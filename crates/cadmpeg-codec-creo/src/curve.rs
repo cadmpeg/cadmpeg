@@ -56,6 +56,10 @@ pub struct CurveExpressionRecord {
     pub lines: Vec<CurveExpressionLine>,
     /// Assignment statements in source order.
     pub assignments: Vec<CurveExpressionAssignment>,
+    /// Complete simultaneous-equation blocks in source order.
+    pub solve_blocks: Vec<CurveExpressionSolveBlock>,
+    /// Whether a `SOLVE`/`FOR` control sequence is malformed or incomplete.
+    pub unresolved_solve_control: bool,
     /// Curve-equation constructs prohibited by the Creo expression grammar.
     pub prohibited_constructs: Vec<String>,
     /// Byte offset of the enclosing entity label.
@@ -94,6 +98,32 @@ pub struct CurveExpressionAssignment {
     /// Whether the source-ordered conditional program executes this assignment.
     pub activation: CurveExpressionActivation,
     /// Byte offset of the assignment source line.
+    pub offset: usize,
+}
+
+/// One `SOLVE`/`FOR` simultaneous-equation block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurveExpressionSolveBlock {
+    /// Ordered equations between the `SOLVE` and `FOR` lines.
+    pub equations: Vec<CurveExpressionEquation>,
+    /// Ordered unknowns declared by the terminating `FOR` line.
+    pub variables: Vec<String>,
+    /// Byte offset of the `SOLVE` line.
+    pub offset: usize,
+    /// Byte offset of the terminating `FOR` line.
+    pub for_offset: usize,
+}
+
+/// One equation in a simultaneous-equation block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveExpressionEquation {
+    /// Exact left-hand expression after surrounding ASCII whitespace removal.
+    pub left: String,
+    /// Exact right-hand expression after surrounding ASCII whitespace removal.
+    pub right: String,
+    /// Referenced identifiers in first-appearance order across both sides.
+    pub dependencies: Vec<String>,
+    /// Byte offset of the equation source line.
     pub offset: usize,
 }
 
@@ -693,12 +723,16 @@ pub(crate) fn expression_records_with_model_name(
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
             let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
+            let solve_program = curve_expression_solve_program(&lines);
             let mut assignments = evaluate_expression_program(
                 &lines,
                 model_name,
                 &ExternalRelationSymbols::default(),
             );
-            if !prohibited_constructs.is_empty() {
+            if !prohibited_constructs.is_empty()
+                || !solve_program.blocks.is_empty()
+                || solve_program.unresolved_control
+            {
                 for assignment in &mut assignments {
                     assignment.value = None;
                 }
@@ -709,6 +743,8 @@ pub(crate) fn expression_records_with_model_name(
                 local_system,
                 lines,
                 assignments,
+                solve_blocks: solve_program.blocks,
+                unresolved_solve_control: solve_program.unresolved_control,
                 prohibited_constructs,
                 offset,
                 expression_offset,
@@ -726,7 +762,10 @@ pub(crate) fn reevaluate_expression_records(
     for record in records {
         record.assignments =
             evaluate_expression_program(&record.lines, model_name, external_symbols);
-        if !record.prohibited_constructs.is_empty() {
+        if !record.prohibited_constructs.is_empty()
+            || !record.solve_blocks.is_empty()
+            || record.unresolved_solve_control
+        {
             for assignment in &mut record.assignments {
                 assignment.value = None;
             }
@@ -952,6 +991,115 @@ fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {
         cursor += 1;
     }
     None
+}
+
+#[derive(Default)]
+struct CurveExpressionSolveProgram {
+    blocks: Vec<CurveExpressionSolveBlock>,
+    line_indices: BTreeSet<usize>,
+    unresolved_control: bool,
+}
+
+struct PendingCurveExpressionSolveBlock {
+    equations: Vec<CurveExpressionEquation>,
+    offset: usize,
+    valid: bool,
+}
+
+fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpressionSolveProgram {
+    let mut program = CurveExpressionSolveProgram::default();
+    let mut pending = None::<PendingCurveExpressionSolveBlock>;
+    for (index, line) in lines.iter().enumerate() {
+        let source = line.text.trim();
+        if pending.is_none() {
+            if starts_relation_keyword(source, "solve") {
+                program.line_indices.insert(index);
+                pending = Some(PendingCurveExpressionSolveBlock {
+                    equations: Vec::new(),
+                    offset: line.offset,
+                    valid: source.eq_ignore_ascii_case("solve"),
+                });
+            } else if starts_relation_keyword(source, "for") {
+                program.line_indices.insert(index);
+                program.unresolved_control = true;
+            }
+            continue;
+        }
+
+        program.line_indices.insert(index);
+        if starts_relation_keyword(source, "solve") {
+            program.unresolved_control = true;
+            pending.as_mut().expect("pending solve block").valid = false;
+            continue;
+        }
+        if starts_relation_keyword(source, "for") {
+            let variables = conditional_keyword_expression(source, "for")
+                .and_then(curve_expression_solve_variables);
+            let block = pending.take().expect("pending solve block");
+            if let Some(variables) =
+                variables.filter(|_| block.valid && !block.equations.is_empty())
+            {
+                program.blocks.push(CurveExpressionSolveBlock {
+                    equations: block.equations,
+                    variables,
+                    offset: block.offset,
+                    for_offset: line.offset,
+                });
+            } else {
+                program.unresolved_control = true;
+            }
+            continue;
+        }
+        if source.is_empty() || source.starts_with("/*") {
+            continue;
+        }
+        let Some((left, right)) = split_expression_assignment(source) else {
+            program.unresolved_control = true;
+            pending.as_mut().expect("pending solve block").valid = false;
+            continue;
+        };
+        let (left, right) = (left.trim(), right.trim());
+        if left.is_empty() || right.is_empty() || split_expression_assignment(right).is_some() {
+            program.unresolved_control = true;
+            pending.as_mut().expect("pending solve block").valid = false;
+            continue;
+        }
+        let mut dependencies = Vec::new();
+        if extend_expression_dependencies(&mut dependencies, left).is_none()
+            || extend_expression_dependencies(&mut dependencies, right).is_none()
+        {
+            program.unresolved_control = true;
+            pending.as_mut().expect("pending solve block").valid = false;
+            continue;
+        }
+        pending
+            .as_mut()
+            .expect("pending solve block")
+            .equations
+            .push(CurveExpressionEquation {
+                left: left.to_owned(),
+                right: right.to_owned(),
+                dependencies,
+                offset: line.offset,
+            });
+    }
+    if pending.is_some() {
+        program.unresolved_control = true;
+    }
+    program
+}
+
+fn curve_expression_solve_variables(source: &str) -> Option<Vec<String>> {
+    let variables = source
+        .split(|character: char| character == ',' || character.is_ascii_whitespace())
+        .filter(|variable| !variable.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    (!variables.is_empty()
+        && variables
+            .iter()
+            .all(|variable| valid_scoped_expression_identifier(variable)))
+    .then_some(variables)
 }
 
 fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
@@ -1208,9 +1356,13 @@ fn evaluate_expression_program(
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
 ) -> Vec<CurveExpressionAssignment> {
+    let solve_line_indices = curve_expression_solve_program(lines).line_indices;
     if !expression_program_control_is_valid(lines) {
         return lines
             .iter()
+            .enumerate()
+            .filter(|(index, _)| !solve_line_indices.contains(index))
+            .map(|(_, line)| line)
             .filter_map(expression_assignment)
             .map(|mut assignment| {
                 assignment.activation = CurveExpressionActivation::Conditional;
@@ -1224,13 +1376,18 @@ fn evaluate_expression_program(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    existing_symbols.extend(lines.iter().filter_map(expression_assignment).filter_map(
-        |assignment| {
-            assignment
-                .scalar_target()
-                .map(|(name, _)| expression_identifier_key(name))
-        },
-    ));
+    existing_symbols.extend(
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !solve_line_indices.contains(index))
+            .filter_map(|(_, line)| expression_assignment(line))
+            .filter_map(|assignment| {
+                assignment
+                    .scalar_target()
+                    .map(|(name, _)| expression_identifier_key(name))
+            }),
+    );
     let context = RelationEvaluationContext {
         model_name,
         existing_symbols: Some(&existing_symbols),
@@ -1248,7 +1405,10 @@ fn evaluate_expression_program(
     let mut stack = Vec::<ConditionalFrame>::new();
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::new();
-    for line in lines {
+    for (index, line) in lines.iter().enumerate() {
+        if solve_line_indices.contains(&index) {
+            continue;
+        }
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
             let condition = (activity == CurveExpressionActivation::Active)
@@ -2909,6 +3069,8 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
 pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
     record.prohibited_constructs.is_empty().then_some(())?;
+    record.solve_blocks.is_empty().then_some(())?;
+    (!record.unresolved_solve_control).then_some(())?;
     let values = evaluate_affine_program(record);
     let radius = values.get("r")?;
     let theta = values.get("theta")?;
@@ -4127,6 +4289,71 @@ mod tests {
             assignments[1].value,
             Some(CurveExpressionValue::Number(1.0))
         );
+    }
+
+    #[test]
+    fn retains_simultaneous_equations_without_sequential_assignments() {
+        let lines = [
+            "area=100",
+            "SOLVE",
+            "width=height+1",
+            "width*height=area",
+            "FOR width, height",
+            "result=area+1",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let program = curve_expression_solve_program(&lines);
+        assert!(!program.unresolved_control);
+        let [block] = program.blocks.as_slice() else {
+            panic!("one solve block");
+        };
+        assert_eq!(block.variables, ["width", "height"]);
+        assert_eq!(block.offset, 1);
+        assert_eq!(block.for_offset, 4);
+        assert_eq!(block.equations.len(), 2);
+        assert_eq!(block.equations[0].left, "width");
+        assert_eq!(block.equations[0].right, "height+1");
+        assert_eq!(block.equations[0].dependencies, ["width", "height"]);
+        assert_eq!(block.equations[1].left, "width*height");
+        assert_eq!(block.equations[1].right, "area");
+        assert_eq!(block.equations[1].dependencies, ["width", "height", "area"]);
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+        assert_eq!(assignments.len(), 2);
+        assert_eq!(assignments[0].parameter_target(), Some(("area", None)));
+        assert_eq!(assignments[1].parameter_target(), Some(("result", None)));
+        assert_eq!(
+            assignments[1].value,
+            Some(CurveExpressionValue::Number(101.0))
+        );
+    }
+
+    #[test]
+    fn unterminated_solve_block_cannot_create_assignments() {
+        let lines = ["before=1", "SOLVE", "false_parameter=2", "after=3"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let program = curve_expression_solve_program(&lines);
+        assert!(program.unresolved_control);
+        assert!(program.blocks.is_empty());
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].parameter_target(), Some(("before", None)));
     }
 
     #[test]

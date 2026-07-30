@@ -55,6 +55,8 @@ pub(super) struct CreoCurveExpressionRecord {
     pub(super) local_system: Option<CreoCurveExpressionLocalSystem>,
     pub(super) lines: Vec<CreoCurveExpressionLine>,
     pub(super) assignments: Vec<CreoCurveExpressionAssignment>,
+    pub(super) solve_blocks: Vec<CreoCurveExpressionSolveBlock>,
+    pub(super) unresolved_solve_control: bool,
     pub(super) prohibited_constructs: Vec<String>,
 }
 
@@ -1819,6 +1821,26 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                     offset: assignment.offset,
                 })
                 .collect(),
+            solve_blocks: record
+                .solve_blocks
+                .iter()
+                .map(|block| CreoCurveExpressionSolveBlock {
+                    equations: block
+                        .equations
+                        .iter()
+                        .map(|equation| CreoCurveExpressionEquation {
+                            left: equation.left.clone(),
+                            right: equation.right.clone(),
+                            dependencies: equation.dependencies.clone(),
+                            offset: equation.offset,
+                        })
+                        .collect(),
+                    variables: block.variables.clone(),
+                    offset: block.offset,
+                    for_offset: block.for_offset,
+                })
+                .collect(),
+            unresolved_solve_control: record.unresolved_solve_control,
             prohibited_constructs: record.prohibited_constructs.clone(),
         })
         .collect()

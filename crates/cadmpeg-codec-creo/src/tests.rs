@@ -6230,6 +6230,71 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
 }
 
 #[test]
+fn decode_retains_simultaneous_curve_expression_blocks() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x06area=100\0SOLVE\0width=height+1\0\
+        width*height=area\0FOR width, height\0result=area+1\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(
+        result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.name.as_str())
+            .collect::<Vec<_>>(),
+        ["area", "result"]
+    );
+    assert!(result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.value.is_none()));
+
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(native.fields["solve_blocks"][0]["variables"][0], "width");
+    assert_eq!(native.fields["solve_blocks"][0]["variables"][1], "height");
+    assert_eq!(
+        native.fields["solve_blocks"][0]["equations"][0]["left"],
+        "width"
+    );
+    assert_eq!(
+        native.fields["solve_blocks"][0]["equations"][0]["right"],
+        "height+1"
+    );
+    assert_eq!(
+        native.fields["solve_blocks"][0]["equations"][1]["dependencies"][2],
+        "area"
+    );
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_assignment_count"],
+        2
+    );
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_solve_block_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_simultaneous_equation_count"],
+        2
+    );
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_solve_variable_count"],
+        2
+    );
+    assert_eq!(
+        result.report.coverage["unresolved_active_curve_expression_solve_control_count"],
+        0
+    );
+}
+
+#[test]
 fn decode_evaluates_dimensioned_relation_string_conversion() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x03length_text=rtos(1[in],1)\0\

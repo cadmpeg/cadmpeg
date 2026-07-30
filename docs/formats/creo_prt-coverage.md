@@ -53,6 +53,9 @@ fixtures, claims above L1 remain unproven.
   including exact and regular-expression whole-string matching.
   Local bindings are case-insensitive, scoped external symbols remain whole,
   and the reserved `PI` and dimensioned gravitational `G` constants evaluate.
+  Simultaneous `SOLVE`/`FOR` blocks retain ordered equation sides,
+  dependencies, and unknowns without interpreting block equations as
+  sequential parameter assignments.
   Constructs prohibited in datum-curve equations are retained but do not
   evaluate or generate a derived curve. Positive
   `exists()` queries resolve against the complete local assignment namespace
@@ -262,9 +265,11 @@ fixtures, claims above L1 remain unproven.
    map likewise counts decoded, transferred, and evaluated active
    curve-equation assignments separately, counts typed table-cell targets, and
    partitions assignments by active, inactive, and unresolved-conditional
-   state. Prohibited active records and their distinct prohibited construct
-   kinds are counted separately, and each nonzero prohibited count raises a
-   decode loss note. Container and census
+   state. Complete simultaneous-solve blocks, equations, and unknowns are
+   counted separately, as are records with malformed or incomplete solve
+   control. Prohibited active records and their distinct prohibited construct
+   kinds are counted separately. Every nonzero prohibited or solve-control
+   count raises a decode loss note. Container and census
    facts about the file — version line, layout, section table, namespace array
    sizes, principal unit, family-table pointer, and configuration state — remain
    in the source metadata attribute map. Referenced configuration driver tables

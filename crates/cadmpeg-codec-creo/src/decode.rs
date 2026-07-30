@@ -468,6 +468,22 @@ struct CreoCurveExpressionAssignment {
 }
 
 #[derive(Serialize)]
+struct CreoCurveExpressionSolveBlock {
+    equations: Vec<CreoCurveExpressionEquation>,
+    variables: Vec<String>,
+    offset: usize,
+    for_offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoCurveExpressionEquation {
+    left: String,
+    right: String,
+    dependencies: Vec<String>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoFeatureOperationState {
     id: String,
     feature_id: u32,
@@ -29660,6 +29676,24 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             .flat_map(|record| &record.assignments)
             .filter(|assignment| assignment.value.is_some())
             .count();
+        let decoded_curve_expression_solve_block_count = active_expressions
+            .clone()
+            .map(|record| record.solve_blocks.len())
+            .sum::<usize>();
+        let decoded_curve_expression_simultaneous_equation_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .map(|block| block.equations.len())
+            .sum::<usize>();
+        let decoded_curve_expression_solve_variable_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .map(|block| block.variables.len())
+            .sum::<usize>();
+        let unresolved_curve_expression_solve_control_count = active_expressions
+            .clone()
+            .filter(|record| record.unresolved_solve_control)
+            .count();
         let prohibited_curve_expression_record_count = active_expressions
             .clone()
             .filter(|record| !record.prohibited_constructs.is_empty())
@@ -29702,6 +29736,22 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "evaluated_active_curve_expression_assignment_count".to_string(),
             evaluated_curve_expression_assignment_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_solve_block_count".to_string(),
+            decoded_curve_expression_solve_block_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_simultaneous_equation_count".to_string(),
+            decoded_curve_expression_simultaneous_equation_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_solve_variable_count".to_string(),
+            decoded_curve_expression_solve_variable_count,
+        );
+        coverage.insert(
+            "unresolved_active_curve_expression_solve_control_count".to_string(),
+            unresolved_curve_expression_solve_control_count,
         );
         coverage.insert(
             "prohibited_active_curve_expression_record_count".to_string(),
@@ -32494,13 +32544,18 @@ fn build_report(
         }
         None => ", configuration presence",
     };
-    let prohibited_curve_expression_record_count = scan
+    let unevaluated_curve_expression_record_count = scan
         .curves
         .expressions
         .iter()
-        .filter(|record| !record.backup && !record.prohibited_constructs.is_empty())
+        .filter(|record| {
+            !record.backup
+                && (!record.prohibited_constructs.is_empty()
+                    || !record.solve_blocks.is_empty()
+                    || record.unresolved_solve_control)
+        })
         .count();
-    let curve_expression_transfer = if prohibited_curve_expression_record_count == 0 {
+    let curve_expression_transfer = if unevaluated_curve_expression_record_count == 0 {
         "Curve-equation assignments transfer with their source, dependencies, and closed numeric \
          and string operator and deterministic function values."
             .to_string()
@@ -32508,9 +32563,9 @@ fn build_report(
         format!(
             "Admitted curve-equation assignments transfer with their source, dependencies, and \
              closed numeric and string operator and deterministic function values. \
-             {prohibited_curve_expression_record_count} active curve-equation record(s) containing \
-             prohibited datum-curve constructs retain source and dependencies without values or \
-             derived curves."
+             {unevaluated_curve_expression_record_count} active curve-equation record(s) \
+             containing prohibited datum-curve constructs or simultaneous-solve control retain \
+             source and dependencies without assignment values or derived curves."
         )
     };
 
@@ -32916,6 +32971,33 @@ fn build_report(
                 "{prohibited_records} active curve-equation record(s) containing prohibited \
                  datum-curve constructs were not evaluated; source and dependencies were \
                  retained without values or derived curves."
+            ),
+            provenance: None,
+        });
+    }
+    let solve_blocks = count("decoded_active_curve_expression_solve_block_count");
+    if solve_blocks != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{solve_blocks} active curve-equation simultaneous-solve block(s) retain their \
+                 ordered equations and unknowns without solved values or derived curves."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_solve_controls = count("unresolved_active_curve_expression_solve_control_count");
+    if unresolved_solve_controls != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_solve_controls} active curve-equation record(s) retain malformed or \
+                 incomplete simultaneous-solve control without sequentially interpreting its \
+                 bounded source lines."
             ),
             provenance: None,
         });
