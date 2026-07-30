@@ -19,8 +19,8 @@ use crate::families::standard::topology::{
 };
 use crate::solve::incidence::{
     compact_boundary_domain_viable, prepare_face_configuration_domains,
-    prune_face_configuration_support, prune_ordered_face_endpoint_support,
-    reconstruct_incidence_candidates,
+    prune_face_configuration_singleton_support, prune_face_configuration_support,
+    prune_ordered_face_endpoint_support, reconstruct_incidence_candidates,
 };
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::mesh_quotient::{
@@ -1364,6 +1364,51 @@ fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
     let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(prune_face_configuration_support(&mut optional, &budget));
     assert_eq!(optional[0], vec![vec![(0, [0, 1])]]);
+}
+
+#[test]
+fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
+    let equal = |left, right| {
+        vec![
+            vec![(left, [0, 0]), (right, [0, 0])],
+            vec![(left, [1, 1]), (right, [1, 1])],
+        ]
+    };
+    let different = vec![
+        vec![(0, [0, 0]), (2, [1, 1])],
+        vec![(0, [1, 1]), (2, [0, 0])],
+    ];
+    let mut inconsistent = vec![equal(0, 1), equal(1, 2), different];
+    let arc_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_face_configuration_support(
+        &mut inconsistent,
+        &arc_budget
+    ));
+    assert!(inconsistent.iter().all(|domain| domain.len() == 2));
+
+    let singleton_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    assert!(!prune_face_configuration_singleton_support(
+        &mut inconsistent,
+        &singleton_budget,
+    ));
+
+    let mut consistent = vec![equal(0, 1), equal(1, 2), equal(2, 0)];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    assert!(prune_face_configuration_singleton_support(
+        &mut consistent,
+        &budget,
+    ));
+    assert!(consistent.iter().all(|domain| domain.len() == 2));
+
+    let preserved = consistent.clone();
+    let exhausted = MeshConstraintBudget::new(0);
+    assert!(prune_face_configuration_singleton_support(
+        &mut consistent,
+        &exhausted,
+    ));
+    assert_eq!(consistent, preserved);
+    assert!(exhausted.exhausted.get());
 }
 
 #[test]

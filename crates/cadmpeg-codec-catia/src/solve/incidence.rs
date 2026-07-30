@@ -591,6 +591,57 @@ pub(crate) fn prune_face_configuration_support(
     true
 }
 
+pub(crate) fn prune_face_configuration_singleton_support(
+    domains: &mut [MeshFaceEndpointConfigurations],
+    budget: &MeshConstraintBudget,
+) -> bool {
+    loop {
+        let mut changed = false;
+        let mut order = (0..domains.len()).collect::<Vec<_>>();
+        order.sort_unstable_by_key(|domain| domains[*domain].len());
+        for domain in order {
+            if domains[domain].len() <= 1 {
+                continue;
+            }
+            let clone_work = domains.iter().map(Vec::len).sum::<usize>().max(1);
+            let mut keep = Vec::with_capacity(domains[domain].len());
+            for configuration in &domains[domain] {
+                if !budget.charge_by(clone_work) {
+                    return true;
+                }
+                let mut trial = domains.to_vec();
+                trial[domain] = vec![configuration.clone()];
+                let viable = prune_face_configuration_support(&mut trial, budget);
+                if budget.exhausted.get() {
+                    return true;
+                }
+                keep.push(viable);
+            }
+            if keep.iter().all(|supported| !supported) {
+                return false;
+            }
+            if keep.iter().any(|supported| !supported) {
+                let mut index = 0;
+                domains[domain].retain(|_| {
+                    let retain = keep[index];
+                    index += 1;
+                    retain
+                });
+                changed = true;
+                if !prune_face_configuration_support(domains, budget) {
+                    return false;
+                }
+                if budget.exhausted.get() {
+                    return true;
+                }
+            }
+        }
+        if !changed {
+            return true;
+        }
+    }
+}
+
 pub(crate) fn prune_ordered_face_endpoint_support(
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
@@ -716,8 +767,13 @@ pub(crate) fn prepare_face_configuration_domains(
                 .unwrap_or_default()
         })
         .collect::<Vec<_>>();
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    if !prune_face_configuration_support(&mut configurations, &budget) {
+    let arc_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let viable = prune_face_configuration_support(&mut configurations, &arc_budget);
+    let singleton_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    if !viable
+        || (!arc_budget.exhausted.get()
+            && !prune_face_configuration_singleton_support(&mut configurations, &singleton_budget))
+    {
         if let Some(domain) = configurations.first_mut() {
             domain.clear();
         }
