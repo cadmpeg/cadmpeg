@@ -3142,6 +3142,66 @@ fn body_combine_requires_exactly_one_resolved_target() {
 }
 
 #[test]
+fn pattern_feature_seeds_must_be_declared_dependencies() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed};
+
+    let mut ir = unit_cube();
+    let seed = FeatureId("synthetic:test:feature#pattern-seed".into());
+    ir.model.features.push(Feature {
+        id: seed.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPoint {
+            position: Point3::new(0.0, 0.0, 0.0),
+        },
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#pattern".into()),
+        ordinal: 1,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: vec![PatternSeed::Feature(seed.clone())],
+            pattern: PatternKind::Mirror {
+                plane_origin: Point3::new(0.0, 0.0, 0.0),
+                plane_normal: Vector3::new(1.0, 0.0, 0.0),
+            },
+        },
+        native_ref: None,
+    });
+    let message = format!(
+        "pattern omits seed feature `{}` from its dependencies",
+        seed.0
+    );
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == message));
+
+    ir.model.features[1].dependencies.push(seed);
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == message));
+}
+
+#[test]
 fn explicit_extrusion_direction_must_be_nonzero() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,

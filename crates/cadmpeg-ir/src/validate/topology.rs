@@ -3093,6 +3093,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                     entity: Some(feature.id.0.clone()),
                                 });
                             }
+                            Some(_) if !feature.dependencies.contains(seed) => {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: format!(
+                                        "pattern omits seed feature `{}` from its dependencies",
+                                        seed.0
+                                    ),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            }
                             Some(_) => {}
                         },
                         PatternSeed::Faces(selection) => face_selections.push(selection),

@@ -1327,9 +1327,8 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 fn nx_pattern_completeness_requires_distinct_seeds() {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, PatternSeed};
 
-    let seed = cadmpeg_ir::features::PatternSeed::Feature(cadmpeg_ir::features::FeatureId(
-        "test:feature#seed".into(),
-    ));
+    let seed_id = cadmpeg_ir::features::FeatureId("test:feature#seed".into());
+    let seed = cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone());
     let pattern = cadmpeg_ir::features::PatternKind::Mirror {
         plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1338,26 +1337,36 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
     assert!(!crate::decode::pattern_feature_is_incomplete(
         std::slice::from_ref(&seed),
         &pattern,
+        std::slice::from_ref(&seed_id),
+    ));
+    assert!(crate::decode::pattern_feature_is_incomplete(
+        std::slice::from_ref(&seed),
+        &pattern,
+        &[],
     ));
     assert!(crate::decode::pattern_feature_is_incomplete(
         &[seed.clone(), seed],
         &pattern,
+        std::slice::from_ref(&seed_id),
     ));
     assert!(crate::decode::pattern_feature_is_incomplete(
         &[PatternSeed::Faces(FaceSelection::Native(
             "nx:pattern-face-selection#0".into(),
         ))],
         &pattern,
+        &[],
     ));
     assert!(crate::decode::pattern_feature_is_incomplete(
         &[PatternSeed::Bodies(BodySelection::Unresolved)],
         &pattern,
+        &[],
     ));
     assert!(!crate::decode::pattern_feature_is_incomplete(
         &[PatternSeed::Bodies(BodySelection::Bodies(vec![
             cadmpeg_ir::ids::BodyId("test:body#seed".into()),
         ]))],
         &pattern,
+        &[],
     ));
 }
 

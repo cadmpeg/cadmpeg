@@ -10383,7 +10383,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "draft"
             }
             FeatureDefinition::Pattern { seeds, pattern }
-                if pattern_feature_is_incomplete(seeds, pattern) =>
+                if pattern_feature_is_incomplete(seeds, pattern, &feature.dependencies) =>
             {
                 "pattern"
             }
@@ -11093,10 +11093,11 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
 pub(crate) fn pattern_feature_is_incomplete(
     seeds: &[cadmpeg_ir::features::PatternSeed],
     pattern: &PatternKind,
+    dependencies: &[cadmpeg_ir::features::FeatureId],
 ) -> bool {
     seeds.is_empty()
         || seeds.iter().any(|seed| match seed {
-            cadmpeg_ir::features::PatternSeed::Feature(_) => false,
+            cadmpeg_ir::features::PatternSeed::Feature(feature) => !dependencies.contains(feature),
             cadmpeg_ir::features::PatternSeed::Faces(faces) => face_selection_is_incomplete(faces),
             cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
                 body_selection_is_incomplete(bodies)
