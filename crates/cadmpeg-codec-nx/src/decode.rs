@@ -19,7 +19,7 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_speed_bound,
     nurbs_surface_isocurve, nurbs_surface_partials, pcurve_tangent, pcurve_uv, surface_partials,
-    surface_point,
+    surface_point, surface_second_partials,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -8087,18 +8087,31 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
                     endpoints,
                     tolerance,
                     parameterization: None,
-                } => (
-                    supports.each_ref(),
-                    *endpoints,
-                    [0.0, 1.0],
-                    *tolerance,
-                    true,
-                ),
+                } => {
+                    let range = if edge.start == edge.end
+                        && ir
+                            .model
+                            .curves
+                            .iter()
+                            .find(|candidate| candidate.id == procedural.curve)
+                            .is_some_and(|curve| {
+                                matches!(
+                                    curve.geometry,
+                                    CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+                                )
+                            }) {
+                        [0.0, std::f64::consts::TAU]
+                    } else {
+                        [0.0, 1.0]
+                    };
+                    (supports.each_ref(), *endpoints, range, *tolerance, true)
+                }
                 _ => return None,
             };
             let [first_surface, second_surface] = supports;
-            let candidates = [first_surface, second_surface]
-                .map(|surface| exact_boundary_pcurve(ir, surface, endpoints, range, tolerance));
+            let candidates = [first_surface, second_surface].map(|surface| {
+                exact_boundary_pcurve(ir, &procedural.curve, surface, endpoints, range, tolerance)
+            });
             let pcurves = match candidates {
                 [Some(first), Some(second)] => {
                     if coincident_pcurve_pair(
@@ -8236,6 +8249,7 @@ fn curve_is_cache_backed(ir: &CadIr, curve: &CurveId) -> bool {
 
 fn exact_boundary_pcurve(
     ir: &CadIr,
+    curve: &CurveId,
     surface: &SurfaceId,
     endpoints: [Point3; 2],
     range: [f64; 2],
@@ -8252,6 +8266,9 @@ fn exact_boundary_pcurve(
         .surfaces
         .iter()
         .find(|candidate| &candidate.id == surface)?;
+    if let Some(candidate) = exact_analytic_isocurve_pcurve(ir, curve, surface, range, tolerance) {
+        return Some(candidate);
+    }
     if matches!(&carrier.geometry, SurfaceGeometry::Plane { .. }) {
         let [first, second] =
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
@@ -8376,6 +8393,124 @@ fn exact_boundary_pcurve(
         return None;
     };
     Some(candidate.clone())
+}
+
+fn exact_analytic_isocurve_pcurve(
+    ir: &CadIr,
+    curve: &CurveId,
+    surface: &SurfaceId,
+    range: [f64; 2],
+    tolerance: f64,
+) -> Option<PcurveGeometry> {
+    const SAMPLE_INTERVALS: usize = 8;
+
+    let curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == curve)?;
+    let curve_speed = match &curve.geometry {
+        CurveGeometry::Circle { radius, .. } => radius.abs(),
+        CurveGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } => major_radius.abs().max(minor_radius.abs()),
+        _ => return None,
+    };
+    let surface_carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    matches!(
+        surface_carrier.geometry,
+        SurfaceGeometry::Cylinder { .. }
+            | SurfaceGeometry::Cone { .. }
+            | SurfaceGeometry::Sphere { .. }
+            | SurfaceGeometry::Torus { .. }
+    )
+    .then_some(())?;
+    let periods = surface_parameter_periods(ir, surface);
+    let mut samples = Vec::with_capacity(SAMPLE_INTERVALS + 1);
+    for index in 0..=SAMPLE_INTERVALS {
+        let parameter = range[0] + (range[1] - range[0]) * index as f64 / SAMPLE_INTERVALS as f64;
+        let point = curve_point(&curve.geometry, parameter)?;
+        let mut uv = analytic_surface_parameters(&surface_carrier.geometry, point)?;
+        if let Some(previous) = samples.last().map(|(_, uv): &(f64, Point2)| *uv) {
+            if let Some(period) = periods[0] {
+                uv.u = lift_periodic_parameter(uv.u, previous.u, period);
+            }
+            if let Some(period) = periods[1] {
+                uv.v = lift_periodic_parameter(uv.v, previous.v, period);
+            }
+        }
+        samples.push((parameter, uv));
+    }
+    let parameter_span = range[1] - range[0];
+    let first = samples.first()?.1;
+    let last = samples.last()?.1;
+    let mut direction = Point2::new(
+        (last.u - first.u) / parameter_span,
+        (last.v - first.v) / parameter_span,
+    );
+    let angular_tolerance = (tolerance / curve_speed.max(tolerance)).max(1.0e-10);
+    let u_constant = samples
+        .iter()
+        .all(|(_, uv)| (uv.u - first.u).abs() <= angular_tolerance);
+    let v_constant = samples
+        .iter()
+        .all(|(_, uv)| (uv.v - first.v).abs() <= angular_tolerance);
+    match (u_constant, v_constant) {
+        (true, false) => direction.u = 0.0,
+        (false, true) => direction.v = 0.0,
+        _ => return None,
+    }
+    let varying_scale = if direction.u == 0.0 {
+        &mut direction.v
+    } else {
+        &mut direction.u
+    };
+    (((*varying_scale).abs() - 1.0).abs() <= angular_tolerance).then_some(())?;
+    *varying_scale = varying_scale.signum();
+    let candidate = PcurveGeometry::Line {
+        origin: Point2::new(
+            first.u - direction.u * range[0],
+            first.v - direction.v * range[0],
+        ),
+        direction,
+    };
+    let parameter = range[0];
+    let uv = pcurve_uv(&candidate, parameter)?;
+    let surface_jet = surface_second_partials(&surface_carrier.geometry, uv.u, uv.v)?;
+    let curve_position = curve_point(&curve.geometry, parameter)?;
+    let curve_tangent = curve_tangent(&curve.geometry, parameter)?;
+    let curve_acceleration = curve_second_derivative(&curve.geometry, parameter)?;
+    let surface_tangent = Vector3::new(
+        direction.u * surface_jet.du.x + direction.v * surface_jet.dv.x,
+        direction.u * surface_jet.du.y + direction.v * surface_jet.dv.y,
+        direction.u * surface_jet.du.z + direction.v * surface_jet.dv.z,
+    );
+    let surface_acceleration = Vector3::new(
+        direction.u * direction.u * surface_jet.duu.x
+            + 2.0 * direction.u * direction.v * surface_jet.duv.x
+            + direction.v * direction.v * surface_jet.dvv.x,
+        direction.u * direction.u * surface_jet.duu.y
+            + 2.0 * direction.u * direction.v * surface_jet.duv.y
+            + direction.v * direction.v * surface_jet.dvv.y,
+        direction.u * direction.u * surface_jet.duu.z
+            + 2.0 * direction.u * direction.v * surface_jet.duv.z
+            + direction.v * direction.v * surface_jet.dvv.z,
+    );
+    let vector_error = |first: Vector3, second: Vector3| {
+        ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
+            .sqrt()
+    };
+    (point_distance(curve_position, surface_jet.point) <= tolerance
+        && vector_error(curve_tangent, surface_tangent) <= tolerance
+        && vector_error(curve_acceleration, surface_acceleration) <= tolerance)
+        .then_some(())?;
+    Some(candidate)
 }
 
 fn coincident_pcurve_pair(
@@ -8540,8 +8675,35 @@ fn boundary_curve_speed_bound(
         {
             affine_speed()
         }
+        SurfaceGeometry::Cylinder { radius, .. } if direction.v == 0.0 && direction.u != 0.0 => {
+            let speed = radius.abs() * direction.u.abs();
+            speed.is_finite().then_some(speed)
+        }
+        SurfaceGeometry::Cone {
+            radius,
+            ratio,
+            half_angle,
+            ..
+        } if direction.v == 0.0 && direction.u != 0.0 => {
+            let local_radius = radius + origin.v * half_angle.tan();
+            let speed = local_radius.abs() * ratio.abs().max(1.0) * direction.u.abs();
+            speed.is_finite().then_some(speed)
+        }
+        SurfaceGeometry::Sphere { radius, .. } if direction.v == 0.0 && direction.u != 0.0 => {
+            let speed = radius.abs() * origin.v.cos().abs() * direction.u.abs();
+            speed.is_finite().then_some(speed)
+        }
         SurfaceGeometry::Sphere { radius, .. } if direction.u == 0.0 && direction.v != 0.0 => {
             let speed = radius.abs() * direction.v.abs();
+            speed.is_finite().then_some(speed)
+        }
+        SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } if direction.v == 0.0 && direction.u != 0.0 => {
+            let ring_radius = major_radius + minor_radius * origin.v.cos();
+            let speed = ring_radius.abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
         SurfaceGeometry::Torus { minor_radius, .. } if direction.u == 0.0 && direction.v != 0.0 => {
@@ -10922,6 +11084,217 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn analytic_closed_isocurves_retain_the_native_full_turn() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let cone = SurfaceId("nx:test:cone".into());
+        let sphere = SurfaceId("nx:test:sphere".into());
+        let torus = SurfaceId("nx:test:torus".into());
+        ir.model.surfaces.extend([
+            Surface {
+                id: cone.clone(),
+                geometry: SurfaceGeometry::Cone {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    radius: 2.0,
+                    ratio: 0.5,
+                    half_angle: 0.25_f64.atan(),
+                },
+                source_object: None,
+            },
+            Surface {
+                id: sphere.clone(),
+                geometry: SurfaceGeometry::Sphere {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    radius: 2.0,
+                },
+                source_object: None,
+            },
+            Surface {
+                id: torus.clone(),
+                geometry: SurfaceGeometry::Torus {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    major_radius: 3.0,
+                    minor_radius: 1.0,
+                },
+                source_object: None,
+            },
+        ]);
+        let plane = SurfaceId("nx:test:plane".into());
+        ir.model.surfaces.push(Surface {
+            id: plane.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 1.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let cone_ellipse = CurveId("nx:test:cone-ellipse".into());
+        let sphere_circle = CurveId("nx:test:sphere-circle".into());
+        let torus_circle = CurveId("nx:test:torus-circle".into());
+        ir.model.curves.extend([
+            Curve {
+                id: cone_ellipse.clone(),
+                geometry: CurveGeometry::Ellipse {
+                    center: Point3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    major_direction: Vector3::new(1.0, 0.0, 0.0),
+                    major_radius: 2.25,
+                    minor_radius: 1.125,
+                },
+                source_object: None,
+            },
+            Curve {
+                id: sphere_circle.clone(),
+                geometry: CurveGeometry::Circle {
+                    center: Point3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    radius: 3.0_f64.sqrt(),
+                },
+                source_object: None,
+            },
+            Curve {
+                id: torus_circle.clone(),
+                geometry: CurveGeometry::Circle {
+                    center: Point3::new(3.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, -1.0, 0.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    radius: 1.0,
+                },
+                source_object: None,
+            },
+        ]);
+
+        let range = [0.0, std::f64::consts::TAU];
+        let cone_pcurve =
+            super::exact_analytic_isocurve_pcurve(&ir, &cone_ellipse, &cone, range, 1.0e-12)
+                .expect("cone ellipse");
+        let sphere_pcurve =
+            super::exact_analytic_isocurve_pcurve(&ir, &sphere_circle, &sphere, range, 1.0e-12)
+                .expect("sphere parallel");
+        let torus_pcurve =
+            super::exact_analytic_isocurve_pcurve(&ir, &torus_circle, &torus, range, 1.0e-12)
+                .expect("torus meridian");
+        assert!(matches!(
+            sphere_pcurve,
+            PcurveGeometry::Line { origin, direction }
+                if (origin.v - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+                    && direction.u == 1.0
+                    && direction.v == 0.0
+        ));
+        assert!(matches!(
+            torus_pcurve,
+            PcurveGeometry::Line { origin, direction }
+                if origin.u.abs() < 1.0e-12
+                    && direction.u == 0.0
+                    && direction.v == 1.0
+        ));
+        assert!(matches!(
+            cone_pcurve,
+            PcurveGeometry::Line { origin, direction }
+                if (origin.v - 1.0).abs() < 1.0e-12
+                    && direction.u == 1.0
+                    && direction.v == 0.0
+        ));
+        for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
+            for (curve, surface, pcurve) in [
+                (&cone_ellipse, &cone, &cone_pcurve),
+                (&sphere_circle, &sphere, &sphere_pcurve),
+                (&torus_circle, &torus, &torus_pcurve),
+            ] {
+                let curve = ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|candidate| &candidate.id == curve)
+                    .unwrap();
+                let expected = cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).unwrap();
+                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
+                let actual =
+                    cadmpeg_ir::eval::model_surface_point_by_id(&ir, surface, uv.u, uv.v).unwrap();
+                assert!(super::point_distance(expected, actual) < 1.0e-12);
+            }
+        }
+
+        let construction = ProceduralCurveId("nx:test:closed-intersection".into());
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: construction,
+            curve: sphere_circle.clone(),
+            definition: ProceduralCurveDefinition::TolerantIntersection {
+                supports: [sphere, plane],
+                endpoints: [
+                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                ],
+                tolerance: 1.0e-8,
+                parameterization: None,
+            },
+            cache_fit_tolerance: None,
+        });
+        let point = PointId("nx:test:closed-point".into());
+        let vertex = VertexId("nx:test:closed-vertex".into());
+        ir.model.points.push(Point {
+            id: point.clone(),
+            position: Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+            source_object: None,
+        });
+        ir.model.vertices.push(Vertex {
+            id: vertex.clone(),
+            point,
+            tolerance: Some(1.0e-8),
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId("nx:test:closed-edge".into()),
+            curve: Some(sphere_circle),
+            start: vertex.clone(),
+            end: vertex,
+            param_range: None,
+            tolerance: Some(1.0e-8),
+        });
+
+        super::complete_exact_boundary_intersection_pcurves(&mut ir, &mut AnnotationBuilder::new());
+        let ProceduralCurveDefinition::TolerantIntersection {
+            supports,
+            parameterization: Some(parameterization),
+            ..
+        } = &ir.model.procedural_curves[0].definition
+        else {
+            panic!("closed intersection parameterization");
+        };
+        assert_eq!(parameterization.parameter_range, range);
+        assert_eq!(ir.model.edges[0].param_range, Some(range));
+        assert!(parameterization
+            .pcurves
+            .iter()
+            .enumerate()
+            .all(|(side, pcurve)| {
+                for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
+                    let Some(uv) = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter) else {
+                        return false;
+                    };
+                    let Some(point) = cadmpeg_ir::eval::model_surface_point_by_id(
+                        &ir,
+                        &supports[side],
+                        uv.u,
+                        uv.v,
+                    ) else {
+                        return false;
+                    };
+                    if (point.z - 1.0).abs() > 1.0e-8 {
+                        return false;
+                    }
+                }
+                true
+            }));
+    }
 
     fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
         SurfaceGeometry::Nurbs(NurbsSurface {
