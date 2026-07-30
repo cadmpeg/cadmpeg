@@ -279,17 +279,31 @@ pub(crate) struct MeshCoordinateRootDomains {
 }
 
 pub(crate) struct MeshImplicitEdgeCandidates {
-    left: Vec<usize>,
-    right: Vec<usize>,
-    left_index: usize,
-    right_index: usize,
-    required_point: Option<usize>,
-    same_root: bool,
+    source: MeshImplicitEdgeCandidateSource,
+}
+
+enum MeshImplicitEdgeCandidateSource {
+    Cartesian {
+        left: Vec<usize>,
+        right: Vec<usize>,
+        left_index: usize,
+        right_index: usize,
+        same_root: bool,
+    },
+    Required {
+        points: std::vec::IntoIter<usize>,
+        required: usize,
+    },
 }
 
 impl MeshImplicitEdgeCandidates {
     pub(crate) fn width_upper_bound(&self) -> usize {
-        self.left.len().saturating_mul(self.right.len())
+        match &self.source {
+            MeshImplicitEdgeCandidateSource::Cartesian { left, right, .. } => {
+                left.len().saturating_mul(right.len())
+            }
+            MeshImplicitEdgeCandidateSource::Required { points, .. } => points.len(),
+        }
     }
 }
 
@@ -297,36 +311,49 @@ impl Iterator for MeshImplicitEdgeCandidates {
     type Item = [usize; 2];
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.left_index < self.left.len() {
-            let left = self.left[self.left_index];
-            let right = self.right[self.right_index];
-            self.right_index += 1;
-            if self.right_index == self.right.len() {
-                self.left_index += 1;
-                self.right_index = 0;
+        match &mut self.source {
+            MeshImplicitEdgeCandidateSource::Required { points, required } => {
+                points.next().map(|point| {
+                    if *required <= point {
+                        [*required, point]
+                    } else {
+                        [point, *required]
+                    }
+                })
             }
-            if self
-                .required_point
-                .is_some_and(|point| left != point && right != point)
-            {
-                continue;
+            MeshImplicitEdgeCandidateSource::Cartesian {
+                left,
+                right,
+                left_index,
+                right_index,
+                same_root,
+            } => {
+                while *left_index < left.len() {
+                    let left_point = left[*left_index];
+                    let right_point = right[*right_index];
+                    *right_index += 1;
+                    if *right_index == right.len() {
+                        *left_index += 1;
+                        *right_index = 0;
+                    }
+                    if !*same_root && left_point == right_point {
+                        continue;
+                    }
+                    if left_point > right_point
+                        && left.binary_search(&right_point).is_ok()
+                        && right.binary_search(&left_point).is_ok()
+                    {
+                        continue;
+                    }
+                    return Some(if left_point <= right_point {
+                        [left_point, right_point]
+                    } else {
+                        [right_point, left_point]
+                    });
+                }
+                None
             }
-            if !self.same_root && left == right {
-                continue;
-            }
-            if left > right
-                && self.left.binary_search(&right).is_ok()
-                && self.right.binary_search(&left).is_ok()
-            {
-                continue;
-            }
-            return Some(if left <= right {
-                [left, right]
-            } else {
-                [right, left]
-            });
         }
-        None
     }
 }
 
@@ -373,13 +400,71 @@ impl MeshCoordinateRootDomains {
     ) -> Option<MeshImplicitEdgeCandidates> {
         self.edge_candidates.get(edge)?.is_empty().then_some(())?;
         let &[left, right] = self.edges.get(edge)?;
+        if let Some(required) = required_point {
+            let required_in_left = self.domains[left].binary_search(&required).is_ok();
+            let required_in_right = self.domains[right].binary_search(&required).is_ok();
+            let mut points = match (required_in_left, required_in_right) {
+                (true, false) => self.domains[right].clone(),
+                (false, true) => self.domains[left].clone(),
+                (false, false) => Vec::new(),
+                (true, true) if left == right => self.domains[left].clone(),
+                (true, true) => {
+                    let mut points =
+                        Vec::with_capacity(self.domains[left].len() + self.domains[right].len());
+                    let (mut left_index, mut right_index) = (0, 0);
+                    while left_index < self.domains[left].len()
+                        || right_index < self.domains[right].len()
+                    {
+                        let point = match (
+                            self.domains[left].get(left_index),
+                            self.domains[right].get(right_index),
+                        ) {
+                            (Some(left), Some(right)) if left < right => {
+                                left_index += 1;
+                                *left
+                            }
+                            (Some(left), Some(right)) if right < left => {
+                                right_index += 1;
+                                *right
+                            }
+                            (Some(left), Some(_)) => {
+                                left_index += 1;
+                                right_index += 1;
+                                *left
+                            }
+                            (Some(left), None) => {
+                                left_index += 1;
+                                *left
+                            }
+                            (None, Some(right)) => {
+                                right_index += 1;
+                                *right
+                            }
+                            (None, None) => break,
+                        };
+                        points.push(point);
+                    }
+                    points
+                }
+            };
+            if left != right {
+                points.retain(|point| *point != required);
+            }
+            return Some(MeshImplicitEdgeCandidates {
+                source: MeshImplicitEdgeCandidateSource::Required {
+                    points: points.into_iter(),
+                    required,
+                },
+            });
+        }
         Some(MeshImplicitEdgeCandidates {
-            left: self.domains[left].clone(),
-            right: self.domains[right].clone(),
-            left_index: 0,
-            right_index: 0,
-            required_point,
-            same_root: left == right,
+            source: MeshImplicitEdgeCandidateSource::Cartesian {
+                left: self.domains[left].clone(),
+                right: self.domains[right].clone(),
+                left_index: 0,
+                right_index: 0,
+                same_root: left == right,
+            },
         })
     }
 

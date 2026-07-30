@@ -2765,6 +2765,23 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
 }
 
 #[test]
+fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product() {
+    let candidates = [Vec::new(), Vec::new()];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &[[10, 11], [12, 13]])
+            .expect("initial quotient");
+    let domains = quotient
+        .prepare_coordinate_root_domains(4, &candidates, None)
+        .expect("implicit coordinate domains");
+    let implicit = domains
+        .implicit_edge_candidates(0, Some(1))
+        .expect("required implicit candidates");
+
+    assert_eq!(implicit.width_upper_bound(), 3);
+    assert_eq!(implicit.collect::<Vec<_>>(), vec![[0, 1], [1, 2], [1, 3]]);
+}
+
+#[test]
 fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
     let candidates = vec![Vec::new(); 100];
     let ports = (0..100)
