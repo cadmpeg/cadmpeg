@@ -724,6 +724,47 @@ mod tests {
     }
 
     #[test]
+    fn delete_only_history_distinguishes_consumed_and_terminal_images() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{FeatureBodyReference, FeatureOperationLabel};
+
+        let labels = [FeatureOperationLabel {
+            id: "operation#delete".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "DELETE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let references = [FeatureBodyReference {
+            id: "reference#10".to_string(),
+            operation_label: labels[0].id.clone(),
+            body_object_index: 10,
+            raw_body_object_index: vec![10],
+            source_offset: 0,
+        }];
+        let binding = |ordinal, body_object_index, body_alias_object_index| SegmentBodyBinding {
+            id: format!("binding#{ordinal}"),
+            stream_link: format!("stream#{ordinal}"),
+            stream_ordinal: ordinal,
+            stream_kind: "partition".to_string(),
+            body_object_index,
+            body_alias_object_index,
+            stream_role: 19,
+            source_offset: u64::from(ordinal),
+        };
+        let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
+
+        let statuses =
+            super::segment_body_lineage_statuses(&labels, &references, &[], &[], &[], &bindings)
+                .expect("complete delete-only lineage");
+        assert_eq!(statuses.len(), 2);
+        assert!(!statuses[0].terminal);
+        assert!(statuses[1].terminal);
+    }
+
+    #[test]
     fn feature_body_lineage_excludes_offset_store_reference_collisions() {
         use super::SegmentBodyBinding;
         use crate::native::features::{

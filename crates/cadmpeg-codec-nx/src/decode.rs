@@ -1963,9 +1963,6 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
     let booleans = model.features.feature_boolean_operations.as_slice();
     let bindings = model.segments.segment_body_bindings.as_slice();
     let body_operands = model.features.feature_operation_body_operands.as_slice();
-    if booleans.is_empty() && body_operands.is_empty() {
-        return false;
-    }
     let Some(statuses) = crate::native::segment_body_lineage_statuses(
         labels,
         body_references,
