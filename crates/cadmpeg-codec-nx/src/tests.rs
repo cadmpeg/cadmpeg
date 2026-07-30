@@ -10236,6 +10236,16 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         crate::decode::closest_pcurve_parameter(&folded, Point2::new(0.0, 0.0), Some(1.9)).unwrap();
     assert_eq!(first_fold, 0.0);
     assert_eq!(second_fold, 2.0);
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+            .unwrap(),
+        [0.0, 2.0]
+    );
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+            .unwrap(),
+        [2.0, 0.0]
+    );
 }
 
 #[test]

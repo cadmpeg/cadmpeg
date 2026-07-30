@@ -3576,11 +3576,14 @@ fn blend_boundary_parameter_from_support_pcurve(
     }
     let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
     let contact_pcurve = spine_contact_pcurve(ir, support, &spine, radius, 0)?;
-    let parameter =
-        closest_pcurve_parameter(contact_pcurve, support_uv, target.seed.map(|seed| seed.u))?;
-    blend_boundary_point(ir, blend, parameter, boundary, 0)
-        .filter(|candidate| point_distance(*candidate, target.point) <= target.tolerance)
-        .map(|_| Point2::new(parameter, boundary as f64))
+    closest_pcurve_parameters(contact_pcurve, support_uv, target.seed.map(|seed| seed.u))?
+        .into_iter()
+        .find(|parameter| {
+            blend_boundary_point(ir, blend, *parameter, boundary, 0).is_some_and(|candidate| {
+                point_distance(candidate, target.point) <= target.tolerance
+            })
+        })
+        .map(|parameter| Point2::new(parameter, boundary as f64))
 }
 
 pub(crate) fn closest_pcurve_parameter(
@@ -3588,6 +3591,16 @@ pub(crate) fn closest_pcurve_parameter(
     point: Point2,
     seed: Option<f64>,
 ) -> Option<f64> {
+    closest_pcurve_parameters(pcurve, point, seed)?
+        .into_iter()
+        .next()
+}
+
+pub(crate) fn closest_pcurve_parameters(
+    pcurve: &PcurveGeometry,
+    point: Point2,
+    seed: Option<f64>,
+) -> Option<Vec<f64>> {
     let PcurveGeometry::Nurbs {
         degree,
         knots,
@@ -3633,9 +3646,9 @@ pub(crate) fn closest_pcurve_parameter(
                 candidates.push((parameter, distance));
             }
         }
-        return closest_parameter_candidate(candidates, seed).map(|candidate| candidate.0);
+        return Some(vec![closest_parameter_candidate(candidates, seed)?.0]);
     }
-    let mut candidates = control_points
+    let candidates = control_points
         .windows(2)
         .enumerate()
         .filter_map(|(index, segment)| {
@@ -3665,8 +3678,30 @@ pub(crate) fn closest_pcurve_parameter(
                 span_start + fraction * (span_end - span_start),
                 squared_distance,
             ))
-        });
-    closest_parameter_candidate(&mut candidates, seed).map(|candidate| candidate.0)
+        })
+        .collect::<Vec<_>>();
+    let minimum_distance = candidates
+        .iter()
+        .map(|candidate| candidate.1)
+        .min_by(f64::total_cmp)?;
+    let mut nearest = candidates
+        .into_iter()
+        .filter(|candidate| candidate.1.total_cmp(&minimum_distance).is_eq())
+        .map(|candidate| candidate.0)
+        .collect::<Vec<_>>();
+    nearest.sort_by(|first, second| {
+        seed.map_or_else(
+            || first.total_cmp(second),
+            |seed| {
+                (first - seed)
+                    .abs()
+                    .total_cmp(&(second - seed).abs())
+                    .then_with(|| first.total_cmp(second))
+            },
+        )
+    });
+    nearest.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    Some(nearest)
 }
 
 fn closest_parameter_candidate(
