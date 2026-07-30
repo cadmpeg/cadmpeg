@@ -47,7 +47,7 @@ schemars = "1.2"
 thiserror = "2"
 sha2 = "0.11"
 memchr = "2"
-base64 = "0.22"
+base64 = "0.23"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 zip = { version = "8", default-features = false, features = ["deflate", "zstd"] }
