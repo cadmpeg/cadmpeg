@@ -3383,15 +3383,15 @@ pub(crate) fn emit_edges(
                 Sense::Forward => CurveId(id(c)),
             });
             // The tedge tail carries the model-space tolerance, then the
-            // per-entity serializer revision stamp, then a version-gated
-            // trailing LONG valued 0 or 1 present only in newer streams. All
+            // per-entity serializer revision stamp, then a trailing LONG
+            // present when the stream save format is at least 22500. All
             // forms are retained verbatim.
             let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12)) {
                 ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision)))
                     if tolerance.is_finite() && *tolerance >= 0.0 =>
                 {
                     let trailing = match r.chunk(13) {
-                        Some(Token::Long(second @ (0 | 1))) => Some(*second),
+                        Some(Token::Long(second)) => Some(*second),
                         _ => None,
                     };
                     Some((*tolerance, *revision, trailing))

@@ -250,7 +250,8 @@ pub struct EmbeddedVariableBlend {
     pub(crate) shape_parameter: f64,
     /// Achieved fit tolerance, at or below `shape_parameter`.
     pub(crate) shape_length: f64,
-    /// Non-negative integer immediately before the cache selector.
+    /// Signed integer immediately before the cache selector, taking the
+    /// values `-1` and `1`.
     pub(crate) shape_tail: i64,
     pub(crate) cache_selector: i64,
     pub(crate) discontinuities: [Vec<f64>; 6],

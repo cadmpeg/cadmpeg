@@ -5639,12 +5639,16 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 
 #[test]
 fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
-    // The tedge tail carries the serializer revision stamp, then a
-    // version-gated trailing LONG present only in newer streams and valued 0
-    // or 1. The tvertex trailing LONG is likewise version-gated, taking 0
-    // or 1 when present. Each form must
-    // survive a write/decode cycle byte-for-byte.
-    for (edge_trailing, vertex_trailing) in [(Some(0), Some(0)), (Some(1), Some(1)), (None, None)] {
+    // The tedge tail carries the serializer revision stamp, then a trailing
+    // LONG present only in newer streams and taking the values 0, 1, and 2.
+    // The tvertex trailing LONG shares the gate and the value set. Each form
+    // must survive a write/decode cycle byte-for-byte.
+    for (edge_trailing, vertex_trailing) in [
+        (Some(0), Some(0)),
+        (Some(1), Some(1)),
+        (Some(2), Some(2)),
+        (None, None),
+    ] {
         let source = f3d_with_smbh(&synthetic_geometry_smbh());
         let decoded = F3dCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())

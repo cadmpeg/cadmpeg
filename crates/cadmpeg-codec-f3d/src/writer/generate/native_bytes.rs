@@ -54,7 +54,8 @@ pub(crate) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), 
 }
 
 /// Emit a native string using the minimal length-prefix width: `0x07` (u8) for
-/// values up to 255 bytes, `0x08` (u16) up to 65535, otherwise `0x09` (u32).
+/// values up to 255 bytes, `0x08` (u16) up to 65535, otherwise `0x09` with a
+/// ref-width (8-byte in generated `BinaryFile8` streams) length prefix.
 /// The serializer stores law-formula names this way, so the width follows the
 /// text length rather than a fixed tag.
 pub(crate) fn native_length_prefixed_string(
@@ -69,8 +70,7 @@ pub(crate) fn native_length_prefixed_string(
         bytes.extend_from_slice(value.as_bytes());
         Ok(())
     } else {
-        let length = u32::try_from(value.len())
-            .map_err(|_| CodecError::NotImplemented("F3D native text exceeds u32".into()))?;
+        let length = value.len() as u64;
         bytes.push(0x09);
         bytes.extend_from_slice(&length.to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());

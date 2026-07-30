@@ -529,6 +529,9 @@ fn role_tails(bytes: &[u8], record: &IndexedRecord, value: &str) -> Vec<usize> {
 }
 
 struct OccurrenceTail {
+    /// Record index of the marked reference opening the tail.
+    #[allow(dead_code)]
+    lead_reference: u64,
     references: Vec<u64>,
     transform: Option<[[f64; 4]; 4]>,
 }
@@ -548,7 +551,15 @@ fn occurrence_tail(bytes: &[u8], mut at: usize) -> Option<OccurrenceTail> {
     if bytes.get(at) != Some(&0) {
         return None;
     }
-    at += 5;
+    // A marked record reference follows the leading zero byte: `0x01`, a
+    // little-endian u32 record index, and six zero bytes.
+    if bytes.get(at + 1) != Some(&1) || bytes.get(at + 6..at + 12) != Some(&[0u8; 6]) {
+        return None;
+    }
+    let lead_reference = u64::from(u32::from_le_bytes(
+        bytes.get(at + 2..at + 6)?.try_into().ok()?,
+    ));
+    at += 12;
     let mut references = Vec::new();
     while bytes.get(at) == Some(&1) {
         if bytes.get(at + 9..at + 11) != Some(&[0, 0]) {
@@ -563,6 +574,7 @@ fn occurrence_tail(bytes: &[u8], mut at: usize) -> Option<OccurrenceTail> {
         return None;
     }
     Some(OccurrenceTail {
+        lead_reference,
         references,
         transform: decode_rigid_matrix(bytes, at + 2),
     })
@@ -759,7 +771,9 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         bytes.push(0);
+        bytes.push(1);
         bytes.extend_from_slice(&ordinal.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
         for reference in references {
             bytes.push(1);
             bytes.extend_from_slice(&reference.to_le_bytes());
@@ -880,7 +894,7 @@ mod tests {
         ];
         let bytes = occurrence_record("role", 10, &[], Some(transform));
         let role_tail = 185 + 4 + "role".len() * 2;
-        let matrix_at = role_tail + 7;
+        let matrix_at = role_tail + 14;
         let record = |end| super::IndexedRecord {
             offset: 0,
             end,
