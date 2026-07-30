@@ -740,17 +740,28 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
 pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
-    // A logical stream cannot exceed the physical file; clamp the eager
-    // reservation to the available bytes so a forged length cannot amplify it.
-    let capacity = cadmpeg_ir::cursor::bounded_len(descriptor.logical_length as u64, 1, data.len())
-        .unwrap_or(0);
-    let mut out = Vec::with_capacity(capacity);
-    for e in &descriptor.extents {
-        let start = inner + e.phys_off as usize;
-        let end = start + e.phys_len as usize;
-        if end <= data.len() {
-            out.extend_from_slice(&data[start..end]);
-        }
+    let Some(logical_length) =
+        descriptor
+            .extents
+            .iter()
+            .try_fold(0usize, |logical_length, extent| {
+                let start = inner.checked_add(extent.phys_off as usize)?;
+                let end = start.checked_add(extent.phys_len as usize)?;
+                (end <= data.len())
+                    .then(|| logical_length.checked_add(end - start))
+                    .flatten()
+            })
+    else {
+        return Vec::new();
+    };
+    if logical_length != descriptor.logical_length as usize {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(logical_length);
+    for extent in &descriptor.extents {
+        let start = inner + extent.phys_off as usize;
+        let end = start + extent.phys_len as usize;
+        out.extend_from_slice(&data[start..end]);
     }
     out
 }
@@ -1213,7 +1224,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 mod tests {
     use super::{
         identify_variant, outer_container_declarations, outer_container_for_extent, parse_extents,
-        summarize, Census, ContainerScan, Descriptor, Extent, InnerDir,
+        reconstruct_logical_stream, summarize, Census, ContainerScan, Descriptor, Extent, InnerDir,
     };
     use crate::variant::Variant;
 
@@ -1244,6 +1255,54 @@ mod tests {
             parse_extents(&directory, 0, 1, 0, 64).expect("complete extent");
         assert_eq!(logical_length, 8);
         assert_eq!(extents[0].flags, 0xa501_0080);
+    }
+
+    #[test]
+    fn logical_stream_reconstruction_is_atomic_over_its_extent_roster() {
+        let descriptor = Descriptor {
+            name: "MAIN".to_string(),
+            desc_offset: 0,
+            logical_length: 4,
+            extents: vec![
+                Extent {
+                    phys_off: 1,
+                    phys_len: 2,
+                    flags: 0,
+                },
+                Extent {
+                    phys_off: 7,
+                    phys_len: 2,
+                    flags: 0,
+                },
+            ],
+        };
+        assert_eq!(
+            reconstruct_logical_stream(b"0123456789", &descriptor, 0),
+            b"1278"
+        );
+
+        let mut outside = descriptor.clone();
+        outside.extents[1].phys_off = 9;
+        assert!(reconstruct_logical_stream(b"0123456789", &outside, 0).is_empty());
+
+        let mut wrong_length = descriptor.clone();
+        wrong_length.logical_length = 3;
+        assert!(reconstruct_logical_stream(b"0123456789", &wrong_length, 0).is_empty());
+    }
+
+    #[test]
+    fn logical_stream_reconstruction_rejects_overflowing_physical_offsets() {
+        let descriptor = Descriptor {
+            name: "MAIN".to_string(),
+            desc_offset: 0,
+            logical_length: 1,
+            extents: vec![Extent {
+                phys_off: 1,
+                phys_len: 1,
+                flags: 0,
+            }],
+        };
+        assert!(reconstruct_logical_stream(&[0], &descriptor, usize::MAX).is_empty());
     }
 
     #[test]
