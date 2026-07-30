@@ -8,6 +8,8 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+mod replay;
+
 /// One non-empty native arena reported as an exporter loss.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LossCount {
@@ -40,10 +42,11 @@ pub enum NativeConvertError {
 }
 
 // The wire and schema shape of a native record: `id`, then the codec-owned
-// fields in the order `Map` iterates. `NativeRecord` both stores and emits
-// exactly what this produces, so one type fixes the document shape instead of
-// every path that builds, serializes, or describes a record. Its doc comments
-// are the ones that reach the generated JSON Schema.
+// fields in the order `Map` iterates. It is what writes a record's stored text
+// and what describes a record to the schema generator, and serializing a record
+// replays that text member for member, so one type fixes the document shape
+// instead of every path that builds, serializes, or describes a record. Its doc
+// comments are the ones that reach the generated JSON Schema.
 /// One source-native record with a stable identity and codec-owned fields.
 #[derive(Serialize, JsonSchema)]
 #[serde(rename = "NativeRecord")]
@@ -105,31 +108,31 @@ impl NativeRecord {
     /// Parse the codec-owned fields, excluding `id`.
     ///
     /// This allocates a fresh [`Value`] tree on every call; read it once and
-    /// reuse the map when inspecting more than one field.
+    /// reuse the map when inspecting more than one field, and prefer
+    /// [`field`](Self::field) when one field is all that is wanted.
     #[must_use]
     pub fn fields(&self) -> Map<String, Value> {
-        let mut fields = self.parsed();
+        let mut fields: Map<String, Value> =
+            serde_json::from_str(&self.json).expect("a native record always holds a JSON object");
         fields.remove("id");
         fields
     }
 
     /// Parse one codec-owned field.
+    ///
+    /// Only the named field is materialized; the rest of the record is scanned
+    /// past without being built.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<Value> {
         if name == "id" {
             return None;
         }
-        self.parsed().remove(name)
+        replay::field(&self.json, name)
     }
 
     /// Deserialize the record into a codec-owned typed record.
     fn to_typed<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
         Ok(serde_json::from_str(&self.json)?)
-    }
-
-    /// Parse the stored text into the whole field map, `id` included.
-    fn parsed(&self) -> Map<String, Value> {
-        serde_json::from_str(&self.json).expect("a native record always holds a JSON object")
     }
 
     /// Render `id` and `fields` as canonical record text.
@@ -150,16 +153,14 @@ impl PartialEq for NativeRecord {
 }
 
 impl Serialize for NativeRecord {
-    /// Emits through `serializer` rather than splicing the stored text, so the
-    /// record honours the caller's formatting: `to_string_pretty` must indent a
-    /// native record the same way it indents every other document entity.
+    /// Replays the stored text member for member through `serializer` rather
+    /// than splicing it, so the record honours the caller's formatting:
+    /// `to_string_pretty` must indent a native record the same way it indents
+    /// every other document entity. The text was written by [`RecordShape`] and
+    /// is replayed in the order it holds, which is the order that shape emits:
+    /// `id` first, then the codec-owned fields by key.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let fields = self.fields();
-        RecordShape {
-            id: &self.id,
-            fields: &fields,
-        }
-        .serialize(serializer)
+        replay::emit(&self.json, serializer)
     }
 }
 
