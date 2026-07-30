@@ -293,6 +293,68 @@ impl MeshCoordinateRootDomains {
                 && self.domains[right].binary_search(&pair[0]).is_ok())
     }
 
+    pub(crate) fn edge_candidate_points(&self, edge: usize) -> Option<Vec<usize>> {
+        let candidates = self.edge_candidates.get(edge)?;
+        if !candidates.is_empty() {
+            let mut points = candidates.iter().flatten().copied().collect::<Vec<_>>();
+            points.sort_unstable();
+            points.dedup();
+            return Some(points);
+        }
+        let &[left, right] = self.edges.get(edge)?;
+        let mut points = self.domains[left].clone();
+        if right != left {
+            points.extend_from_slice(&self.domains[right]);
+            points.sort_unstable();
+            points.dedup();
+        }
+        Some(points)
+    }
+
+    pub(crate) fn edge_candidates_containing(
+        &self,
+        edge: usize,
+        required_point: Option<usize>,
+    ) -> Option<Vec<[usize; 2]>> {
+        let candidates = self.edge_candidates.get(edge)?;
+        if !candidates.is_empty() {
+            return Some(
+                candidates
+                    .iter()
+                    .copied()
+                    .filter(|pair| required_point.is_none_or(|point| pair.contains(&point)))
+                    .collect(),
+            );
+        }
+        let &[left, right] = self.edges.get(edge)?;
+        let mut pairs = Vec::new();
+        if let Some(point) = required_point {
+            if self.domains[left].binary_search(&point).is_ok() {
+                pairs.extend(
+                    self.domains[right]
+                        .iter()
+                        .copied()
+                        .map(|right| [point, right]),
+                );
+            }
+            if right != left && self.domains[right].binary_search(&point).is_ok() {
+                pairs.extend(self.domains[left].iter().copied().map(|left| [left, point]));
+            }
+        } else {
+            for &left_point in &self.domains[left] {
+                for &right_point in &self.domains[right] {
+                    pairs.push([left_point, right_point]);
+                }
+            }
+        }
+        for pair in &mut pairs {
+            pair.sort_unstable();
+        }
+        pairs.sort_unstable();
+        pairs.dedup();
+        Some(pairs)
+    }
+
     fn coverage_matching(
         domains: &[Vec<usize>],
         point_count: usize,
@@ -449,7 +511,10 @@ impl MeshCoordinateRootDomains {
         if candidates.as_slice() == [pair] {
             return Some(self.clone());
         }
-        if !candidates.contains(&pair) {
+        if !candidates.is_empty() && !candidates.contains(&pair) {
+            return None;
+        }
+        if candidates.is_empty() && !self.supports_edge_candidate(edge, pair) {
             return None;
         }
         let mut edge_candidates = self.edge_candidates.as_ref().clone();
@@ -551,6 +616,7 @@ pub(crate) fn initial_mesh_quotient(
         .then_some(quotient)
 }
 
+#[cfg(test)]
 pub(crate) fn complete_mesh_endpoint_candidates_from_quotient(
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
@@ -771,6 +837,9 @@ impl MeshQuotient {
         loop {
             let mut changed = Vec::new();
             for (edge, candidates) in supported_candidates.iter_mut().enumerate() {
+                if candidates.is_empty() {
+                    continue;
+                }
                 let [left, right] = edges[edge];
                 let before = candidates.len();
                 if budget.is_some_and(|budget| !budget.charge_by(before)) {
@@ -6216,9 +6285,6 @@ pub(crate) fn parse_standard_mesh_candidate_outcome<F>(
 where
     F: Fn(&[Option<[usize; 2]>]) -> bool,
 {
-    const MAX_COMPLETED_PAIRS_PER_EDGE: usize = 65_536;
-    const MAX_COMPLETED_PAIRS_TOTAL: usize = 1_000_000;
-
     let Some((
         face_count,
         edge_rows,
@@ -6274,7 +6340,6 @@ where
     if port_identities.len() != edge_rows.len() {
         return MeshCandidateSolve::Rejected(MeshCandidateRejection::PortCardinality);
     }
-    let mut preparation_exhausted = false;
     let Some((mesh_quotient, completed_edge_candidates)) = (|| {
         let mut mesh_quotient =
             initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)?;
@@ -6296,44 +6361,7 @@ where
                 edge_candidates,
                 &mut mesh_quotient,
             )?;
-            let completed = complete_mesh_endpoint_candidates_from_quotient(
-                edge_candidates,
-                &mut mesh_quotient,
-                MAX_COMPLETED_PAIRS_PER_EDGE,
-                MAX_COMPLETED_PAIRS_TOTAL,
-            );
-            if let Some(completed) = completed {
-                completed
-            } else {
-                if edge_faces.iter().flatten().any(|face| *face >= face_count) {
-                    return None;
-                }
-                let closure_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-                let mut closed = mesh_quotient.clone();
-                match closed.coordinate_root_closure_outcome_with_component_budget(
-                    vertex_points.len(),
-                    edge_candidates,
-                    Some((edge_faces, &mesh_domains)),
-                    Some(&closure_budget),
-                    Some(MAX_MESH_CONSTRAINT_OPERATIONS),
-                ) {
-                    CoordinateRootClosure::Solved(_) => {}
-                    CoordinateRootClosure::Exhausted => {
-                        preparation_exhausted = true;
-                        return None;
-                    }
-                    CoordinateRootClosure::Rejected | CoordinateRootClosure::Ambiguous => {
-                        return None;
-                    }
-                }
-                mesh_quotient = closed;
-                complete_mesh_endpoint_candidates_from_quotient(
-                    edge_candidates,
-                    &mut mesh_quotient,
-                    MAX_COMPLETED_PAIRS_PER_EDGE,
-                    MAX_COMPLETED_PAIRS_TOTAL,
-                )?
-            }
+            edge_candidates.to_vec()
         } else {
             edge_candidates.to_vec()
         };
@@ -6342,11 +6370,7 @@ where
         }
         Some((mesh_quotient, completed_edge_candidates))
     })() else {
-        return if preparation_exhausted {
-            MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::QuotientPreparation)
-        } else {
-            MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation)
-        };
+        return MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation);
     };
     let Some(class_constraint) =
         canonical_edge_class_constraint(edge_classes, &completed_edge_candidates)

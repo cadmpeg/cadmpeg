@@ -2529,6 +2529,54 @@ fn port_quotient_declines_unbounded_unknown_edge_pairs() {
 }
 
 #[test]
+fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
+    let candidates = [Vec::new()];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[10, 11]])
+            .expect("initial quotient");
+    let domains = quotient
+        .prepare_coordinate_root_domains(2, &candidates, None)
+        .expect("implicit coordinate domains");
+
+    assert!(domains.edge_candidates()[0].is_empty());
+    assert_eq!(domains.edge_candidate_points(0), Some(vec![0, 1]));
+    assert_eq!(
+        domains.edge_candidates_containing(0, Some(0)),
+        Some(vec![[0, 0], [0, 1]])
+    );
+    assert!(domains.refine_edge_candidate_arc(0, [0, 1], None).is_some());
+    assert!(domains.refine_edge_candidate_arc(0, [0, 0], None).is_none());
+}
+
+#[test]
+fn incidence_search_consumes_implicit_coordinate_root_pairs() {
+    use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
+
+    let candidates = vec![Vec::new(); 3];
+    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &candidates,
+        3,
+        &[[10, 11], [11, 12], [12, 10]],
+    )
+    .expect("cycle quotient");
+    let outcome = component_incidence_pair_solution_outcome(
+        &candidates,
+        &[[0, 0]; 3],
+        1,
+        3,
+        None,
+        Some(&quotient),
+        None,
+        &|_| true,
+    );
+
+    assert!(matches!(
+        outcome,
+        IncidenceSolve::Solved(_) | IncidenceSolve::Ambiguous
+    ));
+}
+
+#[test]
 fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
     let edge_candidates = vec![vec![[0, 1]], Vec::new(), vec![[0, 2]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
