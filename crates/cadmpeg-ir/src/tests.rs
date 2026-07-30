@@ -3693,8 +3693,10 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 #[test]
 fn definition_references_must_be_declared_dependencies_in_every_configuration() {
     use crate::features::{
-        ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
-        Feature, FeatureDefinition, FeatureId, Length, PatternKind, PatternSeed,
+        BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
+        FeatureDefinition, FeatureId, GeneratedCurveRef, Length, PatternKind, PatternSeed,
+        ProfileRef, Termination,
     };
     use std::collections::{BTreeMap, HashSet};
 
@@ -3705,6 +3707,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     let pattern = FeatureId("synthetic:test:feature#3-pattern".into());
     let block = FeatureId("synthetic:test:feature#4-block".into());
     let instance = FeatureId("synthetic:test:feature#5-instance".into());
+    let profile = FeatureId("synthetic:test:feature#6-profile-consumer".into());
     let feature = |id, ordinal, definition| Feature {
         id,
         ordinal,
@@ -3769,9 +3772,41 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 placement: Some(crate::transform::Transform::identity()),
             },
         ),
+        feature(
+            profile.clone(),
+            6,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Generated {
+                    curves: vec![GeneratedCurveRef {
+                        feature: source.clone(),
+                        local_id: "curve-0".into(),
+                    }],
+                    native: "synthetic:test:profile-selection".into(),
+                },
+                direction: ExtrudeDirection::ProfileNormal,
+                start: ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Blind {
+                            length: Length(5.0),
+                        },
+                        draft: None,
+                        offset: None,
+                    },
+                },
+                op: BooleanOp::NewBody,
+                direction_source: None,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            },
+        ),
     ];
     ir.model.features[2].dependencies.push(source.clone());
     ir.model.features[3].dependencies.push(source.clone());
+    ir.model.features[6].dependencies.push(source.clone());
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("synthetic:test:configuration#offset-plane".into()),
         ordinal: 0,
@@ -3789,6 +3824,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             (derived.clone(), 2),
             (pattern.clone(), 3),
             (instance.clone(), 5),
+            (profile.clone(), 6),
         ]
         .into_iter()
         .map(|(feature, index)| {
@@ -3819,7 +3855,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         "sketch block instance omits block feature `{}` from its dependencies",
         block.0
     )));
-    for feature in [&offset, &derived, &pattern] {
+    for feature in [&offset, &derived, &pattern, &profile] {
         assert!(findings.contains(&format!(
             "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
             feature.0, source.0
@@ -3832,7 +3868,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
 
     ir.model.features[1].dependencies.push(source.clone());
     ir.model.features[5].dependencies.push(block.clone());
-    for feature in [&offset, &derived, &pattern] {
+    for feature in [&offset, &derived, &pattern, &profile] {
         ir.model.configurations[0]
             .feature_states
             .get_mut(feature)

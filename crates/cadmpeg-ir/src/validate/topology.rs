@@ -2,6 +2,8 @@
 //! Focused validation checks for topology.
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
+use std::collections::BTreeSet;
+
 use super::*;
 use crate::features::{
     BodySelection, ChamferSpec, ExtrudeStart, FaceMotion, FaceSelection, FeatureSourceContent,
@@ -2384,7 +2386,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
 
-        let mut profiles = Vec::new();
         let mut paths = Vec::new();
         let mut edge_selections = Vec::new();
         let mut face_selections = Vec::new();
@@ -2609,7 +2610,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Extrude {
-                profile,
                 direction,
                 start,
                 extent,
@@ -2617,7 +2617,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 face_maker,
                 ..
             } => {
-                profiles.push(profile);
                 let sides = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
                         vec![side]
@@ -2674,10 +2673,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
-            FeatureDefinition::SheetMetalBaseFlange {
-                profile, thickness, ..
-            } => {
-                profiles.push(profile);
+            FeatureDefinition::SheetMetalBaseFlange { thickness, .. } => {
                 if !positive_feature_length(*thickness) {
                     feature_geometry_error(
                         findings,
@@ -2687,7 +2683,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                profiles.extend(&construction.profile);
                 paths.extend(&construction.axis_reference);
                 if construction.axis.as_ref().is_some_and(|axis| {
                     !axis.origin.x.is_finite()
@@ -2699,16 +2694,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Sweep {
-                profile,
-                sections,
                 path,
                 orientation,
                 twist,
                 scale,
                 ..
             } => {
-                profiles.extend(profile);
-                profiles.extend(sections);
                 paths.extend(path);
                 if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
                 {
@@ -2730,7 +2721,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 for section in sections {
                     match section {
-                        crate::features::LoftSection::Profile(profile) => profiles.push(profile),
+                        crate::features::LoftSection::Profile(_) => {}
                         crate::features::LoftSection::Point(
                             crate::features::LoftPointSection::Native(native),
                         ) if native.is_empty() => {
@@ -2779,7 +2770,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Rib { construction, .. } => {
-                profiles.extend(&construction.profile);
                 if construction
                     .direction
                     .is_some_and(|value| !valid_feature_direction(value))
@@ -3155,7 +3145,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 body_selections.push(bodies);
             }
             FeatureDefinition::Hole {
-                profile,
                 profile_filter,
                 face,
                 kind,
@@ -3169,7 +3158,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 placements,
                 ..
             } => {
-                profiles.extend(profile);
                 face_selections.extend(face);
                 let treatment_diameter_valid = |value: Length| {
                     positive_feature_length(value) && diameter.is_some_and(|bore| value.0 > bore.0)
@@ -3574,7 +3562,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::HelicalSweep { construction, .. } => {
-                profiles.push(&construction.profile);
                 let valid = [
                     construction.axis_origin.x,
                     construction.axis_origin.y,
@@ -3665,12 +3652,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Wrap {
-                profile,
-                face,
-                mode,
-                depth,
+                face, mode, depth, ..
             } => {
-                profiles.push(profile);
                 face_selections.push(face);
                 let valid = match mode {
                     crate::features::WrapMode::Emboss | crate::features::WrapMode::Deboss => {
@@ -3980,7 +3963,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
         }
-        for profile in profiles {
+        for profile in definition_profiles(definition) {
             match profile {
                 ProfileRef::Faces(faces) => check_ids(
                     findings,
@@ -4537,7 +4520,7 @@ fn parameter_value_is_valid(value: &crate::features::ParameterValue) -> bool {
 fn regeneration_references(
     definition: &crate::features::FeatureDefinition,
 ) -> impl Iterator<Item = &crate::features::FeatureId> {
-    let mut references = Vec::new();
+    let mut references = BTreeSet::new();
     match definition {
         crate::features::FeatureDefinition::DatumOffsetPlane {
             reference: Some(reference),
@@ -4548,7 +4531,7 @@ fn regeneration_references(
             block: Some(reference),
             ..
         } => {
-            references.push(reference);
+            references.insert(reference);
         }
         crate::features::FeatureDefinition::Pattern { seeds, .. } => {
             references.extend(seeds.iter().filter_map(|seed| match seed {
@@ -4567,7 +4550,56 @@ fn regeneration_references(
             _ => None,
         },
     ));
+    for profile in definition_profiles(definition) {
+        match profile {
+            crate::features::ProfileRef::Feature(feature) => {
+                references.insert(feature);
+            }
+            crate::features::ProfileRef::Generated { curves, .. } => {
+                references.extend(curves.iter().map(|curve| &curve.feature));
+            }
+            _ => {}
+        }
+    }
     references.into_iter()
+}
+
+fn definition_profiles(
+    definition: &crate::features::FeatureDefinition,
+) -> impl Iterator<Item = &crate::features::ProfileRef> {
+    let mut profiles = Vec::new();
+    match definition {
+        crate::features::FeatureDefinition::Extrude { profile, .. }
+        | crate::features::FeatureDefinition::SheetMetalBaseFlange { profile, .. }
+        | crate::features::FeatureDefinition::Wrap { profile, .. } => profiles.push(profile),
+        crate::features::FeatureDefinition::Revolve { construction, .. } => {
+            profiles.extend(&construction.profile);
+        }
+        crate::features::FeatureDefinition::Rib { construction, .. } => {
+            profiles.extend(&construction.profile);
+        }
+        crate::features::FeatureDefinition::Sweep {
+            profile, sections, ..
+        } => {
+            profiles.extend(profile);
+            profiles.extend(sections);
+        }
+        crate::features::FeatureDefinition::HelicalSweep { construction, .. } => {
+            profiles.push(&construction.profile);
+        }
+        crate::features::FeatureDefinition::Loft { sections, .. } => {
+            profiles.extend(sections.iter().filter_map(|section| match section {
+                crate::features::LoftSection::Profile(profile) => Some(profile),
+                crate::features::LoftSection::Point(_) => None,
+            }));
+        }
+        crate::features::FeatureDefinition::Hole {
+            profile: Some(profile),
+            ..
+        } => profiles.push(profile),
+        _ => {}
+    }
+    profiles.into_iter()
 }
 
 fn definition_terminations(

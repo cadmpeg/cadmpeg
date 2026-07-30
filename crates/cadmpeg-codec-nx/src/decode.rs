@@ -10165,6 +10165,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 ..
             } if sections.len() < 2
                 || sections.iter().any(loft_section_is_incomplete)
+                || sections.iter().any(|section| {
+                    matches!(
+                        section,
+                        LoftSection::Profile(profile)
+                            if profile_dependency_is_incomplete(profile, &feature.dependencies)
+                    )
+                })
                 || centerline.as_ref().is_some_and(path_ref_is_incomplete)
                 || guides.iter().any(path_ref_is_incomplete)
                 || (centerline.is_some() && !guides.is_empty())
@@ -10232,12 +10239,17 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 specification.as_deref(),
             ) || extent.as_ref().is_some_and(|extent| {
                 termination_dependency_is_incomplete(extent, &feature.dependencies)
+            }) || profile.as_ref().is_some_and(|profile| {
+                profile_dependency_is_incomplete(profile, &feature.dependencies)
             }) =>
             {
                 "hole"
             }
             FeatureDefinition::Rib { construction, op }
-                if rib_feature_is_incomplete(construction, *op) =>
+                if rib_feature_is_incomplete(construction, *op)
+                    || construction.profile.as_ref().is_some_and(|profile| {
+                        profile_dependency_is_incomplete(profile, &feature.dependencies)
+                    }) =>
             {
                 "rib"
             }
@@ -10304,6 +10316,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 face_maker,
                 ..
             } if profile_ref_is_incomplete(profile)
+                || profile_dependency_is_incomplete(profile, &feature.dependencies)
                 || matches!(
                     direction,
                     cadmpeg_ir::features::ExtrudeDirection::Unresolved
@@ -10347,7 +10360,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 scale,
                 ..
             } if profile.as_ref().is_none_or(profile_ref_is_incomplete)
+                || profile.as_ref().is_some_and(|profile| {
+                    profile_dependency_is_incomplete(profile, &feature.dependencies)
+                })
                 || sections.iter().any(profile_ref_is_incomplete)
+                || sections.iter().any(|profile| {
+                    profile_dependency_is_incomplete(profile, &feature.dependencies)
+                })
                 || path.as_ref().is_none_or(path_ref_is_incomplete)
                 || sweep_mode_is_incomplete(*mode)
                 || orientation
@@ -10983,6 +11002,10 @@ pub(crate) fn revolve_feature_is_incomplete(
         .profile
         .as_ref()
         .is_none_or(profile_ref_is_incomplete)
+        || construction
+            .profile
+            .as_ref()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, dependencies))
         || construction.axis.is_none_or(|axis| {
             !finite_feature_point(axis.origin) || !unit_feature_direction(axis.direction)
         })
@@ -11417,6 +11440,19 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
         }
         ProfileRef::Feature(_) => false,
         ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
+    }
+}
+
+pub(crate) fn profile_dependency_is_incomplete(
+    profile: &ProfileRef,
+    dependencies: &[FeatureId],
+) -> bool {
+    match profile {
+        ProfileRef::Feature(feature) => !dependencies.contains(feature),
+        ProfileRef::Generated { curves, .. } => curves
+            .iter()
+            .any(|curve| !dependencies.contains(&curve.feature)),
+        _ => false,
     }
 }
 

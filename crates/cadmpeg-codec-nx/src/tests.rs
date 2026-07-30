@@ -1686,7 +1686,9 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
 
 #[test]
 fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
-    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, ProfileRef};
+    use cadmpeg_ir::features::{
+        EdgeSelection, FaceSelection, FeatureId, GeneratedCurveRef, ProfileRef,
+    };
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
     let face = FaceId("test:face#repeated".into());
@@ -1697,6 +1699,32 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     let face = FaceId("test:profile-face#repeated".into());
     assert!(crate::decode::profile_ref_is_incomplete(
         &ProfileRef::Faces(vec![face.clone(), face]),
+    ));
+    let producer = FeatureId("test:feature#profile-producer".into());
+    let generated = ProfileRef::Generated {
+        curves: vec![GeneratedCurveRef {
+            feature: producer.clone(),
+            local_id: "curve-0".into(),
+        }],
+        native: "test:profile-selection".into(),
+    };
+    assert!(!crate::decode::profile_ref_is_incomplete(&generated));
+    assert!(crate::decode::profile_dependency_is_incomplete(
+        &generated,
+        &[],
+    ));
+    assert!(!crate::decode::profile_dependency_is_incomplete(
+        &generated,
+        std::slice::from_ref(&producer),
+    ));
+    let direct = ProfileRef::Feature(producer.clone());
+    assert!(crate::decode::profile_dependency_is_incomplete(
+        &direct,
+        &[],
+    ));
+    assert!(!crate::decode::profile_dependency_is_incomplete(
+        &direct,
+        &[producer],
     ));
 
     let edge = EdgeId("test:edge#repeated".into());
