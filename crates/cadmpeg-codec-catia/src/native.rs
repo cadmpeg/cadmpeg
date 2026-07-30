@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 226;
+pub const CATIA_NATIVE_VERSION: u32 = 227;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -34,7 +34,7 @@ const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 #[cfg(test)]
 const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
 #[cfg(test)]
-const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 226;
+const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 227;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1339,6 +1339,9 @@ pub struct CatiaFormulaParameterDependency {
 /// One exact compound relation-program instance frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaRelationProgramInstance {
+    /// Exact object-head and payload production.
+    #[serde(default)]
+    pub framing: CatiaRelationProgramInstanceFraming,
     /// Stored entity identity in the frame's program slot.
     pub program_entity_id: u32,
     /// Same-graph entity selected by that identity.
@@ -1353,6 +1356,16 @@ pub struct CatiaRelationProgramInstance {
     /// Selected entity when it carries a complete relation-expression program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<String>,
+}
+
+/// Exact framing production for a compound relation-program instance.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CatiaRelationProgramInstanceFraming {
+    /// Compact `0x12` object head and its 20-token payload.
+    #[default]
+    Lead12,
+    /// Separator-form `0x54` object head and its 18-token payload.
+    Lead54,
 }
 
 /// Field order used by a repeated-reference schema preamble.
@@ -2809,14 +2822,36 @@ fn relation_program_instance(
     entities: &HashMap<(String, u32), String>,
     relation_expressions: &HashMap<(String, u32), String>,
 ) -> Option<CatiaRelationProgramInstance> {
-    if object.lead != 0x12
-        || object.entity_id != Some(entity_id)
+    if object.entity_id != Some(entity_id)
         || object.owner_entity_id().is_none()
         || object.class_ref.is_none()
-        || object.storage_ref.is_some()
     {
         return None;
     }
+    let (framing, program_entity_id, repeated_reference_entity_id) =
+        if object.lead == 0x12 && object.storage_ref.is_none() {
+            relation_program_instance_lead_12(entity_id, &object.payload.fields)?
+        } else if object.lead == 0x54 && object.storage_ref.is_some() {
+            relation_program_instance_lead_54(entity_id, &object.payload.fields)?
+        } else {
+            return None;
+        };
+    let program_key = (object.parent.clone(), program_entity_id);
+    let repeated_reference_key = (object.parent.clone(), repeated_reference_entity_id);
+    Some(CatiaRelationProgramInstance {
+        framing,
+        program_entity_id,
+        program: entities.get(&program_key).cloned(),
+        repeated_reference_entity_id,
+        repeated_reference_entity: entities.get(&repeated_reference_key).cloned(),
+        relation_expression: relation_expressions.get(&program_key).cloned(),
+    })
+}
+
+fn relation_program_instance_lead_12(
+    entity_id: u32,
+    fields: &[PayloadField],
+) -> Option<(CatiaRelationProgramInstanceFraming, u32, u32)> {
     let [PayloadField::Reference { .. }, PayloadField::Atom { value: 3, .. }, PayloadField::Reference {
         value: repeated_reference,
         ..
@@ -2837,7 +2872,7 @@ fn relation_program_instance(
         ..
     }, PayloadField::Reference { .. }, PayloadField::Atom {
         value: stored_self, ..
-    }, PayloadField::Terminator] = object.payload.fields.as_slice()
+    }, PayloadField::Terminator] = fields
     else {
         return None;
     };
@@ -2847,15 +2882,53 @@ fn relation_program_instance(
     {
         return None;
     }
-    let program_key = (object.parent.clone(), *program_entity_id);
-    let repeated_reference_key = (object.parent.clone(), *repeated_target);
-    Some(CatiaRelationProgramInstance {
-        program_entity_id: *program_entity_id,
-        program: entities.get(&program_key).cloned(),
-        repeated_reference_entity_id: *repeated_target,
-        repeated_reference_entity: entities.get(&repeated_reference_key).cloned(),
-        relation_expression: relation_expressions.get(&program_key).cloned(),
-    })
+    Some((
+        CatiaRelationProgramInstanceFraming::Lead12,
+        *program_entity_id,
+        *repeated_target,
+    ))
+}
+
+fn relation_program_instance_lead_54(
+    entity_id: u32,
+    fields: &[PayloadField],
+) -> Option<(CatiaRelationProgramInstanceFraming, u32, u32)> {
+    let [PayloadField::Atom { value: 244, .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
+        value: repeated_reference,
+        ..
+    }, PayloadField::Atom {
+        value: program_entity_id,
+        ..
+    }, PayloadField::Atom {
+        value: 2_142_008_808,
+        ..
+    }, PayloadField::Atom { value: 247, .. }, PayloadField::Atom {
+        value: repeated_target,
+        ..
+    }, PayloadField::Reference { .. }, PayloadField::Atom {
+        value: stored_self, ..
+    }, PayloadField::Atom { value: 249, .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
+        value: repeated_target_reference,
+        ..
+    }, PayloadField::Reference { .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
+        value: repeated_reference_copy,
+        ..
+    }, PayloadField::Atom { .. }, PayloadField::Atom { value: 129, .. }, PayloadField::Terminator] =
+        fields
+    else {
+        return None;
+    };
+    if repeated_reference != repeated_reference_copy
+        || repeated_target != repeated_target_reference
+        || *stored_self != entity_id
+    {
+        return None;
+    }
+    Some((
+        CatiaRelationProgramInstanceFraming::Lead54,
+        *program_entity_id,
+        *repeated_target,
+    ))
 }
 
 fn formula_relation(

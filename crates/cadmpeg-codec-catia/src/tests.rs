@@ -2287,19 +2287,6 @@ fn standard_catpart_with_relation_program_instance(
     repeated_reference_entity_id: u32,
     stored_self_entity_id: u32,
 ) -> Vec<u8> {
-    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
-    let mut expression_value = Vec::new();
-    for ordinal in 5_u32..=10 {
-        expression_value.push(0x32);
-        expression_value.extend_from_slice(&ordinal.to_le_bytes());
-    }
-    expression_value.push(0xfe);
-
-    let mut stream =
-        entity_table_record_with_definition_and_value(1, &definition, &expression_value);
-    stream.extend(entity_table_record(2));
-    stream.push(0xde);
-
     let mut instance_payload = Vec::new();
     let reference = |payload: &mut Vec<u8>, value: u32| {
         payload.push(0x32);
@@ -2330,9 +2317,64 @@ fn standard_catpart_with_relation_program_instance(
     atom(&mut instance_payload, stored_self_entity_id);
     instance_payload.push(0xfe);
 
+    standard_catpart_with_relation_program_payload(&[0x12, 0x8a, 0x80], &instance_payload)
+}
+
+fn standard_catpart_with_lead54_relation_program_instance(
+    program_entity_id: u32,
+    repeated_reference_entity_id: u32,
+    stored_self_entity_id: u32,
+) -> Vec<u8> {
+    let mut instance_payload = Vec::new();
+    let reference = |payload: &mut Vec<u8>, value: u32| {
+        payload.push(0x32);
+        payload.extend_from_slice(&value.to_le_bytes());
+    };
+    let atom = |payload: &mut Vec<u8>, value: u32| {
+        payload.push(0x80);
+        payload.extend_from_slice(&value.to_le_bytes());
+    };
+    atom(&mut instance_payload, 244);
+    atom(&mut instance_payload, 2);
+    reference(&mut instance_payload, 5);
+    atom(&mut instance_payload, program_entity_id);
+    atom(&mut instance_payload, 2_142_008_808);
+    atom(&mut instance_payload, 247);
+    atom(&mut instance_payload, repeated_reference_entity_id);
+    reference(&mut instance_payload, 20);
+    atom(&mut instance_payload, stored_self_entity_id);
+    atom(&mut instance_payload, 249);
+    atom(&mut instance_payload, 2);
+    reference(&mut instance_payload, repeated_reference_entity_id);
+    reference(&mut instance_payload, 21);
+    atom(&mut instance_payload, 2);
+    reference(&mut instance_payload, 5);
+    atom(&mut instance_payload, 22);
+    atom(&mut instance_payload, 129);
+    instance_payload.push(0xfe);
+
+    standard_catpart_with_relation_program_payload(
+        &[0x54, 0x01, 0x82, 0x80, 0x81],
+        &instance_payload,
+    )
+}
+
+fn standard_catpart_with_relation_program_payload(head: &[u8], instance_payload: &[u8]) -> Vec<u8> {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
+    let mut expression_value = Vec::new();
+    for ordinal in 5_u32..=10 {
+        expression_value.push(0x32);
+        expression_value.extend_from_slice(&ordinal.to_le_bytes());
+    }
+    expression_value.push(0xfe);
+
+    let mut stream =
+        entity_table_record_with_definition_and_value(1, &definition, &expression_value);
+    stream.extend(entity_table_record(2));
+    stream.push(0xde);
     stream.extend(object_graph_from_records(&[
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
-        object_graph_record(&[0x12, 0x8a, 0x80], &instance_payload),
+        object_graph_record(head, instance_payload),
     ]));
     stream.extend(catalog_stream(&[
         "CATCatalogManager",
@@ -10983,6 +11025,10 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         .relation_program_instance
         .as_ref()
         .expect("complete instance frame");
+    assert_eq!(
+        instance.framing,
+        crate::native::CatiaRelationProgramInstanceFraming::Lead12
+    );
     assert_eq!(instance.program_entity_id, 1);
     assert_eq!(
         instance.program.as_deref(),
@@ -11033,6 +11079,65 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
 }
 
 #[test]
+fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
+    let file = standard_catpart_with_lead54_relation_program_instance(1, 1, 2);
+    let native = crate::native::CatiaNative::decode(&file);
+    let instance = native.entity_records[1]
+        .relation_program_instance
+        .as_ref()
+        .expect("complete lead-54 instance frame");
+    assert_eq!(
+        instance.framing,
+        crate::native::CatiaRelationProgramInstanceFraming::Lead54
+    );
+    assert_eq!(
+        instance.program.as_deref(),
+        Some(native.entity_records[0].id.as_str())
+    );
+    assert_eq!(
+        instance.repeated_reference_entity.as_deref(),
+        Some(native.entity_records[0].id.as_str())
+    );
+    assert_eq!(
+        instance.relation_expression.as_deref(),
+        Some(native.entity_records[0].id.as_str())
+    );
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode lead-54 relation-program instance");
+    assert_eq!(
+        decoded.report.coverage["decoded_relation_program_instance_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
+        1
+    );
+
+    let unresolved = crate::native::CatiaNative::decode(
+        &standard_catpart_with_lead54_relation_program_instance(1, 3, 2),
+    );
+    let instance = unresolved.entity_records[1]
+        .relation_program_instance
+        .as_ref()
+        .expect("unresolved repeated identity");
+    assert_eq!(instance.repeated_reference_entity_id, 3);
+    assert!(instance.repeated_reference_entity.is_none());
+
+    let malformed = crate::native::CatiaNative::decode(
+        &standard_catpart_with_lead54_relation_program_instance(1, 1, 3),
+    );
+    assert!(malformed
+        .entity_records
+        .iter()
+        .all(|entity| entity.relation_program_instance.is_none()));
+}
+
+#[test]
 fn decode_reports_exact_relation_program_instances() {
     for (
         program_entity_id,
@@ -11061,6 +11166,14 @@ fn decode_reports_exact_relation_program_instances() {
         assert_eq!(
             decoded.report.coverage["decoded_relation_program_instance_count"],
             1
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
+            1
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
+            0
         );
         assert_eq!(
             decoded.report.coverage["decoded_resolved_relation_program_instance_count"],
@@ -11104,31 +11217,40 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         .relation_program_instance
         .clone()
         .expect("decoded relation-program instance");
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
-        .store(&mut namespace)
+        .store(&mut stored)
         .expect("store older relation-program namespace");
-    namespace.version = crate::native::CATIA_NATIVE_VERSION - 1;
-    let stored_instance = namespace
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[1]
-        .fields
-        .get_mut("relation_program_instance")
-        .expect("stored relation-program field")
-        .as_object_mut()
-        .expect("stored relation-program instance");
-    stored_instance.remove("repeated_reference_entity_id");
-    stored_instance.remove("repeated_reference_entity");
+    for (version, remove_repeated_reference) in [
+        (crate::native::CATIA_NATIVE_VERSION - 1, false),
+        (crate::native::CATIA_NATIVE_VERSION - 2, true),
+    ] {
+        let mut namespace = stored.clone();
+        namespace.version = version;
+        let stored_instance = namespace
+            .arenas
+            .get_mut("entity_records")
+            .expect("stored entity records")[1]
+            .fields
+            .get_mut("relation_program_instance")
+            .expect("stored relation-program field")
+            .as_object_mut()
+            .expect("stored relation-program instance");
+        stored_instance.remove("framing");
+        if remove_repeated_reference {
+            stored_instance.remove("repeated_reference_entity_id");
+            stored_instance.remove("repeated_reference_entity");
+        }
 
-    let migrated =
-        crate::native::CatiaNative::load(&namespace).expect("migrate relation-program instance");
-    assert_eq!(
-        migrated.entity_records[1]
-            .relation_program_instance
-            .as_ref(),
-        Some(&expected)
-    );
+        let migrated = crate::native::CatiaNative::load(&namespace)
+            .expect("migrate relation-program instance");
+        assert_eq!(
+            migrated.entity_records[1]
+                .relation_program_instance
+                .as_ref(),
+            Some(&expected)
+        );
+    }
 }
 
 #[test]
@@ -13569,7 +13691,7 @@ fn decode_evaluates_integer_part_as_an_integer_result() {
 }
 
 #[test]
-fn decode_evaluates_variadic_extrema_and_integer_remainder() {
+fn decode_evaluates_variadic_extrema_and_real_remainder() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
@@ -13577,7 +13699,7 @@ fn decode_evaluates_variadic_extrema_and_integer_remainder() {
                 false,
                 &[],
                 "Real",
-                Some(9.0),
+                Some(9.8),
                 "min(8,5,7,3)+max(1,4,2)+mod(7.8,3)+max(1)",
             )),
             &DecodeOptions::default(),
@@ -13589,7 +13711,32 @@ fn decode_evaluates_variadic_extrema_and_integer_remainder() {
     };
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(9.0))
+        Some(cadmpeg_ir::features::ParameterValue::Real(9.8))
+    );
+}
+
+#[test]
+fn decode_evaluates_remainder_without_truncating_a_negative_real_dividend() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "Real",
+                Some(-1.5),
+                "mod(-7.5,3)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode negative real remainder formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("negative real remainder formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(-1.5))
     );
 }
 

@@ -120,11 +120,13 @@ current scores require those matrices and representative fixtures.
   partitions the four framings, typed and untyped signatures, and expressions
   referenced or unreferenced by complete formula relations. Parser-version
   expressions remain native when their formula-instance incidence does not
-  resolve. Exact compound instance frames retain their program identity,
+  resolve. Exact compact lead-`12` and separator-form lead-`54` compound
+  instance frames retain their program identity,
   independently resolve it within the same graph, and classify selected
   relation-expression programs without assigning unresolved input and output
-  roles. Coverage partitions resolved, unresolved, relation-expression, and
-  other program instances, partitions the resolved and unresolved identity
+  roles. Coverage partitions compact lead-`12` and separator-form lead-`54`
+  framings, resolved, unresolved, relation-expression, and other program
+  instances, partitions the resolved and unresolved identity
   repeated in the atom/reference slots, and counts distinct selected
   expressions.
   Parameters remain document-scoped until feature-instance ownership resolves.
