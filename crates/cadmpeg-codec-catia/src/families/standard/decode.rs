@@ -3688,6 +3688,7 @@ fn emit_standard_topology(
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
 ) {
+    let mut edge_reversed = Vec::with_capacity(supports.len());
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
         let start_point = point_assignment[logical_vertices[0]];
@@ -3713,6 +3714,14 @@ fn emit_standard_topology(
             limit_curve_bindings[edge_index]
                 .map(|binding| (&limit_curves[binding.curve], binding.parameter_range)),
         );
+        let reversed = param_range.is_some_and(|range| range[0] > range[1]);
+        edge_reversed.push(reversed);
+        let param_range = param_range.map(ordered_range);
+        let [start_point, end_point] = if reversed {
+            [end_point, start_point]
+        } else {
+            [start_point, end_point]
+        };
         let id = EdgeId(format!("catia:standard:edge#{edge_index}"));
         annotate(
             annotations,
@@ -3833,7 +3842,7 @@ fn emit_standard_topology(
                     previous: coedge_ids[(coedge_index + coedge_ids.len() - 1) % coedge_ids.len()]
                         .clone(),
                     radial_next: coedge_ids[coedge_index].clone(),
-                    sense: if edge_use.reversed {
+                    sense: if edge_use.reversed ^ edge_reversed[edge_use.edge_row] {
                         Sense::Reversed
                     } else {
                         Sense::Forward
@@ -5626,9 +5635,8 @@ pub(crate) fn build_standard_edge_curve(
             annotations
                 .derived(&procedural_id, "curve")
                 .derived(&procedural_id, "definition");
-            let parameter_range = native_support
-                .map(|native| native.parameter_range)
-                .or(param_range)
+            let curve_parameter_range = param_range
+                .or_else(|| native_support.map(|native| native.parameter_range))
                 .unwrap_or([0.0, 1.0]);
             ir.model.procedural_curves.push(ProceduralCurve {
                 id: procedural_id,
@@ -5636,14 +5644,14 @@ pub(crate) fn build_standard_edge_curve(
                 definition: ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides,
-                        parameter_range,
+                        parameter_range: ordered_range(curve_parameter_range),
                         discontinuities: std::array::from_fn(|_| Vec::new()),
                     },
                     discontinuity_flag: false,
                 },
                 cache_fit_tolerance: None,
             });
-            param_range = Some(parameter_range);
+            param_range = Some(curve_parameter_range);
         }
     }
     (Some(id), param_range)
