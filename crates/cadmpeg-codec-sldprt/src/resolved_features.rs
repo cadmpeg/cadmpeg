@@ -5934,6 +5934,7 @@ mod marker_tests {
             compact_legacy_short_role_two_curve_endpoint_indices(&payload, 0),
             Some([2, 4])
         );
+        assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(42));
         payload[23..25].copy_from_slice(&1u16.to_le_bytes());
         assert_eq!(
             compact_legacy_short_role_two_curve_endpoint_indices(&payload, 0),
@@ -38249,7 +38250,8 @@ fn roster_curve_endpoint_markers<'a>(
             let roster = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
             let legacy = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
                 == Some(LEGACY_SKETCH_MARKER);
-            let roster_preferred = legacy
+            let roster_preferred = (legacy
+                && compact_legacy_short_role_two_curve_endpoint_indices(payload, offset).is_none())
                 || current_compact_104_indexed_line_endpoint_indices(payload, offset).is_some();
             if roster_preferred || indexed.len() != 2 {
                 if roster.len() == 2 {
@@ -40526,6 +40528,9 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
         return Some(42);
     }
     if compact_legacy_short_role_one_curve_endpoint_indices(payload, offset).is_some() {
+        return Some(42);
+    }
+    if compact_legacy_short_role_two_curve_endpoint_indices(payload, offset).is_some() {
         return Some(42);
     }
     if packed_legacy_curve_endpoint_indices(payload, offset).is_some() {
