@@ -3974,6 +3974,14 @@ fn decode_retains_legacy_relation_synchronous_states() {
         .expect("store invalid schema-field boundary");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
+    let mut missing_bound_field_code = native.clone();
+    missing_bound_field_code.legacy_entity_runs[0].role_selectors[0].field_code = None;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    missing_bound_field_code
+        .store(&mut namespace)
+        .expect("store schema field without its role binding");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+
     let mut invalid = native;
     invalid.legacy_entity_runs[0].synchronous_states[0].selector += 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -14300,6 +14308,34 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("store legacy entity run");
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
     assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
+
+    let mut previous_field_namespace = namespace.clone();
+    let mut previous_field_runs: Vec<crate::native::CatiaLegacyEntityRun> =
+        previous_field_namespace
+            .arena_as("legacy_entity_runs")
+            .expect("load previous field-binding runs");
+    for run in &mut previous_field_runs {
+        for role in &mut run.role_selectors {
+            role.field_code = None;
+        }
+        for role in run
+            .text_fields
+            .iter_mut()
+            .filter_map(|field| field.role.as_mut())
+        {
+            role.field_code = None;
+        }
+    }
+    previous_field_namespace
+        .set_arena("legacy_entity_runs", &previous_field_runs)
+        .expect("store previous field-binding runs");
+    previous_field_namespace.version = 219;
+    let migrated_field_bindings = crate::native::CatiaNative::load(&previous_field_namespace)
+        .expect("load previous field bindings");
+    assert!(migrated_field_bindings.legacy_entity_runs[0]
+        .role_selectors
+        .iter()
+        .all(|role| role.field_code.is_none()));
 
     let mut previous_identity_namespace = namespace.clone();
     let mut previous_identity_runs: Vec<crate::native::CatiaLegacyEntityRun> =

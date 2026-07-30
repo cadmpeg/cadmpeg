@@ -67,6 +67,8 @@ pub struct LegacyRoleSelector {
     pub encoding: LegacyRoleSelectorEncoding,
     /// Stored selector following the role name.
     pub selector: u32,
+    /// Field code when an `E8 <field-code:u16le> 01` opener follows immediately.
+    pub field_code: Option<u16>,
 }
 
 /// One complete UTF-8 text field in an identity interval.
@@ -985,6 +987,7 @@ fn parse_role_selectors(
                 name: LegacyRoleName::Literal(name),
                 encoding,
                 selector,
+                field_code: None,
             })
         })
         .collect::<Vec<_>>();
@@ -1014,6 +1017,7 @@ fn parse_role_selectors(
                     .checked_mul(256)?
                     .checked_add(u32::from(selector_low))?
                     .checked_add(1)?,
+                field_code: None,
             })
         }),
     );
@@ -1046,6 +1050,7 @@ fn parse_role_selectors(
                             name: LegacyRoleName::Selector(name_selector),
                             encoding: LegacyRoleSelectorEncoding::FixedU32,
                             selector,
+                            field_code: None,
                         });
                     }
                 }
@@ -1067,6 +1072,7 @@ fn parse_role_selectors(
                             .checked_mul(256)?
                             .checked_add(u32::from(low))?
                             .checked_add(1)?,
+                        field_code: None,
                     });
                 }
             }
@@ -1076,6 +1082,14 @@ fn parse_role_selectors(
     roles.extend(field_bound_roles);
     roles.sort_by_key(|role| role.offset);
     roles.dedup_by_key(|role| role.offset);
+    for role in &mut roles {
+        role.field_code = role.end_offset().and_then(|offset| {
+            (offset.checked_add(4)? <= end
+                && data.get(offset) == Some(&0xe8)
+                && data.get(offset + 3) == Some(&0x01))
+            .then(|| u16::from_le_bytes([data[offset + 1], data[offset + 2]]))
+        });
+    }
     roles
 }
 
@@ -1185,6 +1199,7 @@ mod tests {
             name: LegacyRoleName::Literal("body".to_string()),
             encoding: LegacyRoleSelectorEncoding::Paged,
             selector: 1,
+            field_code: None,
         };
         assert_eq!(role.end_offset(), None);
     }
@@ -1204,23 +1219,26 @@ mod tests {
         assert_eq!(
             run.role_selectors
                 .iter()
-                .map(|role| (&role.name, role.encoding, role.selector))
+                .map(|role| (&role.name, role.encoding, role.selector, role.field_code))
                 .collect::<Vec<_>>(),
             [
                 (
                     &LegacyRoleName::Selector(0xa1),
                     LegacyRoleSelectorEncoding::Paged,
                     4700,
+                    Some(0x1728),
                 ),
                 (
                     &LegacyRoleName::Selector(0xa2),
                     LegacyRoleSelectorEncoding::Paged,
                     4668,
+                    Some(0x1c00),
                 ),
                 (
                     &LegacyRoleName::Selector(0xa4),
                     LegacyRoleSelectorEncoding::FixedU32,
                     115_925,
+                    Some(0x1734),
                 ),
             ]
         );
