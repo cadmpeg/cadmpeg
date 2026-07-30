@@ -679,6 +679,28 @@ fn nx_datum_completeness_requires_coherent_finite_frames() {
 }
 
 #[test]
+fn nx_projected_curve_completeness_requires_a_valid_direction_law() {
+    use cadmpeg_ir::features::{CurveProjectionDirection, CurveProjectionDirectionState};
+    use cadmpeg_ir::math::Vector3;
+
+    assert!(!crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
+    ));
+    assert!(!crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::Vector(Vector3::new(0.0, 0.0, 1.0)),
+    ));
+    assert!(crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),
+    ));
+    assert!(crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::Vector(Vector3::new(0.0, 0.0, 0.0)),
+    ));
+    assert!(crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::Vector(Vector3::new(f64::NAN, 0.0, 1.0)),
+    ));
+}
+
+#[test]
 fn nx_extent_completeness_checks_nested_and_face_termination() {
     use cadmpeg_ir::features::FeatureId;
     use cadmpeg_ir::features::{

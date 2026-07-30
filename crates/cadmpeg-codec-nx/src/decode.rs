@@ -10179,10 +10179,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 bidirectional,
             } if path_ref_is_incomplete(source)
                 || face_selection_is_incomplete(target_faces)
-                || matches!(
-                    direction,
-                    CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved)
-                )
+                || projected_curve_direction_is_incomplete(*direction)
                 || bidirectional.is_none() =>
             {
                 "projected curve"
@@ -10577,6 +10574,14 @@ pub(crate) fn datum_coordinate_system_is_incomplete(
     }
     let handedness = x_axis.cross(y_axis).dot(z_axis);
     !handedness.is_finite() || (handedness - 1.0).abs() > 1e-9
+}
+
+pub(crate) fn projected_curve_direction_is_incomplete(direction: CurveProjectionDirection) -> bool {
+    match direction {
+        CurveProjectionDirection::Vector(direction) => !valid_feature_direction(direction),
+        CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => true,
+        CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal) => false,
+    }
 }
 
 fn unit_feature_direction(direction: Vector3) -> bool {
