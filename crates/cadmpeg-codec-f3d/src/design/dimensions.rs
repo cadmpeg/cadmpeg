@@ -817,16 +817,12 @@ fn project_all_dimension_constraints(
         let definition =
             unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id)
                 .or_else(|| {
-                    (companion.payload_byte_length == 0)
-                        .then(|| {
-                            unique_line_length_dimension_definition(
-                                entities,
-                                &sketch,
-                                parameter,
-                                &parameter_id,
-                            )
-                        })
-                        .flatten()
+                    unique_line_length_dimension_definition(
+                        entities,
+                        &sketch,
+                        parameter,
+                        &parameter_id,
+                    )
                 })
                 .unwrap_or_else(|| Definition::Native {
                     native_kind: parameter.source_kind.clone(),

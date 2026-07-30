@@ -11395,7 +11395,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             && native_ref == &companion.id
     ));
 
-    let mut empty_companion = companion;
+    let mut empty_companion = companion.clone();
     empty_companion.payload_byte_length = 0;
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -11446,7 +11446,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             groups: &[],
             annotation_frames: &[],
             null_pairs: &[],
-            companions: std::slice::from_ref(&empty_companion),
+            companions: std::slice::from_ref(&companion),
             recipe_records: &[],
             points: &[],
             curves: &[],
