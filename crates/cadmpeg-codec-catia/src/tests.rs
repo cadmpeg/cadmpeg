@@ -1595,6 +1595,23 @@ pub(crate) fn a5_torus_bound_edge_stream() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn a5_sphere_bound_edge_stream() -> Vec<u8> {
+    let u = [0.0, std::f64::consts::FRAC_PI_2];
+    let v = [0.0, 0.0];
+    let mut bytes = a5_pcurve_stream_with_uv(u, v);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_uv(u, v));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend_from_slice(&b2_sphere_stream());
+    for point in [[6.0f32, 2.0, 3.0], [1.0, 7.0, 3.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes
+}
+
 pub(crate) fn b2_offset_support_stream() -> Vec<u8> {
     b2_offset_support_stream_for([0.0, -1.0, 4.0, 3.0])
 }
@@ -7215,6 +7232,38 @@ fn native_namespace_retains_resolved_consolidated_torus_supports() {
             &Vec::<crate::native::CatiaConsolidatedTorus>::new(),
         )
         .expect("remove retained tori");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_resolved_consolidated_sphere_supports() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let native = crate::native::CatiaNative::decode(&a5_sphere_bound_edge_stream());
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated sphere edge run");
+    };
+    assert!(run.support_bindings.iter().all(|binding| matches!(
+        binding,
+        Some(CatiaConsolidatedSupportBinding::Sphere { .. })
+    )));
+    assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store sphere-bound CATIA edge run");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load sphere-bound CATIA edge run"),
+        native
+    );
+
+    namespace
+        .set_arena(
+            "consolidated_spheres",
+            &Vec::<crate::native::CatiaConsolidatedSphere>::new(),
+        )
+        .expect("remove retained spheres");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 }
 

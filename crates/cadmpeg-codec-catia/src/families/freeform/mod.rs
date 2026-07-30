@@ -725,6 +725,7 @@ pub(crate) enum ConsolidatedCarrierKey {
     Cylinder(usize),
     EmbeddedCylinder(usize),
     Cone(usize),
+    Sphere(usize),
     Torus(usize),
     NurbsOffset(usize, u64),
 }
@@ -825,6 +826,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     let cones = crate::families::b2::records::b2_cones(data)
         .into_iter()
         .map(|cone| (cone.pos, cone))
+        .collect::<HashMap<_, _>>();
+    let spheres = crate::families::b2::records::b2_spheres(data)
+        .into_iter()
+        .map(|sphere| (sphere.pos, sphere))
         .collect::<HashMap<_, _>>();
     let tori = crate::families::b2::records::b2_tori(data)
         .into_iter()
@@ -1085,6 +1090,19 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         "cone",
                     )
                 }
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Sphere { pos }) => {
+                    let Some(sphere) = spheres.get(pos) else {
+                        continue;
+                    };
+                    (
+                        ConsolidatedCarrierKey::Sphere(*pos),
+                        crate::families::b2::records::b2_sphere_geometry(sphere),
+                        None,
+                        ConsolidatedCarrierChart::Identity,
+                        "consolidated_b2_03_2a_sphere",
+                        "sphere",
+                    )
+                }
                 Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos }) => {
                     let Some(torus) = tori.get(pos) else {
                         continue;
@@ -1119,6 +1137,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         ConsolidatedCarrierKey::Cylinder(pos)
                         | ConsolidatedCarrierKey::EmbeddedCylinder(pos)
                         | ConsolidatedCarrierKey::Cone(pos)
+                        | ConsolidatedCarrierKey::Sphere(pos)
                         | ConsolidatedCarrierKey::Torus(pos)
                         | ConsolidatedCarrierKey::NurbsOffset(pos, _) => pos as u64,
                     },

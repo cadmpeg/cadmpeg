@@ -787,6 +787,11 @@ pub enum CatiaConsolidatedSupportBinding {
         /// Carrier record byte offset.
         byte_offset: u64,
     },
+    /// `b2 03 2a` sphere.
+    Sphere {
+        /// Carrier record byte offset.
+        byte_offset: u64,
+    },
     /// Doubly periodic `b2 03 2b` torus.
     Torus {
         /// Carrier record byte offset.
@@ -6234,6 +6239,11 @@ fn native_consolidated_support_binding(
                 byte_offset: *pos as u64,
             }
         }
+        crate::families::consolidated::records::ConsolidatedSupportBinding::Sphere { pos } => {
+            CatiaConsolidatedSupportBinding::Sphere {
+                byte_offset: *pos as u64,
+            }
+        }
         crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos } => {
             CatiaConsolidatedSupportBinding::Torus {
                 byte_offset: *pos as u64,
@@ -7631,6 +7641,7 @@ struct ConsolidatedSupportArenas<'a> {
     cylinders: &'a [CatiaConsolidatedCylinder],
     embedded_cylinders: &'a [CatiaConsolidatedEmbeddedCylinder],
     groups: &'a [CatiaConsolidatedGroup],
+    spheres: &'a [CatiaConsolidatedSphere],
     tori: &'a [CatiaConsolidatedTorus],
 }
 
@@ -7663,6 +7674,11 @@ fn validate_consolidated_edge_runs(
         .cones
         .iter()
         .map(|cone| cone.byte_offset)
+        .collect::<HashSet<_>>();
+    let sphere_offsets = supports
+        .spheres
+        .iter()
+        .map(|sphere| sphere.byte_offset)
         .collect::<HashSet<_>>();
     let torus_offsets = supports
         .tori
@@ -7828,6 +7844,9 @@ fn validate_consolidated_edge_runs(
                 }
                 CatiaConsolidatedSupportBinding::Cone { byte_offset } => {
                     cone_offsets.contains(byte_offset)
+                }
+                CatiaConsolidatedSupportBinding::Sphere { byte_offset } => {
+                    sphere_offsets.contains(byte_offset)
                 }
                 CatiaConsolidatedSupportBinding::Torus { byte_offset } => {
                     torus_offsets.contains(byte_offset)
@@ -9543,6 +9562,7 @@ impl CatiaNative {
                 cylinders: &consolidated_cylinders,
                 embedded_cylinders: &consolidated_embedded_cylinders,
                 groups: &consolidated_groups,
+                spheres: &consolidated_spheres,
                 tori: &consolidated_tori,
             },
             &consolidated_edge_nodes,

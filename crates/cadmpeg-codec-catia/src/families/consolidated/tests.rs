@@ -353,6 +353,32 @@ fn a5_edge_binding_resolves_torus_by_scaled_chart_endpoint_lifts() {
 }
 
 #[test]
+fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &crate::tests::a5_sphere_bound_edge_stream(),
+    );
+    assert!(blocks[0]
+        .supports
+        .iter()
+        .all(|support| matches!(support, Some(ConsolidatedSupportBinding::Sphere { .. }))));
+    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
+    let endpoints = blocks[0].endpoint_loci.expect("lifted sphere endpoints");
+    assert!(endpoints[0].distance_squared(cadmpeg_ir::math::Point3::new(6.0, 2.0, 3.0)) < 1e-24);
+    assert!(endpoints[1].distance_squared(cadmpeg_ir::math::Point3::new(1.0, 7.0, 3.0)) < 1e-24);
+}
+
+#[test]
+fn a5_edge_binding_rejects_duplicate_sphere_endpoint_lifts() {
+    let mut bytes = crate::tests::a5_sphere_bound_edge_stream();
+    bytes.extend_from_slice(&crate::tests::b2_sphere_stream());
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert_eq!(blocks[0].supports, [None, None]);
+}
+
+#[test]
 fn a5_edge_binding_rejects_duplicate_torus_endpoint_lifts() {
     let mut bytes = a5_torus_bound_edge_stream();
     bytes.extend_from_slice(&crate::tests::b2_torus_stream());
