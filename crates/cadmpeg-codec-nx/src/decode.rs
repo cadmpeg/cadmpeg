@@ -7557,6 +7557,7 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
         let pcurves: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
             orient_tolerant_intersection_pcurve(
                 ir,
+                &procedural.curve,
                 &supports[side],
                 &carriers[side].geometry,
                 first_range,
@@ -7610,6 +7611,7 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches(
 
 fn orient_tolerant_intersection_pcurve(
     ir: &CadIr,
+    curve: &CurveId,
     support: &SurfaceId,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
@@ -7630,6 +7632,34 @@ fn orient_tolerant_intersection_pcurve(
     match (forward, reversed) {
         (true, false) => Some(pcurve.clone()),
         (false, true) => reverse_pcurve_over_range(pcurve, range),
+        (true, true) => {
+            let reversed = reverse_pcurve_over_range(pcurve, range)?;
+            let curve_tangent = model_curve_tangent(ir, curve, range[0])?;
+            let alignment = |candidate: &PcurveGeometry| {
+                let uv = pcurve_uv(candidate, range[0])?;
+                let uv_tangent = pcurve_tangent(candidate, range[0])?;
+                let partials = model_surface_partials_by_id(ir, support, uv.u, uv.v)?;
+                let tangent = unit_vector(Vector3::new(
+                    uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
+                    uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
+                    uv_tangent.u * partials.du.z + uv_tangent.v * partials.dv.z,
+                ))?;
+                Some(dot_vector(curve_tangent, tangent))
+            };
+            match (alignment(pcurve)?, alignment(&reversed)?) {
+                (forward_alignment, reversed_alignment)
+                    if forward_alignment > 0.0 && reversed_alignment <= 0.0 =>
+                {
+                    Some(pcurve.clone())
+                }
+                (forward_alignment, reversed_alignment)
+                    if reversed_alignment > 0.0 && forward_alignment <= 0.0 =>
+                {
+                    Some(reversed)
+                }
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -12195,6 +12225,7 @@ mod tests {
         let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
         let oriented = super::orient_tolerant_intersection_pcurve(
             &ir,
+            &CurveId("nx:test:unused-orientation-curve".into()),
             &support,
             &pcurve,
             [2.0, 6.0],
@@ -12211,6 +12242,53 @@ mod tests {
             assert!((actual.u - expected.u).abs() < 1e-12);
             assert!((actual.v - expected.v).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let curve = CurveId("nx:test:closed-orientation-curve".into());
+        let support = SurfaceId("nx:test:closed-orientation-support".into());
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let pcurve = PcurveGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            x_axis: Point2::new(1.0, 0.0),
+            y_axis: Point2::new(0.0, 1.0),
+            radius: 2.0,
+        };
+        let endpoint = Point3::new(2.0, 0.0, 0.0);
+
+        let oriented = super::orient_tolerant_intersection_pcurve(
+            &ir,
+            &curve,
+            &support,
+            &pcurve,
+            [0.0, std::f64::consts::TAU],
+            [endpoint, endpoint],
+            1.0e-12,
+        )
+        .expect("carrier tangent selects one closed-branch orientation");
+        let uv = cadmpeg_ir::eval::pcurve_uv(&oriented, std::f64::consts::FRAC_PI_2).unwrap();
+        assert!((uv.u - 0.0).abs() < 1.0e-12);
+        assert!((uv.v - 2.0).abs() < 1.0e-12);
     }
 
     #[test]
