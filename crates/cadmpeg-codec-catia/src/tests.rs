@@ -3737,6 +3737,10 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
         decoded.report.coverage["decoded_legacy_entity_identity_count"],
         3
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_role_selector_count"],
+        0
+    );
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains("legacy design run")
@@ -13757,6 +13761,9 @@ fn native_round_trips_legacy_entity_identity_runs() {
                 bytes.push(0xfe);
             }
         } else if entity_id == 9 {
+            bytes.extend([8, b'p', b'a', b'r', b'a', b'm', b'i', b'n', 0x80]);
+            bytes.extend(4134_u32.to_le_bytes());
+            bytes.extend([0xe8, 0xe4, 0x0b, 0x01]);
             bytes.extend(b"\xfe\x84\x92\x82\x08Boolean\x83");
             bytes.extend(b"\xfe\x84\x92\x82\x96\x83");
             bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 9]);
@@ -13783,6 +13790,46 @@ fn native_round_trips_legacy_entity_identity_runs() {
         catalog_offset as u64
     );
     assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 3);
+    assert_eq!(
+        native.legacy_entity_runs[0]
+            .role_selectors
+            .iter()
+            .map(|role| {
+                (
+                    role.entity_id,
+                    role.name.as_str(),
+                    role.encoding,
+                    role.selector,
+                )
+            })
+            .collect::<Vec<_>>(),
+        [
+            (
+                4,
+                "body",
+                Some(crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32),
+                4,
+            ),
+            (
+                4,
+                "param",
+                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                9,
+            ),
+            (
+                9,
+                "paramin",
+                Some(crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32),
+                4134,
+            ),
+            (
+                9,
+                "name",
+                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                10,
+            ),
+        ]
+    );
     assert_eq!(native.legacy_entity_runs[0].text_fields[0].entity_id, 4);
     assert_eq!(native.legacy_entity_runs[0].text_fields[0].value, "#1_ + 2");
     assert_eq!(
@@ -13845,6 +13892,28 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("store legacy entity run");
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
     assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
+
+    let mut previous_namespace = namespace.clone();
+    let mut previous_runs: Vec<crate::native::CatiaLegacyEntityRun> = previous_namespace
+        .arena_as("legacy_entity_runs")
+        .expect("load legacy entity runs");
+    previous_runs[0].role_selectors.clear();
+    for field in &mut previous_runs[0].text_fields {
+        if let Some(role) = &mut field.role {
+            role.entity_id = 0;
+        }
+    }
+    previous_namespace
+        .set_arena("legacy_entity_runs", &previous_runs)
+        .expect("store previous legacy entity runs");
+    previous_namespace.version = 211;
+    let migrated =
+        crate::native::CatiaNative::load(&previous_namespace).expect("migrate legacy text roles");
+    assert_eq!(migrated.legacy_entity_runs[0].role_selectors.len(), 3);
+    assert!(migrated.legacy_entity_runs[0]
+        .role_selectors
+        .iter()
+        .all(|role| role.entity_id != 0));
 
     let mut invalid_type_name = native.clone();
     invalid_type_name.legacy_entity_runs[0].type_descriptors[0].value =

@@ -20,7 +20,9 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 211;
+pub const CATIA_NATIVE_VERSION: u32 = 212;
+#[cfg(test)]
+const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -2981,14 +2983,30 @@ pub enum CatiaLegacyTextEncoding {
     ZeroU32Length,
 }
 
-/// Schema role selecting one legacy text field.
+/// Framing production used by a legacy role selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaLegacyRoleSelectorEncoding {
+    /// `80` followed by a nonzero little-endian `u32`.
+    FixedU32,
+    /// Page byte `D1..E4` followed by one low byte.
+    Paged,
+}
+
+/// One length-framed legacy schema role and its selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaLegacyTextRole {
+pub struct CatiaLegacyRoleSelector {
     /// Offset of the role-name length byte.
     pub byte_offset: u64,
+    /// Stored identity whose interval contains the role.
+    #[serde(default)]
+    pub entity_id: u32,
     /// Stored UTF-8 role name.
     pub name: String,
-    /// Stored selector identity following the role name.
+    /// Selector framing production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<CatiaLegacyRoleSelectorEncoding>,
+    /// Stored selector following the role name.
     pub selector: u32,
 }
 
@@ -3003,7 +3021,7 @@ pub struct CatiaLegacyTextField {
     pub encoding: CatiaLegacyTextEncoding,
     /// Immediately preceding length-framed role and selector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub role: Option<CatiaLegacyTextRole>,
+    pub role: Option<CatiaLegacyRoleSelector>,
     /// Decoded UTF-8 value.
     pub value: String,
 }
@@ -3133,6 +3151,9 @@ pub struct CatiaLegacyEntityRun {
     pub outer_container: Option<CatiaOuterContainerBinding>,
     /// Stored identities in source order.
     pub identities: Vec<CatiaLegacyEntityIdentity>,
+    /// Complete length-framed role selectors in identity-interval order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub role_selectors: Vec<CatiaLegacyRoleSelector>,
     /// Complete schema text fields in identity-interval order.
     pub text_fields: Vec<CatiaLegacyTextField>,
     /// Complete expression/signature pairs.
@@ -3581,6 +3602,24 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         entity_id: identity.entity_id,
                     })
                     .collect(),
+                role_selectors: run
+                    .role_selectors
+                    .into_iter()
+                    .map(|role| CatiaLegacyRoleSelector {
+                        byte_offset: role.offset as u64,
+                        entity_id: role.entity_id,
+                        name: role.name,
+                        encoding: Some(match role.encoding {
+                            legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
+                                CatiaLegacyRoleSelectorEncoding::FixedU32
+                            }
+                            legacy_entity::LegacyRoleSelectorEncoding::Paged => {
+                                CatiaLegacyRoleSelectorEncoding::Paged
+                            }
+                        }),
+                        selector: role.selector,
+                    })
+                    .collect(),
                 text_fields: run
                     .text_fields
                     .into_iter()
@@ -3595,9 +3634,18 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                                 CatiaLegacyTextEncoding::ZeroU32Length
                             }
                         },
-                        role: field.role.map(|role| CatiaLegacyTextRole {
+                        role: field.role.map(|role| CatiaLegacyRoleSelector {
                             byte_offset: role.offset as u64,
+                            entity_id: role.entity_id,
                             name: role.name,
+                            encoding: Some(match role.encoding {
+                                legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
+                                    CatiaLegacyRoleSelectorEncoding::FixedU32
+                                }
+                                legacy_entity::LegacyRoleSelectorEncoding::Paged => {
+                                    CatiaLegacyRoleSelectorEncoding::Paged
+                                }
+                            }),
                             selector: role.selector,
                         }),
                         value: field.value,
@@ -3691,6 +3739,18 @@ fn valid_legacy_identifier(value: &str) -> bool {
 }
 
 #[cfg(test)]
+fn legacy_role_selector_end(role: &CatiaLegacyRoleSelector) -> Option<u64> {
+    let selector_len = match role.encoding? {
+        CatiaLegacyRoleSelectorEncoding::FixedU32 => 5,
+        CatiaLegacyRoleSelectorEncoding::Paged => 2,
+    };
+    role.byte_offset
+        .checked_add(1)?
+        .checked_add(u64::try_from(role.name.len()).ok()?)?
+        .checked_add(selector_len)
+}
+
+#[cfg(test)]
 fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelation) -> bool {
     let Some(parsed) = legacy_entity::parse_relation_signature(&relation.type_signature) else {
         return false;
@@ -3780,6 +3840,30 @@ fn validate_legacy_entity_runs(
                     .is_some_and(|end| end <= run.catalog_offset)
             })
             && run
+                .role_selectors
+                .windows(2)
+                .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
+            && run.role_selectors.iter().all(|role| {
+                role.byte_offset >= run.byte_offset
+                    && role.byte_offset < run.catalog_offset
+                    && role.selector != 0
+                    && valid_legacy_identifier(&role.name)
+                    && run
+                        .identities
+                        .iter()
+                        .rfind(|identity| identity.byte_offset < role.byte_offset)
+                        .is_some_and(|identity| {
+                            identity.entity_id == role.entity_id
+                                && legacy_role_selector_end(role).is_none_or(|end| {
+                                    end <= run
+                                        .identities
+                                        .iter()
+                                        .find(|next| next.byte_offset > identity.byte_offset)
+                                        .map_or(run.catalog_offset, |next| next.byte_offset)
+                                })
+                        })
+            })
+            && run
                 .text_fields
                 .windows(2)
                 .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
@@ -3798,8 +3882,12 @@ fn validate_legacy_entity_runs(
                     && field.role.as_ref().is_none_or(|role| {
                         role.byte_offset >= run.byte_offset
                             && role.byte_offset < field.byte_offset
+                            && role.entity_id == field.entity_id
                             && role.selector != 0
                             && valid_legacy_identifier(&role.name)
+                            && run.role_selectors.contains(role)
+                            && legacy_role_selector_end(role)
+                                .is_none_or(|end| end == field.byte_offset)
                             && run
                                 .identities
                                 .iter()
@@ -7613,6 +7701,18 @@ impl CatiaNative {
             } else {
                 Vec::new()
             };
+        if namespace.version < CATIA_LEGACY_ROLE_SELECTOR_VERSION {
+            for run in &mut legacy_entity_runs {
+                for field in &mut run.text_fields {
+                    if let Some(role) = &mut field.role {
+                        role.entity_id = field.entity_id;
+                        run.role_selectors.push(role.clone());
+                    }
+                }
+                run.role_selectors.sort_by_key(|role| role.byte_offset);
+                run.role_selectors.dedup_by_key(|role| role.byte_offset);
+            }
+        }
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);
         validate_legacy_entity_runs(&legacy_entity_runs)?;
         let mut preview_images: Vec<CatiaPreviewImage> =

@@ -16,14 +16,27 @@ pub enum LegacyTextEncoding {
     ZeroU32Length,
 }
 
-/// Schema role selecting one legacy text field.
+/// Framing production used by one legacy role selector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyRoleSelectorEncoding {
+    /// `80` followed by a nonzero little-endian `u32`.
+    FixedU32,
+    /// Page byte `D1..E4` followed by one low byte.
+    Paged,
+}
+
+/// One length-framed schema role and its selector.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyTextRole {
+pub struct LegacyRoleSelector {
     /// Offset of the role-name length byte.
     pub offset: usize,
+    /// Stored identity whose interval contains the role.
+    pub entity_id: u32,
     /// Stored UTF-8 role name.
     pub name: String,
-    /// Stored selector identity following the role name.
+    /// Selector framing production.
+    pub encoding: LegacyRoleSelectorEncoding,
+    /// Stored selector following the role name.
     pub selector: u32,
 }
 
@@ -37,7 +50,7 @@ pub struct LegacyTextField {
     /// Text framing production.
     pub encoding: LegacyTextEncoding,
     /// Immediately preceding length-framed role and selector.
-    pub role: Option<LegacyTextRole>,
+    pub role: Option<LegacyRoleSelector>,
     /// Decoded UTF-8 value.
     pub value: String,
 }
@@ -156,6 +169,8 @@ pub struct LegacyEntityRun {
     pub catalog_offset: usize,
     /// Stored identities in source order.
     pub identities: Vec<LegacyEntityIdentity>,
+    /// Complete length-framed role selectors in identity-interval order.
+    pub role_selectors: Vec<LegacyRoleSelector>,
     /// Complete schema text fields contained by the identity intervals.
     pub text_fields: Vec<LegacyTextField>,
     /// Complete expression/signature pairs.
@@ -195,17 +210,23 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
     if identities.first()?.entity_id != 1 {
         return None;
     }
-    let text_fields = identities
-        .iter()
-        .enumerate()
-        .flat_map(|(index, identity)| {
-            let start = identity.offset + 6;
-            let end = identities
-                .get(index + 1)
-                .map_or(catalog_offset, |next| next.offset);
-            parse_text_fields(data, start, end, identity.entity_id)
-        })
-        .collect::<Vec<_>>();
+    let mut role_selectors = Vec::new();
+    let mut text_fields = Vec::new();
+    for (index, identity) in identities.iter().enumerate() {
+        let start = identity.offset + 6;
+        let end = identities
+            .get(index + 1)
+            .map_or(catalog_offset, |next| next.offset);
+        let interval_roles = parse_role_selectors(data, start, end, identity.entity_id);
+        text_fields.extend(parse_text_fields(
+            data,
+            start,
+            end,
+            identity.entity_id,
+            &interval_roles,
+        ));
+        role_selectors.extend(interval_roles);
+    }
     let relations = parse_relations(&text_fields, &identities);
     let type_descriptors = identities
         .iter()
@@ -233,6 +254,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
     Some(LegacyEntityRun {
         catalog_offset,
         identities,
+        role_selectors,
         text_fields,
         relations,
         type_descriptors,
@@ -461,6 +483,7 @@ fn parse_text_fields(
     start: usize,
     end: usize,
     entity_id: u32,
+    role_selectors: &[LegacyRoleSelector],
 ) -> Vec<LegacyTextField> {
     memchr::memmem::find_iter(&data[start..end], TEXT_OPEN)
         .filter_map(|relative| {
@@ -470,55 +493,85 @@ fn parse_text_fields(
                 offset,
                 entity_id,
                 encoding,
-                role: parse_text_role(data, start, offset),
+                role: role_selectors
+                    .iter()
+                    .find(|role| role.end_offset() == offset)
+                    .cloned(),
                 value,
             })
         })
         .collect()
 }
 
-fn parse_text_role(
-    data: &[u8],
-    interval_start: usize,
-    text_offset: usize,
-) -> Option<LegacyTextRole> {
-    let (selector_start, selector) =
-        if text_offset >= interval_start.checked_add(5)? && data[text_offset - 5] == 0x80 {
-            (
-                text_offset - 5,
-                u32::from_le_bytes(data[text_offset - 4..text_offset].try_into().ok()?),
-            )
-        } else if text_offset >= interval_start.checked_add(2)?
-            && (0xd1..=0xe4).contains(&data[text_offset - 2])
-        {
-            (
-                text_offset - 2,
-                u32::from(data[text_offset - 2] - 0xd1)
-                    .checked_mul(256)?
-                    .checked_add(u32::from(data[text_offset - 1]))?
-                    .checked_add(1)?,
-            )
-        } else {
-            return None;
-        };
-    if selector == 0 {
-        return None;
+impl LegacyRoleSelector {
+    fn end_offset(&self) -> usize {
+        self.offset
+            + 1
+            + self.name.len()
+            + match self.encoding {
+                LegacyRoleSelectorEncoding::FixedU32 => 5,
+                LegacyRoleSelectorEncoding::Paged => 2,
+            }
     }
-    let (offset, name) = (2usize..=u8::MAX as usize).find_map(|inclusive_length| {
-        let offset = selector_start.checked_sub(inclusive_length)?;
-        if offset < interval_start || usize::from(*data.get(offset)?) != inclusive_length {
-            return None;
-        }
-        let bytes = data.get(offset + 1..selector_start)?;
-        text_value(bytes)
-            .filter(|name| valid_role_name(name))
-            .map(|name| (offset, name))
-    })?;
-    Some(LegacyTextRole {
-        offset,
-        name,
-        selector,
-    })
+}
+
+fn parse_role_selectors(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    entity_id: u32,
+) -> Vec<LegacyRoleSelector> {
+    (start..end)
+        .filter_map(|offset| {
+            let inclusive_length = usize::from(*data.get(offset)?);
+            if !(2..=u8::MAX as usize).contains(&inclusive_length) {
+                return None;
+            }
+            let selector_offset = offset.checked_add(inclusive_length)?;
+            if selector_offset >= end {
+                return None;
+            }
+            let name = text_value(data.get(offset + 1..selector_offset)?)?;
+            if !valid_role_name(&name) {
+                return None;
+            }
+            let first = *data.get(selector_offset)?;
+            let (encoding, selector) = if first == 0x80 {
+                let selector_end = selector_offset.checked_add(5)?;
+                if selector_end > end {
+                    return None;
+                }
+                (
+                    LegacyRoleSelectorEncoding::FixedU32,
+                    u32::from_le_bytes(
+                        data.get(selector_offset + 1..selector_end)?
+                            .try_into()
+                            .ok()?,
+                    ),
+                )
+            } else if (0xd1..=0xe4).contains(&first) {
+                if selector_offset.checked_add(2)? > end {
+                    return None;
+                }
+                (
+                    LegacyRoleSelectorEncoding::Paged,
+                    u32::from(first - 0xd1)
+                        .checked_mul(256)?
+                        .checked_add(u32::from(*data.get(selector_offset + 1)?))?
+                        .checked_add(1)?,
+                )
+            } else {
+                return None;
+            };
+            (selector != 0).then_some(LegacyRoleSelector {
+                offset,
+                entity_id,
+                name,
+                encoding,
+                selector,
+            })
+        })
+        .collect()
 }
 
 fn valid_role_name(name: &str) -> bool {
@@ -654,15 +707,31 @@ mod tests {
         bytes.extend_from_slice(&15108_u32.to_le_bytes());
         bytes.extend_from_slice(TEXT_OPEN);
         bytes.extend_from_slice(&[5, b't', b'y', b'p', b'e', 0xfe]);
+        bytes.extend_from_slice(&[8, b'p', b'a', b'r', b'a', b'm', b'i', b'n', 0xd1, 0x2a]);
+        bytes.extend_from_slice(&[0xe8, 0xe4, 0x0b, 0x01]);
         bytes.extend_from_slice(CATALOG_OPEN);
 
-        let fields = &parse_runs(&bytes)[0].text_fields;
+        let run = &parse_runs(&bytes)[0];
+        let fields = &run.text_fields;
         let body = fields[0].role.as_ref().expect("paged role selector");
         assert_eq!(body.name, "body");
         assert_eq!(body.selector, 4134);
+        assert_eq!(body.encoding, super::LegacyRoleSelectorEncoding::Paged);
         let parameter = fields[1].role.as_ref().expect("fixed role selector");
         assert_eq!(parameter.name, "param");
         assert_eq!(parameter.selector, 15108);
+        assert_eq!(
+            parameter.encoding,
+            super::LegacyRoleSelectorEncoding::FixedU32
+        );
+        assert_eq!(
+            run.role_selectors
+                .iter()
+                .map(|role| (role.name.as_str(), role.selector))
+                .collect::<Vec<_>>(),
+            [("body", 4134), ("param", 15108), ("paramin", 43)]
+        );
+        assert_eq!(run.role_selectors[2].entity_id, 1);
     }
 
     #[test]
