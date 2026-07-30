@@ -3262,6 +3262,22 @@ fn attach_standard_topology(
             }
         }
     }
+    let endpoint_pair_on_incident_faces = |edge: usize, pair: [usize; 2]| {
+        pair.iter().all(|point| {
+            let Some(position) = ir.model.points.get(*point).map(|point| point.position) else {
+                return false;
+            };
+            supports[edge].faces.iter().all(|face| {
+                face_surface(ir, bindings, &surface_indices, *face).is_some_and(|surface| {
+                    point_on_standard_face(
+                        position,
+                        &surface.geometry,
+                        face_bounds.as_ref().and_then(|bounds| bounds[*face]),
+                    )
+                })
+            })
+        })
+    };
     if let Some(options) = &mut endpoint_options {
         for (edge, pairs) in options.iter_mut().enumerate() {
             let support = &supports[edge];
@@ -3316,7 +3332,8 @@ fn attach_standard_topology(
             if let Some(placement_domains) =
                 missing_edge::standard_mesh_placement_endpoint_pairs(brep, &edge_faces, &seeds)
             {
-                for (edge, domain) in placement_domains.into_iter().enumerate() {
+                for (edge, mut domain) in placement_domains.into_iter().enumerate() {
+                    domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
                     if domain.is_empty() {
                         continue;
                     }
@@ -3345,7 +3362,8 @@ fn attach_standard_topology(
                 })
                 .flatten()
             {
-                for (edge, domain) in boundary_domains.into_iter().enumerate() {
+                for (edge, mut domain) in boundary_domains.into_iter().enumerate() {
+                    domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
                     let previous = options[edge].clone();
                     if options[edge].is_empty() {
                         options[edge] = domain;
@@ -3362,6 +3380,11 @@ fn attach_standard_topology(
             if !changed {
                 break;
             }
+        }
+        for (edge, pairs) in options.iter_mut().enumerate() {
+            pairs.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
+            pairs.sort_unstable();
+            pairs.dedup();
         }
         for (candidates, options) in endpoint_candidates.iter_mut().zip(options) {
             for point in options.iter().flatten() {
