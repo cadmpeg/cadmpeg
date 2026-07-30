@@ -11314,7 +11314,7 @@ fn decode_reports_exact_relation_program_instances() {
     ) in [
         (1, 1, 1, 1, 0, 0, 1),
         (2, 1, 1, 0, 1, 0, 1),
-        (3, 1, 0, 0, 0, 1, 1),
+        (3, 1, 0, 0, 0, 0, 1),
         (1, 3, 1, 1, 0, 0, 0),
     ] {
         let decoded = CatiaCodec
@@ -11375,8 +11375,12 @@ fn decode_reports_exact_relation_program_instances() {
             other
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_instance_count"],
-            unresolved
+            decoded.report.coverage["unresolved_relation_program_instance_count"], unresolved,
+            "program entity {program_entity_id}"
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_null_relation_program_instance_count"],
+            usize::from(program_entity_id == 3)
         );
         assert_eq!(
             decoded.report.coverage["decoded_resolved_relation_program_repeated_reference_count"],
@@ -11384,7 +11388,11 @@ fn decode_reports_exact_relation_program_instances() {
         );
         assert_eq!(
             decoded.report.coverage["unresolved_relation_program_repeated_reference_count"],
-            1 - resolved_repeated
+            usize::from(repeated_reference_entity_id > 3)
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_null_relation_program_repeated_reference_count"],
+            usize::from(repeated_reference_entity_id == 3)
         );
         let classified_program = usize::from(program_entity_id <= 2);
         assert_eq!(
@@ -11708,6 +11716,63 @@ fn configuration_productions_preserve_unresolved_identities() {
 }
 
 #[test]
+fn configuration_productions_distinguish_terminal_null_identities() {
+    let file = standard_catpart_with_configuration_incidences(8, 8, 8);
+    let native = crate::native::CatiaNative::decode(&file);
+    let configuration = native.entity_records[0]
+        .configuration_record
+        .as_ref()
+        .expect("complete Configuration production");
+    assert!(configuration.entity_reference.is_null);
+    assert!(configuration.entity_reference.entity.is_none());
+    let row = native.entity_records[1]
+        .configuration_row_link
+        .as_ref()
+        .expect("complete configrow production");
+    assert!(!row.class_reference.is_null);
+    assert!(row.successor.is_null);
+    assert!(row.successor.entity.is_none());
+    assert_eq!(native.configuration_row_chains.len(), 1);
+    assert!(native.configuration_row_chains[0].terminal.is_null);
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode terminal-null configuration incidences");
+    assert_eq!(
+        decoded.report.coverage["decoded_null_configuration_entity_reference_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_configuration_entity_reference_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_null_configuration_row_class_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_configuration_row_class_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_null_configuration_row_successor_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_configuration_row_successor_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_null_configuration_row_chain_terminal_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_configuration_row_chain_terminal_count"],
+        0
+    );
+}
+
+#[test]
 fn native_load_migrates_and_validates_configuration_incidences() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(8, 5, 7),
@@ -11752,6 +11817,31 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         migrated.configuration_row_chains,
         native.configuration_row_chains
     );
+
+    let mut expected_nulls = crate::native::CatiaNative::decode(
+        &standard_catpart_with_configuration_incidences(8, 8, 8),
+    );
+    let mut stale_nulls = expected_nulls.clone();
+    let configuration = stale_nulls.entity_records[0]
+        .configuration_record
+        .as_mut()
+        .expect("complete Configuration production");
+    configuration.entity_reference.is_null = false;
+    let row = stale_nulls.entity_records[1]
+        .configuration_row_link
+        .as_mut()
+        .expect("complete configrow production");
+    row.successor.is_null = false;
+    stale_nulls.configuration_row_chains[0].terminal.is_null = false;
+    let mut version_239 = cadmpeg_ir::NativeNamespace::default();
+    stale_nulls
+        .store(&mut version_239)
+        .expect("store pre-null-incidence namespace");
+    version_239.version = crate::native::CATIA_TYPED_INCIDENCE_NULL_VERSION - 1;
+    let migrated =
+        crate::native::CatiaNative::load(&version_239).expect("migrate incidence null states");
+    expected_nulls.version = migrated.version;
+    assert_eq!(migrated, expected_nulls);
 
     let mut malformed_chain = native.clone();
     malformed_chain.configuration_row_chains[0]

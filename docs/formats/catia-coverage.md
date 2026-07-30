@@ -128,15 +128,15 @@ current scores require those matrices and representative fixtures.
   independently resolve it within the same graph, and classify selected
   relation-expression programs without assigning unresolved input and output
   roles. Coverage partitions compact lead-`12` and separator-form lead-`54`
-  framings, resolved, unresolved, relation-expression, and other program
-  instances, partitions the resolved and unresolved identity
+  framings, resolved, terminal-null, unresolved, relation-expression, and other
+  program instances, partitions the resolved, terminal-null, and unresolved identity
   repeated in the atom/reference slots, partitions classified and unclassified
   program and repeated-identity entities, and counts distinct selected
-  expressions. Compact-form coverage also partitions its resolved and
-  unresolved `ref(h)` context identity and classifies selected `paramout`, other
-  named, and unclassified context entities without assigning a parameter role.
-  Separator-form coverage also partitions its resolved and
-  unresolved trailing entity identity.
+  expressions. Compact-form coverage also partitions its resolved,
+  terminal-null, and unresolved `ref(h)` context identity and classifies
+  selected `paramout`, other named, and unclassified context entities without
+  assigning a parameter role. Separator-form coverage also partitions its
+  resolved, terminal-null, and unresolved trailing entity identity.
   Parameters remain document-scoped until feature-instance ownership resolves.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not
@@ -168,16 +168,17 @@ current scores require those matrices and representative fixtures.
   ownership, operands, or sketch incidence.
   Exact `Configuration` records retain the first reference as a selected
   value-schema ordinal, entry, and name, and retain the second reference as an
-  independently resolved or unresolved same-graph entity identity with its
-  selected object class when present. Exact
+  independently resolved, terminal-null, or unresolved same-graph entity
+  identity with its selected object class when present. Exact
   `configrow` successor links retain their class and successor identities.
-  Coverage partitions schema references, resolved and unresolved entity
-  references, classified and unclassified referenced entities, row classes, and
-  row successors. Complete root-to-terminal chains retain their class identity,
-  ordered row entity identities, terminal identity, and every available selected
-  entity class. Coverage partitions their ordered links from links whose order
-  remains unresolved. These records do not count as transferred neutral
-  configurations.
+  Coverage partitions schema references, resolved, terminal-null, and
+  unresolved entity references, classified and unclassified referenced
+  entities, row classes, and row successors. Complete root-to-terminal chains
+  retain their class identity, ordered row entity identities, terminal identity,
+  and every available selected entity class. Coverage partitions resolved,
+  terminal-null, and unresolved terminals and partitions their ordered links
+  from links whose order remains unresolved. These records do not count as
+  transferred neutral configurations.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node. Schema fields named `PRTSketch` or `Sketch` do not establish
