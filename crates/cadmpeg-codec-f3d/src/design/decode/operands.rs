@@ -7,7 +7,7 @@ use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, decode_recipe_references, recipe_record_prefix,
 };
 use crate::design::decode::sketch::{
-    next_indexed_record_offset, next_indexed_record_offset_with_index,
+    indexed_record_index, next_indexed_record_offset, next_indexed_record_offset_with_index,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -1566,6 +1566,7 @@ fn unique_body_recipe<'a>(
     stream: &str,
 ) -> Option<&'a ConstructionRecipe> {
     let start = usize::try_from(header.byte_offset).ok()?;
+    let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
     let mut matching = recipes
         .iter()
         .filter(|recipe| {
@@ -1577,19 +1578,21 @@ fn unique_body_recipe<'a>(
             usize::try_from(recipe.byte_offset)
                 .ok()
                 .is_some_and(|recipe_at| {
-                    body_recipe_operand_end(bytes, start, header.record_index, recipe_at).is_some()
+                    body_recipe_operand_end(bytes, prologue_end, header.record_index, recipe_at)
+                        .is_some()
                 })
         });
     let recipe = matching.next()?;
     matching.next().is_none().then_some(recipe)
 }
 
-fn body_recipe_operand_end(
-    bytes: &[u8],
-    start: usize,
-    record_index: u32,
-    recipe_at: usize,
-) -> Option<usize> {
+/// Offset past the four consecutively indexed records that open a body-recipe
+/// operand, or `None` when the records after `start` do not carry
+/// `record_index` through `record_index + 3` in order.
+///
+/// The prologue depends only on the operand header, so a caller weighing many
+/// candidate recipes against one header resolves it once.
+fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
     let mut search = start.checked_add(11)?;
     for expected in [
         record_index,
@@ -1598,21 +1601,32 @@ fn body_recipe_operand_end(
         record_index.checked_add(3)?,
     ] {
         let at = next_indexed_record_offset(bytes, search)?;
-        let (_, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag)? != expected {
+        if indexed_record_index(bytes, at)? != expected {
             return None;
         }
         search = at.checked_add(11)?;
     }
-    if recipe_at < search {
+    Some(search)
+}
+
+/// Offset of the record carrying `record_index + 4` that closes a body-recipe
+/// operand whose recipe sits at `recipe_at`, searching the 64 KiB after the
+/// recipe. The recipe must follow the prologue that ends at `prologue_end`.
+fn body_recipe_operand_end(
+    bytes: &[u8],
+    prologue_end: usize,
+    record_index: u32,
+    recipe_at: usize,
+) -> Option<usize> {
+    if recipe_at < prologue_end {
         return None;
     }
     let expected = record_index.checked_add(4)?;
     let search_limit = recipe_at.checked_add(1 << 16)?.min(bytes.len());
-    search = recipe_at;
-    while let Some(at) = next_indexed_record_offset(bytes.get(..search_limit)?, search) {
-        let (_, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag) == Some(expected) {
+    let window = bytes.get(..search_limit)?;
+    let mut search = recipe_at;
+    while let Some(at) = next_indexed_record_offset(window, search) {
+        if indexed_record_index(window, at) == Some(expected) {
             return Some(at);
         }
         search = at.checked_add(1)?;
@@ -1648,7 +1662,8 @@ fn parse_body_recipe_operand_frame(
 ) -> Option<DesignBodyRecipeOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
-    let next_at = body_recipe_operand_end(bytes, start, header.record_index, recipe_at)?;
+    let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
+    let next_at = body_recipe_operand_end(bytes, prologue_end, header.record_index, recipe_at)?;
     let reference_count = usize::try_from(u32_at(bytes, start + 21)?).ok()?;
     if start >= recipe_at
         || recipe_at >= next_at

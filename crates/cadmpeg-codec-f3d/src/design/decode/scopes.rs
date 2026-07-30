@@ -3,7 +3,9 @@
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
-use crate::design::decode::sketch::{next_indexed_record_offset, valid_sketch_transform};
+use crate::design::decode::sketch::{
+    indexed_record_index, next_indexed_record_offset, valid_sketch_transform,
+};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
@@ -41,12 +43,10 @@ impl IndexedRecordOffsets {
     /// Index every indexed-record header in `bytes` in one forward pass.
     pub(crate) fn build(bytes: &[u8]) -> Self {
         let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
-        let mut position = 0;
-        while let Some(at) = next_indexed_record_offset(bytes, position) {
-            if let Some(record_index) = u32_at(bytes, at + 7) {
+        for at in crate::design::decode::sketch::indexed_record_offsets(bytes) {
+            if let Some(record_index) = indexed_record_index(bytes, at) {
                 by_record_index.entry(record_index).or_default().push(at);
             }
-            position = at.saturating_add(1);
         }
         Self { by_record_index }
     }

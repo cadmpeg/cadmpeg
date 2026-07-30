@@ -182,6 +182,7 @@ name = "cadmpeg-codec-f3d"
 version = "0.3.0"
 dependencies = [
  "cadmpeg-ir",
+ "memchr",
  "roxmltree",
  "schemars",
  "serde",

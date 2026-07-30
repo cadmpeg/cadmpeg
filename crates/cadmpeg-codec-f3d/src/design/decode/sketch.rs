@@ -2592,18 +2592,27 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
     Some((text_reference, transforms, cursor))
 }
 
+/// Whether an indexed-record header starts at `at`: a u32 length prefix of
+/// three, a three-digit ASCII class tag, and a u32 record index. The eleven
+/// bytes must be present.
+fn indexed_record_header_at(bytes: &[u8], at: usize) -> bool {
+    u32_at(bytes, at) == Some(3)
+        && bytes
+            .get(at + 4..at + 7)
+            .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit))
+        && bytes.get(at + 7..at + 11).is_some()
+}
+
+/// The record index carried by the indexed-record header at `at`. The header
+/// spends its first seven bytes on the length-prefixed class tag, so the index
+/// always sits at `at + 7`.
+pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
+    u32_at(bytes, at.checked_add(7)?)
+}
+
 pub(crate) fn next_indexed_record_offset(bytes: &[u8], mut position: usize) -> Option<usize> {
     while position + 11 <= bytes.len() {
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered(bytes, position, 0..=2000, u8::is_ascii_graphic)
-        else {
-            position += 1;
-            continue;
-        };
-        if class_tag.len() == 3
-            && class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && bytes.get(after_tag..after_tag + 4).is_some()
-        {
+        if indexed_record_header_at(bytes, position) {
             return Some(position);
         }
         position += 1;
@@ -2618,8 +2627,7 @@ pub(crate) fn next_indexed_record_offset_with_index(
 ) -> Option<usize> {
     loop {
         let offset = next_indexed_record_offset(bytes, position)?;
-        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag) == Some(record_index) {
+        if indexed_record_index(bytes, offset) == Some(record_index) {
             return Some(offset);
         }
         position = offset.checked_add(1)?;
