@@ -136,7 +136,10 @@ current scores require those matrices and representative fixtures.
   program instances, partitions the resolved, terminal-null, and unresolved identity
   repeated in the atom/reference slots, partitions classified and unclassified
   program and repeated-identity entities, and counts distinct selected
-  expressions. Compact-form coverage also partitions its resolved,
+  expressions. A program instance selecting a complete relation expression
+  retains every source-symbol occurrence and all same-graph named parameter
+  candidates; coverage partitions uniquely resolved, ambiguous, and other
+  unresolved dependencies. Compact-form coverage also partitions its resolved,
   terminal-null, and unresolved `ref(h)` context identity and classifies
   selected `paramout`, other named, and unclassified context entities without
   assigning a parameter role. Separator-form coverage also partitions its
