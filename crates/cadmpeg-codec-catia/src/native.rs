@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 232;
+pub const CATIA_NATIVE_VERSION: u32 = 233;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -45,6 +45,9 @@ const CATIA_CONFIGURATION_INCIDENCE_VERSION: u32 = 230;
 /// Native schema version separating configuration schema and entity references.
 #[cfg(test)]
 pub(crate) const CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION: u32 = 232;
+/// Native schema version retaining selected entity classes on typed incidences.
+#[cfg(test)]
+pub(crate) const CATIA_TYPED_INCIDENCE_CLASS_VERSION: u32 = 233;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1396,6 +1399,9 @@ pub struct CatiaEntityReference {
     /// Same-graph entity selected by that identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity: Option<String>,
+    /// Class selected by the same-graph entity when its object record has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
 }
 
 /// One exact self-defining `Configuration` object production.
@@ -2924,6 +2930,7 @@ fn relation_program_instance(
     entity_id: u32,
     object: &CatiaObjectRecord,
     entities: &HashMap<(String, u32), String>,
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     relation_expressions: &HashMap<(String, u32), String>,
 ) -> Option<CatiaRelationProgramInstance> {
     if object.entity_id != Some(entity_id)
@@ -2949,6 +2956,7 @@ fn relation_program_instance(
             Some(CatiaEntityReference {
                 entity_id: context_entity_id,
                 entity: entities.get(&context_key).cloned(),
+                class_name: entity_classes.get(&context_key).cloned(),
             }),
             None,
         )
@@ -2964,6 +2972,7 @@ fn relation_program_instance(
             Some(CatiaEntityReference {
                 entity_id: trailing_entity_id,
                 entity: entities.get(&trailing_key).cloned(),
+                class_name: entity_classes.get(&trailing_key).cloned(),
             }),
         )
     } else {
@@ -2983,14 +2992,17 @@ fn relation_program_instance(
     })
 }
 
-fn configuration_entity_reference(
+fn entity_reference(
     graph_id: &str,
     entity_id: u32,
     entities: &HashMap<(String, u32), String>,
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
 ) -> CatiaEntityReference {
+    let key = (graph_id.to_owned(), entity_id);
     CatiaEntityReference {
         entity_id,
-        entity: entities.get(&(graph_id.to_owned(), entity_id)).cloned(),
+        entity: entities.get(&key).cloned(),
+        class_name: entity_classes.get(&key).cloned(),
     }
 }
 
@@ -2999,6 +3011,7 @@ fn configuration_record(
     object: &CatiaObjectRecord,
     value_schema_selections: &[CatiaEntityValueSchemaSelection],
     entities: &HashMap<(String, u32), String>,
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
 ) -> Option<CatiaConfigurationRecord> {
     if object.entity_id != Some(entity_id)
         || object.lead != 0x12
@@ -3031,10 +3044,11 @@ fn configuration_record(
         schema_ordinal: *schema_ordinal,
         schema_entry: selection.entry.clone(),
         schema_name: selection.name.clone(),
-        entity_reference: configuration_entity_reference(
+        entity_reference: entity_reference(
             &object.parent,
             *referenced_entity_id,
             entities,
+            entity_classes,
         ),
     })
 }
@@ -3043,6 +3057,7 @@ fn configuration_row_link(
     entity_id: u32,
     object: &CatiaObjectRecord,
     entities: &HashMap<(String, u32), String>,
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
 ) -> Option<CatiaConfigurationRowLink> {
     if object.entity_id != Some(entity_id)
         || object.lead != 0x12
@@ -3061,8 +3076,18 @@ fn configuration_row_link(
         return None;
     };
     Some(CatiaConfigurationRowLink {
-        class_reference: configuration_entity_reference(&object.parent, class_entity_id, entities),
-        successor: configuration_entity_reference(&object.parent, *successor_entity_id, entities),
+        class_reference: entity_reference(
+            &object.parent,
+            class_entity_id,
+            entities,
+            entity_classes,
+        ),
+        successor: entity_reference(
+            &object.parent,
+            *successor_entity_id,
+            entities,
+            entity_classes,
+        ),
     })
 }
 
@@ -3218,8 +3243,23 @@ fn formula_relation(
 type CatiaRelationExpressionIndex = HashMap<String, (String, String)>;
 type CatiaRelationExpressionEntityIndex = HashMap<(String, u32), String>;
 type CatiaEntityByGraphIdentityIndex = HashMap<(String, u32), String>;
+type CatiaEntityClassByGraphIdentityIndex = HashMap<(String, u32), String>;
 type CatiaEntityByObjectIndex = HashMap<String, String>;
 type CatiaParameterBindingIndex = HashMap<String, HashMap<String, Vec<String>>>;
+
+fn entity_class_index<'a>(
+    records: impl IntoIterator<Item = &'a CatiaObjectRecord>,
+) -> CatiaEntityClassByGraphIdentityIndex {
+    records
+        .into_iter()
+        .filter_map(|record| {
+            Some((
+                (record.parent.clone(), record.entity_id?),
+                record.class_name.clone()?,
+            ))
+        })
+        .collect()
+}
 
 fn semantic_entity_indices(
     entities: &[CatiaEntityRecord],
@@ -8013,6 +8053,8 @@ impl CatiaNative {
             entities_by_object,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records);
+        let entity_classes_by_graph_identity =
+            entity_class_index(object_graphs.iter().flat_map(|graph| &graph.records));
         for entity in &mut entity_records {
             let Some(object) = object_graphs
                 .iter()
@@ -8030,6 +8072,7 @@ impl CatiaNative {
                 entity.entity_id,
                 object,
                 &entities_by_graph_identity,
+                &entity_classes_by_graph_identity,
                 &relation_expression_entities,
             );
             entity.configuration_record = configuration_record(
@@ -8037,9 +8080,14 @@ impl CatiaNative {
                 object,
                 &entity.value_schema_selections,
                 &entities_by_graph_identity,
+                &entity_classes_by_graph_identity,
             );
-            entity.configuration_row_link =
-                configuration_row_link(entity.entity_id, object, &entities_by_graph_identity);
+            entity.configuration_row_link = configuration_row_link(
+                entity.entity_id,
+                object,
+                &entities_by_graph_identity,
+                &entity_classes_by_graph_identity,
+            );
             entity.formula_relation = formula_relation(
                 &entity.definition_schema_selections,
                 &entity.object_graph,
@@ -8331,6 +8379,7 @@ impl CatiaNative {
             entities_by_object,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records);
+        let entity_classes_by_graph_identity = entity_class_index(&records);
         if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
             for graph in &graphs {
                 let terminal_null = entity_records
@@ -8374,6 +8423,7 @@ impl CatiaNative {
         }
         if namespace.version < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
             || namespace.version < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
+            || namespace.version < CATIA_TYPED_INCIDENCE_CLASS_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -8387,6 +8437,7 @@ impl CatiaNative {
                             entity.entity_id,
                             object,
                             &entities_by_graph_identity,
+                            &entity_classes_by_graph_identity,
                             &relation_expression_entities,
                         )
                     });
@@ -8405,6 +8456,7 @@ impl CatiaNative {
         }
         if namespace.version < CATIA_CONFIGURATION_INCIDENCE_VERSION
             || namespace.version < CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION
+            || namespace.version < CATIA_TYPED_INCIDENCE_CLASS_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -8419,6 +8471,7 @@ impl CatiaNative {
                             object,
                             &entity.value_schema_selections,
                             &entities_by_graph_identity,
+                            &entity_classes_by_graph_identity,
                         )
                     });
                 entity.configuration_row_link = records_by_id
@@ -8428,6 +8481,7 @@ impl CatiaNative {
                             entity.entity_id,
                             object,
                             &entities_by_graph_identity,
+                            &entity_classes_by_graph_identity,
                         )
                     });
             }
@@ -8544,6 +8598,7 @@ impl CatiaNative {
                                     entity.entity_id,
                                     object,
                                     &entities_by_graph_identity,
+                                    &entity_classes_by_graph_identity,
                                     &relation_expression_entities,
                                 )
                             })
@@ -8560,6 +8615,7 @@ impl CatiaNative {
                                     object,
                                     &entity.value_schema_selections,
                                     &entities_by_graph_identity,
+                                    &entity_classes_by_graph_identity,
                                 )
                             })
                     })
@@ -8574,6 +8630,7 @@ impl CatiaNative {
                                     entity.entity_id,
                                     object,
                                     &entities_by_graph_identity,
+                                    &entity_classes_by_graph_identity,
                                 )
                             })
                     })

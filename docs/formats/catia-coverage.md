@@ -129,7 +129,8 @@ current scores require those matrices and representative fixtures.
   instances, partitions the resolved and unresolved identity
   repeated in the atom/reference slots, and counts distinct selected
   expressions. Compact-form coverage also partitions its resolved and
-  unresolved `ref(h)` context identity without assigning a parameter role.
+  unresolved `ref(h)` context identity and classifies selected `paramout`, other
+  named, and unclassified context entities without assigning a parameter role.
   Separator-form coverage also partitions its resolved and
   unresolved trailing entity identity.
   Parameters remain document-scoped until feature-instance ownership resolves.
@@ -162,12 +163,14 @@ current scores require those matrices and representative fixtures.
   operands, or sketch incidence.
   Exact `Configuration` records retain the first reference as a selected
   value-schema ordinal, entry, and name, and retain the second reference as an
-  independently resolved or unresolved same-graph entity identity. Exact
+  independently resolved or unresolved same-graph entity identity with its
+  selected object class when present. Exact
   `configrow` successor links retain their class and successor identities.
   Coverage partitions schema references, resolved and unresolved entity
-  references, row classes, and row successors. It also partitions row links that
-  form one complete root-to-terminal chain from links whose order remains
-  unresolved. These records do not count as transferred neutral configurations.
+  references, classified and unclassified referenced entities, row classes, and
+  row successors. It also partitions row links that form one complete
+  root-to-terminal chain from links whose order remains unresolved. These records
+  do not count as transferred neutral configurations.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node. Schema fields named `PRTSketch` or `Sketch` do not establish

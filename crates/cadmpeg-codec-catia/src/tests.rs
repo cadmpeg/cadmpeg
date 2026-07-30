@@ -11117,6 +11117,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         context.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
+    assert_eq!(context.class_name.as_deref(), Some("body"));
 
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_relation_program_instance(2, 1, 3, 2),
@@ -11180,6 +11181,7 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         trailing.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
+    assert_eq!(trailing.class_name.as_deref(), Some("body"));
     assert_eq!(
         instance.program.as_deref(),
         Some(native.entity_records[0].id.as_str())
@@ -11213,6 +11215,18 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     );
     assert_eq!(
         decoded.report.coverage["unresolved_lead12_relation_program_context_entity_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_lead12_relation_program_paramout_context_entity_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_other_lead12_relation_program_context_class_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unclassified_lead12_relation_program_context_entity_count"],
         0
     );
     assert_eq!(
@@ -11298,6 +11312,19 @@ fn decode_reports_exact_relation_program_instances() {
             0
         );
         assert_eq!(
+            decoded.report.coverage
+                ["decoded_lead12_relation_program_paramout_context_entity_count"],
+            0
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_other_lead12_relation_program_context_class_count"],
+            1
+        );
+        assert_eq!(
+            decoded.report.coverage["unclassified_lead12_relation_program_context_entity_count"],
+            0
+        );
+        assert_eq!(
             decoded.report.coverage["decoded_resolved_relation_program_instance_count"],
             resolved
         );
@@ -11349,6 +11376,13 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .store(&mut stored)
             .expect("store older relation-program namespace");
         for (version, remove_context, remove_trailing, remove_framing, remove_repeated_reference) in [
+            (
+                crate::native::CATIA_TYPED_INCIDENCE_CLASS_VERSION - 1,
+                false,
+                false,
+                false,
+                false,
+            ),
             (
                 crate::native::CATIA_RELATION_PROGRAM_CONTEXT_VERSION - 1,
                 true,
@@ -11402,6 +11436,14 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 stored_instance.remove("repeated_reference_entity_id");
                 stored_instance.remove("repeated_reference_entity");
             }
+            for field in ["lead12_context_entity", "lead54_trailing_entity"] {
+                if let Some(reference) = stored_instance
+                    .get_mut(field)
+                    .and_then(|value| value.as_object_mut())
+                {
+                    reference.remove("class_name");
+                }
+            }
 
             let migrated = crate::native::CatiaNative::load(&namespace)
                 .expect("migrate relation-program instance");
@@ -11430,6 +11472,10 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         configuration.entity_reference.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
+    assert_eq!(
+        configuration.entity_reference.class_name.as_deref(),
+        Some("Configuration")
+    );
     let row = native.entity_records[1]
         .configuration_row_link
         .as_ref()
@@ -11439,11 +11485,13 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         row.class_reference.entity.as_deref(),
         Some(native.entity_records[1].id.as_str())
     );
+    assert_eq!(row.class_reference.class_name.as_deref(), Some("configrow"));
     assert_eq!(row.successor.entity_id, 7);
     assert_eq!(
         row.successor.entity.as_deref(),
         Some(native.entity_records[2].id.as_str())
     );
+    assert_eq!(row.successor.class_name.as_deref(), Some("body"));
     assert!(native.entity_records[2].configuration_record.is_none());
     assert!(native.entity_records[2].configuration_row_link.is_none());
 
@@ -11464,6 +11512,14 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
     );
     assert_eq!(
         decoded.report.coverage["unresolved_configuration_entity_reference_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_classified_configuration_entity_reference_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unclassified_configuration_entity_reference_count"],
         0
     );
     assert_eq!(

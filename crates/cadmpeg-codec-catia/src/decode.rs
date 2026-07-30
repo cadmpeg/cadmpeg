@@ -827,6 +827,26 @@ fn finish_decode(
     let unresolved_lead12_relation_program_context_entity_count =
         lead12_relation_program_instance_count
             - resolved_lead12_relation_program_context_entity_count;
+    let classified_lead12_relation_program_context_entity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|instance| instance.lead12_context_entity.as_ref())
+        .filter(|context| context.class_name.is_some())
+        .count();
+    let lead12_relation_program_paramout_context_entity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|instance| instance.lead12_context_entity.as_ref())
+        .filter(|context| context.class_name.as_deref() == Some("paramout"))
+        .count();
+    let other_lead12_relation_program_context_class_count =
+        classified_lead12_relation_program_context_entity_count
+            - lead12_relation_program_paramout_context_entity_count;
+    let unclassified_lead12_relation_program_context_entity_count =
+        lead12_relation_program_instance_count
+            - classified_lead12_relation_program_context_entity_count;
     let resolved_relation_program_instance_count = native
         .entity_records
         .iter()
@@ -871,6 +891,12 @@ fn finish_decode(
         .count();
     let unresolved_configuration_reference_count =
         configuration_record_count - resolved_configuration_reference_count;
+    let classified_configuration_entity_reference_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.configuration_record.as_ref())
+        .filter(|record| record.entity_reference.class_name.is_some())
+        .count();
     let configuration_row_link_count = native
         .entity_records
         .iter()
@@ -1920,6 +1946,18 @@ fn finish_decode(
             unresolved_lead12_relation_program_context_entity_count,
         ),
         (
+            "decoded_lead12_relation_program_paramout_context_entity_count".to_string(),
+            lead12_relation_program_paramout_context_entity_count,
+        ),
+        (
+            "decoded_other_lead12_relation_program_context_class_count".to_string(),
+            other_lead12_relation_program_context_class_count,
+        ),
+        (
+            "unclassified_lead12_relation_program_context_entity_count".to_string(),
+            unclassified_lead12_relation_program_context_entity_count,
+        ),
+        (
             "decoded_resolved_lead54_relation_program_trailing_entity_count".to_string(),
             resolved_lead54_relation_program_trailing_entity_count,
         ),
@@ -1966,6 +2004,14 @@ fn finish_decode(
         (
             "unresolved_configuration_entity_reference_count".to_string(),
             unresolved_configuration_reference_count,
+        ),
+        (
+            "decoded_classified_configuration_entity_reference_count".to_string(),
+            classified_configuration_entity_reference_count,
+        ),
+        (
+            "unclassified_configuration_entity_reference_count".to_string(),
+            configuration_record_count - classified_configuration_entity_reference_count,
         ),
         (
             "decoded_configuration_row_link_count".to_string(),
