@@ -2343,6 +2343,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 gap_tolerance,
             } => {
                 body_selections.push(bodies);
+                let body_count = match bodies {
+                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                        Some(bodies.len())
+                    }
+                    BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Generated { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Local { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Unresolved | BodySelection::Native(_) => None,
+                };
+                if body_count.is_some_and(|count| count < 2) {
+                    feature_geometry_error(findings, feature, "sew requires at least two bodies");
+                }
                 if gap_tolerance.is_some_and(|value| !positive_feature_length(value)) {
                     feature_geometry_error(findings, feature, "sew tolerance is invalid");
                 }

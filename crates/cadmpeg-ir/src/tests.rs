@@ -3308,10 +3308,17 @@ fn feature_operand_roles_must_be_disjoint() {
                 native: "test:selection#first".into(),
             },
             second: BodySelection::Local {
-                bodies: vec![body_key],
+                bodies: vec![body_key.clone()],
                 native: "test:selection#second".into(),
             },
             approximate: Some(false),
+        },
+        FeatureDefinition::SewBodies {
+            bodies: BodySelection::Local {
+                bodies: vec![body_key],
+                native: "test:selection#sew".into(),
+            },
+            gap_tolerance: None,
         },
     ]
     .into_iter()
@@ -3338,6 +3345,7 @@ fn feature_operand_roles_must_be_disjoint() {
         "face blend supports overlap",
         "body trim operands overlap",
         "section operands overlap",
+        "sew requires at least two bodies",
     ] {
         assert!(findings.iter().any(|finding| finding.message == message));
     }
