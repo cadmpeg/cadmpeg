@@ -1585,32 +1585,28 @@ pub enum VariableBlendValuePayload {
     },
 }
 
-/// Optional single-radius tail selected by the native radius-kind branch.
+/// Cross-section clause following the variable-radius laws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct VariableBlendSingleRadiusTail {
-    /// Native symbolic or numeric selector.
-    pub selector: LoftBridgeToken,
-    /// Two ordered scalars following the selector.
-    pub parameters: [f64; 2],
-}
-
-/// Variable-blend chamfer form selected by the two-radii branch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum VariableBlendChamferKind {
-    /// A rounded transition controlled by a third blend-value law.
-    Rounded,
-}
-
-/// Optional rounded-chamfer branch following two radius laws.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct VariableBlendChamfer {
-    /// Variable-chamfer form.
-    pub kind: VariableBlendChamferKind,
-    /// Boolean flag preceding the chamfer blend-value payload.
-    pub flag: bool,
-    /// Chamfer blend-value payload.
-    pub value: VariableBlendValue,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VariableBlendCrossSection {
+    /// Circular section with no additional parameters.
+    Circular,
+    /// Thumbweight-controlled section with two ordered shape parameters.
+    Thumbweights {
+        /// Ordered native shape parameters.
+        parameters: [f64; 2],
+    },
+    /// Rounded chamfer with an optional independent rounding-radius law.
+    RoundedChamfer {
+        /// Rounding-radius law; absent when the clause stores `no_radius`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        radius: Option<Box<VariableBlendValue>>,
+    },
+    /// Curvature-continuous round with two ordered shape parameters.
+    G2Round {
+        /// Ordered native shape parameters.
+        parameters: [f64; 2],
+    },
 }
 
 /// Native variable-radius blend surface subtype.
@@ -1655,23 +1651,11 @@ pub struct VariableBlendConstruction {
     /// Second radius-control payload for a two-radii construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_value: Option<VariableBlendValue>,
-    /// Chamfer-selector enum stored after the second radius value of a
-    /// two-radii blend. `0` selects no chamfer, `3` selects the rounded
-    /// chamfer carried in `chamfer`. `None` when the source stored no
-    /// selector token.
+    /// Cross-section clause following the complete radius-law sequence.
+    /// Absence denotes an elided default circular section; an explicit
+    /// circular clause remains distinct.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chamfer_selector: Option<i64>,
-    /// Optional rounded-chamfer payload.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chamfer: Option<Box<VariableBlendChamfer>>,
-    /// Selector enum stored after the radius value of a single-radius blend.
-    /// `0` selects no further fields; `1` and `7` select the two scalars in
-    /// `single_radius_tail`. `None` when the source stored no selector token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub single_radius_selector: Option<i64>,
-    /// Optional single-radius selector tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub single_radius_tail: Option<VariableBlendSingleRadiusTail>,
+    pub cross_section: Option<VariableBlendCrossSection>,
     /// Support-side parameter interval `(T0, T1)`; both bounds present in
     /// every instance.
     pub u_range: [Option<f64>; 2],

@@ -1487,26 +1487,24 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .as_ref()
                     .is_none_or(variable_blend_value_valid)
                 && construction
-                    .chamfer
+                    .cross_section
                     .as_ref()
-                    .is_none_or(|chamfer| variable_blend_value_valid(&chamfer.value));
+                    .is_none_or(|cross_section| match cross_section {
+                        crate::geometry::VariableBlendCrossSection::Circular => true,
+                        crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
+                        | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
+                            parameters.iter().all(|value| value.is_finite())
+                        }
+                        crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
+                            radius.as_deref().is_none_or(variable_blend_value_valid)
+                        }
+                    });
             let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
                 && construction.shape_parameter.is_finite()
-                && construction.shape_length.is_finite()
-                && construction
-                    .single_radius_tail
-                    .as_ref()
-                    .is_none_or(|tail| {
-                        tail.parameters.iter().all(|value| value.is_finite())
-                            && !matches!(tail.selector, crate::geometry::LoftBridgeToken::Double(value) if !value.is_finite())
-                    });
+                && construction.shape_length.is_finite();
             let radius_branch_valid = match construction.radius_kind {
-                VariableBlendRadiusKind::SingleRadius => {
-                    construction.second_value.is_none() && construction.chamfer.is_none()
-                }
-                VariableBlendRadiusKind::TwoRadii => {
-                    construction.second_value.is_some() && construction.single_radius_tail.is_none()
-                }
+                VariableBlendRadiusKind::SingleRadius => construction.second_value.is_none(),
+                VariableBlendRadiusKind::TwoRadii => construction.second_value.is_some(),
             };
             if !ranges_valid
                 || !sides_valid

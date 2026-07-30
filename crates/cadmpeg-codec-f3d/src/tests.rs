@@ -4698,7 +4698,7 @@ fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) 
 fn synthetic_variable_blend_smbh_with_selector(
     name: &str,
     two_radii: bool,
-    chamfer_selector: Option<i64>,
+    cross_section_selector: Option<i64>,
     v_range: [Option<f64>; 2],
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
@@ -4725,14 +4725,18 @@ fn synthetic_variable_blend_smbh_with_selector(
     surface.extend_from_slice(&i64::from(two_radii).to_le_bytes());
     append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
     if !two_radii {
-        if let Some(selector) = chamfer_selector {
+        if let Some(selector) = cross_section_selector {
             surface.push(0x15);
             surface.extend_from_slice(&selector.to_le_bytes());
+            if matches!(selector, 1 | 7) {
+                t_dbl(&mut surface, 2.0);
+                t_dbl(&mut surface, 2.0);
+            }
         }
     }
     if two_radii {
         append_generated_variable_blend_value(&mut surface, [0.1, 0.9], [3.5, 4.5]);
-        if let Some(selector) = chamfer_selector {
+        if let Some(selector) = cross_section_selector {
             surface.push(0x15);
             surface.extend_from_slice(&selector.to_le_bytes());
             if selector == 3 {
@@ -16622,11 +16626,8 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
 }
 
 #[test]
-fn generated_variable_blend_rejects_cross_branch_radius_payloads() {
-    use cadmpeg_ir::geometry::{
-        LoftBridgeToken, ProceduralSurfaceDefinition, VariableBlendRadiusKind,
-        VariableBlendSingleRadiusTail,
-    };
+fn generated_variable_blend_rejects_radius_cardinality_mismatch() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let mut decoded = F3dCodec
         .decode(
@@ -16644,12 +16645,7 @@ fn generated_variable_blend_rejects_cross_branch_radius_payloads() {
     else {
         panic!("expected variable blend")
     };
-    construction.radius_kind = VariableBlendRadiusKind::TwoRadii;
     construction.second_value = Some(construction.first_value.clone());
-    construction.single_radius_tail = Some(VariableBlendSingleRadiusTail {
-        selector: LoftBridgeToken::Integer(1),
-        parameters: [0.25, 0.75],
-    });
 
     assert!(cadmpeg_ir::validate(&decoded, Vec::new())
         .findings
@@ -16658,7 +16654,7 @@ fn generated_variable_blend_rejects_cross_branch_radius_payloads() {
     let error = F3dCodec.encode(&decoded, &mut Vec::new()).unwrap_err();
     assert!(error
         .to_string()
-        .contains("two-radii variable blend carries a single-radius tail"));
+        .contains("single-radius variable blend carries two-radii payloads"));
 }
 
 #[test]
@@ -16692,20 +16688,19 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
             radii: [35.0, 45.0]
         })
     ));
-    let chamfer = construction.chamfer.as_ref().expect("rounded chamfer");
-    assert_eq!(
-        chamfer.kind,
-        cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded
-    );
-    assert!(chamfer.flag);
+    let Some(cadmpeg_ir::geometry::VariableBlendCrossSection::RoundedChamfer {
+        radius: Some(radius),
+    }) = &construction.cross_section
+    else {
+        panic!("expected rounded-chamfer cross section with a radius law")
+    };
     assert!(matches!(
-        &chamfer.value.payload,
+        &radius.payload,
         VariableBlendValuePayload::TwoEnds {
             parameters: [0.0, 1.0],
             radii: [55.0, 65.0]
         }
     ));
-    assert!(construction.single_radius_tail.is_none());
 
     let expected = construction.clone();
     let mut source_less = decoded.ir;
@@ -16726,7 +16721,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
 }
 
 #[test]
-fn generated_two_radii_variable_blend_consumes_zero_chamfer_selector() {
+fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() {
     use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendRadiusKind};
 
     let decoded = F3dCodec
@@ -16746,8 +16741,10 @@ fn generated_two_radii_variable_blend_consumes_zero_chamfer_selector() {
         panic!("expected variable blend")
     };
     assert_eq!(construction.radius_kind, VariableBlendRadiusKind::TwoRadii);
-    assert_eq!(construction.chamfer_selector, Some(0));
-    assert!(construction.chamfer.is_none());
+    assert!(matches!(
+        &construction.cross_section,
+        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)
+    ));
     let expected = construction.clone();
     let mut source_less = decoded.ir;
     source_less.source = None;
@@ -17016,7 +17013,7 @@ fn generated_revision_offset_with_inline_untyped_support_decodes() {
 }
 
 #[test]
-fn generated_single_radius_variable_blend_consumes_zero_selector() {
+fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_section() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
@@ -17035,8 +17032,10 @@ fn generated_single_radius_variable_blend_consumes_zero_selector() {
     else {
         panic!("expected variable blend")
     };
-    assert_eq!(construction.single_radius_selector, Some(0));
-    assert!(construction.single_radius_tail.is_none());
+    assert!(matches!(
+        &construction.cross_section,
+        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)
+    ));
     let expected = construction.clone();
     let mut source_less = decoded.ir;
     source_less.source = None;
@@ -17053,6 +17052,64 @@ fn generated_single_radius_variable_blend_consumes_zero_selector() {
         ProceduralSurfaceDefinition::VariableBlend { construction }
             if construction == &expected
     ));
+}
+
+#[test]
+fn generated_variable_blend_round_trips_parameterized_cross_sections() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendCrossSection};
+
+    for (selector, expected_cross_section) in [
+        (
+            1,
+            VariableBlendCrossSection::Thumbweights {
+                parameters: [2.0, 2.0],
+            },
+        ),
+        (
+            7,
+            VariableBlendCrossSection::G2Round {
+                parameters: [2.0, 2.0],
+            },
+        ),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_selector(
+                    "srf_srf_v_bl_spl_sur",
+                    false,
+                    Some(selector),
+                    [None, None],
+                ))),
+                &DecodeOptions::default(),
+            )
+            .expect("parameterized cross-section decode");
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected variable blend")
+        };
+        assert_eq!(
+            construction.cross_section.as_ref(),
+            Some(&expected_cross_section)
+        );
+
+        let expected = construction.clone();
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("parameterized cross-section source-less encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("parameterized cross-section round trip");
+        assert!(matches!(
+            &round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::VariableBlend { construction }
+                if construction == &expected
+        ));
+    }
 }
 
 fn push_revision_cl_scale(surface: &mut Vec<u8>, with_path: bool) {

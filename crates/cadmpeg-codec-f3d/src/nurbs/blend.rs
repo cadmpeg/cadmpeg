@@ -725,10 +725,7 @@ pub(crate) fn decode_var_blend_spl_sur(
     int_width: usize,
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
-    use cadmpeg_ir::geometry::{
-        LoftBridgeToken, VariableBlendChamfer, VariableBlendChamferKind,
-        VariableBlendSingleRadiusTail,
-    };
+    use cadmpeg_ir::geometry::VariableBlendCrossSection;
     let find_marker = |name: &[u8]| {
         record_bytes.windows(name.len() + 3).position(|window| {
             window[0] == 0x0f
@@ -818,45 +815,33 @@ pub(crate) fn decode_var_blend_spl_sur(
     } else {
         None
     };
-    // A two-radii blend always stores one chamfer-selector enum after its
-    // second radius value: 0 selects no chamfer, 3 selects the rounded
-    // chamfer, which stores one boolean flag followed by its third blend
-    // value. Other selector values are rejected rather than guessed at.
-    let mut chamfer_selector = None;
-    let chamfer = if matches!(
-        radius_kind,
-        cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
-    ) && span.get(position) == Some(&0x15)
-    {
+    // The cross-section clause follows the complete one- or two-radius law
+    // sequence. An absent enum is the elided circular default.
+    let cross_section = if span.get(position) == Some(&0x15) {
         let selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
-        chamfer_selector = Some(selector);
         match selector {
-            0 => None,
-            3 => Some(Box::new(VariableBlendChamfer {
-                kind: VariableBlendChamferKind::Rounded,
-                flag: take_bool(span, &mut position)?,
-                value: decode_variable_blend_value(span, &mut position, int_width, true, 0)?,
-            })),
-            _ => return None,
-        }
-    } else {
-        None
-    };
-    // A single-radius blend always stores one selector enum after its radius
-    // value: 0 selects no further fields; 1 and 7 select two scalars. Other
-    // selector values are rejected rather than guessed at.
-    let mut single_radius_selector = None;
-    let single_radius_tail = if matches!(
-        radius_kind,
-        cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius
-    ) && span.get(position) == Some(&0x15)
-    {
-        let selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
-        single_radius_selector = Some(selector);
-        match selector {
-            0 => None,
-            1 | 7 => Some(VariableBlendSingleRadiusTail {
-                selector: LoftBridgeToken::Integer(selector),
+            0 => Some(VariableBlendCrossSection::Circular),
+            1 => Some(VariableBlendCrossSection::Thumbweights {
+                parameters: [
+                    take_f64(span, &mut position)?,
+                    take_f64(span, &mut position)?,
+                ],
+            }),
+            3 => {
+                let radius = if take_bool(span, &mut position)? {
+                    Some(Box::new(decode_variable_blend_value(
+                        span,
+                        &mut position,
+                        int_width,
+                        true,
+                        0,
+                    )?))
+                } else {
+                    None
+                };
+                Some(VariableBlendCrossSection::RoundedChamfer { radius })
+            }
+            7 => Some(VariableBlendCrossSection::G2Round {
                 parameters: [
                     take_f64(span, &mut position)?,
                     take_f64(span, &mut position)?,
@@ -943,10 +928,7 @@ pub(crate) fn decode_var_blend_spl_sur(
                 radius_kind,
                 first_value,
                 second_value,
-                chamfer_selector,
-                chamfer,
-                single_radius_selector,
-                single_radius_tail,
+                cross_section,
                 u_range,
                 v_range,
                 shape_prefix,

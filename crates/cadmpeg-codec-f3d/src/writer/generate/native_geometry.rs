@@ -3673,7 +3673,6 @@ fn encode_native_variable_blend(
     construction: &cadmpeg_ir::geometry::VariableBlendConstruction,
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::geometry::LoftBridgeToken;
     let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
         CodecError::Malformed("variable blend requires a native cache-fit tolerance".into())
     })?;
@@ -3729,69 +3728,37 @@ fn encode_native_variable_blend(
         construction.radius_kind,
         cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
     ) {
-        if construction.single_radius_tail.is_some() {
-            return Err(CodecError::Malformed(
-                "two-radii variable blend carries a single-radius tail".into(),
-            ));
-        }
         let second = construction.second_value.as_ref().ok_or_else(|| {
             CodecError::Malformed("two-radii variable blend lacks its second value".into())
         })?;
         native_variable_blend_value(bytes, second, 0)?;
-        match (construction.chamfer_selector, &construction.chamfer) {
-            (Some(0), None) => native_enum(bytes, 0),
-            (Some(3) | None, Some(chamfer)) => {
-                native_enum(
-                    bytes,
-                    match chamfer.kind {
-                        cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded => 3,
-                    },
-                );
-                bytes.push(native_bool(chamfer.flag));
-                native_variable_blend_value(bytes, &chamfer.value, 0)?;
-            }
-            (None, None) => {}
-            _ => {
-                return Err(CodecError::Malformed(
-                    "variable-blend chamfer selector conflicts with its chamfer payload".into(),
-                ));
-            }
-        }
-    } else {
-        if construction.second_value.is_some() || construction.chamfer.is_some() {
-            return Err(CodecError::Malformed(
-                "single-radius variable blend carries two-radii payloads".into(),
-            ));
-        }
-        match (
-            construction.single_radius_selector,
-            &construction.single_radius_tail,
-        ) {
-            (Some(0), None) => native_enum(bytes, 0),
-            (selector, Some(tail)) => {
-                let value = match &tail.selector {
-                    LoftBridgeToken::Integer(value) => *value,
-                    _ => {
-                        return Err(CodecError::NotImplemented(
-                            "variable single-radius selector must be an integer".into(),
-                        ));
-                    }
-                };
-                if selector.is_some_and(|stored| stored != value) {
-                    return Err(CodecError::Malformed(
-                        "variable-blend single-radius selector conflicts with its tail".into(),
-                    ));
-                }
-                native_enum(bytes, value);
-                for parameter in tail.parameters {
-                    native_f64(bytes, parameter);
+    } else if construction.second_value.is_some() {
+        return Err(CodecError::Malformed(
+            "single-radius variable blend carries two-radii payloads".into(),
+        ));
+    }
+    if let Some(cross_section) = &construction.cross_section {
+        use cadmpeg_ir::geometry::VariableBlendCrossSection as CrossSection;
+        match cross_section {
+            CrossSection::Circular => native_enum(bytes, 0),
+            CrossSection::Thumbweights { parameters } => {
+                native_enum(bytes, 1);
+                for parameter in parameters {
+                    native_f64(bytes, *parameter);
                 }
             }
-            (None, None) => {}
-            _ => {
-                return Err(CodecError::Malformed(
-                    "variable-blend single-radius selector conflicts with its tail".into(),
-                ));
+            CrossSection::RoundedChamfer { radius } => {
+                native_enum(bytes, 3);
+                bytes.push(native_bool(radius.is_some()));
+                if let Some(radius) = radius {
+                    native_variable_blend_value(bytes, radius, 0)?;
+                }
+            }
+            CrossSection::G2Round { parameters } => {
+                native_enum(bytes, 7);
+                for parameter in parameters {
+                    native_f64(bytes, *parameter);
+                }
             }
         }
     }

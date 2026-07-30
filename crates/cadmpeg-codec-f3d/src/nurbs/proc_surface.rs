@@ -238,10 +238,7 @@ pub struct EmbeddedVariableBlend {
     pub(crate) radius_kind: cadmpeg_ir::geometry::VariableBlendRadiusKind,
     pub(crate) first_value: cadmpeg_ir::geometry::VariableBlendValue,
     pub(crate) second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
-    pub(crate) chamfer_selector: Option<i64>,
-    pub(crate) chamfer: Option<Box<cadmpeg_ir::geometry::VariableBlendChamfer>>,
-    pub(crate) single_radius_selector: Option<i64>,
-    pub(crate) single_radius_tail: Option<cadmpeg_ir::geometry::VariableBlendSingleRadiusTail>,
+    pub(crate) cross_section: Option<cadmpeg_ir::geometry::VariableBlendCrossSection>,
     /// Support-side parameter interval `(T0, T1)`.
     pub(crate) u_range: [Option<f64>; 2],
     /// Second interval `(T lo, F)`: a lower bound with an unbounded-above
