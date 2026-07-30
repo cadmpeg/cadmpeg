@@ -11566,15 +11566,14 @@ mod tests {
                 direction: Point2::new(2.0, -1.0),
             }),
         };
-        let PcurveGeometry::Offset { distance, basis } =
-            super::reverse_pcurve_over_range(&pcurve, [2.0, 6.0])
-                .expect("offset construction is exactly reversible")
-        else {
+        let reversed = super::reverse_pcurve_over_range(&pcurve, [2.0, 6.0])
+            .expect("offset construction is exactly reversible");
+        let PcurveGeometry::Offset { distance, basis } = &reversed else {
             panic!("reversed offset");
         };
-        assert_eq!(distance, -2.5);
+        assert_eq!(*distance, -2.5);
         for parameter in [2.0, 3.0, 5.0, 6.0] {
-            let expected = cadmpeg_ir::eval::pcurve_uv(
+            let expected_basis = cadmpeg_ir::eval::pcurve_uv(
                 match &pcurve {
                     PcurveGeometry::Offset { basis, .. } => basis,
                     _ => unreachable!(),
@@ -11583,7 +11582,43 @@ mod tests {
             )
             .unwrap();
             let actual = cadmpeg_ir::eval::pcurve_uv(&basis, parameter).unwrap();
-            assert_eq!(actual, expected);
+            assert_eq!(actual, expected_basis);
+            let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+            assert!((actual.u - expected.u).abs() < 1e-12);
+            assert!((actual.v - expected.v).abs() < 1e-12);
+        }
+
+        let support = SurfaceId("nx:test:offset-orientation-support".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.surfaces.push(Surface {
+            id: support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).unwrap();
+        let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
+        let oriented = super::orient_tolerant_intersection_pcurve(
+            &ir,
+            &support,
+            &pcurve,
+            [2.0, 6.0],
+            [
+                Point3::new(second.u, second.v, 0.0),
+                Point3::new(first.u, first.v, 0.0),
+            ],
+            1e-12,
+        )
+        .expect("offset endpoints select the reversed terminal branch");
+        for parameter in [2.0, 3.0, 5.0, 6.0] {
+            let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(&oriented, parameter).unwrap();
+            assert!((actual.u - expected.u).abs() < 1e-12);
+            assert!((actual.v - expected.v).abs() < 1e-12);
         }
     }
 

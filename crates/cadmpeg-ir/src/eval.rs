@@ -452,13 +452,33 @@ pub fn nurbs_pcurve_uv(
     weights: Option<&[f64]>,
     t: f64,
 ) -> Option<Point2> {
+    nurbs_pcurve_differential(degree, knots, control_points, weights, t)
+        .map(|differential| differential.point)
+}
+
+struct PcurveDifferential {
+    point: Point2,
+    tangent: Option<Point2>,
+}
+
+fn nurbs_pcurve_differential(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+    t: f64,
+) -> Option<PcurveDifferential> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t);
+    let derivative = bspline_basis_derivative(knots, degree, span, t);
     let mut u = 0.0;
     let mut v = 0.0;
     let mut weight_sum = 0.0;
-    for (i, value) in basis.iter().enumerate() {
+    let mut du = 0.0;
+    let mut dv = 0.0;
+    let mut weight_derivative = 0.0;
+    for (i, (value, derivative)) in basis.iter().zip(&derivative).enumerate() {
         let index = span - degree + i;
         let weight = weights
             .and_then(|weights| weights.get(index).copied())
@@ -467,8 +487,25 @@ pub fn nurbs_pcurve_uv(
         u += value * weight * pole.u;
         v += value * weight * pole.v;
         weight_sum += value * weight;
+        du += derivative * weight * pole.u;
+        dv += derivative * weight * pole.v;
+        weight_derivative += derivative * weight;
     }
-    (weight_sum != 0.0).then(|| Point2::new(u / weight_sum, v / weight_sum))
+    if weight_sum == 0.0 {
+        return None;
+    }
+    let point = Point2::new(u / weight_sum, v / weight_sum);
+    let tangent = Point2::new(
+        (du - point.u * weight_derivative) / weight_sum,
+        (dv - point.v * weight_derivative) / weight_sum,
+    );
+    if !point.u.is_finite() || !point.v.is_finite() {
+        return None;
+    }
+    Some(PcurveDifferential {
+        point,
+        tangent: (tangent.u.is_finite() && tangent.v.is_finite()).then_some(tangent),
+    })
 }
 
 /// Return whether a point lies within `tolerance` of a nonperiodic NURBS
@@ -1329,65 +1366,156 @@ fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Po
         return None;
     }
     match geometry {
-        PcurveGeometry::Line { origin, direction } => Some(Point2::new(
-            origin.u + t * direction.u,
-            origin.v + t * direction.v,
-        )),
+        PcurveGeometry::Offset { distance, basis } => {
+            let differential = pcurve_uv_differential_inner(basis, t, depth + 1)?;
+            let point = differential.point;
+            let tangent = differential.tangent?;
+            let magnitude = tangent.u.hypot(tangent.v);
+            if !magnitude.is_finite() || magnitude == 0.0 {
+                return None;
+            }
+            let point = Point2::new(
+                point.u - distance * tangent.v / magnitude,
+                point.v + distance * tangent.u / magnitude,
+            );
+            (point.u.is_finite() && point.v.is_finite()).then_some(point)
+        }
+        _ => {
+            pcurve_uv_differential_inner(geometry, t, depth).map(|differential| differential.point)
+        }
+    }
+}
+
+fn pcurve_uv_differential_inner(
+    geometry: &PcurveGeometry,
+    t: f64,
+    depth: usize,
+) -> Option<PcurveDifferential> {
+    if depth > 256 {
+        return None;
+    }
+    let pair = match geometry {
+        PcurveGeometry::Line { origin, direction } => (
+            Point2::new(origin.u + t * direction.u, origin.v + t * direction.v),
+            *direction,
+        ),
         PcurveGeometry::Circle {
             center,
             x_axis,
             y_axis,
             radius,
-        } => Some(offset2(
-            *center,
-            &[(radius * t.cos(), *x_axis), (radius * t.sin(), *y_axis)],
-        )),
+        } => {
+            let cosine = t.cos();
+            let sine = t.sin();
+            (
+                offset2(
+                    *center,
+                    &[(radius * cosine, *x_axis), (radius * sine, *y_axis)],
+                ),
+                Point2::new(
+                    radius * (-sine * x_axis.u + cosine * y_axis.u),
+                    radius * (-sine * x_axis.v + cosine * y_axis.v),
+                ),
+            )
+        }
         PcurveGeometry::Ellipse {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => Some(offset2(
-            *center,
-            &[
-                (major_radius * t.cos(), *x_axis),
-                (minor_radius * t.sin(), *y_axis),
-            ],
-        )),
+        } => {
+            let cosine = t.cos();
+            let sine = t.sin();
+            (
+                offset2(
+                    *center,
+                    &[
+                        (major_radius * cosine, *x_axis),
+                        (minor_radius * sine, *y_axis),
+                    ],
+                ),
+                Point2::new(
+                    -major_radius * sine * x_axis.u + minor_radius * cosine * y_axis.u,
+                    -major_radius * sine * x_axis.v + minor_radius * cosine * y_axis.v,
+                ),
+            )
+        }
         PcurveGeometry::Harmonic {
             center,
             cosine,
             sine,
-        } => Some(offset2(*center, &[(t.cos(), *cosine), (t.sin(), *sine)])),
+        } => {
+            let cosine_parameter = t.cos();
+            let sine_parameter = t.sin();
+            (
+                offset2(
+                    *center,
+                    &[(cosine_parameter, *cosine), (sine_parameter, *sine)],
+                ),
+                Point2::new(
+                    -sine_parameter * cosine.u + cosine_parameter * sine.u,
+                    -sine_parameter * cosine.v + cosine_parameter * sine.v,
+                ),
+            )
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
             y_axis,
             focal_distance,
-        } if *focal_distance != 0.0 => Some(offset2(
-            *vertex,
-            &[(t * t / (4.0 * focal_distance), *x_axis), (t, *y_axis)],
-        )),
-        PcurveGeometry::Parabola { .. } => None,
+        } if *focal_distance != 0.0 => (
+            offset2(
+                *vertex,
+                &[(t * t / (4.0 * focal_distance), *x_axis), (t, *y_axis)],
+            ),
+            Point2::new(
+                t / (2.0 * focal_distance) * x_axis.u + y_axis.u,
+                t / (2.0 * focal_distance) * x_axis.v + y_axis.v,
+            ),
+        ),
+        PcurveGeometry::Parabola { .. } => return None,
         PcurveGeometry::Hyperbola {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => Some(offset2(
-            *center,
-            &[
-                (major_radius * t.cosh(), *x_axis),
-                (minor_radius * t.sinh(), *y_axis),
-            ],
-        )),
+        } => {
+            let cosine = t.cosh();
+            let sine = t.sinh();
+            (
+                offset2(
+                    *center,
+                    &[
+                        (major_radius * cosine, *x_axis),
+                        (minor_radius * sine, *y_axis),
+                    ],
+                ),
+                Point2::new(
+                    major_radius * sine * x_axis.u + minor_radius * cosine * y_axis.u,
+                    major_radius * sine * x_axis.v + minor_radius * cosine * y_axis.v,
+                ),
+            )
+        }
         PcurveGeometry::Hyperbolic {
             center,
             cosine,
             sine,
-        } => Some(offset2(*center, &[(t.cosh(), *cosine), (t.sinh(), *sine)])),
+        } => {
+            let cosine_parameter = t.cosh();
+            let sine_parameter = t.sinh();
+            (
+                offset2(
+                    *center,
+                    &[(cosine_parameter, *cosine), (sine_parameter, *sine)],
+                ),
+                Point2::new(
+                    sine_parameter * cosine.u + cosine_parameter * sine.u,
+                    sine_parameter * cosine.v + cosine_parameter * sine.v,
+                ),
+            )
+        }
         PcurveGeometry::PolarHarmonic {
             radial_center,
             radial_cos,
@@ -1396,12 +1524,26 @@ fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Po
             axial_cos,
             axial_sin,
         } => {
-            let cos = t.cos();
-            let sin = t.sin();
-            let x = radial_center.u + radial_cos.u * cos + radial_sin.u * sin;
-            let y = radial_center.v + radial_cos.v * cos + radial_sin.v * sin;
-            ((x != 0.0) || (y != 0.0))
-                .then(|| Point2::new(y.atan2(x), axial_origin + axial_cos * cos + axial_sin * sin))
+            let cosine = t.cos();
+            let sine = t.sin();
+            let x = radial_center.u + radial_cos.u * cosine + radial_sin.u * sine;
+            let y = radial_center.v + radial_cos.v * cosine + radial_sin.v * sine;
+            let dx = -radial_cos.u * sine + radial_sin.u * cosine;
+            let dy = -radial_cos.v * sine + radial_sin.v * cosine;
+            let radius_squared = x * x + y * y;
+            if radius_squared == 0.0 {
+                return None;
+            }
+            (
+                Point2::new(
+                    y.atan2(x),
+                    axial_origin + axial_cos * cosine + axial_sin * sine,
+                ),
+                Point2::new(
+                    (x * dy - y * dx) / radius_squared,
+                    -axial_cos * sine + axial_sin * cosine,
+                ),
+            )
         }
         PcurveGeometry::PolarNurbs {
             degree,
@@ -1414,15 +1556,36 @@ fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Po
             if radial_control_points.len() != axial_control_points.len() {
                 return None;
             }
-            let radial =
-                nurbs_pcurve_uv(*degree, knots, radial_control_points, weights.as_deref(), t)?;
+            let radial = nurbs_pcurve_differential(
+                *degree,
+                knots,
+                radial_control_points,
+                weights.as_deref(),
+                t,
+            )?;
             let axial_points = axial_control_points
                 .iter()
                 .map(|value| Point2::new(*value, 0.0))
                 .collect::<Vec<_>>();
-            let axial = nurbs_pcurve_uv(*degree, knots, &axial_points, weights.as_deref(), t)?;
-            ((radial.u != 0.0) || (radial.v != 0.0))
-                .then(|| Point2::new(radial.v.atan2(radial.u), axial.u))
+            let axial =
+                nurbs_pcurve_differential(*degree, knots, &axial_points, weights.as_deref(), t)?;
+            let radius_squared = radial.point.u * radial.point.u + radial.point.v * radial.point.v;
+            if radius_squared == 0.0 {
+                return None;
+            }
+            let point = Point2::new(radial.point.v.atan2(radial.point.u), axial.point.u);
+            let tangent = radial
+                .tangent
+                .zip(axial.tangent)
+                .map(|(radial_tangent, axial_tangent)| {
+                    Point2::new(
+                        (radial.point.u * radial_tangent.v - radial.point.v * radial_tangent.u)
+                            / radius_squared,
+                        axial_tangent.u,
+                    )
+                })
+                .filter(|tangent| tangent.u.is_finite() && tangent.v.is_finite());
+            return Some(PcurveDifferential { point, tangent });
         }
         PcurveGeometry::Nurbs {
             degree,
@@ -1430,13 +1593,27 @@ fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Po
             control_points,
             weights,
             ..
-        } => nurbs_pcurve_uv(*degree, knots, control_points, weights.as_deref(), t),
-        PcurveGeometry::Trimmed { basis, .. } => pcurve_uv_inner(basis, t, depth + 1),
-        // Exact offset evaluation also requires the basis tangent. The IR
-        // retains the exact construction even when this point-only evaluator
-        // cannot establish a stable tangent.
-        PcurveGeometry::Offset { .. } => None,
+        } => {
+            return nurbs_pcurve_differential(
+                *degree,
+                knots,
+                control_points,
+                weights.as_deref(),
+                t,
+            );
+        }
+        PcurveGeometry::Trimmed { basis, .. } => {
+            return pcurve_uv_differential_inner(basis, t, depth + 1);
+        }
+        PcurveGeometry::Offset { .. } => return None,
+    };
+    if !pair.0.u.is_finite() || !pair.0.v.is_finite() {
+        return None;
     }
+    Some(PcurveDifferential {
+        point: pair.0,
+        tangent: (pair.1.u.is_finite() && pair.1.v.is_finite()).then_some(pair.1),
+    })
 }
 
 fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
@@ -1657,5 +1834,55 @@ mod tests {
                 7.0 - 4.0 * parameter.cosh() + 0.75 * parameter.sinh(),
             ))
         );
+    }
+
+    #[test]
+    fn signed_offset_pcurves_use_the_exact_left_normal() {
+        let line = PcurveGeometry::Offset {
+            distance: 2.0,
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(1.0, 2.0),
+                direction: Point2::new(3.0, 4.0),
+            }),
+        };
+        let circle = PcurveGeometry::Offset {
+            distance: 1.0,
+            basis: Box::new(PcurveGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                x_axis: Point2::new(1.0, 0.0),
+                y_axis: Point2::new(0.0, 1.0),
+                radius: 4.0,
+            }),
+        };
+        let point = pcurve_uv(&line, 0.5).expect("regular line offset evaluates");
+        assert!((point.u - 0.9).abs() < 1e-12);
+        assert!((point.v - 5.2).abs() < 1e-12);
+        assert_eq!(pcurve_uv(&circle, 0.0), Some(Point2::new(3.0, 0.0)));
+
+        let rational_arc = PcurveGeometry::Offset {
+            distance: 0.25,
+            basis: Box::new(PcurveGeometry::Nurbs {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point2::new(1.0, 0.0),
+                    Point2::new(1.0, 1.0),
+                    Point2::new(0.0, 1.0),
+                ],
+                weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+                periodic: false,
+            }),
+        };
+        for parameter in [0.0, 0.5, 1.0] {
+            let point = pcurve_uv(&rational_arc, parameter)
+                .expect("regular rational NURBS offset evaluates");
+            assert!((point.u.hypot(point.v) - 0.75).abs() < 1e-12);
+        }
+
+        let nested = PcurveGeometry::Offset {
+            distance: 1.0,
+            basis: Box::new(line),
+        };
+        assert_eq!(pcurve_uv(&nested, 0.5), None);
     }
 }
