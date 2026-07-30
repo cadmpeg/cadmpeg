@@ -9507,7 +9507,7 @@ fn orient_edge_range(
     let allowance = [edge_tolerance, start_tolerance, end_tolerance]
         .into_iter()
         .flatten()
-        .fold(0.01_f64, f64::max);
+        .fold(0.0_f64, f64::max);
     let distance = |a: cadmpeg_ir::math::Point3, b: cadmpeg_ir::math::Point3| {
         ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
     };
@@ -12357,7 +12357,7 @@ mod tests {
             },
             Point {
                 id: end_point.clone(),
-                position: Point3::new(1.0, 1.0, 0.0),
+                position: Point3::new(1.0, 0.005, 0.0),
                 source_object: None,
             },
         ]);
