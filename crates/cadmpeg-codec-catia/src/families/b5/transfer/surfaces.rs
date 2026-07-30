@@ -310,6 +310,8 @@ pub(super) fn revolve_nurbs(
     }
     let span_count = (span_count as usize).max(1);
     let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
+    let control_count =
+        crate::nurbs_surface_control_count(profile.control_points.len(), angular_count)?;
     let mut angles = Vec::with_capacity(angular_count);
     let mut angular_weights = Vec::with_capacity(angular_count);
     let mut v_knots = Vec::with_capacity(angular_count + 3);
@@ -337,7 +339,7 @@ pub(super) fn revolve_nurbs(
         .weights
         .clone()
         .unwrap_or_else(|| vec![1.0; profile.control_points.len()]);
-    let mut control_points = Vec::with_capacity(profile.control_points.len() * angular_count);
+    let mut control_points = Vec::with_capacity(control_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
     for (profile_point, profile_weight) in profile.control_points.iter().zip(profile_weights) {
         let relative = [

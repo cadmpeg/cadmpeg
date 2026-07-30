@@ -65,6 +65,17 @@ pub mod fuzz;
 /// angular curve or surface direction from untrusted native parameters.
 pub(crate) const MAX_EXACT_ARC_SPANS: usize = 4_096;
 
+/// Maximum number of control points materialized for one NURBS surface from
+/// untrusted native cardinalities.
+pub(crate) const MAX_NURBS_SURFACE_CONTROL_POINTS: usize = 1_000_000;
+
+/// Multiplies two NURBS surface dimensions within the materialization limit.
+pub(crate) fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Option<usize> {
+    u_count
+        .checked_mul(v_count)
+        .filter(|count| *count <= MAX_NURBS_SURFACE_CONTROL_POINTS)
+}
+
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 

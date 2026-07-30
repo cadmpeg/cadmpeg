@@ -1696,6 +1696,16 @@ mod tests {
             [0.0, 1.0],
         )
         .is_none());
+        let mut wide_profile = profile;
+        wide_profile.control_points = vec![Point3::new(1.0, 0.0, 0.0); 123];
+        assert!(revolve_nurbs(
+            &wide_profile,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [0.0, 4096.0 * std::f64::consts::FRAC_PI_2],
+            [0.0, 1.0],
+        )
+        .is_none());
     }
 
     #[test]

@@ -361,9 +361,8 @@ fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurb
     {
         return None;
     }
-    let pole_bytes = (u_count as usize)
-        .checked_mul(v_count as usize)?
-        .checked_mul(24)?;
+    let pole_count = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
+    let pole_bytes = pole_count.checked_mul(24)?;
     let grid = skip_u32_token_run(data, after_v_mults)?.checked_add(3)?;
     let end = grid.checked_add(pole_bytes)?;
     data.get(grid..end)?;
@@ -1580,7 +1579,8 @@ pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<Surfa
 /// preamble.
 fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
     let layout = zero_entity_nurbs_layout(data, record)?;
-    let pole_count = (layout.u_count as usize).checked_mul(layout.v_count as usize)?;
+    let pole_count =
+        crate::nurbs_surface_control_count(layout.u_count as usize, layout.v_count as usize)?;
     let mut control_points = Vec::with_capacity(pole_count);
     for pole in 0..pole_count {
         control_points.push(f64_point(
@@ -1730,13 +1730,23 @@ mod tests {
         bytes[23..31].copy_from_slice(&0.0f64.to_le_bytes());
         bytes[31..39].copy_from_slice(&1.0f64.to_le_bytes());
         write_tagged_u32(&mut bytes, 39, 2);
-        write_tagged_u32(&mut bytes, 44, 4096);
+        write_tagged_u32(&mut bytes, 44, 1000);
         bytes[50..58].copy_from_slice(&0.0f64.to_le_bytes());
         bytes[58..66].copy_from_slice(&1.0f64.to_le_bytes());
         write_tagged_u32(&mut bytes, 66, 2);
-        write_tagged_u32(&mut bytes, 71, 4096);
+        write_tagged_u32(&mut bytes, 71, 1000);
 
         assert!(zero_entity_nurbs_layout(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn nurbs_surface_control_count_has_one_codec_wide_ceiling() {
+        assert_eq!(
+            crate::nurbs_surface_control_count(1000, 1000),
+            Some(1_000_000)
+        );
+        assert_eq!(crate::nurbs_surface_control_count(1001, 1000), None);
+        assert_eq!(crate::nurbs_surface_control_count(usize::MAX, 2), None);
     }
 
     fn support_pcurve_record(tag: u8) -> Vec<u8> {

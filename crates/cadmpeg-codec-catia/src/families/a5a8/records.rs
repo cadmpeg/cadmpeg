@@ -731,9 +731,10 @@ pub fn a8_surface_from_external_grid(
     if !header.poles_elided {
         return None;
     }
-    let poles = usize::try_from(header.u_count)
-        .ok()?
-        .checked_mul(usize::try_from(header.v_count).ok()?)?;
+    let poles = crate::nurbs_surface_control_count(
+        usize::try_from(header.u_count).ok()?,
+        usize::try_from(header.v_count).ok()?,
+    )?;
     let weight_bytes = if header.rational {
         poles.checked_mul(8)?
     } else {
@@ -873,7 +874,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     if !monotonic(&u_distinct) || !monotonic(&v_distinct) {
         return None;
     }
-    let poles = (u_count as usize).checked_mul(v_count as usize)?;
+    let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
     if at.checked_add(poles.checked_mul(24)?)? > end {
         return None;
     }
@@ -1027,7 +1028,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     if poles_elided {
         return None;
     }
-    let poles = (u_count as usize).checked_mul(v_count as usize)?;
+    let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
     let pole_bytes = poles.checked_mul(24)?;
     if pole_start.checked_add(pole_bytes)? > end {
         return None;
