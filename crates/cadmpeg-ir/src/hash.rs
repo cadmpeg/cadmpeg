@@ -43,26 +43,7 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> String {
 /// Retained source bytes therefore never reach the digest, and the digest is
 /// stable across a decode that stores it.
 pub fn semantic_document_hash(ir: &CadIr, format: &str, source_image_id: &str) -> String {
-    let unknowns = ir
-        .native_unknowns(format)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|record| record.id.0 != source_image_id)
-        .collect::<Vec<_>>();
-    // A scratch namespace reduces the records through the same conversion and
-    // ordering a stored arena goes through, which is what keeps the digest
-    // equal to the one a normalized copy of the document produces. The typed
-    // records are released before serialization so only the reduced arena stays
-    // resident.
-    let mut projected = NativeNamespace::default();
-    projected
-        .set_arena("unknowns", &unknowns)
-        .expect("unknown records serialize");
-    drop(unknowns);
-    let unknown_arena = projected
-        .arenas
-        .get("unknowns")
-        .expect("the unknown arena was just set");
+    let unknowns = reduced_unknowns(ir, format, source_image_id);
     canonical_json_sha256(&NormalizedDocument {
         ir_version: &ir.ir_version,
         source: ir.source.as_ref().map(|source| {
@@ -73,8 +54,39 @@ pub fn semantic_document_hash(ir: &CadIr, format: &str, source_image_id: &str) -
         units: &ir.units,
         tolerances: &ir.tolerances,
         model: ir.model.sorted(),
-        native: normalized_native(&ir.native, format, unknown_arena),
+        native: normalized_native(&ir.native, format, &unknowns),
     })
+}
+
+/// Reduce the `format` unknown arena to record identities and links, dropping
+/// `source_image_id`, in canonical order.
+///
+/// Each record is deserialized, filtered, and converted back before the next is
+/// read, so the retained population — hundreds of thousands of records — is
+/// never resident in typed and reduced form at once. A scratch namespace puts
+/// the records through the same conversion and ordering a stored arena goes
+/// through, which is what keeps the digest equal to the one a normalized copy of
+/// the document produces.
+fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<NativeRecord> {
+    let mut unreadable = false;
+    let mut projected = NativeNamespace::default();
+    projected
+        .set_arena_from(
+            "unknowns",
+            ir.native_unknowns_iter(format)
+                .map_while(|record| record.inspect_err(|_| unreadable = true).ok())
+                .filter(|record| record.id.0 != source_image_id),
+        )
+        .expect("unknown records serialize");
+    if unreadable {
+        // An arena the reduction cannot read reduces to nothing, which is what
+        // it did back when the whole arena was read in one fallible step.
+        return Vec::new();
+    }
+    projected
+        .arenas
+        .remove("unknowns")
+        .expect("the unknown arena was just set")
 }
 
 /// A document as the semantic digest sees it.

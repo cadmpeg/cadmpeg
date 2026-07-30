@@ -254,10 +254,26 @@ impl CadIr {
         &self,
         format: &str,
     ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
-        self.native.namespace(format).map_or_else(
-            || Ok(Vec::new()),
-            |namespace| namespace.arena_as("unknowns"),
-        )
+        self.native_unknowns_iter(format).collect()
+    }
+
+    /// Deserialize the reserved `unknowns` arena for `format` one record at a
+    /// time.
+    ///
+    /// Retained source populations reach hundreds of thousands of records, so a
+    /// caller that rebuilds the arena — reducing it for hashing, say — should
+    /// consume this rather than [`native_unknowns`](Self::native_unknowns) and
+    /// convert each record before the next is read, which keeps the typed
+    /// population and the rebuilt one from ever coexisting.
+    pub fn native_unknowns_iter<'a>(
+        &'a self,
+        format: &str,
+    ) -> impl Iterator<Item = Result<NativeUnknownRecord, crate::native::NativeConvertError>> + 'a
+    {
+        self.native
+            .namespace(format)
+            .into_iter()
+            .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
     }
 
     /// Deserialize every reserved native `unknowns` arena.

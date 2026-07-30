@@ -232,12 +232,24 @@ impl NativeNamespace {
 
     /// Deserialize an arena into codec-owned typed records.
     pub fn arena_as<T: DeserializeOwned>(&self, name: &str) -> Result<Vec<T>, NativeConvertError> {
+        self.arena_iter_as(name).collect()
+    }
+
+    /// Deserialize an arena into codec-owned typed records one at a time.
+    ///
+    /// A record is parsed only when the iterator is advanced onto it, so a
+    /// caller that consumes and releases each one — reshaping an arena, or
+    /// reducing it for hashing — never holds the typed population alongside
+    /// whatever it produces from it.
+    pub fn arena_iter_as<'a, T: DeserializeOwned + 'a>(
+        &'a self,
+        name: &str,
+    ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
         self.arenas
             .get(name)
             .into_iter()
             .flatten()
             .map(NativeRecord::to_typed)
-            .collect()
     }
 }
 
