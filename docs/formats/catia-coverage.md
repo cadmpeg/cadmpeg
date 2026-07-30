@@ -142,6 +142,10 @@ current scores require those matrices and representative fixtures.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
+- Every standard topology attempt reports attachment or exactly one failure
+  stage. It also reports curve-support and native-endpoint-pair populations and
+  partitions the final exact-pruned endpoint domains into empty, singleton, and
+  multiple-choice populations with their total choice count.
 - Zero-entity face-local support occurrences with complete lifted endpoint
   tapes form radial endpoint-pair candidates when two occurrences have one
   reciprocal unordered model-space endpoint match and the surrounding

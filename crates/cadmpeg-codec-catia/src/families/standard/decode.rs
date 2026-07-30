@@ -1568,6 +1568,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         brep,
     );
     let mut bound_standard_limit_curve_count = 0;
+    let mut topology_diagnostics = StandardTopologyDiagnostics::default();
     let topology_result = attach_standard_topology(
         &mut topology_ir,
         &mut topology_annotations,
@@ -1579,6 +1580,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &object_evidence.edge_owner_faces,
         &object_evidence.edge_supports,
         &object_evidence.limit_curves,
+        &mut topology_diagnostics,
         &mut bound_standard_limit_curve_count,
     )
     .and_then(|()| {
@@ -1643,6 +1645,30 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         );
     }
     report.coverage.insert(
+        "standard_topology_curve_support_count".to_string(),
+        topology_diagnostics.curve_supports,
+    );
+    report.coverage.insert(
+        "standard_topology_native_endpoint_pair_count".to_string(),
+        topology_diagnostics.native_endpoint_pairs,
+    );
+    report.coverage.insert(
+        "standard_topology_empty_endpoint_domain_count".to_string(),
+        topology_diagnostics.empty_endpoint_domains,
+    );
+    report.coverage.insert(
+        "standard_topology_singleton_endpoint_domain_count".to_string(),
+        topology_diagnostics.singleton_endpoint_domains,
+    );
+    report.coverage.insert(
+        "standard_topology_multiple_endpoint_domain_count".to_string(),
+        topology_diagnostics.multiple_endpoint_domains,
+    );
+    report.coverage.insert(
+        "standard_topology_endpoint_domain_choice_count".to_string(),
+        topology_diagnostics.endpoint_domain_choices,
+    );
+    report.coverage.insert(
         "refined_consolidated_analytic_surface_count".to_string(),
         refined_analytic_surfaces.len(),
     );
@@ -1695,6 +1721,16 @@ pub(crate) struct StandardObjectEvidence {
     pub(crate) limit_curves: Vec<NurbsCurve>,
 }
 
+#[derive(Default)]
+struct StandardTopologyDiagnostics {
+    curve_supports: usize,
+    native_endpoint_pairs: usize,
+    empty_endpoint_domains: usize,
+    singleton_endpoint_domains: usize,
+    multiple_endpoint_domains: usize,
+    endpoint_domain_choices: usize,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StandardTopologyFailure {
     NoCurveSupports,
@@ -1727,21 +1763,21 @@ impl StandardTopologyFailure {
 
     const fn coverage_key(self) -> &'static str {
         match self {
-            Self::NoCurveSupports => "standard_topology_no_curve_supports_count",
-            Self::EdgeFaceAssignment => "standard_topology_edge_face_assignment_failure_count",
-            Self::MissingFaceSurface => "standard_topology_missing_face_surface_count",
+            Self::NoCurveSupports => "standard_topology_failure_no_curve_supports_count",
+            Self::EdgeFaceAssignment => "standard_topology_failure_edge_face_assignment_count",
+            Self::MissingFaceSurface => "standard_topology_failure_missing_face_surface_count",
             Self::ConflictingNativeEndpoints => {
-                "standard_topology_conflicting_native_endpoints_count"
+                "standard_topology_failure_conflicting_native_endpoints_count"
             }
             Self::NativeEndpointPropagation => {
-                "standard_topology_native_endpoint_propagation_failure_count"
+                "standard_topology_failure_native_endpoint_propagation_count"
             }
-            Self::EmptyEndpointDomain => "standard_topology_empty_endpoint_domain_count",
-            Self::NoTopologySolution => "standard_topology_no_solution_count",
-            Self::AmbiguousTopologySolution => "standard_topology_ambiguous_solution_count",
-            Self::TopologySearchExhausted => "standard_topology_search_exhausted_count",
-            Self::InvalidTopologySolution => "standard_topology_invalid_solution_count",
-            Self::InadmissibleNeutralModel => "standard_topology_inadmissible_model_count",
+            Self::EmptyEndpointDomain => "standard_topology_failure_empty_endpoint_domains",
+            Self::NoTopologySolution => "standard_topology_failure_no_solution_count",
+            Self::AmbiguousTopologySolution => "standard_topology_failure_ambiguous_solution_count",
+            Self::TopologySearchExhausted => "standard_topology_failure_search_exhausted_count",
+            Self::InvalidTopologySolution => "standard_topology_failure_invalid_solution_count",
+            Self::InadmissibleNeutralModel => "standard_topology_failure_inadmissible_model_count",
         }
     }
 
@@ -2675,6 +2711,7 @@ fn attach_standard_topology(
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
     native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
     limit_curves: &[NurbsCurve],
+    diagnostics: &mut StandardTopologyDiagnostics,
     bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
@@ -2683,6 +2720,7 @@ fn attach_standard_topology(
     if supports.is_empty() {
         return Err(StandardTopologyFailure::NoCurveSupports);
     }
+    diagnostics.curve_supports = supports.len();
     let serialized_edge_faces = supports
         .iter()
         .map(|support| support.faces)
@@ -2868,6 +2906,9 @@ fn attach_standard_topology(
     }) else {
         return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
     };
+    diagnostics.native_endpoint_pairs = native_endpoint_evidence
+        .as_ref()
+        .map_or(0, |pairs| pairs.iter().flatten().count());
     if let Some(pairs) = &native_endpoint_evidence {
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
@@ -3235,6 +3276,13 @@ fn attach_standard_topology(
     }
     if let Some(options) = &mut constrained_endpoint_options {
         bind_ordered_standard_curve_branches(&supports, options);
+        diagnostics.empty_endpoint_domains =
+            options.iter().filter(|domain| domain.is_empty()).count();
+        diagnostics.singleton_endpoint_domains =
+            options.iter().filter(|domain| domain.len() == 1).count();
+        diagnostics.multiple_endpoint_domains =
+            options.iter().filter(|domain| domain.len() > 1).count();
+        diagnostics.endpoint_domain_choices = options.iter().map(Vec::len).sum();
     }
     let resolved_endpoint_pairs = propagated_endpoint_pairs
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());

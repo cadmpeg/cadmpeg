@@ -3599,10 +3599,16 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             .report
             .coverage
             .iter()
-            .filter(|(key, _)| key.starts_with("standard_topology_"))
+            .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
             .map(|(_, count)| count)
             .sum::<usize>(),
         1
+    );
+    assert_eq!(
+        result.report.coverage["standard_topology_empty_endpoint_domain_count"]
+            + result.report.coverage["standard_topology_singleton_endpoint_domain_count"]
+            + result.report.coverage["standard_topology_multiple_endpoint_domain_count"],
+        result.report.coverage["standard_topology_curve_support_count"]
     );
 
     // The produced IR validates (free carriers, no dangling references).
@@ -3707,10 +3713,16 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             .report
             .coverage
             .iter()
-            .filter(|(key, _)| key.starts_with("standard_topology_"))
+            .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
             .map(|(_, count)| count)
             .sum::<usize>(),
         0
+    );
+    assert_eq!(
+        decoded.report.coverage["standard_topology_empty_endpoint_domain_count"]
+            + decoded.report.coverage["standard_topology_singleton_endpoint_domain_count"]
+            + decoded.report.coverage["standard_topology_multiple_endpoint_domain_count"],
+        decoded.report.coverage["standard_topology_curve_support_count"]
     );
 }
 
