@@ -3096,10 +3096,10 @@ fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord {
-            id: "asm-history-0".into(),
-            fields: Default::default(),
-        }],
+        vec![cadmpeg_ir::NativeRecord::new(
+            "asm-history-0",
+            Default::default(),
+        )],
     );
     ir.finalize();
 
@@ -3115,10 +3115,10 @@ fn strict_writer_rejects_before_emitting_bytes() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord {
-            id: "asm-history-0".into(),
-            fields: Default::default(),
-        }],
+        vec![cadmpeg_ir::NativeRecord::new(
+            "asm-history-0",
+            Default::default(),
+        )],
     );
     ir.finalize();
     let options = StepWriteOptions {

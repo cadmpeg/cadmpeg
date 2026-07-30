@@ -227,7 +227,7 @@ impl CadIr {
             .into_iter()
             .map(UnknownRecord::into_native_record)
             .collect::<Vec<_>>();
-        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        converted.sort_by(|left, right| left.id().cmp(right.id()));
         namespace.arenas.insert("unknowns".into(), converted);
     }
 

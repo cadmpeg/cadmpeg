@@ -722,16 +722,10 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     let opaque = namespace.arenas.get("opaque_records");
     let generated_comment = opaque.is_some_and(|records| {
         records.iter().any(|record| {
-            record.id == "rhino:source:opaque#comment"
-                && record
-                    .fields
-                    .get("typecode")
-                    .and_then(serde_json::Value::as_str)
-                    == Some("0x00000001")
-                && record
-                    .fields
-                    .get("data")
-                    .and_then(serde_json::Value::as_str)
+            let fields = record.fields();
+            record.id() == "rhino:source:opaque#comment"
+                && fields.get("typecode").and_then(serde_json::Value::as_str) == Some("0x00000001")
+                && fields.get("data").and_then(serde_json::Value::as_str)
                     == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw==")
         })
     });
@@ -740,8 +734,8 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
             records.iter().any(|record| {
                 !matches!(
                     record
-                        .fields
-                        .get("typecode")
+                        .field("typecode")
+                        .as_ref()
                         .and_then(serde_json::Value::as_str),
                     Some("0x00000001" | "0xa0000026" | "0x20008031" | "0x20008050")
                 )
@@ -771,8 +765,8 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     namespace.arenas.get("unknowns").is_none_or(|records| {
         records.iter().all(|record| {
             record
-                .fields
-                .get("links")
+                .field("links")
+                .as_ref()
                 .and_then(serde_json::Value::as_array)
                 .is_some_and(|links| {
                     !links.is_empty()
@@ -795,45 +789,48 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
 }
 
 fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
-    json_i64(record, "archive_index") == Some(0)
-        && json_i64(record, "linetype_index") == Some(-1)
-        && json_i64(record, "material_index") == Some(-1)
-        && json_str(record, "name") == Some("Default")
-        && json_bool(record, "visible") == Some(true)
-        && json_bool(record, "locked") == Some(false)
-        && json_array_empty(record, "rendering_materials")
+    let fields = record.fields();
+    json_i64(&fields, "archive_index") == Some(0)
+        && json_i64(&fields, "linetype_index") == Some(-1)
+        && json_i64(&fields, "material_index") == Some(-1)
+        && json_str(&fields, "name") == Some("Default")
+        && json_bool(&fields, "visible") == Some(true)
+        && json_bool(&fields, "locked") == Some(false)
+        && json_array_empty(&fields, "rendering_materials")
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
-    json_i64(record, "layer_index") == Some(0)
-        && json_i64(record, "material_index") == Some(-1)
-        && json_i64(record, "linetype_index") == Some(-1)
-        && json_i64(record, "hatch_pattern_index") == Some(-1)
-        && json_i64(record, "object_mode") == Some(0)
-        && json_str(record, "name") == Some("")
-        && json_str(record, "url") == Some("")
-        && json_bool(record, "visible") == Some(true)
-        && json_array_empty(record, "group_indexes")
-        && json_array_empty(record, "display_materials")
-        && json_array_empty(record, "rendering_materials")
-        && json_array_empty(record, "clipping_plane_uuids")
+    let fields = record.fields();
+    json_i64(&fields, "layer_index") == Some(0)
+        && json_i64(&fields, "material_index") == Some(-1)
+        && json_i64(&fields, "linetype_index") == Some(-1)
+        && json_i64(&fields, "hatch_pattern_index") == Some(-1)
+        && json_i64(&fields, "object_mode") == Some(0)
+        && json_str(&fields, "name") == Some("")
+        && json_str(&fields, "url") == Some("")
+        && json_bool(&fields, "visible") == Some(true)
+        && json_array_empty(&fields, "group_indexes")
+        && json_array_empty(&fields, "display_materials")
+        && json_array_empty(&fields, "rendering_materials")
+        && json_array_empty(&fields, "clipping_plane_uuids")
 }
 
-fn json_i64(record: &cadmpeg_ir::NativeRecord, name: &str) -> Option<i64> {
-    record.fields.get(name)?.as_i64()
+type NativeFields = serde_json::Map<String, serde_json::Value>;
+
+fn json_i64(fields: &NativeFields, name: &str) -> Option<i64> {
+    fields.get(name)?.as_i64()
 }
 
-fn json_str<'a>(record: &'a cadmpeg_ir::NativeRecord, name: &str) -> Option<&'a str> {
-    record.fields.get(name)?.as_str()
+fn json_str<'a>(fields: &'a NativeFields, name: &str) -> Option<&'a str> {
+    fields.get(name)?.as_str()
 }
 
-fn json_bool(record: &cadmpeg_ir::NativeRecord, name: &str) -> Option<bool> {
-    record.fields.get(name)?.as_bool()
+fn json_bool(fields: &NativeFields, name: &str) -> Option<bool> {
+    fields.get(name)?.as_bool()
 }
 
-fn json_array_empty(record: &cadmpeg_ir::NativeRecord, name: &str) -> bool {
-    record
-        .fields
+fn json_array_empty(fields: &NativeFields, name: &str) -> bool {
+    fields
         .get(name)
         .and_then(serde_json::Value::as_array)
         .is_some_and(Vec::is_empty)
@@ -4056,10 +4053,10 @@ mod tests {
             .arenas
             .entry("materials".into())
             .or_default()
-            .push(cadmpeg_ir::NativeRecord {
-                id: "rhino:presentation:material#unsupported".into(),
-                fields: serde_json::Map::new(),
-            });
+            .push(cadmpeg_ir::NativeRecord::new(
+                "rhino:presentation:material#unsupported",
+                serde_json::Map::new(),
+            ));
 
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)

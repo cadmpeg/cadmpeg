@@ -567,7 +567,7 @@ pub(crate) fn validate_source_less_history_graph(
         if let Some(records) = namespace.arenas.get(arena) {
             let unique = records
                 .iter()
-                .map(|record| record.id.as_str())
+                .map(cadmpeg_ir::NativeRecord::id)
                 .collect::<BTreeSet<_>>();
             if unique.len() != records.len() {
                 return Err(CodecError::Malformed(format!(

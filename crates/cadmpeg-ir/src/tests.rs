@@ -1398,17 +1398,17 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let mut right = left.clone();
     right.native.namespace_mut("f3d").arenas.insert(
         "act_guids".into(),
-        vec![NativeRecord {
-            id: "f3d:test:act-guid#0".into(),
-            fields: serde_json::Map::new(),
-        }],
+        vec![NativeRecord::new(
+            "f3d:test:act-guid#0",
+            serde_json::Map::new(),
+        )],
     );
     right.native.namespace_mut("sldprt").arenas.insert(
         "configurations".into(),
-        vec![NativeRecord {
-            id: "sldprt:test:configuration#0".into(),
-            fields: serde_json::Map::new(),
-        }],
+        vec![NativeRecord::new(
+            "sldprt:test:configuration#0",
+            serde_json::Map::new(),
+        )],
     );
     right.native.finalize();
 
@@ -1441,8 +1441,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .namespace_mut("sldprt")
         .arenas
         .get_mut("configurations")
-        .unwrap()[0]
-        .id = "f3d:test:act-guid#0".into();
+        .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new());
     right.native.finalize();
     assert!(validate(&right, Vec::new())
         .findings
@@ -2243,10 +2242,10 @@ fn native_topology_link_must_resolve() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "sketch_curve_links".into(),
-        vec![NativeRecord {
-            id: "native:link#0".into(),
-            fields: serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
-        }],
+        vec![NativeRecord::new(
+            "native:link#0",
+            serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
+        )],
     );
     ir.native.finalize();
     assert!(validate(&ir, Vec::new())

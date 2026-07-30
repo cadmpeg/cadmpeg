@@ -191,16 +191,27 @@ macro_rules! sort_f3d_arenas {
                 // Store the history tree split across its five arenas. Writing
                 // `asm_histories` with its states still attached would convert
                 // the whole tree to `serde_json` values only to overwrite it.
-                let histories = self.asm_histories.iter().cloned().map(|mut history| { history.states.clear(); history }).collect::<Vec<_>>();
-                let states = self.asm_histories.iter().flat_map(|history| history.states.iter().cloned()).map(|mut state| { state.bulletin_boards.clear(); state.records.clear(); state }).collect::<Vec<_>>();
-                let boards = self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| state.bulletin_boards.iter().cloned()).map(|mut board| { board.changes.clear(); board }).collect::<Vec<_>>();
-                let changes = self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.bulletin_boards).flat_map(|board| board.changes.iter().cloned()).collect::<Vec<_>>();
-                let records = self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| state.records.iter().cloned()).collect::<Vec<_>>();
-                namespace.set_arena("asm_histories", &histories)?;
-                namespace.set_arena("asm_delta_states", &states)?;
-                namespace.set_arena("asm_bulletin_boards", &boards)?;
-                namespace.set_arena("asm_entity_changes", &changes)?;
-                namespace.set_arena("asm_history_records", &records)?;
+                // Detaching a level means cloning the record it lives on, so
+                // each level is detached one record at a time rather than
+                // collected into a second copy of the whole population.
+                namespace.set_arena_from("asm_histories", self.asm_histories.iter().map(|history| {
+                    let mut history = history.clone();
+                    history.states.clear();
+                    history
+                }))?;
+                namespace.set_arena_from("asm_delta_states", self.asm_histories.iter().flat_map(|history| &history.states).map(|state| {
+                    let mut state = state.clone();
+                    state.bulletin_boards.clear();
+                    state.records.clear();
+                    state
+                }))?;
+                namespace.set_arena_from("asm_bulletin_boards", self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.bulletin_boards).map(|board| {
+                    let mut board = board.clone();
+                    board.changes.clear();
+                    board
+                }))?;
+                namespace.set_arena_from("asm_entity_changes", self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.bulletin_boards).flat_map(|board| &board.changes))?;
+                namespace.set_arena_from("asm_history_records", self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.records))?;
                 debug_assert!(F3D_ARENA_NAMES
                     .iter()
                     .all(|name| namespace.arenas.contains_key(*name)));

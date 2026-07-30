@@ -2687,11 +2687,11 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
     assert_eq!(native.arenas["product_definitions"].len(), 1);
     assert_eq!(native.arenas["product_occurrences"].len(), 2);
     assert_eq!(
-        native.arenas["product_occurrences"][0].fields["definition_uuid"],
+        native.arenas["product_occurrences"][0].fields()["definition_uuid"],
         Uuid::from_wire(definition_id).to_string()
     );
     assert_eq!(
-        native.arenas["product_occurrences"][0].fields["transform_units"],
+        native.arenas["product_occurrences"][0].fields()["transform_units"],
         "millimeter"
     );
     assert!(result

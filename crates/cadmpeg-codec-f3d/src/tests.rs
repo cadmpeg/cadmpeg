@@ -220,7 +220,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     for records in round_trip.arenas.values() {
         for record in records {
             let json = serde_json::to_value(record).unwrap();
-            assert_eq!(json["id"], record.id);
+            assert_eq!(json["id"], record.id());
             assert!(json.as_object().unwrap().len() > 1);
         }
     }
@@ -235,14 +235,15 @@ fn diff_reports_design_material_assignment_changes() {
         )
         .unwrap();
     let mut edited = decoded.ir.clone();
-    edited
+    let assignment = &mut edited
         .native
         .namespace_mut("f3d")
         .arenas
         .get_mut("design_material_assignments")
-        .unwrap()[0]
-        .fields
-        .insert("entity_suffix".into(), serde_json::json!(123456));
+        .unwrap()[0];
+    let mut assignment_fields = assignment.fields();
+    assignment_fields.insert("entity_suffix".into(), serde_json::json!(123456));
+    *assignment = cadmpeg_ir::NativeRecord::new(assignment.id().to_string(), assignment_fields);
     let report = cadmpeg_ir::diff(&decoded.ir, &edited);
     let arena = report
         .per_arena
@@ -8282,14 +8283,15 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     let mut orphaned = decoded.ir.clone();
     orphaned.source = None;
     orphaned.set_native_unknowns("f3d", &[]).unwrap();
-    orphaned
+    let orphan = &mut orphaned
         .native
         .namespace_mut("f3d")
         .arenas
         .get_mut("asm_history_records")
-        .expect("history-record arena")[0]
-        .fields
-        .insert("parent".into(), serde_json::json!("missing-state"));
+        .expect("history-record arena")[0];
+    let mut orphan_fields = orphan.fields();
+    orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
+    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
     let error = F3dCodec
         .encode(&orphaned, &mut Vec::new())
         .expect_err("orphan history records must not be discarded");

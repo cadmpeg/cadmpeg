@@ -58,7 +58,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     for records in round_trip.arenas.values() {
         for record in records {
             let json = serde_json::to_value(record).unwrap();
-            assert_eq!(json["id"], record.id);
+            assert_eq!(json["id"], record.id());
             assert!(json.as_object().unwrap().len() > 1);
         }
     }
@@ -160,7 +160,9 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
     let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
     legacy.version = 4;
     for record in legacy.arenas.get_mut("sketch_input_entities").unwrap() {
-        record.fields.remove("object_index");
+        let mut fields = record.fields();
+        fields.remove("object_index");
+        *record = cadmpeg_ir::NativeRecord::new(record.id().to_string(), fields);
     }
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
     assert!(migrated.feature_input_lanes.iter().all(|lane| {
@@ -176,9 +178,11 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
 
     let mut sentinel = decoded.ir.native.namespace("sldprt").unwrap().clone();
     sentinel.version = 6;
-    sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0]
-        .fields
-        .insert("object_index".into(), serde_json::json!(u32::MAX));
+    let sentinel_entity = &mut sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0];
+    let mut sentinel_fields = sentinel_entity.fields();
+    sentinel_fields.insert("object_index".into(), serde_json::json!(u32::MAX));
+    *sentinel_entity =
+        cadmpeg_ir::NativeRecord::new(sentinel_entity.id().to_string(), sentinel_fields);
     let migrated = crate::native::SldprtNative::load(&sentinel).unwrap();
     assert_eq!(
         migrated.feature_input_lanes[0].sketch_entities[0].object_index,
@@ -8454,18 +8458,26 @@ fn native_validation_rejects_orphan_history_records() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded
+    let orphan = decoded
         .ir
         .native
         .namespace_mut("sldprt")
         .arenas
         .get_mut("features")
         .unwrap()[0]
-        .fields
-        .insert(
-            "parent".into(),
-            serde_json::Value::String("missing-history".into()),
-        );
+        .clone();
+    let mut orphan_fields = orphan.fields();
+    orphan_fields.insert(
+        "parent".into(),
+        serde_json::Value::String("missing-history".into()),
+    );
+    decoded
+        .ir
+        .native
+        .namespace_mut("sldprt")
+        .arenas
+        .get_mut("features")
+        .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
     assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
         finding.message.contains("invalid owner") && finding.message.contains("missing-history")
     }));
@@ -18477,7 +18489,9 @@ fn decode_and_validate_compact_delete_body_selection() {
         .get_mut("feature_input_body_selections")
         .unwrap()
     {
-        record.fields.remove("mode");
+        let mut fields = record.fields();
+        fields.remove("mode");
+        *record = cadmpeg_ir::NativeRecord::new(record.id().to_string(), fields);
     }
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
     assert_eq!(
