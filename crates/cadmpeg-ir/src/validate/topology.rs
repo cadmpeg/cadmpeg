@@ -1905,8 +1905,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
 
 fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
     use crate::features::{
-        EdgeSelection, ExtrudeExtent, FeatureDefinition, PathRef, ProfileRef, RevolveExtent,
-        ScaleCenter, Termination,
+        EdgeSelection, ExtrudeExtent, FeatureDefinition, PathRef, ProfileRef, ScaleCenter,
+        Termination,
     };
 
     let mut configuration_ordinals = HashSet::new();
@@ -2134,6 +2134,27 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         });
                     }
                     Some(_) => {}
+                }
+            }
+            for termination in definition_terminations(&state.definition) {
+                if !termination_magnitude_is_valid(termination) {
+                    geometry_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration feature extent magnitude is invalid",
+                    );
+                }
+                if matches!(
+                    termination,
+                    Termination::ToVertex {
+                        vertex: crate::features::VertexSelection::Generated { vertex, native },
+                    } if native.trim().is_empty() || vertex.local_id.trim().is_empty()
+                ) {
+                    geometry_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration generated termination vertex is invalid",
+                    );
                 }
             }
             if let FeatureDefinition::DatumOffsetPlane { distance, .. } = &state.definition {
@@ -2365,7 +2386,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
 
         let mut profiles = Vec::new();
         let mut paths = Vec::new();
-        let mut extents = Vec::new();
         let mut edge_selections = Vec::new();
         let mut face_selections = Vec::new();
         let mut body_selections = Vec::new();
@@ -2604,9 +2624,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                     ExtrudeExtent::TwoSided { first, second } => vec![first, second],
                 };
-                for side in &sides {
-                    extents.push(&side.termination);
-                }
                 if let crate::features::ExtrudeDirection::Explicit(vector) = direction {
                     if !valid_feature_direction(*vector) {
                         feature_geometry_error(findings, feature, "extrusion direction is invalid");
@@ -2671,16 +2688,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);
-                match &construction.extent {
-                    Some(
-                        RevolveExtent::OneSided { termination }
-                        | RevolveExtent::Symmetric { termination },
-                    ) => extents.push(termination),
-                    Some(RevolveExtent::TwoSided { first, second }) => {
-                        extents.extend([first, second]);
-                    }
-                    None => {}
-                }
                 paths.extend(&construction.axis_reference);
                 if construction.axis.as_ref().is_some_and(|axis| {
                     !axis.origin.x.is_finite()
@@ -3154,7 +3161,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 kind,
                 exit_kind,
                 diameter,
-                extent,
                 direction,
                 position,
                 bottom,
@@ -3165,7 +3171,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 profiles.extend(profile);
                 face_selections.extend(face);
-                extents.extend(extent);
                 let treatment_diameter_valid = |value: Length| {
                     positive_feature_length(value) && diameter.is_some_and(|bore| value.0 > bore.0)
                 };
@@ -4094,25 +4099,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 | PathRef::SpatialSketchSelection { .. } => {}
             }
         }
-        for termination in extents {
-            let valid_magnitude = match termination {
-                Termination::Blind { length } => length.0.is_finite() && length.0 != 0.0,
-                Termination::Angle { angle } => angle.0.is_finite() && angle.0 > 0.0,
-                Termination::OffsetFromFace { offset, .. } => {
-                    offset.0.is_finite() && offset.0 > 0.0
-                }
-                Termination::ToFace { offset, .. } => {
-                    offset.is_none_or(|offset| offset.0.is_finite())
-                }
-                Termination::Unresolved
-                | Termination::ThroughAll
-                | Termination::ThroughNext
-                | Termination::ToFirst
-                | Termination::ToLast
-                | Termination::ToVertex { .. }
-                | Termination::ToShape { .. } => true,
-            };
-            if !valid_magnitude {
+        for termination in definition_terminations(definition) {
+            if !termination_magnitude_is_valid(termination) {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
                     severity: Severity::Error,
@@ -4571,7 +4559,70 @@ fn regeneration_references(
         }
         _ => {}
     }
+    references.extend(definition_terminations(definition).filter_map(
+        |termination| match termination {
+            crate::features::Termination::ToVertex {
+                vertex: crate::features::VertexSelection::Generated { vertex, .. },
+            } => Some(&vertex.feature),
+            _ => None,
+        },
+    ));
     references.into_iter()
+}
+
+fn definition_terminations(
+    definition: &crate::features::FeatureDefinition,
+) -> impl Iterator<Item = &crate::features::Termination> {
+    let mut terminations = Vec::new();
+    match definition {
+        crate::features::FeatureDefinition::Extrude { extent, .. } => match extent {
+            crate::features::ExtrudeExtent::OneSided { side }
+            | crate::features::ExtrudeExtent::Symmetric { side } => {
+                terminations.push(&side.termination);
+            }
+            crate::features::ExtrudeExtent::TwoSided { first, second } => {
+                terminations.extend([&first.termination, &second.termination]);
+            }
+        },
+        crate::features::FeatureDefinition::Revolve { construction, .. } => {
+            match &construction.extent {
+                Some(
+                    crate::features::RevolveExtent::OneSided { termination }
+                    | crate::features::RevolveExtent::Symmetric { termination },
+                ) => terminations.push(termination),
+                Some(crate::features::RevolveExtent::TwoSided { first, second }) => {
+                    terminations.extend([first, second]);
+                }
+                None => {}
+            }
+        }
+        crate::features::FeatureDefinition::Hole {
+            extent: Some(extent),
+            ..
+        } => terminations.push(extent),
+        _ => {}
+    }
+    terminations.into_iter()
+}
+
+fn termination_magnitude_is_valid(termination: &crate::features::Termination) -> bool {
+    match termination {
+        crate::features::Termination::Blind { length } => length.0.is_finite() && length.0 != 0.0,
+        crate::features::Termination::Angle { angle } => angle.0.is_finite() && angle.0 > 0.0,
+        crate::features::Termination::OffsetFromFace { offset, .. } => {
+            offset.0.is_finite() && offset.0 > 0.0
+        }
+        crate::features::Termination::ToFace { offset, .. } => {
+            offset.is_none_or(|offset| offset.0.is_finite())
+        }
+        crate::features::Termination::Unresolved
+        | crate::features::Termination::ThroughAll
+        | crate::features::Termination::ThroughNext
+        | crate::features::Termination::ToFirst
+        | crate::features::Termination::ToLast
+        | crate::features::Termination::ToVertex { .. }
+        | crate::features::Termination::ToShape { .. } => true,
+    }
 }
 
 fn check_configuration_output_closure(

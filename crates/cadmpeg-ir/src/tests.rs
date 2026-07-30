@@ -3353,7 +3353,8 @@ fn block_placement_must_be_proper_rigid() {
 #[test]
 fn generated_termination_vertices_require_declared_feature_dependencies() {
     use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
+        BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         GeneratedVertexRef, ProfileRef, Termination, VertexSelection,
     };
     use std::collections::BTreeMap;
@@ -3424,11 +3425,87 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .findings
         .iter()
         .any(|finding| finding.message == message));
-    ir.model.features[1].dependencies.push(source);
+    let extrude = ir.model.features[1].id.clone();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("synthetic:test:configuration#vertex".into()),
+        ordinal: 0,
+        active: false,
+        source_index: None,
+        name: "Vertex".into(),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        suppressed_features: Vec::new(),
+        bodies: ConfigurationBodies::Unresolved,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([(
+            extrude.clone(),
+            ConfigurationFeatureState {
+                suppressed: false,
+                dependencies: Vec::new(),
+                outputs: Vec::new(),
+                definition: ir.model.features[1].definition.clone(),
+            },
+        )]),
+        native_ref: None,
+    });
+    ir.model.features[1].dependencies.push(source.clone());
     assert!(!validate(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == message));
+    let configuration_message = format!(
+        "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
+        extrude.0, source.0
+    );
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == configuration_message));
+
+    let state = ir.model.configurations[0]
+        .feature_states
+        .get_mut(&extrude)
+        .expect("configured extrude");
+    state.dependencies.push(source);
+    assert!(validate(&ir, Vec::new()).is_ok());
+    let state = ir.model.configurations[0]
+        .feature_states
+        .get_mut(&extrude)
+        .expect("configured extrude");
+    let FeatureDefinition::Extrude { extent, .. } = &mut state.definition else {
+        unreachable!()
+    };
+    let ExtrudeExtent::OneSided { side } = extent else {
+        unreachable!()
+    };
+    let Termination::ToVertex {
+        vertex: VertexSelection::Generated { native, .. },
+    } = &mut side.termination
+    else {
+        unreachable!()
+    };
+    native.clear();
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.message == "configuration generated termination vertex is invalid"
+    }));
+    let state = ir.model.configurations[0]
+        .feature_states
+        .get_mut(&extrude)
+        .expect("configured extrude");
+    let FeatureDefinition::Extrude { extent, .. } = &mut state.definition else {
+        unreachable!()
+    };
+    let ExtrudeExtent::OneSided { side } = extent else {
+        unreachable!()
+    };
+    side.termination = Termination::Blind {
+        length: crate::features::Length(f64::NAN),
+    };
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| { finding.message == "configuration feature extent magnitude is invalid" }));
 }
 
 #[test]
