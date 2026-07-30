@@ -2,6 +2,11 @@
 //! Identity framing for the pre-`7C05` design stream.
 
 const CATALOG_OPEN: &[u8] = b"\xde\x04\xfe\xfe\x12CATCatalogManager";
+const SCHEMA_PROGRAM_PREFIX: &[u8] = b"\xfe\xfe\xfe";
+const SCHEMA_PROGRAM_FOOTER: &[u8] = b"\x4e\x11\x00\x00\x00DASSAULT-SYSTEMES\x05\x00\x00\x00CATIA";
+#[cfg(test)]
+pub(crate) const SCHEMA_PROGRAM_OFFSET_FROM_CATALOG: usize =
+    CATALOG_OPEN.len() + SCHEMA_PROGRAM_PREFIX.len();
 const TEXT_OPEN: &[u8] = b"\xe8\x00\x12\x01";
 const SCALAR_OPEN: &[u8] = b"\xfe\x85\x88\x82\xfe";
 const NAMED_SCALAR_OPEN: &[u8] = b"\xfe\x84\x88\x82\xfe";
@@ -266,11 +271,24 @@ pub struct LegacyEntityIdentity {
     pub lead: u8,
 }
 
+/// One complete compact schema program following a legacy catalog opener.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacySchemaProgram {
+    /// Offset of the first program byte after the fixed prefix.
+    pub offset: usize,
+    /// Offset of the fixed vendor footer following the program.
+    pub footer_offset: usize,
+    /// Exact program bytes, including the terminal `FE`.
+    pub bytes: Vec<u8>,
+}
+
 /// A monotonically identified legacy run terminated by its schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyEntityRun {
     /// Offset of the fixed catalog opening production.
     pub catalog_offset: usize,
+    /// Complete compact schema program following the catalog opener.
+    pub schema_program: Option<LegacySchemaProgram>,
     /// Stored identities in source order.
     pub identities: Vec<LegacyEntityIdentity>,
     /// Complete length-framed role selectors in identity-interval order.
@@ -396,6 +414,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
     bind_integer_names(&text_fields, &mut integer_values);
     Some(LegacyEntityRun {
         catalog_offset,
+        schema_program: parse_schema_program(data, catalog_offset),
         identities,
         role_selectors,
         text_fields,
@@ -406,6 +425,31 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         scalar_values,
         string_values,
         integer_values,
+    })
+}
+
+fn parse_schema_program(data: &[u8], catalog_offset: usize) -> Option<LegacySchemaProgram> {
+    let prefix_offset = catalog_offset.checked_add(CATALOG_OPEN.len())?;
+    let offset = prefix_offset.checked_add(SCHEMA_PROGRAM_PREFIX.len())?;
+    if data.get(prefix_offset..offset)? != SCHEMA_PROGRAM_PREFIX {
+        return None;
+    }
+    let search_end = memchr::memmem::find(&data[offset..], CATALOG_OPEN)
+        .and_then(|relative| offset.checked_add(relative))
+        .unwrap_or(data.len());
+    let mut footers = memchr::memmem::find_iter(&data[offset..search_end], SCHEMA_PROGRAM_FOOTER)
+        .filter_map(|relative| offset.checked_add(relative));
+    let footer_offset = footers.next()?;
+    if footers.next().is_some()
+        || footer_offset == offset
+        || data.get(footer_offset - 1) != Some(&0xfe)
+    {
+        return None;
+    }
+    Some(LegacySchemaProgram {
+        offset,
+        footer_offset,
+        bytes: data.get(offset..footer_offset)?.to_vec(),
     })
 }
 
@@ -1177,7 +1221,8 @@ fn text_value_allow_empty(bytes: &[u8]) -> Option<String> {
 mod tests {
     use super::{
         parse_runs, LegacyRoleName, LegacyRoleSelector, LegacyRoleSelectorEncoding, CATALOG_OPEN,
-        INTEGER_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, STRING_OPEN, TEXT_OPEN, TYPE_OPEN,
+        INTEGER_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, SCHEMA_PROGRAM_FOOTER, SCHEMA_PROGRAM_PREFIX,
+        STRING_OPEN, TEXT_OPEN, TYPE_OPEN,
     };
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
@@ -1202,6 +1247,38 @@ mod tests {
             field_code: None,
         };
         assert_eq!(role.end_offset(), None);
+    }
+
+    #[test]
+    fn retains_only_a_uniquely_footer_bounded_schema_program() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(CATALOG_OPEN);
+        bytes.extend_from_slice(SCHEMA_PROGRAM_PREFIX);
+        let program_offset = bytes.len();
+        bytes.extend_from_slice(&[0x81, 0xe3, 0x04, 0xfe]);
+        let footer_offset = bytes.len();
+        bytes.extend_from_slice(SCHEMA_PROGRAM_FOOTER);
+
+        let runs = parse_runs(&bytes);
+        let program = runs[0]
+            .schema_program
+            .as_ref()
+            .expect("complete schema program");
+        assert_eq!(program.offset, program_offset);
+        assert_eq!(program.footer_offset, footer_offset);
+        assert_eq!(program.bytes, [0x81, 0xe3, 0x04, 0xfe]);
+
+        let mut unterminated = bytes.clone();
+        unterminated[footer_offset - 1] = 0x81;
+        assert!(parse_runs(&unterminated)[0].schema_program.is_none());
+
+        let mut ambiguous = bytes;
+        ambiguous.splice(
+            footer_offset..footer_offset,
+            SCHEMA_PROGRAM_FOOTER.iter().copied(),
+        );
+        assert!(parse_runs(&ambiguous)[0].schema_program.is_none());
     }
 
     #[test]

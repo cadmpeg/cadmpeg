@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 220;
+pub const CATIA_NATIVE_VERSION: u32 = 221;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -2980,6 +2980,19 @@ pub struct CatiaLegacyEntityIdentity {
     pub lead: u8,
 }
 
+/// One complete compact legacy schema program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacySchemaProgram {
+    /// Offset of the first program byte after the fixed prefix.
+    pub byte_offset: u64,
+    /// Offset of the fixed vendor footer following the program.
+    pub footer_byte_offset: u64,
+    /// Exact program bytes, including the terminal `FE`.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub data: Vec<u8>,
+}
+
 /// Framing production used by a legacy schema text field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -3275,6 +3288,9 @@ pub struct CatiaLegacyEntityRun {
     pub byte_len: u64,
     /// Offset of the fixed schema-catalog opening production.
     pub catalog_offset: u64,
+    /// Complete compact schema program following the catalog opener.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_program: Option<CatiaLegacySchemaProgram>,
     /// Exact declared outer container whose physical stream contains this run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outer_container: Option<CatiaOuterContainerBinding>,
@@ -3734,6 +3750,11 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                 byte_offset: byte_offset as u64,
                 byte_len: (run.catalog_offset - byte_offset) as u64,
                 catalog_offset: run.catalog_offset as u64,
+                schema_program: run.schema_program.map(|program| CatiaLegacySchemaProgram {
+                    byte_offset: program.offset as u64,
+                    footer_byte_offset: program.footer_offset as u64,
+                    data: program.bytes,
+                }),
                 outer_container: None,
                 identities: run
                     .identities
@@ -4107,6 +4128,18 @@ fn validate_legacy_entity_runs(
         let run_end = run.byte_offset.checked_add(run.byte_len);
         let valid = run.id == format!("catia:legacy:entity-run#{index:08}")
             && run_end == Some(run.catalog_offset)
+            && run.schema_program.as_ref().is_none_or(|program| {
+                !program.data.is_empty()
+                    && program.data.last() == Some(&0xfe)
+                    && run.catalog_offset.checked_add(
+                        u64::try_from(legacy_entity::SCHEMA_PROGRAM_OFFSET_FROM_CATALOG)
+                            .expect("schema-program prefix length fits u64"),
+                    ) == Some(program.byte_offset)
+                    && u64::try_from(program.data.len())
+                        .ok()
+                        .and_then(|len| program.byte_offset.checked_add(len))
+                        == Some(program.footer_byte_offset)
+            })
             && previous_end.is_none_or(|end| end <= run.byte_offset)
             && run.identities.first().is_some_and(|identity| {
                 identity.byte_offset == run.byte_offset && identity.entity_id == 1

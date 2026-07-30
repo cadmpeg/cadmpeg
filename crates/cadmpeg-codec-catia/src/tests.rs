@@ -3827,6 +3827,10 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         4
     );
     assert_eq!(
+        decoded.report.coverage["decoded_legacy_role_field_binding_count"],
+        5
+    );
+    assert_eq!(
         decoded.report.coverage["decoded_legacy_schema_field_count"],
         5
     );
@@ -3926,6 +3930,10 @@ fn decode_retains_legacy_relation_synchronous_states() {
     assert_eq!(
         decoded.report.coverage["decoded_legacy_schema_field_count"],
         3
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_role_field_binding_count"],
+        4
     );
     let native = crate::native::CatiaNative::load(
         decoded
@@ -14143,6 +14151,11 @@ fn native_round_trips_legacy_entity_identity_runs() {
     }
     let catalog_offset = bytes.len();
     bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+    bytes.extend(b"\xfe\xfe\xfe");
+    let schema_program_offset = bytes.len();
+    bytes.extend([0x81, 0xe3, 0x04, 0xfe]);
+    let schema_footer_offset = bytes.len();
+    bytes.extend(b"\x4e\x11\x00\x00\x00DASSAULT-SYSTEMES\x05\x00\x00\x00CATIA");
 
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.legacy_entity_runs.len(), 1);
@@ -14162,6 +14175,16 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].catalog_offset,
         catalog_offset as u64
     );
+    let schema_program = native.legacy_entity_runs[0]
+        .schema_program
+        .as_ref()
+        .expect("complete compact schema program");
+    assert_eq!(schema_program.byte_offset, schema_program_offset as u64);
+    assert_eq!(
+        schema_program.footer_byte_offset,
+        schema_footer_offset as u64
+    );
+    assert_eq!(schema_program.data, [0x81, 0xe3, 0x04, 0xfe]);
     assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 5);
     assert_eq!(
         native.legacy_entity_runs[0]
@@ -14308,6 +14331,19 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("store legacy entity run");
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
     assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
+
+    let mut invalid_schema_program = native.clone();
+    invalid_schema_program.legacy_entity_runs[0]
+        .schema_program
+        .as_mut()
+        .expect("schema program")
+        .data
+        .pop();
+    let mut invalid_schema_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_schema_program
+        .store(&mut invalid_schema_namespace)
+        .expect("store invalid schema program");
+    assert!(crate::native::CatiaNative::load(&invalid_schema_namespace).is_err());
 
     let mut previous_field_namespace = namespace.clone();
     let mut previous_field_runs: Vec<crate::native::CatiaLegacyEntityRun> =
