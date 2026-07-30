@@ -83,9 +83,10 @@ current scores require those matrices and representative fixtures.
   incidence. Legacy identity runs admit and retain the `81`, `82`, `E5`, and
   `FD` record leads. Each legacy identity run retains its exact outer container
   binding. Every complete schema role selector retains its fixed or paged
-  production, containing identity, name, and value. Inclusive-length UTF-8
-  string packets and inline or wide signed-integer packets transfer as typed
-  parameters when
+  production, containing identity, name, and value. Legacy text fields retain
+  both `FE`-closed values and values carrying an inline `E3` paged-role tail.
+  Inclusive-length UTF-8 string packets and inline or wide signed-integer
+  packets transfer as typed parameters when
   their name and terminal type resolve uniquely.
   Legacy parameter transfer is restricted to the unique declared part-history
   container; unbound runs remain eligible only in declaration-free fragments.

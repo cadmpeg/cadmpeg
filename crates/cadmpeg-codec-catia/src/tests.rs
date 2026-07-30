@@ -3764,6 +3764,63 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
 }
 
 #[test]
+fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
+    fn compound_field(bytes: &mut Vec<u8>, value: &str, role: &str, selector_low: u8) {
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.push(u8::try_from(value.len() + 1).expect("short value"));
+        bytes.extend(value.as_bytes());
+        bytes.push(u8::try_from(role.len() + 1).expect("short role"));
+        bytes.extend(role.as_bytes());
+        bytes.extend([0xe3, selector_low]);
+    }
+
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.push(0xe5);
+    compound_field(&mut bytes, "", "body", 0x53);
+    compound_field(&mut bytes, "2 * #1_", "param", 0x52);
+    compound_field(&mut bytes, "(#1_ : #In LENGTH) : LENGTH\n", "opened", 0x51);
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode compound legacy fields");
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_text_field_count"],
+        3
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_e3_role_tail_text_field_count"],
+        3
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_role_text_field_count"],
+        2
+    );
+    assert_eq!(decoded.report.coverage["decoded_legacy_relation_count"], 1);
+
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA native namespace"),
+    )
+    .expect("load compound legacy fields");
+    assert!(native.legacy_entity_runs[0]
+        .text_fields
+        .iter()
+        .all(|field| {
+            field.encoding == crate::native::CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
+        }));
+    assert_eq!(
+        native.legacy_entity_runs[0].relations[0].expression,
+        "2 * #1_"
+    );
+}
+
+#[test]
 fn decode_retains_legacy_relation_synchronous_states() {
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);

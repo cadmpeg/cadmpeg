@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 216;
+pub const CATIA_NATIVE_VERSION: u32 = 217;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -2986,6 +2986,8 @@ pub enum CatiaLegacyTextEncoding {
     U8InclusiveLength,
     /// Zero selector and little-endian `u32` byte length.
     ZeroU32Length,
+    /// Nonzero inclusive length followed by an `E3` paged-role tail.
+    U8InclusiveLengthE3RoleTail,
 }
 
 /// Framing production used by a legacy role selector.
@@ -3711,6 +3713,9 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                             legacy_entity::LegacyTextEncoding::ZeroU32Length => {
                                 CatiaLegacyTextEncoding::ZeroU32Length
                             }
+                            legacy_entity::LegacyTextEncoding::U8InclusiveLengthE3RoleTail => {
+                                CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                            }
                         },
                         role: field.role.map(|role| CatiaLegacyRoleSelector {
                             byte_offset: role.offset as u64,
@@ -3993,7 +3998,8 @@ fn validate_legacy_entity_runs(
                 .windows(2)
                 .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
             && run.text_fields.iter().all(|field| {
-                !field.value.is_empty()
+                (!field.value.is_empty()
+                    || field.encoding == CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail)
                     && field.value.chars().all(|character| {
                         !character.is_control() || matches!(character, '\t' | '\n' | '\r')
                     })

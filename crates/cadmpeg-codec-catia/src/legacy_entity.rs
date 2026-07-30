@@ -16,6 +16,8 @@ pub enum LegacyTextEncoding {
     U8InclusiveLength,
     /// Zero selector, little-endian `u32` byte length, text, and `FE`.
     ZeroU32Length,
+    /// Nonzero one-byte inclusive length followed by text and an `E3` paged-role tail.
+    U8InclusiveLengthE3RoleTail,
 }
 
 /// Framing production used by one legacy role selector.
@@ -627,7 +629,37 @@ fn parse_relations(
             .iter()
             .position(|field| field.entity_id != entity_id)
             .map_or(fields.len(), |relative| start + relative);
-        if let [expression, type_signature] = &fields[start..end] {
+        let entity_fields = &fields[start..end];
+        let mut expressions = entity_fields
+            .iter()
+            .filter(|field| field.role.as_ref().is_some_and(|role| role.name == "body"));
+        let expression = expressions.next();
+        let duplicate_expression = expressions.next();
+        let mut signatures = entity_fields
+            .iter()
+            .filter(|field| field.role.as_ref().is_some_and(|role| role.name == "param"));
+        let signature = signatures.next();
+        let duplicate_signature = signatures.next();
+        let role_bound_pair = match (
+            expression,
+            duplicate_expression,
+            signature,
+            duplicate_signature,
+        ) {
+            (Some(expression), None, Some(signature), None)
+                if expression.offset < signature.offset =>
+            {
+                Some((expression, signature))
+            }
+            _ => None,
+        };
+        let pair = role_bound_pair.or_else(|| {
+            let [expression, signature] = entity_fields else {
+                return None;
+            };
+            Some((expression, signature))
+        });
+        if let Some((expression, type_signature)) = pair {
             if let Some(signature) = parse_relation_signature(&type_signature.value) {
                 let body_selector = relation_role_selector(expression, "body");
                 let parameter_selector = relation_role_selector(type_signature, "param");
@@ -847,8 +879,32 @@ fn parse_text_field(
         if let Some(value) = length_closed_text(data, payload + 1, length, end) {
             return Some((LegacyTextEncoding::U8InclusiveLength, value));
         }
+        if let Some(value) = role_tailed_text(data, payload + 1, length, end) {
+            return Some((LegacyTextEncoding::U8InclusiveLengthE3RoleTail, value));
+        }
     }
     None
+}
+
+fn role_tailed_text(data: &[u8], start: usize, length: usize, end: usize) -> Option<String> {
+    let value_end = start.checked_add(length)?;
+    if value_end >= end {
+        return None;
+    }
+    let role_length = usize::from(*data.get(value_end)?);
+    if role_length < 2 {
+        return None;
+    }
+    let separator = value_end.checked_add(role_length)?;
+    let tail_end = separator.checked_add(2)?;
+    if tail_end > end
+        || data.get(separator) != Some(&0xe3)
+        || !text_value(data.get(value_end + 1..separator)?)
+            .is_some_and(|role| valid_role_name(&role))
+    {
+        return None;
+    }
+    text_value_allow_empty(data.get(start..value_end)?)
 }
 
 fn length_closed_text(data: &[u8], start: usize, length: usize, end: usize) -> Option<String> {
@@ -1101,6 +1157,8 @@ mod tests {
         bytes.extend_from_slice(&[5, b'n', b'a', b'm', b'e', 0]);
         bytes.extend_from_slice(TEXT_OPEN);
         bytes.extend_from_slice(&[4, b'a', 1, b'b', 0xfe]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[1, 5, b'b', b'o', b'd', b'y', 0xe3]);
         bytes.extend_from_slice(CATALOG_OPEN);
 
         assert!(parse_runs(&bytes)[0].text_fields.is_empty());
@@ -1137,6 +1195,63 @@ mod tests {
         );
         assert_eq!(relation.signature.inputs[0].parameter, "#1_");
         assert_eq!(relation.signature.result_type, "VoidType");
+    }
+
+    #[test]
+    fn pairs_compound_text_fields_through_inline_role_tails() {
+        fn compound_field(bytes: &mut Vec<u8>, value: &str, role: &str, selector: u8) {
+            bytes.extend_from_slice(TEXT_OPEN);
+            bytes.push(u8::try_from(value.len() + 1).expect("short value"));
+            bytes.extend_from_slice(value.as_bytes());
+            bytes.push(u8::try_from(role.len() + 1).expect("short role"));
+            bytes.extend_from_slice(role.as_bytes());
+            bytes.extend_from_slice(&[0xe3, selector]);
+        }
+
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        identity_with_lead(&mut bytes, 93, 0xe5);
+        compound_field(&mut bytes, "", "body", 0x53);
+        compound_field(&mut bytes, "2 * #1_", "param", 0x52);
+        compound_field(&mut bytes, "(#1_ : #In LENGTH) : LENGTH\n", "opened", 0x51);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let run = &parse_runs(&bytes)[0];
+        assert_eq!(run.text_fields.len(), 3);
+        assert!(run.text_fields.iter().all(|field| {
+            field.encoding == super::LegacyTextEncoding::U8InclusiveLengthE3RoleTail
+        }));
+        assert_eq!(
+            run.text_fields
+                .iter()
+                .map(|field| (
+                    field.value.as_str(),
+                    field.role.as_ref().map(|role| role.name.as_str())
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("", None),
+                ("2 * #1_", Some("body")),
+                ("(#1_ : #In LENGTH) : LENGTH\n", Some("param"))
+            ]
+        );
+        assert_eq!(
+            run.role_selectors
+                .iter()
+                .filter(|role| matches!(role.name.as_str(), "body" | "param" | "opened"))
+                .map(|role| (role.name.as_str(), role.selector, role.encoding))
+                .collect::<Vec<_>>(),
+            [
+                ("body", 4692, super::LegacyRoleSelectorEncoding::Paged),
+                ("param", 4691, super::LegacyRoleSelectorEncoding::Paged),
+                ("opened", 4690, super::LegacyRoleSelectorEncoding::Paged)
+            ]
+        );
+        let relation = &run.relations[0];
+        assert_eq!(relation.expression, "2 * #1_");
+        assert_eq!(relation.body_selector, Some(4692));
+        assert_eq!(relation.parameter_selector, Some(4691));
+        assert_eq!(relation.parameter_entity_id, None);
     }
 
     #[test]
