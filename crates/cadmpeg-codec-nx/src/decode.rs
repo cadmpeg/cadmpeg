@@ -3606,7 +3606,7 @@ pub(crate) fn closest_pcurve_parameters(
         knots,
         control_points,
         weights,
-        ..
+        periodic,
     } = pcurve
     else {
         return None;
@@ -3620,45 +3620,55 @@ pub(crate) fn closest_pcurve_parameters(
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
         return None;
     }
+    if seed.is_some_and(|seed| !seed.is_finite()) {
+        return None;
+    }
+    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, *periodic, seed));
     let homogeneous =
         homogeneous_pcurve_spans(degree, knots, control_points, weights.as_deref(), point)?;
-    if degree != 1 || weights.is_some() {
-        let candidates = stationary_rational_distance_candidates(&homogeneous, seed)?;
-        return closest_parameter_candidates(candidates, seed);
-    }
-    let candidates = control_points
-        .windows(2)
-        .enumerate()
-        .filter_map(|(index, segment)| {
-            let start = segment[0];
-            let end = segment[1];
-            let direction = Point2::new(end.u - start.u, end.v - start.v);
-            let squared_length = direction.u * direction.u + direction.v * direction.v;
-            if !squared_length.is_finite() || squared_length == 0.0 {
-                return None;
-            }
-            let fraction = (((point.u - start.u) * direction.u
-                + (point.v - start.v) * direction.v)
-                / squared_length)
-                .clamp(0.0, 1.0);
-            let span_start = *knots.get(index + 1)?;
-            let span_end = *knots.get(index + 2)?;
-            if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
-                return None;
-            }
-            let projected = Point2::new(
-                start.u + fraction * direction.u,
-                start.v + fraction * direction.v,
-            );
-            let squared_distance =
-                (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
-            Some((
-                span_start + fraction * (span_end - span_start),
-                squared_distance,
-            ))
-        })
-        .collect::<Vec<_>>();
-    closest_parameter_candidates(candidates, seed)
+    let candidates = if degree != 1 || weights.is_some() {
+        closest_parameter_candidates(
+            stationary_rational_distance_candidates(&homogeneous, search_seed)?,
+            search_seed,
+        )?
+    } else {
+        let candidates = control_points
+            .windows(2)
+            .enumerate()
+            .filter_map(|(index, segment)| {
+                let start = segment[0];
+                let end = segment[1];
+                let direction = Point2::new(end.u - start.u, end.v - start.v);
+                let squared_length = direction.u * direction.u + direction.v * direction.v;
+                if !squared_length.is_finite() || squared_length == 0.0 {
+                    return None;
+                }
+                let fraction = (((point.u - start.u) * direction.u
+                    + (point.v - start.v) * direction.v)
+                    / squared_length)
+                    .clamp(0.0, 1.0);
+                let span_start = *knots.get(index + 1)?;
+                let span_end = *knots.get(index + 2)?;
+                if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
+                    return None;
+                }
+                let projected = Point2::new(
+                    start.u + fraction * direction.u,
+                    start.v + fraction * direction.v,
+                );
+                let squared_distance =
+                    (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
+                Some((
+                    span_start + fraction * (span_end - span_start),
+                    squared_distance,
+                ))
+            })
+            .collect::<Vec<_>>();
+        closest_parameter_candidates(candidates, search_seed)?
+    };
+    Some(lift_periodic_parameters(
+        candidates, domain, *periodic, seed,
+    ))
 }
 
 struct HomogeneousCurveSpans<const DIMENSION: usize> {
@@ -4146,6 +4156,37 @@ fn closest_parameter_candidates(
     });
     nearest.dedup_by(|first, second| first.to_bits() == second.to_bits());
     (!nearest.is_empty()).then_some(nearest)
+}
+
+fn canonical_periodic_parameter(domain: [f64; 2], periodic: bool, parameter: f64) -> f64 {
+    if !periodic {
+        return parameter;
+    }
+    let period = domain[1] - domain[0];
+    domain[0] + (parameter - domain[0]).rem_euclid(period)
+}
+
+fn lift_periodic_parameters(
+    mut parameters: Vec<f64>,
+    domain: [f64; 2],
+    periodic: bool,
+    seed: Option<f64>,
+) -> Vec<f64> {
+    let Some(seed) = seed.filter(|_| periodic) else {
+        return parameters;
+    };
+    let period = domain[1] - domain[0];
+    for parameter in &mut parameters {
+        *parameter += ((seed - *parameter) / period).round() * period;
+    }
+    parameters.sort_by(|first, second| {
+        (first - seed)
+            .abs()
+            .total_cmp(&(second - seed).abs())
+            .then_with(|| first.total_cmp(second))
+    });
+    parameters.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    parameters
 }
 
 fn spine_contact_point(
@@ -4856,6 +4897,14 @@ fn closest_nurbs_curve_parameter(
     {
         return None;
     }
+    let domain = [*curve.knots.get(degree)?, *curve.knots.get(count)?];
+    if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
+        return None;
+    }
+    if seed.is_some_and(|seed| !seed.is_finite()) {
+        return None;
+    }
+    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic, seed));
     let weights = match &curve.weights {
         Some(weights)
             if weights.len() == count
@@ -4894,12 +4943,13 @@ fn closest_nurbs_curve_parameter(
         spans: bezier_spans(degree, &curve.knots, controls)?,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
-    closest_parameter_candidates(
-        stationary_rational_distance_candidates(&homogeneous, seed)?,
-        seed,
-    )?
-    .into_iter()
-    .next()
+    let parameters = closest_parameter_candidates(
+        stationary_rational_distance_candidates(&homogeneous, search_seed)?,
+        search_seed,
+    )?;
+    lift_periodic_parameters(parameters, domain, curve.periodic, seed)
+        .into_iter()
+        .next()
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {
@@ -10381,6 +10431,44 @@ mod tests {
         assert!((first - 0.1).abs() < 1.0e-8);
         assert!((second - 0.1001).abs() < 1.0e-8);
         assert!((remote - 0.7).abs() < 1.0e-8);
+    }
+
+    #[test]
+    fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
+        let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: knots.clone(),
+            control_points: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 0.0),
+            ],
+            weights: None,
+            periodic: true,
+        };
+        let curve = NurbsCurve {
+            degree: 1,
+            knots,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: true,
+        };
+
+        assert_eq!(
+            super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
+                .expect("periodic pcurve phase"),
+            [4.0]
+        );
+        assert_eq!(
+            super::closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
+                .expect("periodic curve phase"),
+            4.0
+        );
     }
 
     #[test]
