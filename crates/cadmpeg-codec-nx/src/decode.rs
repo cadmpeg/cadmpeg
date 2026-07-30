@@ -3424,26 +3424,16 @@ pub(crate) fn refine_blend_surface_parameters(
         );
         let current_distance = squared_distance(position);
         let u_step = parameter_derivative_step(parameters.u, u_domain);
-        let v_step = parameter_derivative_step(parameters.v, None);
-        let derivative = |along_u: bool, step: f64| {
+        let derivative = |step: f64| {
             let mut before = parameters;
             let mut after = parameters;
-            if along_u {
-                before.u -= step;
-                after.u += step;
-                if let Some(domain) = u_domain {
-                    before.u = before.u.clamp(domain[0], domain[1]);
-                    after.u = after.u.clamp(domain[0], domain[1]);
-                }
-            } else {
-                before.v -= step;
-                after.v += step;
+            before.u -= step;
+            after.u += step;
+            if let Some(domain) = u_domain {
+                before.u = before.u.clamp(domain[0], domain[1]);
+                after.u = after.u.clamp(domain[0], domain[1]);
             }
-            let width = if along_u {
-                after.u - before.u
-            } else {
-                after.v - before.v
-            };
+            let width = after.u - before.u;
             if !width.is_finite() || width == 0.0 {
                 return None;
             }
@@ -3455,8 +3445,17 @@ pub(crate) fn refine_blend_surface_parameters(
                 (second.z - first.z) / width,
             ))
         };
-        let du = derivative(true, u_step)?;
-        let dv = derivative(false, v_step)?;
+        let du = derivative(u_step)?;
+        let (_, tangent, first, second, radius) =
+            blend_surface_frame(ir, surface, parameters.u, depth + 1)?;
+        let alpha = signed_angle(first, second, tangent);
+        let radial = rodrigues_rotate(first, tangent, parameters.v * alpha);
+        let section_tangent = cross_vector(tangent, radial);
+        let dv = Vector3::new(
+            radius * alpha * section_tangent.x,
+            radius * alpha * section_tangent.y,
+            radius * alpha * section_tangent.z,
+        );
         let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
             break;
         };

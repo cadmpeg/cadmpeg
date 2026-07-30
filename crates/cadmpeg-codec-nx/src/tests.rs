@@ -11048,6 +11048,38 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!((continued.u - expected.u).abs() < 1.0e-8);
     assert!((continued.v - expected.v).abs() < 1.0e-8);
 
+    let mut translated = ir.clone();
+    for carrier in &mut translated.model.surfaces {
+        if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
+            origin.x += 1.0e12;
+            origin.y += 1.0e12;
+        }
+    }
+    let CurveGeometry::Line { origin, .. } = &mut translated
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == spine)
+        .expect("translated spine")
+        .geometry
+    else {
+        unreachable!()
+    };
+    origin.x += 1.0e12;
+    origin.y += 1.0e12;
+    let translated_point =
+        crate::decode::blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();
+    let translated_parameters = crate::decode::blend_surface_parameters_for_fit(
+        &translated,
+        &surface,
+        translated_point,
+        Some(Point2::new(expected.u + 0.1, expected.v - 0.05)),
+        1.0e-3,
+    )
+    .expect("exact section tangent is independent of model-space magnitude");
+    assert!((translated_parameters.u - expected.u).abs() < 1.0e-3);
+    assert!((translated_parameters.v - expected.v).abs() < 1.0e-3);
+
     let boundary_curve = CurveId("synthetic:blend-boundary-curve".into());
     ir.model.procedural_curves.push(ProceduralCurve {
         id: ProceduralCurveId("synthetic:blend-boundary".into()),
