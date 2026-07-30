@@ -760,6 +760,8 @@ pub struct FeatureOutline {
     pub phase: OutlinePhase,
     /// Six feature-local scalar slots; undefined prefixes remain `None`.
     pub local_values: Vec<Option<f64>>,
+    /// Exact encoded scalar body of each feature-local slot.
+    pub local_value_bodies: Vec<Vec<u8>>,
     /// Byte offset of the outline label in the original stream.
     pub offset: usize,
 }
@@ -1839,9 +1841,11 @@ fn decode_optional_scalars(
     mut cursor: usize,
     count: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<Option<f64>> {
+) -> (Vec<Option<f64>>, Vec<Vec<u8>>) {
     let mut values = Vec::with_capacity(count);
+    let mut bodies = Vec::with_capacity(count);
     for _ in 0..count {
+        let start = cursor;
         if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
             values.push(Some(value));
             cursor = next;
@@ -1851,8 +1855,9 @@ fn decode_optional_scalars(
         } else {
             values.push(None);
         }
+        bodies.push(payload.get(start..cursor).unwrap_or_default().to_vec());
     }
-    values
+    (values, bodies)
 }
 
 fn find_bytes(payload: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -6957,9 +6962,12 @@ fn definitions_in_ranges(
         if let Some(info) = find_bytes(payload, b"\xe0\x00feat_outl_info\0", start, end) {
             if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
+                let (local_values, local_value_bodies) =
+                    decode_optional_scalars(payload, scalar_start, 6, &cache);
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
-                    local_values: decode_optional_scalars(payload, scalar_start, 6, &cache),
+                    local_values,
+                    local_value_bodies,
                     offset: label,
                 });
             }
@@ -6985,9 +6993,12 @@ fn definitions_in_ranges(
                 {
                     continue;
                 }
+                let (local_values, local_value_bodies) =
+                    decode_optional_scalars(payload, after_ref + 4, 6, &cache);
                 outlines.push(FeatureOutline {
                     phase,
-                    local_values: decode_optional_scalars(payload, after_ref + 4, 6, &cache),
+                    local_values,
+                    local_value_bodies,
                     offset: label_offset,
                 });
             }

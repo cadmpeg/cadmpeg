@@ -1372,6 +1372,11 @@ Use the following order to select a body count:
 
 ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, joined by `ext_id`.
 
+`feat_outl_info.outline f9 02 03` stores six sequential feature-local scalar
+slots. `post_roll_back` and `post_regen` records store the same six-slot body
+after `e3 f7 <class> f5 96 92 <selector>`. Each slot is independently bounded
+by its scalar encoding; an undefined prefix does not remove that slot.
+
 | Table         | Semantics                                                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `var_arr`     | Solver-variable table keyed by `key`; `type=1` is point `u`, `type=2` is point `v`, and `type=3` is radius; `value` is solved, `guess` is the pre-solve estimate, and `known`, `homogeneity`, and `uvar_id` retain solver state. |

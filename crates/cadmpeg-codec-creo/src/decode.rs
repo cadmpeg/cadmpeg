@@ -218,6 +218,7 @@ struct CreoFeatureParameterFrame {
 struct CreoFeatureOutline {
     phase: &'static str,
     local_values: Vec<Option<f64>>,
+    local_value_bodies: Vec<Vec<u8>>,
     offset: usize,
 }
 

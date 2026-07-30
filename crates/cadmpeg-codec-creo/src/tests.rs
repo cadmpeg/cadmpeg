@@ -3973,7 +3973,8 @@ fn scan_decodes_rank_two_featdefs_local_system() {
 #[test]
 fn scan_decodes_featdefs_feature_local_outlines() {
     let mut payload = b"feat_defs_40\0\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03".to_vec();
-    payload.extend([0x0f; 6]);
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend([0x0f; 5]);
     payload.extend_from_slice(b"\xe0\x00post_roll_back\0\xe3\xf7\x01\xf5\x96\x92\x02");
     payload.extend([0xe4; 6]);
     let data = build_prt("c", &[("FeatDefs", payload)]);
@@ -3982,12 +3983,28 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     let outlines = &scan.features.definitions[0].outlines;
     assert_eq!(outlines.len(), 2);
     assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
-    assert_eq!(outlines[0].local_values, vec![Some(0.0); 6]);
+    assert_eq!(
+        outlines[0].local_values,
+        vec![
+            Some(3.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0)
+        ]
+    );
+    assert_eq!(
+        outlines[0].local_value_bodies[0],
+        [0x46, 0x08, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(outlines[0].local_value_bodies[1..], vec![vec![0x0f]; 5]);
     assert_eq!(
         outlines[1].phase,
         crate::feature::OutlinePhase::PostRollback
     );
     assert_eq!(outlines[1].local_values, vec![Some(1.0); 6]);
+    assert_eq!(outlines[1].local_value_bodies, vec![vec![0xe4]; 6]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -3999,10 +4016,19 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     assert_eq!(outlines.len(), 2);
     assert_eq!(outlines[0]["phase"], "pre_rollback");
     assert_eq!(outlines[0]["local_values"].as_array().unwrap().len(), 6);
-    assert_eq!(outlines[0]["local_values"][0], 0.0);
+    assert_eq!(outlines[0]["local_values"][0], 3.0);
+    assert_eq!(
+        outlines[0]["local_value_bodies"][0]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    assert_eq!(outlines[0]["local_value_bodies"][0][0], 0x46);
     assert_eq!(outlines[1]["phase"], "post_rollback");
     assert_eq!(outlines[1]["local_values"].as_array().unwrap().len(), 6);
     assert_eq!(outlines[1]["local_values"][0], 1.0);
+    assert_eq!(outlines[1]["local_value_bodies"][0][0], 0xe4);
 }
 
 #[test]

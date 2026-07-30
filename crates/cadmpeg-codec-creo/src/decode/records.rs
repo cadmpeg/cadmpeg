@@ -2266,6 +2266,7 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
                         crate::feature::OutlinePhase::PostRegen => "post_regen",
                     },
                     local_values: outline.local_values.clone(),
+                    local_value_bodies: outline.local_value_bodies.clone(),
                     offset: outline.offset,
                 })
                 .collect(),

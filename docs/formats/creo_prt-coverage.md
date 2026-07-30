@@ -113,6 +113,8 @@ fixtures, claims above L1 remain unproven.
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
   distinct producing feature, independent of feature-row order.
+- Feature-local pre-rollback, post-rollback, and post-regeneration outlines
+  retain each of their six exact scalar bodies independently of numeric decode.
 - Bare `Body`, `Körper`, and `Surface` operation states without a recipe,
   schema row, or feature reference name transfer as solid-body and surface-body
   model-tree nodes. Recipe-, schema-, and reference-backed records retain their
