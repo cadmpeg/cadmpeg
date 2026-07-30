@@ -162,10 +162,46 @@ pub trait EntityRewrite {
     fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error>;
 }
 
+macro_rules! declare_model_view {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] => $key:expr;)*) => {
+        /// Every model arena borrowed in canonical identity order.
+        ///
+        /// Serializes exactly as a [`Model`] that [`Model::finalize`] has
+        /// already ordered, so canonical bytes can be produced from a shared
+        /// reference. A whole-model copy is what makes a document digest cost a
+        /// second resident copy of the largest arenas; this view costs one
+        /// pointer per entity instead.
+        #[derive(Serialize)]
+        pub(crate) struct SortedModel<'a> {
+            $(
+                $(#[$attribute])*
+                $field: Vec<&'a $ty>,
+            )*
+        }
+
+        impl Model {
+            /// Borrow every arena in canonical identity order.
+            pub(crate) fn sorted(&self) -> SortedModel<'_> {
+                SortedModel {
+                    $($field: sorted_refs(&self.$field, $key),)*
+                }
+            }
+        }
+    };
+}
+
+/// Borrow `entities` in the order [`Model::finalize`] would put them in.
+fn sorted_refs<T>(entities: &[T], key: impl Fn(&T) -> String) -> Vec<&T> {
+    let mut refs = entities.iter().collect::<Vec<_>>();
+    refs.sort_by_key(|entity| key(entity));
+    refs
+}
+
 /// The IR schema version this build produces and accepts.
 pub const IR_VERSION: &str = "4";
 
 arena_registry!(declare_model);
+arena_registry!(declare_model_view);
 
 fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<String, D::Error>
 where

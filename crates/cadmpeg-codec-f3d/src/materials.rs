@@ -448,10 +448,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     let mut bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
     let body_overrides = decode_body_appearance_overrides(scan)?;
     for over in &body_overrides {
-        let Some(body) = body_keys
-            .iter()
-            .find_map(|(body, key)| (*key == over.asm_body_key).then_some(body.clone()))
-        else {
+        let Some(body) = body_for_key(body_keys, over.asm_body_key) else {
             continue;
         };
         if bindings
@@ -1051,6 +1048,23 @@ fn skip_zeros(bytes: &[u8], position: usize) -> usize {
     skip_zeros_capped(bytes, position, 8)
 }
 
+/// The body carrying ASM body key `key`.
+///
+/// Several bodies can carry one key. Hash order decides which of them an
+/// iteration reaches first and would put a different body in the appearance
+/// binding — and so a different document digest — on every process run, so the
+/// smallest identity wins instead.
+pub(crate) fn body_for_key<S: std::hash::BuildHasher>(
+    body_keys: &std::collections::HashMap<BodyId, u64, S>,
+    key: u64,
+) -> Option<BodyId> {
+    body_keys
+        .iter()
+        .filter_map(|(body, candidate)| (*candidate == key).then_some(body))
+        .min()
+        .cloned()
+}
+
 fn bind_bodies<S: std::hash::BuildHasher>(
     appearances: &[Appearance],
     assignments: &[DesignMaterialAssignment],
@@ -1061,9 +1075,7 @@ fn bind_bodies<S: std::hash::BuildHasher>(
     assignments
         .iter()
         .filter_map(|assignment| {
-            let body = body_keys.iter().find_map(|(body, key)| {
-                (*key == assignment.asm_body_key).then_some(body.clone())
-            })?;
+            let body = body_for_key(body_keys, assignment.asm_body_key)?;
             let appearance = appearances.iter().find(|appearance| {
                 appearance
                     .visual_guid
@@ -1252,7 +1264,13 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     Some((value, 4 + byte_len))
 }
 
-fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, usize)> {
+/// ASM body key to design-entity suffix and the two field offsets, keyed in
+/// ascending body-key order.
+///
+/// Callers search this map by entity suffix rather than by key, so an ordered
+/// map is what keeps the answer the same across process runs when two body keys
+/// carry one suffix.
+fn decode_body_map(bytes: &[u8]) -> BTreeMap<u64, (u64, usize, usize)> {
     crate::design::decode::body::body_bindings(bytes)
         .into_iter()
         .map(|binding| {

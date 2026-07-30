@@ -1904,31 +1904,9 @@ fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> UnknownRecord 
     }
 }
 
+/// The document digest recorded as the F3D `semantic_sha256` attribute.
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    // Normalize with a field-by-field clone so the retained source image (the
-    // largest single payload) is filtered out instead of copied and dropped.
-    let mut normalized = ir.clone();
-    normalized.finalize();
-    normalized.source = ir.source.as_ref().map(|source| {
-        let mut source = source.clone();
-        source.attributes.remove("semantic_sha256");
-        source
-    });
-    let unknowns = ir
-        .native_unknowns("f3d")
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|record| record.id.0 != crate::ids::FILE_SOURCE_IMAGE_ID)
-        .collect::<Vec<_>>();
-    normalized
-        .set_native_unknowns("f3d", &unknowns)
-        .expect("F3D unknown records serialize");
-    sha256_hex(
-        normalized
-            .to_canonical_json()
-            .expect("CadIr serialization")
-            .as_bytes(),
-    )
+    cadmpeg_ir::hash::semantic_document_hash(ir, "f3d", crate::ids::FILE_SOURCE_IMAGE_ID)
 }
 
 fn populate_annotations(

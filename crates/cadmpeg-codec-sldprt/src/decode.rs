@@ -2663,39 +2663,12 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
     normalized.model.sketches.clear();
     normalized.model.sketch_entities.clear();
     normalized.model.sketch_constraints.clear();
-    sha256_hex(
-        normalized
-            .to_canonical_json()
-            .expect("CadIr serialization")
-            .as_bytes(),
-    )
+    cadmpeg_ir::hash::canonical_json_sha256(&normalized)
 }
 
+/// The document digest recorded as the SLDPRT `semantic_sha256` attribute.
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    // Normalize with a field-by-field clone so the retained source image (the
-    // largest single payload) is filtered out instead of copied and dropped.
-    let mut normalized = ir.clone();
-    normalized.finalize();
-    normalized.source = ir.source.as_ref().map(|source| {
-        let mut source = source.clone();
-        source.attributes.remove("semantic_sha256");
-        source
-    });
-    let unknowns = ir
-        .native_unknowns("sldprt")
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|record| record.id.0 != "sldprt:file:source-image#0")
-        .collect::<Vec<_>>();
-    normalized
-        .set_native_unknowns("sldprt", &unknowns)
-        .expect("SLDPRT unknown records serialize");
-    sha256_hex(
-        normalized
-            .to_canonical_json()
-            .expect("CadIr serialization")
-            .as_bytes(),
-    )
+    cadmpeg_ir::hash::semantic_document_hash(ir, "sldprt", "sldprt:file:source-image#0")
 }
 
 fn preserve_source_image(

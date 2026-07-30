@@ -4574,3 +4574,135 @@ fn reference_images_require_valid_assets_and_plane_placements() {
             && finding.message == "reference-image placement is invalid"
     }));
 }
+
+/// Normalize the way the codecs did before the digest streamed: copy the whole
+/// document, order it, drop the recorded digest and the retained source image,
+/// and hash the serialized string.
+fn cloned_semantic_hash(ir: &CadIr, format: &str, source_image_id: &str) -> String {
+    let mut normalized = ir.clone();
+    normalized.finalize();
+    normalized.source = ir.source.as_ref().map(|source| {
+        let mut source = source.clone();
+        source.attributes.remove("semantic_sha256");
+        source
+    });
+    let unknowns = ir
+        .native_unknowns(format)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|record| record.id.0 != source_image_id)
+        .collect::<Vec<_>>();
+    normalized.set_native_unknowns(format, &unknowns).unwrap();
+    crate::hash::sha256_hex(normalized.to_canonical_json().unwrap().as_bytes())
+}
+
+/// A document with an unordered model, a recorded digest, two native
+/// namespaces, and a retained source image among the unknown records.
+fn semantic_hash_fixture() -> CadIr {
+    let mut ir = unit_cube();
+    ir.model.faces.reverse();
+    ir.model.surfaces.reverse();
+    ir.source = Some(crate::SourceMeta {
+        format: "synthetic".into(),
+        attributes: [
+            ("semantic_sha256".to_owned(), "stale".to_owned()),
+            ("active_brep".to_owned(), "body#0".to_owned()),
+        ]
+        .into_iter()
+        .collect(),
+    });
+    ir.set_native_unknowns_owned(
+        "synthetic",
+        vec![
+            UnknownRecord {
+                id: UnknownId("synthetic:file:source-image#0".into()),
+                offset: 0,
+                byte_len: 3,
+                sha256: "00".into(),
+                data: Some(vec![1, 2, 3]),
+                links: Vec::new(),
+            },
+            UnknownRecord {
+                id: UnknownId("synthetic:record#1".into()),
+                offset: 8,
+                byte_len: 2,
+                sha256: "11".into(),
+                data: Some(vec![4, 5]),
+                links: vec!["cube:body#0".into()],
+            },
+        ],
+    );
+    let namespace = ir.native.namespace_mut("other");
+    namespace.version = 3;
+    namespace.arenas.insert(
+        "records".into(),
+        vec![NativeRecord::new("other:record#0", serde_json::Map::new())],
+    );
+    ir
+}
+
+#[test]
+fn semantic_document_hash_matches_the_cloned_normalization() {
+    let ir = semantic_hash_fixture();
+    let source_image = "synthetic:file:source-image#0";
+    assert_eq!(
+        crate::hash::semantic_document_hash(&ir, "synthetic", source_image),
+        cloned_semantic_hash(&ir, "synthetic", source_image)
+    );
+    // A format the document has no namespace for still hashes the same way:
+    // both paths add the empty unknown arena the codecs have always added.
+    assert_eq!(
+        crate::hash::semantic_document_hash(&ir, "absent", source_image),
+        cloned_semantic_hash(&ir, "absent", source_image)
+    );
+}
+
+#[test]
+fn semantic_document_hash_ignores_the_recorded_digest_and_retained_bytes() {
+    let source_image = "synthetic:file:source-image#0";
+    let ir = semantic_hash_fixture();
+    let hash = crate::hash::semantic_document_hash(&ir, "synthetic", source_image);
+
+    let mut recorded = semantic_hash_fixture();
+    recorded
+        .source
+        .as_mut()
+        .unwrap()
+        .attributes
+        .insert("semantic_sha256".into(), hash.clone());
+    assert_eq!(
+        crate::hash::semantic_document_hash(&recorded, "synthetic", source_image),
+        hash
+    );
+
+    let mut repacked = semantic_hash_fixture();
+    let mut records = repacked
+        .native
+        .namespace("synthetic")
+        .unwrap()
+        .arenas
+        .get("unknowns")
+        .unwrap()
+        .clone();
+    records.retain(|record| record.id() != source_image);
+    records.push(
+        UnknownRecord {
+            id: UnknownId(source_image.into()),
+            offset: 4,
+            byte_len: 1,
+            sha256: "22".into(),
+            data: Some(vec![9]),
+            links: vec!["cube:body#0".into()],
+        }
+        .into_native_record(),
+    );
+    repacked
+        .native
+        .namespace_mut("synthetic")
+        .arenas
+        .insert("unknowns".into(), records);
+    assert_eq!(
+        crate::hash::semantic_document_hash(&repacked, "synthetic", source_image),
+        hash
+    );
+}
