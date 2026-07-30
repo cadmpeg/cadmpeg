@@ -725,6 +725,8 @@ A `Linear Dimension*` parameter not consumed by a typed locus or recipe relation
 
 A `Linear Dimension*` parameter not resolved as a line length governs the unique pair of parallel line entities in the parameter owner's Sketch whose supporting-line separation equals the evaluated length. One matching pair establishes an entity distance. Zero or multiple matching pairs do not establish a neutral line-separation relation.
 
+When multiple matching parallel-line pairs remain, a profile-local pair has exactly one intervening entity in the profile's cyclic boundary traversal. Two or more profile-local pairs establish one repeated parallel-line distance when no entity belongs to more than one pair. Pairs follow profile and boundary traversal order. An overlapping local candidate graph does not establish a neutral relation.
+
 When the entity-pair rule does not establish a relation, collinear line entities form carriers within the source kernel's absolute linear resolution. The unique pair of parallel carriers whose perpendicular separation equals the evaluated length and whose bounded member spans overlap along their common direction establishes a parallel-line-set distance when at least one carrier contains multiple entities. Disjoint bounded segments may belong to one carrier. Carrier members follow Sketch entity order. Zero or multiple matching carrier pairs do not establish a neutral parallel-line-set relation.
 
 A `Linear Dimension*` parameter not resolved by either line-only form governs the unique point-line pair in the parameter owner's Sketch whose perpendicular separation equals the evaluated length. Zero or multiple matching point-line pairs do not establish a neutral point-line relation.

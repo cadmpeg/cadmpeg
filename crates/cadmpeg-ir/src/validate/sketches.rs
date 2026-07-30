@@ -828,6 +828,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             SpatialConstraint::LineLength { entity, .. } => vec![entity.clone()],
             SpatialConstraint::RepeatedLineLength { entities, .. } => entities.clone(),
+            SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => pairs
+                .iter()
+                .flat_map(|pair| [pair.first.clone(), pair.second.clone()])
+                .collect(),
             SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
                 first.iter().chain(second).cloned().collect()
             }
@@ -854,6 +858,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::ParallelToDirection { .. }
             | SpatialConstraint::LineLength { .. } => entities.len() == 1,
             SpatialConstraint::RepeatedLineLength { .. } => entities.len() >= 2,
+            SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => pairs.len() >= 2,
             SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
                 !first.is_empty() && !second.is_empty() && (first.len() > 1 || second.len() > 1)
             }
@@ -1021,6 +1026,24 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::GeometricConsistency,
                         &constraint.id.0,
                         "spatial distance requires parallel lines separated by its length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::RepeatedParallelLineDistance { pairs, parameter } => {
+                let matches = pairs.iter().all(|pair| {
+                    let measured = spatial_geometry.get(&pair.first).and_then(|first| {
+                        spatial_geometry
+                            .get(&pair.second)
+                            .and_then(|second| spatial_parallel_line_distance(first, second))
+                    });
+                    spatial_length_parameter_matches(measured, parameter, &parameter_values)
+                });
+                if !matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "repeated spatial distance requires disjoint parallel-line pairs matching one length parameter",
                     );
                 }
             }

@@ -1764,6 +1764,15 @@ pub fn project_spatial_dimension_constraints(
                             )
                         })
                         .or_else(|| {
+                            owner_scoped_spatial_repeated_profile_line_distance_definition(
+                                spatial_entities,
+                                spatial_sketches,
+                                &sketch,
+                                parameter,
+                                parameter_id,
+                            )
+                        })
+                        .or_else(|| {
                             owner_scoped_spatial_parallel_line_set_dimension_definition(
                                 spatial_entities,
                                 &sketch,
@@ -1804,6 +1813,9 @@ pub fn project_spatial_dimension_constraints(
             | SpatialSketchConstraintDefinition::LineLength { parameter, .. }
             | SpatialSketchConstraintDefinition::RepeatedLineLength { parameter, .. }
             | SpatialSketchConstraintDefinition::ParallelLineDistance { parameter, .. }
+            | SpatialSketchConstraintDefinition::RepeatedParallelLineDistance {
+                parameter, ..
+            }
             | SpatialSketchConstraintDefinition::ParallelLineSetDistance { parameter, .. }
             | SpatialSketchConstraintDefinition::Offset {
                 parameter: Some(parameter),
@@ -1959,6 +1971,69 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
     Some(Definition::ParallelLineDistance {
         first: first.id.clone(),
         second: second.id.clone(),
+        parameter: parameter_id.clone(),
+    })
+}
+
+pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
+    entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+    sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchEntityPair,
+    };
+
+    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+        return None;
+    }
+    let expected = (parameter.evaluated_value * 10.0).abs();
+    if !expected.is_finite() {
+        return None;
+    }
+    let entities = entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch)
+        .map(|entity| (&entity.id, entity))
+        .collect::<HashMap<_, _>>();
+    let sketch = sketches.iter().find(|candidate| &candidate.id == sketch)?;
+    let mut seen_pairs = HashSet::new();
+    let mut used_entities = HashSet::new();
+    let mut pairs = Vec::new();
+    for profile in &sketch.profiles {
+        if profile.boundary.len() < 4 {
+            continue;
+        }
+        for index in 0..profile.boundary.len() {
+            let first_id = &profile.boundary[index].entity;
+            let second_id = &profile.boundary[(index + 2) % profile.boundary.len()].entity;
+            let key = if first_id < second_id {
+                (first_id, second_id)
+            } else {
+                (second_id, first_id)
+            };
+            if !seen_pairs.insert(key) {
+                continue;
+            }
+            let first = entities.get(first_id)?;
+            let second = entities.get(second_id)?;
+            if !spatial_parallel_line_distance_matches(&first.geometry, &second.geometry, expected)
+            {
+                continue;
+            }
+            if !used_entities.insert(first_id) || !used_entities.insert(second_id) {
+                return None;
+            }
+            pairs.push(SpatialSketchEntityPair {
+                first: (*first_id).clone(),
+                second: (*second_id).clone(),
+            });
+        }
+    }
+    (pairs.len() >= 2).then(|| Definition::RepeatedParallelLineDistance {
+        pairs,
         parameter: parameter_id.clone(),
     })
 }

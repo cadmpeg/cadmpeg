@@ -3563,6 +3563,20 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             end: Point3::new(3.0, 3.0, 3.0),
         },
     });
+    let repeated_parallel_line =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#repeated-parallel-line".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: repeated_parallel_line.clone(),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Line {
+            start: Point3::new(2.0, 2.0 + 2.0f64.sqrt(), 2.0 - 2.0f64.sqrt()),
+            end: Point3::new(3.0, 3.0 + 2.0f64.sqrt(), 3.0 - 2.0f64.sqrt()),
+        },
+    });
     let distance = ParameterId("synthetic:test:parameter#spatial-distance".into());
     ir.model.parameters.push(DesignParameter {
         id: distance.clone(),
@@ -3681,6 +3695,28 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::SplineGroup {
                 entities: vec![line.clone(), circle.clone()],
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId(
+                "synthetic:test:spatial-sketch-constraint#repeated-parallel-distance".into(),
+            ),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::RepeatedParallelLineDistance {
+                pairs: vec![
+                    crate::sketches::SpatialSketchEntityPair {
+                        first: line.clone(),
+                        second: parallel_line.clone(),
+                    },
+                    crate::sketches::SpatialSketchEntityPair {
+                        first: collinear_line.clone(),
+                        second: repeated_parallel_line,
+                    },
+                ],
+                parameter: distance.clone(),
             },
             native_ref: None,
         });

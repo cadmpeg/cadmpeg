@@ -346,6 +346,15 @@ pub struct SpatialSketchOffsetPair {
     pub source_reversed: bool,
 }
 
+/// One unordered entity pair in a repeated model-space sketch relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchEntityPair {
+    /// First member in source discovery order.
+    pub first: SpatialSketchEntityId,
+    /// Second member in source discovery order.
+    pub second: SpatialSketchEntityId,
+}
+
 /// Neutral geometric relations between model-space sketch entities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -431,6 +440,13 @@ pub enum SpatialSketchConstraintDefinition {
         /// Second measured line.
         second: SpatialSketchEntityId,
         /// Driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
+    /// Repeated separation between disjoint pairs of parallel lines.
+    RepeatedParallelLineDistance {
+        /// Distinct line pairs in profile traversal order.
+        pairs: Vec<SpatialSketchEntityPair>,
+        /// Shared driving distance parameter.
         parameter: crate::features::ParameterId,
     },
     /// Minimum separation between two parallel collinear model-space line sets.
