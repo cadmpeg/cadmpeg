@@ -63,6 +63,9 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
     }
     let (declared_count, mut at) = count_atom(bytes, pos + 6)?;
     let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
+    if entry_count > end.checked_sub(at)? {
+        return None;
+    }
     let mut entries = Vec::with_capacity(entry_count);
     for ordinal in 0..entry_count {
         let (value_len, header_len) = match *bytes.get(at)? {
@@ -140,6 +143,12 @@ mod tests {
         let catalogs = parse(&bytes);
         assert_eq!(catalogs.len(), 1);
         assert_eq!(catalogs[0].entries[4].value, "angle\n°");
+    }
+
+    #[test]
+    fn catalog_rejects_a_count_larger_than_the_framed_entry_bytes() {
+        let bytes = [0x7c, 0x02, 8, 0, 0, 0, 0xe4, 0xff];
+        assert!(parse(&bytes).is_empty());
     }
 
     #[test]
