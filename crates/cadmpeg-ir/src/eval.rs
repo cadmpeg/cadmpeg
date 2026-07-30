@@ -205,6 +205,39 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
         .collect()
 }
 
+fn bspline_basis_second_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+    if degree < 2 {
+        return vec![0.0; degree + 1];
+    }
+    let lower = bspline_basis_derivative(knots, degree - 1, span, t);
+    let lower_start = span - (degree - 1);
+    (0..=degree)
+        .map(|local| {
+            let index = span - degree + local;
+            let lower_at = |global: usize| {
+                global
+                    .checked_sub(lower_start)
+                    .and_then(|at| lower.get(at))
+                    .copied()
+                    .unwrap_or(0.0)
+            };
+            let left_denominator = knots[index + degree] - knots[index];
+            let right_denominator = knots[index + degree + 1] - knots[index + 1];
+            let left = if left_denominator == 0.0 {
+                0.0
+            } else {
+                degree as f64 * lower_at(index) / left_denominator
+            };
+            let right = if right_denominator == 0.0 {
+                0.0
+            } else {
+                degree as f64 * lower_at(index + 1) / right_denominator
+            };
+            left - right
+        })
+        .collect()
+}
+
 /// Evaluate a possibly-rational B-spline curve over 3D poles.
 pub fn nurbs_curve_point(
     degree: u32,
@@ -773,6 +806,24 @@ pub struct SurfacePartials {
     pub dv: Vector3,
 }
 
+/// Point, first partials, and second partials of a surface in its stored
+/// parameterization.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfaceSecondPartials {
+    /// Surface point at `(u, v)`.
+    pub point: Point3,
+    /// First partial derivative with respect to `u`.
+    pub du: Vector3,
+    /// First partial derivative with respect to `v`.
+    pub dv: Vector3,
+    /// Second partial derivative with respect to `u`.
+    pub duu: Vector3,
+    /// Mixed partial derivative.
+    pub duv: Vector3,
+    /// Second partial derivative with respect to `v`.
+    pub dvv: Vector3,
+}
+
 /// Evaluate a tensor-product NURBS surface and its exact rational first
 /// partials at `(u, v)`.
 pub fn nurbs_surface_partials(
@@ -780,6 +831,20 @@ pub fn nurbs_surface_partials(
     u_at: f64,
     v_at: f64,
 ) -> Option<SurfacePartials> {
+    nurbs_surface_second_partials(surface, u_at, v_at).map(|partials| SurfacePartials {
+        point: partials.point,
+        du: partials.du,
+        dv: partials.dv,
+    })
+}
+
+/// Evaluate a tensor-product NURBS surface and its exact rational first and
+/// second partials at `(u, v)`.
+pub fn nurbs_surface_second_partials(
+    surface: &NurbsSurface,
+    u_at: f64,
+    v_at: f64,
+) -> Option<SurfaceSecondPartials> {
     let u_degree = usize::try_from(surface.u_degree).ok()?;
     let v_degree = usize::try_from(surface.v_degree).ok()?;
     let u_count = usize::try_from(surface.u_count).ok()?;
@@ -812,12 +877,20 @@ pub fn nurbs_surface_partials(
     let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at);
     let u_derivative = bspline_basis_derivative(&surface.u_knots, u_degree, u_span, u_at);
     let v_derivative = bspline_basis_derivative(&surface.v_knots, v_degree, v_span, v_at);
+    let u_second = bspline_basis_second_derivative(&surface.u_knots, u_degree, u_span, u_at);
+    let v_second = bspline_basis_second_derivative(&surface.v_knots, v_degree, v_span, v_at);
     let mut weighted = [0.0; 3];
     let mut weighted_u = [0.0; 3];
     let mut weighted_v = [0.0; 3];
+    let mut weighted_uu = [0.0; 3];
+    let mut weighted_uv = [0.0; 3];
+    let mut weighted_vv = [0.0; 3];
     let mut weight = 0.0;
     let mut weight_u = 0.0;
     let mut weight_v = 0.0;
+    let mut weight_uu = 0.0;
+    let mut weight_uv = 0.0;
+    let mut weight_vv = 0.0;
     for i in 0..=u_degree {
         for j in 0..=v_degree {
             let index = (u_span - u_degree + i) * v_count + (v_span - v_degree + j);
@@ -829,14 +902,23 @@ pub fn nurbs_surface_partials(
             let basis = u_basis[i] * v_basis[j] * pole_weight;
             let basis_u = u_derivative[i] * v_basis[j] * pole_weight;
             let basis_v = u_basis[i] * v_derivative[j] * pole_weight;
+            let basis_uu = u_second[i] * v_basis[j] * pole_weight;
+            let basis_uv = u_derivative[i] * v_derivative[j] * pole_weight;
+            let basis_vv = u_basis[i] * v_second[j] * pole_weight;
             for (axis, coordinate) in [pole.x, pole.y, pole.z].into_iter().enumerate() {
                 weighted[axis] += basis * coordinate;
                 weighted_u[axis] += basis_u * coordinate;
                 weighted_v[axis] += basis_v * coordinate;
+                weighted_uu[axis] += basis_uu * coordinate;
+                weighted_uv[axis] += basis_uv * coordinate;
+                weighted_vv[axis] += basis_vv * coordinate;
             }
             weight += basis;
             weight_u += basis_u;
             weight_v += basis_v;
+            weight_uu += basis_uu;
+            weight_uv += basis_uv;
+            weight_vv += basis_vv;
         }
     }
     if weight == 0.0 {
@@ -854,10 +936,33 @@ pub fn nurbs_surface_partials(
             (weighted_derivative[2] - point.z * weight_derivative) / weight,
         )
     };
-    Some(SurfacePartials {
+    let du = derivative(weighted_u, weight_u);
+    let dv = derivative(weighted_v, weight_v);
+    let second_derivative = |weighted_derivative: [f64; 3],
+                             weight_derivative: f64,
+                             first_weight: f64,
+                             first: Vector3| {
+        Vector3::new(
+            (weighted_derivative[0] - point.x * weight_derivative - 2.0 * first_weight * first.x)
+                / weight,
+            (weighted_derivative[1] - point.y * weight_derivative - 2.0 * first_weight * first.y)
+                / weight,
+            (weighted_derivative[2] - point.z * weight_derivative - 2.0 * first_weight * first.z)
+                / weight,
+        )
+    };
+    let mixed_derivative = Vector3::new(
+        (weighted_uv[0] - point.x * weight_uv - weight_u * dv.x - weight_v * du.x) / weight,
+        (weighted_uv[1] - point.y * weight_uv - weight_u * dv.y - weight_v * du.y) / weight,
+        (weighted_uv[2] - point.z * weight_uv - weight_u * dv.z - weight_v * du.z) / weight,
+    );
+    Some(SurfaceSecondPartials {
         point,
-        du: derivative(weighted_u, weight_u),
-        dv: derivative(weighted_v, weight_v),
+        du,
+        dv,
+        duu: second_derivative(weighted_uu, weight_uu, weight_u, du),
+        duv: mixed_derivative,
+        dvv: second_derivative(weighted_vv, weight_vv, weight_v, dv),
     })
 }
 
@@ -1247,23 +1352,38 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
 pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
-    surface_partials_inner(geometry, u, v, 0).map(|partials| partials.point)
+    surface_second_partials_inner(geometry, u, v, 0).map(|partials| partials.point)
 }
 
 /// Evaluate a directly stored surface and its exact first partial derivatives.
 pub fn surface_partials(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfacePartials> {
-    surface_partials_inner(geometry, u, v, 0)
+    surface_second_partials_inner(geometry, u, v, 0).map(|partials| SurfacePartials {
+        point: partials.point,
+        du: partials.du,
+        dv: partials.dv,
+    })
 }
 
-fn surface_partials_inner(
+/// Evaluate a directly stored surface and its exact first and second partial
+/// derivatives.
+pub fn surface_second_partials(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Option<SurfaceSecondPartials> {
+    surface_second_partials_inner(geometry, u, v, 0)
+}
+
+fn surface_second_partials_inner(
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
     depth: usize,
-) -> Option<SurfacePartials> {
+) -> Option<SurfaceSecondPartials> {
     if depth > 256 {
         return None;
     }
+    let zero = Vector3::new(0.0, 0.0, 0.0);
     match geometry {
         SurfaceGeometry::Plane {
             origin,
@@ -1271,10 +1391,13 @@ fn surface_partials_inner(
             u_axis,
         } => {
             let v_axis = cross(*normal, *u_axis);
-            Some(SurfacePartials {
+            Some(SurfaceSecondPartials {
                 point: offset(*origin, &[(u, *u_axis), (v, v_axis)]),
                 du: *u_axis,
                 dv: v_axis,
+                duu: zero,
+                duv: zero,
+                dvv: zero,
             })
         }
         SurfaceGeometry::Cylinder {
@@ -1286,7 +1409,7 @@ fn surface_partials_inner(
             let transverse = cross(*axis, *ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
-            Some(SurfacePartials {
+            Some(SurfaceSecondPartials {
                 point: offset(
                     *origin,
                     &[
@@ -1300,6 +1423,12 @@ fn surface_partials_inner(
                     (radius * cosine, transverse),
                 ]),
                 dv: *axis,
+                duu: vector_sum(&[
+                    (-radius * cosine, *ref_direction),
+                    (-radius * sine, transverse),
+                ]),
+                duv: zero,
+                dvv: zero,
             })
         }
         SurfaceGeometry::Cone {
@@ -1314,8 +1443,8 @@ fn surface_partials_inner(
             let cosine = u.cos();
             let sine = u.sin();
             let radial_slope = half_angle.tan();
-            let local_radius = radius + v * half_angle.tan();
-            Some(SurfacePartials {
+            let local_radius = radius + v * radial_slope;
+            Some(SurfaceSecondPartials {
                 point: offset(
                     *origin,
                     &[
@@ -1333,6 +1462,15 @@ fn surface_partials_inner(
                     (radial_slope * ratio * sine, transverse),
                     (1.0, *axis),
                 ]),
+                duu: vector_sum(&[
+                    (-local_radius * cosine, *ref_direction),
+                    (-local_radius * ratio * sine, transverse),
+                ]),
+                duv: vector_sum(&[
+                    (-radial_slope * sine, *ref_direction),
+                    (radial_slope * ratio * cosine, transverse),
+                ]),
+                dvv: zero,
             })
         }
         SurfaceGeometry::Sphere {
@@ -1346,7 +1484,7 @@ fn surface_partials_inner(
             let u_sine = u.sin();
             let v_cosine = v.cos();
             let v_sine = v.sin();
-            Some(SurfacePartials {
+            Some(SurfaceSecondPartials {
                 point: offset(
                     *center,
                     &[
@@ -1364,6 +1502,19 @@ fn surface_partials_inner(
                     (-radius * v_sine * u_sine, transverse),
                     (radius * v_cosine, *axis),
                 ]),
+                duu: vector_sum(&[
+                    (-radius * v_cosine * u_cosine, *ref_direction),
+                    (-radius * v_cosine * u_sine, transverse),
+                ]),
+                duv: vector_sum(&[
+                    (radius * v_sine * u_sine, *ref_direction),
+                    (-radius * v_sine * u_cosine, transverse),
+                ]),
+                dvv: vector_sum(&[
+                    (-radius * v_cosine * u_cosine, *ref_direction),
+                    (-radius * v_cosine * u_sine, transverse),
+                    (-radius * v_sine, *axis),
+                ]),
             })
         }
         SurfaceGeometry::Torus {
@@ -1378,8 +1529,8 @@ fn surface_partials_inner(
             let u_sine = u.sin();
             let v_cosine = v.cos();
             let v_sine = v.sin();
-            let ring = major_radius + minor_radius * v.cos();
-            Some(SurfacePartials {
+            let ring = major_radius + minor_radius * v_cosine;
+            Some(SurfaceSecondPartials {
                 point: offset(
                     *center,
                     &[
@@ -1397,18 +1548,37 @@ fn surface_partials_inner(
                     (-minor_radius * v_sine * u_sine, transverse),
                     (minor_radius * v_cosine, *axis),
                 ]),
+                duu: vector_sum(&[
+                    (-ring * u_cosine, *ref_direction),
+                    (-ring * u_sine, transverse),
+                ]),
+                duv: vector_sum(&[
+                    (minor_radius * v_sine * u_sine, *ref_direction),
+                    (-minor_radius * v_sine * u_cosine, transverse),
+                ]),
+                dvv: vector_sum(&[
+                    (-minor_radius * v_cosine * u_cosine, *ref_direction),
+                    (-minor_radius * v_cosine * u_sine, transverse),
+                    (-minor_radius * v_sine, *axis),
+                ]),
             })
         }
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_partials(nurbs, u, v),
-        SurfaceGeometry::Polygonal { .. } => None,
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_second_partials(nurbs, u, v),
         SurfaceGeometry::Transformed { basis, transform } => {
-            surface_partials_inner(basis, u, v, depth + 1).map(|partials| SurfacePartials {
-                point: affine_point(*transform, partials.point),
-                du: affine_vector(*transform, partials.du),
-                dv: affine_vector(*transform, partials.dv),
+            surface_second_partials_inner(basis, u, v, depth + 1).map(|partials| {
+                SurfaceSecondPartials {
+                    point: affine_point(*transform, partials.point),
+                    du: affine_vector(*transform, partials.du),
+                    dv: affine_vector(*transform, partials.dv),
+                    duu: affine_vector(*transform, partials.duu),
+                    duv: affine_vector(*transform, partials.duv),
+                    dvv: affine_vector(*transform, partials.dvv),
+                }
             })
         }
-        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -1517,6 +1687,98 @@ pub fn model_surface_point_by_id(
     }
 
     evaluate(ir, surface, u, v, &mut Vec::new()).map(|evaluation| evaluation.point)
+}
+
+/// Evaluate an arena-selected direct or uniform-offset surface and its exact
+/// first partial derivatives.
+///
+/// Nested offsets share the base surface's oriented unit normal, so their
+/// signed distances combine before differentiating the normal field.
+pub fn model_surface_partials_by_id(
+    ir: &CadIr,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+) -> Option<SurfacePartials> {
+    let mut support = surface;
+    let mut distance = 0.0;
+    let mut visiting = Vec::new();
+    loop {
+        if visiting.contains(support) {
+            return None;
+        }
+        visiting.push(support.clone());
+        let carrier = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|candidate| candidate.id == *support)?;
+        if let SurfaceGeometry::Procedural { construction } = &carrier.geometry {
+            let procedural =
+                ir.model.procedural_surfaces.iter().find(|candidate| {
+                    candidate.id == *construction && candidate.surface == *support
+                })?;
+            let ProceduralSurfaceDefinition::Offset {
+                support: next,
+                distance: increment,
+                ..
+            } = &procedural.definition
+            else {
+                return None;
+            };
+            distance += increment;
+            support = next;
+            continue;
+        }
+
+        let base = surface_second_partials(&carrier.geometry, u, v)?;
+        let normal_vector = cross(base.du, base.dv);
+        let normal_magnitude = normal_vector.norm();
+        if !normal_magnitude.is_finite() || normal_magnitude == 0.0 {
+            return None;
+        }
+        let normal = Vector3::new(
+            normal_vector.x / normal_magnitude,
+            normal_vector.y / normal_magnitude,
+            normal_vector.z / normal_magnitude,
+        );
+        let normal_u_numerator = vector_sum(&[
+            (1.0, cross(base.duu, base.dv)),
+            (1.0, cross(base.du, base.duv)),
+        ]);
+        let normal_v_numerator = vector_sum(&[
+            (1.0, cross(base.duv, base.dv)),
+            (1.0, cross(base.du, base.dvv)),
+        ]);
+        let unit_normal_derivative = |derivative: Vector3| {
+            let normal_component =
+                normal.x * derivative.x + normal.y * derivative.y + normal.z * derivative.z;
+            Vector3::new(
+                (derivative.x - normal_component * normal.x) / normal_magnitude,
+                (derivative.y - normal_component * normal.y) / normal_magnitude,
+                (derivative.z - normal_component * normal.z) / normal_magnitude,
+            )
+        };
+        let normal_u = unit_normal_derivative(normal_u_numerator);
+        let normal_v = unit_normal_derivative(normal_v_numerator);
+        return Some(SurfacePartials {
+            point: Point3::new(
+                base.point.x + distance * normal.x,
+                base.point.y + distance * normal.y,
+                base.point.z + distance * normal.z,
+            ),
+            du: Vector3::new(
+                base.du.x + distance * normal_u.x,
+                base.du.y + distance * normal_u.y,
+                base.du.z + distance * normal_u.z,
+            ),
+            dv: Vector3::new(
+                base.dv.x + distance * normal_v.x,
+                base.dv.y + distance * normal_v.y,
+                base.dv.z + distance * normal_v.z,
+            ),
+        });
+    }
 }
 
 fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {
@@ -1905,9 +2167,10 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        curve_point, curve_tangent, model_surface_point_by_id, nurbs_curve_parameter_near_point,
-        nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_partials,
-        nurbs_surface_point, pcurve_uv, surface_partials,
+        curve_point, curve_tangent, model_surface_partials_by_id, model_surface_point_by_id,
+        nurbs_curve_parameter_near_point, nurbs_curve_speed_bound, nurbs_surface_isocurve,
+        nurbs_surface_partials, nurbs_surface_point, nurbs_surface_second_partials, pcurve_uv,
+        surface_partials, surface_second_partials,
     };
     use crate::geometry::{
         CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
@@ -1941,6 +2204,40 @@ mod tests {
         assert_eq!(partials.point, Point3::new(0.5, 2.25, 0.0));
         assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
         assert_eq!(partials.dv, Vector3::new(0.0, 3.0, 0.0));
+    }
+
+    #[test]
+    fn quadratic_surface_second_partials_follow_stored_parameterization() {
+        let surface = NurbsSurface {
+            u_degree: 2,
+            v_degree: 2,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            u_count: 3,
+            v_count: 3,
+            control_points: (0..3)
+                .flat_map(|i| {
+                    (0..3).map(move |j| {
+                        Point3::new(
+                            f64::from(i) / 2.0,
+                            f64::from(j) / 2.0,
+                            f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
+                        )
+                    })
+                })
+                .collect(),
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let partials =
+            nurbs_surface_second_partials(&surface, 0.25, 0.75).expect("second partials");
+        assert_eq!(partials.point, Point3::new(0.25, 0.75, 0.625));
+        assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.5));
+        assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 1.5));
+        assert_eq!(partials.duu, Vector3::new(0.0, 0.0, 2.0));
+        assert_eq!(partials.duv, Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(partials.dvv, Vector3::new(0.0, 0.0, 2.0));
     }
 
     #[test]
@@ -2011,6 +2308,10 @@ mod tests {
             model_surface_point_by_id(&ir, &second_id, 1.0e16, -1.0e16),
             Some(Point3::new(1.0e16, -1.0e16, -3.0))
         );
+        let partials = model_surface_partials_by_id(&ir, &second_id, 1.0e16, -1.0e16).unwrap();
+        assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));
+        assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
     }
 
     #[test]
@@ -2058,10 +2359,14 @@ mod tests {
             },
         };
 
+        let cylinder_second = surface_second_partials(&cylinder, 0.0, 4.0).unwrap();
         let cylinder = surface_partials(&cylinder, 0.0, 4.0).unwrap();
         assert_eq!(cylinder.point, Point3::new(2.0, 0.0, 4.0));
         assert_eq!(cylinder.du, Vector3::new(0.0, 2.0, 0.0));
         assert_eq!(cylinder.dv, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(cylinder_second.duu, Vector3::new(-2.0, 0.0, 0.0));
+        assert_eq!(cylinder_second.duv, Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(cylinder_second.dvv, Vector3::new(0.0, 0.0, 0.0));
         let cone = surface_partials(&cone, 0.0, 3.0).unwrap();
         assert!((cone.point.x - 5.0).abs() < 1e-12);
         assert!((cone.du.y - 5.0).abs() < 1e-12);
@@ -2157,6 +2462,11 @@ mod tests {
         assert!((partials.du.x - 16.0 / 9.0).abs() < 1e-12);
         assert!(partials.du.y.abs() < 1e-12);
         assert!((partials.dv.y - 3.0).abs() < 1e-12);
+        let second = nurbs_surface_second_partials(&surface, 0.5, 0.25).expect("second partials");
+        assert!((second.duu.x + 64.0 / 27.0).abs() < 1e-12);
+        assert!(second.duu.y.abs() < 1e-12);
+        assert_eq!(second.duv, Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(second.dvv, Vector3::new(0.0, 0.0, 0.0));
     }
 
     #[test]

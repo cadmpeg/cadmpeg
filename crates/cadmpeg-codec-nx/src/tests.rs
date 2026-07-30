@@ -6819,6 +6819,75 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
+
+    let mut translated = result.ir.clone();
+    for carrier in &mut translated.model.surfaces {
+        if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
+            origin.x += 1.0e12;
+            origin.y += 1.0e12;
+        }
+    }
+    let translated_point =
+        cadmpeg_ir::eval::model_surface_point_by_id(&translated, &surface, expected.u, expected.v)
+            .unwrap();
+    let translated_parameters = crate::decode::offset_surface_parameters_with_tolerance(
+        &translated,
+        &surface,
+        translated_point,
+        Some(Point2::new(expected.u + 0.1, expected.v - 0.1)),
+        Some(1.0e-3),
+    )
+    .expect("exact offset tangents are independent of model-space magnitude");
+    assert!((translated_parameters.u - expected.u).abs() < 1.0e-3);
+    assert!((translated_parameters.v - expected.v).abs() < 1.0e-3);
+
+    let nested_surface = cadmpeg_ir::ids::SurfaceId("synthetic:nested-offset".into());
+    let nested_construction =
+        cadmpeg_ir::ids::ProceduralSurfaceId("synthetic:nested-offset-construction".into());
+    translated
+        .model
+        .surfaces
+        .push(cadmpeg_ir::geometry::Surface {
+            id: nested_surface.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: nested_construction.clone(),
+            },
+            source_object: None,
+        });
+    translated
+        .model
+        .procedural_surfaces
+        .push(cadmpeg_ir::geometry::ProceduralSurface {
+            id: nested_construction,
+            surface: nested_surface.clone(),
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: surface,
+                distance: -0.75,
+                u_sense: None,
+                v_sense: None,
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+    let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &translated,
+        &nested_surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
+    let nested_parameters = crate::decode::offset_surface_parameters_with_tolerance(
+        &translated,
+        &nested_surface,
+        nested_point,
+        Some(Point2::new(expected.u - 0.1, expected.v + 0.1)),
+        Some(1.0e-3),
+    )
+    .expect("nested offsets share the exact base-surface normal derivative");
+    assert!((nested_parameters.u - expected.u).abs() < 1.0e-3);
+    assert!((nested_parameters.v - expected.v).abs() < 1.0e-3);
 }
 
 #[test]

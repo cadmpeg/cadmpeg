@@ -16,9 +16,9 @@ use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, curve_point, curve_tangent, model_surface_point_by_id,
-    nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_partials, pcurve_uv,
-    surface_partials, surface_point,
+    analytic_surface_parameters, curve_point, curve_tangent, model_surface_partials_by_id,
+    model_surface_point_by_id, nurbs_curve_speed_bound, nurbs_surface_isocurve,
+    nurbs_surface_partials, pcurve_uv, surface_partials, surface_point,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -5219,6 +5219,9 @@ fn model_surface_derivative(
         .iter()
         .find(|candidate| &candidate.id == surface)?;
     if let Some(partials) = surface_partials(&carrier.geometry, parameters.u, parameters.v) {
+        return Some(if along_u { partials.du } else { partials.dv });
+    }
+    if let Some(partials) = model_surface_partials_by_id(ir, surface, parameters.u, parameters.v) {
         return Some(if along_u { partials.du } else { partials.dv });
     }
 
