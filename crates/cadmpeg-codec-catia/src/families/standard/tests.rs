@@ -1020,6 +1020,61 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
 }
 
 #[test]
+fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![
+        vec![[0, 0], [1, 1]],
+        vec![[10, 11]],
+        vec![[10, 11], [12, 13], [14, 15]],
+    ];
+    let edge_faces = [[0, 0], [1, 1], [1, 1]];
+    let face_edges = vec![vec![0], vec![1, 2]];
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1), use_(2)]],
+        }]),
+    ];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 3],
+        edges: &[0, 1, 2],
+        constraints: Vec::new(),
+        assignment: vec![None; 3],
+        degrees: vec![BTreeMap::new(), BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(
+        search.face_configuration_options(),
+        Some(vec![vec![(1, [10, 11]), (2, [10, 11])]])
+    );
+}
+
+#[test]
 fn incidence_forced_face_chain_does_not_consume_branch_budget() {
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,

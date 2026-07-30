@@ -1361,9 +1361,10 @@ impl IncidenceComponentSearch<'_, '_> {
             })
             .collect::<Vec<_>>();
         faces.sort_by_key(|(width, face, _)| (*width, *face));
-        for (_, _, assignments) in faces {
+        let mut best = None;
+        for (width, face, assignments) in faces {
             if !self.boundary_propagation_budget.charge() {
-                return None;
+                break;
             }
             let Some(configurations) = mesh_face_endpoint_configurations(
                 assignments,
@@ -1372,7 +1373,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 self.boundary_propagation_budget,
             ) else {
                 if self.boundary_propagation_budget.exhausted.get() {
-                    return None;
+                    break;
                 }
                 continue;
             };
@@ -1394,9 +1395,15 @@ impl IncidenceComponentSearch<'_, '_> {
             if projected.iter().all(Vec::is_empty) {
                 continue;
             }
-            return Some(projected);
+            let rank = (projected.len(), width, face);
+            if best.as_ref().is_none_or(|(best_rank, _)| rank < *best_rank) {
+                best = Some((rank, projected));
+                if rank.0 == 1 {
+                    break;
+                }
+            }
         }
-        None
+        best.map(|(_, projected)| projected)
     }
 
     fn search_face_configurations(
