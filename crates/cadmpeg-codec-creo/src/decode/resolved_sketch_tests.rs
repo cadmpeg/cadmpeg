@@ -7571,6 +7571,110 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             .definition,
         SketchConstraintDefinition::Native { .. }
     ));
+    let mut mixed_perpendicular = definition.clone();
+    mixed_perpendicular
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps = vec![crate::feature::FeatureSkamp {
+        id: 19,
+        kind: 5,
+        flags: 0,
+        status: 34,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 0,
+            },
+        ],
+        offset: 84,
+    }];
+    synchronize_skamp_count(&mut mixed_perpendicular);
+    assert_eq!(
+        section_skamp_constraints(
+            &mixed_perpendicular,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Perpendicular {
+            first: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            second: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+        }
+    );
+    mixed_perpendicular
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[0]
+        .sense = 2;
+    assert!(matches!(
+        section_skamp_constraints(
+            &mixed_perpendicular,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    mixed_perpendicular
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps = vec![
+        crate::feature::FeatureSkamp {
+            id: 18,
+            kind: 0,
+            flags: 0,
+            status: 35,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 2,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 14,
+                    sense: 0,
+                },
+            ],
+            offset: 83,
+        },
+        crate::feature::FeatureSkamp {
+            id: 19,
+            kind: 5,
+            flags: 0,
+            status: 34,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 13,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+            ],
+            offset: 84,
+        },
+    ];
+    synchronize_skamp_count(&mut mixed_perpendicular);
+    assert_eq!(
+        section_skamp_constraints(
+            &mixed_perpendicular,
+            &SketchId("creo:model:sketch#917".into())
+        )[1]
+        .0
+        .definition,
+        SketchConstraintDefinition::Perpendicular {
+            first: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            second: SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
+        }
+    );
     let mut point_pair = definition.clone();
     let point_pair_relations = point_pair.relations.as_mut().expect("relations");
     point_pair_relations.skamps = vec![crate::feature::FeatureSkamp {

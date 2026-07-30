@@ -1511,8 +1511,9 @@ across that equality under the same unique-row and conflict rules as type zero.
 A two-item type-9 incidence with sense zero on one line and one point makes the
 point coincident with the line and maps to a neutral point-on-object
 constraint. Operand order does not change the line and point roles.
-A two-item sense-zero line incidence makes the lines perpendicular for type 5,
-parallel for type 7, and equal in length for type 8.
+A two-item sense-zero curve incidence makes the curves perpendicular for type
+5. When both operands are lines, type 7 makes them parallel and type 8 makes
+them equal in length.
 A two-item type-6 incidence with sense zero on two arcs or circles makes their
 radii equal. A solved positive radius propagates through the connected radius
 component. A solved arc center and endpoint supply their Euclidean distance as

@@ -10759,6 +10759,14 @@ fn section_skamp_curve_entity(
     let is_curve = section_skamp_is_line(definition, item)
         || unique_bounded_curve_segment(definition, item.entity_id).is_some()
         || section_skamp_is_circular(definition, item)
+        || matches!(
+            solver_only_section_entity_family(definition, item.entity_id),
+            Some(
+                SectionEntityIncidenceFamily::BoundedCurve
+                    | SectionEntityIncidenceFamily::Arc
+                    | SectionEntityIncidenceFamily::Circular
+            )
+        )
         || section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
             matches!(
                 entity,
@@ -11151,12 +11159,16 @@ fn section_skamp_constraints_for_geometry(
                             native_constraint()?
                         }
                     }
-                    (5, [first, second])
-                        if section_skamp_line_pair(definition, sketch, first, second).is_some() =>
-                    {
-                        let [first, second] =
-                            section_skamp_line_pair(definition, sketch, first, second)?;
-                        SketchConstraintDefinition::Perpendicular { first, second }
+                    (5, [first, second]) => {
+                        match (
+                            section_skamp_curve_entity(definition, sketch, first),
+                            section_skamp_curve_entity(definition, sketch, second),
+                        ) {
+                            (Some(first), Some(second)) => {
+                                SketchConstraintDefinition::Perpendicular { first, second }
+                            }
+                            _ => native_constraint()?,
+                        }
                     }
                     (6, [first, second])
                         if section_skamp_circular_entity(definition, sketch, first).is_some()

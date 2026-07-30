@@ -129,6 +129,10 @@ fixtures, claims above L1 remain unproven.
   when the selected section-point identifier matches exactly one endpoint of
   the sense-zero entity. This structural join is independent of solver
   activity and does not require evaluated tangent vectors.
+- A two-item type-five incidence transfers as entity-level perpendicularity
+  when both sense-zero operands have uniquely established curve families.
+  Line-only coordinate-orientation propagation remains restricted to two
+  uniquely established lines.
 - A type-37 incidence transfers as a projected-copy relation when its two
   sense-zero operands are consecutive reference/result identities and the
   result has a unique row in the trimmed profile.
