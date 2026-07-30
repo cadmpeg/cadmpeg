@@ -2332,6 +2332,8 @@ where
         for component in &components {
             let preflight_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let orientation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let coordinate_preflight_budget =
+                MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
             let mut accept_first = |solution: &[MeshEndpointPair]| {
                 let mut completed = fixed.clone();
@@ -2347,8 +2349,9 @@ where
                         })
                         .collect::<Vec<_>>();
                     domains
-                        .refine_candidates(&candidates, Some(&preflight_budget))
+                        .refine_candidates(&candidates, Some(&coordinate_preflight_budget))
                         .is_some()
+                        || coordinate_preflight_budget.exhausted.get()
                 });
                 if !coordinate_feasible {
                     return ControlFlow::Continue(());
