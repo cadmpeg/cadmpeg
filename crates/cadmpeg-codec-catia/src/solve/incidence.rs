@@ -1998,6 +1998,29 @@ where
         }) {
             return None;
         }
+        let preparation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let coordinate_domains = if choices.iter().any(|candidates| candidates.len() > 1) {
+            if let Some(quotient) = mesh_quotient {
+                let mut quotient = quotient.clone();
+                let Some(domains) = quotient.prepare_coordinate_root_domains(
+                    point_count,
+                    choices,
+                    Some(&preparation_budget),
+                ) else {
+                    exhausted = preparation_budget.exhausted.get();
+                    rejection = IncidenceRejection::ComponentDomain;
+                    return None;
+                };
+                Some(domains)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let choices = coordinate_domains
+            .as_ref()
+            .map_or(choices, MeshCoordinateRootDomains::edge_candidates);
         let mut components =
             incidence_choice_components(choices, edge_faces, mesh_assignments, mesh_quotient);
         if let Some(constraint) = partial_solution_valid {
@@ -2084,22 +2107,6 @@ where
             let _ = visitor(&pairs);
             return Some(());
         }
-        let preparation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let coordinate_domains = if let Some(quotient) = mesh_quotient {
-            let mut quotient = quotient.clone();
-            let Some(domains) = quotient.prepare_coordinate_root_domains(
-                point_count,
-                choices,
-                Some(&preparation_budget),
-            ) else {
-                exhausted = preparation_budget.exhausted.get();
-                rejection = IncidenceRejection::ComponentDomain;
-                return None;
-            };
-            Some(domains)
-        } else {
-            None
-        };
         let mut component_domains = Vec::with_capacity(components.len());
         for component in components {
             let component_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);

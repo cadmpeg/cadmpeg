@@ -2433,6 +2433,30 @@ fn port_quotient_completes_only_supported_unknown_edge_pairs() {
 }
 
 #[test]
+fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
+    let candidates = [
+        vec![[0, 1], [0, 2]],
+        vec![[0, 1]],
+        vec![[0, 1]],
+        vec![[2, 2]],
+    ];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &candidates,
+        3,
+        &[[10, 11], [10, 12], [13, 11], [14, 14]],
+    )
+    .expect("initial quotient");
+    let domains = quotient
+        .prepare_coordinate_root_domains(3, &candidates, None)
+        .expect("coordinate root domains");
+
+    assert_eq!(
+        domains.edge_candidates(),
+        &[vec![[0, 1]], vec![[0, 1]], vec![[0, 1]], vec![[2, 2]]]
+    );
+}
+
+#[test]
 fn port_quotient_declines_unbounded_unknown_edge_pairs() {
     let candidates = [Vec::new()];
     let mut quotient =

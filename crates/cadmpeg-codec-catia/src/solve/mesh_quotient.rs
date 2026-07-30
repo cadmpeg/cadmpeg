@@ -278,6 +278,10 @@ pub(crate) struct MeshCoordinateRootDomains {
 }
 
 impl MeshCoordinateRootDomains {
+    pub(crate) fn edge_candidates(&self) -> &[Vec<[usize; 2]>] {
+        &self.edge_candidates
+    }
+
     fn coverage_matching(
         domains: &[Vec<usize>],
         point_count: usize,
@@ -618,13 +622,49 @@ impl MeshQuotient {
         ) {
             return None;
         }
+        let mut supported_candidates = edge_candidates.to_vec();
+        loop {
+            let mut changed = Vec::new();
+            for (edge, candidates) in supported_candidates.iter_mut().enumerate() {
+                let [left, right] = edges[edge];
+                let before = candidates.len();
+                if budget.is_some_and(|budget| !budget.charge_by(before)) {
+                    return None;
+                }
+                candidates.retain(|pair| {
+                    (domains[left].binary_search(&pair[0]).is_ok()
+                        && domains[right].binary_search(&pair[1]).is_ok())
+                        || (domains[left].binary_search(&pair[1]).is_ok()
+                            && domains[right].binary_search(&pair[0]).is_ok())
+                });
+                if candidates.is_empty() {
+                    return None;
+                }
+                if candidates.len() != before {
+                    changed.push(edge);
+                }
+            }
+            if changed.is_empty() {
+                break;
+            }
+            if !enforce_edge_arc_consistency_from(
+                &mut domains,
+                &edges,
+                &root_edges,
+                &supported_candidates,
+                &changed,
+                budget,
+            ) {
+                return None;
+            }
+        }
         let coverage_matching =
             MeshCoordinateRootDomains::coverage_matching(&domains, point_count, budget)?;
         Some(MeshCoordinateRootDomains {
             domains,
             edges: Arc::new(edges),
             root_edges: Arc::new(root_edges),
-            edge_candidates: Arc::new(edge_candidates.to_vec()),
+            edge_candidates: Arc::new(supported_candidates),
             coverage_matching,
             point_count,
         })
