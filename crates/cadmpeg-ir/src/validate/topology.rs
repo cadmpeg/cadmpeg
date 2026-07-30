@@ -2176,6 +2176,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
         }
+        check_configuration_output_closure(configuration, findings);
     }
     if active_configurations > 1 {
         findings.push(Finding {
@@ -4553,6 +4554,74 @@ fn regeneration_references(
         _ => {}
     }
     references.into_iter()
+}
+
+fn check_configuration_output_closure(
+    configuration: &crate::features::DesignConfiguration,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(bodies) = configuration.bodies.resolved() else {
+        return;
+    };
+    if bodies.is_empty() || configuration.feature_states.is_empty() {
+        return;
+    }
+    let bodies = bodies.iter().collect::<HashSet<_>>();
+    let mut closure = configuration
+        .feature_states
+        .iter()
+        .filter(|(_, state)| {
+            !state.suppressed && state.outputs.iter().any(|body| bodies.contains(body))
+        })
+        .map(|(feature, _)| feature.clone())
+        .collect::<HashSet<_>>();
+    let written_bodies = configuration
+        .feature_states
+        .values()
+        .filter(|state| !state.suppressed)
+        .flat_map(|state| &state.outputs)
+        .collect::<HashSet<_>>();
+    for body in bodies.difference(&written_bodies) {
+        findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!(
+                "configuration body `{}` has no unsuppressed feature-state writer",
+                body.0
+            ),
+            entity: Some(configuration.id.0.clone()),
+        });
+    }
+    let mut pending = closure.iter().cloned().collect::<Vec<_>>();
+    while let Some(feature) = pending.pop() {
+        let state = &configuration.feature_states[&feature];
+        for dependency in &state.dependencies {
+            match configuration.feature_states.get(dependency) {
+                None => findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!(
+                        "configuration output closure omits dependency state `{}`",
+                        dependency.0
+                    ),
+                    entity: Some(configuration.id.0.clone()),
+                }),
+                Some(dependency_state) if dependency_state.suppressed => {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "configuration output closure uses suppressed dependency state `{}`",
+                            dependency.0
+                        ),
+                        entity: Some(configuration.id.0.clone()),
+                    });
+                }
+                Some(_) if closure.insert(dependency.clone()) => pending.push(dependency.clone()),
+                Some(_) => {}
+            }
+        }
+    }
 }
 
 fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {

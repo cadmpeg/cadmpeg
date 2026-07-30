@@ -1475,6 +1475,79 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].active = false;
     ir.model.features[0].suppressed = Some(false);
 
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        first_feature.clone(),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumPoint {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        },
+    )]);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message
+                == format!(
+                    "configuration body `{}` has no unsuppressed feature-state writer",
+                    body.0
+                )
+    }));
+
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        later_feature.clone(),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: vec![first_feature.clone()],
+            outputs: vec![body.clone()],
+            definition: FeatureDefinition::DatumPoint {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        },
+    )]);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message
+                == format!(
+                    "configuration output closure omits dependency state `{}`",
+                    first_feature.0
+                )
+    }));
+    ir.model.configurations[0].feature_states.insert(
+        first_feature.clone(),
+        ConfigurationFeatureState {
+            suppressed: true,
+            dependencies: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumPoint {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        },
+    );
+    ir.model.configurations[0]
+        .suppressed_features
+        .push(first_feature.clone());
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message
+                == format!(
+                    "configuration output closure uses suppressed dependency state `{}`",
+                    first_feature.0
+                )
+    }));
+    ir.model.configurations[0]
+        .feature_states
+        .get_mut(&first_feature)
+        .expect("dependency state")
+        .suppressed = false;
+    ir.model.configurations[0].suppressed_features.clear();
+    assert!(validate(&ir, Vec::new()).is_ok());
+    ir.model.configurations[0].feature_states.clear();
+
     ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(vec![
         BodyId("synthetic:test:body#missing".into()),
         BodyId("synthetic:test:body#missing".into()),
