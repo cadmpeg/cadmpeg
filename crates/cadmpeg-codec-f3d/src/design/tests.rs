@@ -11556,7 +11556,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         endpoint_refs: Vec::new(),
         geometry: SketchGeometry::Line { start, end },
     };
-    let entities = vec![
+    let mut entities = vec![
         line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
         line("second", Point2::new(1.0, 2.0), Point2::new(5.0, 2.0)),
         line("unrelated", Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)),
@@ -11571,6 +11571,52 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         [SketchConstraintDefinition::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
     ));
+
+    let parameter = DesignParameter {
+        id: "f3d:A:design-parameter#1".into(),
+        byte_offset: 0,
+        class_tag: "305".into(),
+        record_index: 1,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
+        source_ordinal: 1,
+        owner_record_index: Some(2),
+        expression: "2 mm".into(),
+        expression_offset: 0,
+        source_kind: "Linear Dimension-2".into(),
+        source_kind_offset: 0,
+        kind: DesignParameterKind::Dimension,
+        unit: Some("mm".into()),
+        unit_offset: Some(0),
+        name: "d1".into(),
+        name_offset: 0,
+        evaluated_value: 0.2,
+        evaluated_value_offset: 0,
+    };
+    assert!(matches!(
+        crate::design::dimensions::unique_parallel_line_dimension_definition(
+            &entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        ),
+        Some(SketchConstraintDefinition::Distance {
+            entities,
+            ..
+        }) if entities.as_slice()
+            == [SketchEntityId("first".into()), SketchEntityId("second".into())]
+    ));
+
+    entities.push(line("third", Point2::new(-1.0, 4.0), Point2::new(3.0, 4.0)));
+    assert!(
+        crate::design::dimensions::unique_parallel_line_dimension_definition(
+            &entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        )
+        .is_none()
+    );
 }
 
 #[test]
