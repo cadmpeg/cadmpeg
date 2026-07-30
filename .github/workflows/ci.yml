@@ -41,6 +41,11 @@ jobs:
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
 
+      - name: Specification reference check
+        # Open-items documents cite the specification by section and paragraph
+        # start. Catches a reference that names no paragraph or several.
+        run: python3 scripts/check-doc-anchors.py
+
       - name: Format check
         run: cargo fmt --all --check
 

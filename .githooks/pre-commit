@@ -3,6 +3,14 @@
 # Skip with: git commit --no-verify
 set -e
 
+# Specification references in the open-items documents name a section and a
+# paragraph start rather than a line number, so they stay valid as the
+# specification grows. Validate them whenever either side is staged.
+if git diff --cached --name-only | grep -qE '^docs/formats/.*\.md$'; then
+  echo "pre-commit: scripts/check-doc-anchors.py"
+  python3 scripts/check-doc-anchors.py
+fi
+
 # Only run the Rust gate when the commit stages files that can change its
 # outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
 # and build flags), or the toolchain pin. A docs-, CI-, or config-only commit
