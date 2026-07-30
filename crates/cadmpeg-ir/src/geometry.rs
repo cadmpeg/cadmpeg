@@ -601,8 +601,8 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         u_sense: Option<i64>,
         /// Native V parameter-direction sense enum, when carried. The
-        /// revision-gated layout stores a boolean in this slot instead: the
-        /// offset-side reversal.
+        /// revision-gated layout stores a boolean in this slot instead; it
+        /// does not affect the offset surface's point set.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         v_sense: Option<i64>,
         /// Ordered conditional ASM extension flags.

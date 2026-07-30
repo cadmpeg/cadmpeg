@@ -26,6 +26,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Some records do not include a cache. For those records, the field layout is the only source of the face shape. We must know the layout to read them and to write them. The decoder keeps these records as opaque bytes now.
 
+### GC-05. Second boolean of the `off_spl_sur` sense pair
+
+**Question.** What does the second boolean of the revision-gated `off_spl_sur` sense pair control?
+
+**Known.** `f3d.md` §7.3 `off_spl_sur` gives the first boolean and the offset construction. The second boolean does not select the offset side and does not move the offset surface. It is set only in records whose first boolean is also set, and those records have a support surface whose stored parameterization is reflected relative to the model.
+
+**Need.** We must know which value to write when we make this record from a neutral model. `false` is the value for a surface built directly from a support surface and a distance, so the item blocks only the reflected case.
+
 ### GC-06. `off_spl_sur` ASM extension prefix
 
 **Question.** What do the two booleans of the `off_spl_sur` ASM extension prefix control?
