@@ -366,6 +366,7 @@ fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurb
         .checked_mul(24)?;
     let grid = skip_u32_token_run(data, after_v_mults)?.checked_add(3)?;
     let end = grid.checked_add(pole_bytes)?;
+    data.get(grid..end)?;
     Some(ZeroEntityNurbsLayout {
         u_distinct,
         u_mults,
@@ -1721,6 +1722,21 @@ mod tests {
     fn write_tagged_u32(record: &mut [u8], at: usize, value: u32) {
         record[at] = 0x10;
         record[at + 1..at + 5].copy_from_slice(&value.to_le_bytes());
+    }
+
+    #[test]
+    fn nurbs_layout_requires_the_declared_pole_grid_before_allocation() {
+        let mut bytes = vec![0u8; 79];
+        bytes[23..31].copy_from_slice(&0.0f64.to_le_bytes());
+        bytes[31..39].copy_from_slice(&1.0f64.to_le_bytes());
+        write_tagged_u32(&mut bytes, 39, 2);
+        write_tagged_u32(&mut bytes, 44, 4096);
+        bytes[50..58].copy_from_slice(&0.0f64.to_le_bytes());
+        bytes[58..66].copy_from_slice(&1.0f64.to_le_bytes());
+        write_tagged_u32(&mut bytes, 66, 2);
+        write_tagged_u32(&mut bytes, 71, 4096);
+
+        assert!(zero_entity_nurbs_layout(&bytes, 0).is_none());
     }
 
     fn support_pcurve_record(tag: u8) -> Vec<u8> {

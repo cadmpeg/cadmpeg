@@ -2,7 +2,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -42,6 +42,20 @@ use crate::solve::UnionFind;
 fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {
     let domain = Arc::new(domain);
     vec![domain; count]
+}
+
+fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
+    faces
+        .iter()
+        .map(|degrees| {
+            degrees
+                .iter()
+                .copied()
+                .enumerate()
+                .filter_map(|(point, degree)| (degree != 0).then_some((point, degree)))
+                .collect()
+        })
+        .collect()
 }
 
 fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -577,7 +591,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         edges: &[0, 1],
         constraints: vec![(0, 0), (0, 1), (0, 2)],
         assignment: vec![None; 2],
-        degrees: vec![vec![0; 3]],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: None,
@@ -606,7 +620,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         edges: &[0, 1],
         constraints: vec![(0, 0), (0, 1), (0, 2), (1, 1), (1, 2)],
         assignment: vec![None; 2],
-        degrees: vec![vec![0; 3], vec![0, 0, 2]],
+        degrees: sparse_degrees(&[&[0, 0, 0], &[0, 0, 2]]),
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: None,
@@ -643,7 +657,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         edges: &edges,
         constraints,
         assignment: vec![None; EDGE_COUNT],
-        degrees: vec![vec![0; EDGE_COUNT * 2]; EDGE_COUNT],
+        degrees: vec![BTreeMap::new(); EDGE_COUNT],
         solutions: Vec::new(),
         solution_filter: Some(&solution_filter),
         partial_solution_filter: None,
@@ -677,7 +691,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         edges: &edges,
         constraints: Vec::new(),
         assignment: vec![None; 2],
-        degrees: vec![vec![0; 6]],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
@@ -720,7 +734,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         edges: &[0, 1],
         constraints: Vec::new(),
         assignment: vec![None; 3],
-        degrees: vec![vec![0; 6]],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
@@ -767,7 +781,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         edges: &edges,
         constraints: vec![(0, 0)],
         assignment: vec![None],
-        degrees: vec![vec![0]],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: None,
@@ -808,7 +822,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         edges: &[],
         constraints: Vec::new(),
         assignment: vec![Some([0, 0])],
-        degrees: vec![vec![2]],
+        degrees: sparse_degrees(&[&[2]]),
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: None,
@@ -854,7 +868,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         edges: &[0, 1],
         constraints: Vec::new(),
         assignment: vec![None, None],
-        degrees: vec![vec![0; 301], vec![0; 301]],
+        degrees: vec![BTreeMap::new(), BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: None,
@@ -908,7 +922,7 @@ fn incidence_candidate_defers_global_quotient_validation_until_selection() {
         edges: &[0],
         constraints: vec![(0, 0)],
         assignment: vec![None],
-        degrees: vec![vec![0]],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: None,
@@ -955,7 +969,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
         edges: &[0],
         constraints: vec![(0, 0)],
         assignment: vec![Some([0, 0]), Some([0, 1])],
-        degrees: vec![vec![2, 0], vec![1, 1]],
+        degrees: sparse_degrees(&[&[2, 0], &[1, 1]]),
         solutions: Vec::new(),
         solution_filter: None,
         partial_solution_filter: None,
@@ -1001,6 +1015,23 @@ fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_
     .expect("independent same-face cycle solutions");
 
     assert_eq!(solutions.len(), 4);
+}
+
+#[test]
+fn incidence_component_composition_does_not_allocate_the_declared_point_product() {
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &[vec![[usize::MAX - 1, usize::MAX - 1]]],
+        &[[0, 0]],
+        1,
+        usize::MAX,
+        None,
+        None,
+        None,
+        &|_| true,
+    )
+    .expect("sparse component degree state");
+
+    assert_eq!(solutions, vec![vec![[usize::MAX - 1, usize::MAX - 1]]]);
 }
 
 #[test]
@@ -4543,6 +4574,11 @@ fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
 #[test]
 fn vertex_table_rejects_unbacked_extended_count_before_allocation() {
     assert!(parse_vertex_table(&[0x01, 0x06, 0xff, 0xff, 0xff, 0xff, 0xff], 0).is_none());
+}
+
+#[test]
+fn vertex_table_rejects_an_overflowing_start_offset() {
+    assert!(parse_vertex_table(&[], usize::MAX).is_none());
 }
 
 #[test]

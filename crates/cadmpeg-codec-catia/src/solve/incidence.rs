@@ -424,7 +424,7 @@ pub(crate) struct IncidenceComponentSearch<'a> {
     pub(crate) edges: &'a [usize],
     pub(crate) constraints: Vec<(usize, usize)>,
     pub(crate) assignment: Vec<Option<[usize; 2]>>,
-    pub(crate) degrees: Vec<Vec<u8>>,
+    pub(crate) degrees: Vec<BTreeMap<usize, u8>>,
     pub(crate) solutions: Vec<Vec<(usize, [usize; 2])>>,
     pub(crate) solution_filter: Option<MeshEndpointSolutionFilter<'a>>,
     pub(crate) partial_solution_filter: Option<MeshPartialEndpointConstraint<'a>>,
@@ -721,13 +721,17 @@ pub(crate) fn compact_boundary_domains_jointly_viable<'a>(
 }
 
 impl IncidenceComponentSearch<'_> {
+    fn degree(&self, face: usize, point: usize) -> u8 {
+        self.degrees[face].get(&point).copied().unwrap_or_default()
+    }
+
     fn degree_candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
         let faces = self.edge_faces[edge];
         faces.into_iter().enumerate().all(|(rank, face)| {
             (rank > 0 && face == faces[0])
                 || pair.iter().enumerate().all(|(point_rank, &point)| {
                     let multiplicity = 1 + usize::from(point_rank == 0 && pair[0] == pair[1]);
-                    usize::from(self.degrees[face][point]) + multiplicity <= 2
+                    usize::from(self.degree(face, point)) + multiplicity <= 2
                 })
         })
     }
@@ -748,8 +752,7 @@ impl IncidenceComponentSearch<'_> {
             incident.then(|| pair.iter().filter(|candidate| **candidate == point).count())
         };
         let degree_after_selection = |face: usize, point: usize| {
-            usize::from(self.degrees[face][point])
-                + selected_degree(face, point).unwrap_or_default()
+            usize::from(self.degree(face, point)) + selected_degree(face, point).unwrap_or_default()
         };
         let supporting_pair_fits = |supporting_edge: usize, supporting_pair: [usize; 2]| {
             let faces = self.edge_faces[supporting_edge];
@@ -889,7 +892,7 @@ impl IncidenceComponentSearch<'_> {
         }
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
         for &(face, point) in &self.constraints {
-            if self.degrees[face][point] != 1 {
+            if self.degree(face, point) != 1 {
                 continue;
             }
             let options = self.constraint_options(face, point);
@@ -942,9 +945,15 @@ impl IncidenceComponentSearch<'_> {
             }
             for point in pair {
                 if increase {
-                    self.degrees[face][point] += 1;
+                    *self.degrees[face].entry(point).or_default() += 1;
                 } else {
-                    self.degrees[face][point] -= 1;
+                    let degree = self.degrees[face]
+                        .get_mut(&point)
+                        .expect("assigned incidence degree");
+                    *degree -= 1;
+                    if *degree == 0 {
+                        self.degrees[face].remove(&point);
+                    }
                 }
             }
         }
@@ -1175,7 +1184,7 @@ impl IncidenceComponentSearch<'_> {
                 || self
                     .constraints
                     .iter()
-                    .any(|&(face, point)| self.degrees[face][point] == 1)
+                    .any(|&(face, point)| self.degree(face, point) == 1)
             {
                 return;
             }
@@ -1642,7 +1651,7 @@ where
         mesh_quotient: Option<&MeshQuotient>,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
         assignment: &[Option<[usize; 2]>],
-        degrees: &[Vec<u8>],
+        degrees: &[BTreeMap<usize, u8>],
         point_count: usize,
         budget: &MeshConstraintBudget,
     ) -> ComponentDomain {
@@ -1728,7 +1737,7 @@ where
         mesh_quotient: Option<&MeshQuotient>,
         solution_valid: &F,
         assignment: &mut [Option<[usize; 2]>],
-        degrees: &mut [Vec<u8>],
+        degrees: &mut [BTreeMap<usize, u8>],
         point_count: usize,
         budget: &MeshConstraintBudget,
         visitor: &mut V,
@@ -1779,7 +1788,7 @@ where
                         continue;
                     }
                     for point in pair {
-                        degrees[face][point] += 1;
+                        *degrees[face].entry(point).or_default() += 1;
                     }
                 }
             }
@@ -1804,7 +1813,13 @@ where
                         continue;
                     }
                     for point in pair {
-                        degrees[face][point] -= 1;
+                        let degree = degrees[face]
+                            .get_mut(&point)
+                            .expect("assigned incidence degree");
+                        *degree -= 1;
+                        if *degree == 0 {
+                            degrees[face].remove(&point);
+                        }
                     }
                 }
             }
@@ -1852,7 +1867,7 @@ where
             }
         }
         let mut fixed = vec![None; choices.len()];
-        let mut degrees = vec![vec![0u8; point_count]; face_count];
+        let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
         for (edge, pairs) in choices.iter().enumerate() {
             let [pair] = pairs.as_slice() else {
                 continue;
@@ -1864,7 +1879,8 @@ where
                     continue;
                 }
                 for point in pair {
-                    degrees[face][*point] = degrees[face][*point].checked_add(1)?;
+                    let degree = degrees[face].entry(*point).or_default();
+                    *degree = degree.checked_add(1)?;
                 }
             }
         }

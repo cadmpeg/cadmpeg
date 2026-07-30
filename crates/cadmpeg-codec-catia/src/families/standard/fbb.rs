@@ -512,7 +512,7 @@ pub(crate) fn parse_edge_tables_scoped_at(
 }
 
 pub(crate) fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Vec<[f64; 3]>> {
-    if bytes.get(position..position + 2)? != [0x01, 0x06] {
+    if !bytes.get(position..)?.starts_with(&[0x01, 0x06]) {
         return None;
     }
     position += 2;
