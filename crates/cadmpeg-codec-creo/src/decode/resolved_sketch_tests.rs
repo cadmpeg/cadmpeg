@@ -4676,6 +4676,7 @@ fn saved_line_joins_through_order_table() {
                         [Some(-8.0), Some(-0.85), Some(0.0)],
                         [Some(8.0), Some(-0.85), None],
                     ],
+                    body: Vec::new(),
                     offset: 20,
                 },
             )],
@@ -11309,6 +11310,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
                     [Some(0.0), Some(0.0), Some(0.0)],
                     [Some(1.0), Some(0.0), Some(0.0)],
                 ],
+                body: Vec::new(),
                 offset: 82,
             },
         )],
@@ -11357,6 +11359,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
                     [Some(0.0), Some(1.0), Some(0.0)],
                     [Some(1.0), Some(1.0), Some(0.0)],
                 ],
+                body: Vec::new(),
                 offset: 84,
             },
         ));

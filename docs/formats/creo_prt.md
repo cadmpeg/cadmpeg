@@ -3178,6 +3178,11 @@ entity row is complete. Saved line rows may contain `f0 f7 <ref>`,
 and coordinate fields. A saved line retains its identity, references,
 attributes, and ordered coordinate prefix when a structural boundary occurs
 before all six endpoint-coordinate slots.
+The saved line body begins at the row's first reference, attribute, or entity
+identifier and ends after its final owned token. The following `e3` row
+separator or named-record opener is not part of the body. The body preserves
+the stored scalar and compact coordinate encodings independently of their
+decoded endpoint values.
 Named saved arcs and circles retain their identity and each decoded scalar
 field when later center, radius, endpoint, or parameter fields are absent.
 Positional saved arcs retain their uniquely joined identity and ordered

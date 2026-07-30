@@ -5924,7 +5924,8 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     payload.extend_from_slice(&[0xe4, 0xe4, 0x0f, 0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0x0f, 0xe4, 0xe3]);
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let saved = scan.features.definitions[0]
         .saved_section
@@ -5949,6 +5950,26 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     assert_eq!(second.entity_id, 43);
     assert_eq!(second.references, vec![4]);
     assert_eq!(second.attributes, vec![[1, 2, 3, 4, 5]]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let native_saved =
+        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["saved_entities"];
+    for (native, expected) in native_saved
+        .as_array()
+        .expect("saved entity array")
+        .iter()
+        .zip([&first.body, &second.body])
+    {
+        let body = native["body"]
+            .as_array()
+            .expect("saved line body")
+            .iter()
+            .map(|byte| byte.as_u64().expect("byte") as u8)
+            .collect::<Vec<_>>();
+        assert_eq!(&body, expected);
+    }
 }
 
 #[test]

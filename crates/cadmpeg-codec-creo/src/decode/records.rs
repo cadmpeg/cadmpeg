@@ -2081,6 +2081,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                         references: line.references.clone(),
                         attributes: line.attributes.clone(),
                         endpoints: line.endpoints,
+                        body: line.body.clone(),
                         offset: line.offset,
                     },
                     crate::feature::FeatureSavedEntity::Arc(arc) => CreoSketchSavedEntity::Arc {

@@ -1528,6 +1528,8 @@ pub struct FeatureSavedLine {
     pub attributes: Vec<[u8; 5]>,
     /// Two three-dimensional endpoints in the section sketch frame.
     pub endpoints: [[Option<f64>; 3]; 2],
+    /// Exact row bytes through the final owned token, excluding the structural boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the record preamble in the original stream.
     pub offset: usize,
 }
@@ -5218,6 +5220,7 @@ fn saved_line_block(
             cursor = record_offset + 1;
             continue;
         }
+        let record_end = cursor;
         if row_separator {
             cursor += 1;
         }
@@ -5230,6 +5233,7 @@ fn saved_line_block(
                 [values[0], values[1], values[2]],
                 [values[3], values[4], values[5]],
             ],
+            body: payload[record_offset..record_end].to_vec(),
             offset: record_offset,
         }));
     }
@@ -5509,11 +5513,17 @@ fn saved_positional_generated_entities(
                     _ => false,
                 };
                 if orientation_matches {
+                    let body_end = if payload.get(row_end.saturating_sub(1)) == Some(&0xe3) {
+                        row_end - 1
+                    } else {
+                        row_end
+                    };
                     entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
                         entity_id,
                         references: Vec::new(),
                         attributes: Vec::new(),
                         endpoints,
+                        body: payload[row_start..body_end].to_vec(),
                         offset: row_start,
                     }));
                 }
@@ -10569,6 +10579,8 @@ mod tests {
         assert_eq!(line.entity_id, 5);
         assert_eq!(line.references, [42, 43]);
         assert_eq!(line.endpoints, [[Some(8.0); 3]; 2]);
+        let body_start = b"\xe0\0entity(line)\0".len();
+        assert_eq!(line.body, payload[body_start..payload.len() - 1]);
     }
 
     #[test]
@@ -10586,6 +10598,8 @@ mod tests {
                 [Some(8.0), Some(8.0), Some(8.0)]
             ]
         );
+        let body_start = b"\xe0\0entity(line)\0".len();
+        assert_eq!(line.body, payload[body_start..payload.len() - 1]);
     }
 
     #[test]
@@ -10631,6 +10645,13 @@ mod tests {
         };
         assert_eq!(line.entity_id, 3);
         assert_eq!(line.references, [196]);
+        let body_start = b"\xe0\0entity(line)\0".len();
+        let body_end = payload[body_start..]
+            .windows(b"\xe0\0entity(point)\0".len())
+            .position(|window| window == b"\xe0\0entity(point)\0")
+            .map(|relative| body_start + relative)
+            .expect("point boundary");
+        assert_eq!(line.body, payload[body_start..body_end]);
     }
 
     #[test]
@@ -11054,6 +11075,7 @@ mod tests {
         assert_eq!(line.entity_id, 8);
         assert_eq!(line.endpoints[0], [Some(0.0); 3]);
         assert_eq!(line.endpoints[1], [Some(1.0), Some(0.0), Some(0.0)]);
+        assert_eq!(line.body, payload[1..payload.len() - 1]);
     }
 
     #[test]

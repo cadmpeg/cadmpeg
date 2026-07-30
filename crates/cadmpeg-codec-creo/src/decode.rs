@@ -256,6 +256,7 @@ enum CreoSketchSavedEntity {
         references: Vec<u32>,
         attributes: Vec<[u8; 5]>,
         endpoints: [[Option<f64>; 3]; 2],
+        body: Vec<u8>,
         offset: usize,
     },
     Arc {
