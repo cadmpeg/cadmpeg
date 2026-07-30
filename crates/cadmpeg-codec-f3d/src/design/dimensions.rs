@@ -378,6 +378,9 @@ fn project_all_dimension_constraints(
                 return Some(definition);
             }
             if group.state == 0 && group.unknown_constraint_bits == 0 {
+                if let Some(definition) = counted_axis_relation(&locus_entities, group.owner_role) {
+                    return Some(definition);
+                }
                 if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
                     return Some(definition);
                 }
@@ -2280,6 +2283,37 @@ pub(crate) fn two_locus_distance_dimension(
         entities: entities.iter().map(|entity| entity.id.clone()).collect(),
         parameter,
     })
+}
+
+pub(crate) fn counted_axis_relation(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    owner_role: u32,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
+    };
+
+    let [entity] = entities else {
+        return None;
+    };
+    let Geometry::Line { start, end } = &entity.geometry else {
+        return None;
+    };
+    let du = end.u - start.u;
+    let dv = end.v - start.v;
+    let length = du.hypot(dv);
+    if length <= 1.0e-12 {
+        return None;
+    }
+    match owner_role {
+        0x40 if dv.abs() <= 1.0e-9 * length => Some(Definition::Horizontal {
+            entity: entity.id.clone(),
+        }),
+        0x80 if du.abs() <= 1.0e-9 * length => Some(Definition::Vertical {
+            entity: entity.id.clone(),
+        }),
+        _ => None,
+    }
 }
 
 pub(crate) fn exact_counted_dimension_relation(

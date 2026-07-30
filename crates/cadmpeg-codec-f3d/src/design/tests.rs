@@ -45,12 +45,13 @@ use crate::design::decode::sketch::{
     parse_sketch_surface,
 };
 use crate::design::dimensions::{
-    bind_dimension_loci, directional_point_dimension, exact_atomic_constraint,
-    exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
-    expression_identifiers, indirect_angular_lines, null_locus_dimension_definition,
-    offset_parameter_factor, point_lies_on_sketch_geometry, project_dimension_constraints,
-    project_spatial_dimension_constraints, radial_dimension_definition,
-    radial_locus_dimension_definition, remove_dimension_frame_relations, repeated_linear_dimension,
+    bind_dimension_loci, counted_axis_relation, directional_point_dimension,
+    exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
+    exact_offset_constraint, expression_identifiers, indirect_angular_lines,
+    null_locus_dimension_definition, offset_parameter_factor, point_lies_on_sketch_geometry,
+    project_dimension_constraints, project_spatial_dimension_constraints,
+    radial_dimension_definition, radial_locus_dimension_definition,
+    remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_parallel_line_distance_matches, spatial_point_distance_matches,
     two_locus_distance_dimension, unique_radial_dimension_definition,
     unresolved_parameter_expression_dependency_count,
@@ -10645,6 +10646,42 @@ fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
     };
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
     assert!(exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).is_none());
+}
+
+#[test]
+fn counted_axis_roles_require_matching_single_line_geometry() {
+    let line = |id: &str, start, end| cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line { start, end },
+    };
+    let horizontal = line(
+        "generated:line#horizontal",
+        Point2::new(-2.0, 3.0),
+        Point2::new(5.0, 3.0),
+    );
+    let vertical = line(
+        "generated:line#vertical",
+        Point2::new(4.0, -1.0),
+        Point2::new(4.0, 8.0),
+    );
+
+    assert!(matches!(
+        counted_axis_relation(&[&horizontal], 0x40),
+        Some(SketchConstraintDefinition::Horizontal { entity })
+            if entity == horizontal.id
+    ));
+    assert!(matches!(
+        counted_axis_relation(&[&vertical], 0x80),
+        Some(SketchConstraintDefinition::Vertical { entity })
+            if entity == vertical.id
+    ));
+    assert!(counted_axis_relation(&[&horizontal], 0x80).is_none());
+    assert!(counted_axis_relation(&[&horizontal, &vertical], 0x40).is_none());
 }
 
 #[test]
