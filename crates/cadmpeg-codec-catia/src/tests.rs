@@ -1745,6 +1745,31 @@ pub(crate) fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn a5_nurbs_pair_bound_edge_stream(duplicate_first_surface: bool) -> Vec<u8> {
+    let p0 = [1.0, 2.0, 3.0];
+    let p1 = [4.0, 5.0, 6.0];
+    let mut bytes = a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 0.0]);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_uv([0.0, 0.0], [0.0, 1.0]));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    let first_surface = a5_surface_stream_with_poles([
+        p0,
+        [p0[0], p0[1], p0[2] + 1.0],
+        p1,
+        [p1[0], p1[1], p1[2] + 1.0],
+    ]);
+    bytes.extend_from_slice(&first_surface);
+    bytes.extend_from_slice(&a5_surface_stream_with_poles([
+        p0,
+        p1,
+        [p0[0], p0[1] + 1.0, p0[2]],
+        [p1[0], p1[1] + 1.0, p1[2]],
+    ]));
+    if duplicate_first_surface {
+        bytes.extend_from_slice(&first_surface);
+    }
+    bytes
+}
+
 pub(crate) fn b2_circle_stream() -> Vec<u8> {
     let radius = 3.0;
     let mut record = vec![0xb2, 0x03, 0x19, 0x34, 0x05, 0x08, 0x34, 0x12];

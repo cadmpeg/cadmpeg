@@ -5,9 +5,10 @@
 
 use crate::tests::{
     a5_circle_bound_edge_stream, a5_cone_bound_edge_stream, a5_cylinder_bound_edge_stream,
-    a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream, a5_pcurve_stream,
-    a6_pcurve_stream, append_b5_record, b2_circle_stream, b2_edge_block_stream,
-    b2_edge_parameter_stream_for, b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
+    a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream,
+    a5_nurbs_pair_bound_edge_stream, a5_pcurve_stream, a6_pcurve_stream, append_b5_record,
+    b2_circle_stream, b2_edge_block_stream, b2_edge_parameter_stream_for,
+    b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
 };
 
 #[test]
@@ -232,6 +233,39 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
     ));
     assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
+}
+
+#[test]
+fn a5_edge_binding_jointly_resolves_two_direct_nurbs_carriers() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_nurbs_pair_bound_edge_stream(false),
+    );
+    assert_eq!(blocks.len(), 1);
+    assert!(
+        blocks[0].supports.iter().all(|support| {
+            matches!(
+                support,
+                Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if *offset == 0.0
+            )
+        }),
+        "{:#?}",
+        blocks[0].supports
+    );
+    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
+    assert!(blocks[0].endpoint_loci.is_some());
+}
+
+#[test]
+fn a5_edge_binding_rejects_nonunique_direct_nurbs_carrier_pairs() {
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_nurbs_pair_bound_edge_stream(true),
+    );
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].supports, [None, None]);
+    assert!(blocks[0].shared_loci.is_none());
+    assert!(blocks[0].endpoint_loci.is_none());
 }
 
 #[test]

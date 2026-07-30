@@ -659,8 +659,8 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 /// Resolve consolidated edge sides against typed cylinder, circle, cone, and
 /// NURBS carriers.
 ///
-/// A carrier wins only when it is the sole chart whose two lifted pcurve endpoints
-/// coincide with serialized `05 08 01` vertices at single-precision tolerance.
+/// A carrier binds only when record identity or chart geometry determines one
+/// solution. Ambiguous candidates remain unresolved.
 #[must_use]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let points = object_stream_vertices(data);
@@ -757,6 +757,44 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                     supports[partner] = Some(winner.clone());
                 }
             }
+            if supports.iter().all(Option::is_none) {
+                let candidates = block.pcurves.each_ref().map(|pcurve| {
+                    surfaces
+                        .iter()
+                        .filter_map(|surface| {
+                            let binding = ConsolidatedSupportBinding::NurbsCarrier {
+                                pos: surface.pos,
+                                offset: 0.0,
+                            };
+                            let points = support_points(
+                                &binding,
+                                pcurve,
+                                &standalone,
+                                &embedded,
+                                &cones,
+                                &surfaces,
+                            )?;
+                            Some((binding, points))
+                        })
+                        .collect::<Vec<_>>()
+                });
+                let mut winner = None;
+                'pairs: for (first_binding, first_points) in &candidates[0] {
+                    for (second_binding, second_points) in &candidates[1] {
+                        if !point_sequences_agree(first_points, second_points) {
+                            continue;
+                        }
+                        if winner.is_some() {
+                            winner = None;
+                            break 'pairs;
+                        }
+                        winner = Some([first_binding.clone(), second_binding.clone()]);
+                    }
+                }
+                if let Some(winner) = winner {
+                    supports = winner.map(Some);
+                }
+            }
             let shared_loci =
                 resolved_support_loci(&block, &supports, &standalone, &embedded, &cones, &surfaces);
             let endpoint_loci = shared_loci
@@ -770,6 +808,15 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
             }
         })
         .collect()
+}
+
+fn point_sequences_agree(first: &[Point3], second: &[Point3]) -> bool {
+    !first.is_empty()
+        && first.len() == second.len()
+        && first
+            .iter()
+            .zip(second)
+            .all(|(&left, &right)| point_distance(left, right) <= 2e-3)
 }
 
 fn resolved_support_loci(
@@ -798,13 +845,7 @@ fn resolved_support_loci(
     let first = candidates.first()?;
     candidates
         .iter()
-        .all(|candidate| {
-            candidate.len() == first.len()
-                && first
-                    .iter()
-                    .zip(candidate)
-                    .all(|(&left, &right)| point_distance(left, right) <= 2e-3)
-        })
+        .all(|candidate| point_sequences_agree(first, candidate))
         .then(|| first.clone())
 }
 
