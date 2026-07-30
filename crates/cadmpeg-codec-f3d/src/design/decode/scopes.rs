@@ -2431,12 +2431,17 @@ pub(crate) fn parse_parameter_scope(
     let (paired_class_tag, _) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
-    for at in start + 11..paired_at {
-        if let Some((kind, end)) = lp_utf16_bounded(bytes, at, 1..=256) {
-            let Some(tail_length) = paired_at.checked_sub(end) else {
+    for tail_length in [77, 78, 87, 110] {
+        let Some(end) = paired_at.checked_sub(tail_length) else {
+            continue;
+        };
+        let earliest = end.saturating_sub(4 + 2 * 256).max(start + 11);
+        for at in earliest..end {
+            let Some((kind, decoded_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
                 continue;
             };
-            if parameter_scope_tail_length_is_valid(&kind, tail_length)
+            if decoded_end == end
+                && parameter_scope_tail_length_is_valid(&kind, tail_length)
                 && kind.chars().all(|character| !character.is_control())
             {
                 candidates.push((at, end, tail_length, kind));

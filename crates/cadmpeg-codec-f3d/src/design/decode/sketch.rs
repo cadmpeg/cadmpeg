@@ -1063,38 +1063,20 @@ fn decode_headers_for_indices(
     {
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut position = 0usize;
-        while position + 11 <= bytes.len() {
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, position, 0..=2000, u8::is_ascii_graphic)
-            else {
-                position += 1;
-                continue;
-            };
-            if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-                position += 1;
-                continue;
-            }
-            let Some(raw) = bytes.get(after_tag..after_tag + 4) else {
-                break;
-            };
-            let record_index = u32::from_le_bytes(
-                raw.try_into()
-                    .expect("invariant: raw is a 4-byte slice from bytes.get(range) of length 4"),
-            );
+        for position in indexed_record_offsets(bytes) {
+            let record_index = indexed_record_index(bytes, position)
+                .expect("validated indexed-record header carries a four-byte record index");
             let scope = ids::native_scope(&entry.name);
             if wanted.contains(&(scope, record_index)) && emitted.insert(record_index) {
                 out.push(DesignRecordHeader {
                     id: ids::native_design_record_header_id(&entry.name, position),
                     record_index,
-                    class_tag,
+                    class_tag: std::str::from_utf8(&bytes[position + 4..position + 7])
+                        .expect("validated indexed-record class tag is ASCII")
+                        .to_owned(),
                     byte_offset: position as u64,
                 });
             }
-            // Headers are located in an otherwise heterogeneous stream. Keep
-            // the scan byte-aligned so a plausible length-prefixed string in
-            // an enclosing payload cannot skip a real nested header.
-            position += 1;
         }
     }
     out.sort_by_key(|record| record.id.clone());
