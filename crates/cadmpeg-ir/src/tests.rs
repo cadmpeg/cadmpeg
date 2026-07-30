@@ -3602,6 +3602,19 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             position: Point3::new(0.5, 0.5, 0.5),
         },
     });
+    let measured_point =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#measured-point".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: measured_point.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point {
+            position: Point3::new(0.5, 0.5, 2.5),
+        },
+    });
     let coincident_point =
         SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#coincident-point".into());
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
@@ -3653,8 +3666,22 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#midpoint".into()),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::Midpoint {
-                point,
+                point: point.clone(),
                 entity: line.clone(),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId(
+                "synthetic:test:spatial-sketch-constraint#point-distance".into(),
+            ),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::PointDistance {
+                first: point.clone(),
+                second: measured_point,
+                parameter: distance.clone(),
             },
             native_ref: None,
         });

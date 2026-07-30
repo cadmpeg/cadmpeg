@@ -1144,21 +1144,36 @@ pub fn project_spatial_dimension_constraints(
                         let [first, second] = measured.as_slice() else {
                             return None;
                         };
-                        (native_kind.starts_with("Linear Dimension")
-                            && first.sketch == sketch
-                            && second.sketch == sketch
-                            && spatial_parallel_line_distance_matches(
-                                &first.geometry,
-                                &second.geometry,
-                                expected,
-                            ))
-                        .then(|| {
-                            SpatialSketchConstraintDefinition::ParallelLineDistance {
+                        if !native_kind.starts_with("Linear Dimension")
+                            || first.sketch != sketch
+                            || second.sketch != sketch
+                            || first.id == second.id
+                        {
+                            return None;
+                        }
+                        if spatial_point_distance_matches(
+                            &first.geometry,
+                            &second.geometry,
+                            expected,
+                        ) {
+                            Some(SpatialSketchConstraintDefinition::PointDistance {
                                 first: first.id.clone(),
                                 second: second.id.clone(),
                                 parameter: parameter.clone(),
-                            }
-                        })
+                            })
+                        } else if spatial_parallel_line_distance_matches(
+                            &first.geometry,
+                            &second.geometry,
+                            expected,
+                        ) {
+                            Some(SpatialSketchConstraintDefinition::ParallelLineDistance {
+                                first: first.id.clone(),
+                                second: second.id.clone(),
+                                parameter: parameter.clone(),
+                            })
+                        } else {
+                            None
+                        }
                     });
                     distance.unwrap_or(SpatialSketchConstraintDefinition::Native {
                         native_kind,
@@ -1177,6 +1192,28 @@ pub fn project_spatial_dimension_constraints(
             })
         })
         .collect()
+}
+
+pub(crate) fn spatial_point_distance_matches(
+    first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    expected: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+
+    let (
+        SpatialSketchGeometry::Point { position: first },
+        SpatialSketchGeometry::Point { position: second },
+    ) = (first, second)
+    else {
+        return false;
+    };
+    let measured = ((second.x - first.x).powi(2)
+        + (second.y - first.y).powi(2)
+        + (second.z - first.z).powi(2))
+    .sqrt();
+    let scale = 1.0 + measured.max(expected.abs());
+    expected.is_finite() && (measured - expected.abs()).abs() <= 1.0e-9 * scale
 }
 
 pub(crate) fn spatial_parallel_line_distance_matches(

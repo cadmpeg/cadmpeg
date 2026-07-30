@@ -719,6 +719,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::SplineGroup { entities } => entities.clone(),
             SpatialConstraint::Coincident { first, second }
             | SpatialConstraint::Tangent { first, second }
+            | SpatialConstraint::PointDistance { first, second, .. }
             | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
                 vec![first.clone(), second.clone()]
             }
@@ -856,6 +857,42 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::GeometricConsistency,
                         &constraint.id.0,
                         "spatial distance requires parallel lines separated by its length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::PointDistance {
+                first,
+                second,
+                parameter,
+            } => {
+                let measured = match (spatial_geometry.get(first), spatial_geometry.get(second)) {
+                    (
+                        Some(SpatialSketchGeometry::Point { position: first }),
+                        Some(SpatialSketchGeometry::Point { position: second }),
+                    ) => Some(
+                        ((second.x - first.x).powi(2)
+                            + (second.y - first.y).powi(2)
+                            + (second.z - first.z).powi(2))
+                        .sqrt(),
+                    ),
+                    _ => None,
+                };
+                let expected = match parameter_values.get(parameter) {
+                    Some(Some(crate::features::ParameterValue::Length(length))) => {
+                        Some(length.0.abs())
+                    }
+                    _ => None,
+                };
+                let matches = measured.zip(expected).is_some_and(|(measured, expected)| {
+                    let scale = 1.0 + measured.max(expected);
+                    (measured - expected).abs() <= 1.0e-9 * scale
+                });
+                if !matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial point distance requires two points separated by its length parameter",
                     );
                 }
             }

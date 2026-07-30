@@ -380,6 +380,15 @@ pub enum SpatialSketchConstraintDefinition {
         /// Second tangent curve.
         second: SpatialSketchEntityId,
     },
+    /// Euclidean distance between two model-space sketch points.
+    PointDistance {
+        /// First measured point.
+        first: SpatialSketchEntityId,
+        /// Second measured point.
+        second: SpatialSketchEntityId,
+        /// Driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
     /// Minimum separation between two parallel model-space sketch lines.
     ParallelLineDistance {
         /// First measured line.

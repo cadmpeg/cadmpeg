@@ -51,8 +51,9 @@ use crate::design::dimensions::{
     offset_parameter_factor, point_lies_on_sketch_geometry, project_dimension_constraints,
     project_spatial_dimension_constraints, radial_dimension_definition,
     radial_locus_dimension_definition, remove_dimension_frame_relations, repeated_linear_dimension,
-    spatial_parallel_line_distance_matches, two_locus_distance_dimension,
-    unique_radial_dimension_definition, unresolved_parameter_expression_dependency_count,
+    spatial_parallel_line_distance_matches, spatial_point_distance_matches,
+    two_locus_distance_dimension, unique_radial_dimension_definition,
+    unresolved_parameter_expression_dependency_count,
 };
 use crate::design::edge_resolve::{
     feature_input_topology_id, partial_historical_edge_selection,
@@ -206,6 +207,26 @@ fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
     assert!(!spatial_parallel_line_distance_matches(
         &first, &crossing, 0.0
     ));
+}
+
+#[test]
+fn spatial_point_distance_requires_point_geometry_and_exact_value() {
+    use cadmpeg_ir::sketches::SpatialSketchGeometry::{Line, Point};
+
+    let first = Point {
+        position: Point3::new(1.0, 2.0, 3.0),
+    };
+    let second = Point {
+        position: Point3::new(4.0, 6.0, 3.0),
+    };
+    let line = Line {
+        start: Point3::new(1.0, 2.0, 3.0),
+        end: Point3::new(4.0, 6.0, 3.0),
+    };
+
+    assert!(spatial_point_distance_matches(&first, &second, 5.0));
+    assert!(!spatial_point_distance_matches(&first, &second, 4.0));
+    assert!(!spatial_point_distance_matches(&first, &line, 5.0));
 }
 
 #[test]
@@ -10345,6 +10366,23 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         profiles: Vec::new(),
         native_ref: Some(placement.id.clone()),
     };
+    let spatial_entities = points
+        .iter()
+        .map(|point| cadmpeg_ir::sketches::SpatialSketchEntity {
+            id: cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
+                "spatial-point-{}",
+                point.record_index
+            )),
+            sketch: spatial_sketch.id.clone(),
+            construction: false,
+            native_ref: Some(point.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: cadmpeg_ir::sketches::SpatialSketchGeometry::Point {
+                position: Point3::new(0.0, point.coordinates.v, 0.0),
+            },
+        })
+        .collect::<Vec<_>>();
     assert!(project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -10379,20 +10417,23 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             entities: &[],
         },
         std::slice::from_ref(&spatial_sketch),
-        &[],
+        &spatial_entities,
     );
     assert_eq!(spatial_constraints.len(), 1, "{spatial_constraints:#?}");
     assert!(matches!(
         &spatial_constraints[0],
         cadmpeg_ir::sketches::SpatialSketchConstraint {
             sketch: actual_sketch,
-            definition: SpatialSketchConstraintDefinition::Native {
-                parameter: Some(actual_parameter),
-                ..
+            definition: SpatialSketchConstraintDefinition::PointDistance {
+                first,
+                second,
+                parameter: actual_parameter,
             },
             ..
         } if actual_sketch == &spatial_sketch.id
             && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+            && first == &spatial_entities[0].id
+            && second == &spatial_entities[1].id
     ));
 
     let mut zero_parameter = parameter;
