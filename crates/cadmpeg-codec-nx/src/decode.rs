@@ -622,7 +622,12 @@ impl HomogeneousSurfaceNet {
         })
     }
 
-    fn active_control_bounds(&self, u: f64, v: f64) -> Option<HomogeneousControlBounds> {
+    fn active_control_bounds(
+        &self,
+        u: f64,
+        v: f64,
+        origin: [f64; 3],
+    ) -> Option<HomogeneousControlBounds> {
         let u_controls = active_spline_controls(&self.u_knots, self.u_degree, self.u_count, u)?;
         let v_controls = active_spline_controls(&self.v_knots, self.v_degree, self.v_count, v)?;
         let mut bounds = HomogeneousControlBounds {
@@ -635,7 +640,11 @@ impl HomogeneousSurfaceNet {
                 let control = self.controls[u * self.v_count + v];
                 let position_norm = control[..3]
                     .iter()
-                    .map(|coordinate| coordinate * coordinate)
+                    .zip(origin)
+                    .map(|(coordinate, origin)| {
+                        let coordinate = coordinate - origin * control[3];
+                        coordinate * coordinate
+                    })
                     .sum::<f64>()
                     .sqrt();
                 if !position_norm.is_finite() || !control[3].is_finite() {
@@ -801,13 +810,26 @@ fn rational_surface_derivative_bounds(
     u: f64,
     v: f64,
 ) -> Option<RationalSurfaceDerivativeBounds> {
-    let base_bounds = net.active_control_bounds(u, v)?;
+    let u_controls = active_spline_controls(&net.u_knots, net.u_degree, net.u_count, u)?;
+    let v_controls = active_spline_controls(&net.v_knots, net.v_degree, net.v_count, v)?;
+    let reference = net.controls[*u_controls.start() * net.v_count + *v_controls.start()];
+    let origin = (reference[3] > 0.0).then(|| {
+        [
+            reference[0] / reference[3],
+            reference[1] / reference[3],
+            reference[2] / reference[3],
+        ]
+    })?;
+    if origin.iter().any(|coordinate| !coordinate.is_finite()) {
+        return None;
+    }
+    let base_bounds = net.active_control_bounds(u, v, origin)?;
     let weight_floor = (base_bounds.minimum_weight > 0.0).then_some(base_bounds.minimum_weight)?;
     let a = base_bounds.maximum_position_norm;
     let u_net = net.derivative(true)?;
     let v_net = net.derivative(false)?;
-    let u_bounds = u_net.active_control_bounds(u, v)?;
-    let v_bounds = v_net.active_control_bounds(u, v)?;
+    let u_bounds = u_net.active_control_bounds(u, v, origin)?;
+    let v_bounds = v_net.active_control_bounds(u, v, origin)?;
     let au = u_bounds.maximum_position_norm;
     let av = v_bounds.maximum_position_norm;
     let wu = u_bounds.maximum_weight_magnitude;
@@ -816,7 +838,9 @@ fn rational_surface_derivative_bounds(
     let (auu, wuu) = if u_net.u_degree == 0 {
         (0.0, 0.0)
     } else {
-        let bounds = u_net.derivative(true)?.active_control_bounds(u, v)?;
+        let bounds = u_net
+            .derivative(true)?
+            .active_control_bounds(u, v, origin)?;
         (
             bounds.maximum_position_norm,
             bounds.maximum_weight_magnitude,
@@ -825,13 +849,15 @@ fn rational_surface_derivative_bounds(
     let (avv, wvv) = if v_net.v_degree == 0 {
         (0.0, 0.0)
     } else {
-        let bounds = v_net.derivative(false)?.active_control_bounds(u, v)?;
+        let bounds = v_net
+            .derivative(false)?
+            .active_control_bounds(u, v, origin)?;
         (
             bounds.maximum_position_norm,
             bounds.maximum_weight_magnitude,
         )
     };
-    let uv_bounds = uv_net.active_control_bounds(u, v)?;
+    let uv_bounds = uv_net.active_control_bounds(u, v, origin)?;
     let auv = uv_bounds.maximum_position_norm;
     let wuv = uv_bounds.maximum_weight_magnitude;
     let inverse_weight = weight_floor.recip();
@@ -10255,6 +10281,29 @@ mod tests {
             Some(0.0)
         );
         assert!(super::certified_offset_cache_fit(&support, &support, 0.01, 0.02).is_some());
+    }
+
+    #[test]
+    fn rational_offset_cache_bounds_are_translation_invariant() {
+        let mut support = quadratic_paraboloid_surface();
+        let SurfaceGeometry::Nurbs(surface) = &mut support else {
+            unreachable!();
+        };
+        for point in &mut surface.control_points {
+            point.x += 1.0e12;
+            point.y -= 2.0e12;
+            point.z += 3.0e12;
+        }
+        let axis_weights = [1.0, 1.01, 1.02];
+        surface.weights = Some(
+            (0..3)
+                .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
+                .collect(),
+        );
+
+        let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+            .expect("absolute placement does not widen rational derivative bounds");
+        assert!(bound <= 0.02);
     }
 
     #[test]
