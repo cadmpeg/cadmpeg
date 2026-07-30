@@ -397,20 +397,28 @@ pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
 pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
     let catalogs = catalog::parse(data);
     let value_blocks = value_block::parse(data);
-    let candidates = data
-        .windows(2)
-        .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x08])
-        .filter_map(|(pos, _)| parse_candidate(data, pos))
-        .collect::<Vec<_>>();
     let mut roots = Vec::<ObjectGraph>::new();
-    for graph in candidates {
-        let graph_end = graph.pos + graph.total_len;
-        if roots
-            .iter()
-            .any(|outer| outer.pos < graph.pos && outer.pos + outer.total_len >= graph_end)
-        {
+    let mut enclosing_end = 0usize;
+    for pos in memchr::memchr_iter(0x7c, data) {
+        let Some(marker_tail) = pos.checked_add(1) else {
             continue;
+        };
+        if data.get(marker_tail) != Some(&0x08) {
+            continue;
+        }
+        let declared_end = pos
+            .checked_add(2)
+            .and_then(|length_offset| u32_le(data, length_offset))
+            .and_then(|length| usize::try_from(length).ok())
+            .and_then(|length| pos.checked_add(length));
+        if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
+            continue;
+        }
+        let Some(graph) = parse_candidate(data, pos) else {
+            continue;
+        };
+        if let Some(graph_end) = graph.pos.checked_add(graph.total_len) {
+            enclosing_end = enclosing_end.max(graph_end);
         }
         roots.push(graph);
     }
