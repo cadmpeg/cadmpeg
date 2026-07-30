@@ -139,7 +139,11 @@ current scores require those matrices and representative fixtures.
   expressions. A program instance selecting a complete relation expression
   retains every source-symbol occurrence and all same-graph named parameter
   candidates; coverage partitions uniquely resolved, ambiguous, and other
-  unresolved dependencies. Compact-form coverage also partitions its resolved,
+  unresolved dependencies. When its typed signature and every source occurrence
+  uniquely bind all distinct declared inputs, the instance retains complete
+  inputs in signature order with declared types and selected entity incidences.
+  Coverage partitions typed instances with complete and incomplete input
+  bindings and counts resolved inputs. Compact-form coverage also partitions its resolved,
   terminal-null, and unresolved `ref(h)` context identity and classifies
   selected `paramout`, other named, and unclassified context entities without
   assigning a parameter role. Separator-form coverage also partitions its

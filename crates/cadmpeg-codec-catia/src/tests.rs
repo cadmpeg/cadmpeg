@@ -11174,6 +11174,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         .parameter_dependencies
         .iter()
         .all(|dependency| dependency.candidates.is_empty()));
+    assert!(instance.inputs.is_none());
     let context = instance
         .lead12_context_entity
         .as_ref()
@@ -11223,6 +11224,96 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         .entity_records
         .iter()
         .all(|entity| entity.relation_program_instance.is_none()));
+}
+
+#[test]
+fn relation_program_inputs_require_complete_unique_signature_bindings() {
+    let signature = crate::native::CatiaRelationTypeSignature {
+        inputs: vec![
+            crate::native::CatiaRelationTypeInput {
+                parameter: "#1_".to_string(),
+                input_type: "LENGTH".to_string(),
+            },
+            crate::native::CatiaRelationTypeInput {
+                parameter: "#2_".to_string(),
+                input_type: "Real".to_string(),
+            },
+        ],
+        result_type: "Real".to_string(),
+    };
+    let reference = |entity_id: u32| crate::native::CatiaEntityReference {
+        entity_id,
+        is_null: false,
+        entity: Some(format!("entity-{entity_id}")),
+        class_name: Some("param".to_string()),
+    };
+    let dependency =
+        |symbol: &str, candidates: Vec<_>| crate::native::CatiaRelationParameterDependency {
+            symbol: symbol.to_string(),
+            candidates,
+        };
+    let complete = vec![
+        dependency("#1_", vec![reference(10)]),
+        dependency("#1_ /2", vec![reference(10)]),
+        dependency("#2_", vec![reference(11)]),
+    ];
+    let inputs = crate::native::resolved_relation_program_inputs(&signature, &complete)
+        .expect("complete ordered input bindings");
+    assert_eq!(
+        inputs
+            .iter()
+            .map(|input| (input.parameter.as_str(), input.entity.entity_id))
+            .collect::<Vec<_>>(),
+        [("#1_", 10), ("#2_", 11)]
+    );
+
+    let zero = crate::native::CatiaRelationTypeSignature {
+        inputs: Vec::new(),
+        result_type: "Real".to_string(),
+    };
+    assert_eq!(
+        crate::native::resolved_relation_program_inputs(&zero, &[]),
+        Some(Vec::new())
+    );
+    assert!(crate::native::resolved_relation_program_inputs(
+        &signature,
+        &[dependency("#1_", vec![reference(10)])]
+    )
+    .is_none());
+    assert!(crate::native::resolved_relation_program_inputs(
+        &signature,
+        &[
+            dependency("#1_", vec![reference(10)]),
+            dependency("#2_", vec![reference(10)])
+        ]
+    )
+    .is_none());
+    assert!(crate::native::resolved_relation_program_inputs(
+        &signature,
+        &[
+            dependency("#1_", vec![reference(10)]),
+            dependency("#1_ /2", vec![reference(12)]),
+            dependency("#2_", vec![reference(11)])
+        ]
+    )
+    .is_none());
+    assert!(crate::native::resolved_relation_program_inputs(
+        &signature,
+        &[
+            dependency("#1_", vec![reference(10), reference(12)]),
+            dependency("#2_", vec![reference(11)])
+        ]
+    )
+    .is_none());
+    assert!(crate::native::resolved_relation_program_inputs(
+        &signature,
+        &[
+            dependency("#1_", vec![reference(10)]),
+            dependency("#2_", vec![reference(11)]),
+            dependency("#3_", vec![reference(12)])
+        ]
+    )
+    .is_none());
 }
 
 #[test]
@@ -11294,6 +11385,22 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     assert_eq!(
         decoded.report.coverage["unresolved_relation_program_parameter_dependency_count"],
         3
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_typed_relation_program_instance_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_relation_program_input_instance_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_relation_program_input_instance_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_relation_program_input_count"],
+        0
     );
     assert_eq!(
         decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
@@ -11528,6 +11635,12 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("store older relation-program namespace");
         for (version, remove_context, remove_trailing, remove_framing) in [
             (
+                crate::native::CATIA_RELATION_PROGRAM_INPUT_VERSION - 1,
+                false,
+                false,
+                false,
+            ),
+            (
                 crate::native::CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION - 1,
                 false,
                 false,
@@ -11584,6 +11697,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             if remove_framing {
                 stored_instance.remove("framing");
             }
+            stored_instance.remove("inputs");
             stored_instance.remove("reference_incidences");
             stored_instance.remove("parameter_dependencies");
             stored_instance.remove("program_entity");
@@ -11618,6 +11732,21 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         malformed_dependencies
             .store(&mut namespace)
             .expect("store malformed relation-program dependencies");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+
+        let mut malformed_inputs = native.clone();
+        malformed_inputs.entity_records[1]
+            .relation_program_instance
+            .as_mut()
+            .expect("decoded relation-program instance")
+            .inputs = Some(Vec::new());
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed_inputs
+            .store(&mut namespace)
+            .expect("store malformed relation-program inputs");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
             Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
