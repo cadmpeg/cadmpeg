@@ -1283,8 +1283,9 @@ mod tests {
         assert_eq!(repeated.footer_offset, footer_offset);
 
         let mut incomplete_footer = bytes;
+        let incomplete_footer_offset = program_offset + 1;
         incomplete_footer.splice(
-            program_offset + 1..program_offset + 1,
+            incomplete_footer_offset..incomplete_footer_offset,
             SCHEMA_PROGRAM_FOOTER.iter().copied(),
         );
         let incomplete_runs = parse_runs(&incomplete_footer);
