@@ -85,7 +85,7 @@ current scores require those matrices and representative fixtures.
   binding. Every complete schema role selector retains its fixed or paged
   production, containing identity, role representation, and value. Legacy text
   fields retain both `FE`-closed values and values carrying an inline `E3`
-  paged-role tail; role tails retain literal names or exact unresolved
+  paged-role tail. Field-bound roles retain literal names or exact unresolved
   schema-selector bytes.
   Inclusive-length UTF-8 string packets and inline or wide signed-integer
   packets transfer as typed parameters when

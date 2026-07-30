@@ -924,7 +924,65 @@ fn parse_role_selectors(
             })
         }),
     );
+    let field_bound_roles = memchr::memchr_iter(0xe8, &data[start..end])
+        .filter_map(|relative| {
+            let field_offset = start.checked_add(relative)?;
+            let field_header_end = field_offset.checked_add(4)?;
+            if field_header_end > end || data.get(field_offset + 3) != Some(&0x01) {
+                return None;
+            }
+            if roles
+                .iter()
+                .any(|role| role.end_offset() == Some(field_offset))
+            {
+                return None;
+            }
+            if let Some(role_offset) = field_offset
+                .checked_sub(6)
+                .filter(|offset| *offset >= start)
+            {
+                let name_selector = *data.get(role_offset)?;
+                if name_selector != 0 && data.get(role_offset + 1) == Some(&0x80) {
+                    let selector = u32::from_le_bytes(
+                        data.get(role_offset + 2..field_offset)?.try_into().ok()?,
+                    );
+                    if selector != 0 {
+                        return Some(LegacyRoleSelector {
+                            offset: role_offset,
+                            entity_id,
+                            name: LegacyRoleName::Selector(name_selector),
+                            encoding: LegacyRoleSelectorEncoding::FixedU32,
+                            selector,
+                        });
+                    }
+                }
+            }
+            if let Some(role_offset) = field_offset
+                .checked_sub(3)
+                .filter(|offset| *offset >= start)
+            {
+                let name_selector = *data.get(role_offset)?;
+                let page = *data.get(role_offset + 1)?;
+                if name_selector != 0 && (0xd1..=0xe4).contains(&page) {
+                    let low = *data.get(role_offset + 2)?;
+                    return Some(LegacyRoleSelector {
+                        offset: role_offset,
+                        entity_id,
+                        name: LegacyRoleName::Selector(name_selector),
+                        encoding: LegacyRoleSelectorEncoding::Paged,
+                        selector: u32::from(page - 0xd1)
+                            .checked_mul(256)?
+                            .checked_add(u32::from(low))?
+                            .checked_add(1)?,
+                    });
+                }
+            }
+            None
+        })
+        .collect::<Vec<_>>();
+    roles.extend(field_bound_roles);
     roles.sort_by_key(|role| role.offset);
+    roles.dedup_by_key(|role| role.offset);
     roles
 }
 
@@ -1036,6 +1094,43 @@ mod tests {
             selector: 1,
         };
         assert_eq!(role.end_offset(), None);
+    }
+
+    #[test]
+    fn selected_roles_bind_following_schema_fields() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(&[0xa1, 0xe3, 0x5b, 0xe8, 0x28, 0x17, 0x01, 0xfe]);
+        bytes.extend_from_slice(&[0xa2, 0xe3, 0x3b, 0xe8, 0x00, 0x1c, 0x01, 0x82]);
+        bytes.extend_from_slice(&[
+            0xa4, 0x80, 0xd5, 0xc4, 0x01, 0x00, 0xe8, 0x34, 0x17, 0x01, 0xfe,
+        ]);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let run = &parse_runs(&bytes)[0];
+        assert_eq!(
+            run.role_selectors
+                .iter()
+                .map(|role| (&role.name, role.encoding, role.selector))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    &LegacyRoleName::Selector(0xa1),
+                    LegacyRoleSelectorEncoding::Paged,
+                    4700,
+                ),
+                (
+                    &LegacyRoleName::Selector(0xa2),
+                    LegacyRoleSelectorEncoding::Paged,
+                    4668,
+                ),
+                (
+                    &LegacyRoleName::Selector(0xa4),
+                    LegacyRoleSelectorEncoding::FixedU32,
+                    115925,
+                ),
+            ]
+        );
     }
 
     #[test]
