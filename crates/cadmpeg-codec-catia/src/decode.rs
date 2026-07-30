@@ -127,6 +127,29 @@ fn finish_decode(
                 && record.storage_record.is_none()
         })
         .count();
+    let object_record_reference_count = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .map(|record| record.references.len())
+        .sum::<usize>();
+    let resolved_object_record_reference_count = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .flat_map(|record| &record.references)
+        .filter(|reference| reference.target.is_some())
+        .count();
+    let null_object_record_reference_count = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .flat_map(|record| &record.references)
+        .filter(|reference| reference.is_null)
+        .count();
+    let unresolved_object_record_reference_count = object_record_reference_count
+        - resolved_object_record_reference_count
+        - null_object_record_reference_count;
     let repeated_reference_suffix_count = native
         .object_graphs
         .iter()
@@ -186,6 +209,14 @@ fn finish_decode(
         .flat_map(|row| &row.cells)
         .filter(|cell| cell.field.is_some())
         .count();
+    let design_parallel_reference_null_cell_count = native
+        .design_objects
+        .iter()
+        .filter_map(|object| object.parallel_reference_table.as_ref())
+        .flat_map(|table| &table.rows)
+        .flat_map(|row| &row.cells)
+        .filter(|cell| cell.is_null)
+        .count();
     let design_parallel_reference_classified_cell_count = native
         .design_objects
         .iter()
@@ -203,8 +234,9 @@ fn finish_decode(
         .count();
     let design_parallel_reference_unclassified_column_count =
         design_parallel_reference_column_count - design_parallel_reference_classified_column_count;
-    let design_parallel_reference_unresolved_cell_count =
-        design_parallel_reference_cell_count - design_parallel_reference_resolved_cell_count;
+    let design_parallel_reference_unresolved_cell_count = design_parallel_reference_cell_count
+        - design_parallel_reference_resolved_cell_count
+        - design_parallel_reference_null_cell_count;
     let design_parallel_reference_unclassified_cell_count =
         design_parallel_reference_cell_count - design_parallel_reference_classified_cell_count;
     let design_parallel_reference_matched_row_count = native
@@ -558,7 +590,14 @@ fn finish_decode(
         .filter_map(|record| record.formula_relation.as_ref())
         .filter(|formula| formula.parameter.is_some())
         .count();
-    let unresolved_formula_output_count = formula_relation_count - resolved_formula_output_count;
+    let null_formula_output_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.formula_relation.as_ref())
+        .filter(|formula| formula.parameter_is_null)
+        .count();
+    let unresolved_formula_output_count =
+        formula_relation_count - resolved_formula_output_count - null_formula_output_count;
     let formula_parameter_dependency_count = native
         .entity_records
         .iter()
@@ -1248,6 +1287,22 @@ fn finish_decode(
             unresolved_storage_record_count,
         ),
         (
+            "decoded_object_record_reference_count".to_string(),
+            object_record_reference_count,
+        ),
+        (
+            "decoded_resolved_object_record_reference_count".to_string(),
+            resolved_object_record_reference_count,
+        ),
+        (
+            "decoded_null_object_record_reference_count".to_string(),
+            null_object_record_reference_count,
+        ),
+        (
+            "unresolved_object_record_reference_count".to_string(),
+            unresolved_object_record_reference_count,
+        ),
+        (
             "decoded_repeated_reference_suffix_count".to_string(),
             repeated_reference_suffix_count,
         ),
@@ -1291,6 +1346,10 @@ fn finish_decode(
         (
             "decoded_design_parallel_reference_resolved_cell_count".to_string(),
             design_parallel_reference_resolved_cell_count,
+        ),
+        (
+            "decoded_design_parallel_reference_null_cell_count".to_string(),
+            design_parallel_reference_null_cell_count,
         ),
         (
             "unresolved_design_parallel_reference_cell_count".to_string(),
@@ -1523,6 +1582,10 @@ fn finish_decode(
         (
             "decoded_resolved_formula_output_count".to_string(),
             resolved_formula_output_count,
+        ),
+        (
+            "decoded_null_formula_output_count".to_string(),
+            null_formula_output_count,
         ),
         (
             "unresolved_formula_output_count".to_string(),
@@ -1855,7 +1918,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), including {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_tuple_count} complete numeric entity-value tuple(s), {numeric_entity_value_packet_count} embedded numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {escaped_word_entity_suffix_count} escaped-word entity suffix(es), {token_8149_entity_suffix_count} standalone 8149 suffix token(s), {fixed_fe_f6_entity_suffix_count} fixed FE-F6 suffix frame(s), {paged_atom_state_01_entity_suffix_count} paged-atom state-01 suffix(es), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_control_entity_suffix_value_count} schema-selected control value(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} direct control entity-suffix value(s), comprising {control_e8_entity_suffix_value_count} E8 and {control_e9_entity_suffix_value_count} E9 state(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {constraint_range_count} complete constraint-range value(s), comprising {dimension_constraint_range_count} dimension and {complex_constraint_range_count} complex-constraint range(s), with {evaluated_constraint_range_count} finite evaluation(s) and {unset_constraint_range_count} unset evaluation(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {definition_chain_evaluation_count} two-definition chain evaluation(s), comprising {evaluated_definition_chain_count} finite and {unset_definition_chain_count} unset value(s), with {structurally_owned_definition_chain_evaluation_count} structurally owned and {unowned_definition_chain_evaluation_count} without a resolved structural owner; {unassigned_definition_chain_value_count} chain value(s), including {unassigned_definition_chain_evaluation_count} evaluation(s), occupy explicit literal unassigned owner slots; {formula_relation_count} complete formula relation(s), comprising {resolved_formula_output_count} resolved and {unresolved_formula_output_count} unresolved output identities, {formula_parameter_dependency_count} formula parameter symbol occurrence(s), comprising {resolved_formula_parameter_dependency_count} uniquely resolved and {unresolved_formula_parameter_dependency_count} unresolved, including {ambiguous_formula_parameter_dependency_count} with multiple candidates, {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s), {} exact formula, expression, or parameter field record(s), and {} exact principal-plane field record(s) transferred, while {unresolved_object_record_count} modeling-scope field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, sketch identity and geometry, constraints, configurations, and re-derivable history remain unresolved.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), including {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, {object_record_reference_count} payload reference(s), comprising {resolved_object_record_reference_count} resolved, {null_object_record_reference_count} terminal-null, and {unresolved_object_record_reference_count} unresolved identities, {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_tuple_count} complete numeric entity-value tuple(s), {numeric_entity_value_packet_count} embedded numeric entity-value packet(s), {compact_entity_value_packet_count} compact entity-value packet(s), {layout_entity_value_packet_count} layout entity-value packet(s), {escaped_word_entity_suffix_count} escaped-word entity suffix(es), {token_8149_entity_suffix_count} standalone 8149 suffix token(s), {fixed_fe_f6_entity_suffix_count} fixed FE-F6 suffix frame(s), {paged_atom_state_01_entity_suffix_count} paged-atom state-01 suffix(es), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_control_entity_suffix_value_count} schema-selected control value(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} direct control entity-suffix value(s), comprising {control_e8_entity_suffix_value_count} E8 and {control_e9_entity_suffix_value_count} E9 state(s), {relation_expression_count} complete relation expression(s), {parameter_value_count} complete named parameter value(s), {constraint_range_count} complete constraint-range value(s), comprising {dimension_constraint_range_count} dimension and {complex_constraint_range_count} complex-constraint range(s), with {evaluated_constraint_range_count} finite evaluation(s) and {unset_constraint_range_count} unset evaluation(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {definition_chain_evaluation_count} two-definition chain evaluation(s), comprising {evaluated_definition_chain_count} finite and {unset_definition_chain_count} unset value(s), with {structurally_owned_definition_chain_evaluation_count} structurally owned and {unowned_definition_chain_evaluation_count} without a resolved structural owner; {unassigned_definition_chain_value_count} chain value(s), including {unassigned_definition_chain_evaluation_count} evaluation(s), occupy explicit literal unassigned owner slots; {formula_relation_count} complete formula relation(s), comprising {resolved_formula_output_count} resolved, {null_formula_output_count} terminal-null, and {unresolved_formula_output_count} unresolved output identities, {formula_parameter_dependency_count} formula parameter symbol occurrence(s), comprising {resolved_formula_parameter_dependency_count} uniquely resolved and {unresolved_formula_parameter_dependency_count} unresolved, including {ambiguous_formula_parameter_dependency_count} with multiple candidates, {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed formula parameter(s), {} exact formula, expression, or parameter field record(s), and {} exact principal-plane field record(s) transferred, while {unresolved_object_record_count} modeling-scope field record(s) across {unresolved_design_object_count} design object(s), neutral features, other parameters, sketch identity and geometry, constraints, configurations, and re-derivable history remain unresolved.",
                 native.design_objects.len(),
                 formula_transfer.formula_parameter_count,
                 transferred_formula_design_records.len(),

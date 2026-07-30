@@ -55,14 +55,16 @@ current scores require those matrices and representative fixtures.
   its exact containing FINJPL segment when one completely contains the graph;
   cross-container and cross-segment references remain valid. A literal
   occupying an assigned owner slot remains distinct from both a reference owner
-  and a head without an owner role.
+  and a head without an owner role. Payload references distinguish resolved
+  fields, the graph's terminal null identity, and other unresolved identities.
 - Equal-cardinality all-reference lists spanning every field of a design object
   retain their source-ordered columns and ordinal-aligned rows as one parallel
   reference table. Columns retain their aligned source field classes and
-  resolved cells retain the exact target field class; resolved and unresolved
-  target identities remain distinct. Coverage partitions classified and
-  unclassified columns, resolved and unresolved target cells, classified and
-  unclassified target cells, and matched and unmatched rows. A row retains its
+  resolved cells retain the exact target field class; resolved, terminal-null,
+  and unresolved target identities remain distinct. Coverage partitions
+  classified and unclassified columns, resolved, terminal-null, and unresolved
+  target cells, classified and unclassified target cells, and matched and
+  unmatched rows. A row retains its
   matching design object only when every classified column selects a distinct,
   identically classified field in that object. The match does not assert schema
   membership or semantic operand roles.
@@ -84,7 +86,8 @@ current scores require those matrices and representative fixtures.
   exactly. Typed unset inputs transfer independently while preventing formula
   evaluation. Each formula relation retains its stored output identity
   independently of whether that identity resolves to an entity in the same
-  graph; coverage distinguishes resolved and unresolved outputs. Every formula
+  graph; coverage distinguishes resolved, terminal-null, and unresolved
+  outputs. Every formula
   symbol occurrence retains all same-graph parameter binding candidates;
   exactly one candidate resolves the dependency. Every transferred numeric
   parameter retains its canonical

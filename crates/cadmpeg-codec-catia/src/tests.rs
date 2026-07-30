@@ -7691,6 +7691,7 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
                 entity_id: 2,
                 payload_offset: 5,
                 source: crate::native::CatiaObjectRecordReferenceSource::Field,
+                is_null: false,
                 target: Some(native.object_graphs[0].records[1].id.clone()),
                 design_object: native.object_graphs[0].records[1].design_object.clone(),
             },
@@ -7698,6 +7699,7 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
                 entity_id: 0x89ab_cdef,
                 payload_offset: 10,
                 source: crate::native::CatiaObjectRecordReferenceSource::Field,
+                is_null: false,
                 target: None,
                 design_object: None,
             },
@@ -7768,6 +7770,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                     list_payload_offset: 0,
                     item_ordinal: 0,
                 },
+                is_null: false,
                 target: Some(graph.records[2].id.clone()),
                 design_object: graph.records[2].design_object.clone(),
             },
@@ -7778,6 +7781,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
                     list_payload_offset: 0,
                     item_ordinal: 1,
                 },
+                is_null: false,
                 target: Some(graph.records[2].id.clone()),
                 design_object: graph.records[2].design_object.clone(),
             },
@@ -7836,6 +7840,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
             entity_id: 1,
             payload_offset: 0,
             source: crate::native::CatiaObjectRecordReferenceSource::Field,
+            is_null: false,
             target: Some(graph.records[0].id.clone()),
             design_object: graph.records[0].design_object.clone(),
         }]
@@ -8508,6 +8513,67 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         migrated.design_objects[0].parallel_reference_table,
         Some(expected)
     );
+
+    let null_list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x85, 0x85, 0xfe];
+    let null_list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x85, 0x86, 0xfe];
+    let terminal_null =
+        crate::native::CatiaNative::decode(&sequential_entity_backed_object_graph(&[
+            object_graph_record(&[0x04, 0x01, 0x81, 0x83], &null_list_a),
+            object_graph_record(&[0x04, 0x01, 0x81, 0x84], &null_list_b),
+            object_graph_record(&[0x04, 0x01, 0x83, 0x83], &[0xfe]),
+            object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]),
+        ]));
+    let null_table = terminal_null.design_objects[0]
+        .parallel_reference_table
+        .as_ref()
+        .expect("parallel reference table with terminal null row");
+    assert!(null_table.rows[1].cells.iter().all(|cell| {
+        cell.entity_id == 5 && cell.is_null && cell.field.is_none() && cell.design_object.is_none()
+    }));
+
+    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::default();
+    terminal_null
+        .store(&mut version_210_namespace)
+        .expect("store terminal null parallel reference cells");
+    let mut version_210_records: Vec<crate::native::CatiaObjectRecord> = version_210_namespace
+        .arena_as("object_graph_records")
+        .expect("load version 210 object records");
+    for reference in version_210_records
+        .iter_mut()
+        .flat_map(|record| &mut record.references)
+    {
+        reference.is_null = false;
+    }
+    version_210_namespace
+        .set_arena("object_graph_records", &version_210_records)
+        .expect("store version 210 object records");
+    let mut version_210_objects: Vec<crate::native::CatiaDesignObject> = version_210_namespace
+        .arena_as("design_objects")
+        .expect("load version 210 design objects");
+    for cell in version_210_objects[0]
+        .parallel_reference_table
+        .as_mut()
+        .expect("parallel reference table")
+        .rows
+        .iter_mut()
+        .flat_map(|row| &mut row.cells)
+    {
+        cell.is_null = false;
+    }
+    version_210_namespace
+        .set_arena("design_objects", &version_210_objects)
+        .expect("store version 210 design objects");
+    version_210_namespace.version = 210;
+    let migrated = crate::native::CatiaNative::load(&version_210_namespace)
+        .expect("migrate terminal null parallel reference cells");
+    assert!(migrated.design_objects[0]
+        .parallel_reference_table
+        .as_ref()
+        .expect("migrated parallel reference table")
+        .rows[1]
+        .cells
+        .iter()
+        .all(|cell| cell.is_null));
 
     let three_references = [0x3b, 0x83, 0x81, 0x83, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
     let mismatched = sequential_entity_backed_object_graph(&[
@@ -11904,6 +11970,84 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
         .is_empty());
+}
+
+#[test]
+fn terminal_entity_identity_is_a_null_formula_output() {
+    let bytes = standard_catpart_with_formula_relation(5, false);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let formula = native.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation");
+    assert_eq!(formula.parameter_entity_id, 5);
+    assert!(formula.parameter_is_null);
+    assert_eq!(formula.parameter, None);
+    let formula_record = native.object_graphs[0]
+        .records
+        .iter()
+        .find(|record| record.id == native.entity_records[0].object_record)
+        .expect("formula object record");
+    assert!(formula_record.references[2].is_null);
+    assert_eq!(formula_record.references[2].target, None);
+
+    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_210_namespace)
+        .expect("store terminal null references");
+    let mut version_210_records: Vec<crate::native::CatiaObjectRecord> = version_210_namespace
+        .arena_as("object_graph_records")
+        .expect("load version 210 object records");
+    for record in &mut version_210_records {
+        for reference in &mut record.references {
+            reference.is_null = false;
+        }
+    }
+    version_210_namespace
+        .set_arena("object_graph_records", &version_210_records)
+        .expect("store version 210 object records");
+    let mut version_210_entities: Vec<crate::native::CatiaEntityRecord> = version_210_namespace
+        .arena_as("entity_records")
+        .expect("load version 210 entity records");
+    version_210_entities[0]
+        .formula_relation
+        .as_mut()
+        .expect("complete formula relation")
+        .parameter_is_null = false;
+    version_210_namespace
+        .set_arena("entity_records", &version_210_entities)
+        .expect("store version 210 entity records");
+    version_210_namespace.version = 210;
+    let migrated = crate::native::CatiaNative::load(&version_210_namespace)
+        .expect("migrate terminal null references");
+    assert!(migrated.object_graphs[0].records[0].references[2].is_null);
+    assert!(
+        migrated.entity_records[0]
+            .formula_relation
+            .as_ref()
+            .expect("migrated formula relation")
+            .parameter_is_null
+    );
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode formula with null output");
+    assert_eq!(
+        decoded.report.coverage["decoded_null_formula_output_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_formula_output_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_null_object_record_reference_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_object_record_reference_count"],
+        0
+    );
 }
 
 #[test]

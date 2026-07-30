@@ -20,7 +20,9 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 210;
+pub const CATIA_NATIVE_VERSION: u32 = 211;
+#[cfg(test)]
+const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
 const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 #[cfg(test)]
@@ -1299,6 +1301,9 @@ pub struct CatiaFormulaRelation {
     pub expression: String,
     /// Stored parameter identity selected by the third payload reference.
     pub parameter_entity_id: u32,
+    /// The stored parameter identity is the graph's terminal null identity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub parameter_is_null: bool,
     /// Parameter entity when the stored identity resolves inside the same graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter: Option<String>,
@@ -1548,6 +1553,9 @@ pub struct CatiaObjectRecordReference {
     pub payload_offset: u64,
     /// Structural container of the reference occurrence.
     pub source: CatiaObjectRecordReferenceSource,
+    /// The stored identity is the graph's terminal null identity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_null: bool,
     /// Exact selected record; absent when the identity is outside the graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
@@ -1620,6 +1628,9 @@ pub enum CatiaDesignObjectRelationSource {
 pub struct CatiaDesignReferenceCell {
     /// Stored target entity identity.
     pub entity_id: u32,
+    /// The stored identity is the graph's terminal null identity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_null: bool,
     /// Exact field record selected by the stored identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
@@ -1878,6 +1889,7 @@ fn design_parallel_reference_table(
         })
         .collect::<Option<Vec<_>>>()?;
     let row_count = columns.first()?.2.len();
+    let terminal_null_entity_id = terminal_null_entity_id(record_indices);
     if columns
         .iter()
         .any(|(_, _, references)| references.len() != row_count)
@@ -1895,6 +1907,7 @@ fn design_parallel_reference_table(
                         .and_then(|index| graph.records.get(*index));
                     CatiaDesignReferenceCell {
                         entity_id: target_entity_id,
+                        is_null: Some(target_entity_id) == terminal_null_entity_id,
                         field: target.map(|record| record.id.clone()),
                         field_class: target.and_then(design_class),
                         design_object: target.and_then(|record| record.design_object.clone()),
@@ -1991,6 +2004,7 @@ fn resolved_payload_references(
     record_ids: &[String],
     record_design_objects: &[Option<String>],
     record_indices: &HashMap<u32, usize>,
+    terminal_null_entity_id: Option<u32>,
 ) -> Vec<CatiaObjectRecordReference> {
     payload_references(payload)
         .map(|(entity_id, payload_offset, source)| {
@@ -2000,6 +2014,7 @@ fn resolved_payload_references(
                 payload_offset: u64::try_from(payload_offset)
                     .expect("bounded CATIA payload offset fits u64"),
                 source,
+                is_null: Some(entity_id) == terminal_null_entity_id,
                 target: index.and_then(|index| record_ids.get(index)).cloned(),
                 design_object: index
                     .and_then(|index| record_design_objects.get(index))
@@ -2008,6 +2023,10 @@ fn resolved_payload_references(
             }
         })
         .collect()
+}
+
+fn terminal_null_entity_id(record_indices: &HashMap<u32, usize>) -> Option<u32> {
+    record_indices.keys().max()?.checked_add(1)
 }
 
 fn resolved_storage_link(
@@ -2807,6 +2826,7 @@ fn formula_relation(
     Some(CatiaFormulaRelation {
         expression: expression.clone(),
         parameter_entity_id: *parameter_entity_id,
+        parameter_is_null: parameter_reference.is_null,
         parameter: parameter_reference
             .target
             .as_ref()
@@ -7214,7 +7234,27 @@ impl CatiaNative {
         }
         let (relation_expressions, entities_by_object, parameter_bindings) =
             semantic_entity_indices(&entity_records);
-        if namespace.version < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION {
+        if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
+            for graph in &graphs {
+                let terminal_null = entity_records
+                    .iter()
+                    .filter(|entity| entity.object_graph == graph.id)
+                    .map(|entity| entity.entity_id)
+                    .max()
+                    .and_then(|entity_id| entity_id.checked_add(1));
+                for record in records
+                    .iter_mut()
+                    .filter(|record| record.parent == graph.id)
+                {
+                    for reference in &mut record.references {
+                        reference.is_null = Some(reference.entity_id) == terminal_null;
+                    }
+                }
+            }
+        }
+        if namespace.version < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
+            || namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION
+        {
             let records_by_id = records
                 .iter()
                 .map(|record| (record.id.as_str(), record))
@@ -7383,6 +7423,7 @@ impl CatiaNative {
                 .enumerate()
                 .filter_map(|(index, record)| Some((record.entity_id?, index)))
                 .collect::<HashMap<_, _>>();
+            let terminal_null_entity_id = terminal_null_entity_id(&record_indices);
             if record_indices.len()
                 != graph
                     .records
@@ -7450,6 +7491,7 @@ impl CatiaNative {
                             &record_ids,
                             &record_design_objects,
                             &record_indices,
+                            terminal_null_entity_id,
                         )
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -7506,7 +7548,9 @@ impl CatiaNative {
                     }
                 }
             }
-            if namespace.version < CATIA_PARALLEL_REFERENCE_TABLE_VERSION {
+            if namespace.version < CATIA_PARALLEL_REFERENCE_TABLE_VERSION
+                || namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION
+            {
                 let derived_by_id = design_objects
                     .iter()
                     .map(|object| (object.id.as_str(), object))
@@ -8214,6 +8258,7 @@ fn native_object_graph(
         .enumerate()
         .filter_map(|(index, record)| Some((record.entity_id?, index)))
         .collect::<HashMap<_, _>>();
+    let terminal_null_entity_id = terminal_null_entity_id(&record_indices);
     for record in &mut records {
         (record.storage_record, record.storage_design_object) = resolved_storage_link(
             record.storage_ref,
@@ -8226,6 +8271,7 @@ fn native_object_graph(
             &record_ids,
             &record_design_objects,
             &record_indices,
+            terminal_null_entity_id,
         );
     }
     let entities = entity_records
