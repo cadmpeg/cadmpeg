@@ -4635,6 +4635,30 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         boolean.report.coverage["transferred_legacy_formula_count"],
         1
     );
+
+    let conditional = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_constant(
+                "true ? 5 ; 1 / 0",
+                Some(5.0),
+                "Real",
+                "Real",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode lazy conditional formula");
+    let [parameter] = conditional.ir.model.parameters.as_slice() else {
+        panic!("one conditional formula parameter")
+    };
+    assert_eq!(parameter.expression, "true ? 5 ; 1 / 0");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
+    );
+    assert_eq!(
+        conditional.report.coverage["transferred_legacy_formula_count"],
+        1
+    );
 }
 
 #[test]
