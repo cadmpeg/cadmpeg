@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 238;
+pub const CATIA_NATIVE_VERSION: u32 = 239;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -63,6 +63,9 @@ pub(crate) const CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION: u32 = 237;
 /// Native namespace version that types formula dependency candidate incidences.
 #[cfg(test)]
 pub(crate) const CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION: u32 = 238;
+/// Native schema version retaining complete ordered configuration-row chains.
+#[cfg(test)]
+pub(crate) const CATIA_CONFIGURATION_ROW_CHAIN_VERSION: u32 = 239;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -100,6 +103,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_spheres",
     "consolidated_tori",
     "consolidated_vertex_identities",
+    "configuration_row_chains",
     "design_objects",
     "entity_records",
     "external_references",
@@ -1468,6 +1472,21 @@ pub struct CatiaConfigurationRowLink {
     pub class_reference: CatiaEntityReference,
     /// Stored successor identity.
     pub successor: CatiaEntityReference,
+}
+
+/// One complete ordered chain formed by exact `configrow` successor links.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConfigurationRowChain {
+    /// Stable identity derived from the graph and stored class identity.
+    pub id: String,
+    /// Object graph containing every row link.
+    pub object_graph: String,
+    /// Stored class identity that selects the root row.
+    pub class_reference: CatiaEntityReference,
+    /// Row entities in successor order from the selected root.
+    pub rows: Vec<CatiaEntityReference>,
+    /// First successor identity that does not select another row link.
+    pub terminal: CatiaEntityReference,
 }
 
 /// Exact framing production for a compound relation-program instance.
@@ -3151,6 +3170,67 @@ fn configuration_row_link(
     })
 }
 
+fn derive_configuration_row_chains(
+    records: &[CatiaEntityRecord],
+    entities: &HashMap<(String, u32), String>,
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
+) -> Vec<CatiaConfigurationRowChain> {
+    let row_ids = records
+        .iter()
+        .filter(|entity| entity.configuration_row_link.is_some())
+        .map(|entity| (entity.object_graph.as_str(), entity.entity_id))
+        .collect::<HashSet<_>>();
+    let mut groups = HashMap::<(&str, u32), Vec<(u32, u32)>>::new();
+    for entity in records {
+        let Some(link) = &entity.configuration_row_link else {
+            continue;
+        };
+        groups
+            .entry((entity.object_graph.as_str(), link.class_reference.entity_id))
+            .or_default()
+            .push((entity.entity_id, link.successor.entity_id));
+    }
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    groups.sort_by(
+        |((left_graph, left_root), _), ((right_graph, right_root), _)| {
+            left_graph.cmp(right_graph).then(left_root.cmp(right_root))
+        },
+    );
+
+    groups
+        .into_iter()
+        .filter_map(|((graph, root), links)| {
+            let successors = links.iter().copied().collect::<HashMap<_, _>>();
+            if successors.len() != links.len() {
+                return None;
+            }
+            let mut row_ids_in_order = Vec::with_capacity(links.len());
+            let mut visited = HashSet::new();
+            let mut current = root;
+            while let Some(successor) = successors.get(&current).copied() {
+                if !visited.insert(current) {
+                    return None;
+                }
+                row_ids_in_order.push(current);
+                current = successor;
+            }
+            if visited.len() != links.len() || row_ids.contains(&(graph, current)) {
+                return None;
+            }
+            Some(CatiaConfigurationRowChain {
+                id: format!("{graph}:configuration-row-chain#{root}"),
+                object_graph: graph.to_string(),
+                class_reference: entity_reference(graph, root, entities, entity_classes),
+                rows: row_ids_in_order
+                    .into_iter()
+                    .map(|entity_id| entity_reference(graph, entity_id, entities, entity_classes))
+                    .collect(),
+                terminal: entity_reference(graph, current, entities, entity_classes),
+            })
+        })
+        .collect()
+}
+
 fn relation_program_instance_lead_12(
     entity_id: u32,
     fields: &[PayloadField],
@@ -4169,6 +4249,9 @@ pub struct CatiaNative {
     /// Global endpoint identities and their consolidated edge incidence.
     #[serde(default)]
     pub consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity>,
+    /// Complete configuration-row successor chains.
+    #[serde(default)]
+    pub configuration_row_chains: Vec<CatiaConfigurationRowChain>,
     /// Design objects grouped by their serialized owner entity identity.
     #[serde(default)]
     pub design_objects: Vec<CatiaDesignObject>,
@@ -4243,6 +4326,7 @@ impl Default for CatiaNative {
             consolidated_spheres: Vec::new(),
             consolidated_tori: Vec::new(),
             consolidated_vertex_identities: Vec::new(),
+            configuration_row_chains: Vec::new(),
             design_objects: Vec::new(),
             entity_records: Vec::new(),
             external_references: Vec::new(),
@@ -8165,6 +8249,11 @@ impl CatiaNative {
                 &parameter_bindings,
             );
         }
+        let configuration_row_chains = derive_configuration_row_chains(
+            &entity_records,
+            &entities_by_graph_identity,
+            &entity_classes_by_graph_identity,
+        );
         alias_rows.retain(|row| {
             let row_start = row.byte_offset.saturating_sub(4);
             !object_graphs
@@ -8315,6 +8404,7 @@ impl CatiaNative {
             consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
+            configuration_row_chains,
             design_objects,
             entity_records,
             external_references,
@@ -8394,6 +8484,8 @@ impl CatiaNative {
             }
         }
         let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
+        let mut configuration_row_chains: Vec<CatiaConfigurationRowChain> =
+            namespace.arena_as("configuration_row_chains")?;
         if namespace.version < CATIA_SUFFIX_FRAMING_VERSION {
             for entity in &mut entity_records {
                 entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
@@ -8557,6 +8649,18 @@ impl CatiaNative {
                         )
                     });
             }
+        }
+        let expected_configuration_row_chains = derive_configuration_row_chains(
+            &entity_records,
+            &entities_by_graph_identity,
+            &entity_classes_by_graph_identity,
+        );
+        if namespace.version < CATIA_CONFIGURATION_ROW_CHAIN_VERSION {
+            configuration_row_chains = expected_configuration_row_chains;
+        } else if configuration_row_chains != expected_configuration_row_chains {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "configuration-row chains do not match their successor links".to_string(),
+            ));
         }
         for graph in &mut graphs {
             graph.records = records
@@ -9229,6 +9333,7 @@ impl CatiaNative {
             consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
+            configuration_row_chains,
             design_objects,
             entity_records,
             external_references,
@@ -9337,6 +9442,7 @@ impl CatiaNative {
             "consolidated_vertex_identities",
             &self.consolidated_vertex_identities,
         )?;
+        namespace.set_arena("configuration_row_chains", &self.configuration_row_chains)?;
         namespace.set_arena("design_objects", &self.design_objects)?;
         namespace.set_arena("entity_records", &self.entity_records)?;
         namespace.set_arena("external_references", &self.external_references)?;
@@ -9408,6 +9514,7 @@ impl CatiaNative {
             consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
+            configuration_row_chains,
             design_objects,
             entity_records,
             external_references,
@@ -9473,6 +9580,7 @@ impl CatiaNative {
             "consolidated_vertex_identities",
             &consolidated_vertex_identities,
         )?;
+        namespace.set_arena("configuration_row_chains", &configuration_row_chains)?;
         namespace.set_arena("design_objects", &design_objects)?;
         namespace.set_arena("entity_records", &entity_records)?;
         namespace.set_arena("external_references", &external_references)?;

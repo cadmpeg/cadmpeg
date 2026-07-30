@@ -29,44 +29,14 @@ use crate::formula;
 use crate::native::{CatiaNative, CatiaObjectGraph};
 
 fn configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
-    let row_ids = native
-        .entity_records
-        .iter()
-        .filter(|entity| entity.configuration_row_link.is_some())
-        .map(|entity| (entity.object_graph.as_str(), entity.entity_id))
-        .collect::<HashSet<_>>();
-    let mut groups = HashMap::<(&str, u32), Vec<(u32, u32)>>::new();
-    for entity in &native.entity_records {
-        let Some(link) = &entity.configuration_row_link else {
-            continue;
-        };
-        groups
-            .entry((entity.object_graph.as_str(), link.class_reference.entity_id))
-            .or_default()
-            .push((entity.entity_id, link.successor.entity_id));
-    }
-
-    let mut complete_chain_count = 0;
-    let mut ordered_row_count = 0;
-    for ((graph, root), rows) in groups {
-        let successors = rows.iter().copied().collect::<HashMap<_, _>>();
-        if successors.len() != rows.len() {
-            continue;
-        }
-        let mut visited = HashSet::new();
-        let mut current = root;
-        while let Some(successor) = successors.get(&current).copied() {
-            if !visited.insert(current) {
-                break;
-            }
-            current = successor;
-        }
-        if visited.len() == rows.len() && !row_ids.contains(&(graph, current)) {
-            complete_chain_count += 1;
-            ordered_row_count += rows.len();
-        }
-    }
-    (complete_chain_count, ordered_row_count)
+    (
+        native.configuration_row_chains.len(),
+        native
+            .configuration_row_chains
+            .iter()
+            .map(|chain| chain.rows.len())
+            .sum(),
+    )
 }
 
 /// Decodes a `.CATPart` reader into an IR document and decode report.
@@ -938,6 +908,16 @@ fn finish_decode(
         configuration_row_chain_coverage(&native);
     let unordered_configuration_row_link_count =
         configuration_row_link_count - ordered_configuration_row_link_count;
+    let resolved_configuration_row_chain_terminal_count = native
+        .configuration_row_chains
+        .iter()
+        .filter(|chain| chain.terminal.entity.is_some())
+        .count();
+    let classified_configuration_row_chain_terminal_count = native
+        .configuration_row_chains
+        .iter()
+        .filter(|chain| chain.terminal.class_name.is_some())
+        .count();
     let referenced_relation_expressions = native
         .entity_records
         .iter()
@@ -2103,6 +2083,24 @@ fn finish_decode(
         (
             "decoded_ordered_configuration_row_link_count".to_string(),
             ordered_configuration_row_link_count,
+        ),
+        (
+            "decoded_resolved_configuration_row_chain_terminal_count".to_string(),
+            resolved_configuration_row_chain_terminal_count,
+        ),
+        (
+            "unresolved_configuration_row_chain_terminal_count".to_string(),
+            complete_configuration_row_chain_count
+                - resolved_configuration_row_chain_terminal_count,
+        ),
+        (
+            "decoded_classified_configuration_row_chain_terminal_count".to_string(),
+            classified_configuration_row_chain_terminal_count,
+        ),
+        (
+            "unclassified_configuration_row_chain_terminal_count".to_string(),
+            complete_configuration_row_chain_count
+                - classified_configuration_row_chain_terminal_count,
         ),
         (
             "unresolved_configuration_row_order_count".to_string(),

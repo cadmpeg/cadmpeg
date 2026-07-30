@@ -173,9 +173,11 @@ current scores require those matrices and representative fixtures.
   `configrow` successor links retain their class and successor identities.
   Coverage partitions schema references, resolved and unresolved entity
   references, classified and unclassified referenced entities, row classes, and
-  row successors. It also partitions row links that form one complete
-  root-to-terminal chain from links whose order remains unresolved. These records
-  do not count as transferred neutral configurations.
+  row successors. Complete root-to-terminal chains retain their class identity,
+  ordered row entity identities, terminal identity, and every available selected
+  entity class. Coverage partitions their ordered links from links whose order
+  remains unresolved. These records do not count as transferred neutral
+  configurations.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node. Schema fields named `PRTSketch` or `Sketch` do not establish

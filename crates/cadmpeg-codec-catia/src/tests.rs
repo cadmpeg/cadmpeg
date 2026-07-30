@@ -2461,6 +2461,42 @@ fn standard_catpart_with_configuration_incidences(
     file
 }
 
+fn standard_catpart_with_configuration_row_chain() -> Vec<u8> {
+    let row_payload = |successor: u32| {
+        let mut payload = vec![0x80];
+        payload.extend_from_slice(&250_u32.to_le_bytes());
+        payload.push(0x80);
+        payload.extend_from_slice(&successor.to_le_bytes());
+        payload.push(0xfe);
+        payload
+    };
+    let mut stream = entity_table_record(5);
+    stream.extend(entity_table_record(6));
+    stream.extend(entity_table_record(7));
+    stream.extend(entity_table_record(8));
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&[
+        object_graph_record(&[0x12, 0x89, 0x85], &row_payload(6)),
+        object_graph_record(&[0x12, 0x89, 0x85], &row_payload(7)),
+        object_graph_record(&[0x12, 0x89, 0x85], &row_payload(8)),
+        object_graph_record(&[0x12, 0x89, 0x86], &[0xfe]),
+    ]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "body",
+        "configrow",
+        "body",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     standard_catpart_with_two_selector_value("Thickness", "#1_ /2", suffix)
 }
@@ -11505,6 +11541,23 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         Some(native.entity_records[2].id.as_str())
     );
     assert_eq!(row.successor.class_name.as_deref(), Some("body"));
+    assert_eq!(native.configuration_row_chains.len(), 1);
+    let chain = &native.configuration_row_chains[0];
+    assert_eq!(chain.object_graph, native.entity_records[1].object_graph);
+    assert_eq!(chain.class_reference, row.class_reference);
+    assert_eq!(
+        chain
+            .rows
+            .iter()
+            .map(|reference| reference.entity_id)
+            .collect::<Vec<_>>(),
+        [6]
+    );
+    assert_eq!(
+        chain.rows[0].entity.as_deref(),
+        Some(native.entity_records[1].id.as_str())
+    );
+    assert_eq!(chain.terminal, row.successor);
     assert!(native.entity_records[2].configuration_record.is_none());
     assert!(native.entity_records[2].configuration_row_link.is_none());
 
@@ -11556,6 +11609,14 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         1
     );
     assert_eq!(
+        decoded.report.coverage["decoded_resolved_configuration_row_chain_terminal_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_classified_configuration_row_chain_terminal_count"],
+        1
+    );
+    assert_eq!(
         decoded.report.coverage["unresolved_configuration_row_order_count"],
         0
     );
@@ -11564,6 +11625,29 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         0
     );
     assert!(decoded.ir.model.configurations.is_empty());
+}
+
+#[test]
+fn configuration_row_chain_retains_complete_source_order() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_configuration_row_chain());
+    assert_eq!(native.configuration_row_chains.len(), 1);
+    let chain = &native.configuration_row_chains[0];
+    assert_eq!(chain.class_reference.entity_id, 5);
+    assert_eq!(
+        chain
+            .rows
+            .iter()
+            .map(|reference| reference.entity_id)
+            .collect::<Vec<_>>(),
+        [5, 6, 7]
+    );
+    assert!(chain
+        .rows
+        .iter()
+        .all(|reference| reference.class_name.as_deref() == Some("configrow")));
+    assert_eq!(chain.terminal.entity_id, 8);
+    assert_eq!(chain.terminal.class_name.as_deref(), Some("body"));
 }
 
 #[test]
@@ -11603,11 +11687,11 @@ fn configuration_productions_preserve_unresolved_identities() {
         .iter()
         .all(|entity| entity.configuration_row_link.is_none()));
 
+    let cyclic_file = standard_catpart_with_configuration_incidences(8, 15, 6);
+    let cyclic_native = crate::native::CatiaNative::decode(&cyclic_file);
+    assert!(cyclic_native.configuration_row_chains.is_empty());
     let cyclic = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_configuration_incidences(8, 15, 6)),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(cyclic_file), &DecodeOptions::default())
         .expect("decode cyclic configuration row");
     assert_eq!(
         cyclic.report.coverage["decoded_complete_configuration_row_chain_count"],
@@ -11651,6 +11735,36 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         migrated.entity_records[1].configuration_row_link,
         native.entity_records[1].configuration_row_link
     );
+    assert_eq!(
+        migrated.configuration_row_chains,
+        native.configuration_row_chains
+    );
+
+    let mut older = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut older)
+        .expect("store pre-chain configuration namespace");
+    older.version = crate::native::CATIA_CONFIGURATION_ROW_CHAIN_VERSION - 1;
+    older.arenas.remove("configuration_row_chains");
+    let migrated =
+        crate::native::CatiaNative::load(&older).expect("migrate configuration-row chains");
+    assert_eq!(
+        migrated.configuration_row_chains,
+        native.configuration_row_chains
+    );
+
+    let mut malformed_chain = native.clone();
+    malformed_chain.configuration_row_chains[0]
+        .terminal
+        .entity_id = 6;
+    let mut current = cadmpeg_ir::NativeNamespace::default();
+    malformed_chain
+        .store(&mut current)
+        .expect("store malformed configuration chain");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&current),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 
     let mut malformed = native;
     malformed.entity_records[1]
