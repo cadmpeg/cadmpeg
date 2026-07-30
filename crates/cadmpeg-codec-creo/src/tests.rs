@@ -3119,6 +3119,56 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
 }
 
 #[test]
+fn prototype_minor_radius_replays_define_a_constant_round_radius() {
+    let replay = [0x18, 0x0c, 0x29, 0xc9, 0x99];
+    let mut geometry = visibgeom_payload(2, 0);
+    geometry.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 8]);
+    geometry.extend_from_slice(&replay);
+    geometry.push(0xe3);
+    geometry.extend_from_slice(&[8, 0x26, 4, 0x01, 0, 0]);
+    geometry.extend_from_slice(&replay);
+    geometry.push(0xe3);
+    geometry.extend_from_slice(b"srf_prim_ptr(torus)\0\xe0\x02local_sys\0\xf9\x04\x03");
+    for value in [1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, -2.0] {
+        push_generated_scalar(&mut geometry, value);
+    }
+    geometry.extend_from_slice(b"\xe0\x01radius1\0\xe4\xe0\x01radius2\0\x29\xc9\x99");
+    geometry.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let data = build_prt(
+        "c",
+        &[
+            ("ND:0:VisibGeom:0", geometry),
+            (
+                "AllFeatur",
+                vec![
+                    4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+                ],
+            ),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+
+    assert_eq!(
+        result.report.coverage["decoded_type26_replayed_minor_radius_count"],
+        2
+    );
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+                radius: cadmpeg_ir::features::Length(radius),
+            }, ..
+        }] if radius.to_bits() == 0.199_999_999_999_999_98_f64.to_bits())
+    ));
+}
+
+#[test]
 fn decode_types_named_german_round_without_a_schema_row() {
     let data = build_prt("c", &[("MdlStatus", b"Rundung id 4\0".to_vec())]);
     let result = CreoCodec

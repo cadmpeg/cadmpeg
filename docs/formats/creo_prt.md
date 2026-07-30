@@ -2232,16 +2232,18 @@ the rolling-ball radii of the toroidal patches and define one constant fillet
 radius only when all values agree.
 When those rows have no tagged radius trailers, a uniquely associated named
 torus prototype supplies the rolling-ball-radius candidate from `radius2`.
-Every generated row must carry a complete terminal outline, and exactly one of
-the three corresponding endpoint-coordinate deltas in each outline must equal
-that candidate. The candidate then defines the constant fillet radius.
+Each generated row can prove that candidate by replaying it exactly as the
+final scalar in its terminal scalar frame. A complete terminal outline also
+proves it when exactly one of the three corresponding endpoint-coordinate
+deltas equals the candidate.
 The untagged five-coordinate envelope is an independent radius proof. With
 coordinates `[a1,a2,b0,b1,b2]`, it requires `a1 = b0`; the two remaining
 endpoint deltas, under exactly one coordinate ordering, must equal
 `2*(radius1+radius2)` and `radius2`. The split four-coordinate form applies the
 same two-delta rule to its leading and trailing coordinate pairs. Every
-generated row must satisfy one of these envelope forms against the same
-prototype radii.
+generated row must satisfy the exact replay, outline, or envelope proof against
+the same prototype radii. The candidate then defines the constant fillet
+radius.
 An owned round set may mix type-24 cylinder rows and type-26 torus rows. When
 every row carries its complete family-specific radius form, the type-24 rolling
 radius and type-26 `radius2` values form one common radius set. The round is

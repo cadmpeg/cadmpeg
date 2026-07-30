@@ -16199,7 +16199,7 @@ fn replayed_torus_minor_radius(
     record.type26_replayed_minor_radius(row.type_byte, prototype_minor_radius)
 }
 
-fn prototype_envelope_round_radius(
+fn prototype_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Option<f64> {
@@ -16236,9 +16236,11 @@ fn prototype_envelope_round_radius(
                 return false;
             };
             record.torus_radius_overrides(row.type_byte).is_none()
-                && (record
-                    .torus_outline_frame(row.type_byte)
-                    .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius2))
+                && (replayed_torus_minor_radius(scan, row, record)
+                    .is_some_and(|radius| radius.to_bits() == radius2.to_bits())
+                    || record
+                        .torus_outline_frame(row.type_byte)
+                        .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius2))
                     || record
                         .type26_five_coordinate_envelope(row.type_byte)
                         .is_some_and(|envelope| {
@@ -16283,7 +16285,7 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         {
             return None;
         }
-        return prototype_envelope_round_radius(scan, &generated_rows);
+        return prototype_round_radius(scan, &generated_rows);
     }
     let cylinder_radii = round_placed_cylinder_radii(scan, ir, feature_id);
     if cylinder_radii.len() == cylinder_rows.len()

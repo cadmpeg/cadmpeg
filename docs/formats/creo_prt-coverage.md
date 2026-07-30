@@ -42,6 +42,9 @@ fixtures, claims above L1 remain unproven.
   and termination have independent byte-backed proofs.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
+- A round whose generated type-26 rows all replay the same uniquely associated
+  prototype minor radius transfers that exact value as its constant radius;
+  patch placement is independent of the radius proof.
 - Curve-equation assignments retain source order and dependency identity;
   closed numeric and string operator and deterministic function values transfer,
   including exact and regular-expression whole-string matching.
