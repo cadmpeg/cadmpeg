@@ -999,16 +999,20 @@ const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
 struct SurfaceTransferCoverage {
     unique_rows: usize,
     transferred_rows: usize,
+    retained_unknown_rows: usize,
     ambiguous_rows: usize,
     by_family: BTreeMap<&'static str, (usize, usize)>,
+    unknown_by_family: BTreeMap<&'static str, usize>,
 }
 
 #[derive(Default)]
 struct CurveTransferCoverage {
     unique_rows: usize,
     transferred_rows: usize,
+    retained_unknown_rows: usize,
     ambiguous_rows: usize,
     by_type: BTreeMap<u8, (usize, usize)>,
+    unknown_by_type: BTreeMap<u8, usize>,
 }
 
 #[derive(Default)]
@@ -1117,6 +1121,20 @@ fn curve_transfer_coverage(
                 .ok()
         })
         .collect::<BTreeSet<_>>();
+    let unknown_ids = curves
+        .iter()
+        .filter(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        .filter_map(|curve| {
+            curve
+                .source_object
+                .as_ref()
+                .filter(|source| source.format == "creo")?
+                .object_id
+                .strip_prefix("VisibGeom:")?
+                .parse::<u32>()
+                .ok()
+        })
+        .collect::<BTreeSet<_>>();
     let mut coverage = CurveTransferCoverage {
         unique_rows: unique_rows.len(),
         ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
@@ -1124,10 +1142,13 @@ fn curve_transfer_coverage(
     };
     for row in unique_rows {
         let transferred = usize::from(transferred_ids.contains(&row.id));
+        let retained_unknown = usize::from(unknown_ids.contains(&row.id));
         coverage.transferred_rows += transferred;
+        coverage.retained_unknown_rows += retained_unknown;
         let type_coverage = coverage.by_type.entry(row.type_byte).or_default();
         type_coverage.0 += 1;
         type_coverage.1 += transferred;
+        *coverage.unknown_by_type.entry(row.type_byte).or_default() += retained_unknown;
     }
     coverage
 }
@@ -1166,6 +1187,20 @@ fn surface_transfer_coverage(
             Some((id, kinds))
         })
         .collect::<Vec<_>>();
+    let unknown_ids = surfaces
+        .iter()
+        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+        .filter_map(|surface| {
+            surface
+                .source_object
+                .as_ref()
+                .filter(|source| source.format == "creo")?
+                .object_id
+                .strip_prefix("VisibGeom:")?
+                .parse::<u32>()
+                .ok()
+        })
+        .collect::<BTreeSet<_>>();
     let mut coverage = SurfaceTransferCoverage {
         unique_rows: unique_rows.len(),
         ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
@@ -1173,16 +1208,20 @@ fn surface_transfer_coverage(
     };
     for kind in SURFACE_KINDS {
         coverage.by_family.insert(surface_family(kind), (0, 0));
+        coverage.unknown_by_family.insert(surface_family(kind), 0);
     }
     for row in unique_rows {
         let is_transferred = transferred
             .iter()
             .any(|(id, kinds)| *id == row.id && kinds.contains(&row.kind));
+        let retained_unknown = unknown_ids.contains(&row.id);
         coverage.transferred_rows += usize::from(is_transferred);
+        coverage.retained_unknown_rows += usize::from(retained_unknown);
         let family = surface_family(row.kind);
         let family_coverage = coverage.by_family.entry(family).or_default();
         family_coverage.0 += 1;
         family_coverage.1 += usize::from(is_transferred);
+        *coverage.unknown_by_family.entry(family).or_default() += usize::from(retained_unknown);
     }
     coverage
 }
@@ -20927,6 +20966,71 @@ fn transfer_topology_bound_planes(
     transferred
 }
 
+fn retain_unresolved_visible_carriers(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "unresolved_visible_surface_carrier",
+            Exactness::Unknown,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Unknown {
+                record: geometry_section_record(scan, row.offset),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
+    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "unresolved_visible_curve_carrier",
+            Exactness::Unknown,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Unknown {
+                record: geometry_section_record(scan, row.offset),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
+}
+
 fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEquation> {
     let mut carriers = placed_planes(scan)
         .into_iter()
@@ -28991,6 +29095,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         transfer_resolved_circular_extrusion_breps(scan, &mut ir, &mut annotations);
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
+    retain_unresolved_visible_carriers(scan, &mut ir, &mut annotations);
     let transferred_part_product = transfer_part_product(scan, &mut ir, &mut annotations);
     let decoded_feature_skamp_count = scan
         .features
@@ -29074,6 +29179,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             surface_coverage.transferred_rows,
         );
         coverage.insert(
+            "retained_unknown_visible_surface_row_count".to_string(),
+            surface_coverage.retained_unknown_rows,
+        );
+        coverage.insert(
             "untransferred_visible_surface_row_count".to_string(),
             surface_coverage
                 .unique_rows
@@ -29093,6 +29202,14 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 format!("untransferred_visible_{family}_surface_row_count"),
                 rows.saturating_sub(*transferred),
             );
+            coverage.insert(
+                format!("retained_unknown_visible_{family}_surface_row_count"),
+                surface_coverage
+                    .unknown_by_family
+                    .get(family)
+                    .copied()
+                    .unwrap_or_default(),
+            );
         }
         coverage.insert(
             "unique_visible_curve_row_count".to_string(),
@@ -29101,6 +29218,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "transferred_visible_curve_row_count".to_string(),
             curve_coverage.transferred_rows,
+        );
+        coverage.insert(
+            "retained_unknown_visible_curve_row_count".to_string(),
+            curve_coverage.retained_unknown_rows,
         );
         coverage.insert(
             "untransferred_visible_curve_row_count".to_string(),
@@ -29120,6 +29241,14 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             coverage.insert(
                 format!("transferred_visible_curve_type_{type_byte:02x}_row_count"),
                 *transferred,
+            );
+            coverage.insert(
+                format!("retained_unknown_visible_curve_type_{type_byte:02x}_row_count"),
+                curve_coverage
+                    .unknown_by_type
+                    .get(type_byte)
+                    .copied()
+                    .unwrap_or_default(),
             );
         }
         coverage.insert(

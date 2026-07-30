@@ -226,6 +226,11 @@ fixtures, claims above L1 remain unproven.
    untransferred visible surface- and curve-row counts. Surface counts are
    partitioned by family; curve counts are partitioned by raw type byte because
    the curve namespace does not independently define geometric families.
+   Every unique row without a transferred carrier retains an explicit unknown
+   carrier linked to its containing native geometry record. The map counts
+   these retained unknown carriers separately, including the same surface-family
+   and curve-type partitions; they remain untransferred for shape-domain
+   coverage.
    Duplicate native identifiers are counted separately as ambiguous rows.
    Nonzero untransferred and ambiguous row counts each raise a decode loss note.
    The coverage map separately counts decoded, transferred, typed, and native

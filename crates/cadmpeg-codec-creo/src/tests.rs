@@ -166,6 +166,17 @@ fn assert_annotation(
     }
 }
 
+fn assert_unknown_visible_surface(surfaces: &[cadmpeg_ir::geometry::Surface], id: u32) {
+    let surface = surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{id}"))
+        .expect("retained unresolved visible surface");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
+    ));
+}
+
 #[test]
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
@@ -471,6 +482,25 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         result.report.coverage["transferred_native_feature_count"],
         0
     );
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("retained unresolved surface carrier");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
+    ));
+    assert_eq!(
+        result.report.coverage["retained_unknown_visible_surface_row_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["untransferred_visible_surface_row_count"],
+        1
+    );
 }
 
 #[test]
@@ -550,12 +580,7 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
             .as_deref(),
         Some("tabulated_cylinder_curve_replay")
     );
-    assert!(result
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.0 != "creo:visibgeom:surface#7"));
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
 #[test]
@@ -738,7 +763,7 @@ fn decode_preserves_type_2c_direction_before_named_record() {
     assert_eq!(record.fields["extrusion_direction"][0], 0.0);
     assert_eq!(record.fields["extrusion_direction"][1], 1.0);
     assert_eq!(record.fields["extrusion_direction"][2], 0.0);
-    assert!(result.ir.model.surfaces.is_empty());
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
 #[test]
@@ -7356,6 +7381,25 @@ fn scan_discovers_curve_halfedge_topology() {
             .as_deref(),
         Some("curve_topology_row")
     );
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#7")
+        .expect("retained unresolved curve carrier");
+    assert!(matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Unknown { record: Some(_) }
+    ));
+    assert_eq!(
+        result.report.coverage["retained_unknown_visible_curve_row_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["untransferred_visible_curve_row_count"],
+        1
+    );
 }
 
 #[test]
@@ -7590,12 +7634,7 @@ fn decode_withholds_unplaced_cylinder_prototype_frame() {
             &DecodeOptions::default(),
         )
         .expect("decode");
-    assert!(result
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
 #[test]
@@ -7649,12 +7688,7 @@ fn decode_withholds_complete_cylinder_prototype_without_positive_radius() {
                 &DecodeOptions::default(),
             )
             .expect("decode");
-        assert!(result
-            .ir
-            .model
-            .surfaces
-            .iter()
-            .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+        assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
     }
 }
 
@@ -7850,12 +7884,7 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
-    assert!(result
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#8"));
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 8);
     assert_eq!(
         result.report.coverage["transferred_first_instance_prototype_surface_count"],
         1
@@ -7877,12 +7906,7 @@ fn decode_withholds_competing_named_prototypes_for_one_surface_row() {
         )
         .expect("decode");
 
-    assert!(result
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
 #[test]
