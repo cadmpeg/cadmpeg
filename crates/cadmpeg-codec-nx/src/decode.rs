@@ -10203,6 +10203,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             FeatureDefinition::Hole {
                 profile,
+                profile_filter,
                 face,
                 position,
                 direction,
@@ -10211,6 +10212,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 exit_kind,
                 diameter,
                 extent,
+                bottom,
+                taper_angle,
+                specification,
                 ..
             } if hole_feature_is_incomplete(
                 profile.as_ref(),
@@ -10220,6 +10224,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 (kind, exit_kind.as_ref()),
                 *diameter,
                 extent.as_ref(),
+            ) || hole_auxiliary_semantics_are_incomplete(
+                profile_filter.as_ref(),
+                bottom.as_ref(),
+                *taper_angle,
+                specification.as_deref(),
             ) =>
             {
                 "hole"
@@ -10844,6 +10853,43 @@ fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bo
                 || !valid_angle(*angle)
         }
     }
+}
+
+pub(crate) fn hole_auxiliary_semantics_are_incomplete(
+    profile_filter: Option<&cadmpeg_ir::features::HoleProfileFilter>,
+    bottom: Option<&cadmpeg_ir::features::HoleBottom>,
+    taper_angle: Option<cadmpeg_ir::features::Angle>,
+    specification: Option<&cadmpeg_ir::features::HoleSpecification>,
+) -> bool {
+    let valid_angle = |angle: cadmpeg_ir::features::Angle| {
+        angle.0.is_finite() && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
+    };
+    profile_filter.is_some_and(|filter| !filter.points && !filter.circles && !filter.arcs)
+        || bottom.is_some_and(|bottom| {
+            matches!(
+                bottom,
+                cadmpeg_ir::features::HoleBottom::Angled { included_angle, .. }
+                    if !valid_angle(*included_angle)
+            )
+        })
+        || taper_angle.is_some_and(|angle| !valid_angle(angle))
+        || specification.is_some_and(|specification| {
+            specification.standard.trim().is_empty()
+                || specification
+                    .pitch
+                    .is_some_and(|pitch| !positive_feature_length(pitch))
+                || specification
+                    .major_diameter
+                    .is_some_and(|diameter| !positive_feature_length(diameter))
+                || specification
+                    .clearance
+                    .is_some_and(|clearance| !clearance.0.is_finite())
+                || matches!(
+                    specification.depth,
+                    cadmpeg_ir::features::HoleThreadDepth::Blind { depth }
+                        if !positive_feature_length(depth)
+                )
+        })
 }
 
 fn chamfer_spec_is_incomplete(spec: &ChamferSpec) -> bool {

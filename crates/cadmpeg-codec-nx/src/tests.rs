@@ -716,6 +716,73 @@ fn nx_datum_completeness_requires_coherent_finite_frames() {
 }
 
 #[test]
+fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
+    use cadmpeg_ir::features::{
+        Angle, HoleBottom, HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length,
+        ThreadHand,
+    };
+
+    assert!(!crate::decode::hole_auxiliary_semantics_are_incomplete(
+        Some(&HoleProfileFilter {
+            points: true,
+            circles: false,
+            arcs: false,
+        }),
+        Some(&HoleBottom::Angled {
+            included_angle: Angle(0.5),
+            depth_to_tip: true,
+        }),
+        Some(Angle(0.1)),
+        None,
+    ));
+    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
+        Some(&HoleProfileFilter {
+            points: false,
+            circles: false,
+            arcs: false,
+        }),
+        None,
+        None,
+        None,
+    ));
+    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
+        None,
+        Some(&HoleBottom::Angled {
+            included_angle: Angle(f64::NAN),
+            depth_to_tip: false,
+        }),
+        None,
+        None,
+    ));
+    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
+        None,
+        None,
+        Some(Angle(std::f64::consts::PI)),
+        None,
+    ));
+    let invalid_specification = HoleSpecification {
+        standard: " ".into(),
+        designation: None,
+        class: None,
+        fit: None,
+        threaded: true,
+        modeled: false,
+        cosmetic: true,
+        pitch: Some(Length(0.0)),
+        major_diameter: Some(Length(5.0)),
+        hand: ThreadHand::Right,
+        depth: HoleThreadDepth::Blind { depth: Length(0.0) },
+        clearance: None,
+    };
+    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
+        None,
+        None,
+        None,
+        Some(&invalid_specification),
+    ));
+}
+
+#[test]
 fn nx_projected_curve_completeness_requires_a_valid_direction_law() {
     use cadmpeg_ir::features::{CurveProjectionDirection, CurveProjectionDirectionState};
     use cadmpeg_ir::math::Vector3;
