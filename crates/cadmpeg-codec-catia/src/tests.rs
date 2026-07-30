@@ -4314,6 +4314,89 @@ fn decode_transfers_unset_non_numeric_legacy_parameters() {
 }
 
 #[test]
+fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters() {
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.push(0x81);
+    bytes.extend([0xfd, 0x8c]);
+    bytes.extend([0x58, 0xd1, 8]);
+    bytes.extend(b"\xe8\x00\x12\x01\x09Revision\xfe");
+    bytes.extend([0x5f, 0xd1, 9]);
+    bytes.extend(b"\xe8\xc4\x17\x01\xfe\xfe");
+    bytes.extend(b"\xfe\x85\x93\x82\xfe\x0bRevision-1");
+    bytes.push(0xea);
+    bytes.extend(2_u32.to_le_bytes());
+    bytes.push(0x81);
+    bytes.extend([0xfd, 0x8c]);
+    bytes.extend([0x58, 0xd1, 10]);
+    bytes.extend(b"\xe8\x00\x12\x01\x07Search\xfe");
+    bytes.extend([6, b'V', b'a', b'l', b'b', b'y', 0xd1, 11]);
+    bytes.extend(b"\xe8\xc4\x17\x01\xfe\xfe");
+    bytes.extend(b"\xfe\x85\x9d\x82\xfe\x80");
+    bytes.extend((-7_i32).to_le_bytes());
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode intrinsically typed evaluated parameters");
+
+    let [string, integer] = decoded.ir.model.parameters.as_slice() else {
+        panic!("two transferred evaluated parameters")
+    };
+    assert_eq!(string.name, "Revision");
+    assert_eq!(
+        string.value,
+        Some(cadmpeg_ir::features::ParameterValue::String(
+            "Revision-1".to_string()
+        ))
+    );
+    assert_eq!(string.properties["value_type"], "String");
+    assert_eq!(integer.name, "Search");
+    assert_eq!(
+        integer.value,
+        Some(cadmpeg_ir::features::ParameterValue::Integer(-7))
+    );
+    assert_eq!(integer.properties["value_type"], "Integer");
+    assert_eq!(
+        decoded.report.coverage["transferred_legacy_parameter_count"],
+        2
+    );
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_does_not_override_a_string_value_type_descriptor() {
+    for descriptor in [
+        b"\xfe\x84\x92\x82\x08Integer\x83".as_slice(),
+        b"\xfe\x84\x92\x82\x82\x83".as_slice(),
+    ] {
+        let mut bytes = zero_entity_catpart();
+        bytes.push(0xea);
+        bytes.extend(1_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        bytes.extend([0x58, 0xd1, 8]);
+        bytes.extend(b"\xe8\x00\x12\x01\x06Value\xfe");
+        bytes.extend([0x5f, 0xd1, 9]);
+        bytes.extend(b"\xe8\xc4\x17\x01\xfe\xfe");
+        bytes.extend(descriptor);
+        bytes.extend(b"\xfe\x85\x93\x82\xfe\x05Text");
+        bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+        let decoded = CatiaCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode string with an incompatible or unresolved descriptor");
+
+        assert!(decoded.ir.model.parameters.is_empty());
+        assert_eq!(
+            decoded.report.coverage["transferred_legacy_parameter_count"],
+            0
+        );
+    }
+}
+
+#[test]
 fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);

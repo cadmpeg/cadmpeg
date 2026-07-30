@@ -4011,7 +4011,6 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
         .collect()
 }
 
-#[cfg(test)]
 fn valid_legacy_identifier(value: &str) -> bool {
     let mut characters = value.chars();
     characters
@@ -4057,6 +4056,16 @@ fn legacy_value_name(
         return None;
     }
 
+    let name = legacy_evaluated_value_name(roles, fields, entity_id, value_offset)?;
+    Some((name.byte_offset, name.value.clone()))
+}
+
+pub(crate) fn legacy_evaluated_value_name<'a>(
+    roles: &[CatiaLegacyRoleSelector],
+    fields: &'a [CatiaLegacyTextField],
+    entity_id: u32,
+    value_offset: u64,
+) -> Option<&'a CatiaLegacyTextField> {
     let mut evaluation_roles = roles.iter().filter(|role| {
         role.entity_id == entity_id
             && role.field_code == Some(0x17c4)
@@ -4076,10 +4085,7 @@ fn legacy_value_name(
                 .is_some_and(|role| role.field_code == Some(0x1200))
     });
     let name = names.next()?;
-    names
-        .next()
-        .is_none()
-        .then(|| (name.byte_offset, name.value.clone()))
+    names.next().is_none().then_some(name)
 }
 
 #[cfg(test)]

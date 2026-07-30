@@ -503,7 +503,14 @@ fn collect_legacy_parameters(
             let Some(name) = &string.name else {
                 continue;
             };
-            let Some((value_type, selected)) = resolved_legacy_type(run, string.entity_id) else {
+            let Some((value_type, selected)) = resolved_or_intrinsic_legacy_type(
+                run,
+                string.entity_id,
+                string.byte_offset,
+                string.name_field,
+                name,
+                "String",
+            ) else {
                 continue;
             };
             if value_type != "String" {
@@ -549,7 +556,14 @@ fn collect_legacy_parameters(
             let Some(name) = &integer.name else {
                 continue;
             };
-            let Some((value_type, selected)) = resolved_legacy_type(run, integer.entity_id) else {
+            let Some((value_type, selected)) = resolved_or_intrinsic_legacy_type(
+                run,
+                integer.entity_id,
+                integer.byte_offset,
+                integer.name_field,
+                name,
+                "Integer",
+            ) else {
                 continue;
             };
             if !matches!(value_type, "Integer" | "I") {
@@ -681,6 +695,35 @@ fn resolved_legacy_type(
             }
         }
     }
+}
+
+fn resolved_or_intrinsic_legacy_type<'a>(
+    run: &'a crate::native::CatiaLegacyEntityRun,
+    entity_id: u32,
+    value_offset: u64,
+    name_field: Option<u64>,
+    name: &str,
+    intrinsic_type: &'static str,
+) -> Option<(&'a str, bool)> {
+    if let Some(resolved) = resolved_legacy_type(run, entity_id) {
+        return Some(resolved);
+    }
+    if run
+        .type_descriptors
+        .iter()
+        .any(|descriptor| descriptor.entity_id == entity_id)
+    {
+        return None;
+    }
+    let name_field = name_field?;
+    crate::native::legacy_evaluated_value_name(
+        &run.role_selectors,
+        &run.text_fields,
+        entity_id,
+        value_offset,
+    )
+    .is_some_and(|field| field.byte_offset == name_field && field.value == name)
+    .then_some((intrinsic_type, false))
 }
 
 #[cfg(test)]

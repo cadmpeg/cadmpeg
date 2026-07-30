@@ -95,8 +95,11 @@ current scores require those matrices and representative fixtures.
   selector. Consecutive field-bound roles retain the intervening schema-field
   code and exact payload.
   Inclusive-length UTF-8 string packets and inline or wide signed-integer
-  packets transfer as typed parameters when
-  their name and terminal type resolve uniquely.
+  packets transfer as typed parameters when their descriptors resolve to the
+  matching type. Their packet opcodes supply intrinsic `String` and `Integer`
+  types when the exact evaluated-value name production is present and the
+  containing identity has no type descriptor. A present contradictory,
+  ambiguous, or unresolved descriptor prevents transfer.
   Legacy parameter transfer is restricted to the unique declared part-history
   container; unbound runs remain eligible only in declaration-free fragments.
 - Complete numeric parameters and formula relations transfer when their type,
