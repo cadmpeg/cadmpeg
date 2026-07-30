@@ -2126,6 +2126,7 @@ enum CreoMathFunction {
     StringEnds,
     StringMatch,
     StringPattern,
+    ContextDependent,
 }
 
 fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
@@ -2169,6 +2170,10 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "string_ends" => Some(CreoMathFunction::StringEnds),
         "string_match" => Some(CreoMathFunction::StringMatch),
         "string_pattern" => Some(CreoMathFunction::StringPattern),
+        "cable_len" | "cable_thick" | "cbl_logical_file" | "eang" | "elen" | "edistk"
+        | "ecoordx" | "ecoordy" | "evalgraph" | "trajpar_of_pnt" => {
+            Some(CreoMathFunction::ContextDependent)
+        }
         _ => None,
     }
 }
@@ -4009,6 +4014,54 @@ mod tests {
         assert_eq!(evaluate_expression(&excessive_power_depth, &values), None);
         let long_unary_chain = format!("{}1", "-".repeat(1024));
         assert_eq!(evaluate_expression(&long_unary_chain, &values), Some(1.0));
+    }
+
+    #[test]
+    fn retains_context_function_arguments_without_function_dependencies() {
+        let expressions = [
+            "a=cable_len(\"c\",start_id,end_id)",
+            "b=cable_thick(\"c\",location_id)",
+            "c=cbl_logical_file()",
+            "d=eang(first_entity,second_entity)",
+            "e=elen(first_entity)",
+            "f=edistk(first_entity,second_entity)",
+            "g=ecoordx(first_entity)",
+            "h=ecoordy(first_entity)",
+            "i=evalgraph(\"graph\",driver)",
+            "j=trajpar_of_pnt(\"trajectory\",\"point\")",
+        ];
+        let lines = expressions
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), expressions.len());
+        assert_eq!(assignments[0].dependencies, ["start_id", "end_id"]);
+        assert_eq!(assignments[1].dependencies, ["location_id"]);
+        assert!(assignments[2].dependencies.is_empty());
+        assert_eq!(
+            assignments[3].dependencies,
+            ["first_entity", "second_entity"]
+        );
+        assert_eq!(assignments[4].dependencies, ["first_entity"]);
+        assert_eq!(
+            assignments[5].dependencies,
+            ["first_entity", "second_entity"]
+        );
+        assert_eq!(assignments[6].dependencies, ["first_entity"]);
+        assert_eq!(assignments[7].dependencies, ["first_entity"]);
+        assert_eq!(assignments[8].dependencies, ["driver"]);
+        assert!(assignments[9].dependencies.is_empty());
+        assert!(assignments
+            .iter()
+            .all(|assignment| assignment.value.is_none()));
     }
 
     #[test]
