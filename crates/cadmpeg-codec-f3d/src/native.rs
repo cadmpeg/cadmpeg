@@ -156,7 +156,6 @@ macro_rules! f3d_arenas {
             wire_topologies: WireTopology;
             xref_designs: XrefDesign;
             xref_references: XrefReference;
-            asm_histories: AsmHistory;
         }
     };
 }
@@ -165,8 +164,12 @@ macro_rules! sort_f3d_arenas {
     ($($field:ident: $ty:ty;)*) => {
         impl F3dNative {
             pub fn load(namespace: &cadmpeg_ir::NativeNamespace) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+                // `asm_histories` is not a flat arena: its delta states,
+                // bulletin boards, entity changes, and history records live in
+                // four sibling arenas and are grafted back on below.
                 let mut native = Self {
                     version: namespace.version,
+                    asm_histories: namespace.arena_as("asm_histories")?,
                     $($field: namespace.arena_as(stringify!($field))?,)*
                 };
                 let mut states: Vec<crate::history_records::AsmDeltaState> = namespace.arena_as("asm_delta_states")?;
@@ -185,6 +188,9 @@ macro_rules! sort_f3d_arenas {
             pub fn store(&self, namespace: &mut cadmpeg_ir::NativeNamespace) -> Result<(), cadmpeg_ir::NativeConvertError> {
                 namespace.version = F3D_NATIVE_VERSION;
                 $(namespace.set_arena(stringify!($field), &self.$field)?;)*
+                // Store the history tree split across its five arenas. Writing
+                // `asm_histories` with its states still attached would convert
+                // the whole tree to `serde_json` values only to overwrite it.
                 let histories = self.asm_histories.iter().cloned().map(|mut history| { history.states.clear(); history }).collect::<Vec<_>>();
                 let states = self.asm_histories.iter().flat_map(|history| history.states.iter().cloned()).map(|mut state| { state.bulletin_boards.clear(); state.records.clear(); state }).collect::<Vec<_>>();
                 let boards = self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| state.bulletin_boards.iter().cloned()).map(|mut board| { board.changes.clear(); board }).collect::<Vec<_>>();
