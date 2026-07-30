@@ -2145,6 +2145,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     );
                 }
             }
+            if state.suppressed && !state.outputs.is_empty() {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: "suppressed configuration feature state has output bodies".into(),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
             let mut outputs = HashSet::new();
             for output in &state.outputs {
                 if !ids.bodies.contains(&output.0) {

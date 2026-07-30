@@ -1450,6 +1450,17 @@ fn configuration_body_membership_round_trips_and_validates() {
             && finding.message
                 == "configuration feature suppression disagrees with suppressed feature list"
     }));
+    let state = ir.model.configurations[0]
+        .feature_states
+        .get_mut(&first_feature)
+        .expect("configuration feature state");
+    state.suppressed = true;
+    state.outputs.push(body.clone());
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message == "suppressed configuration feature state has output bodies"
+    }));
     ir.model.configurations[0].feature_states.clear();
     ir.model.configurations[0].suppressed_features.clear();
 
