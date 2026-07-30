@@ -334,6 +334,18 @@ pub struct SpatialSketchConstraint {
     pub native_ref: Option<String>,
 }
 
+/// One progenitor/result pair in a model-space sketch offset relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchOffsetPair {
+    /// Source entity whose stored direction defines the signed offset normal.
+    pub source: SpatialSketchEntityId,
+    /// Entity produced at the shared signed offset distance.
+    pub result: SpatialSketchEntityId,
+    /// Reverse the source traversal before selecting its left normal.
+    #[serde(default)]
+    pub source_reversed: bool,
+}
+
 /// Neutral geometric relations between model-space sketch entities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -429,6 +441,21 @@ pub enum SpatialSketchConstraintDefinition {
         second: Vec<SpatialSketchEntityId>,
         /// Driving distance parameter.
         parameter: crate::features::ParameterId,
+    },
+    /// One or more model-space curves offset from their progenitors.
+    Offset {
+        /// Ordered progenitor/result pairs.
+        pairs: Vec<SpatialSketchOffsetPair>,
+        /// Unit normal of the common offset plane.
+        normal: Vector3,
+        /// Strictly positive common offset magnitude.
+        distance: crate::features::Length,
+        /// Driving offset-distance parameter, when dimensional.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<crate::features::ParameterId>,
+        /// Multiplier from the driving parameter value to `distance`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_factor: Option<f64>,
     },
     /// A model-space line is parallel to one fixed model-space direction.
     ParallelToDirection {

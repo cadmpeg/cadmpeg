@@ -376,6 +376,10 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                             parameter,
                             ..
                         } => Some(parameter),
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Offset {
+                            parameter,
+                            ..
+                        } => parameter.as_ref(),
                         _ => None,
                     },
                 ),

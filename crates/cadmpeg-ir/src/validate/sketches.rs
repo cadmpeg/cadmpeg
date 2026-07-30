@@ -831,6 +831,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
                 first.iter().chain(second).cloned().collect()
             }
+            SpatialConstraint::Offset { pairs, .. } => pairs
+                .iter()
+                .flat_map(|pair| [pair.source.clone(), pair.result.clone()])
+                .collect(),
             SpatialConstraint::Symmetric {
                 first,
                 second,
@@ -852,6 +856,22 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::RepeatedLineLength { .. } => entities.len() >= 2,
             SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
                 !first.is_empty() && !second.is_empty() && (first.len() > 1 || second.len() > 1)
+            }
+            SpatialConstraint::Offset {
+                pairs,
+                normal,
+                distance,
+                parameter,
+                parameter_factor,
+            } => {
+                !pairs.is_empty()
+                    && (normal.norm() - 1.0).abs() <= 1.0e-9
+                    && distance.0.is_finite()
+                    && distance.0 > 0.0
+                    && matches!(
+                        (parameter, parameter_factor),
+                        (None, None) | (Some(_), Some(-1.0 | 1.0))
+                    )
             }
             _ => entities.len() >= 2,
         };
@@ -1125,6 +1145,67 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::GeometricConsistency,
                         &constraint.id.0,
                         "spatial parallel-line-set distance requires collinear carriers with overlapping spans separated by its length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::Offset {
+                pairs,
+                normal,
+                distance,
+                parameter,
+                parameter_factor,
+            } => {
+                let metric_witnesses = pairs
+                    .iter()
+                    .filter_map(|pair| {
+                        let source = spatial_geometry.get(&pair.source)?;
+                        let result = spatial_geometry.get(&pair.result)?;
+                        crate::eval::spatial_line_offset(source, result, *normal)
+                            .map(|signed| (signed, pair.source_reversed))
+                    })
+                    .collect::<Vec<_>>();
+                let geometry_matches = metric_witnesses.iter().all(|(signed, reversed)| {
+                    let expected = if *reversed { -distance.0 } else { distance.0 };
+                    let scale = 1.0 + signed.abs().max(distance.0);
+                    (signed - expected).abs() <= 1.0e-9 * scale
+                });
+                let curves_match = pairs.iter().all(|pair| {
+                    spatial_geometry.get(&pair.source).is_some_and(|geometry| {
+                        matches!(
+                            geometry,
+                            SpatialSketchGeometry::Line { .. }
+                                | SpatialSketchGeometry::Circle { .. }
+                                | SpatialSketchGeometry::Arc { .. }
+                                | SpatialSketchGeometry::Nurbs { .. }
+                        )
+                    }) && spatial_geometry.get(&pair.result).is_some_and(|geometry| {
+                        matches!(
+                            geometry,
+                            SpatialSketchGeometry::Line { .. }
+                                | SpatialSketchGeometry::Circle { .. }
+                                | SpatialSketchGeometry::Arc { .. }
+                                | SpatialSketchGeometry::Nurbs { .. }
+                        )
+                    })
+                });
+                let parameter_matches = match (parameter, parameter_factor) {
+                    (None, None) => true,
+                    (Some(parameter), Some(factor)) => match parameter_values.get(parameter) {
+                        Some(Some(crate::features::ParameterValue::Length(value))) => {
+                            let expected = value.0 * factor;
+                            let scale = 1.0 + expected.abs().max(distance.0);
+                            (expected - distance.0).abs() <= 1.0e-9 * scale
+                        }
+                        _ => false,
+                    },
+                    _ => false,
+                };
+                if !geometry_matches || !curves_match || !parameter_matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial offset requires a consistent curve-pair distance and parameter",
                     );
                 }
             }

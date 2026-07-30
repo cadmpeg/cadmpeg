@@ -3499,7 +3499,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::sketches::{
         SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
-        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
+        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchOffsetPair,
+        SpatialSketchProfile,
     };
 
     let mut ir = unit_cube();
@@ -3680,6 +3681,28 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::SplineGroup {
                 entities: vec![line.clone(), circle.clone()],
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#offset".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::Offset {
+                pairs: vec![SpatialSketchOffsetPair {
+                    source: line.clone(),
+                    result: parallel_line.clone(),
+                    source_reversed: false,
+                }],
+                normal: Vector3::new(
+                    -2.0 / 6.0f64.sqrt(),
+                    1.0 / 6.0f64.sqrt(),
+                    1.0 / 6.0f64.sqrt(),
+                ),
+                distance: Length(2.0),
+                parameter: Some(distance.clone()),
+                parameter_factor: Some(1.0),
             },
             native_ref: None,
         });

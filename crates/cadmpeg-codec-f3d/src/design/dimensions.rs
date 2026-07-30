@@ -1671,6 +1671,21 @@ pub fn project_spatial_dimension_constraints(
                         &sketch,
                         &spatial_by_record,
                     );
+                    let offset = parameter.as_ref().and_then(|parameter_id| {
+                        let expected = *parameter_lengths.get(parameter_id)?;
+                        let parameter = parameters_by_id.get(parameter_id)?;
+                        let signed = design_length(parameter)?.0;
+                        spatial_counted_offset_dimension_definition(
+                            &native_kind,
+                            &operands,
+                            parameter_id,
+                            expected,
+                            signed,
+                            &sketch,
+                            spatial_sketches,
+                            &spatial_by_record,
+                        )
+                    });
                     let distance = parameter.as_ref().and_then(|parameter| {
                         let expected = *parameter_lengths.get(parameter)?;
                         let scope = native_stream(constraint.native_ref.as_deref()?)?;
@@ -1758,7 +1773,7 @@ pub fn project_spatial_dimension_constraints(
                             )
                         })
                     });
-                    symmetry.or(distance).or(owner_scoped).unwrap_or(
+                    symmetry.or(offset).or(distance).or(owner_scoped).unwrap_or(
                         SpatialSketchConstraintDefinition::Native {
                             native_kind,
                             native_state,
@@ -1789,9 +1804,11 @@ pub fn project_spatial_dimension_constraints(
             | SpatialSketchConstraintDefinition::LineLength { parameter, .. }
             | SpatialSketchConstraintDefinition::RepeatedLineLength { parameter, .. }
             | SpatialSketchConstraintDefinition::ParallelLineDistance { parameter, .. }
-            | SpatialSketchConstraintDefinition::ParallelLineSetDistance { parameter, .. } => {
-                Some(parameter)
-            }
+            | SpatialSketchConstraintDefinition::ParallelLineSetDistance { parameter, .. }
+            | SpatialSketchConstraintDefinition::Offset {
+                parameter: Some(parameter),
+                ..
+            } => Some(parameter),
             _ => None,
         })
         .cloned()
@@ -2112,6 +2129,174 @@ fn spatial_reflection_symmetry(
         second: second.id.clone(),
         axis: axis.id.clone(),
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spatial_counted_offset_dimension_definition(
+    native_kind: &str,
+    operands: &[cadmpeg_ir::sketches::SketchNativeOperand],
+    parameter: &cadmpeg_ir::features::ParameterId,
+    distance: f64,
+    signed_parameter: f64,
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::sketches::{
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchOffsetPair,
+    };
+
+    if !native_kind.starts_with("Linear Dimension")
+        || !distance.is_finite()
+        || distance <= 1.0e-9
+        || !signed_parameter.is_finite()
+    {
+        return None;
+    }
+    let scope = operands
+        .iter()
+        .find_map(|operand| native_stream(operand.native_ref.as_deref()?))?;
+    let loci = operands
+        .iter()
+        .take_while(|operand| operand.native_field.as_deref() == Some("locus"))
+        .collect::<Vec<_>>();
+    let owner_position = loci.len();
+    let owner = operands.get(owner_position)?;
+    let returns = operands.get(owner_position + 1..)?;
+    if owner.native_field.as_deref() != Some("owner")
+        || owner.native_kind != "record"
+        || returns
+            .iter()
+            .any(|operand| operand.native_field.as_deref() != Some("return"))
+        || loci.len() < 4
+        || !loci.len().is_multiple_of(2)
+        || returns.len() != loci.len()
+    {
+        return None;
+    }
+    let source_count = loci
+        .iter()
+        .position(|operand| operand.native_role == Some(0))?;
+    if source_count == 0
+        || source_count * 2 != loci.len()
+        || loci[..source_count]
+            .iter()
+            .any(|operand| operand.native_role == Some(0))
+        || loci[source_count..]
+            .iter()
+            .any(|operand| operand.native_role != Some(0))
+    {
+        return None;
+    }
+    let roles = loci
+        .iter()
+        .map(|operand| Some((operand.object_index, operand.native_role?)))
+        .collect::<Option<HashMap<_, _>>>()?;
+    if roles.len() != loci.len() {
+        return None;
+    }
+    let result_records = returns
+        .chunks_exact(2)
+        .map(|pair| pair[1].object_index)
+        .collect::<HashSet<_>>();
+    let result_ids = result_records
+        .iter()
+        .filter_map(|record| {
+            spatial_by_record
+                .get(&(scope, *record))
+                .map(|entity| &entity.id)
+        })
+        .collect::<HashSet<_>>();
+    if result_ids.len() != result_records.len() {
+        return None;
+    }
+    let spatial = spatial_sketches
+        .iter()
+        .find(|candidate| &candidate.id == sketch)?;
+    let normal = spatial
+        .profiles
+        .iter()
+        .find(|profile| {
+            profile.boundary.len() == result_ids.len()
+                && profile
+                    .boundary
+                    .iter()
+                    .all(|use_| result_ids.contains(&use_.entity))
+        })?
+        .normal;
+    let mut pairs = Vec::with_capacity(source_count);
+    let mut used = HashSet::new();
+    let mut reversal = None;
+    let mut witnesses = 0usize;
+    for operands in returns.chunks_exact(2) {
+        let source_record = operands[0].object_index;
+        let result_record = operands[1].object_index;
+        if roles.get(&source_record) == Some(&0)
+            || roles.get(&result_record) != Some(&0)
+            || !used.insert(source_record)
+            || !used.insert(result_record)
+        {
+            return None;
+        }
+        let source = *spatial_by_record.get(&(scope, source_record))?;
+        let result = *spatial_by_record.get(&(scope, result_record))?;
+        if source.sketch != *sketch
+            || result.sketch != *sketch
+            || !spatial_curve(&source.geometry)
+            || !spatial_curve(&result.geometry)
+        {
+            return None;
+        }
+        if let Some(signed) =
+            cadmpeg_ir::eval::spatial_line_offset(&source.geometry, &result.geometry, normal)
+        {
+            let scale = 1.0 + signed.abs().max(distance);
+            if (signed.abs() - distance).abs() > 1.0e-9 * scale {
+                return None;
+            }
+            let pair_reversal = signed.is_sign_negative();
+            if reversal.is_some_and(|expected| expected != pair_reversal) {
+                return None;
+            }
+            reversal = Some(pair_reversal);
+            witnesses += 1;
+        }
+        pairs.push((source.id.clone(), result.id.clone()));
+    }
+    if used.len() != loci.len() || witnesses == 0 {
+        return None;
+    }
+    let source_reversed = reversal?;
+    Some(Definition::Offset {
+        pairs: pairs
+            .into_iter()
+            .map(|(source, result)| SpatialSketchOffsetPair {
+                source,
+                result,
+                source_reversed,
+            })
+            .collect(),
+        normal,
+        distance: Length(distance),
+        parameter: Some(parameter.clone()),
+        parameter_factor: Some(if signed_parameter.is_sign_negative() {
+            -1.0
+        } else {
+            1.0
+        }),
+    })
+}
+
+fn spatial_curve(geometry: &cadmpeg_ir::sketches::SpatialSketchGeometry) -> bool {
+    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    matches!(
+        geometry,
+        SpatialSketchGeometry::Line { .. }
+            | SpatialSketchGeometry::Circle { .. }
+            | SpatialSketchGeometry::Arc { .. }
+            | SpatialSketchGeometry::Nurbs { .. }
+    )
 }
 
 pub(crate) fn spatial_point_distance_matches(
