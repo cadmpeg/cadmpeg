@@ -3,7 +3,8 @@
 //! Reconstructs face/edge incidence from serialized boundary domains.
 
 use crate::families::standard::topology::{
-    incidence_cycles, reconstruct_incidence, EdgeRow, StandardTopology,
+    incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
+    StandardTopology,
 };
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycles_viable_where,
@@ -1670,6 +1671,94 @@ fn component_incidence_faces_viable(
     })
 }
 
+fn partial_face_orientability_viable(
+    assignment: &[Option<[usize; 2]>],
+    edge_faces: &[[usize; 2]],
+    face_edges: &[Vec<usize>],
+    budget: &MeshConstraintBudget,
+) -> bool {
+    if !edge_faces.iter().any(|faces| faces[0] != faces[1]) {
+        return true;
+    }
+    let edge_points = assignment
+        .iter()
+        .map(|pair| pair.unwrap_or_default())
+        .collect::<Vec<_>>();
+    let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
+    let mut boundary_count = 0usize;
+    for incident in face_edges {
+        let selected = incident
+            .iter()
+            .copied()
+            .filter(|edge| assignment[*edge].is_some())
+            .collect::<Vec<_>>();
+        if selected.is_empty() {
+            continue;
+        }
+        if !budget.charge_by(selected.len()) {
+            return false;
+        }
+        let mut edges_at_point = HashMap::<usize, Vec<usize>>::new();
+        let mut degrees = HashMap::<usize, u8>::new();
+        for &edge in &selected {
+            for point in edge_points[edge] {
+                edges_at_point.entry(point).or_default().push(edge);
+                let degree = degrees.entry(point).or_default();
+                *degree = match degree.checked_add(1) {
+                    Some(degree) => degree,
+                    None => return false,
+                };
+            }
+        }
+        if degrees.values().any(|degree| *degree > 2) {
+            return false;
+        }
+        let mut unseen = selected.iter().copied().collect::<HashSet<_>>();
+        for first in selected {
+            if !unseen.contains(&first) {
+                continue;
+            }
+            let mut stack = vec![first];
+            let mut component = Vec::new();
+            let mut points = HashSet::new();
+            while let Some(edge) = stack.pop() {
+                if !unseen.remove(&edge) {
+                    continue;
+                }
+                component.push(edge);
+                for point in edge_points[edge] {
+                    points.insert(point);
+                    stack.extend(edges_at_point[&point].iter().copied());
+                }
+            }
+            if points.iter().any(|point| degrees[point] != 2) {
+                continue;
+            }
+            component.sort_unstable();
+            let Some([cycle]) = incidence_cycles(&component, &edge_points)
+                .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())
+            else {
+                return false;
+            };
+            let boundary = boundary_count;
+            boundary_count = match boundary_count.checked_add(1) {
+                Some(count) => count,
+                None => return false,
+            };
+            for (edge, reversed) in cycle {
+                edge_uses
+                    .entry(edge)
+                    .or_default()
+                    .push((boundary, reversed));
+            }
+        }
+    }
+    if !budget.charge_by(edge_uses.values().map(Vec::len).sum()) {
+        return false;
+    }
+    solve_boundary_orientation_constraints(boundary_count, &edge_uses, false).is_some()
+}
+
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn component_incidence_pair_solutions<F>(
@@ -1839,6 +1928,7 @@ where
                 point_count,
             );
             locally_closed
+                && partial_face_orientability_viable(&completed, edge_faces, face_edges, budget)
                 && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed))
         };
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);

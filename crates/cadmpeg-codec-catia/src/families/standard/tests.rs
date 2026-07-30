@@ -14,8 +14,8 @@ use crate::families::standard::fbb::{
     prune_edge_candidates_by_port_domains, standard_face_count, EDGE_DELIMITER,
 };
 use crate::families::standard::topology::{
-    complete_duplicate_face_slots, reconstruct_incidence, Boundary, CoedgeUse, EdgeBoundaryLayout,
-    EdgeRow, FaceTopology, StandardTopology, TrimRecord,
+    complete_duplicate_face_slots, reconstruct_incidence, solve_boundary_orientation_constraints,
+    Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, StandardTopology, TrimRecord,
 };
 use crate::solve::incidence::{compact_boundary_domain_viable, reconstruct_incidence_candidates};
 use crate::solve::matching::unique_coordinate_bijection;
@@ -3059,6 +3059,21 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
     assert!(!search.selected_orientable());
     search.selected[2] = Some((0, vec![vec![false, true]]));
     assert!(search.selected_orientable());
+}
+
+#[test]
+fn partial_boundary_orientation_constraints_reject_an_odd_parity_cycle() {
+    let mut edge_uses = HashMap::from([
+        (0, vec![(0, false), (1, false)]),
+        (1, vec![(1, false), (2, false)]),
+        (2, vec![(2, false), (0, false)]),
+        (3, vec![(3, false)]),
+    ]);
+
+    assert!(solve_boundary_orientation_constraints(4, &edge_uses, false).is_none());
+    edge_uses.get_mut(&2).expect("third paired edge")[1].1 = true;
+    assert!(solve_boundary_orientation_constraints(4, &edge_uses, false).is_some());
+    assert!(solve_boundary_orientation_constraints(4, &edge_uses, true).is_none());
 }
 
 #[test]

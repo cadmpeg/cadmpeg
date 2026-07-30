@@ -773,11 +773,36 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
             }
         }
     }
-    let mut constraints = vec![Vec::<(usize, bool)>::new(); boundary_nodes.len()];
+    let flips = solve_boundary_orientation_constraints(boundary_nodes.len(), &edge_uses, true)?;
+    for ((face_index, boundary_index), flip) in boundary_nodes.into_iter().zip(flips) {
+        if flip {
+            let boundary = &mut faces[face_index].boundaries[boundary_index];
+            boundary.coedges.reverse();
+            for coedge in &mut boundary.coedges {
+                coedge.reversed = !coedge.reversed;
+                std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
+            }
+        }
+    }
+    Some(())
+}
+
+pub(crate) fn solve_boundary_orientation_constraints(
+    boundary_count: usize,
+    edge_uses: &HashMap<usize, Vec<(usize, bool)>>,
+    require_paired_uses: bool,
+) -> Option<Vec<bool>> {
+    let mut constraints = vec![Vec::<(usize, bool)>::new(); boundary_count];
     for uses in edge_uses.values() {
         let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
+            if !require_paired_uses && uses.len() == 1 {
+                continue;
+            }
             return None;
         };
+        if *left_node >= boundary_count || *right_node >= boundary_count {
+            return None;
+        }
         let parity = left_reversed == right_reversed;
         if left_node == right_node {
             if parity {
@@ -789,8 +814,8 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
         }
     }
 
-    let mut flips = vec![None; boundary_nodes.len()];
-    for root in 0..boundary_nodes.len() {
+    let mut flips = vec![None; boundary_count];
+    for root in 0..boundary_count {
         if flips[root].is_some() {
             continue;
         }
@@ -811,17 +836,7 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
             }
         }
     }
-    for ((face_index, boundary_index), flip) in boundary_nodes.into_iter().zip(flips) {
-        if flip? {
-            let boundary = &mut faces[face_index].boundaries[boundary_index];
-            boundary.coedges.reverse();
-            for coedge in &mut boundary.coedges {
-                coedge.reversed = !coedge.reversed;
-                std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
-            }
-        }
-    }
-    Some(())
+    flips.into_iter().collect()
 }
 
 pub(crate) fn incidence_cycles(
