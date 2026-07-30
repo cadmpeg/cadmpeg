@@ -449,6 +449,8 @@ pub(crate) fn order_incidence_components_by_branch_width(
 
 pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) choices: &'a [Vec<[usize; 2]>],
+    pub(crate) explicit_point_supports: Option<Vec<HashMap<usize, Vec<[usize; 2]>>>>,
+    pub(crate) point_support_edges: Option<Vec<HashMap<usize, Vec<usize>>>>,
     pub(crate) edge_faces: &'a [[usize; 2]],
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
@@ -912,11 +914,21 @@ impl IncidenceComponentSearch<'_, '_> {
             return IncidenceCandidatePairs::Implicit(candidates);
         }
         IncidenceCandidatePairs::Options(
-            self.choices[edge]
-                .iter()
-                .copied()
-                .filter(|pair| required_point.is_none_or(|point| pair.contains(&point)))
-                .collect::<Vec<_>>()
+            required_point
+                .and_then(|point| {
+                    self.explicit_point_supports
+                        .as_ref()?
+                        .get(edge)?
+                        .get(&point)
+                        .cloned()
+                })
+                .unwrap_or_else(|| {
+                    self.choices[edge]
+                        .iter()
+                        .copied()
+                        .filter(|pair| required_point.is_none_or(|point| pair.contains(&point)))
+                        .collect()
+                })
                 .into_iter(),
         )
     }
@@ -964,14 +976,20 @@ impl IncidenceComponentSearch<'_, '_> {
             })
     }
 
-    fn degree_support_preserved(&self, edge: usize, pair: [usize; 2]) -> bool {
-        let selected_faces = self.edge_faces[edge];
+    fn degree_frontiers_supported(
+        &self,
+        faces: &[usize],
+        selected: Option<(usize, [usize; 2])>,
+    ) -> bool {
         let selected_degree = |face: usize, point: usize| {
-            let incident = selected_faces[0] == face || selected_faces[1] == face;
-            incident.then(|| pair.iter().filter(|candidate| **candidate == point).count())
+            selected.map_or(0, |(edge, pair)| {
+                let selected_faces = self.edge_faces[edge];
+                usize::from(selected_faces[0] == face || selected_faces[1] == face)
+                    * pair.iter().filter(|candidate| **candidate == point).count()
+            })
         };
         let degree_after_selection = |face: usize, point: usize| {
-            usize::from(self.degree(face, point)) + selected_degree(face, point).unwrap_or_default()
+            usize::from(self.degree(face, point)) + selected_degree(face, point)
         };
         let supporting_pair_fits = |supporting_edge: usize, supporting_pair: [usize; 2]| {
             let faces = self.edge_faces[supporting_edge];
@@ -988,11 +1006,14 @@ impl IncidenceComponentSearch<'_, '_> {
                         })
             })
         };
+        let supporting_point_fits = |supporting_edge: usize, point: usize| {
+            let faces = self.edge_faces[supporting_edge];
+            faces.into_iter().enumerate().all(|(rank, face)| {
+                (rank > 0 && face == faces[0]) || degree_after_selection(face, point) < 2
+            })
+        };
 
-        let preserved = selected_faces.into_iter().enumerate().all(|(rank, face)| {
-            if rank > 0 && face == selected_faces[0] {
-                return true;
-            }
+        faces.iter().copied().all(|face| {
             let start = self
                 .constraints
                 .partition_point(|&(constraint_face, _)| constraint_face < face);
@@ -1000,19 +1021,22 @@ impl IncidenceComponentSearch<'_, '_> {
                 .partition_point(|&(constraint_face, _)| constraint_face == face)
                 + start;
             let constrained_points = &self.constraints[start..end];
-            let is_constrained = |point| {
-                constrained_points
-                    .binary_search_by_key(&point, |&(_, constraint_point)| constraint_point)
-                    .is_ok()
-            };
             let support_exists = |point| {
-                for &supporting_edge in &self.face_edges[face] {
+                let indexed_edges = self
+                    .point_support_edges
+                    .as_ref()
+                    .and_then(|by_face| by_face.get(face))
+                    .and_then(|by_point| by_point.get(&point));
+                let supporting_edges =
+                    indexed_edges.map_or(self.face_edges[face].as_slice(), Vec::as_slice);
+                for &supporting_edge in supporting_edges {
                     if !self.budget.charge() {
                         return false;
                     }
-                    if supporting_edge == edge
+                    if selected.is_some_and(|(edge, _)| supporting_edge == edge)
                         || !self.active[supporting_edge]
                         || self.assignment[supporting_edge].is_some()
+                        || !supporting_point_fits(supporting_edge, point)
                     {
                         continue;
                     }
@@ -1036,7 +1060,8 @@ impl IncidenceComponentSearch<'_, '_> {
                         }
                         continue;
                     }
-                    for supporting_pair in self.choices[supporting_edge].iter().copied() {
+                    for supporting_pair in self.candidate_pairs(supporting_edge, Some(point), None)
+                    {
                         if !self.budget.charge() {
                             return false;
                         }
@@ -1047,24 +1072,17 @@ impl IncidenceComponentSearch<'_, '_> {
                 }
                 false
             };
-            let existing_frontier_supported = self.degrees[face]
-                .iter()
-                .filter(|&(&point, _)| {
-                    is_constrained(point) && degree_after_selection(face, point) == 1
-                })
-                .all(|(&point, _)| support_exists(point));
-            existing_frontier_supported
-                && pair
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(point_rank, point)| {
-                        (*point_rank == 0 || *point != pair[0])
-                            && self.degree(face, *point) == 0
-                            && degree_after_selection(face, *point) == 1
-                            && is_constrained(*point)
-                    })
-                    .all(|(_, point)| support_exists(point))
-        });
+            constrained_points.iter().all(|&(_, point)| {
+                degree_after_selection(face, point) != 1 || support_exists(point)
+            })
+        })
+    }
+
+    fn degree_support_preserved(&self, edge: usize, pair: [usize; 2]) -> bool {
+        let mut faces = self.edge_faces[edge].to_vec();
+        faces.sort_unstable();
+        faces.dedup();
+        let preserved = self.degree_frontiers_supported(&faces, Some((edge, pair)));
         #[cfg(test)]
         if !self.budget.exhausted.get() {
             assert_eq!(
@@ -1590,10 +1608,7 @@ impl IncidenceComponentSearch<'_, '_> {
             if !self.active[edge] || self.assignment[edge].is_some() {
                 continue;
             }
-            if !self.candidate_fits(edge, pair) {
-                if self.budget.exhausted.get() {
-                    self.exhausted = true;
-                }
+            if !self.degree_candidate_fits(edge, pair) {
                 self.rollback_face_configuration(assigned);
                 return None;
             }
@@ -1619,6 +1634,13 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         affected_faces.sort_unstable();
         affected_faces.dedup();
+        if !self.degree_frontiers_supported(&affected_faces, None) {
+            if self.budget.exhausted.get() {
+                self.exhausted = true;
+            }
+            self.rollback_face_configuration(assigned);
+            return None;
+        }
         Some(AppliedFaceConfiguration {
             assigned,
             affected_faces,
@@ -2429,6 +2451,7 @@ where
     ) -> bool {
         let mut active = vec![false; choices.len()];
         let mut constraints = HashSet::<(usize, usize)>::new();
+        let mut point_support_edges = vec![HashMap::<usize, Vec<usize>>::new(); face_edges.len()];
         let mut component_faces = HashSet::new();
         for &edge in component {
             active[edge] = true;
@@ -2438,17 +2461,36 @@ where
                     continue;
                 }
                 component_faces.insert(face);
-                let points = coordinate_domains
+                let mut points = coordinate_domains
                     .filter(|_| choices[edge].is_empty())
                     .and_then(|domains| domains.edge_candidate_points(edge))
                     .unwrap_or_else(|| choices[edge].iter().flatten().copied().collect());
+                points.sort_unstable();
+                points.dedup();
                 for point in points {
                     constraints.insert((face, point));
+                    point_support_edges[face]
+                        .entry(point)
+                        .or_default()
+                        .push(edge);
                 }
             }
         }
         let mut constraints = constraints.into_iter().collect::<Vec<_>>();
         constraints.sort_unstable();
+        let explicit_point_supports = choices
+            .iter()
+            .map(|pairs| {
+                let mut supports = HashMap::<usize, Vec<[usize; 2]>>::new();
+                for &pair in pairs {
+                    supports.entry(pair[0]).or_default().push(pair);
+                    if pair[1] != pair[0] {
+                        supports.entry(pair[1]).or_default().push(pair);
+                    }
+                }
+                supports
+            })
+            .collect();
         let filter = |solution: &[MeshEndpointPair]| {
             let mut completed = assignment.to_vec();
             for &(edge, pair) in solution {
@@ -2477,6 +2519,8 @@ where
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
         let mut search = IncidenceComponentSearch {
             choices,
+            explicit_point_supports: Some(explicit_point_supports),
+            point_support_edges: Some(point_support_edges),
             edge_faces,
             face_edges,
             mesh_assignments,
