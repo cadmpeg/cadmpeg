@@ -996,6 +996,18 @@ fn legacy_extended_linked_profile_point_coordinates(
                     && first != second
         )
         && sketch_marker_prefix_at(payload, offset.saturating_add(146));
+    let split_identities = payload.get(offset + 100..offset + 136) == Some(&[0; 36])
+        && matches!(
+            [identity(136), identity(142)],
+            [Some(first), Some(second)]
+                if first != 0
+                    && first != u32::MAX
+                    && second != 0
+                    && second != u32::MAX
+                    && first != second
+        )
+        && payload.get(offset + 140..offset + 142) == Some(&[0; 2])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(146));
     let terminal_sentinel = payload.get(offset + 100..offset + 142) == Some(&[0; 42])
         && payload.get(offset + 74..offset + 78) == Some(&[0x00, 0x00, 0x02, 0x00])
         && identity(142) == Some(u32::MAX)
@@ -1019,12 +1031,16 @@ fn legacy_extended_linked_profile_point_coordinates(
         cells,
         [Some((first_tag, first_id, true)), Some((second_tag, second_id, true))]
             if first_tag != 0
-                && first_tag == second_tag
-                && first_id != second_id
+                && second_tag != 0
+                && (first_tag, first_id) != (second_tag, second_id)
     );
     if !valid_cells
         || payload.get(offset + 94..offset + 100) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
-        || !(single_identity || paired_identities || terminal_sentinel || continuation)
+        || !(single_identity
+            || paired_identities
+            || split_identities
+            || terminal_sentinel
+            || continuation)
     {
         return None;
     }
@@ -8016,6 +8032,23 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+        payload[86..88].copy_from_slice(&0x8121u16.to_le_bytes());
+        payload[88..90].copy_from_slice(&6u16.to_le_bytes());
+        assert_eq!(
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
+            Some([0.8, 0.0125])
+        );
+        payload[86..88].copy_from_slice(&0x8116u16.to_le_bytes());
+        payload[88..90].copy_from_slice(&7u16.to_le_bytes());
+        payload[100..146].fill(0);
+        payload[136..140].copy_from_slice(&1u32.to_le_bytes());
+        payload[142..146].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
+            Some([0.8, 0.0125])
+        );
+        payload[136..140].fill(0);
+        payload[142..146].copy_from_slice(&6u32.to_le_bytes());
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[56..58].copy_from_slice(&[0x1a, 0x00]);
         assert_eq!(
