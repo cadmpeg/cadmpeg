@@ -57,10 +57,12 @@ fixtures, claims above L1 remain unproven.
   dependencies, block-local auxiliary assignments, and unknowns. Auxiliary
   assignments retain ordinary target, namespace, dependency, and evaluation
   semantics; simultaneous equations do not become sequential assignments.
-  Complete affine scalar systems over previously valued dimensionless unknowns
-  evaluate when they have one finite consistent solution. Nonlinear,
-  dimensioned, dependency-unresolved, underdetermined, and inconsistent systems
-  retain absent aligned solution values.
+  Complete dimensionally valid affine systems over previously valued numeric
+  unknowns evaluate in canonical relation units when they have one finite
+  consistent solution. Unknowns may have different physical dimensions, and
+  known dimensioned coefficients participate in the affine system. Nonlinear,
+  dimensionally inconsistent, dependency-unresolved, underdetermined, and
+  inconsistent systems retain absent aligned solution values.
   Constructs prohibited in datum-curve equations are retained but do not
   evaluate or generate a derived curve. Positive
   `exists()` queries resolve against the complete local assignment namespace

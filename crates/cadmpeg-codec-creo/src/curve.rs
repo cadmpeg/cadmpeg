@@ -1508,19 +1508,25 @@ fn evaluate_expression_program_details(
     let mut activity = CurveExpressionActivation::Active;
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
     let mut solve_solutions = BTreeMap::new();
-    let mut dimensionless_solve_blocks = BTreeSet::new();
+    let mut solve_block_dimensions = BTreeMap::new();
     for (index, line) in lines.iter().enumerate() {
         if let Some(block) = solve_program
             .blocks
             .iter()
             .find(|block| block.offset == line.offset)
         {
-            if block.variables.iter().all(|variable| {
-                values
-                    .get(&expression_identifier_key(variable))
-                    .is_some_and(|value| matches!(value, CurveExpressionValue::Number(_)))
-            }) {
-                dimensionless_solve_blocks.insert(block.offset);
+            if let Some(dimensions) = block
+                .variables
+                .iter()
+                .map(|variable| {
+                    values
+                        .get(&expression_identifier_key(variable))
+                        .and_then(quantity_parts_ref)
+                        .map(|(_, dimension)| dimension)
+                })
+                .collect::<Option<Vec<_>>>()
+            {
+                solve_block_dimensions.insert(block.offset, dimensions);
             }
             for variable in &block.variables {
                 let key = expression_identifier_key(variable);
@@ -1541,10 +1547,12 @@ fn evaluate_expression_program_details(
             .iter()
             .find(|block| block.for_offset == line.offset)
         {
-            if let Some(solution) = dimensionless_solve_blocks
-                .contains(&block.offset)
-                .then(|| solve_affine_expression_block(block, &values))
-                .flatten()
+            if let Some(solution) =
+                solve_block_dimensions
+                    .get(&block.offset)
+                    .and_then(|dimensions| {
+                        solve_affine_expression_block(block, &values, dimensions, context)
+                    })
             {
                 for (variable, value) in block.variables.iter().zip(&solution) {
                     let key = expression_identifier_key(variable);
@@ -1604,30 +1612,8 @@ fn evaluate_expression_program_details(
                 assignment.value = declaration_is_valid
                     .then(|| evaluate_relation_expression(&assignment.expression, &values, context))
                     .flatten()
-                    .and_then(|value| match declared_unit.as_deref() {
-                        None => Some(value),
-                        Some(unit) => {
-                            let unit = relation_unit(unit)?;
-                            match (value, unit.dimension) {
-                                (CurveExpressionValue::Number(value), _) => {
-                                    CurveExpressionValue::Number(value).with_unit(unit)
-                                }
-                                (
-                                    value @ CurveExpressionValue::Length(_),
-                                    RelationDimension::LENGTH,
-                                )
-                                | (
-                                    value @ CurveExpressionValue::Angle(_),
-                                    RelationDimension::ANGLE,
-                                ) => Some(value),
-                                (CurveExpressionValue::Quantity(value), dimension)
-                                    if value.dimension() == dimension =>
-                                {
-                                    Some(CurveExpressionValue::Quantity(value))
-                                }
-                                _ => None,
-                            }
-                        }
+                    .and_then(|value| {
+                        apply_declared_relation_unit(value, declared_unit.as_deref())
                     });
                 if let Some(value) = assignment.value.clone() {
                     values.insert(key, value);
@@ -2183,13 +2169,15 @@ impl ExpressionValue for AffineValue {
 
 #[derive(Debug, Clone, PartialEq)]
 struct SimultaneousAffineValue {
+    dimension: RelationDimension,
     constant: f64,
     coefficients: BTreeMap<String, f64>,
 }
 
 impl SimultaneousAffineValue {
-    fn constant(value: f64) -> Self {
+    fn constant(value: f64, dimension: RelationDimension) -> Self {
         Self {
+            dimension,
             constant: value,
             coefficients: BTreeMap::new(),
         }
@@ -2203,7 +2191,8 @@ impl SimultaneousAffineValue {
         self
     }
 
-    fn combine(mut self, right: Self, subtract: bool) -> Self {
+    fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
+        (self.dimension == right.dimension).then_some(())?;
         let sign = if subtract { -1.0 } else { 1.0 };
         self.constant += sign * right.constant;
         for (variable, coefficient) in right.coefficients {
@@ -2216,101 +2205,132 @@ impl SimultaneousAffineValue {
                 self.coefficients.remove(&variable);
             }
         }
-        self
+        Some(self)
+    }
+
+    fn as_curve_value(&self) -> Option<CurveExpressionValue> {
+        self.coefficients
+            .is_empty()
+            .then(|| quantity_value(self.constant, self.dimension))
     }
 }
 
 impl ExpressionValue for SimultaneousAffineValue {
     fn number(value: f64) -> Self {
-        Self::constant(value)
+        Self::constant(value, RelationDimension::default())
+    }
+
+    fn reserved(name: &str) -> Option<Self> {
+        let value = CurveExpressionValue::reserved(name)?;
+        let (value, dimension) = quantity_parts_ref(&value)?;
+        Some(Self::constant(value, dimension))
     }
 
     fn with_unit(self, unit: RelationUnit) -> Option<Self> {
-        (unit.dimension == RelationDimension::default()).then_some(())?;
-        Some(
-            self.scale(unit.scale)
-                .combine(Self::constant(unit.offset), false),
-        )
+        (self.dimension == RelationDimension::default()).then_some(())?;
+        let mut value = self.scale(unit.scale);
+        value.dimension = unit.dimension;
+        value.constant += unit.offset;
+        Some(value)
     }
 
     fn add(self, right: Self) -> Option<Self> {
-        Some(self.combine(right, false))
+        self.combine(right, false)
     }
 
     fn subtract(self, right: Self) -> Option<Self> {
-        Some(self.combine(right, true))
+        self.combine(right, true)
     }
 
     fn multiply(self, right: Self) -> Option<Self> {
         if self.coefficients.is_empty() {
-            Some(right.scale(self.constant))
+            let dimension = self.dimension.combine(right.dimension, false)?;
+            let mut result = right.scale(self.constant);
+            result.dimension = dimension;
+            Some(result)
         } else if right.coefficients.is_empty() {
-            Some(self.scale(right.constant))
+            let dimension = self.dimension.combine(right.dimension, false)?;
+            let mut result = self.scale(right.constant);
+            result.dimension = dimension;
+            Some(result)
         } else {
             None
         }
     }
 
     fn divide(self, right: Self) -> Option<Self> {
-        (right.coefficients.is_empty() && right.constant != 0.0)
-            .then(|| self.scale(1.0 / right.constant))
+        (right.coefficients.is_empty() && right.constant != 0.0).then_some(())?;
+        let dimension = self.dimension.combine(right.dimension, true)?;
+        let mut result = self.scale(1.0 / right.constant);
+        result.dimension = dimension;
+        Some(result)
     }
 
     fn power(self, right: Self) -> Option<Self> {
-        if !right.coefficients.is_empty() {
+        if !right.coefficients.is_empty() || right.dimension != RelationDimension::default() {
             return None;
         }
         if right.constant == 1.0 {
             return Some(self);
         }
         if right.constant == 0.0 {
-            return Some(Self::constant(1.0));
+            return Some(Self::number(1.0));
         }
-        self.coefficients
-            .is_empty()
-            .then(|| self.constant.powf(right.constant))
-            .filter(|value| value.is_finite())
-            .map(Self::constant)
+        let value = self.as_curve_value()?;
+        let exponent = CurveExpressionValue::Number(right.constant);
+        let result = value.power(exponent)?;
+        let (value, dimension) = quantity_parts_ref(&result)?;
+        value.is_finite().then(|| Self::constant(value, dimension))
     }
 
     fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
-        (self.coefficients.is_empty() && right.coefficients.is_empty())
-            .then(|| Self::constant(f64::from(operator.evaluate(self.constant, right.constant))))
+        let left = self.as_curve_value()?;
+        let right = right.as_curve_value()?;
+        let CurveExpressionValue::Number(value) = left.compare(right, operator)? else {
+            return None;
+        };
+        Some(Self::number(value))
     }
 
     fn logical_and(self, right: Self) -> Option<Self> {
-        (self.coefficients.is_empty() && right.coefficients.is_empty())
-            .then(|| Self::constant(f64::from(self.constant != 0.0 && right.constant != 0.0)))
+        let left = self.as_curve_value()?;
+        let right = right.as_curve_value()?;
+        let CurveExpressionValue::Number(value) = left.logical_and(right)? else {
+            return None;
+        };
+        Some(Self::number(value))
     }
 
     fn logical_or(self, right: Self) -> Option<Self> {
-        (self.coefficients.is_empty() && right.coefficients.is_empty())
-            .then(|| Self::constant(f64::from(self.constant != 0.0 || right.constant != 0.0)))
+        let left = self.as_curve_value()?;
+        let right = right.as_curve_value()?;
+        let CurveExpressionValue::Number(value) = left.logical_or(right)? else {
+            return None;
+        };
+        Some(Self::number(value))
     }
 
     fn logical_not(self) -> Option<Self> {
-        self.coefficients
-            .is_empty()
-            .then(|| Self::constant(f64::from(self.constant == 0.0)))
+        let value = self.as_curve_value()?;
+        let CurveExpressionValue::Number(value) = value.logical_not()? else {
+            return None;
+        };
+        Some(Self::number(value))
     }
 
     fn function(
         name: CreoMathFunction,
         scope: Option<&str>,
         arguments: &[Self],
-        _context: RelationEvaluationContext<'_>,
+        context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
-        scope.is_none().then_some(())?;
-        let constants = arguments
+        let arguments = arguments
             .iter()
-            .map(|argument| {
-                argument
-                    .coefficients
-                    .is_empty()
-                    .then_some(argument.constant)
-            })
+            .map(Self::as_curve_value)
             .collect::<Option<Vec<_>>>()?;
-        evaluate_creo_math_function(name, &constants).map(Self::constant)
+        let result = CurveExpressionValue::function(name, scope, &arguments, context)?;
+        let (value, dimension) = quantity_parts_ref(&result)?;
+        Some(Self::constant(value, dimension))
     }
 
     fn negate(self) -> Option<Self> {
@@ -3294,6 +3314,27 @@ fn evaluate_relation_expression(
     (parser.cursor == parser.source.len() && value.finite()).then_some(value)
 }
 
+fn apply_declared_relation_unit(
+    value: CurveExpressionValue,
+    declared_unit: Option<&str>,
+) -> Option<CurveExpressionValue> {
+    let Some(declared_unit) = declared_unit else {
+        return Some(value);
+    };
+    let unit = relation_unit(declared_unit)?;
+    match (value, unit.dimension) {
+        (CurveExpressionValue::Number(value), _) => {
+            CurveExpressionValue::Number(value).with_unit(unit)
+        }
+        (value @ CurveExpressionValue::Length(_), RelationDimension::LENGTH)
+        | (value @ CurveExpressionValue::Angle(_), RelationDimension::ANGLE) => Some(value),
+        (CurveExpressionValue::Quantity(value), dimension) if value.dimension() == dimension => {
+            Some(CurveExpressionValue::Quantity(value))
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
     let mut parser = ExpressionParser {
@@ -3327,12 +3368,13 @@ fn evaluate_affine_expression(
 fn evaluate_simultaneous_affine_expression(
     expression: &str,
     values: &BTreeMap<String, SimultaneousAffineValue>,
+    context: RelationEvaluationContext<'_>,
 ) -> Option<SimultaneousAffineValue> {
     let mut parser = ExpressionParser {
         source: expression.as_bytes(),
         cursor: 0,
         values,
-        context: RelationEvaluationContext::default(),
+        context,
         nesting: 0,
     };
     let value = parser.logical_or()?;
@@ -3343,7 +3385,10 @@ fn evaluate_simultaneous_affine_expression(
 fn solve_affine_expression_block(
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
+    variable_dimensions: &[RelationDimension],
+    context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<CurveExpressionValue>> {
+    (variable_dimensions.len() == block.variables.len()).then_some(())?;
     let variable_keys = block
         .variables
         .iter()
@@ -3352,16 +3397,18 @@ fn solve_affine_expression_block(
     let mut affine_values = values
         .iter()
         .filter_map(|(name, value)| {
-            let CurveExpressionValue::Number(value) = value else {
-                return None;
-            };
-            Some((name.clone(), SimultaneousAffineValue::constant(*value)))
+            let (value, dimension) = quantity_parts_ref(value)?;
+            Some((
+                name.clone(),
+                SimultaneousAffineValue::constant(value, dimension),
+            ))
         })
         .collect::<BTreeMap<_, _>>();
-    for variable in &variable_keys {
+    for (variable, dimension) in variable_keys.iter().zip(variable_dimensions) {
         affine_values.insert(
             variable.clone(),
             SimultaneousAffineValue {
+                dimension: *dimension,
                 constant: 0.0,
                 coefficients: BTreeMap::from([(variable.clone(), 1.0)]),
             },
@@ -3371,9 +3418,11 @@ fn solve_affine_expression_block(
         .equations
         .iter()
         .map(|equation| {
-            let left = evaluate_simultaneous_affine_expression(&equation.left, &affine_values)?;
-            let right = evaluate_simultaneous_affine_expression(&equation.right, &affine_values)?;
-            let difference = left.combine(right, true);
+            let left =
+                evaluate_simultaneous_affine_expression(&equation.left, &affine_values, context)?;
+            let right =
+                evaluate_simultaneous_affine_expression(&equation.right, &affine_values, context)?;
+            let difference = left.combine(right, true)?;
             let coefficients = variable_keys
                 .iter()
                 .map(|variable| {
@@ -3389,12 +3438,13 @@ fn solve_affine_expression_block(
                 rhs: -difference.constant,
             })
         })
-        .collect::<Option<Vec<AffineEquationRow>>>()?;
+        .collect::<Option<Vec<_>>>()?;
     let solution = solve_unique_affine_system(&mut rows, variable_keys.len())?;
     Some(
         solution
             .into_iter()
-            .map(CurveExpressionValue::Number)
+            .zip(variable_dimensions)
+            .map(|(value, dimension)| quantity_value(value, *dimension))
             .collect(),
     )
 }
@@ -3409,13 +3459,21 @@ fn solve_unique_affine_system(
     variable_count: usize,
 ) -> Option<Vec<f64>> {
     (variable_count > 0 && rows.len() >= variable_count).then_some(())?;
-    let coefficient_scale = rows
-        .iter()
-        .flat_map(|row| row.coefficients.iter())
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
+    for row in rows.iter_mut() {
+        let scale = row
+            .coefficients
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0, f64::max);
+        if scale > 0.0 {
+            for coefficient in &mut row.coefficients {
+                *coefficient /= scale;
+            }
+            row.rhs /= scale;
+        }
+    }
     let rhs_scale = rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
-    let coefficient_tolerance = 1e-12 * coefficient_scale;
+    let coefficient_tolerance = 1e-12;
     let residual_tolerance = 1e-9 * rhs_scale;
     let mut pivot_row = 0;
     for column in 0..variable_count {
@@ -4899,8 +4957,132 @@ mod tests {
     }
 
     #[test]
-    fn leaves_dimensioned_solve_variables_unsolved() {
-        let lines = ["x=0[mm]", "SOLVE", "x=10", "FOR x"]
+    fn affine_solver_is_invariant_under_independent_equation_scaling() {
+        let mut rows = [
+            AffineEquationRow {
+                coefficients: vec![1e-15, 0.0],
+                rhs: 6e-15,
+            },
+            AffineEquationRow {
+                coefficients: vec![0.0, 1e15],
+                rhs: 4e15,
+            },
+        ];
+
+        let solution =
+            solve_unique_affine_system(&mut rows, 2).expect("independently scaled unique system");
+        assert!((solution[0] - 6.0).abs() <= 1e-12);
+        assert!((solution[1] - 4.0).abs() <= 1e-12);
+    }
+
+    #[test]
+    fn solves_dimensioned_affine_simultaneous_equations() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "x+y=10[mm]",
+            "x-y=2[mm]",
+            "FOR x,y",
+            "area=x*y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(6.0),
+                CurveExpressionValue::Length(4.0),
+            ]
+        );
+        assert_eq!(
+            evaluation.assignments[0].value,
+            Some(CurveExpressionValue::Length(6.0))
+        );
+        assert_eq!(
+            evaluation.assignments[1].value,
+            Some(CurveExpressionValue::Length(4.0))
+        );
+        assert_eq!(
+            evaluation.assignments[2].value,
+            Some(quantity_value(
+                24.0,
+                RelationDimension::LENGTH
+                    .scale(2)
+                    .expect("squared length dimension")
+            ))
+        );
+    }
+
+    #[test]
+    fn solves_affine_systems_with_different_unknown_dimensions() {
+        let lines = [
+            "distance=0[mm]",
+            "duration=0[s]",
+            "speed=2[mm/s]",
+            "total=10[mm]",
+            "SOLVE",
+            "distance+speed*duration=total",
+            "duration=2[s]",
+            "FOR distance,duration",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&4],
+            [
+                CurveExpressionValue::Length(6.0),
+                quantity_value(2.0, RelationDimension::TIME),
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_reserved_quantity_dimensions_in_affine_systems() {
+        let lines = [
+            "acceleration=0[mm/s^2]",
+            "SOLVE",
+            "acceleration=G",
+            "FOR acceleration",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&1],
+            [quantity_value(9_800.0, RelationDimension::ACCELERATION)]
+        );
+    }
+
+    #[test]
+    fn leaves_dimensionally_inconsistent_affine_systems_unsolved() {
+        let lines = ["x=0[mm]", "SOLVE", "x=1[s]", "FOR x"]
             .into_iter()
             .enumerate()
             .map(|(offset, text)| CurveExpressionLine {

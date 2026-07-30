@@ -6389,6 +6389,47 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
 }
 
 #[test]
+fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x06x=0[mm]\0y=0[mm]\0SOLVE\0\
+        x+y=10[mm]\0x-y=2[mm]\0FOR x,y\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode dimensioned affine solve block");
+
+    let values = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.name.as_str(), parameter.value.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        values["x"],
+        Some(&cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(6.0)
+        ))
+    );
+    assert_eq!(
+        values["y"],
+        Some(&cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(4.0)
+        ))
+    );
+
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(native.fields["solve_blocks"][0]["solutions"][0], 6.0);
+    assert_eq!(native.fields["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        result.report.coverage["evaluated_active_curve_expression_solve_variable_count"],
+        2
+    );
+}
+
+#[test]
 fn decode_evaluates_dimensioned_relation_string_conversion() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x03length_text=rtos(1[in],1)\0\

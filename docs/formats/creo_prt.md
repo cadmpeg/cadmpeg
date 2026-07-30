@@ -3321,13 +3321,16 @@ auxiliary relation retains ordinary assignment-target semantics, participates
 in the program identifier namespace, and evaluates when its dependencies have
 values. An equation does not declare a parameter. A complete block retains its
 ordered equations, auxiliary relations, unknowns, and aligned solution values.
-When every unknown has a preceding dimensionless numeric value, every equation
-reduces to an affine scalar equality after evaluating known dependencies and
+When every unknown has a preceding numeric value, every equation reduces to a
+dimensionally valid affine equality after evaluating known dependencies and
 block-local auxiliary relations, and the complete system has one finite
-consistent solution, the solution replaces the preceding unknown values at the
-terminating `FOR` line and supplies following assignments. Nonlinear,
-dimensioned, dependency-unresolved, underdetermined, or inconsistent systems
-retain absent solution values. Entering the block invalidates any preceding
+consistent solution, the solution in canonical relation units replaces the
+preceding unknown values at the terminating `FOR` line and supplies following
+assignments. Unknowns may have different physical dimensions; multiplication or
+division by a known dimensioned value supplies the corresponding affine
+coefficient. Nonlinear, dimensionally inconsistent, dependency-unresolved,
+underdetermined, or inconsistent systems retain absent solution values.
+Entering the block invalidates any preceding
 value of each declared unknown; that value does not supply following
 assignments when the block remains unsolved. A malformed block is bounded from
 its `SOLVE` line through its `FOR` line, or through the end of the program when
