@@ -1225,11 +1225,12 @@ impl MeshQuotient {
         {
             return CoordinateRootClosure::Rejected;
         }
-        self.coordinate_root_closure_outcome(
+        self.coordinate_root_closure_outcome_with_component_budget(
             point_count,
             edge_candidates,
             Some((edge_faces, boundary_domains)),
             budget,
+            Some(MAX_MESH_CONSTRAINT_OPERATIONS),
         )
     }
 
@@ -1285,6 +1286,8 @@ impl MeshQuotient {
         component_search_budget: Option<usize>,
         ambiguous: &Cell<bool>,
     ) -> Option<HashMap<usize, usize>> {
+        const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
+
         fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
             candidates.is_empty()
                 || candidates
@@ -1537,12 +1540,11 @@ impl MeshQuotient {
             point_uses: &mut [usize],
             solutions: &mut Vec<Vec<usize>>,
             states: &mut usize,
+            state_limit: usize,
             exhausted: &mut bool,
             base_degrees: &mut HashMap<(usize, usize), u8>,
             budget: Option<&MeshConstraintBudget>,
         ) {
-            const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
-
             fn adjust_assignment_degrees(
                 root: usize,
                 increase: bool,
@@ -2207,7 +2209,10 @@ impl MeshQuotient {
                 );
                 return;
             };
-            if budget.is_none() && *states >= MAX_COORDINATE_CLOSURE_STATES {
+            if *states >= state_limit {
+                if let Some(budget) = budget {
+                    budget.exhausted.set(true);
+                }
                 *exhausted = true;
                 rollback(
                     assigned,
@@ -2252,6 +2257,7 @@ impl MeshQuotient {
                     point_uses,
                     solutions,
                     states,
+                    state_limit,
                     exhausted,
                     base_degrees,
                     budget,
@@ -2379,14 +2385,6 @@ impl MeshQuotient {
                 .iter()
                 .map(|root| domains[*root].len())
                 .fold(0usize, usize::saturating_add);
-            let component_limit = component_search_budget.map(|base| {
-                // Reading and propagating the component's explicit support graph
-                // is input work. Reserve four linear passes independently of the
-                // fixed budget for search beyond that graph.
-                base.saturating_add(support_count.saturating_mul(4))
-            });
-            let component_budget = component_limit.map(MeshConstraintBudget::new);
-            let budget = component_budget.as_ref().or(shared_budget);
             let component_set = component.iter().copied().collect::<HashSet<_>>();
             let local_index = component
                 .iter()
@@ -2398,6 +2396,39 @@ impl MeshQuotient {
                 .enumerate()
                 .filter_map(|(edge, [left, _])| component_set.contains(left).then_some(edge))
                 .collect::<Vec<_>>();
+            let component_points = component
+                .iter()
+                .flat_map(|root| domains[*root].iter())
+                .copied()
+                .collect::<HashSet<_>>();
+            let explicit_pair_supports = edge_ids
+                .iter()
+                .map(|edge| edge_candidates[*edge].len())
+                .fold(0usize, usize::saturating_add);
+            let traversal_bound = component
+                .len()
+                .saturating_add(component_points.len())
+                .isqrt()
+                .saturating_add(9);
+            // A component may require one branch state for every explicit
+            // root-point support before propagation distinguishes a solution.
+            let state_limit = MAX_COORDINATE_CLOSURE_STATES.max(support_count);
+            let component_limit = component_search_budget.map(|base| {
+                // Reserve the same graph-traversal allowance used by coordinate
+                // preparation plus face-incidence scans for every permitted
+                // branch state.
+                let state_work = support_count
+                    .saturating_add(explicit_pair_supports)
+                    .saturating_mul(traversal_bound)
+                    .saturating_add(if incidence.is_some() {
+                        support_count.saturating_mul(edge_ids.len())
+                    } else {
+                        0
+                    });
+                base.saturating_add(state_work.saturating_mul(state_limit))
+            });
+            let component_budget = component_limit.map(MeshConstraintBudget::new);
+            let budget = component_budget.as_ref().or(shared_budget);
             let local_edges = edge_ids
                 .iter()
                 .map(|edge| {
@@ -2454,11 +2485,6 @@ impl MeshQuotient {
                     root_edges[right].push(edge);
                 }
             }
-            let component_points = local_domains
-                .iter()
-                .flatten()
-                .copied()
-                .collect::<HashSet<_>>();
             if !enforce_sparse_endpoint_membership(
                 &mut local_domains,
                 &local_edges,
@@ -2521,6 +2547,7 @@ impl MeshQuotient {
                 &mut vec![0; point_count],
                 &mut solutions,
                 &mut states,
+                state_limit,
                 &mut exhausted,
                 &mut base_degrees,
                 budget,
@@ -6679,14 +6706,24 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
         let point = component * 3;
-        quotient.merge(node + 1, node + 2).unwrap();
-        quotient.merge(node + 3, node + 4).unwrap();
+        quotient
+            .merge(node + 1, node + 2)
+            .expect("disjoint coordinate roots merge");
+        quotient
+            .merge(node + 3, node + 4)
+            .expect("disjoint coordinate roots merge");
         candidates.extend([
             vec![[point, point + 1]],
             vec![[point + 1, point + 2]],
             vec![[point, point + 2]],
         ]);
     }
+    let edge_faces = (0..COMPONENT_COUNT)
+        .flat_map(|face| std::iter::repeat_n([face, face], 3))
+        .collect::<Vec<_>>();
+    let boundary_domains = (0..COMPONENT_COUNT)
+        .map(|face| MeshFaceBoundaryDomain::UnorderedFullCycle((face * 3..face * 3 + 3).collect()))
+        .collect::<Vec<_>>();
     let shared_budget = MeshConstraintBudget::new(1);
     let mut shared = quotient.clone();
     assert_eq!(
@@ -6699,16 +6736,32 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
         CoordinateRootClosure::Exhausted
     );
 
-    let preparation_budget = MeshConstraintBudget::new(1);
-    assert!(matches!(
-        quotient.coordinate_root_closure_outcome_with_component_budget(
+    let shared_incidence_budget = MeshConstraintBudget::new(100);
+    let mut shared_incidence = quotient.clone();
+    assert!(shared_incidence
+        .close_coordinate_roots_for_incidence_with_budget(
             COMPONENT_COUNT * 3,
             &candidates,
-            None,
-            Some(&preparation_budget),
-            Some(100),
-        ),
-        CoordinateRootClosure::Solved(_)
-    ));
+            &edge_faces,
+            COMPONENT_COUNT,
+            &boundary_domains,
+            Some(&shared_incidence_budget),
+        )
+        .is_none());
+    assert!(shared_incidence_budget.exhausted.get());
+
+    let preparation_budget = MeshConstraintBudget::new(100);
+    let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
+        COMPONENT_COUNT * 3,
+        &candidates,
+        &edge_faces,
+        COMPONENT_COUNT,
+        &boundary_domains,
+        Some(&preparation_budget),
+    );
+    assert!(
+        matches!(outcome, CoordinateRootClosure::Solved(_)),
+        "{outcome:?}"
+    );
     assert!(!preparation_budget.exhausted.get());
 }

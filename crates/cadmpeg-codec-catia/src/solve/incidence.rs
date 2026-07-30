@@ -2262,13 +2262,19 @@ where
                     *visited = visited.checked_add(1).ok_or(())?;
                     return Ok(visitor(&pairs));
                 };
+                let Some(closure_limit) =
+                    quotient.coordinate_domain_preparation_limit(point_count, &singleton)
+                else {
+                    return Ok(ControlFlow::Continue(()));
+                };
+                let closure_budget = MeshConstraintBudget::new(closure_limit);
                 let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
                     point_count,
                     &singleton,
                     edge_faces,
                     domains.len(),
                     domains,
-                    Some(budget),
+                    Some(&closure_budget),
                 );
                 match outcome {
                     CoordinateRootClosure::Solved(_) => {}
@@ -2500,8 +2506,10 @@ where
                     .copied()
                     .map(|pair| vec![pair])
                     .collect::<Vec<_>>();
-                let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
                 let mut quotient = quotient.clone();
+                let closure_limit =
+                    quotient.coordinate_domain_preparation_limit(point_count, &singleton)?;
+                let budget = MeshConstraintBudget::new(closure_limit);
                 let Some(domains) = mesh_assignments else {
                     if !quotient.point_assignment_exists(point_count, &singleton, Some(&budget)) {
                         exhausted = budget.exhausted.get();
