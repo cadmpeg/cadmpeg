@@ -83,7 +83,7 @@ pub struct CurveExpressionLocalSystem {
 /// One executable assignment in a curve expression program.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveExpressionAssignment {
-    /// Scalar parameter or table cell receiving the right-hand value.
+    /// Typed relation target receiving the right-hand value.
     pub target: CurveExpressionTarget,
     /// Exact right-hand expression after surrounding ASCII whitespace removal.
     pub expression: String,
