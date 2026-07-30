@@ -3490,15 +3490,16 @@ fn attach_standard_topology(
             &edge_classes,
             &circle_constraint_edges,
             |pairs| {
-                standard_circle_pair_solution_is_simple(
-                    ir,
-                    bindings,
-                    &surface_indices,
-                    brep,
-                    &supports,
-                    options,
-                    pairs,
-                )
+                standard_curve_branch_assignment_is_ranked(&supports, options, pairs)
+                    && standard_circle_pair_solution_is_simple(
+                        ir,
+                        bindings,
+                        &surface_indices,
+                        brep,
+                        &supports,
+                        options,
+                        pairs,
+                    )
             },
         );
         let has_circle_preference = circle_constraint_edges
@@ -3517,7 +3518,7 @@ fn attach_standard_topology(
                     options,
                     &edge_classes,
                     &unconstrained,
-                    |_| true,
+                    |pairs| standard_curve_branch_assignment_is_ranked(&supports, options, pairs),
                 )
             })
         } else {
@@ -4480,6 +4481,114 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             grouped[edge] = true;
         }
     }
+}
+
+fn standard_curve_branch_assignment_is_ranked(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &[Vec<[usize; 2]>],
+    assignment: &[Option<[usize; 2]>],
+) -> bool {
+    if supports.len() != candidates.len() || candidates.len() != assignment.len() {
+        return false;
+    }
+    let normalize = |pairs: &[[usize; 2]]| {
+        let mut pairs = pairs
+            .iter()
+            .copied()
+            .map(|mut pair| {
+                pair.sort_unstable();
+                pair
+            })
+            .collect::<Vec<_>>();
+        pairs.sort_unstable();
+        pairs.dedup();
+        pairs
+    };
+    let ranked_family = |geometry: &crate::families::standard::records::StandardCurveGeometry| {
+        matches!(
+            geometry,
+            crate::families::standard::records::StandardCurveGeometry::Line
+                | crate::families::standard::records::StandardCurveGeometry::Bspline
+        )
+    };
+    let normalized = candidates
+        .iter()
+        .map(|pairs| normalize(pairs))
+        .collect::<Vec<_>>();
+    let mut checked = vec![false; supports.len()];
+    for first in 0..supports.len() {
+        if checked[first] || !ranked_family(&supports[first].geometry) {
+            continue;
+        }
+        let mut faces = supports[first].faces;
+        faces.sort_unstable();
+        let group = (first..supports.len())
+            .filter(|edge| {
+                let mut candidate_faces = supports[*edge].faces;
+                candidate_faces.sort_unstable();
+                ranked_family(&supports[*edge].geometry)
+                    && std::mem::discriminant(&supports[*edge].geometry)
+                        == std::mem::discriminant(&supports[first].geometry)
+                    && candidate_faces == faces
+                    && normalized[*edge] == normalized[first]
+            })
+            .collect::<Vec<_>>();
+        if group.len() < 2 {
+            continue;
+        }
+        for &edge in &group {
+            checked[edge] = true;
+        }
+        let group = group.into_iter().collect::<HashSet<_>>();
+        let mut constrained = candidates.to_vec();
+        for (edge, pair) in assignment.iter().copied().enumerate() {
+            if !group.contains(&edge) {
+                if let Some(pair) = pair {
+                    constrained[edge] = vec![pair];
+                }
+            }
+        }
+        let frontiers = faces.map(|face| {
+            let complete = supports.iter().enumerate().all(|(edge, support)| {
+                group.contains(&edge)
+                    || !support.faces.contains(&face)
+                    || assignment[edge].is_some()
+            });
+            complete.then(|| {
+                let mut degrees = HashMap::<usize, usize>::new();
+                for (edge, support) in supports.iter().enumerate() {
+                    if group.contains(&edge) || !support.faces.contains(&face) {
+                        continue;
+                    }
+                    for point in assignment[edge].into_iter().flatten() {
+                        *degrees.entry(point).or_default() += 1;
+                    }
+                }
+                degrees
+                    .into_iter()
+                    .filter_map(|(point, degree)| (degree == 1).then_some(point))
+                    .collect::<HashSet<_>>()
+            })
+        });
+        if let [Some(left), Some(right)] = frontiers {
+            if left == right && left.len() == group.len().saturating_mul(2) {
+                for &edge in &group {
+                    constrained[edge].retain(|pair| pair.iter().all(|point| left.contains(point)));
+                }
+            }
+        }
+        bind_ordered_standard_curve_branches(supports, &mut constrained);
+        if group.into_iter().any(|edge| {
+            assignment[edge].is_some_and(|assigned| {
+                !constrained[edge]
+                    .iter()
+                    .any(|candidate| missing_edge::same_unordered_pair(*candidate, assigned))
+            })
+        }) {
+            return false;
+        }
+    }
+    true
 }
 
 pub(crate) fn standard_circle_endpoint_candidates(
@@ -6125,9 +6234,9 @@ mod route_tests {
         point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
         resolve_standard_limit_curve_binding, retry_rejected_mesh_solution,
         standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_limit_curve_bindings, standard_native_support_endpoint_pair,
-        standard_object_evidence_from_streams, standard_pcurve_geometry,
-        standard_plane_normal_from_adjacent_circle_carriers,
+        standard_curve_branch_assignment_is_ranked, standard_limit_curve_bindings,
+        standard_native_support_endpoint_pair, standard_object_evidence_from_streams,
+        standard_pcurve_geometry, standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
         unique_native_identity_points, witness_arc_end, StandardEdgeSupport,
@@ -7438,6 +7547,56 @@ mod route_tests {
         bind_ordered_standard_curve_branches(&supports, &mut candidates);
 
         assert_eq!(candidates, [vec![[6, 9]], vec![[5, 9]]]);
+    }
+
+    #[test]
+    fn completed_adjacent_branches_fix_same_incidence_allocation_rank() {
+        let spline = |faces| StandardCurveSupport {
+            pos: 0,
+            tag: 0,
+            faces,
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let supports = [
+            spline([0, 2]),
+            spline([1, 3]),
+            spline([0, 4]),
+            spline([1, 5]),
+            spline([0, 1]),
+            spline([0, 1]),
+        ];
+        let branch_domain = vec![[10, 11], [10, 20], [10, 21], [11, 20], [11, 21], [20, 21]];
+        let candidates = [
+            vec![[10, 11], [10, 12], [11, 12]],
+            vec![[10, 11], [10, 13], [11, 13]],
+            vec![[20, 21], [20, 22], [21, 22]],
+            vec![[20, 21], [20, 23], [21, 23]],
+            branch_domain.clone(),
+            branch_domain,
+        ];
+        let ranked = [[10, 11], [10, 11], [20, 21], [20, 21], [10, 20], [11, 21]].map(Some);
+        let mut crossed = ranked;
+        crossed[4] = Some([10, 21]);
+        crossed[5] = Some([11, 20]);
+        let mut partial = crossed;
+        partial[0] = None;
+        partial[1] = None;
+
+        assert!(standard_curve_branch_assignment_is_ranked(
+            &supports,
+            &candidates,
+            &ranked,
+        ));
+        assert!(!standard_curve_branch_assignment_is_ranked(
+            &supports,
+            &candidates,
+            &crossed,
+        ));
+        assert!(standard_curve_branch_assignment_is_ranked(
+            &supports,
+            &candidates,
+            &partial,
+        ));
     }
 
     #[test]
