@@ -6547,8 +6547,9 @@ fn refine_nurbs_surface_parameters(
 }
 
 fn point_distance(first: Point3, second: Point3) -> f64 {
-    ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
-        .sqrt()
+    (first.x - second.x)
+        .hypot(first.y - second.y)
+        .hypot(first.z - second.z)
 }
 
 fn intersection_side(
@@ -9251,14 +9252,11 @@ fn pcurve_matches_edge_range(
     ]
     .into_iter()
     .flatten()
-    .fold(0.01_f64, f64::max);
-    let distance = |a: cadmpeg_ir::math::Point3, b: cadmpeg_ir::math::Point3| {
-        ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
-    };
-    (distance(coincident_surface[0], start) <= allowance
-        && distance(coincident_surface[1], end) <= allowance)
-        || (distance(coincident_surface[0], end) <= allowance
-            && distance(coincident_surface[1], start) <= allowance)
+    .fold(0.0_f64, f64::max);
+    (point_distance(coincident_surface[0], start) <= allowance
+        && point_distance(coincident_surface[1], end) <= allowance)
+        || (point_distance(coincident_surface[0], end) <= allowance
+            && point_distance(coincident_surface[1], start) <= allowance)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -9508,13 +9506,12 @@ fn orient_edge_range(
         .into_iter()
         .flatten()
         .fold(0.0_f64, f64::max);
-    let distance = |a: cadmpeg_ir::math::Point3, b: cadmpeg_ir::math::Point3| {
-        ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
-    };
-    if distance(at[0], start_position) <= allowance && distance(at[1], end_position) <= allowance {
+    if point_distance(at[0], start_position) <= allowance
+        && point_distance(at[1], end_position) <= allowance
+    {
         Some((range, false))
-    } else if distance(at[1], start_position) <= allowance
-        && distance(at[0], end_position) <= allowance
+    } else if point_distance(at[1], start_position) <= allowance
+        && point_distance(at[0], end_position) <= allowance
     {
         Some((range, true))
     } else {
@@ -12308,7 +12305,7 @@ mod tests {
     }
 
     #[test]
-    fn edge_range_incidence_does_not_inherit_procedural_cache_fit_tolerance() {
+    fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let curve_id = CurveId("nx:test:curve#0".into());
         ir.model.curves.push(Curve {
@@ -12375,8 +12372,43 @@ mod tests {
                 tolerance: None,
             },
         ]);
+        let edge = EdgeId("nx:test:edge#0".into());
+        ir.model.edges.push(Edge {
+            id: edge.clone(),
+            curve: Some(curve_id.clone()),
+            start: start.clone(),
+            end: end.clone(),
+            param_range: None,
+            tolerance: None,
+        });
+        let surface = SurfaceId("nx:test:surface#0".into());
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            weights: None,
+            periodic: false,
+        };
 
         assert!(super::orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
+        assert!(!super::pcurve_matches_edge(
+            &ir, &edge, &surface, &pcurve, None,
+        ));
+        let large_distance = super::point_distance(
+            Point3::new(1.0e200, 1.0e200, 1.0e200),
+            Point3::new(0.0, 0.0, 0.0),
+        );
+        assert!(large_distance.is_finite());
+        assert!((large_distance / 1.0e200 - 3.0_f64.sqrt()).abs() < 1.0e-15);
     }
 
     #[test]
