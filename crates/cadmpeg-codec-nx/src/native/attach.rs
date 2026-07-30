@@ -1030,7 +1030,7 @@ fn attach_feature_operations(
             }
         }
     }
-    let hole_outputs = simple_hole_templates
+    let explicit_simple_hole_outputs = simple_hole_templates
         .iter()
         .filter_map(|template| {
             let object_index = body_references.get(template.operation_label.as_str())?;
@@ -1043,12 +1043,11 @@ fn attach_feature_operations(
     let simple_hole_operations =
         simple_hole_operations(simple_hole_templates, simple_hole_construction_groups)
             .unwrap_or_default();
-    let simple_hole_diameters = simple_hole_diameters(
-        ir,
-        simple_hole_templates,
-        simple_hole_construction_groups,
-        &hole_outputs,
-    );
+    let (hole_outputs, simple_hole_diameters) =
+        match hole_body_projection(ir, &simple_hole_operations, &explicit_simple_hole_outputs) {
+            Some(projection) => (projection.outputs, projection.diameters),
+            None => (explicit_simple_hole_outputs, BTreeMap::new()),
+        };
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
     let hole_package_operations = labels
@@ -1056,7 +1055,7 @@ fn attach_feature_operations(
         .filter(|label| label.value == "HOLE PACKAGE")
         .map(|label| label.id.clone())
         .collect::<Vec<_>>();
-    let hole_package_outputs = hole_package_operations
+    let explicit_hole_package_outputs = hole_package_operations
         .iter()
         .filter_map(|operation| {
             let object_index = body_references.get(operation.as_str())?;
@@ -1066,8 +1065,11 @@ fn attach_feature_operations(
             ))
         })
         .collect::<BTreeMap<_, _>>();
-    let hole_package_diameters =
-        hole_diameters_for_operations(ir, &hole_package_operations, &hole_package_outputs);
+    let (hole_package_outputs, hole_package_diameters) =
+        match hole_body_projection(ir, &hole_package_operations, &explicit_hole_package_outputs) {
+            Some(projection) => (projection.outputs, projection.diameters),
+            None => (explicit_hole_package_outputs, BTreeMap::new()),
+        };
     let hole_package_placements =
         hole_axis_placements_for_operations(ir, &hole_package_operations, &hole_package_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
@@ -1272,6 +1274,13 @@ fn attach_feature_operations(
                     feature_body_outputs(*body, &bodies_by_object_index)
                 })
         };
+        if outputs.is_empty() {
+            outputs = hole_outputs
+                .get(label.id.as_str())
+                .or_else(|| hole_package_outputs.get(label.id.as_str()))
+                .cloned()
+                .unwrap_or_default();
+        }
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
         }
@@ -3749,25 +3758,6 @@ fn native_feature_parameters(
     parameters
 }
 
-/// Derive a shared simple-hole diameter only when the active B-rep supplies a
-/// complete bijection between simple through-hole operations and through-bore
-/// cylinder walls. A native construction group establishes the operation set
-/// when present. Without a group, a uniform equal-cardinality bore set makes
-/// every possible bijection yield the same diameter. Differing radii or any
-/// unmatched operation or bore wall reject the projection atomically.
-fn simple_hole_diameters(
-    ir: &CadIr,
-    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
-    groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, Length> {
-    let Some(operations) = simple_hole_operations(templates, groups) else {
-        return BTreeMap::new();
-    };
-
-    hole_diameters_for_operations(ir, &operations, outputs)
-}
-
 fn simple_hole_operations(
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
@@ -3805,51 +3795,48 @@ fn simple_hole_operations(
     })
 }
 
-/// Derive one diameter per operation when the complete operation set and its
-/// exact output-body topology form a uniform through-bore bijection in every
-/// body partition.
-fn hole_diameters_for_operations(
+struct HoleBodyProjection {
+    outputs: BTreeMap<String, Vec<BodyId>>,
+    diameters: BTreeMap<String, Length>,
+}
+
+fn hole_body_projection(
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, Length> {
+) -> Option<HoleBodyProjection> {
     if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
     {
-        return BTreeMap::new();
+        return None;
     }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return BTreeMap::new();
-    };
+    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
 
+    let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return BTreeMap::new();
-        };
-        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
-            return BTreeMap::new();
-        };
+        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let bores = through_bore_cylinders(ir, &body_faces)?;
         let radii = bores
             .into_iter()
             .map(|(_, _, radius)| radius)
             .collect::<Vec<_>>();
-        let Some(radius) = radii.first().copied() else {
-            return BTreeMap::new();
-        };
+        let radius = radii.first().copied()?;
         if radii.len() != operations.len()
             || radii
                 .iter()
                 .any(|candidate| candidate.to_bits() != radius.to_bits())
         {
-            return BTreeMap::new();
+            return None;
         }
-        diameters.extend(
-            operations
-                .into_iter()
-                .map(|operation| (operation, Length(radius * 2.0))),
-        );
+        for operation in operations {
+            projected_outputs.insert(operation.clone(), vec![body.clone()]);
+            diameters.insert(operation, Length(radius * 2.0));
+        }
     }
-    diameters
+    Some(HoleBodyProjection {
+        outputs: projected_outputs,
+        diameters,
+    })
 }
 
 /// Derive one complete unoriented placement when one operation owns exactly
@@ -4750,6 +4737,28 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    fn hole_diameters_for_operations(
+        ir: &CadIr,
+        operations: &[String],
+        outputs: &BTreeMap<String, Vec<BodyId>>,
+    ) -> BTreeMap<String, Length> {
+        hole_body_projection(ir, operations, outputs)
+            .map(|projection| projection.diameters)
+            .unwrap_or_default()
+    }
+
+    fn simple_hole_diameters(
+        ir: &CadIr,
+        templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+        groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
+        outputs: &BTreeMap<String, Vec<BodyId>>,
+    ) -> BTreeMap<String, Length> {
+        let Some(operations) = simple_hole_operations(templates, groups) else {
+            return BTreeMap::new();
+        };
+        hole_diameters_for_operations(ir, &operations, outputs)
+    }
 
     #[test]
     fn active_configuration_retains_complete_evaluated_parameter_state() {
@@ -6561,22 +6570,26 @@ mod tests {
             ("hole-a".to_string(), vec![body.clone()]),
             ("hole-b".to_string(), vec![body]),
         ]);
+        let inferred =
+            super::hole_body_projection(&ir, &operations, &std::collections::BTreeMap::new())
+                .expect("complete bore bijection");
+        assert_eq!(inferred.outputs, outputs);
         assert_eq!(
-            super::simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,),
+            simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,),
             std::collections::BTreeMap::from([
                 ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
                 ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
             ])
         );
         assert_eq!(
-            super::simple_hole_diameters(&ir, &templates, &[], &outputs),
+            simple_hole_diameters(&ir, &templates, &[], &outputs),
             std::collections::BTreeMap::from([
                 ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
                 ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
             ])
         );
         assert_eq!(
-            super::hole_diameters_for_operations(&ir, &operations, &outputs),
+            hole_diameters_for_operations(&ir, &operations, &outputs),
             std::collections::BTreeMap::from([
                 ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
                 ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
@@ -6678,12 +6691,15 @@ mod tests {
             };
             *radius = 3.1;
         }
-        assert!(
-            super::hole_diameters_for_operations(&different_radii, &operations, &outputs,)
-                .is_empty()
-        );
+        assert!(hole_diameters_for_operations(&different_radii, &operations, &outputs,).is_empty());
+        assert!(super::hole_body_projection(
+            &different_radii,
+            &operations,
+            &std::collections::BTreeMap::new(),
+        )
+        .is_none());
         assert_eq!(
-            super::simple_hole_diameters(
+            simple_hole_diameters(
                 &ir,
                 &templates,
                 std::slice::from_ref(&group),
@@ -6694,7 +6710,7 @@ mod tests {
                 ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
             ])
         );
-        assert!(super::hole_diameters_for_operations(
+        assert!(hole_diameters_for_operations(
             &ir,
             &[operations[0].clone(), operations[0].clone()],
             &outputs,
@@ -6707,8 +6723,7 @@ mod tests {
         };
         *radius += 0.1;
         assert!(
-            super::hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,)
-                .is_empty()
+            hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,).is_empty()
         );
         let mut coincident_boundaries = ir.clone();
         let CurveGeometry::Circle { center, .. } =
@@ -6717,12 +6732,10 @@ mod tests {
             unreachable!()
         };
         center.y = 0.0;
-        assert!(super::hole_diameters_for_operations(
-            &coincident_boundaries,
-            &operations,
-            &outputs,
-        )
-        .is_empty());
+        assert!(
+            hole_diameters_for_operations(&coincident_boundaries, &operations, &outputs,)
+                .is_empty()
+        );
         let mut nonparallel = single_hole.clone();
         let SurfaceGeometry::Cylinder { axis, .. } = &mut nonparallel.model.surfaces[1].geometry
         else {
@@ -6737,14 +6750,12 @@ mod tests {
         .is_empty());
         let mut sheet = ir.clone();
         sheet.model.bodies[0].kind = BodyKind::Sheet;
-        assert!(super::hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
+        assert!(hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
         let mut disconnected = ir.clone();
         disconnected.model.bodies[0]
             .regions
             .push(RegionId("second-region".into()));
-        assert!(
-            super::hole_diameters_for_operations(&disconnected, &operations, &outputs).is_empty()
-        );
+        assert!(hole_diameters_for_operations(&disconnected, &operations, &outputs).is_empty());
         let mut shared_carrier = ir.clone();
         shared_carrier.model.faces.push(Face {
             id: FaceId("unowned-shared-cylinder-face".into()),
@@ -6760,13 +6771,13 @@ mod tests {
             tolerance: None,
         });
         assert_eq!(
-            super::simple_hole_diameters(
+            simple_hole_diameters(
                 &shared_carrier,
                 &templates,
                 std::slice::from_ref(&group),
                 &outputs,
             ),
-            super::simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,)
+            simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,)
         );
 
         let mut distinct = ir.clone();
@@ -6814,7 +6825,7 @@ mod tests {
             ("hole-b".to_string(), vec![BodyId("second-body".into())]),
         ]);
         assert_eq!(
-            super::simple_hole_diameters(
+            simple_hole_diameters(
                 &distinct,
                 &templates,
                 std::slice::from_ref(&group),
@@ -6826,19 +6837,19 @@ mod tests {
             ])
         );
         assert_eq!(
-            super::hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
+            hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
             std::collections::BTreeMap::from([
                 ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
                 ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
             ])
         );
-        assert!(super::hole_diameters_for_operations(
+        assert!(hole_diameters_for_operations(
             &distinct,
             &operations,
             &std::collections::BTreeMap::new(),
         )
         .is_empty());
-        assert!(super::hole_diameters_for_operations(
+        assert!(hole_diameters_for_operations(
             &ir,
             &operations,
             &std::collections::BTreeMap::from([(
@@ -6990,9 +7001,7 @@ mod tests {
             unreachable!()
         };
         *radius = 3.0;
-        assert!(
-            super::simple_hole_diameters(&mismatched, &templates, &[group], &outputs,).is_empty()
-        );
+        assert!(simple_hole_diameters(&mismatched, &templates, &[group], &outputs,).is_empty());
     }
 
     #[test]
