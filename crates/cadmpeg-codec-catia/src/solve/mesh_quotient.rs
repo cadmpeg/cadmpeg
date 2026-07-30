@@ -284,6 +284,7 @@ pub(crate) struct MeshImplicitEdgeCandidates {
     left_index: usize,
     right_index: usize,
     required_point: Option<usize>,
+    same_root: bool,
 }
 
 impl MeshImplicitEdgeCandidates {
@@ -308,6 +309,9 @@ impl Iterator for MeshImplicitEdgeCandidates {
                 .required_point
                 .is_some_and(|point| left != point && right != point)
             {
+                continue;
+            }
+            if !self.same_root && left == right {
                 continue;
             }
             if left > right
@@ -335,6 +339,9 @@ impl MeshCoordinateRootDomains {
         let Some(&[left, right]) = self.edges.get(edge) else {
             return false;
         };
+        if left != right && pair[0] == pair[1] {
+            return false;
+        }
         (self.domains[left].binary_search(&pair[0]).is_ok()
             && self.domains[right].binary_search(&pair[1]).is_ok())
             || (self.domains[left].binary_search(&pair[1]).is_ok()
@@ -382,15 +389,25 @@ impl MeshCoordinateRootDomains {
                     self.domains[right]
                         .iter()
                         .copied()
+                        .filter(|right_point| left == right || *right_point != point)
                         .map(|right| [point, right]),
                 );
             }
             if right != left && self.domains[right].binary_search(&point).is_ok() {
-                pairs.extend(self.domains[left].iter().copied().map(|left| [left, point]));
+                pairs.extend(
+                    self.domains[left]
+                        .iter()
+                        .copied()
+                        .filter(|left_point| *left_point != point)
+                        .map(|left| [left, point]),
+                );
             }
         } else {
             for &left_point in &self.domains[left] {
                 for &right_point in &self.domains[right] {
+                    if left != right && left_point == right_point {
+                        continue;
+                    }
                     pairs.push([left_point, right_point]);
                 }
             }
@@ -416,6 +433,7 @@ impl MeshCoordinateRootDomains {
             left_index: 0,
             right_index: 0,
             required_point,
+            same_root: left == right,
         })
     }
 
@@ -747,6 +765,42 @@ pub(crate) fn complete_mesh_endpoint_candidates_from_quotient(
 }
 
 impl MeshQuotient {
+    pub(crate) fn coordinate_domain_preparation_limit(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> Option<usize> {
+        if self.union.len() != edge_candidates.len().checked_mul(2)? {
+            return None;
+        }
+        let mut root_count = 0usize;
+        let mut root_supports = 0usize;
+        for node in 0..self.union.len() {
+            if self.union.find(node) != node {
+                continue;
+            }
+            root_count += 1;
+            root_supports = root_supports.saturating_add(
+                self.domains[node]
+                    .iter()
+                    .filter(|point| **point < point_count)
+                    .count(),
+            );
+        }
+        let explicit_pair_supports = edge_candidates.iter().map(Vec::len).sum::<usize>();
+        let matching_phase_bound = root_count
+            .saturating_add(point_count)
+            .isqrt()
+            .saturating_add(1);
+        let traversal_bound = matching_phase_bound.saturating_add(8);
+        Some(
+            root_supports
+                .saturating_add(explicit_pair_supports)
+                .saturating_mul(traversal_bound)
+                .max(MAX_MESH_CONSTRAINT_OPERATIONS),
+        )
+    }
+
     fn signature_work(&mut self) -> usize {
         let mut work = 0usize;
         for node in 0..self.union.len() {

@@ -465,6 +465,8 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) partial_solution_filter: Option<MeshPartialEndpointConstraint<'a>>,
     pub(crate) dead_states: HashSet<Vec<Option<[usize; 2]>>>,
     pub(crate) budget: &'a MeshConstraintBudget,
+    pub(crate) coordinate_propagation_budget: &'a MeshConstraintBudget,
+    pub(crate) boundary_propagation_budget: &'a MeshConstraintBudget,
     pub(crate) exhausted: bool,
     pub(crate) stopped: bool,
 }
@@ -810,6 +812,25 @@ impl IncidenceComponentSearch<'_, '_> {
             })
     }
 
+    fn refine_coordinate_domains(
+        &self,
+        domains: &MeshCoordinateRootDomains,
+        edge: usize,
+        pair: [usize; 2],
+    ) -> Option<MeshCoordinateRootDomains> {
+        if self.coordinate_propagation_budget.exhausted.get() {
+            return Some(domains.clone());
+        }
+        let refined =
+            domains.refine_edge_candidate_arc(edge, pair, Some(self.coordinate_propagation_budget));
+        refined.or_else(|| {
+            self.coordinate_propagation_budget
+                .exhausted
+                .get()
+                .then(|| domains.clone())
+        })
+    }
+
     fn degree(&self, face: usize, point: usize) -> u8 {
         self.degrees[face].get(&point).copied().unwrap_or_default()
     }
@@ -922,7 +943,7 @@ impl IncidenceComponentSearch<'_, '_> {
                             mesh_assignment_endpoint_cycles_viable_where(
                                 assignment,
                                 self.choices,
-                                Some(self.budget),
+                                Some(self.boundary_propagation_budget),
                                 |candidate_edge, candidate_pair| {
                                     let selected = if candidate_edge == edge {
                                         Some(pair)
@@ -942,7 +963,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     }
                 })
         });
-        viable && !self.budget.exhausted.get()
+        viable
     }
 
     fn constraint_options(
@@ -1029,21 +1050,6 @@ impl IncidenceComponentSearch<'_, '_> {
                     |candidates| IncidenceBranch::Implicit { edge, candidates },
                 )
         };
-        if let Some(constraint) = self.partial_solution_filter {
-            let edge = self
-                .edges
-                .iter()
-                .copied()
-                .filter(|&edge| {
-                    constraint.active_edges.get(edge) == Some(&true)
-                        && self.assignment[edge].is_none()
-                        && self.branch_edge_ready(edge)
-                })
-                .min_by_key(|&edge| branch_width(edge));
-            if let Some(edge) = edge {
-                return Some(edge_branch(edge));
-            }
-        }
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
         for &(face, point) in &self.constraints {
             if self.degree(face, point) != 1 {
@@ -1071,6 +1077,21 @@ impl IncidenceComponentSearch<'_, '_> {
             return constrained
                 .map(Vec::into_iter)
                 .map(IncidenceBranch::Options);
+        }
+        if let Some(constraint) = self.partial_solution_filter {
+            let edge = self
+                .edges
+                .iter()
+                .copied()
+                .filter(|&edge| {
+                    constraint.active_edges.get(edge) == Some(&true)
+                        && self.assignment[edge].is_none()
+                        && self.branch_edge_ready(edge)
+                })
+                .min_by_key(|&edge| branch_width(edge));
+            if let Some(edge) = edge {
+                return Some(edge_branch(edge));
+            }
         }
         let edge = self
             .edges
@@ -1134,7 +1155,7 @@ impl IncidenceComponentSearch<'_, '_> {
                             mesh_assignment_endpoint_cycles_viable_where(
                                 assignment,
                                 self.choices,
-                                Some(self.budget),
+                                Some(self.boundary_propagation_budget),
                                 |edge, pair| {
                                     self.assignment[edge]
                                         .is_none_or(|selected| same_unordered_pair(selected, pair))
@@ -1146,20 +1167,26 @@ impl IncidenceComponentSearch<'_, '_> {
                     _ => compact_boundary_domain_viable(domain, &self.assignment, None),
                 })
         });
-        if !viable || self.budget.exhausted.get() {
+        if !viable {
             return None;
         }
         if quotient_states.is_empty() {
             Some(quotient_states)
         } else {
-            advance_compact_boundary_domains(
+            let fallback = quotient_states.clone();
+            let advanced = advance_compact_boundary_domains(
                 faces.iter().filter_map(|face| mesh_assignments.get(*face)),
                 self.choices,
                 &self.assignment,
                 None,
                 quotient_states,
-                self.budget,
-            )
+                self.boundary_propagation_budget,
+            );
+            if self.boundary_propagation_budget.exhausted.get() {
+                Some(fallback)
+            } else {
+                advanced
+            }
         }
     }
 
@@ -1204,15 +1231,18 @@ impl IncidenceComponentSearch<'_, '_> {
             .collect::<Vec<_>>();
         faces.sort_by_key(|(width, face, _)| (*width, *face));
         for (_, _, assignments) in faces {
-            if !self.budget.charge() {
-                return Some(Vec::new());
+            if !self.boundary_propagation_budget.charge() {
+                return None;
             }
             let Some(configurations) = mesh_face_endpoint_configurations(
                 assignments,
                 self.choices,
                 &self.assignment,
-                self.budget,
+                self.boundary_propagation_budget,
             ) else {
+                if self.boundary_propagation_budget.exhausted.get() {
+                    return None;
+                }
                 continue;
             };
             let mut projected = configurations
@@ -1261,12 +1291,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     break;
                 }
                 if let Some(domains) = next_coordinate_domains.take() {
-                    let Some(refined) =
-                        domains.refine_edge_candidate_arc(edge, pair, Some(self.budget))
-                    else {
-                        if self.budget.exhausted.get() {
-                            self.exhausted = true;
-                        }
+                    let Some(refined) = self.refine_coordinate_domains(&domains, edge, pair) else {
                         viable = false;
                         break;
                     };
@@ -1394,6 +1419,10 @@ impl IncidenceComponentSearch<'_, '_> {
             return;
         };
         for (edge, pair) in std::iter::once(first_option).chain(options) {
+            if !self.budget.charge() {
+                self.exhausted = true;
+                return;
+            }
             if self.assignment[edge].is_some() {
                 continue;
             }
@@ -1405,13 +1434,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 continue;
             }
             let next_coordinate_domains = if let Some(domains) = coordinate_domains {
-                let Some(refined) =
-                    domains.refine_edge_candidate_arc(edge, pair, Some(self.budget))
-                else {
-                    if self.budget.exhausted.get() {
-                        self.exhausted = true;
-                        return;
-                    }
+                let Some(refined) = self.refine_coordinate_domains(domains, edge, pair) else {
                     continue;
                 };
                 Some(refined)
@@ -2015,6 +2038,8 @@ where
         degrees: &[BTreeMap<usize, u8>],
         point_count: usize,
         budget: &MeshConstraintBudget,
+        coordinate_propagation_budget: &MeshConstraintBudget,
+        boundary_propagation_budget: &MeshConstraintBudget,
         orientation_budget: &MeshConstraintBudget,
         solution_visitor: Option<MeshEndpointSolutionVisitor<'_>>,
     ) -> bool {
@@ -2084,6 +2109,8 @@ where
             partial_solution_filter: partial_solution_valid,
             dead_states: HashSet::new(),
             budget,
+            coordinate_propagation_budget,
+            boundary_propagation_budget,
             exhausted: false,
             stopped: false,
         };
@@ -2114,6 +2141,7 @@ where
         component_budgets: &[MeshConstraintBudget],
         orientation_budget: &MeshConstraintBudget,
         coordinate_propagation_budget: &MeshConstraintBudget,
+        boundary_propagation_budget: &MeshConstraintBudget,
     ) -> Result<ControlFlow<()>, ()>
     where
         F: Fn(&[[usize; 2]]) -> bool,
@@ -2238,6 +2266,7 @@ where
                     component_budgets,
                     orientation_budget,
                     coordinate_propagation_budget,
+                    boundary_propagation_budget,
                 )
             } else {
                 Ok(ControlFlow::Continue(()))
@@ -2284,6 +2313,8 @@ where
             &base_degrees,
             point_count,
             component_budget,
+            coordinate_propagation_budget,
+            boundary_propagation_budget,
             orientation_budget,
             Some(&mut visit_solution),
         );
@@ -2307,10 +2338,12 @@ where
         }) {
             return None;
         }
-        let preparation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         let coordinate_domains = if choices.iter().any(|candidates| candidates.len() != 1) {
             if let Some(quotient) = mesh_quotient {
                 let mut quotient = quotient.clone();
+                let preparation_limit =
+                    quotient.coordinate_domain_preparation_limit(point_count, choices)?;
+                let preparation_budget = MeshConstraintBudget::new(preparation_limit);
                 let Some(domains) = quotient.prepare_coordinate_root_domains(
                     point_count,
                     choices,
@@ -2421,6 +2454,8 @@ where
             let orientation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let coordinate_preflight_budget =
                 MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let boundary_preflight_budget =
+                MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
             let mut accept_first = |solution: &[MeshEndpointPair]| {
                 let mut completed = fixed.clone();
@@ -2458,6 +2493,8 @@ where
                 &degrees,
                 point_count,
                 &preflight_budget,
+                &coordinate_preflight_budget,
+                &boundary_preflight_budget,
                 &orientation_budget,
                 Some(&mut accept_first),
             );
@@ -2480,6 +2517,7 @@ where
         // solution. Keep their exhaustion independent of the exact search budget.
         let coordinate_propagation_budget =
             MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let boundary_propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         if visit_components(
             0,
             choices,
@@ -2502,6 +2540,7 @@ where
             &component_budgets,
             &orientation_budget,
             &coordinate_propagation_budget,
+            &boundary_propagation_budget,
         )
         .is_err()
         {
