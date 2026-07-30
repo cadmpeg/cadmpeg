@@ -75,6 +75,8 @@ fixtures, claims above L1 remain unproven.
   remain symbolic until the referenced namespace is decoded.
   Session-scoped `rel_model_name:<session_id>()` calls likewise remain symbolic
   model-context queries without becoming parameter dependencies.
+  Colon-scoped assignment targets retain their complete typed identity and
+  source-order value semantics without emitting false local parameters.
   Left-hand `value(parameter,row[,column])` statements retain a typed table-cell
   target and its complete dependency order without emitting a false scalar
   parameter.

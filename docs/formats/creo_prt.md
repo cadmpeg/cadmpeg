@@ -3343,6 +3343,12 @@ in the assignment dependency order.
 session identifier. The scoped call is a model-context query, not a parameter
 reference. Its result resolves through the referenced model namespace.
 
+An assignment target may be a complete colon-scoped dimension or parameter
+identifier such as `d7:0` or `width:fid_25:cid_12`. The assignment drives that
+scoped item and does not declare an unscoped local parameter. A scoped target
+cannot carry a new-parameter unit declaration. Its evaluated value becomes the
+current value of the complete scoped identifier for following source lines.
+
 A `crv_fr_eqn` program containing calls to `abs`, `ceil`, `floor`, `extract`, `if`,
 `itos`, or `search`, or containing `IF`, `ELSE`, or `ENDIF` control lines, is
 not an evaluable datum-curve equation. Its source, assignments, and dependencies
@@ -3403,9 +3409,10 @@ state for that identifier. An unbalanced conditional program does not evaluate
 any assignment. Assignment activation transfers as `active`, `inactive`, or
 `conditional` while every source assignment retains its identity.
 
-Every assignment is a distinct neutral design parameter. A source identifier
-assigned once is its parameter name. Repeated assignments use the parameter
-names `<identifier>#1`, `<identifier>#2`, and so on in source order and retain
+Every local-parameter assignment is a distinct neutral design parameter. A
+local source identifier assigned once is its parameter name. Repeated local
+assignments use the parameter names `<identifier>#1`, `<identifier>#2`, and so
+on in source order and retain
 the unqualified identifier as `source_name`. A reference to multiple executing
 or conditional assignments of one identifier is ambiguous and does not bind to
 one occurrence. An unscoped `d<external_id>` dependency binds to its transferred

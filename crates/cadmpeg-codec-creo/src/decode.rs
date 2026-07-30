@@ -29625,6 +29625,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 )
             })
             .count();
+        let decoded_curve_expression_scoped_symbol_assignment_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.assignments)
+            .filter(|assignment| {
+                matches!(
+                    &assignment.target,
+                    crate::curve::CurveExpressionTarget::ScopedSymbol { .. }
+                )
+            })
+            .count();
         let evaluated_curve_expression_assignment_count = active_expressions
             .clone()
             .flat_map(|record| &record.assignments)
@@ -29656,6 +29666,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "decoded_active_curve_expression_table_cell_assignment_count".to_string(),
             decoded_curve_expression_table_cell_assignment_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_scoped_symbol_assignment_count".to_string(),
+            decoded_curve_expression_scoped_symbol_assignment_count,
         );
         coverage.insert(
             "evaluated_active_curve_expression_assignment_count".to_string(),

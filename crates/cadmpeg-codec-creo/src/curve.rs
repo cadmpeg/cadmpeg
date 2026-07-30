@@ -108,6 +108,11 @@ pub enum CurveExpressionTarget {
         /// Unit expression declared on a newly created parameter target.
         declared_unit: Option<String>,
     },
+    /// Dimension or parameter qualified by a relation scope.
+    ScopedSymbol {
+        /// Complete scoped relation identifier.
+        name: String,
+    },
     /// Cell of a series or list parameter.
     TableCell {
         /// Table-valued parameter identifier.
@@ -126,6 +131,18 @@ impl CurveExpressionAssignment {
                 name,
                 declared_unit,
             } => Some((name, declared_unit.as_deref())),
+            CurveExpressionTarget::ScopedSymbol { .. }
+            | CurveExpressionTarget::TableCell { .. } => None,
+        }
+    }
+
+    fn scalar_target(&self) -> Option<(&str, Option<&str>)> {
+        match &self.target {
+            CurveExpressionTarget::Parameter {
+                name,
+                declared_unit,
+            } => Some((name, declared_unit.as_deref())),
+            CurveExpressionTarget::ScopedSymbol { name } => Some((name, None)),
             CurveExpressionTarget::TableCell { .. } => None,
         }
     }
@@ -926,10 +943,17 @@ fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
     } else {
         (source, None)
     };
-    valid_expression_identifier(name).then(|| CurveExpressionTarget::Parameter {
-        name: name.to_owned(),
-        declared_unit: declared_unit.map(str::to_owned),
-    })
+    if name.contains(':') {
+        declared_unit.is_none().then_some(())?;
+        valid_scoped_expression_identifier(name).then(|| CurveExpressionTarget::ScopedSymbol {
+            name: name.to_owned(),
+        })
+    } else {
+        valid_expression_identifier(name).then(|| CurveExpressionTarget::Parameter {
+            name: name.to_owned(),
+            declared_unit: declared_unit.map(str::to_owned),
+        })
+    }
 }
 
 fn valid_expression_identifier(name: &str) -> bool {
@@ -937,6 +961,10 @@ fn valid_expression_identifier(name: &str) -> bool {
         && name.bytes().enumerate().all(|(index, byte)| {
             byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
         })
+}
+
+fn valid_scoped_expression_identifier(name: &str) -> bool {
+    expression_identifier_end(name.as_bytes(), 0) == Some(name.len())
 }
 
 fn split_assignment_target_arguments(source: &str) -> Option<Vec<&str>> {
@@ -1115,7 +1143,7 @@ fn evaluate_expression_program(
     existing_symbols.extend(lines.iter().filter_map(expression_assignment).filter_map(
         |assignment| {
             assignment
-                .parameter_target()
+                .scalar_target()
                 .map(|(name, _)| expression_identifier_key(name))
         },
     ));
@@ -1163,7 +1191,7 @@ fn evaluate_expression_program(
         };
         assignment.activation = activity;
         let Some((name, declared_unit)) = assignment
-            .parameter_target()
+            .scalar_target()
             .map(|(name, unit)| (name.to_owned(), unit.map(str::to_owned)))
         else {
             assignments.push(assignment);
@@ -4325,6 +4353,58 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
+        let lines = [
+            "d7:0=driver+1",
+            "width:fid_25:cid_12=5",
+            "copy=d7:0*2",
+            "present=exists('width:fid_25:cid_12')",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+        let mut external_symbols = ExternalRelationSymbols::default();
+        external_symbols.observe("driver", Some(CurveExpressionValue::Number(2.0)));
+
+        let assignments = evaluate_expression_program(&lines, None, &external_symbols);
+
+        assert_eq!(assignments.len(), 4);
+        assert_eq!(
+            assignments[0].target,
+            CurveExpressionTarget::ScopedSymbol {
+                name: "d7:0".to_owned(),
+            }
+        );
+        assert_eq!(assignments[0].dependencies, ["driver"]);
+        assert_eq!(
+            assignments[0].value,
+            Some(CurveExpressionValue::Number(3.0))
+        );
+        assert_eq!(
+            assignments[1].target,
+            CurveExpressionTarget::ScopedSymbol {
+                name: "width:fid_25:cid_12".to_owned(),
+            }
+        );
+        assert_eq!(assignments[2].dependencies, ["d7:0"]);
+        assert_eq!(
+            assignments[2].value,
+            Some(CurveExpressionValue::Number(6.0))
+        );
+        assert_eq!(
+            assignments[3].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert!(assignments[..2]
+            .iter()
+            .all(|assignment| assignment.parameter_target().is_none()));
     }
 
     #[test]

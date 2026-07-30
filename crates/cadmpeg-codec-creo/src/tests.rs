@@ -6255,6 +6255,54 @@ fn decode_retains_scoped_model_name_call_as_model_context() {
 }
 
 #[test]
+fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04\
+        d7:0=3\0\
+        width:fid_25:cid_12=5\0\
+        copy=d7:0*2\0\
+        present=exists('width:fid_25:cid_12')\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [copy, present] = result.ir.model.parameters.as_slice() else {
+        panic!("two local curve-expression parameters");
+    };
+
+    assert_eq!(copy.name, "copy");
+    assert_eq!(
+        copy.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(6.0))
+    );
+    assert_eq!(present.name, "present");
+    assert_eq!(
+        present.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
+    );
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(
+        native.fields["assignments"][0]["target"]["kind"],
+        "scoped_symbol"
+    );
+    assert_eq!(native.fields["assignments"][0]["target"]["name"], "d7:0");
+    assert_eq!(
+        native.fields["assignments"][1]["target"]["name"],
+        "width:fid_25:cid_12"
+    );
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_scoped_symbol_assignment_count"],
+        2
+    );
+    assert_eq!(
+        result.report.coverage["transferred_curve_expression_parameter_count"],
+        2
+    );
+}
+
+#[test]
 fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x03\
