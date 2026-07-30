@@ -2323,6 +2323,7 @@ fn standard_catpart_with_relation_program_instance(
 fn standard_catpart_with_lead54_relation_program_instance(
     program_entity_id: u32,
     repeated_reference_entity_id: u32,
+    trailing_entity_id: u32,
     stored_self_entity_id: u32,
 ) -> Vec<u8> {
     let mut instance_payload = Vec::new();
@@ -2349,7 +2350,7 @@ fn standard_catpart_with_lead54_relation_program_instance(
     reference(&mut instance_payload, 21);
     atom(&mut instance_payload, 2);
     reference(&mut instance_payload, 5);
-    atom(&mut instance_payload, 22);
+    atom(&mut instance_payload, trailing_entity_id);
     atom(&mut instance_payload, 129);
     instance_payload.push(0xfe);
 
@@ -11080,7 +11081,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
 
 #[test]
 fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
-    let file = standard_catpart_with_lead54_relation_program_instance(1, 1, 2);
+    let file = standard_catpart_with_lead54_relation_program_instance(1, 1, 1, 2);
     let native = crate::native::CatiaNative::decode(&file);
     let instance = native.entity_records[1]
         .relation_program_instance
@@ -11089,6 +11090,15 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     assert_eq!(
         instance.framing,
         crate::native::CatiaRelationProgramInstanceFraming::Lead54
+    );
+    let trailing = instance
+        .lead54_trailing_entity
+        .as_ref()
+        .expect("lead-54 trailing entity");
+    assert_eq!(trailing.entity_id, 1);
+    assert_eq!(
+        trailing.entity.as_deref(),
+        Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(
         instance.program.as_deref(),
@@ -11117,9 +11127,17 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
         1
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_lead54_relation_program_trailing_entity_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["unresolved_lead54_relation_program_trailing_entity_count"],
+        0
+    );
 
     let unresolved = crate::native::CatiaNative::decode(
-        &standard_catpart_with_lead54_relation_program_instance(1, 3, 2),
+        &standard_catpart_with_lead54_relation_program_instance(1, 3, 3, 2),
     );
     let instance = unresolved.entity_records[1]
         .relation_program_instance
@@ -11127,9 +11145,15 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         .expect("unresolved repeated identity");
     assert_eq!(instance.repeated_reference_entity_id, 3);
     assert!(instance.repeated_reference_entity.is_none());
+    let trailing = instance
+        .lead54_trailing_entity
+        .as_ref()
+        .expect("lead-54 trailing entity");
+    assert_eq!(trailing.entity_id, 3);
+    assert!(trailing.entity.is_none());
 
     let malformed = crate::native::CatiaNative::decode(
-        &standard_catpart_with_lead54_relation_program_instance(1, 1, 3),
+        &standard_catpart_with_lead54_relation_program_instance(1, 1, 1, 3),
     );
     assert!(malformed
         .entity_records
@@ -11210,46 +11234,56 @@ fn decode_reports_exact_relation_program_instances() {
 
 #[test]
 fn native_load_derives_relation_program_instances_from_older_namespaces() {
-    let native = crate::native::CatiaNative::decode(
-        &standard_catpart_with_relation_program_instance(1, 1, 2),
-    );
-    let expected = native.entity_records[1]
-        .relation_program_instance
-        .clone()
-        .expect("decoded relation-program instance");
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut stored)
-        .expect("store older relation-program namespace");
-    for (version, remove_repeated_reference) in [
-        (crate::native::CATIA_NATIVE_VERSION - 1, false),
-        (crate::native::CATIA_NATIVE_VERSION - 2, true),
+    for native in [
+        crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance(
+            1, 1, 2,
+        )),
+        crate::native::CatiaNative::decode(
+            &standard_catpart_with_lead54_relation_program_instance(1, 1, 1, 2),
+        ),
     ] {
-        let mut namespace = stored.clone();
-        namespace.version = version;
-        let stored_instance = namespace
-            .arenas
-            .get_mut("entity_records")
-            .expect("stored entity records")[1]
-            .fields
-            .get_mut("relation_program_instance")
-            .expect("stored relation-program field")
-            .as_object_mut()
-            .expect("stored relation-program instance");
-        stored_instance.remove("framing");
-        if remove_repeated_reference {
-            stored_instance.remove("repeated_reference_entity_id");
-            stored_instance.remove("repeated_reference_entity");
-        }
+        let expected = native.entity_records[1]
+            .relation_program_instance
+            .clone()
+            .expect("decoded relation-program instance");
+        let mut stored = cadmpeg_ir::NativeNamespace::default();
+        native
+            .store(&mut stored)
+            .expect("store older relation-program namespace");
+        for (version, remove_framing, remove_repeated_reference) in [
+            (crate::native::CATIA_NATIVE_VERSION - 1, false, false),
+            (crate::native::CATIA_NATIVE_VERSION - 2, true, false),
+            (crate::native::CATIA_NATIVE_VERSION - 3, true, true),
+        ] {
+            let mut namespace = stored.clone();
+            namespace.version = version;
+            let stored_instance = namespace
+                .arenas
+                .get_mut("entity_records")
+                .expect("stored entity records")[1]
+                .fields
+                .get_mut("relation_program_instance")
+                .expect("stored relation-program field")
+                .as_object_mut()
+                .expect("stored relation-program instance");
+            stored_instance.remove("lead54_trailing_entity");
+            if remove_framing {
+                stored_instance.remove("framing");
+            }
+            if remove_repeated_reference {
+                stored_instance.remove("repeated_reference_entity_id");
+                stored_instance.remove("repeated_reference_entity");
+            }
 
-        let migrated = crate::native::CatiaNative::load(&namespace)
-            .expect("migrate relation-program instance");
-        assert_eq!(
-            migrated.entity_records[1]
-                .relation_program_instance
-                .as_ref(),
-            Some(&expected)
-        );
+            let migrated = crate::native::CatiaNative::load(&namespace)
+                .expect("migrate relation-program instance");
+            assert_eq!(
+                migrated.entity_records[1]
+                    .relation_program_instance
+                    .as_ref(),
+                Some(&expected)
+            );
+        }
     }
 }
 

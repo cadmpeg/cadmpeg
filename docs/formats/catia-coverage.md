@@ -128,7 +128,8 @@ current scores require those matrices and representative fixtures.
   framings, resolved, unresolved, relation-expression, and other program
   instances, partitions the resolved and unresolved identity
   repeated in the atom/reference slots, and counts distinct selected
-  expressions.
+  expressions. Separator-form coverage also partitions its resolved and
+  unresolved trailing entity identity.
   Parameters remain document-scoped until feature-instance ownership resolves.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not

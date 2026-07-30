@@ -780,6 +780,16 @@ fn finish_decode(
                 crate::native::CatiaRelationProgramInstanceFraming::Lead54 => (lead12, lead54 + 1),
             }
         });
+    let resolved_lead54_relation_program_trailing_entity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|instance| instance.lead54_trailing_entity.as_ref())
+        .filter(|trailing| trailing.entity.is_some())
+        .count();
+    let unresolved_lead54_relation_program_trailing_entity_count =
+        lead54_relation_program_instance_count
+            - resolved_lead54_relation_program_trailing_entity_count;
     let resolved_relation_program_instance_count = native
         .entity_records
         .iter()
@@ -1829,6 +1839,14 @@ fn finish_decode(
         (
             "decoded_lead54_relation_program_instance_count".to_string(),
             lead54_relation_program_instance_count,
+        ),
+        (
+            "decoded_resolved_lead54_relation_program_trailing_entity_count".to_string(),
+            resolved_lead54_relation_program_trailing_entity_count,
+        ),
+        (
+            "unresolved_lead54_relation_program_trailing_entity_count".to_string(),
+            unresolved_lead54_relation_program_trailing_entity_count,
         ),
         (
             "decoded_resolved_relation_program_instance_count".to_string(),

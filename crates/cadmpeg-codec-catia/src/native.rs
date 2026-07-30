@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 227;
+pub const CATIA_NATIVE_VERSION: u32 = 228;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -34,7 +34,7 @@ const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 #[cfg(test)]
 const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
 #[cfg(test)]
-const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 227;
+const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 228;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1356,6 +1356,19 @@ pub struct CatiaRelationProgramInstance {
     /// Selected entity when it carries a complete relation-expression program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<String>,
+    /// Trailing same-graph entity incidence carried only by lead-`54`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead54_trailing_entity: Option<CatiaRelationProgramTrailingEntity>,
+}
+
+/// Entity identity in the trailing atom slot of a lead-`54` relation frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaRelationProgramTrailingEntity {
+    /// Stored entity identity.
+    pub entity_id: u32,
+    /// Same-graph entity selected by that identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity: Option<String>,
 }
 
 /// Exact framing production for a compound relation-program instance.
@@ -2828,11 +2841,29 @@ fn relation_program_instance(
     {
         return None;
     }
-    let (framing, program_entity_id, repeated_reference_entity_id) =
+    let (framing, program_entity_id, repeated_reference_entity_id, lead54_trailing_entity) =
         if object.lead == 0x12 && object.storage_ref.is_none() {
-            relation_program_instance_lead_12(entity_id, &object.payload.fields)?
+            let (program_entity_id, repeated_reference_entity_id) =
+                relation_program_instance_lead_12(entity_id, &object.payload.fields)?;
+            (
+                CatiaRelationProgramInstanceFraming::Lead12,
+                program_entity_id,
+                repeated_reference_entity_id,
+                None,
+            )
         } else if object.lead == 0x54 && object.storage_ref.is_some() {
-            relation_program_instance_lead_54(entity_id, &object.payload.fields)?
+            let (program_entity_id, repeated_reference_entity_id, trailing_entity_id) =
+                relation_program_instance_lead_54(entity_id, &object.payload.fields)?;
+            let trailing_key = (object.parent.clone(), trailing_entity_id);
+            (
+                CatiaRelationProgramInstanceFraming::Lead54,
+                program_entity_id,
+                repeated_reference_entity_id,
+                Some(CatiaRelationProgramTrailingEntity {
+                    entity_id: trailing_entity_id,
+                    entity: entities.get(&trailing_key).cloned(),
+                }),
+            )
         } else {
             return None;
         };
@@ -2845,13 +2876,14 @@ fn relation_program_instance(
         repeated_reference_entity_id,
         repeated_reference_entity: entities.get(&repeated_reference_key).cloned(),
         relation_expression: relation_expressions.get(&program_key).cloned(),
+        lead54_trailing_entity,
     })
 }
 
 fn relation_program_instance_lead_12(
     entity_id: u32,
     fields: &[PayloadField],
-) -> Option<(CatiaRelationProgramInstanceFraming, u32, u32)> {
+) -> Option<(u32, u32)> {
     let [PayloadField::Reference { .. }, PayloadField::Atom { value: 3, .. }, PayloadField::Reference {
         value: repeated_reference,
         ..
@@ -2882,17 +2914,13 @@ fn relation_program_instance_lead_12(
     {
         return None;
     }
-    Some((
-        CatiaRelationProgramInstanceFraming::Lead12,
-        *program_entity_id,
-        *repeated_target,
-    ))
+    Some((*program_entity_id, *repeated_target))
 }
 
 fn relation_program_instance_lead_54(
     entity_id: u32,
     fields: &[PayloadField],
-) -> Option<(CatiaRelationProgramInstanceFraming, u32, u32)> {
+) -> Option<(u32, u32, u32)> {
     let [PayloadField::Atom { value: 244, .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
         value: repeated_reference,
         ..
@@ -2913,8 +2941,10 @@ fn relation_program_instance_lead_54(
     }, PayloadField::Reference { .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
         value: repeated_reference_copy,
         ..
-    }, PayloadField::Atom { .. }, PayloadField::Atom { value: 129, .. }, PayloadField::Terminator] =
-        fields
+    }, PayloadField::Atom {
+        value: trailing_entity_id,
+        ..
+    }, PayloadField::Atom { value: 129, .. }, PayloadField::Terminator] = fields
     else {
         return None;
     };
@@ -2924,11 +2954,7 @@ fn relation_program_instance_lead_54(
     {
         return None;
     }
-    Some((
-        CatiaRelationProgramInstanceFraming::Lead54,
-        *program_entity_id,
-        *repeated_target,
-    ))
+    Some((*program_entity_id, *repeated_target, *trailing_entity_id))
 }
 
 fn formula_relation(

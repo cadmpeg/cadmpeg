@@ -18,7 +18,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
   core `CATPrtCont` design history is unresolved. Container class names and
   structural owner groups do not establish shared feature authorship.
 - The semantic roles of the references, fixed-width words, and control bytes in inline `7C09` bodies are unresolved.
-- The binding from compound relation-program instances to ordered inputs and `paramout` parameter entities is unresolved. The exact program slot and repeated atom/reference identity establish incidence with their selected entities but do not assign operand or output roles.
+- The binding from compound relation-program instances to ordered inputs and `paramout` parameter entities is unresolved. The exact program slot, repeated atom/reference identity, and separator-form trailing entity identity establish incidence with their selected entities but do not assign operand or output roles.
 - The referents of nonlocal `body` and `param` selectors on legacy typed relations are unresolved. The selectors do not use the containing legacy run's entity-identity space.
 - The entity binding for typed `String` relation inputs and results is unresolved. Schema-catalog type signatures alone do not identify the named string-value packets used by a relation.
 - The value production and entity binding for typed `Boolean` parameters and active configuration state are unresolved. Boolean- and activity-named field classes include compound object payloads and do not identify scalar values.
