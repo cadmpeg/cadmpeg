@@ -1131,10 +1131,20 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
 pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
-    surface_point_inner(geometry, u, v, 0)
+    surface_partials_inner(geometry, u, v, 0).map(|partials| partials.point)
 }
 
-fn surface_point_inner(geometry: &SurfaceGeometry, u: f64, v: f64, depth: usize) -> Option<Point3> {
+/// Evaluate a directly stored surface and its exact first partial derivatives.
+pub fn surface_partials(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfacePartials> {
+    surface_partials_inner(geometry, u, v, 0)
+}
+
+fn surface_partials_inner(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    depth: usize,
+) -> Option<SurfacePartials> {
     if depth > 256 {
         return None;
     }
@@ -1143,23 +1153,39 @@ fn surface_point_inner(geometry: &SurfaceGeometry, u: f64, v: f64, depth: usize)
             origin,
             normal,
             u_axis,
-        } => Some(offset(
-            *origin,
-            &[(u, *u_axis), (v, cross(*normal, *u_axis))],
-        )),
+        } => {
+            let v_axis = cross(*normal, *u_axis);
+            Some(SurfacePartials {
+                point: offset(*origin, &[(u, *u_axis), (v, v_axis)]),
+                du: *u_axis,
+                dv: v_axis,
+            })
+        }
         SurfaceGeometry::Cylinder {
             origin,
             axis,
             ref_direction,
             radius,
-        } => Some(offset(
-            *origin,
-            &[
-                (radius * u.cos(), *ref_direction),
-                (radius * u.sin(), cross(*axis, *ref_direction)),
-                (v, *axis),
-            ],
-        )),
+        } => {
+            let transverse = cross(*axis, *ref_direction);
+            let cosine = u.cos();
+            let sine = u.sin();
+            Some(SurfacePartials {
+                point: offset(
+                    *origin,
+                    &[
+                        (radius * cosine, *ref_direction),
+                        (radius * sine, transverse),
+                        (v, *axis),
+                    ],
+                ),
+                du: vector_sum(&[
+                    (-radius * sine, *ref_direction),
+                    (radius * cosine, transverse),
+                ]),
+                dv: *axis,
+            })
+        }
         SurfaceGeometry::Cone {
             origin,
             axis,
@@ -1168,29 +1194,62 @@ fn surface_point_inner(geometry: &SurfaceGeometry, u: f64, v: f64, depth: usize)
             ratio,
             half_angle,
         } => {
+            let transverse = cross(*axis, *ref_direction);
+            let cosine = u.cos();
+            let sine = u.sin();
+            let radial_slope = half_angle.tan();
             let local_radius = radius + v * half_angle.tan();
-            Some(offset(
-                *origin,
-                &[
-                    (local_radius * u.cos(), *ref_direction),
-                    (local_radius * ratio * u.sin(), cross(*axis, *ref_direction)),
-                    (v, *axis),
-                ],
-            ))
+            Some(SurfacePartials {
+                point: offset(
+                    *origin,
+                    &[
+                        (local_radius * cosine, *ref_direction),
+                        (local_radius * ratio * sine, transverse),
+                        (v, *axis),
+                    ],
+                ),
+                du: vector_sum(&[
+                    (-local_radius * sine, *ref_direction),
+                    (local_radius * ratio * cosine, transverse),
+                ]),
+                dv: vector_sum(&[
+                    (radial_slope * cosine, *ref_direction),
+                    (radial_slope * ratio * sine, transverse),
+                    (1.0, *axis),
+                ]),
+            })
         }
         SurfaceGeometry::Sphere {
             center,
             axis,
             ref_direction,
             radius,
-        } => Some(offset(
-            *center,
-            &[
-                (radius * v.cos() * u.cos(), *ref_direction),
-                (radius * v.cos() * u.sin(), cross(*axis, *ref_direction)),
-                (radius * v.sin(), *axis),
-            ],
-        )),
+        } => {
+            let transverse = cross(*axis, *ref_direction);
+            let u_cosine = u.cos();
+            let u_sine = u.sin();
+            let v_cosine = v.cos();
+            let v_sine = v.sin();
+            Some(SurfacePartials {
+                point: offset(
+                    *center,
+                    &[
+                        (radius * v_cosine * u_cosine, *ref_direction),
+                        (radius * v_cosine * u_sine, transverse),
+                        (radius * v_sine, *axis),
+                    ],
+                ),
+                du: vector_sum(&[
+                    (-radius * v_cosine * u_sine, *ref_direction),
+                    (radius * v_cosine * u_cosine, transverse),
+                ]),
+                dv: vector_sum(&[
+                    (-radius * v_sine * u_cosine, *ref_direction),
+                    (-radius * v_sine * u_sine, transverse),
+                    (radius * v_cosine, *axis),
+                ]),
+            })
+        }
         SurfaceGeometry::Torus {
             center,
             axis,
@@ -1198,20 +1257,40 @@ fn surface_point_inner(geometry: &SurfaceGeometry, u: f64, v: f64, depth: usize)
             major_radius,
             minor_radius,
         } => {
+            let transverse = cross(*axis, *ref_direction);
+            let u_cosine = u.cos();
+            let u_sine = u.sin();
+            let v_cosine = v.cos();
+            let v_sine = v.sin();
             let ring = major_radius + minor_radius * v.cos();
-            Some(offset(
-                *center,
-                &[
-                    (ring * u.cos(), *ref_direction),
-                    (ring * u.sin(), cross(*axis, *ref_direction)),
-                    (minor_radius * v.sin(), *axis),
-                ],
-            ))
+            Some(SurfacePartials {
+                point: offset(
+                    *center,
+                    &[
+                        (ring * u_cosine, *ref_direction),
+                        (ring * u_sine, transverse),
+                        (minor_radius * v_sine, *axis),
+                    ],
+                ),
+                du: vector_sum(&[
+                    (-ring * u_sine, *ref_direction),
+                    (ring * u_cosine, transverse),
+                ]),
+                dv: vector_sum(&[
+                    (-minor_radius * v_sine * u_cosine, *ref_direction),
+                    (-minor_radius * v_sine * u_sine, transverse),
+                    (minor_radius * v_cosine, *axis),
+                ]),
+            })
         }
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_partials(nurbs, u, v),
         SurfaceGeometry::Polygonal { .. } => None,
         SurfaceGeometry::Transformed { basis, transform } => {
-            surface_point_inner(basis, u, v, depth + 1).map(|point| affine_point(*transform, point))
+            surface_partials_inner(basis, u, v, depth + 1).map(|partials| SurfacePartials {
+                point: affine_point(*transform, partials.point),
+                du: affine_vector(*transform, partials.du),
+                dv: affine_vector(*transform, partials.dv),
+            })
         }
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
     }
@@ -1257,13 +1336,18 @@ pub fn model_surface_point_by_id(
     u: f64,
     v: f64,
 ) -> Option<Point3> {
-    fn point(
+    struct SurfaceEvaluation {
+        point: Point3,
+        oriented_normal: Option<Vector3>,
+    }
+
+    fn evaluate(
         ir: &CadIr,
         surface_id: &crate::ids::SurfaceId,
         u: f64,
         v: f64,
         visiting: &mut Vec<crate::ids::SurfaceId>,
-    ) -> Option<Point3> {
+    ) -> Option<SurfaceEvaluation> {
         if visiting.contains(surface_id) {
             return None;
         }
@@ -1281,29 +1365,42 @@ pub fn model_surface_point_by_id(
                 ProceduralSurfaceDefinition::Offset {
                     support, distance, ..
                 } => {
-                    let support_point = point(ir, support, u, v, visiting)?;
-                    let step = 1.0e-6;
-                    let u0 = point(ir, support, u - step, v, visiting)?;
-                    let u1 = point(ir, support, u + step, v, visiting)?;
-                    let v0 = point(ir, support, u, v - step, visiting)?;
-                    let v1 = point(ir, support, u, v + step, visiting)?;
-                    let du = Vector3::new(u1.x - u0.x, u1.y - u0.y, u1.z - u0.z);
-                    let dv = Vector3::new(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
-                    let normal = cross(du, dv);
-                    let norm = normal.norm();
-                    (norm.is_finite() && norm > 0.0)
-                        .then(|| offset(support_point, &[(distance / norm, normal)]))
+                    let support = evaluate(ir, support, u, v, visiting)?;
+                    let normal = support.oriented_normal?;
+                    Some(SurfaceEvaluation {
+                        point: offset(support.point, &[(*distance, normal)]),
+                        oriented_normal: Some(normal),
+                    })
                 }
-                _ => model_surface_point(ir, &surface.geometry, u, v),
+                _ => model_surface_point(ir, &surface.geometry, u, v).map(|point| {
+                    SurfaceEvaluation {
+                        point,
+                        oriented_normal: None,
+                    }
+                }),
             }
         } else {
-            surface_point(&surface.geometry, u, v)
+            surface_partials(&surface.geometry, u, v).map(|partials| {
+                let normal = cross(partials.du, partials.dv);
+                let magnitude = normal.norm();
+                let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
+                    Vector3::new(
+                        normal.x / magnitude,
+                        normal.y / magnitude,
+                        normal.z / magnitude,
+                    )
+                });
+                SurfaceEvaluation {
+                    point: partials.point,
+                    oriented_normal,
+                }
+            })
         };
         visiting.pop();
         result
     }
 
-    point(ir, surface, u, v, &mut Vec::new())
+    evaluate(ir, surface, u, v, &mut Vec::new()).map(|evaluation| evaluation.point)
 }
 
 fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {
@@ -1354,6 +1451,31 @@ fn affine_point(transform: Transform, point: Point3) -> Point3 {
             + transform.rows[2][2] * point.z
             + transform.rows[2][3],
     )
+}
+
+fn affine_vector(transform: Transform, vector: Vector3) -> Vector3 {
+    Vector3::new(
+        transform.rows[0][0] * vector.x
+            + transform.rows[0][1] * vector.y
+            + transform.rows[0][2] * vector.z,
+        transform.rows[1][0] * vector.x
+            + transform.rows[1][1] * vector.y
+            + transform.rows[1][2] * vector.z,
+        transform.rows[2][0] * vector.x
+            + transform.rows[2][1] * vector.y
+            + transform.rows[2][2] * vector.z,
+    )
+}
+
+fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
+    terms
+        .iter()
+        .fold(Vector3::new(0.0, 0.0, 0.0), |mut vector, (factor, term)| {
+            vector.x += factor * term.x;
+            vector.y += factor * term.y;
+            vector.z += factor * term.z;
+            vector
+        })
 }
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
@@ -1627,13 +1749,18 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        curve_point, nurbs_curve_parameter_near_point, nurbs_curve_speed_bound,
-        nurbs_surface_isocurve, nurbs_surface_partials, nurbs_surface_point, pcurve_uv,
+        curve_point, model_surface_point_by_id, nurbs_curve_parameter_near_point,
+        nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_partials,
+        nurbs_surface_point, pcurve_uv, surface_partials,
     };
     use crate::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceParameterAxis,
+        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
+        ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
     };
+    use crate::ids::{ProceduralSurfaceId, SurfaceId};
     use crate::math::{Point2, Point3, Vector3};
+    use crate::transform::Transform;
+    use crate::CadIr;
 
     #[test]
     fn bilinear_surface_partials_follow_stored_parameterization() {
@@ -1658,6 +1785,144 @@ mod tests {
         assert_eq!(partials.point, Point3::new(0.5, 2.25, 0.0));
         assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
         assert_eq!(partials.dv, Vector3::new(0.0, 3.0, 0.0));
+    }
+
+    #[test]
+    fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
+        let support_id = SurfaceId("support".into());
+        let first_id = SurfaceId("first-offset".into());
+        let second_id = SurfaceId("second-offset".into());
+        let first_construction = ProceduralSurfaceId("first-construction".into());
+        let second_construction = ProceduralSurfaceId("second-construction".into());
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.model.surfaces = vec![
+            Surface {
+                id: support_id.clone(),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+            Surface {
+                id: first_id.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: first_construction.clone(),
+                },
+                source_object: None,
+            },
+            Surface {
+                id: second_id.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: second_construction.clone(),
+                },
+                source_object: None,
+            },
+        ];
+        ir.model.procedural_surfaces = vec![
+            ProceduralSurface {
+                id: first_construction,
+                surface: first_id.clone(),
+                definition: ProceduralSurfaceDefinition::Offset {
+                    support: support_id,
+                    distance: 2.0,
+                    u_sense: None,
+                    v_sense: None,
+                    extension_flags: Vec::new(),
+                    revision_form: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+            ProceduralSurface {
+                id: second_construction,
+                surface: second_id.clone(),
+                definition: ProceduralSurfaceDefinition::Offset {
+                    support: first_id,
+                    distance: -5.0,
+                    u_sense: None,
+                    v_sense: None,
+                    extension_flags: Vec::new(),
+                    revision_form: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        ];
+
+        assert_eq!(
+            model_surface_point_by_id(&ir, &second_id, 1.0e16, -1.0e16),
+            Some(Point3::new(1.0e16, -1.0e16, -3.0))
+        );
+    }
+
+    #[test]
+    fn analytic_and_transformed_surface_partials_follow_parameterization() {
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let sphere = SurfaceGeometry::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 3.0,
+        };
+        let torus = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 5.0,
+            minor_radius: 2.0,
+        };
+        let transformed = SurfaceGeometry::Transformed {
+            basis: Box::new(SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            transform: Transform {
+                rows: [
+                    [2.0, 0.0, 0.0, 7.0],
+                    [0.0, 3.0, 0.0, 11.0],
+                    [0.0, 0.0, 4.0, 13.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            },
+        };
+
+        let cylinder = surface_partials(&cylinder, 0.0, 4.0).unwrap();
+        assert_eq!(cylinder.point, Point3::new(2.0, 0.0, 4.0));
+        assert_eq!(cylinder.du, Vector3::new(0.0, 2.0, 0.0));
+        assert_eq!(cylinder.dv, Vector3::new(0.0, 0.0, 1.0));
+        let cone = surface_partials(&cone, 0.0, 3.0).unwrap();
+        assert!((cone.point.x - 5.0).abs() < 1e-12);
+        assert!((cone.du.y - 5.0).abs() < 1e-12);
+        assert!((cone.dv.x - 1.0).abs() < 1e-12);
+        assert_eq!(cone.dv.z, 1.0);
+        let sphere = surface_partials(&sphere, 0.0, 0.0).unwrap();
+        assert_eq!(sphere.point, Point3::new(3.0, 0.0, 0.0));
+        assert_eq!(sphere.du, Vector3::new(0.0, 3.0, 0.0));
+        assert_eq!(sphere.dv, Vector3::new(0.0, 0.0, 3.0));
+        let torus = surface_partials(&torus, 0.0, 0.0).unwrap();
+        assert_eq!(torus.point, Point3::new(7.0, 0.0, 0.0));
+        assert_eq!(torus.du, Vector3::new(0.0, 7.0, 0.0));
+        assert_eq!(torus.dv, Vector3::new(0.0, 0.0, 2.0));
+        let transformed = surface_partials(&transformed, 2.0, 3.0).unwrap();
+        assert_eq!(transformed.point, Point3::new(11.0, 20.0, 13.0));
+        assert_eq!(transformed.du, Vector3::new(2.0, 0.0, 0.0));
+        assert_eq!(transformed.dv, Vector3::new(0.0, 3.0, 0.0));
     }
 
     #[test]
