@@ -143,7 +143,11 @@ current scores require those matrices and representative fixtures.
   uniquely bind all distinct declared inputs, the instance retains complete
   inputs in signature order with declared types and selected entity incidences.
   Coverage partitions typed instances with complete and incomplete input
-  bindings and counts resolved inputs. Compact-form coverage also partitions its resolved,
+  bindings and counts resolved inputs.
+  Each complete input whose selected entity carries a compatible finite or unset
+  evaluation transfers as a typed document parameter independently of program
+  output binding. Conflicting type assignments prevent transfer.
+  Compact-form coverage partitions its resolved,
   terminal-null, and unresolved `ref(h)` context identity and classifies
   selected `paramout`, other named, and unclassified context entities without
   assigning a parameter role. Separator-form coverage also partitions its

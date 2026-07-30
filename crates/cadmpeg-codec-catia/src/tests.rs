@@ -11317,6 +11317,74 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
 }
 
 #[test]
+fn complete_relation_program_inputs_transfer_typed_parameters() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
+    let parameter_entity = native.entity_records[2].clone();
+    native.entity_records[0].formula_relation = None;
+    native.entity_records[0].relation_program_instance =
+        Some(crate::native::CatiaRelationProgramInstance {
+            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12,
+            program_entity: crate::native::CatiaEntityReference::default(),
+            repeated_entity: crate::native::CatiaEntityReference::default(),
+            reference_incidences: Vec::new(),
+            relation_expression: None,
+            parameter_dependencies: Vec::new(),
+            inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                parameter: "#1_".to_string(),
+                value_type: "LENGTH".to_string(),
+                entity: crate::native::CatiaEntityReference {
+                    entity_id: parameter_entity.entity_id,
+                    is_null: false,
+                    entity: Some(parameter_entity.id.clone()),
+                    class_name: Some("param".to_string()),
+                },
+            }]),
+            lead12_context_entity: None,
+            lead54_trailing_entity: None,
+        });
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = Annotations::default();
+    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
+    let [parameter] = ir.model.parameters.as_slice() else {
+        panic!("one relation-program input parameter")
+    };
+    assert_eq!(transfer.relation_program_parameter_count, 1);
+    assert_eq!(parameter.name, "Thickness");
+    assert_eq!(parameter.expression, "35 mm");
+    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(
+        parameter.properties.get("value_type").map(String::as_str),
+        Some("LENGTH")
+    );
+    assert_eq!(parameter.native_ref, Some(parameter_entity.id.clone()));
+
+    let mut conflicting_native = native.clone();
+    let mut conflicting_instance = conflicting_native.entity_records[0]
+        .relation_program_instance
+        .clone()
+        .expect("complete relation-program instance");
+    conflicting_instance
+        .inputs
+        .as_mut()
+        .expect("complete relation-program inputs")[0]
+        .value_type = "Real".to_string();
+    conflicting_native.entity_records[1].relation_program_instance = Some(conflicting_instance);
+    let mut conflicting_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let conflicting_transfer = crate::formula::transfer_parameters(
+        &mut conflicting_ir,
+        &conflicting_native,
+        &mut Annotations::default(),
+        None,
+    );
+    assert_eq!(conflicting_transfer.relation_program_parameter_count, 0);
+    assert!(conflicting_ir.model.parameters.is_empty());
+}
+
+#[test]
 fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     let file = standard_catpart_with_lead54_relation_program_instance(1, 1, 1, 2);
     let native = crate::native::CatiaNative::decode(&file);
@@ -11400,6 +11468,10 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     );
     assert_eq!(
         decoded.report.coverage["decoded_resolved_relation_program_input_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_relation_program_input_parameter_count"],
         0
     );
     assert_eq!(

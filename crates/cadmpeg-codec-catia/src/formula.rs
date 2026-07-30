@@ -63,6 +63,56 @@ pub(crate) fn transfer_parameters(
             ),
     };
     let legacy_transfer = collect_legacy_parameters(native, &mut candidates, legacy_scope);
+    let mut relation_program_parameters =
+        BTreeMap::<ParameterId, Option<(DesignParameter, &'static str)>>::new();
+    for program_entity in native.entity_records.iter().filter(|entity| {
+        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+    }) {
+        let Some(inputs) = program_entity
+            .relation_program_instance
+            .as_ref()
+            .and_then(|instance| instance.inputs.as_ref())
+        else {
+            continue;
+        };
+        for input in inputs {
+            let Some(entity) = input
+                .entity
+                .entity
+                .as_deref()
+                .and_then(|entity| entities.get(entity))
+            else {
+                continue;
+            };
+            let Some(parameter) = &entity.parameter_value else {
+                continue;
+            };
+            let Some(candidate) =
+                typed_entity_parameter_candidate(entity, parameter, input.value_type.as_str())
+            else {
+                continue;
+            };
+            relation_program_parameters
+                .entry(candidate.parameter.id.clone())
+                .and_modify(|existing| {
+                    if existing.as_ref().is_some_and(|input| {
+                        input.1 != candidate.parameter_type || input.0 != candidate.parameter
+                    }) {
+                        *existing = None;
+                    }
+                })
+                .or_insert_with(|| Some((candidate.parameter.clone(), candidate.parameter_type)));
+            match candidates.get(&candidate.parameter.id) {
+                Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
+                    conflicting_inputs.insert(candidate.parameter.id);
+                }
+                Some(_) => {}
+                None => {
+                    candidates.insert(candidate.parameter.id.clone(), candidate);
+                }
+            }
+        }
+    }
 
     for formula_entity in native.entity_records.iter().filter(|entity| {
         graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
@@ -117,52 +167,30 @@ pub(crate) fn transfer_parameters(
                 all_inputs_complete = false;
                 continue;
             };
-            let Some(evaluation) =
-                typed_parameter_evaluation(&input.input_type, &parameter.evaluation)
+            let Some(candidate) =
+                typed_entity_parameter_candidate(entity, parameter, &input.input_type)
             else {
                 all_inputs_complete = false;
                 continue;
             };
-            let parameter_type = canonical_parameter_type(&input.input_type)
-                .expect("typed evaluation requires a supported type");
             used_inputs.insert(input.parameter.as_str());
-            let id = neutral_parameter_id(&entity.id);
+            let id = candidate.parameter.id.clone();
             if dependencies.contains(&id) {
                 continue;
             }
             dependencies.push(id.clone());
-            let (expression, value) = match evaluation {
-                TypedParameterEvaluation::Unset => {
+            match candidate.parameter.value.as_ref() {
+                None => {
                     all_inputs_complete = false;
-                    (String::new(), None)
                 }
-                TypedParameterEvaluation::Value(value) => {
+                Some(value) => {
                     expression_bindings.insert(
                         input.parameter.as_str(),
-                        EvaluatedFormulaValue::from_parameter_value(&value),
+                        EvaluatedFormulaValue::from_parameter_value(value),
                     );
-                    (parameter_expression(&value), Some(value))
                 }
-            };
-            transferred.push(FormulaParameterCandidate {
-                parameter: DesignParameter {
-                    id,
-                    owner: None,
-                    ordinal: 0,
-                    name: parameter.name.value.clone(),
-                    expression,
-                    display: None,
-                    value,
-                    dependencies: Vec::new(),
-                    properties: parameter_properties(parameter_type),
-                    pmi: None,
-                    native_ref: Some(entity.id.clone()),
-                },
-                parameter_type,
-                formula_output: false,
-                input_fallback: None,
-                source_order: entity.byte_offset,
-            });
+            }
+            transferred.push(candidate);
         }
         let formula_complete = all_inputs_complete
             && used_inputs.len() == signature.inputs.len()
@@ -345,6 +373,16 @@ pub(crate) fn transfer_parameters(
         }
     }
     candidates.retain(|id, _| derivable.contains(id));
+    let relation_program_parameter_count = relation_program_parameters
+        .iter()
+        .filter(|(id, input)| {
+            input.as_ref().is_some_and(|input| {
+                candidates.get(*id).is_some_and(|candidate| {
+                    formula_parameter_candidate_accepts_input(candidate, input)
+                })
+            })
+        })
+        .count();
     let mut consumed_entity_records = candidates
         .values()
         .filter_map(|candidate| candidate.parameter.native_ref.clone())
@@ -407,7 +445,8 @@ pub(crate) fn transfer_parameters(
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
     FormulaTransfer {
-        formula_parameter_count: transferred.saturating_sub(legacy_transfer.parameters),
+        typed_parameter_count: transferred.saturating_sub(legacy_transfer.parameters),
+        relation_program_parameter_count,
         legacy_parameter_count: legacy_transfer.parameters,
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
         legacy_formula_count: legacy_transfer.formulas,
@@ -417,7 +456,8 @@ pub(crate) fn transfer_parameters(
 
 #[derive(Default)]
 pub(crate) struct FormulaTransfer {
-    pub(crate) formula_parameter_count: usize,
+    pub(crate) typed_parameter_count: usize,
+    pub(crate) relation_program_parameter_count: usize,
     pub(crate) legacy_parameter_count: usize,
     pub(crate) legacy_selector_parameter_count: usize,
     pub(crate) legacy_formula_count: usize,
@@ -796,6 +836,42 @@ struct FormulaParameterCandidate {
     formula_output: bool,
     input_fallback: Option<(DesignParameter, &'static str)>,
     source_order: u64,
+}
+
+fn typed_entity_parameter_candidate(
+    entity: &crate::native::CatiaEntityRecord,
+    parameter: &crate::native::CatiaParameterValue,
+    source_type: &str,
+) -> Option<FormulaParameterCandidate> {
+    let evaluation = typed_parameter_evaluation(source_type, &parameter.evaluation)?;
+    let parameter_type =
+        canonical_parameter_type(source_type).expect("typed evaluation requires a supported type");
+    let (expression, value) = match evaluation {
+        TypedParameterEvaluation::Unset => (String::new(), None),
+        TypedParameterEvaluation::Value(value) => {
+            let expression = parameter_expression(&value);
+            (expression, Some(value))
+        }
+    };
+    Some(FormulaParameterCandidate {
+        parameter: DesignParameter {
+            id: neutral_parameter_id(&entity.id),
+            owner: None,
+            ordinal: 0,
+            name: parameter.name.value.clone(),
+            expression,
+            display: None,
+            value,
+            dependencies: Vec::new(),
+            properties: parameter_properties(parameter_type),
+            pmi: None,
+            native_ref: Some(entity.id.clone()),
+        },
+        parameter_type,
+        formula_output: false,
+        input_fallback: None,
+        source_order: entity.byte_offset,
+    })
 }
 
 struct FormulaProgramCandidate {
