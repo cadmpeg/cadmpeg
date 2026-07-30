@@ -1543,8 +1543,13 @@ fn direct_curve_parameter_near_point(
             }
             direct_curve_parameter_near_point(basis, basis_point, seed, basis_tolerance)?
         }
-        CurveGeometry::Degenerate { .. }
-        | CurveGeometry::Procedural { .. }
+        CurveGeometry::Degenerate { point: stored } => {
+            let error = (stored.x - point.x)
+                .hypot(stored.y - point.y)
+                .hypot(stored.z - point.z);
+            (error.is_finite() && error <= tolerance).then_some(seed)?
+        }
+        CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Unknown { .. } => return None,
     };
@@ -2833,6 +2838,30 @@ mod tests {
             super::model_curve_parameter_near_point(&ir, &id, Point3::new(0.0, 0.0, 0.0), 0.0,)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn degenerate_curve_inverse_preserves_the_selected_parameter() {
+        let point = Point3::new(2.0, 3.0, 4.0);
+        let id = CurveId("test:degenerate-inverse".into());
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Degenerate { point },
+            source_object: None,
+        });
+        let seed = 123.5;
+        assert_eq!(
+            super::model_curve_parameter_near_point(&ir, &id, point, seed),
+            Some(seed)
+        );
+        assert!(super::model_curve_parameter_near_point(
+            &ir,
+            &id,
+            Point3::new(2.0, 3.0, 5.0),
+            seed,
+        )
+        .is_none());
     }
 
     #[test]
