@@ -7639,6 +7639,46 @@ fn reverse_pcurve_over_range(
             y_axis: Point2::new(-y_axis.u, -y_axis.v),
             focal_distance: *focal_distance,
         }),
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        } if start.is_finite()
+            && end.is_finite()
+            && start < end
+            && focal_distance.is_finite()
+            && *focal_distance != 0.0 =>
+        {
+            let point = |parameter: f64| {
+                let axial = parameter * parameter / (4.0 * focal_distance);
+                Point2::new(
+                    vertex.u + axial * x_axis.u + parameter * y_axis.u,
+                    vertex.v + axial * x_axis.v + parameter * y_axis.v,
+                )
+            };
+            let first = point(end);
+            let last = point(start);
+            let derivative = Point2::new(
+                -(end / (2.0 * focal_distance) * x_axis.u + y_axis.u),
+                -(end / (2.0 * focal_distance) * x_axis.v + y_axis.v),
+            );
+            let half_span = (end - start) * 0.5;
+            let middle = Point2::new(
+                first.u + half_span * derivative.u,
+                first.v + half_span * derivative.v,
+            );
+            [first.u, first.v, middle.u, middle.v, last.u, last.v]
+                .into_iter()
+                .all(f64::is_finite)
+                .then_some(PcurveGeometry::Nurbs {
+                    degree: 2,
+                    knots: vec![start, start, start, end, end, end],
+                    control_points: vec![first, middle, last],
+                    weights: None,
+                    periodic: false,
+                })
+        }
         PcurveGeometry::Hyperbola {
             center,
             x_axis,
@@ -7652,9 +7692,8 @@ fn reverse_pcurve_over_range(
             major_radius: *major_radius,
             minor_radius: *minor_radius,
         }),
-        PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Parabola { .. }
-        | PcurveGeometry::Hyperbola { .. } => None,
+        PcurveGeometry::Ellipse { .. } | PcurveGeometry::Hyperbola { .. } => None,
+        PcurveGeometry::Parabola { .. } => None,
     }
 }
 
@@ -11344,7 +11383,57 @@ mod tests {
                 assert!((actual.u - expected.u).abs() < 1e-12);
                 assert!((actual.v - expected.v).abs() < 1e-12);
             }
-            assert!(super::reverse_pcurve_over_range(&carrier, [0.0, 1.5]).is_none());
+            if !matches!(carrier, PcurveGeometry::Parabola { .. }) {
+                assert!(super::reverse_pcurve_over_range(&carrier, [0.0, 1.5]).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
+        let pcurve = PcurveGeometry::Parabola {
+            vertex: Point2::new(2.0, 3.0),
+            x_axis: Point2::new(0.6, 0.8),
+            y_axis: Point2::new(-0.8, 0.6),
+            focal_distance: 0.75,
+        };
+        let range = [0.25, 2.75];
+        let reversed = super::reverse_pcurve_over_range(&pcurve, range)
+            .expect("a finite parabola interval has an exact quadratic reflection");
+        assert!(matches!(
+            &reversed,
+            PcurveGeometry::Nurbs {
+                degree: 2,
+                weights: None,
+                periodic: false,
+                ..
+            }
+        ));
+        for parameter in [0.25, 0.5, 1.0, 1.75, 2.5, 2.75] {
+            let expected =
+                cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
+            assert!((actual.u - expected.u).abs() < 1e-12);
+            assert!((actual.v - expected.v).abs() < 1e-12);
+        }
+
+        let offset = PcurveGeometry::Offset {
+            distance: 1.25,
+            basis: Box::new(pcurve.clone()),
+        };
+        let PcurveGeometry::Offset { distance, basis } =
+            super::reverse_pcurve_over_range(&offset, range)
+                .expect("offset parabola reflection closes recursively")
+        else {
+            panic!("reversed offset parabola");
+        };
+        assert_eq!(distance, -1.25);
+        for parameter in [0.25, 1.0, 2.0, 2.75] {
+            let expected =
+                cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(&basis, parameter).unwrap();
+            assert!((actual.u - expected.u).abs() < 1e-12);
+            assert!((actual.v - expected.v).abs() < 1e-12);
         }
     }
 
