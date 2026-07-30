@@ -1675,9 +1675,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             | Definition::Equal { first, second }
             | Definition::Concentric { first, second }
             | Definition::Coradial { first, second }
-            | Definition::Collinear { first, second } => {
-                (vec![first.clone(), second.clone()], None)
-            }
+            | Definition::Collinear { first, second }
+            | Definition::ProjectedCopy {
+                source: first,
+                result: second,
+            } => (vec![first.clone(), second.clone()], None),
             Definition::InternalAlignment { helper, parent, .. } => {
                 (vec![helper.clone(), parent.clone()], None)
             }

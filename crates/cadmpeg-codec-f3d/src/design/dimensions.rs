@@ -185,6 +185,8 @@ fn project_all_dimension_constraints(
                              parameter| Definition::Native {
         native_kind: source_kind.to_owned(),
         native_state: state,
+        native_flags: None,
+        native_properties: std::collections::BTreeMap::new(),
         entities: operands
             .iter()
             .filter_map(|(_, _, record_index)| {
@@ -558,6 +560,8 @@ fn project_all_dimension_constraints(
                     Definition::Native {
                         native_kind: parameter.source_kind.clone(),
                         native_state: None,
+                        native_flags: None,
+                        native_properties: std::collections::BTreeMap::new(),
                         entities: indices
                             .iter()
                             .filter_map(|record_index| {
@@ -646,6 +650,8 @@ fn project_all_dimension_constraints(
                 definition: Definition::Native {
                     native_kind: parameter.source_kind.clone(),
                     native_state: None,
+                    native_flags: None,
+                    native_properties: std::collections::BTreeMap::new(),
                     entities: indices
                         .iter()
                         .filter_map(|record_index| {
@@ -735,6 +741,8 @@ fn project_all_dimension_constraints(
                 _ => Definition::Native {
                     native_kind: parameter.source_kind.clone(),
                     native_state: None,
+                    native_flags: None,
+                    native_properties: std::collections::BTreeMap::new(),
                     entities: recipe_dimension_candidate_entities(&linear_candidates),
                     parameter: Some(parameter_id),
                     operands: records
@@ -819,6 +827,8 @@ fn project_all_dimension_constraints(
             definition: Definition::Native {
                 native_kind: parameter.source_kind.clone(),
                 native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities: Vec::new(),
                 parameter: Some(parameter_id),
                 operands: vec![SketchNativeOperand {
