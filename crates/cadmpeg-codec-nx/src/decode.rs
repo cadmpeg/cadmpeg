@@ -3620,6 +3620,17 @@ pub(crate) fn closest_pcurve_parameters(
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
         return None;
     }
+    let incident = incident_pcurve_parameters(
+        degree,
+        knots,
+        control_points,
+        weights.as_deref(),
+        point,
+        seed,
+    )?;
+    if !incident.is_empty() {
+        return Some(incident);
+    }
     if degree != 1 || weights.is_some() {
         let squared_distance = |parameter| {
             let position = pcurve_uv(pcurve, parameter)?;
@@ -3681,6 +3692,278 @@ pub(crate) fn closest_pcurve_parameters(
         })
         .collect::<Vec<_>>();
     closest_parameter_candidates(candidates, seed)
+}
+
+fn incident_pcurve_parameters(
+    degree: usize,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+    point: Point2,
+    seed: Option<f64>,
+) -> Option<Vec<f64>> {
+    const MAX_INTERVALS: usize = 100_000;
+
+    let count = control_points.len();
+    if degree == 0
+        || count <= degree
+        || knots.len() != count.checked_add(degree)?.checked_add(1)?
+        || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || control_points
+            .iter()
+            .any(|control| !control.u.is_finite() || !control.v.is_finite())
+        || !point.u.is_finite()
+        || !point.v.is_finite()
+    {
+        return None;
+    }
+    let weights = match weights {
+        Some(weights)
+            if weights.len() == count
+                && weights
+                    .iter()
+                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
+        {
+            weights.to_vec()
+        }
+        Some(_) => return None,
+        None => vec![1.0; count],
+    };
+    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
+    let coordinate_scale = control_points
+        .iter()
+        .flat_map(|control| [control.u, control.v])
+        .chain([point.u, point.v])
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    let residual_tolerance = 64.0 * f64::EPSILON * coordinate_scale * minimum_weight;
+    let controls = control_points
+        .iter()
+        .zip(weights)
+        .map(|(control, weight)| {
+            [
+                weight * (control.u - point.u),
+                weight * (control.v - point.v),
+                weight,
+            ]
+        })
+        .collect::<Vec<_>>();
+    if controls.iter().flatten().any(|value| !value.is_finite()) {
+        return None;
+    }
+    let spans = bezier_pcurve_spans(degree, knots, controls)?;
+    let mut intervals = spans;
+    let mut examined = 0usize;
+    let mut roots = Vec::new();
+    while let Some(span) = intervals.pop() {
+        examined += 1;
+        if examined > MAX_INTERVALS {
+            return None;
+        }
+        let nonzero_controls = span
+            .controls
+            .iter()
+            .filter(|control| {
+                control[0].abs() > residual_tolerance || control[1].abs() > residual_tolerance
+            })
+            .collect::<Vec<_>>();
+        if nonzero_controls.len() != span.controls.len() {
+            if span.controls.first().is_some_and(|control| {
+                control[0].abs() <= residual_tolerance && control[1].abs() <= residual_tolerance
+            }) {
+                roots.push(span.domain[0]);
+            }
+            if span.controls.last().is_some_and(|control| {
+                control[0].abs() <= residual_tolerance && control[1].abs() <= residual_tolerance
+            }) {
+                roots.push(span.domain[1]);
+            }
+        }
+        let coincident = nonzero_controls.is_empty();
+        if coincident {
+            roots.push(
+                seed.filter(|seed| (span.domain[0]..=span.domain[1]).contains(seed))
+                    .unwrap_or(span.domain[0]),
+            );
+            continue;
+        }
+        let contains_zero = (0..2).all(|axis| {
+            let minimum = nonzero_controls
+                .iter()
+                .map(|control| control[axis])
+                .min_by(f64::total_cmp);
+            let maximum = nonzero_controls
+                .iter()
+                .map(|control| control[axis])
+                .max_by(f64::total_cmp);
+            minimum.is_some_and(|minimum| minimum <= residual_tolerance)
+                && maximum.is_some_and(|maximum| maximum >= -residual_tolerance)
+        });
+        if !contains_zero {
+            continue;
+        }
+        let middle = span.domain[0] + (span.domain[1] - span.domain[0]) * 0.5;
+        if middle == span.domain[0] || middle == span.domain[1] {
+            let parameter =
+                [span.domain[0], span.domain[1]]
+                    .into_iter()
+                    .min_by(|first, second| {
+                        let distance = |parameter| {
+                            pcurve_residual_distance(&span.controls, parameter, span.domain)
+                        };
+                        distance(*first).total_cmp(&distance(*second))
+                    })?;
+            if pcurve_residual_distance(&span.controls, parameter, span.domain)
+                <= residual_tolerance
+            {
+                roots.push(parameter);
+            }
+            continue;
+        }
+        let (first, second) = subdivide_bezier_pcurve_span(span, middle);
+        intervals.push(second);
+        intervals.push(first);
+    }
+    roots.sort_by(f64::total_cmp);
+    roots.dedup_by(|first, second| {
+        (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
+    });
+    roots.sort_by(|first, second| {
+        seed.map_or_else(
+            || first.total_cmp(second),
+            |seed| {
+                (first - seed)
+                    .abs()
+                    .total_cmp(&(second - seed).abs())
+                    .then_with(|| first.total_cmp(second))
+            },
+        )
+    });
+    Some(roots)
+}
+
+#[derive(Clone)]
+struct BezierPcurveSpan {
+    domain: [f64; 2],
+    controls: Vec<[f64; 3]>,
+}
+
+fn bezier_pcurve_spans(
+    degree: usize,
+    knots: &[f64],
+    mut controls: Vec<[f64; 3]>,
+) -> Option<Vec<BezierPcurveSpan>> {
+    let mut knots = knots.to_vec();
+    let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
+    let mut internal = knots[degree + 1..controls.len()]
+        .iter()
+        .copied()
+        .filter(|knot| domain[0] < *knot && *knot < domain[1])
+        .collect::<Vec<_>>();
+    internal.sort_by(f64::total_cmp);
+    internal.dedup();
+    for knot in internal {
+        while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
+            insert_homogeneous_curve_knot(degree, &mut knots, &mut controls, knot)?;
+        }
+    }
+    let mut boundaries = knots[degree..=controls.len()].to_vec();
+    boundaries.sort_by(f64::total_cmp);
+    boundaries.dedup();
+    let spans = boundaries
+        .windows(2)
+        .enumerate()
+        .filter_map(|(index, domain)| {
+            (domain[0] < domain[1]).then(|| {
+                let start = index.checked_mul(degree)?;
+                Some(BezierPcurveSpan {
+                    domain: [domain[0], domain[1]],
+                    controls: controls.get(start..=start + degree)?.to_vec(),
+                })
+            })?
+        })
+        .collect::<Vec<_>>();
+    (!spans.is_empty()).then_some(spans)
+}
+
+fn insert_homogeneous_curve_knot(
+    degree: usize,
+    knots: &mut Vec<f64>,
+    controls: &mut Vec<[f64; 3]>,
+    knot: f64,
+) -> Option<()> {
+    let count = controls.len();
+    let span = knots
+        .windows(2)
+        .position(|pair| pair[0] <= knot && knot < pair[1])?;
+    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
+    if multiplicity >= degree {
+        return Some(());
+    }
+    let mut inserted = vec![[0.0; 3]; count + 1];
+    inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
+    inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
+    for index in span - degree + 1..=span - multiplicity {
+        let denominator = knots[index + degree] - knots[index];
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let alpha = (knot - knots[index]) / denominator;
+        inserted[index] = std::array::from_fn(|axis| {
+            alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
+        });
+    }
+    knots.insert(span + 1, knot);
+    *controls = inserted;
+    Some(())
+}
+
+fn subdivide_bezier_pcurve_span(
+    span: BezierPcurveSpan,
+    middle: f64,
+) -> (BezierPcurveSpan, BezierPcurveSpan) {
+    let mut levels = vec![span.controls];
+    while levels.last().is_some_and(|level| level.len() > 1) {
+        let next = levels
+            .last()
+            .expect("nonempty Bézier subdivision level")
+            .windows(2)
+            .map(|pair| std::array::from_fn(|axis| (pair[0][axis] + pair[1][axis]) * 0.5))
+            .collect();
+        levels.push(next);
+    }
+    let first = levels.iter().map(|level| level[0]).collect();
+    let second = levels
+        .iter()
+        .rev()
+        .map(|level| *level.last().expect("nonempty Bézier subdivision level"))
+        .collect();
+    (
+        BezierPcurveSpan {
+            domain: [span.domain[0], middle],
+            controls: first,
+        },
+        BezierPcurveSpan {
+            domain: [middle, span.domain[1]],
+            controls: second,
+        },
+    )
+}
+
+fn pcurve_residual_distance(controls: &[[f64; 3]], parameter: f64, domain: [f64; 2]) -> f64 {
+    let fraction = (parameter - domain[0]) / (domain[1] - domain[0]);
+    let mut values = controls.to_vec();
+    while values.len() > 1 {
+        values = values
+            .windows(2)
+            .map(|pair| {
+                std::array::from_fn(|axis| {
+                    (1.0 - fraction) * pair[0][axis] + fraction * pair[1][axis]
+                })
+            })
+            .collect();
+    }
+    values[0][0].hypot(values[0][1]) / values[0][2]
 }
 
 fn closest_parameter_candidates(
@@ -9771,5 +10054,88 @@ mod tests {
             [0.0, 1.0],
             0.1,
         ));
+    }
+
+    #[test]
+    fn rational_pcurve_incidence_isolates_close_branches() {
+        let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
+        let controls = [
+            0.006_306_3,
+            -0.029_213_45,
+            0.095_295_133_333_333_34,
+            -0.070_192_95,
+            0.024_297_3,
+        ]
+        .into_iter()
+        .zip(weights)
+        .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
+        .collect::<Vec<_>>();
+        let roots = super::incident_pcurve_parameters(
+            4,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            &controls,
+            Some(&weights),
+            Point2::new(0.0, 0.0),
+            Some(0.11),
+        )
+        .expect("complete homogeneous root isolation");
+
+        assert_eq!(roots.len(), 4);
+        for (actual, expected) in roots.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
+            assert!((actual - expected).abs() < 1.0e-8);
+        }
+    }
+
+    #[test]
+    fn coincident_pcurve_interval_retains_seed_and_boundaries() {
+        let roots = super::incident_pcurve_parameters(
+            2,
+            &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            &[Point2::new(2.0, -3.0); 3],
+            None,
+            Point2::new(2.0, -3.0),
+            Some(0.3),
+        )
+        .expect("coincident interval");
+
+        assert_eq!(roots, [0.3, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
+        let knots = [0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 1.0];
+        let points = [
+            Point2::new(-1.0, 0.0),
+            Point2::new(0.0, 2.0),
+            Point2::new(1.0, -1.0),
+            Point2::new(2.0, 3.0),
+            Point2::new(4.0, 0.0),
+        ];
+        let weights = [1.0, 1.5, 0.75, 2.0, 1.25];
+        let controls = points
+            .iter()
+            .zip(weights)
+            .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
+            .collect();
+        let spans =
+            super::bezier_pcurve_spans(2, &knots, controls).expect("valid Bézier extraction");
+
+        assert_eq!(spans.len(), 3);
+        for span in spans {
+            for fraction in [0.0, 0.5, 1.0] {
+                let parameter = span.domain[0] + fraction * (span.domain[1] - span.domain[0]);
+                let expected = cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    2,
+                    &knots,
+                    &points,
+                    Some(&weights),
+                    parameter,
+                )
+                .expect("source NURBS evaluation");
+                let actual =
+                    super::pcurve_residual_distance(&span.controls, parameter, span.domain);
+                assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
+            }
+        }
     }
 }
