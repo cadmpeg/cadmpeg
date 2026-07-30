@@ -3356,6 +3356,12 @@ tolerance component, followed by one or more decimal digits. A system target
 drives that system item, does not declare a user parameter, cannot carry a
 new-parameter unit declaration, and supplies the complete identifier's current
 value to following source lines.
+A registered relation function may be a write target as
+`function(argument,...) = expression`. The function identifier selects the
+registered write callback; each argument is an ordinary expression. Target
+argument dependencies precede right-hand dependencies in source order. A
+function-write target does not declare a parameter and does not supply a scalar
+value to the local relation namespace.
 
 A `crv_fr_eqn` program containing calls to `abs`, `ceil`, `floor`, `extract`, `if`,
 `itos`, or `search`, or containing `IF`, `ELSE`, or `ENDIF` control lines, is

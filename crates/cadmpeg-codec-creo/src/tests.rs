@@ -6343,6 +6343,57 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
 }
 
 #[test]
+fn decode_retains_registered_function_write_targets_without_emitting_parameters() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02\
+        store_value(component,row,column)=driver\0\
+        result=1\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one local curve-expression parameter");
+    };
+
+    assert_eq!(parameter.name, "result");
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(
+        native.fields["assignments"][0]["target"]["kind"],
+        "function_write"
+    );
+    assert_eq!(
+        native.fields["assignments"][0]["target"]["name"],
+        "store_value"
+    );
+    let arguments = native.fields["assignments"][0]["target"]["arguments"]
+        .as_array()
+        .expect("function arguments");
+    assert_eq!(arguments.len(), 3);
+    assert_eq!(arguments[0], "component");
+    assert_eq!(arguments[1], "row");
+    assert_eq!(arguments[2], "column");
+    let dependencies = native.fields["assignments"][0]["dependencies"]
+        .as_array()
+        .expect("function dependencies");
+    assert_eq!(dependencies.len(), 4);
+    assert_eq!(dependencies[0], "component");
+    assert_eq!(dependencies[1], "row");
+    assert_eq!(dependencies[2], "column");
+    assert_eq!(dependencies[3], "driver");
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_function_write_assignment_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_curve_expression_parameter_count"],
+        1
+    );
+}
+
+#[test]
 fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x03\

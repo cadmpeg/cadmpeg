@@ -120,6 +120,13 @@ pub enum CurveExpressionTarget {
         /// Namespace family selected by the identifier prefix.
         family: CurveExpressionSystemSymbolFamily,
     },
+    /// Write invocation of a registered relation function.
+    FunctionWrite {
+        /// Registered function identifier.
+        name: String,
+        /// Exact argument expressions in source order.
+        arguments: Vec<String>,
+    },
     /// Cell of a series or list parameter.
     TableCell {
         /// Table-valued parameter identifier.
@@ -162,6 +169,7 @@ impl CurveExpressionAssignment {
             } => Some((name, declared_unit.as_deref())),
             CurveExpressionTarget::ScopedSymbol { .. }
             | CurveExpressionTarget::SystemSymbol { .. }
+            | CurveExpressionTarget::FunctionWrite { .. }
             | CurveExpressionTarget::TableCell { .. } => None,
         }
     }
@@ -174,6 +182,7 @@ impl CurveExpressionAssignment {
             } => Some((name, declared_unit.as_deref())),
             CurveExpressionTarget::ScopedSymbol { name } => Some((name, None)),
             CurveExpressionTarget::SystemSymbol { name, .. } => Some((name, None)),
+            CurveExpressionTarget::FunctionWrite { .. } => None,
             CurveExpressionTarget::TableCell { .. } => None,
         }
     }
@@ -822,6 +831,10 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
         if let Some(column) = column {
             extend_expression_dependencies(&mut dependencies, column)?;
         }
+    } else if let CurveExpressionTarget::FunctionWrite { arguments, .. } = &target {
+        for argument in arguments {
+            extend_expression_dependencies(&mut dependencies, argument)?;
+        }
     }
     extend_expression_dependencies(&mut dependencies, expression)?;
     Some(CurveExpressionAssignment {
@@ -942,28 +955,26 @@ fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {
 }
 
 fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
-    if source
-        .get(.."value".len())
-        .is_some_and(|name| name.eq_ignore_ascii_case("value"))
-        && source.as_bytes().get("value".len()) == Some(&b'(')
-        && source.ends_with(')')
-    {
-        let arguments = split_assignment_target_arguments(
-            source.get("value(".len()..source.len().checked_sub(1)?)?,
-        )?;
-        let [parameter, row, rest @ ..] = arguments.as_slice() else {
-            return None;
-        };
-        let column = match rest {
-            [] => None,
-            [column] => Some((*column).to_owned()),
-            _ => return None,
-        };
-        valid_expression_identifier(parameter).then_some(())?;
-        return Some(CurveExpressionTarget::TableCell {
-            parameter: (*parameter).to_owned(),
-            row: (*row).to_owned(),
-            column,
+    if let Some((name, arguments)) = expression_target_function_call(source) {
+        if name.eq_ignore_ascii_case("value") {
+            let [parameter, row, rest @ ..] = arguments.as_slice() else {
+                return None;
+            };
+            let column = match rest {
+                [] => None,
+                [column] => Some((*column).to_owned()),
+                _ => return None,
+            };
+            valid_expression_identifier(parameter).then_some(())?;
+            return Some(CurveExpressionTarget::TableCell {
+                parameter: (*parameter).to_owned(),
+                row: (*row).to_owned(),
+                column,
+            });
+        }
+        return Some(CurveExpressionTarget::FunctionWrite {
+            name: name.to_owned(),
+            arguments: arguments.into_iter().map(str::to_owned).collect(),
         });
     }
     let (name, declared_unit) = if source.ends_with(']') {
@@ -991,6 +1002,20 @@ fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
             declared_unit: declared_unit.map(str::to_owned),
         })
     }
+}
+
+fn expression_target_function_call(source: &str) -> Option<(&str, Vec<&str>)> {
+    let argument_start = source.find('(')?;
+    source.ends_with(')').then_some(())?;
+    let name = source.get(..argument_start)?.trim_end();
+    valid_expression_identifier(name).then_some(())?;
+    let body = source.get(argument_start + 1..source.len().checked_sub(1)?)?;
+    let arguments = if body.trim().is_empty() {
+        Vec::new()
+    } else {
+        split_assignment_target_arguments(body)?
+    };
+    Some((name, arguments))
 }
 
 fn valid_expression_identifier(name: &str) -> bool {
@@ -4520,12 +4545,11 @@ mod tests {
     }
 
     #[test]
-    fn retains_table_cell_targets_without_defining_scalar_parameters() {
+    fn retains_registered_function_write_targets_and_argument_dependencies() {
         let lines = [
-            "value(samples,row_index,column_index)=driver*2",
-            "VALUE(series,2)=5",
-            "after=value(samples,row_index,column_index)",
-            "value(samples,if(row_index==1,2,3),column_index)=driver",
+            "store_value(component,if(row==1,2,3),column,\"literal\")=driver*2",
+            "notify_regeneration()=5",
+            "result=driver",
         ]
         .into_iter()
         .enumerate()
@@ -4538,7 +4562,58 @@ mod tests {
         let assignments =
             evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
 
-        assert_eq!(assignments.len(), 4);
+        assert_eq!(assignments.len(), 3);
+        assert_eq!(
+            assignments[0].target,
+            CurveExpressionTarget::FunctionWrite {
+                name: "store_value".to_owned(),
+                arguments: vec![
+                    "component".to_owned(),
+                    "if(row==1,2,3)".to_owned(),
+                    "column".to_owned(),
+                    "\"literal\"".to_owned(),
+                ],
+            }
+        );
+        assert_eq!(
+            assignments[0].dependencies,
+            ["component", "row", "column", "driver"]
+        );
+        assert_eq!(
+            assignments[1].target,
+            CurveExpressionTarget::FunctionWrite {
+                name: "notify_regeneration".to_owned(),
+                arguments: Vec::new(),
+            }
+        );
+        assert!(assignments[1].dependencies.is_empty());
+        assert!(assignments[..2]
+            .iter()
+            .all(|assignment| assignment.value.is_none()));
+        assert_eq!(assignments[2].parameter_target(), Some(("result", None)));
+    }
+
+    #[test]
+    fn retains_table_cell_targets_without_defining_scalar_parameters() {
+        let lines = [
+            "value(samples,row_index,column_index)=driver*2",
+            "VALUE(series,2)=5",
+            "after=value(samples,row_index,column_index)",
+            "value(samples,if(row_index==1,2,3),column_index)=driver",
+            "value (spaced,row_index)=driver",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), 5);
         assert_eq!(
             assignments[0].target,
             CurveExpressionTarget::TableCell {
@@ -4576,6 +4651,14 @@ mod tests {
         assert_eq!(
             assignments[3].dependencies,
             ["samples", "row_index", "column_index", "driver"]
+        );
+        assert_eq!(
+            assignments[4].target,
+            CurveExpressionTarget::TableCell {
+                parameter: "spaced".to_owned(),
+                row: "row_index".to_owned(),
+                column: None,
+            }
         );
         assert!(assignments
             .iter()

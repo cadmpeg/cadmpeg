@@ -79,6 +79,8 @@ fixtures, claims above L1 remain unproven.
   source-order value semantics without emitting false local parameters.
   Unscoped dimension, tolerance, and pattern targets retain their typed system
   namespace and source-order value semantics without emitting user parameters.
+  Registered function-write targets retain their name, ordered argument
+  expressions, and dependencies without emitting parameters.
   Left-hand `value(parameter,row[,column])` statements retain a typed table-cell
   target and its complete dependency order without emitting a false scalar
   parameter.
