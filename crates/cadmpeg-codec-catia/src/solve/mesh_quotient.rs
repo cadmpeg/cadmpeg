@@ -14,7 +14,8 @@ use crate::solve::incidence::{
     IncidenceRejection, IncidenceSolve,
 };
 use crate::solve::matching::{
-    distinct_domain_matching_with_budget, domains_have_distinct_matching, MatchingEdgeConstraint,
+    distinct_domain_matching_with_budget, domains_have_distinct_matching,
+    repair_distinct_domain_matching_with_budget, MatchingEdgeConstraint,
 };
 #[cfg(test)]
 use crate::solve::missing_edge::standard_mesh_boundary_assignments;
@@ -98,11 +99,265 @@ impl MeshEndpointResolve {
     }
 }
 
+fn enforce_edge_arc_consistency(
+    domains: &mut [Vec<usize>],
+    edges: &[[usize; 2]],
+    edge_ids: &[usize],
+    root_edges: &[Vec<usize>],
+    edge_candidates: &[Vec<[usize; 2]>],
+    budget: Option<&MeshConstraintBudget>,
+) -> bool {
+    let support_work = edge_ids
+        .iter()
+        .map(|edge| edge_candidates[*edge].len().saturating_mul(2))
+        .sum::<usize>();
+    if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
+        return false;
+    }
+    let supports = edge_ids
+        .iter()
+        .map(|edge| {
+            let mut supports = HashMap::<usize, HashSet<usize>>::new();
+            for [left, right] in edge_candidates[*edge].iter().copied() {
+                supports.entry(left).or_default().insert(right);
+                supports.entry(right).or_default().insert(left);
+            }
+            supports
+        })
+        .collect::<Vec<_>>();
+    let mut queued = vec![[true; 2]; edges.len()];
+    let mut queue = (0..edges.len())
+        .flat_map(|edge| [(edge, 0usize), (edge, 1usize)])
+        .collect::<VecDeque<_>>();
+    while let Some((edge, side)) = queue.pop_front() {
+        queued[edge][side] = false;
+        if supports[edge].is_empty() {
+            continue;
+        }
+        let root = edges[edge][side];
+        let other = edges[edge][1 - side];
+        let other_domain = domains[other].iter().copied().collect::<HashSet<_>>();
+        let before = domains[root].len();
+        domains[root].retain(|point| {
+            let Some(supported) = supports[edge].get(point) else {
+                return false;
+            };
+            if budget.is_some_and(|budget| !budget.charge_by(supported.len().max(1))) {
+                return false;
+            }
+            supported.iter().any(|point| other_domain.contains(point))
+        });
+        if budget.is_some_and(|budget| budget.exhausted.get()) || domains[root].is_empty() {
+            return false;
+        }
+        if domains[root].len() == before {
+            continue;
+        }
+        for &neighbor in &root_edges[root] {
+            let neighbor_side = usize::from(edges[neighbor][1] == root);
+            let revised_side = 1 - neighbor_side;
+            if !queued[neighbor][revised_side] {
+                queued[neighbor][revised_side] = true;
+                queue.push_back((neighbor, revised_side));
+            }
+        }
+    }
+    true
+}
+
+fn enforce_edge_arc_consistency_from(
+    domains: &mut [Vec<usize>],
+    edges: &[[usize; 2]],
+    root_edges: &[Vec<usize>],
+    edge_candidates: &[Vec<[usize; 2]>],
+    initial_edges: &[usize],
+    budget: Option<&MeshConstraintBudget>,
+) -> bool {
+    let mut queued = vec![[true; 2]; edges.len()];
+    let mut queue = initial_edges
+        .iter()
+        .copied()
+        .flat_map(|edge| [(edge, 0usize), (edge, 1usize)])
+        .collect::<VecDeque<_>>();
+    queued.fill([false; 2]);
+    for &edge in initial_edges {
+        queued[edge] = [true; 2];
+    }
+    while let Some((edge, side)) = queue.pop_front() {
+        queued[edge][side] = false;
+        let candidates = &edge_candidates[edge];
+        if candidates.is_empty() {
+            continue;
+        }
+        let root = edges[edge][side];
+        let other = edges[edge][1 - side];
+        let other_domain = domains[other].iter().copied().collect::<HashSet<_>>();
+        let before = domains[root].len();
+        domains[root].retain(|point| {
+            if budget.is_some_and(|budget| !budget.charge_by(candidates.len().max(1))) {
+                return false;
+            }
+            candidates.iter().any(|pair| {
+                (pair[0] == *point && other_domain.contains(&pair[1]))
+                    || (pair[1] == *point && other_domain.contains(&pair[0]))
+            })
+        });
+        if budget.is_some_and(|budget| budget.exhausted.get()) || domains[root].is_empty() {
+            return false;
+        }
+        if domains[root].len() == before {
+            continue;
+        }
+        for &neighbor in &root_edges[root] {
+            let neighbor_side = usize::from(edges[neighbor][1] == root);
+            let revised_side = 1 - neighbor_side;
+            if !queued[neighbor][revised_side] {
+                queued[neighbor][revised_side] = true;
+                queue.push_back((neighbor, revised_side));
+            }
+        }
+    }
+    true
+}
+
+fn enforce_sparse_endpoint_membership(
+    domains: &mut [Vec<usize>],
+    edges: &[[usize; 2]],
+    edge_ids: &[usize],
+    edge_candidates: &[Vec<[usize; 2]>],
+    budget: Option<&MeshConstraintBudget>,
+) -> bool {
+    let mut ordered = (0..edges.len()).collect::<Vec<_>>();
+    ordered.sort_unstable_by_key(|edge| edge_candidates[edge_ids[*edge]].len());
+    for edge in ordered {
+        let candidates = &edge_candidates[edge_ids[edge]];
+        if candidates.is_empty() {
+            continue;
+        }
+        let [left, right] = edges[edge];
+        let domain_work =
+            domains[left].len() + usize::from(right != left).saturating_mul(domains[right].len());
+        let support_work = candidates.len().saturating_mul(2);
+        if support_work >= domain_work {
+            continue;
+        }
+        let work = support_work.saturating_add(domain_work);
+        if budget.is_some_and(|budget| work > budget.remaining.get()) {
+            continue;
+        }
+        if budget.is_some_and(|budget| !budget.charge_by(work)) {
+            return false;
+        }
+        let allowed = candidates.iter().flatten().copied().collect::<HashSet<_>>();
+        domains[left].retain(|point| allowed.contains(point));
+        if right != left {
+            domains[right].retain(|point| allowed.contains(point));
+        }
+        if domains[left].is_empty() || domains[right].is_empty() {
+            return false;
+        }
+    }
+    true
+}
+
 #[derive(Clone)]
 pub(crate) struct MeshQuotient {
     pub(crate) union: UnionFind,
     pub(crate) domains: Vec<Arc<HashSet<usize>>>,
     pub(crate) members: Vec<Vec<usize>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct MeshCoordinateRootDomains {
+    domains: Vec<Vec<usize>>,
+    edges: Arc<Vec<[usize; 2]>>,
+    root_edges: Arc<Vec<Vec<usize>>>,
+    edge_candidates: Arc<Vec<Vec<[usize; 2]>>>,
+    coverage_matching: Vec<usize>,
+    point_count: usize,
+}
+
+impl MeshCoordinateRootDomains {
+    fn coverage_matching(
+        domains: &[Vec<usize>],
+        point_count: usize,
+        budget: Option<&MeshConstraintBudget>,
+    ) -> Option<Vec<usize>> {
+        let mut roots_by_point = vec![Vec::new(); point_count];
+        for (root, domain) in domains.iter().enumerate() {
+            for &point in domain {
+                roots_by_point[point].push(root);
+            }
+        }
+        (!roots_by_point.iter().any(Vec::is_empty))
+            .then(|| {
+                distinct_domain_matching_with_budget(
+                    roots_by_point.iter().map(Vec::as_slice),
+                    domains.len(),
+                    budget,
+                    None,
+                )
+            })
+            .flatten()
+    }
+
+    pub(crate) fn candidates_viable(
+        &self,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
+    ) -> bool {
+        self.refine_candidates(edge_candidates, budget).is_some()
+    }
+
+    pub(crate) fn refine_candidates(
+        &self,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
+    ) -> Option<Self> {
+        if edge_candidates.len() != self.edge_candidates.len() {
+            return None;
+        }
+        let changed = edge_candidates
+            .iter()
+            .zip(self.edge_candidates.iter())
+            .enumerate()
+            .filter_map(|(edge, (current, base))| (current != base).then_some(edge))
+            .collect::<Vec<_>>();
+        if changed.is_empty() {
+            return Some(self.clone());
+        }
+        let mut domains = self.domains.clone();
+        if !enforce_edge_arc_consistency_from(
+            &mut domains,
+            &self.edges,
+            &self.root_edges,
+            edge_candidates,
+            &changed,
+            budget,
+        ) {
+            return None;
+        }
+        let mut roots_by_point = vec![Vec::new(); self.point_count];
+        for (root, domain) in domains.iter().enumerate() {
+            for &point in domain {
+                roots_by_point[point].push(root);
+            }
+        }
+        let coverage_matching = repair_distinct_domain_matching_with_budget(
+            roots_by_point.iter().map(Vec::as_slice),
+            domains.len(),
+            &self.coverage_matching,
+            budget,
+        )?;
+        Some(Self {
+            domains,
+            edges: Arc::clone(&self.edges),
+            root_edges: Arc::clone(&self.root_edges),
+            edge_candidates: Arc::new(edge_candidates.to_vec()),
+            coverage_matching,
+            point_count: self.point_count,
+        })
+    }
 }
 
 pub(crate) fn initial_mesh_quotient(
@@ -293,6 +548,86 @@ impl MeshQuotient {
             edge_candidates,
             None,
         )
+    }
+
+    pub(crate) fn prepare_coordinate_root_domains(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
+    ) -> Option<MeshCoordinateRootDomains> {
+        if self.union.len() != edge_candidates.len().saturating_mul(2) {
+            return None;
+        }
+        let roots = (0..self.union.len())
+            .filter(|node| self.union.find(*node) == *node)
+            .collect::<Vec<_>>();
+        if roots.len() < point_count {
+            return None;
+        }
+        let root_indices = roots
+            .iter()
+            .enumerate()
+            .map(|(index, root)| (*root, index))
+            .collect::<HashMap<_, _>>();
+        let edges = (0..edge_candidates.len())
+            .map(|edge| {
+                Some([
+                    *root_indices.get(&self.union.find(edge * 2))?,
+                    *root_indices.get(&self.union.find(edge * 2 + 1))?,
+                ])
+            })
+            .collect::<Option<Vec<_>>>();
+        let edges = edges?;
+        let mut domains = roots
+            .iter()
+            .map(|root| {
+                let mut domain = self.domains[*root]
+                    .iter()
+                    .copied()
+                    .filter(|point| *point < point_count)
+                    .collect::<Vec<_>>();
+                domain.sort_unstable();
+                domain
+            })
+            .collect::<Vec<_>>();
+        if domains.iter().any(Vec::is_empty) {
+            return None;
+        }
+        let edge_ids = (0..edges.len()).collect::<Vec<_>>();
+        let mut root_edges = vec![Vec::new(); roots.len()];
+        for (edge, [left, right]) in edges.iter().copied().enumerate() {
+            root_edges[left].push(edge);
+            if right != left {
+                root_edges[right].push(edge);
+            }
+        }
+        if !enforce_sparse_endpoint_membership(
+            &mut domains,
+            &edges,
+            &edge_ids,
+            edge_candidates,
+            budget,
+        ) || !enforce_edge_arc_consistency(
+            &mut domains,
+            &edges,
+            &edge_ids,
+            &root_edges,
+            edge_candidates,
+            budget,
+        ) {
+            return None;
+        }
+        let coverage_matching =
+            MeshCoordinateRootDomains::coverage_matching(&domains, point_count, budget)?;
+        Some(MeshCoordinateRootDomains {
+            domains,
+            edges: Arc::new(edges),
+            root_edges: Arc::new(root_edges),
+            edge_candidates: Arc::new(edge_candidates.to_vec()),
+            coverage_matching,
+            point_count,
+        })
     }
 
     fn propagate_component_edge_domains(
@@ -549,112 +884,6 @@ impl MeshQuotient {
                 || candidates
                     .iter()
                     .any(|pair| same_unordered_pair(*pair, [left, right]))
-        }
-
-        fn enforce_edge_arc_consistency(
-            domains: &mut [Vec<usize>],
-            edges: &[[usize; 2]],
-            edge_ids: &[usize],
-            root_edges: &[Vec<usize>],
-            edge_candidates: &[Vec<[usize; 2]>],
-            budget: Option<&MeshConstraintBudget>,
-        ) -> bool {
-            let support_work = edge_ids
-                .iter()
-                .map(|edge| edge_candidates[*edge].len().saturating_mul(2))
-                .sum::<usize>();
-            if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
-                return false;
-            }
-            let supports = edge_ids
-                .iter()
-                .map(|edge| {
-                    let mut supports = HashMap::<usize, HashSet<usize>>::new();
-                    for [left, right] in edge_candidates[*edge].iter().copied() {
-                        supports.entry(left).or_default().insert(right);
-                        supports.entry(right).or_default().insert(left);
-                    }
-                    supports
-                })
-                .collect::<Vec<_>>();
-            let mut queued = vec![[true; 2]; edges.len()];
-            let mut queue = (0..edges.len())
-                .flat_map(|edge| [(edge, 0usize), (edge, 1usize)])
-                .collect::<VecDeque<_>>();
-            while let Some((edge, side)) = queue.pop_front() {
-                queued[edge][side] = false;
-                if supports[edge].is_empty() {
-                    continue;
-                }
-                let root = edges[edge][side];
-                let other = edges[edge][1 - side];
-                let other_domain = domains[other].iter().copied().collect::<HashSet<_>>();
-                let before = domains[root].len();
-                domains[root].retain(|point| {
-                    let Some(supported) = supports[edge].get(point) else {
-                        return false;
-                    };
-                    if budget.is_some_and(|budget| !budget.charge_by(supported.len().max(1))) {
-                        return false;
-                    }
-                    supported.iter().any(|point| other_domain.contains(point))
-                });
-                if budget.is_some_and(|budget| budget.exhausted.get()) || domains[root].is_empty() {
-                    return false;
-                }
-                if domains[root].len() == before {
-                    continue;
-                }
-                for &neighbor in &root_edges[root] {
-                    let neighbor_side = usize::from(edges[neighbor][1] == root);
-                    let revised_side = 1 - neighbor_side;
-                    if !queued[neighbor][revised_side] {
-                        queued[neighbor][revised_side] = true;
-                        queue.push_back((neighbor, revised_side));
-                    }
-                }
-            }
-            true
-        }
-
-        fn enforce_sparse_endpoint_membership(
-            domains: &mut [Vec<usize>],
-            edges: &[[usize; 2]],
-            edge_ids: &[usize],
-            edge_candidates: &[Vec<[usize; 2]>],
-            budget: Option<&MeshConstraintBudget>,
-        ) -> bool {
-            let mut ordered = (0..edges.len()).collect::<Vec<_>>();
-            ordered.sort_unstable_by_key(|edge| edge_candidates[edge_ids[*edge]].len());
-            for edge in ordered {
-                let candidates = &edge_candidates[edge_ids[edge]];
-                if candidates.is_empty() {
-                    continue;
-                }
-                let [left, right] = edges[edge];
-                let domain_work = domains[left].len()
-                    + usize::from(right != left).saturating_mul(domains[right].len());
-                let support_work = candidates.len().saturating_mul(2);
-                if support_work >= domain_work {
-                    continue;
-                }
-                let work = support_work.saturating_add(domain_work);
-                if budget.is_some_and(|budget| work > budget.remaining.get()) {
-                    continue;
-                }
-                if budget.is_some_and(|budget| !budget.charge_by(work)) {
-                    return false;
-                }
-                let allowed = candidates.iter().flatten().copied().collect::<HashSet<_>>();
-                domains[left].retain(|point| allowed.contains(point));
-                if right != left {
-                    domains[right].retain(|point| allowed.contains(point));
-                }
-                if domains[left].is_empty() || domains[right].is_empty() {
-                    return false;
-                }
-            }
-            true
         }
 
         #[allow(clippy::too_many_arguments)]

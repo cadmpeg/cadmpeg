@@ -8,9 +8,9 @@ use crate::families::standard::topology::{
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycles_viable_where,
     mesh_face_endpoint_configurations, CoordinateRootClosure, MeshConstraintBudget,
-    MeshEndpointPair, MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations,
-    MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState,
-    MAX_MESH_CONSTRAINT_OPERATIONS,
+    MeshCoordinateRootDomains, MeshEndpointPair, MeshEndpointSolutionFilter,
+    MeshFaceEndpointConfigurations, MeshPartialEndpointConstraint, MeshQuotient,
+    MeshQuotientGaugeState, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -1728,7 +1728,6 @@ where
 {
     struct ComponentDomain {
         solutions: Vec<Vec<MeshEndpointPair>>,
-        ambiguous: bool,
         exhausted: bool,
     }
 
@@ -1739,8 +1738,7 @@ where
         edge_faces: &[[usize; 2]],
         face_edges: &[Vec<usize>],
         mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
-        mesh_quotient: Option<&MeshQuotient>,
-        coordinate_root_policy: CoordinateRootPolicy,
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
         assignment: &[Option<[usize; 2]>],
         degrees: &[BTreeMap<usize, u8>],
@@ -1765,7 +1763,6 @@ where
         }
         let mut constraints = constraints.into_iter().collect::<Vec<_>>();
         constraints.sort_unstable();
-        let coordinate_ambiguous = Cell::new(false);
         let coordinate_exhausted = Cell::new(false);
         let filter = |solution: &[MeshEndpointPair]| {
             let mut completed = assignment.to_vec();
@@ -1786,7 +1783,7 @@ where
             if !partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed)) {
                 return false;
             }
-            mesh_quotient.is_none_or(|quotient| {
+            coordinate_domains.is_none_or(|domains| {
                 let candidates = completed
                     .iter()
                     .enumerate()
@@ -1794,41 +1791,11 @@ where
                         pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
                     })
                     .collect::<Vec<_>>();
-                let mut quotient = quotient.clone();
-                let outcome = match mesh_assignments {
-                    Some(domains) => quotient.coordinate_root_closure_outcome_for_incidence(
-                        point_count,
-                        &candidates,
-                        edge_faces,
-                        face_edges.len(),
-                        domains,
-                        Some(budget),
-                    ),
-                    None => {
-                        return quotient.point_assignment_exists(
-                            point_count,
-                            &candidates,
-                            Some(budget),
-                        )
-                    }
-                };
-                match outcome {
-                    CoordinateRootClosure::Solved(_) => true,
-                    CoordinateRootClosure::Ambiguous
-                        if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor =>
-                    {
-                        true
-                    }
-                    CoordinateRootClosure::Ambiguous => {
-                        coordinate_ambiguous.set(true);
-                        false
-                    }
-                    CoordinateRootClosure::Exhausted => {
-                        coordinate_exhausted.set(true);
-                        false
-                    }
-                    CoordinateRootClosure::Rejected => false,
+                let viable = domains.candidates_viable(&candidates, Some(budget));
+                if !viable && budget.exhausted.get() {
+                    coordinate_exhausted.set(true);
                 }
+                viable
             })
         };
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
@@ -1853,7 +1820,6 @@ where
         search.search();
         ComponentDomain {
             solutions: search.solutions,
-            ambiguous: coordinate_ambiguous.get(),
             exhausted: search.exhausted || coordinate_exhausted.get(),
         }
     }
@@ -1861,9 +1827,11 @@ where
     #[allow(clippy::too_many_arguments)]
     fn visit_components<F, V>(
         component_index: usize,
+        choices: &[Vec<[usize; 2]>],
         edge_faces: &[[usize; 2]],
         mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
         mesh_quotient: Option<&MeshQuotient>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
         coordinate_root_policy: CoordinateRootPolicy,
         solution_valid: &F,
         assignment: &mut [Option<[usize; 2]>],
@@ -1946,22 +1914,46 @@ where
                     }
                 }
             }
-            let control = visit_components(
-                component_index + 1,
-                edge_faces,
-                mesh_assignments,
-                mesh_quotient,
-                coordinate_root_policy,
-                solution_valid,
-                assignment,
-                degrees,
-                point_count,
-                budget,
-                visitor,
-                visited,
-                ambiguous,
-                component_domains,
-            );
+            let candidates = coordinate_domains.map(|_| {
+                assignment
+                    .iter()
+                    .enumerate()
+                    .map(|(edge, pair)| {
+                        pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let refined_domains =
+                coordinate_domains
+                    .zip(candidates.as_ref())
+                    .and_then(|(domains, candidates)| {
+                        domains.refine_candidates(candidates, Some(budget))
+                    });
+            let feasible = coordinate_domains.is_none() || refined_domains.is_some();
+            let control = if feasible {
+                visit_components(
+                    component_index + 1,
+                    choices,
+                    edge_faces,
+                    mesh_assignments,
+                    mesh_quotient,
+                    refined_domains.as_ref().or(coordinate_domains),
+                    coordinate_root_policy,
+                    solution_valid,
+                    assignment,
+                    degrees,
+                    point_count,
+                    budget,
+                    visitor,
+                    visited,
+                    ambiguous,
+                    component_domains,
+                )
+            } else if budget.exhausted.get() {
+                Err(())
+            } else {
+                Ok(ControlFlow::Continue(()))
+            };
             for &(edge, pair) in solution.iter().rev() {
                 assignment[edge] = None;
                 for (rank, face) in edge_faces[edge].into_iter().enumerate() {
@@ -2092,32 +2084,41 @@ where
             let _ = visitor(&pairs);
             return Some(());
         }
-        let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let preparation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let coordinate_domains = if let Some(quotient) = mesh_quotient {
+            let mut quotient = quotient.clone();
+            let Some(domains) = quotient.prepare_coordinate_root_domains(
+                point_count,
+                choices,
+                Some(&preparation_budget),
+            ) else {
+                exhausted = preparation_budget.exhausted.get();
+                rejection = IncidenceRejection::ComponentDomain;
+                return None;
+            };
+            Some(domains)
+        } else {
+            None
+        };
         let mut component_domains = Vec::with_capacity(components.len());
         for component in components {
+            let component_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let domain = solve_component_domain(
                 &component,
                 choices,
                 edge_faces,
                 &face_edges,
                 mesh_assignments,
-                mesh_quotient,
-                coordinate_root_policy,
+                coordinate_domains.as_ref(),
                 partial_solution_valid,
                 &fixed,
                 &degrees,
                 point_count,
-                &budget,
+                &component_budget,
             );
             if domain.solutions.is_empty() && domain.exhausted {
                 exhausted = true;
                 return None;
-            }
-            if domain.ambiguous {
-                ambiguous = true;
-                if domain.solutions.is_empty() {
-                    continue;
-                }
             }
             if domain.solutions.is_empty() {
                 rejection = IncidenceRejection::ComponentDomain;
@@ -2141,17 +2142,20 @@ where
             .map(|(_, domain)| domain)
             .collect::<Vec<_>>();
         rejection = IncidenceRejection::ComponentComposition;
+        let composition_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         if visit_components(
             0,
+            choices,
             edge_faces,
             mesh_assignments,
             mesh_quotient,
+            coordinate_domains.as_ref(),
             coordinate_root_policy,
             solution_valid,
             &mut fixed,
             &mut degrees,
             point_count,
-            &budget,
+            &composition_budget,
             visitor,
             &mut visited,
             &mut ambiguous,
