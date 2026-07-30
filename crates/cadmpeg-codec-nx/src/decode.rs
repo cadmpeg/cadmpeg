@@ -22,9 +22,9 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, ExtrudeExtent,
-    ExtrudeStart, FaceSelection, FeatureDefinition, HoleKind, Length, ParameterId, PathRef,
-    PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode,
-    Termination, TrimRegion, VertexSelection,
+    ExtrudeStart, FaceSelection, FeatureDefinition, HoleKind, Length, LoftPointSection,
+    LoftSection, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
+    RibDraft, SketchSpace, SweepMode, Termination, TrimRegion, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -9566,16 +9566,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             FeatureDefinition::Loft {
                 sections,
+                centerline,
                 guides,
                 op,
                 ..
             } if sections.len() < 2
-                || sections.iter().any(|section| match section {
-                    cadmpeg_ir::features::LoftSection::Profile(profile) => {
-                        profile_ref_is_incomplete(profile)
-                    }
-                    cadmpeg_ir::features::LoftSection::Point { .. } => false,
-                })
+                || sections.iter().any(loft_section_is_incomplete)
+                || centerline.as_ref().is_some_and(path_ref_is_incomplete)
                 || guides.iter().any(path_ref_is_incomplete)
                 || matches!(op, BooleanOp::Unresolved) =>
             {
@@ -10241,16 +10238,40 @@ pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
 
 pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
     match profile {
-        ProfileRef::Unresolved(_) | ProfileRef::Native(_) => true,
-        ProfileRef::Sketch(_) => false,
-        ProfileRef::Feature(_) | ProfileRef::Generated { .. } => false,
-        ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
-        ProfileRef::SketchProfiles { .. }
-        | ProfileRef::SketchRegions { .. }
+        ProfileRef::Unresolved(_)
+        | ProfileRef::Native(_)
         | ProfileRef::SketchSelection { .. }
-        | ProfileRef::SpatialSketchProfiles { .. }
-        | ProfileRef::SpatialSketchSelection { .. }
-        | ProfileRef::HistoricalFaces { .. } => false,
+        | ProfileRef::SpatialSketchSelection { .. } => true,
+        ProfileRef::Sketch(_) => false,
+        ProfileRef::SketchProfiles { profiles, .. }
+        | ProfileRef::SpatialSketchProfiles { profiles, .. } => {
+            selection_ids_are_incomplete(profiles)
+        }
+        ProfileRef::SketchRegions { regions, .. } => {
+            regions.is_empty()
+                || regions
+                    .iter()
+                    .enumerate()
+                    .any(|(index, region)| regions[..index].contains(region))
+        }
+        ProfileRef::HistoricalFaces { faces, .. } => selection_ids_are_incomplete(faces),
+        ProfileRef::Generated { curves, native } => {
+            native.trim().is_empty()
+                || curves.is_empty()
+                || curves.iter().enumerate().any(|(index, curve)| {
+                    curve.local_id.trim().is_empty() || curves[..index].contains(curve)
+                })
+        }
+        ProfileRef::Feature(_) => false,
+        ProfileRef::Faces(faces) => selection_ids_are_incomplete(faces),
+    }
+}
+
+pub(crate) fn loft_section_is_incomplete(section: &LoftSection) -> bool {
+    match section {
+        LoftSection::Profile(profile) => profile_ref_is_incomplete(profile),
+        LoftSection::Point(LoftPointSection::Native(_)) => true,
+        LoftSection::Point(LoftPointSection::Point(_) | LoftPointSection::Vertex(_)) => false,
     }
 }
 
@@ -10260,12 +10281,11 @@ fn selection_ids_are_incomplete<T: Ord>(ids: &[T]) -> bool {
 
 pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
     match path {
-        PathRef::Unresolved(_) | PathRef::Native(_) => true,
+        PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. } => {
+            true
+        }
         PathRef::HistoricalEdges { edges, .. } => selection_ids_are_incomplete(edges),
         PathRef::Sketch(_) => false,
-        PathRef::SpatialSketchSelection { selections, .. } => {
-            selection_ids_are_incomplete(selections)
-        }
         PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
         PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
     }

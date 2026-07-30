@@ -789,7 +789,10 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
 
 #[test]
 fn nx_selection_completeness_requires_nonempty_unique_identities() {
-    use cadmpeg_ir::features::{BodySelection, EdgeSelection, FaceSelection, PathRef, ProfileRef};
+    use cadmpeg_ir::features::{
+        BodySelection, EdgeSelection, FaceSelection, LoftPointSection, LoftSection, PathRef,
+        ProfileRef,
+    };
 
     assert!(crate::decode::body_selection_is_incomplete(
         &BodySelection::Bodies(Vec::new())
@@ -821,9 +824,27 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
     assert!(crate::decode::profile_ref_is_incomplete(
         &ProfileRef::Faces(Vec::new())
     ));
+    assert!(crate::decode::profile_ref_is_incomplete(
+        &ProfileRef::SketchSelection {
+            sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+            selections: vec!["nx:sketch-selection#0".into()],
+        }
+    ));
+    assert!(crate::decode::profile_ref_is_incomplete(
+        &ProfileRef::SketchProfiles {
+            sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+            profiles: Vec::new(),
+        }
+    ));
     assert!(crate::decode::path_ref_is_incomplete(&PathRef::Curves(
         Vec::new()
     )));
+    assert!(crate::decode::path_ref_is_incomplete(
+        &PathRef::SpatialSketchSelection {
+            sketch: cadmpeg_ir::sketches::SpatialSketchId("test:spatial-sketch#0".into()),
+            selections: vec!["nx:path-selection#0".into()],
+        }
+    ));
     let edge = cadmpeg_ir::ids::EdgeId("edge#0".into());
     assert!(crate::decode::path_ref_is_incomplete(&PathRef::Edges(
         vec![edge.clone(), edge]
@@ -832,6 +853,86 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
     assert!(crate::decode::path_ref_is_incomplete(&PathRef::Curves(
         vec![curve.clone(), curve]
     )));
+    assert!(crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Native("nx:point-selection#0".into(),))
+    ));
+    assert!(!crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Point(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0
+        ),))
+    ));
+}
+
+#[test]
+fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
+    use cadmpeg_ir::features::{
+        BooleanOp, Feature, FeatureDefinition, FeatureId, LoftPointSection, LoftSection, PathRef,
+    };
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let output = ir.model.bodies[0].id.clone();
+    let definition = |sections, centerline| FeatureDefinition::Loft {
+        sections,
+        centerline,
+        guides: Vec::new(),
+        op: BooleanOp::NewBody,
+        closed: false,
+        solid: true,
+        ruled: false,
+        max_degree: None,
+        check_compatibility: None,
+        allow_multi_profile_faces: None,
+    };
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#loft".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![output],
+        definition: definition(
+            vec![
+                LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 0.0))),
+                LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
+            ],
+            Some(PathRef::Native("nx:centerline#0".into())),
+        ),
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("loft (1)"));
+
+    ir.model.features[0].definition = definition(
+        vec![
+            LoftSection::Point(LoftPointSection::Native("nx:point#0".into())),
+            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
+        ],
+        None,
+    );
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("loft (1)"));
+
+    ir.model.features[0].definition = definition(
+        vec![
+            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 0.0))),
+            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
+        ],
+        None,
+    );
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]
