@@ -1473,6 +1473,95 @@ fn json_round_trips_and_is_deterministic() {
 }
 
 #[test]
+fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
+    let feature =
+        crate::features::DatumPlaneReference::Feature(crate::features::FeatureId("feature".into()));
+    assert_eq!(
+        serde_json::to_value(&feature).unwrap(),
+        serde_json::json!("feature")
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::features::DatumPlaneReference>(serde_json::json!(
+            "feature"
+        ))
+        .unwrap(),
+        feature
+    );
+
+    let face = crate::features::DatumPlaneReference::Face {
+        face: crate::features::FaceSelection::Faces(vec![crate::ids::FaceId("face".into())]),
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    assert_eq!(
+        serde_json::from_value::<crate::features::DatumPlaneReference>(
+            serde_json::to_value(&face).unwrap()
+        )
+        .unwrap(),
+        face
+    );
+}
+
+#[test]
+fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
+    use crate::features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, Length};
+
+    let mut ir = unit_cube();
+    let principal = FeatureId("synthetic:test:feature#principal".into());
+    let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
+        id: FeatureId(id.into()),
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        "synthetic:test:feature#offset",
+        0,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(principal.clone())),
+            distance: Length(5.0),
+        },
+    ));
+    ir.model.features.push(feature(
+        principal.0.as_str(),
+        1,
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+    ));
+    ir.finalize();
+
+    let report = validate(&ir, Vec::new());
+    assert!(!report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("datum-plane reference cycle")));
+
+    let offset = ir.model.features[0].id.clone();
+    ir.model.features[1].definition = FeatureDefinition::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Feature(offset)),
+        distance: Length(5.0),
+    };
+    let report = validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("datum-plane reference cycle")));
+}
+
+#[test]
 fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
     // Byte-backed writers compare parsed documents against fresh decodes with
     // exact f64 equality, so JSON parsing must be correctly rounded. The
