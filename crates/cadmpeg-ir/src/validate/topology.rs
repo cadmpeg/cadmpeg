@@ -1772,6 +1772,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 entities,
                 parameter,
             } => (entities.clone(), Some(parameter.0.as_str())),
+            Definition::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            } => (
+                first.iter().chain(second).cloned().collect(),
+                Some(parameter.0.as_str()),
+            ),
             Definition::Angle {
                 first,
                 second,

@@ -845,6 +845,15 @@ fn project_all_dimension_constraints(
             unique_parallel_line_dimension_definition(entities, &sketch, parameter, &parameter_id)
         })
         .or_else(|| {
+            owner_scoped_parallel_line_set_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            )
+        })
+        .or_else(|| {
             unique_point_line_dimension_definition(entities, &sketch, parameter, &parameter_id)
         })
         .or_else(|| {
@@ -1007,7 +1016,7 @@ pub(crate) fn unique_point_line_dimension_definition(
 }
 
 /// Resolve an owner-scoped linear dimension when exactly one parallel-line
-/// pair has the evaluated separation.
+/// pair has the evaluated supporting-line separation.
 pub(crate) fn unique_parallel_line_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
@@ -1043,6 +1052,95 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     let (first, second) = matched?;
     Some(Definition::Distance {
         entities: vec![first.id.clone(), second.id.clone()],
+        parameter: parameter_id.clone(),
+    })
+}
+
+/// Resolve an owner-scoped distance between fragmented parallel line carriers.
+pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    if !parameter.source_kind.starts_with("Linear Dimension")
+        || !design_dimension_unit(parameter)
+        || !linear_tolerance.is_finite()
+        || linear_tolerance < 0.0
+    {
+        return None;
+    }
+    let evaluated_mm = parameter.evaluated_value * 10.0;
+    if !evaluated_mm.is_finite() {
+        return None;
+    }
+    let lines = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+        })
+        .collect::<Vec<_>>();
+    let collinear = |first: &cadmpeg_ir::sketches::SketchEntity,
+                     second: &cadmpeg_ir::sketches::SketchEntity| {
+        parallel_line_distance(first, second).is_some_and(|distance| distance <= linear_tolerance)
+    };
+    let mut carriers = Vec::<Vec<&cadmpeg_ir::sketches::SketchEntity>>::new();
+    for line in lines {
+        let matches = carriers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, carrier)| {
+                carrier
+                    .iter()
+                    .all(|member| collinear(member, line))
+                    .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => carriers.push(vec![line]),
+            [index] => carriers[*index].push(line),
+            _ => return None,
+        }
+    }
+    let mut matched = None;
+    for first in 0..carriers.len() {
+        for second in first + 1..carriers.len() {
+            if carriers[first].len() == 1 && carriers[second].len() == 1 {
+                continue;
+            }
+            let measured = carriers[first].iter().find_map(|first| {
+                carriers[second]
+                    .iter()
+                    .find_map(|second| parallel_line_span_distance(first, second, linear_tolerance))
+            });
+            let Some(measured) = measured else {
+                continue;
+            };
+            let expected = evaluated_mm.abs();
+            let tolerance =
+                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            if (measured - expected).abs() > tolerance {
+                continue;
+            }
+            if matched.is_some() {
+                return None;
+            }
+            matched = Some((first, second));
+        }
+    }
+    let (first, second) = matched?;
+    Some(Definition::ParallelLineSetDistance {
+        first: carriers[first]
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect(),
+        second: carriers[second]
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect(),
         parameter: parameter_id.clone(),
     })
 }
@@ -1292,6 +1390,7 @@ pub(crate) fn constraint_parameters(
         | Definition::VerticalDistance { parameter, .. }
         | Definition::RepeatedDistance { parameter, .. }
         | Definition::RepeatedLength { parameter, .. }
+        | Definition::ParallelLineSetDistance { parameter, .. }
         | Definition::Angle { parameter, .. }
         | Definition::AngleToAxis { parameter, .. }
         | Definition::Radius { parameter, .. }
@@ -2764,6 +2863,17 @@ pub(crate) fn parallel_line_separation(
     second: &cadmpeg_ir::sketches::SketchEntity,
     evaluated_mm: f64,
 ) -> bool {
+    let Some(separation) = parallel_line_distance(first, second) else {
+        return false;
+    };
+    let expected = evaluated_mm.abs();
+    (separation - expected).abs() <= 1.0e-9 * (1.0 + expected)
+}
+
+fn parallel_line_distance(
+    first: &cadmpeg_ir::sketches::SketchEntity,
+    second: &cadmpeg_ir::sketches::SketchEntity,
+) -> Option<f64> {
     use cadmpeg_ir::sketches::SketchGeometry;
 
     let SketchGeometry::Line {
@@ -2771,14 +2881,14 @@ pub(crate) fn parallel_line_separation(
         end: first_end,
     } = &first.geometry
     else {
-        return false;
+        return None;
     };
     let SketchGeometry::Line {
         start: second_start,
         end: second_end,
     } = &second.geometry
     else {
-        return false;
+        return None;
     };
     let first_direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
     let second_direction =
@@ -2786,20 +2896,50 @@ pub(crate) fn parallel_line_separation(
     let first_length = first_direction.u.hypot(first_direction.v);
     let second_length = second_direction.u.hypot(second_direction.v);
     if first_length <= 1.0e-12 || second_length <= 1.0e-12 {
-        return false;
+        return None;
     }
     let cross = first_direction.u * second_direction.v - first_direction.v * second_direction.u;
     if cross.abs() > 1.0e-9 * first_length * second_length {
-        return false;
+        return None;
     }
     let offset = Point2::new(
         second_start.u - first_start.u,
         second_start.v - first_start.v,
     );
-    let separation =
-        (offset.u * first_direction.v - offset.v * first_direction.u).abs() / first_length;
-    let expected = evaluated_mm.abs();
-    (separation - expected).abs() <= 1.0e-9 * (1.0 + expected)
+    Some((offset.u * first_direction.v - offset.v * first_direction.u).abs() / first_length)
+}
+
+fn parallel_line_span_distance(
+    first: &cadmpeg_ir::sketches::SketchEntity,
+    second: &cadmpeg_ir::sketches::SketchEntity,
+    linear_tolerance: f64,
+) -> Option<f64> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let distance = parallel_line_distance(first, second)?;
+    let (
+        SketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (&first.geometry, &second.geometry)
+    else {
+        unreachable!("parallel line distance requires line entities")
+    };
+    let direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
+    let length = direction.u.hypot(direction.v);
+    let project = |point: Point2| (point.u * direction.u + point.v * direction.v) / length;
+    let first_interval = [project(*first_start), project(*first_end)];
+    let second_interval = [project(*second_start), project(*second_end)];
+    let first_min = first_interval[0].min(first_interval[1]);
+    let first_max = first_interval[0].max(first_interval[1]);
+    let second_min = second_interval[0].min(second_interval[1]);
+    let second_max = second_interval[0].max(second_interval[1]);
+    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
 }
 
 pub(crate) fn concentric_circle_separation(

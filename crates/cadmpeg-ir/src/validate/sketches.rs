@@ -1176,6 +1176,59 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .max(1.0e-9 * (1.0 + length.abs().max(lengths[0].abs())))
                     })
             }
+            Constraint::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            } => {
+                let distinct = first.iter().chain(second).collect::<HashSet<_>>();
+                let first_geometry = first
+                    .iter()
+                    .filter_map(|entity| geometry.get(entity).copied())
+                    .collect::<Vec<_>>();
+                let second_geometry = second
+                    .iter()
+                    .filter_map(|entity| geometry.get(entity).copied())
+                    .collect::<Vec<_>>();
+                let tolerance = ir.tolerances.linear;
+                let first_collinear = first_geometry.first().is_some_and(|reference| {
+                    first_geometry.iter().all(|candidate| {
+                        planar_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance)
+                    })
+                });
+                let second_collinear = second_geometry.first().is_some_and(|reference| {
+                    second_geometry.iter().all(|candidate| {
+                        planar_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance)
+                    })
+                });
+                let measured = first_geometry.iter().find_map(|first| {
+                    second_geometry.iter().find_map(|second| {
+                        planar_parallel_line_span_distance(first, second, tolerance)
+                    })
+                });
+                let expected = match parameter_values.get(parameter) {
+                    Some(Some(crate::features::ParameterValue::Length(length))) => {
+                        Some(length.0.abs())
+                    }
+                    _ => None,
+                };
+                let measurement_matches =
+                    measured.zip(expected).is_some_and(|(measured, expected)| {
+                        (measured - expected).abs()
+                            <= tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())))
+                    });
+                !first.is_empty()
+                    && !second.is_empty()
+                    && (first.len() > 1 || second.len() > 1)
+                    && distinct.len() == first.len() + second.len()
+                    && first_geometry.len() == first.len()
+                    && second_geometry.len() == second.len()
+                    && first_collinear
+                    && second_collinear
+                    && measurement_matches
+            }
             Constraint::RepeatedRadius { entities, .. }
             | Constraint::RepeatedDiameter { entities, .. } => {
                 let distinct = entities.iter().collect::<HashSet<_>>();
@@ -1327,6 +1380,73 @@ fn invalid_optional_parameter_pair(start: Option<f64>, end: Option<f64>) -> bool
 
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
     (left.u - right.u).hypot(left.v - right.v)
+}
+
+fn planar_parallel_line_distance(first: &SketchGeometry, second: &SketchGeometry) -> Option<f64> {
+    let (
+        SketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        return None;
+    };
+    let first_direction =
+        crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
+    let second_direction =
+        crate::math::Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
+    let first_length = first_direction.u.hypot(first_direction.v);
+    let second_length = second_direction.u.hypot(second_direction.v);
+    if first_length <= 1.0e-12 || second_length <= 1.0e-12 {
+        return None;
+    }
+    let cross = first_direction.u * second_direction.v - first_direction.v * second_direction.u;
+    if cross.abs() > 1.0e-9 * first_length * second_length {
+        return None;
+    }
+    let offset = crate::math::Point2::new(
+        second_start.u - first_start.u,
+        second_start.v - first_start.v,
+    );
+    Some((offset.u * first_direction.v - offset.v * first_direction.u).abs() / first_length)
+}
+
+fn planar_parallel_line_span_distance(
+    first: &SketchGeometry,
+    second: &SketchGeometry,
+    linear_tolerance: f64,
+) -> Option<f64> {
+    let distance = planar_parallel_line_distance(first, second)?;
+    let (
+        SketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        unreachable!("parallel line distance requires line geometry")
+    };
+    let direction =
+        crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
+    let length = direction.u.hypot(direction.v);
+    let project =
+        |point: crate::math::Point2| (point.u * direction.u + point.v * direction.v) / length;
+    let first_interval = [project(*first_start), project(*first_end)];
+    let second_interval = [project(*second_start), project(*second_end)];
+    let first_min = first_interval[0].min(first_interval[1]);
+    let first_max = first_interval[0].max(first_interval[1]);
+    let second_min = second_interval[0].min(second_interval[1]);
+    let second_max = second_interval[0].max(second_interval[1]);
+    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
 }
 
 fn oriented_endpoints(

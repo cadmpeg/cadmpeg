@@ -11779,6 +11779,42 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             == [SketchEntityId("first".into()), SketchEntityId("second".into())]
     ));
 
+    let fragment = line(
+        "second-fragment",
+        Point2::new(7.0, 2.0),
+        Point2::new(9.0, 2.0),
+    );
+    let mut fragmented_entities = entities.clone();
+    fragmented_entities.push(fragment);
+    fragmented_entities.push(line(
+        "disjoint-first",
+        Point2::new(20.0, 0.0),
+        Point2::new(20.0, 1.0),
+    ));
+    fragmented_entities.push(line(
+        "disjoint-second",
+        Point2::new(22.0, 3.0),
+        Point2::new(22.0, 4.0),
+    ));
+    assert!(matches!(
+        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(
+            &fragmented_entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::ParallelLineSetDistance {
+            first,
+            second,
+            ..
+        }) if first == vec![SketchEntityId("first".into())]
+            && second == vec![
+                SketchEntityId("second".into()),
+                SketchEntityId("second-fragment".into()),
+            ]
+    ));
+
     let point = SketchEntity {
         id: SketchEntityId("point".into()),
         sketch: sketch.clone(),

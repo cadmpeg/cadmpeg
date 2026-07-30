@@ -669,6 +669,11 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         },
         SketchConstraintDefinition::RepeatedLength {
             entities: vec![entity.clone(), entity.clone()],
+            parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::ParallelLineSetDistance {
+            first: vec![entity.clone()],
+            second: vec![entity.clone()],
             parameter,
         },
         SketchConstraintDefinition::SnellsLaw {

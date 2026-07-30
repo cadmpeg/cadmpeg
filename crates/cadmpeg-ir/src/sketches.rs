@@ -989,6 +989,15 @@ pub enum SketchConstraintDefinition {
         /// Shared driving length parameter.
         parameter: ParameterId,
     },
+    /// Distance between two parallel collinear line-entity sets.
+    ParallelLineSetDistance {
+        /// Collinear entities forming the first line carrier.
+        first: Vec<SketchEntityId>,
+        /// Collinear entities forming the second line carrier.
+        second: Vec<SketchEntityId>,
+        /// Driving distance parameter.
+        parameter: ParameterId,
+    },
     /// Angle controlled by a design parameter.
     Angle {
         /// First angular entity.
