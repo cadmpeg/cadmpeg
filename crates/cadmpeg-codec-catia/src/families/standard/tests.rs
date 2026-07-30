@@ -1949,6 +1949,15 @@ fn incidence_components_reuse_independent_solution_domains() {
 }
 
 #[test]
+fn incidence_components_include_fixed_incidence_chains() {
+    let choices = vec![vec![[0, 0], [0, 1]], vec![[2, 2], [2, 3]], vec![[0, 2]]];
+    let components =
+        crate::solve::incidence::incidence_choice_components(&choices, &[[0, 0]; 3], None, None);
+
+    assert_eq!(components, vec![vec![0, 1]]);
+}
+
+#[test]
 fn incidence_components_preflight_independent_unsatisfiable_domains() {
     use std::ops::ControlFlow;
 

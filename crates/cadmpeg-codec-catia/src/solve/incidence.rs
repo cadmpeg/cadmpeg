@@ -241,6 +241,30 @@ pub(crate) fn incidence_choice_components(
     mesh_quotient: Option<&MeshQuotient>,
 ) -> Vec<Vec<usize>> {
     let mut union = UnionFind::new(choices.len());
+    let mut point_nodes = HashMap::<(usize, usize), usize>::new();
+    for (edge, pairs) in choices.iter().enumerate() {
+        for (rank, face) in edge_faces[edge].into_iter().enumerate() {
+            if rank > 0 && face == edge_faces[edge][0] {
+                continue;
+            }
+            for point in pairs.iter().flatten().copied() {
+                let next = point_nodes.len();
+                point_nodes.entry((face, point)).or_insert(next);
+            }
+        }
+    }
+    let mut fixed_incidence = UnionFind::new(point_nodes.len());
+    for (edge, pairs) in choices.iter().enumerate() {
+        let [pair] = pairs.as_slice() else {
+            continue;
+        };
+        for (rank, face) in edge_faces[edge].into_iter().enumerate() {
+            if rank > 0 && face == edge_faces[edge][0] {
+                continue;
+            }
+            fixed_incidence.union(point_nodes[&(face, pair[0])], point_nodes[&(face, pair[1])]);
+        }
+    }
     let mut owner = HashMap::<(usize, usize), usize>::new();
     let ambiguous = choices
         .iter()
@@ -254,6 +278,7 @@ pub(crate) fn incidence_choice_components(
                 continue;
             }
             for point in choices[edge].iter().flatten().copied() {
+                let point = fixed_incidence.find(point_nodes[&(face, point)]);
                 match owner.entry((face, point)) {
                     std::collections::hash_map::Entry::Occupied(entry) => {
                         union.union(*entry.get(), edge);
