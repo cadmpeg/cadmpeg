@@ -2171,9 +2171,9 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "string_match" => Some(CreoMathFunction::StringMatch),
         "string_pattern" => Some(CreoMathFunction::StringPattern),
         "cable_len" | "cable_thick" | "cbl_logical_file" | "eang" | "elen" | "edistk"
-        | "ecoordx" | "ecoordy" | "evalgraph" | "trajpar_of_pnt" => {
-            Some(CreoMathFunction::ContextDependent)
-        }
+        | "ecoordx" | "ecoordy" | "evalgraph" | "trajpar_of_pnt" | "massprop_param"
+        | "material_param" | "mp_mass" | "mp_assigned_mass" | "mp_surf_area" | "mp_volume"
+        | "mp_cg_x" | "mp_cg_y" | "mp_cg_z" => Some(CreoMathFunction::ContextDependent),
         _ => None,
     }
 }
@@ -4029,6 +4029,15 @@ mod tests {
             "h=ecoordy(first_entity)",
             "i=evalgraph(\"graph\",driver)",
             "j=trajpar_of_pnt(\"trajectory\",\"point\")",
+            "k=massprop_param(property_name)",
+            "l=material_param(parameter_name,material_name)",
+            "m=mp_mass(model_path)",
+            "n=mp_assigned_mass(model_path)",
+            "o=mp_surf_area(model_path)",
+            "p=mp_volume(model_path)",
+            "q=mp_cg_x(model_path,coordinate_system,component_path)",
+            "r=mp_cg_y(model_path,coordinate_system,component_path)",
+            "s=mp_cg_z(model_path,coordinate_system,component_path)",
         ];
         let lines = expressions
             .into_iter()
@@ -4059,6 +4068,20 @@ mod tests {
         assert_eq!(assignments[7].dependencies, ["first_entity"]);
         assert_eq!(assignments[8].dependencies, ["driver"]);
         assert!(assignments[9].dependencies.is_empty());
+        assert_eq!(assignments[10].dependencies, ["property_name"]);
+        assert_eq!(
+            assignments[11].dependencies,
+            ["parameter_name", "material_name"]
+        );
+        for assignment in &assignments[12..16] {
+            assert_eq!(assignment.dependencies, ["model_path"]);
+        }
+        for assignment in &assignments[16..19] {
+            assert_eq!(
+                assignment.dependencies,
+                ["model_path", "coordinate_system", "component_path"]
+            );
+        }
         assert!(assignments
             .iter()
             .all(|assignment| assignment.value.is_none()));

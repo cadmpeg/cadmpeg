@@ -3317,6 +3317,13 @@ dependencies. Their arguments retain ordinary string-literal and parameter
 dependency semantics. Their results resolve through the referenced cabling,
 case-study, graph, or trajectory namespace.
 
+The context-dependent function names `massprop_param`, `material_param`,
+`mp_mass`, `mp_assigned_mass`, `mp_surf_area`, `mp_volume`, `mp_cg_x`,
+`mp_cg_y`, and `mp_cg_z` are operators rather than parameter dependencies.
+Their arguments retain ordinary string-literal and parameter dependency
+semantics. Their results resolve through model mass properties, material
+assignments, model paths, and coordinate systems.
+
 A `crv_fr_eqn` program containing calls to `abs`, `ceil`, `floor`, `extract`, `if`,
 `itos`, or `search`, or containing `IF`, `ELSE`, or `ENDIF` control lines, is
 not an evaluable datum-curve equation. Its source, assignments, and dependencies
