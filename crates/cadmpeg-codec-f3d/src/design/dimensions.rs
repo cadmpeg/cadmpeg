@@ -848,6 +848,15 @@ fn project_all_dimension_constraints(
             unique_point_line_dimension_definition(entities, &sketch, parameter, &parameter_id)
         })
         .or_else(|| {
+            unique_point_class_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            )
+        })
+        .or_else(|| {
             concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id)
         })
         .unwrap_or_else(|| Definition::Native {
@@ -1091,6 +1100,116 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
             parameter: parameter_id.clone(),
         }),
     }
+}
+
+/// Resolve the unique owner-scoped distance between solved point loci.
+pub(crate) fn unique_point_class_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+    };
+
+    if !parameter.source_kind.starts_with("Linear Dimension")
+        || !design_dimension_unit(parameter)
+        || !linear_tolerance.is_finite()
+        || linear_tolerance < 0.0
+    {
+        return None;
+    }
+    let expected = (parameter.evaluated_value * 10.0).abs();
+    if !expected.is_finite() {
+        return None;
+    }
+    let points = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Point { .. })
+        })
+        .collect::<Vec<_>>();
+    let position = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
+        SketchGeometry::Point { position } => *position,
+        _ => unreachable!("point-class members are point entities"),
+    };
+    let coincident = |first: &cadmpeg_ir::sketches::SketchEntity,
+                      second: &cadmpeg_ir::sketches::SketchEntity| {
+        let first = position(first);
+        let second = position(second);
+        let scale = 1.0
+            + first
+                .u
+                .abs()
+                .max(first.v.abs())
+                .max(second.u.abs().max(second.v.abs()));
+        (second.u - first.u).hypot(second.v - first.v) <= linear_tolerance.max(1.0e-9 * scale)
+    };
+    let mut classes = Vec::<Vec<&cadmpeg_ir::sketches::SketchEntity>>::new();
+    for point in points {
+        let matches = classes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, class)| {
+                class
+                    .iter()
+                    .any(|member| coincident(member, point))
+                    .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let Some((&first, rest)) = matches.split_first() else {
+            classes.push(vec![point]);
+            continue;
+        };
+        classes[first].push(point);
+        for &index in rest.iter().rev() {
+            let merged = classes.remove(index);
+            classes[first].extend(merged);
+        }
+    }
+    let mut matched = None;
+    for first in 0..classes.len() {
+        for second in first + 1..classes.len() {
+            let first_position = position(classes[first][0]);
+            let second_position = position(classes[second][0]);
+            let du = second_position.u - first_position.u;
+            let dv = second_position.v - first_position.v;
+            let measured = du.hypot(dv);
+            let tolerance =
+                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            if (measured - expected).abs() > tolerance {
+                continue;
+            }
+            if matched.is_some() {
+                return None;
+            }
+            matched = Some((classes[first][0], classes[second][0], du, dv, tolerance));
+        }
+    }
+    let (first, second, du, dv, tolerance) = matched?;
+    let first = SketchLocus::Entity(first.id.clone());
+    let second = SketchLocus::Entity(second.id.clone());
+    Some(if du.abs() <= tolerance {
+        Definition::VerticalDistance {
+            first,
+            second,
+            parameter: parameter_id.clone(),
+        }
+    } else if dv.abs() <= tolerance {
+        Definition::HorizontalDistance {
+            first,
+            second,
+            parameter: parameter_id.clone(),
+        }
+    } else {
+        Definition::DistanceLoci {
+            first,
+            second,
+            parameter: parameter_id.clone(),
+        }
+    })
 }
 
 /// Resolve the owner-scoped circular measurements governed by one radial

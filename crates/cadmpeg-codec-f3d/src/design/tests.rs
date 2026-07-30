@@ -53,7 +53,8 @@ use crate::design::dimensions::{
     point_lies_on_sketch_geometry, radial_dimension_definition, radial_locus_dimension_definition,
     remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_parallel_line_distance_matches, spatial_point_distance_matches,
-    two_locus_distance_dimension, unresolved_parameter_expression_dependency_count,
+    two_locus_distance_dimension, unique_point_class_dimension_definition,
+    unresolved_parameter_expression_dependency_count,
 };
 
 fn project_dimension_constraints(
@@ -3204,6 +3205,60 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
         }) if entities == vec![first.id, second.id]
             && parameter == parameter_id
     ));
+}
+
+#[test]
+fn owner_scoped_point_dimensions_quotient_coincident_identities() {
+    let sketch = SketchId("f3d:model:sketch#point-classes".into());
+    let point = |name: &str, u: f64, v: f64| SketchEntity {
+        id: SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(u, v),
+        },
+    };
+    let lower = point("lower", -53.0, -20.875);
+    let lower_duplicate = point("lower-duplicate", -53.0, -20.875 + 5.0e-7);
+    let upper = point("upper", -53.0, -7.875);
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "13 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d19",
+        1.3,
+    ))
+    .expect("linear parameter");
+    let parameter_id = cadmpeg_ir::features::ParameterId("parameter#point-classes".into());
+
+    assert!(matches!(
+        unique_point_class_dimension_definition(
+            &[lower.clone(), lower_duplicate, upper.clone()],
+            &sketch,
+            &parameter,
+            &parameter_id,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::VerticalDistance {
+            first: SketchLocus::Entity(first),
+            second: SketchLocus::Entity(second),
+            parameter,
+        }) if first == lower.id && second == upper.id && parameter == parameter_id
+    ));
+
+    let another_upper = point("another-upper", -40.0, -7.875);
+    assert!(unique_point_class_dimension_definition(
+        &[lower, upper, another_upper],
+        &sketch,
+        &parameter,
+        &parameter_id,
+        1.0e-6,
+    )
+    .is_none());
 }
 
 #[test]
