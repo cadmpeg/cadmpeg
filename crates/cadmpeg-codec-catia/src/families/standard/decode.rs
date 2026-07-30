@@ -3029,7 +3029,7 @@ fn attach_standard_topology(
     });
     let allocation_endpoint_pairs = vertex_roster
         .as_ref()
-        .map(|roster| standard_successor_endpoint_pairs(&supports, roster));
+        .map(|roster| standard_successor_endpoint_pairs(&supports, roster, &endpoint_candidates));
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
@@ -3081,6 +3081,9 @@ fn attach_standard_topology(
                         native,
                         &ir.model.points,
                         &endpoint_candidates[edge],
+                        native_endpoint_evidence
+                            .as_ref()
+                            .and_then(|pairs| pairs[edge]),
                     )
                 })
                 .filter(|pair| {
@@ -3091,13 +3094,6 @@ fn attach_standard_topology(
             else {
                 continue;
             };
-            if native_endpoint_evidence
-                .as_ref()
-                .and_then(|pairs| pairs[edge])
-                .is_some_and(|native| !missing_edge::same_unordered_pair(native, pair))
-            {
-                return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
-            }
             options[edge] = vec![pair];
         }
     }
@@ -3695,6 +3691,15 @@ fn emit_standard_topology(
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
+        let native_support = native_edge_supports.get(&support.tag).filter(|native| {
+            standard_native_support_endpoint_pair(
+                native,
+                &ir.model.points,
+                &[start_point, end_point],
+                Some([start_point, end_point]),
+            )
+            .is_some()
+        });
         let (curve, param_range) = build_standard_edge_curve(
             ir,
             annotations,
@@ -3703,7 +3708,7 @@ fn emit_standard_topology(
             brep,
             support,
             [start_point, end_point],
-            native_edge_supports.get(&support.tag),
+            native_support,
             limit_curve_bindings[edge_index]
                 .map(|binding| (&limit_curves[binding.curve], binding.parameter_range)),
         );
@@ -3877,6 +3882,7 @@ pub(crate) fn standard_native_support_endpoint_pair(
     support: &StandardEdgeSupport,
     points: &[Point],
     candidates: &[usize],
+    required_pair: Option<[usize; 2]>,
 ) -> Option<[usize; 2]> {
     const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
@@ -3930,6 +3936,9 @@ pub(crate) fn standard_native_support_endpoint_pair(
     <[usize; 2]>::try_from(pair)
         .ok()
         .filter(|pair| pair[0] != pair[1])
+        .filter(|pair| {
+            required_pair.is_none_or(|required| missing_edge::same_unordered_pair(*pair, required))
+        })
 }
 
 pub(crate) fn resolve_standard_endpoint_pairs(
@@ -4650,6 +4659,7 @@ pub(crate) fn merge_native_endpoint_evidence(
 pub(crate) fn standard_successor_endpoint_pairs(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     vertex_roster: &[u32],
+    endpoint_candidates: &[Vec<usize>],
 ) -> Vec<Option<[usize; 2]>> {
     let point_by_identity = vertex_roster
         .iter()
@@ -4659,11 +4669,16 @@ pub(crate) fn standard_successor_endpoint_pairs(
         .collect::<HashMap<_, _>>();
     supports
         .iter()
-        .map(|support| {
-            Some([
+        .enumerate()
+        .map(|(edge, support)| {
+            let candidates = endpoint_candidates.get(edge)?;
+            let pair = [
                 *point_by_identity.get(&support.tag.checked_add(1)?)?,
                 *point_by_identity.get(&support.tag.checked_add(2)?)?,
-            ])
+            ];
+            pair.into_iter()
+                .all(|point| candidates.contains(&point))
+                .then_some(pair)
         })
         .collect()
 }
@@ -6564,8 +6579,12 @@ mod route_tests {
         };
 
         assert_eq!(
-            standard_native_support_endpoint_pair(&native, &points, &[0, 1]),
+            standard_native_support_endpoint_pair(&native, &points, &[0, 1], None),
             Some([0, 1])
+        );
+        assert_eq!(
+            standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2])),
+            None
         );
 
         let mut reversed = native.clone();
@@ -6574,7 +6593,7 @@ mod route_tests {
             direction: Point2::new(-1.0, 0.0),
         };
         assert_eq!(
-            standard_native_support_endpoint_pair(&reversed, &points, &[0, 1]),
+            standard_native_support_endpoint_pair(&reversed, &points, &[0, 1], None),
             Some([0, 1])
         );
 
@@ -6584,7 +6603,7 @@ mod route_tests {
             source_object: None,
         });
         assert_eq!(
-            standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2]),
+            standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2], None),
             None
         );
 
@@ -6594,7 +6613,7 @@ mod route_tests {
             direction: Point2::new(1.0, 0.0),
         };
         assert_eq!(
-            standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1]),
+            standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None),
             None
         );
     }
@@ -7439,8 +7458,27 @@ mod route_tests {
         ];
 
         assert_eq!(
-            standard_successor_endpoint_pairs(&supports, &[99, 101, 102, 202]),
+            standard_successor_endpoint_pairs(
+                &supports,
+                &[99, 101, 102, 202],
+                &[vec![1, 2], vec![0, 3]],
+            ),
             [Some([1, 2]), None]
+        );
+    }
+
+    #[test]
+    fn standard_edge_allocation_rejects_geometrically_unrelated_successors() {
+        let supports = [StandardCurveSupport {
+            pos: 8,
+            tag: 100,
+            faces: [1, 2],
+            geometry: StandardCurveGeometry::Bspline,
+        }];
+
+        assert_eq!(
+            standard_successor_endpoint_pairs(&supports, &[99, 101, 102], &[vec![0, 1]]),
+            [None]
         );
     }
 
