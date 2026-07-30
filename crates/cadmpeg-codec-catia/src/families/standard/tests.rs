@@ -541,6 +541,17 @@ fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
 }
 
 #[test]
+fn incidence_propagation_indexes_wide_endpoint_support_domains() {
+    let domain = (0..4096).map(|point| [0, point]).collect::<Vec<_>>();
+    let mut choices = vec![domain.clone(), domain.clone()];
+    let edge_faces = [[0, 0], [0, 0]];
+
+    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, domain.len())
+        .expect("each endpoint candidate has support from the other edge");
+    assert_eq!(choices, vec![domain.clone(), domain]);
+}
+
+#[test]
 fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
     let choices = vec![vec![[0, 1], [0, 2]], vec![[0, 2]]];
     let edge_faces = [[0, 0], [0, 0]];

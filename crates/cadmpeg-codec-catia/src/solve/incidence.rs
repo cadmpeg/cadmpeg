@@ -42,33 +42,68 @@ pub(crate) fn prune_incidence_choices(
         })
     }
 
-    fn preserves_degree_support(
-        choices: &[Vec<[usize; 2]>],
-        fixed: &[bool],
+    fn preserves_new_degree_support(
+        supports: &[Vec<u32>],
+        edge_supports: &[HashSet<usize>],
         degrees: &[Vec<u8>],
         edge_faces: &[[usize; 2]],
-        face_edges: &[Vec<usize>],
         edge: usize,
         pair: [usize; 2],
     ) -> bool {
         unique_faces(edge_faces[edge]).all(|face| {
-            degrees[face]
-                .iter()
-                .copied()
-                .enumerate()
-                .all(|(point, degree)| {
-                    let selected_degree =
-                        pair.iter().filter(|candidate| **candidate == point).count();
-                    degree + selected_degree as u8 != 1
-                        || face_edges[face].iter().copied().any(|supporting_edge| {
-                            supporting_edge != edge
-                                && !fixed[supporting_edge]
-                                && choices[supporting_edge]
-                                    .iter()
-                                    .any(|candidate| candidate.contains(&point))
-                        })
-                })
+            pair.into_iter().enumerate().all(|(rank, point)| {
+                if rank == 1 && point == pair[0] {
+                    return true;
+                }
+                let selected_degree = 1 + u8::from(pair[0] == pair[1]);
+                degrees[face][point] + selected_degree != 1
+                    || supports[face][point] > u32::from(edge_supports[edge].contains(&point))
+            })
         })
+    }
+
+    fn remove_edge_support(
+        supports: &mut [Vec<u32>],
+        edge_supports: &mut [HashSet<usize>],
+        edge_faces: &[[usize; 2]],
+        edge: usize,
+        retained: HashSet<usize>,
+    ) -> Option<()> {
+        let removed = edge_supports[edge]
+            .difference(&retained)
+            .copied()
+            .collect::<Vec<_>>();
+        for face in unique_faces(edge_faces[edge]) {
+            for &point in &removed {
+                supports[face][point] = supports[face][point].checked_sub(1)?;
+            }
+        }
+        edge_supports[edge] = retained;
+        Some(())
+    }
+
+    fn sole_supporting_edge(
+        face_edges: &[Vec<usize>],
+        edge_supports: &[HashSet<usize>],
+        face: usize,
+        point: usize,
+    ) -> Option<usize> {
+        face_edges[face]
+            .iter()
+            .copied()
+            .find(|&edge| edge_supports[edge].contains(&point))
+    }
+
+    fn choice_points(choices: &[[usize; 2]]) -> HashSet<usize> {
+        choices.iter().flatten().copied().collect::<HashSet<_>>()
+    }
+
+    fn degree_one_points(degrees: &[Vec<u8>], face: usize) -> impl Iterator<Item = usize> + '_ {
+        degrees[face]
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(point, degree)| (degree == 1).then_some(point))
     }
 
     if choices.len() != edge_faces.len()
@@ -90,6 +125,18 @@ pub(crate) fn prune_incidence_choices(
     }
     let mut fixed = vec![false; choices.len()];
     let mut degrees = vec![vec![0u8; point_count]; face_count];
+    let mut edge_supports = choices
+        .iter()
+        .map(|pairs| choice_points(pairs))
+        .collect::<Vec<_>>();
+    let mut supports = vec![vec![0u32; point_count]; face_count];
+    for (edge, points) in edge_supports.iter().enumerate() {
+        for face in unique_faces(edge_faces[edge]) {
+            for &point in points {
+                supports[face][point] = supports[face][point].checked_add(1)?;
+            }
+        }
+    }
     loop {
         let mut changed = false;
         for edge in 0..choices.len() {
@@ -102,12 +149,11 @@ pub(crate) fn prune_incidence_choices(
                 .copied()
                 .filter(|pair| {
                     fits(&degrees, edge_faces, edge, *pair)
-                        && preserves_degree_support(
-                            choices,
-                            &fixed,
+                        && preserves_new_degree_support(
+                            &supports,
+                            &edge_supports,
                             &degrees,
                             edge_faces,
-                            &face_edges,
                             edge,
                             *pair,
                         )
@@ -115,6 +161,13 @@ pub(crate) fn prune_incidence_choices(
                 .collect::<Vec<_>>();
             choices[edge] = retained;
             changed |= choices[edge].len() != before;
+            remove_edge_support(
+                &mut supports,
+                &mut edge_supports,
+                edge_faces,
+                edge,
+                choice_points(&choices[edge]),
+            )?;
             let [pair] = choices[edge].as_slice() else {
                 if choices[edge].is_empty() {
                     return None;
@@ -126,29 +179,37 @@ pub(crate) fn prune_incidence_choices(
                     degrees[face][*point] = degrees[face][*point].checked_add(1)?;
                 }
             }
+            remove_edge_support(
+                &mut supports,
+                &mut edge_supports,
+                edge_faces,
+                edge,
+                HashSet::new(),
+            )?;
             fixed[edge] = true;
             changed = true;
         }
         for face in 0..face_count {
-            for (point, &degree) in degrees[face].iter().enumerate() {
-                if degree != 1 {
-                    continue;
-                }
-                let supporting_edges = face_edges[face]
-                    .iter()
-                    .copied()
-                    .filter(|&edge| {
-                        !fixed[edge] && choices[edge].iter().any(|pair| pair.contains(&point))
-                    })
-                    .collect::<Vec<_>>();
-                let (&edge, rest) = supporting_edges.split_first()?;
-                if rest.iter().all(|candidate| *candidate == edge) {
-                    let before = choices[edge].len();
-                    choices[edge].retain(|pair| pair.contains(&point));
-                    if choices[edge].is_empty() {
-                        return None;
+            for point in degree_one_points(&degrees, face) {
+                match supports[face][point] {
+                    0 => return None,
+                    1 => {
+                        let edge = sole_supporting_edge(&face_edges, &edge_supports, face, point)?;
+                        let before = choices[edge].len();
+                        choices[edge].retain(|pair| pair.contains(&point));
+                        if choices[edge].is_empty() {
+                            return None;
+                        }
+                        changed |= choices[edge].len() != before;
+                        remove_edge_support(
+                            &mut supports,
+                            &mut edge_supports,
+                            edge_faces,
+                            edge,
+                            choice_points(&choices[edge]),
+                        )?;
                     }
-                    changed |= choices[edge].len() != before;
+                    _ => {}
                 }
             }
         }
