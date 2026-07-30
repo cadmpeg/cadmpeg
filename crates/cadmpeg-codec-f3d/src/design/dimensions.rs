@@ -1633,8 +1633,20 @@ pub fn project_spatial_dimension_constraints(
             ))
         })
         .collect::<HashMap<_, _>>();
+    let parameters_by_id = parameters
+        .iter()
+        .map(|parameter| (neutral_parameter_id(parameter), parameter))
+        .collect::<HashMap<_, _>>();
+    let source_constraints = project_all_dimension_constraints(inputs, linear_tolerance);
+    let parameter_constraint_counts = source_constraints
+        .iter()
+        .flat_map(|constraint| constraint_parameters(&constraint.definition))
+        .fold(HashMap::new(), |mut counts, parameter| {
+            *counts.entry(parameter.clone()).or_insert(0usize) += 1;
+            counts
+        });
     let mut source_parameters = HashSet::new();
-    let mut projected = project_all_dimension_constraints(inputs, linear_tolerance)
+    let mut projected = source_constraints
         .into_iter()
         .filter_map(|constraint| {
             let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
@@ -1709,14 +1721,51 @@ pub fn project_spatial_dimension_constraints(
                             None
                         }
                     });
-                    symmetry
-                        .or(distance)
-                        .unwrap_or(SpatialSketchConstraintDefinition::Native {
+                    let owner_scoped = (operands.len() == 1
+                        && operands[0].native_kind == "dimension_companion"
+                        && operands[0].native_field.as_deref().is_some_and(|field| {
+                            field == "companion" || field == "companion_payload"
+                        }))
+                    .then_some(())
+                    .and(parameter.as_ref())
+                    .filter(|parameter_id| {
+                        parameter_constraint_counts.get(*parameter_id) == Some(&1)
+                    })
+                    .and_then(|parameter_id| {
+                        let parameter = parameters_by_id.get(parameter_id)?;
+                        owner_scoped_spatial_line_length_dimension_definition(
+                            spatial_entities,
+                            &sketch,
+                            parameter,
+                            parameter_id,
+                            linear_tolerance,
+                        )
+                        .or_else(|| {
+                            unique_spatial_parallel_line_dimension_definition(
+                                spatial_entities,
+                                &sketch,
+                                parameter,
+                                parameter_id,
+                            )
+                        })
+                        .or_else(|| {
+                            owner_scoped_spatial_parallel_line_set_dimension_definition(
+                                spatial_entities,
+                                &sketch,
+                                parameter,
+                                parameter_id,
+                                linear_tolerance,
+                            )
+                        })
+                    });
+                    symmetry.or(distance).or(owner_scoped).unwrap_or(
+                        SpatialSketchConstraintDefinition::Native {
                             native_kind,
                             native_state,
                             parameter,
                             operands,
-                        })
+                        },
+                    )
                 }
                 _ => return None,
             };
@@ -1737,17 +1786,16 @@ pub fn project_spatial_dimension_constraints(
                 ..
             }
             | SpatialSketchConstraintDefinition::PointDistance { parameter, .. }
-            | SpatialSketchConstraintDefinition::ParallelLineDistance { parameter, .. } => {
+            | SpatialSketchConstraintDefinition::LineLength { parameter, .. }
+            | SpatialSketchConstraintDefinition::RepeatedLineLength { parameter, .. }
+            | SpatialSketchConstraintDefinition::ParallelLineDistance { parameter, .. }
+            | SpatialSketchConstraintDefinition::ParallelLineSetDistance { parameter, .. } => {
                 Some(parameter)
             }
             _ => None,
         })
         .cloned()
         .collect::<HashSet<_>>();
-    let parameters_by_id = parameters
-        .iter()
-        .map(|parameter| (neutral_parameter_id(parameter), parameter))
-        .collect::<HashMap<_, _>>();
     let owners_by_record = owners
         .iter()
         .filter_map(|owner| Some(((native_stream(&owner.id)?, owner.record_index), owner)))
@@ -1800,6 +1848,197 @@ pub fn project_spatial_dimension_constraints(
         })
     }));
     projected
+}
+
+pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
+    };
+
+    if !parameter.source_kind.starts_with("Linear Dimension")
+        || !design_dimension_unit(parameter)
+        || !linear_tolerance.is_finite()
+        || linear_tolerance < 0.0
+    {
+        return None;
+    }
+    let expected = (parameter.evaluated_value * 10.0).abs();
+    if !expected.is_finite() {
+        return None;
+    }
+    let matches = entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch)
+        .filter(|entity| {
+            let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+                return false;
+            };
+            let measured = (end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z));
+            let tolerance =
+                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            (measured - expected).abs() <= tolerance
+        })
+        .map(|entity| entity.id.clone())
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => None,
+        [entity] => Some(Definition::LineLength {
+            entity: entity.clone(),
+            parameter: parameter_id.clone(),
+        }),
+        _ => Some(Definition::RepeatedLineLength {
+            entities: matches,
+            parameter: parameter_id.clone(),
+        }),
+    }
+}
+
+pub(crate) fn unique_spatial_parallel_line_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
+    };
+
+    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+        return None;
+    }
+    let expected = (parameter.evaluated_value * 10.0).abs();
+    if !expected.is_finite() {
+        return None;
+    }
+    let lines = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch
+                && matches!(entity.geometry, SpatialSketchGeometry::Line { .. })
+        })
+        .collect::<Vec<_>>();
+    let mut matched = None;
+    for first in 0..lines.len() {
+        for second in first + 1..lines.len() {
+            if spatial_parallel_line_distance_matches(
+                &lines[first].geometry,
+                &lines[second].geometry,
+                expected,
+            ) {
+                if matched.is_some() {
+                    return None;
+                }
+                matched = Some((lines[first], lines[second]));
+            }
+        }
+    }
+    let (first, second) = matched?;
+    Some(Definition::ParallelLineDistance {
+        first: first.id.clone(),
+        second: second.id.clone(),
+        parameter: parameter_id.clone(),
+    })
+}
+
+pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SpatialSketchConstraintDefinition as Definition, SpatialSketchGeometry,
+    };
+
+    if !parameter.source_kind.starts_with("Linear Dimension")
+        || !design_dimension_unit(parameter)
+        || !linear_tolerance.is_finite()
+        || linear_tolerance < 0.0
+    {
+        return None;
+    }
+    let expected = (parameter.evaluated_value * 10.0).abs();
+    if !expected.is_finite() {
+        return None;
+    }
+    let lines = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch
+                && matches!(entity.geometry, SpatialSketchGeometry::Line { .. })
+        })
+        .collect::<Vec<_>>();
+    let collinear = |first: &cadmpeg_ir::sketches::SpatialSketchEntity,
+                     second: &cadmpeg_ir::sketches::SpatialSketchEntity| {
+        spatial_parallel_line_distance(&first.geometry, &second.geometry)
+            .is_some_and(|distance| distance <= linear_tolerance)
+    };
+    let mut carriers = Vec::<Vec<&cadmpeg_ir::sketches::SpatialSketchEntity>>::new();
+    for line in lines {
+        let matches = carriers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, carrier)| {
+                carrier
+                    .iter()
+                    .all(|member| collinear(member, line))
+                    .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => carriers.push(vec![line]),
+            [index] => carriers[*index].push(line),
+            _ => return None,
+        }
+    }
+    let mut matched = None;
+    for first in 0..carriers.len() {
+        for second in first + 1..carriers.len() {
+            if carriers[first].len() == 1 && carriers[second].len() == 1 {
+                continue;
+            }
+            let measured = carriers[first].iter().find_map(|first| {
+                carriers[second].iter().find_map(|second| {
+                    spatial_parallel_line_span_distance(
+                        &first.geometry,
+                        &second.geometry,
+                        linear_tolerance,
+                    )
+                })
+            });
+            let Some(measured) = measured else {
+                continue;
+            };
+            let tolerance =
+                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            if (measured - expected).abs() > tolerance {
+                continue;
+            }
+            if matched.is_some() {
+                return None;
+            }
+            matched = Some((first, second));
+        }
+    }
+    let (first, second) = matched?;
+    Some(Definition::ParallelLineSetDistance {
+        first: carriers[first]
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect(),
+        second: carriers[second]
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect(),
+        parameter: parameter_id.clone(),
+    })
 }
 
 fn spatial_reflection_symmetry(
@@ -1902,6 +2141,17 @@ pub(crate) fn spatial_parallel_line_distance_matches(
     second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     expected: f64,
 ) -> bool {
+    let Some(measured) = spatial_parallel_line_distance(first, second) else {
+        return false;
+    };
+    let scale = 1.0 + measured.max(expected.abs());
+    expected.is_finite() && (measured - expected.abs()).abs() <= 1.0e-9 * scale
+}
+
+fn spatial_parallel_line_distance(
+    first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+) -> Option<f64> {
     use cadmpeg_ir::sketches::SpatialSketchGeometry;
 
     let (
@@ -1915,7 +2165,7 @@ pub(crate) fn spatial_parallel_line_distance_matches(
         },
     ) = (first, second)
     else {
-        return false;
+        return None;
     };
     let first_direction = Vector3::new(
         first_end.x - first_start.x,
@@ -1938,7 +2188,7 @@ pub(crate) fn spatial_parallel_line_distance_matches(
         || second_length <= 1.0e-12
         || cross.norm() > 1.0e-9 * first_length * second_length
     {
-        return false;
+        return None;
     }
     let offset = Vector3::new(
         second_start.x - first_start.x,
@@ -1951,9 +2201,46 @@ pub(crate) fn spatial_parallel_line_distance_matches(
         offset.x * first_direction.y - offset.y * first_direction.x,
     )
     .norm();
-    let measured = area / first_length;
-    let scale = 1.0 + measured.max(expected.abs());
-    expected.is_finite() && (measured - expected.abs()).abs() <= 1.0e-9 * scale
+    Some(area / first_length)
+}
+
+fn spatial_parallel_line_span_distance(
+    first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    linear_tolerance: f64,
+) -> Option<f64> {
+    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+
+    let distance = spatial_parallel_line_distance(first, second)?;
+    let (
+        SpatialSketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SpatialSketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        unreachable!("parallel line distance requires line geometry")
+    };
+    let direction = Vector3::new(
+        first_end.x - first_start.x,
+        first_end.y - first_start.y,
+        first_end.z - first_start.z,
+    );
+    let length = direction.norm();
+    let project = |point: Point3| {
+        (point.x * direction.x + point.y * direction.y + point.z * direction.z) / length
+    };
+    let first_interval = [project(*first_start), project(*first_end)];
+    let second_interval = [project(*second_start), project(*second_end)];
+    let first_min = first_interval[0].min(first_interval[1]);
+    let first_max = first_interval[0].max(first_interval[1]);
+    let second_min = second_interval[0].min(second_interval[1]);
+    let second_max = second_interval[0].max(second_interval[1]);
+    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
 }
 
 pub(crate) fn repeated_linear_dimension(

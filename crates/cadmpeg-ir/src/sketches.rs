@@ -398,12 +398,35 @@ pub enum SpatialSketchConstraintDefinition {
         /// Driving distance parameter.
         parameter: crate::features::ParameterId,
     },
+    /// Endpoint-to-endpoint length of one bounded model-space sketch line.
+    LineLength {
+        /// Measured line.
+        entity: SpatialSketchEntityId,
+        /// Driving length parameter.
+        parameter: crate::features::ParameterId,
+    },
+    /// Endpoint-to-endpoint lengths of multiple bounded model-space sketch lines.
+    RepeatedLineLength {
+        /// Distinct measured lines in spatial-sketch entity order.
+        entities: Vec<SpatialSketchEntityId>,
+        /// Shared driving length parameter.
+        parameter: crate::features::ParameterId,
+    },
     /// Minimum separation between two parallel model-space sketch lines.
     ParallelLineDistance {
         /// First measured line.
         first: SpatialSketchEntityId,
         /// Second measured line.
         second: SpatialSketchEntityId,
+        /// Driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
+    /// Minimum separation between two parallel collinear model-space line sets.
+    ParallelLineSetDistance {
+        /// Collinear entities forming the first line carrier.
+        first: Vec<SpatialSketchEntityId>,
+        /// Collinear entities forming the second line carrier.
+        second: Vec<SpatialSketchEntityId>,
         /// Driving distance parameter.
         parameter: crate::features::ParameterId,
     },

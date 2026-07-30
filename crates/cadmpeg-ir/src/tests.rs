@@ -3548,6 +3548,20 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             end: Point3::new(1.0, 1.0 + 2.0f64.sqrt(), 1.0 - 2.0f64.sqrt()),
         },
     });
+    let collinear_line =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#collinear-line".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: collinear_line.clone(),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Line {
+            start: Point3::new(2.0, 2.0, 2.0),
+            end: Point3::new(3.0, 3.0, 3.0),
+        },
+    });
     let distance = ParameterId("synthetic:test:parameter#spatial-distance".into());
     ir.model.parameters.push(DesignParameter {
         id: distance.clone(),
@@ -3557,6 +3571,20 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         expression: "2 mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length(2.0))),
+        dependencies: Vec::new(),
+        properties: Default::default(),
+        pmi: None,
+        native_ref: None,
+    });
+    let line_length = ParameterId("synthetic:test:parameter#spatial-line-length".into());
+    ir.model.parameters.push(DesignParameter {
+        id: line_length.clone(),
+        owner: None,
+        ordinal: 1,
+        name: "spatial_line_length".into(),
+        expression: "sqrt(3) mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length(3.0f64.sqrt()))),
         dependencies: Vec::new(),
         properties: Default::default(),
         pmi: None,
@@ -3652,6 +3680,44 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::SplineGroup {
                 entities: vec![line.clone(), circle.clone()],
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId(
+                "synthetic:test:spatial-sketch-constraint#line-set-distance".into(),
+            ),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::ParallelLineSetDistance {
+                first: vec![line.clone(), collinear_line],
+                second: vec![parallel_line.clone()],
+                parameter: distance.clone(),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#line-length".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::LineLength {
+                entity: line.clone(),
+                parameter: line_length.clone(),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId(
+                "synthetic:test:spatial-sketch-constraint#repeated-line-length".into(),
+            ),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::RepeatedLineLength {
+                entities: vec![line.clone(), parallel_line.clone()],
+                parameter: line_length,
             },
             native_ref: None,
         });

@@ -363,6 +363,18 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelLineDistance {
                             parameter,
                             ..
+                        }
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::LineLength {
+                            parameter,
+                            ..
+                        }
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::RepeatedLineLength {
+                            parameter,
+                            ..
+                        }
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelLineSetDistance {
+                            parameter,
+                            ..
                         } => Some(parameter),
                         _ => None,
                     },
