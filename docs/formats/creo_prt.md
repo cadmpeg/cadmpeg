@@ -1375,7 +1375,9 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 `feat_outl_info.outline f9 02 03` stores six sequential feature-local scalar
 slots. `post_roll_back` and `post_regen` records store the same six-slot body
 after `e3 f7 <class> f5 96 92 <selector>`. Each slot is independently bounded
-by its scalar encoding; an undefined prefix does not remove that slot.
+by its scalar encoding; an undefined prefix does not remove that slot. A named
+record beginning before slot six terminates the body; the remaining slots are
+absent and own no bytes.
 
 | Table         | Semantics                                                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |

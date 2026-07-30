@@ -4032,6 +4032,44 @@ fn scan_decodes_featdefs_feature_local_outlines() {
 }
 
 #[test]
+fn scan_stops_feature_local_outlines_at_named_records() {
+    let mut payload = b"feat_defs_40\0\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03".to_vec();
+    payload.extend_from_slice(&[0x0f, 0xe4]);
+    payload.extend_from_slice(b"\xe0\x00post_roll_back\0\xe3\xf7\x01\xf5\x96\x92\x02");
+    payload.extend_from_slice(&[0xe4, 0x0f]);
+    payload.extend_from_slice(b"\xe0\x00post_regen\0\xe3\xf7\x01\xf5\x96\x92\x02");
+    payload.extend([0x0f; 6]);
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    let outlines = &scan.features.definitions[0].outlines;
+    assert_eq!(outlines.len(), 3);
+    assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
+    assert_eq!(
+        outlines[0].local_values,
+        vec![Some(0.0), Some(1.0), None, None, None, None]
+    );
+    assert_eq!(
+        outlines[0].local_value_bodies,
+        vec![vec![0x0f], vec![0xe4], vec![], vec![], vec![], vec![]]
+    );
+    assert_eq!(
+        outlines[1].phase,
+        crate::feature::OutlinePhase::PostRollback
+    );
+    assert_eq!(
+        outlines[1].local_values,
+        vec![Some(1.0), Some(0.0), None, None, None, None]
+    );
+    assert_eq!(
+        outlines[1].local_value_bodies,
+        vec![vec![0xe4], vec![0x0f], vec![], vec![], vec![], vec![]]
+    );
+    assert_eq!(outlines[2].phase, crate::feature::OutlinePhase::PostRegen);
+    assert_eq!(outlines[2].local_values, vec![Some(0.0); 6]);
+    assert_eq!(outlines[2].local_value_bodies, vec![vec![0x0f]; 6]);
+}
+
+#[test]
 fn scan_decodes_featdefs_var_arr_section_points() {
     let mut payload =
         b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();

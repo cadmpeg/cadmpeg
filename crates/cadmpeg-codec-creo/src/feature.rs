@@ -1838,24 +1838,27 @@ fn decode_exact_scalars(
 
 fn decode_optional_scalars(
     payload: &[u8],
-    mut cursor: usize,
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> (Vec<Option<f64>>, Vec<Vec<u8>>) {
     let mut values = Vec::with_capacity(count);
     let mut bodies = Vec::with_capacity(count);
+    let mut cursor = 0;
     for _ in 0..count {
+        if cursor >= payload.len() || payload.get(cursor) == Some(&psb::token::NAMED_RECORD) {
+            values.push(None);
+            bodies.push(Vec::new());
+            continue;
+        }
         let start = cursor;
         if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
             values.push(Some(value));
             cursor = next;
-        } else if cursor < payload.len() {
-            values.push(None);
-            cursor += 1;
         } else {
             values.push(None);
+            cursor += 1;
         }
-        bodies.push(payload.get(start..cursor).unwrap_or_default().to_vec());
+        bodies.push(payload[start..cursor].to_vec());
     }
     (values, bodies)
 }
@@ -6963,7 +6966,7 @@ fn definitions_in_ranges(
             if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
                 let (local_values, local_value_bodies) =
-                    decode_optional_scalars(payload, scalar_start, 6, &cache);
+                    decode_optional_scalars(&payload[scalar_start..end], 6, &cache);
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
                     local_values,
@@ -6994,7 +6997,7 @@ fn definitions_in_ranges(
                     continue;
                 }
                 let (local_values, local_value_bodies) =
-                    decode_optional_scalars(payload, after_ref + 4, 6, &cache);
+                    decode_optional_scalars(&payload[after_ref + 4..end], 6, &cache);
                 outlines.push(FeatureOutline {
                     phase,
                     local_values,
