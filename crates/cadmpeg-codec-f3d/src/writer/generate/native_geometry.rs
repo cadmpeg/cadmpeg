@@ -1045,15 +1045,9 @@ fn native_procedural_surface_definition(
                     ))
                 })?;
             if let Some(form) = revision_form {
-                let u_sense = (*u_sense).ok_or_else(|| {
-                    CodecError::Malformed("revision-gated off_spl_sur requires a U sense".into())
-                })?;
-                let v_sense = (*v_sense).ok_or_else(|| {
-                    CodecError::Malformed("revision-gated off_spl_sur requires a V sense".into())
-                })?;
-                if form.revision <= 0 || extension_flags.len() != 2 {
+                if form.revision <= 0 || form.flags.len() != 4 {
                     return Err(CodecError::Malformed(
-                        "revision-gated off_spl_sur requires a positive revision and two extension flags"
+                        "revision-gated off_spl_sur requires a positive revision and a four-boolean carrier run"
                             .into(),
                     ));
                 }
@@ -1068,9 +1062,7 @@ fn native_procedural_surface_definition(
                 )?;
                 native_f64(bytes, *distance / LEN_TO_MM);
                 // Leading sense pair, then the two-boolean ASM extension prefix.
-                bytes.push(native_bool(u_sense != 0));
-                bytes.push(native_bool(v_sense != 0));
-                for flag in extension_flags {
+                for flag in &form.flags {
                     bytes.push(native_bool(*flag));
                 }
                 native_revision_surface_tail(

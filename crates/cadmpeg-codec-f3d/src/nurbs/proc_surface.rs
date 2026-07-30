@@ -142,10 +142,10 @@ pub enum DecodedProceduralSurfaceDefinition {
         support: SurfaceGeometry,
         /// Signed model-space distance.
         distance: f64,
-        /// Native U sense enum.
-        u_sense: i64,
-        /// Native V sense enum.
-        v_sense: i64,
+        /// Native U sense enum, absent from the revision-gated layout.
+        u_sense: Option<i64>,
+        /// Native V sense enum, absent from the revision-gated layout.
+        v_sense: Option<i64>,
         /// Ordered conditional ASM flags.
         extension_flags: Vec<bool>,
         /// Revision-gated form fields.
@@ -3111,19 +3111,16 @@ fn decode_off_spl_sur(
         )?;
         let support = support?;
         let distance = take_f64(span, &mut position)? * LEN_TO_MM;
-        // The four booleans split into a leading pair carrying record-level
-        // progenitor sense state, followed by a two-boolean ASM extension
-        // prefix. The first boolean is the offset-direction reversal (true
-        // places the solved surface opposite the stored signed distance along
-        // the support normal); the second occurs only alongside a true first
-        // boolean and selects no geometric change within the record. The pair
-        // reuses the slots the pre-revision layout reads as the U/V sense
-        // enums, so it round-trips through the same IR fields.
-        let u_sense = i64::from(take_bool(span, &mut position)?);
-        let v_sense = i64::from(take_bool(span, &mut position)?);
-        let mut extension_flags = Vec::with_capacity(2);
-        for _ in 0..2 {
-            extension_flags.push(take_bool(span, &mut position)?);
+        // One four-boolean carrier run: the leading pair carrying record-level
+        // progenitor orientation state, then the two-boolean ASM extension
+        // prefix. The first boolean repeats the support reference's sense flag
+        // and orients the offset displacement; the second leaves the point set
+        // unchanged. This run occupies the byte positions the pre-revision
+        // layout reads as the U/V sense enums but shares no grammar with them,
+        // so it travels in the revision form rather than those IR slots.
+        let mut flags = Vec::with_capacity(4);
+        for _ in 0..4 {
+            flags.push(take_bool(span, &mut position)?);
         }
         let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
             decode_revision_surface_tail(span, &mut position, int_width)?;
@@ -3131,15 +3128,15 @@ fn decode_off_spl_sur(
             definition: DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
-                u_sense,
-                v_sense,
-                extension_flags,
+                u_sense: None,
+                v_sense: None,
+                extension_flags: Vec::new(),
                 revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
                     revision,
                     support_bounds,
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
-                    flags: Vec::new(),
+                    flags,
                     tail_enum,
                     discontinuities,
                     tail_flag,
@@ -3151,8 +3148,8 @@ fn decode_off_spl_sur(
     }
     let support = decode_embedded_surface(span, &mut position, int_width)?;
     let distance = take_f64(span, &mut position)? * LEN_TO_MM;
-    let u_sense = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let v_sense = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let u_sense = Some(take_tagged_int(span, &mut position, 0x15, int_width)?);
+    let v_sense = Some(take_tagged_int(span, &mut position, 0x15, int_width)?);
     let mut extension_flags = Vec::new();
     if modern {
         let first = take_bool(span, &mut position)?;

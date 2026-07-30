@@ -291,8 +291,8 @@ fn emit_carrier_surface(
                 ProceduralSurfaceDefinition::Offset {
                     support: support_id,
                     distance,
-                    u_sense: Some(u_sense),
-                    v_sense: Some(v_sense),
+                    u_sense,
+                    v_sense,
                     extension_flags,
                     revision_form,
                 }

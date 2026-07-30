@@ -595,17 +595,14 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Signed offset distance, in document length units.
         distance: f64,
-        /// Native U parameter-direction sense enum, when carried. The
-        /// revision-gated layout stores a boolean in this slot instead: it
-        /// repeats the sense flag of the support surface reference.
+        /// Native U parameter-direction sense enum, when carried.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         u_sense: Option<i64>,
-        /// Native V parameter-direction sense enum, when carried. The
-        /// revision-gated layout stores a boolean in this slot instead; it
-        /// does not affect the offset surface's point set.
+        /// Native V parameter-direction sense enum, when carried.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         v_sense: Option<i64>,
-        /// Ordered conditional ASM extension flags.
+        /// Ordered conditional ASM extension flags. A revision-gated offset
+        /// carries no such tail; its boolean run travels in `revision_form`.
         extension_flags: Vec<bool>,
         /// Revision-gated form fields; absent from the pre-revision layout.
         #[serde(default, skip_serializing_if = "Option::is_none")]
