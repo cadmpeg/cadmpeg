@@ -124,7 +124,9 @@ fixtures, claims above L1 remain unproven.
 - Section-segment coverage counts decoded rows, rows with resolved neutral
   geometry, decoded rows retaining source-native geometry, and declared rows
   that did not decode. Each nonzero unresolved or missing count raises a decode
-  loss note.
+  loss note. A uniquely joined evaluated saved entity resolves its corresponding
+  generic bounded-curve or saved-conic segment row as well as the emitted sketch
+  entity.
 - Section-coordinate solving accepts a complete variable table or no variable
   table. An incomplete variable table contributes no coordinate equations;
   missing declared rows are counted and raise a decode loss note. Complete

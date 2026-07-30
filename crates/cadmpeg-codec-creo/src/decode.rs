@@ -12544,6 +12544,28 @@ fn transfer_sketches(
             .count();
         coverage.resolved_geometry += resolved_reference_lines;
         coverage.by_family.entry("reference_line").or_default().1 += resolved_reference_lines;
+        let resolved_bounded_curves = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.bounded_curve_rows)
+            .filter(|segment| {
+                unique_segment_ids.contains(&segment.external_id)
+                    && materialized_saved_section_external_ids.contains(&segment.external_id)
+            })
+            .count();
+        coverage.resolved_geometry += resolved_bounded_curves;
+        coverage.by_family.entry("bounded_curve").or_default().1 += resolved_bounded_curves;
+        let resolved_conics = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.conic_rows)
+            .filter(|segment| {
+                unique_segment_ids.contains(&segment.external_id)
+                    && materialized_saved_section_external_ids.contains(&segment.external_id)
+            })
+            .count();
+        coverage.resolved_geometry += resolved_conics;
+        coverage.by_family.entry("conic").or_default().1 += resolved_conics;
         let resolved_opaque = definition
             .segments
             .iter()
