@@ -6230,6 +6230,31 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
 }
 
 #[test]
+fn decode_retains_scoped_model_name_call_as_model_context() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01component_name=rel_model_name:27()\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one curve-expression parameter");
+    };
+
+    assert_eq!(parameter.name, "component_name");
+    assert_eq!(parameter.expression, "rel_model_name:27()");
+    assert_eq!(parameter.value, None);
+    assert!(parameter.dependencies.is_empty());
+    assert!(!parameter.properties.contains_key("external_dependencies"));
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert!(native.fields["assignments"][0]["dependencies"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+}
+
+#[test]
 fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x03\

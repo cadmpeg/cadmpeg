@@ -73,6 +73,8 @@ fixtures, claims above L1 remain unproven.
   material functions and series/list parameter queries retain their argument
   dependencies without treating the function name as a parameter; their values
   remain symbolic until the referenced namespace is decoded.
+  Session-scoped `rel_model_name:<session_id>()` calls likewise remain symbolic
+  model-context queries without becoming parameter dependencies.
   Left-hand `value(parameter,row[,column])` statements retain a typed table-cell
   target and its complete dependency order without emitting a false scalar
   parameter.

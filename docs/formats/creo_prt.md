@@ -3339,6 +3339,10 @@ does not declare a scalar parameter named `value` or `parameter`. The table
 identifier and selector-expression identifiers precede right-hand identifiers
 in the assignment dependency order.
 
+`rel_model_name:<session_id>()` selects the model identified by the decimal
+session identifier. The scoped call is a model-context query, not a parameter
+reference. Its result resolves through the referenced model namespace.
+
 A `crv_fr_eqn` program containing calls to `abs`, `ceil`, `floor`, `extract`, `if`,
 `itos`, or `search`, or containing `IF`, `ELSE`, or `ENDIF` control lines, is
 not an evaluable datum-curve equation. Its source, assignments, and dependencies

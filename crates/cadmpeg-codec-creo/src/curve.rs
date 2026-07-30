@@ -842,9 +842,8 @@ fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &s
             while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
                 following += 1;
             }
-            let function = bytes.get(following) == Some(&b'(')
-                && !dependency.contains(':')
-                && creo_math_function(dependency).is_some();
+            let function =
+                bytes.get(following) == Some(&b'(') && creo_relation_function(dependency).is_some();
             let constant = reserved_relation_scalar(dependency).is_some();
             if !function
                 && !constant
@@ -1573,6 +1572,7 @@ trait ExpressionValue: Clone {
     fn logical_not(self) -> Option<Self>;
     fn function(
         name: CreoMathFunction,
+        scope: Option<&str>,
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
     ) -> Option<Self>;
@@ -1627,9 +1627,11 @@ impl ExpressionValue for f64 {
 
     fn function(
         name: CreoMathFunction,
+        scope: Option<&str>,
         arguments: &[Self],
         _context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
+        scope.is_none().then_some(())?;
         evaluate_creo_math_function(name, arguments)
     }
 
@@ -1725,9 +1727,11 @@ impl ExpressionValue for AffineValue {
 
     fn function(
         name: CreoMathFunction,
+        scope: Option<&str>,
         arguments: &[Self],
         _context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
+        scope.is_none().then_some(())?;
         let constants = arguments
             .iter()
             .map(|argument| (argument.linear == 0.0).then_some(argument.constant))
@@ -1862,9 +1866,11 @@ impl ExpressionValue for CurveExpressionValue {
 
     fn function(
         name: CreoMathFunction,
+        scope: Option<&str>,
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
+        scope.is_none().then_some(())?;
         evaluate_creo_relation_function(name, arguments, context)
     }
 
@@ -2207,9 +2213,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             }
             return self.values.get(&expression_identifier_key(name)).cloned();
         }
-        (!name.contains(':')).then_some(())?;
         (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
-        let function = creo_math_function(name)?;
+        let (function, scope) = creo_relation_function(name)?;
         self.cursor += 1;
         self.nesting += 1;
         self.whitespace();
@@ -2228,7 +2233,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         (self.source.get(self.cursor) == Some(&b')')).then_some(())?;
         self.cursor += 1;
         self.nesting -= 1;
-        V::function(function, &arguments, self.context)
+        V::function(function, scope, &arguments, self.context)
     }
 }
 
@@ -2325,6 +2330,17 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
             Some(CreoMathFunction::ContextDependent)
         }
         _ => None,
+    }
+}
+
+fn creo_relation_function(name: &str) -> Option<(CreoMathFunction, Option<&str>)> {
+    if let Some((function, scope)) = name.split_once(':') {
+        (function.eq_ignore_ascii_case("rel_model_name")
+            && !scope.is_empty()
+            && scope.bytes().all(|byte| byte.is_ascii_digit()))
+        .then_some((CreoMathFunction::RelModelName, Some(scope)))
+    } else {
+        creo_math_function(name).map(|function| (function, None))
     }
 }
 
@@ -4274,6 +4290,41 @@ mod tests {
         assert!(assignments
             .iter()
             .all(|assignment| assignment.value.is_none()));
+    }
+
+    #[test]
+    fn retains_scoped_model_name_calls_without_parameter_dependencies() {
+        let lines = ["component_name=rel_model_name:27()", "copy=component_name"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let assignments = evaluate_expression_program(
+            &lines,
+            Some("current_part"),
+            &ExternalRelationSymbols::default(),
+        );
+
+        assert_eq!(assignments.len(), 2);
+        assert!(assignments[0].dependencies.is_empty());
+        assert_eq!(assignments[0].value, None);
+        assert_eq!(assignments[1].dependencies, ["component_name"]);
+        assert_eq!(assignments[1].value, None);
+        assert_eq!(
+            evaluate_relation_expression(
+                "rel_model_name:27()",
+                &BTreeMap::new(),
+                RelationEvaluationContext {
+                    model_name: Some("current_part"),
+                    ..RelationEvaluationContext::default()
+                },
+            ),
+            None
+        );
     }
 
     #[test]
