@@ -78,7 +78,9 @@ current scores require those matrices and representative fixtures.
   nested schema selectors are counted independently.
 - Legacy typed relations retain their `body` and `param` role selectors and
   exact parameter identities when those selectors close within one identity
-  run. Each legacy identity run retains its exact outer container binding.
+  run. Complete `synchrone` fields retain synchronous and asynchronous
+  relation-update state independently of unresolved relation-expression
+  incidence. Each legacy identity run retains its exact outer container binding.
   Every complete schema role selector retains its fixed or paged production,
   containing identity, name, and value. Inclusive-length UTF-8 string packets
   and inline or wide signed-integer packets transfer as typed parameters when

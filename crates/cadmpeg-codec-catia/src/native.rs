@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 214;
+pub const CATIA_NATIVE_VERSION: u32 = 215;
 #[cfg(test)]
 const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
 #[cfg(test)]
@@ -3066,6 +3066,19 @@ pub struct CatiaLegacyRelation {
     pub result_type: String,
 }
 
+/// One complete legacy `synchrone` relation-update field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyRelationSynchronousState {
+    /// Offset of the `synchrone` role-name length byte.
+    pub role_byte_offset: u64,
+    /// Stored containing identity.
+    pub entity_id: u32,
+    /// Selector carried by the `synchrone` role.
+    pub selector: u32,
+    /// Whether the relation updates synchronously.
+    pub synchronous: bool,
+}
+
 /// Value selected by one complete legacy type descriptor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CatiaLegacyTypeValue {
@@ -3208,6 +3221,9 @@ pub struct CatiaLegacyEntityRun {
     pub text_fields: Vec<CatiaLegacyTextField>,
     /// Complete expression/signature pairs.
     pub relations: Vec<CatiaLegacyRelation>,
+    /// Complete `synchrone` relation-update fields.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub synchronous_states: Vec<CatiaLegacyRelationSynchronousState>,
     /// Complete literal or selector type descriptors.
     pub type_descriptors: Vec<CatiaLegacyTypeDescriptor>,
     /// Complete typed scalar packets.
@@ -3737,6 +3753,16 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         }
                     })
                     .collect(),
+                synchronous_states: run
+                    .synchronous_states
+                    .into_iter()
+                    .map(|state| CatiaLegacyRelationSynchronousState {
+                        role_byte_offset: state.role_offset as u64,
+                        entity_id: state.entity_id,
+                        selector: state.selector,
+                        synchronous: state.synchronous,
+                    })
+                    .collect(),
                 type_descriptors: run
                     .type_descriptors
                     .into_iter()
@@ -3987,6 +4013,30 @@ fn validate_legacy_entity_runs(
                 .relations
                 .iter()
                 .all(|relation| valid_legacy_relation(run, relation))
+            && run
+                .synchronous_states
+                .windows(2)
+                .all(|pair| pair[0].role_byte_offset < pair[1].role_byte_offset)
+            && run.synchronous_states.iter().all(|state| {
+                state.role_byte_offset >= run.byte_offset
+                    && state.role_byte_offset < run.catalog_offset
+                    && run
+                        .identities
+                        .iter()
+                        .rfind(|identity| identity.byte_offset < state.role_byte_offset)
+                        .is_some_and(|identity| identity.entity_id == state.entity_id)
+                    && run
+                        .role_selectors
+                        .iter()
+                        .filter(|role| {
+                            role.byte_offset == state.role_byte_offset
+                                && role.entity_id == state.entity_id
+                                && role.name == "synchrone"
+                                && role.selector == state.selector
+                        })
+                        .count()
+                        == 1
+            })
             && run
                 .type_descriptors
                 .windows(2)

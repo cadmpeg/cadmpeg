@@ -100,6 +100,19 @@ pub struct LegacyRelation {
     pub signature: LegacyRelationSignature,
 }
 
+/// One complete `synchrone` relation-update field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyRelationSynchronousState {
+    /// Offset of the `synchrone` role-name length byte.
+    pub role_offset: usize,
+    /// Stored identity whose interval contains the field.
+    pub entity_id: u32,
+    /// Selector carried by the `synchrone` role.
+    pub selector: u32,
+    /// Whether the relation updates synchronously.
+    pub synchronous: bool,
+}
+
 /// Value selected by one legacy type descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LegacyTypeValue {
@@ -218,6 +231,8 @@ pub struct LegacyEntityRun {
     pub text_fields: Vec<LegacyTextField>,
     /// Complete expression/signature pairs.
     pub relations: Vec<LegacyRelation>,
+    /// Complete `synchrone` relation-update fields.
+    pub synchronous_states: Vec<LegacyRelationSynchronousState>,
     /// Complete literal or selector type descriptors.
     pub type_descriptors: Vec<LegacyTypeDescriptor>,
     /// Complete typed scalar packets.
@@ -275,6 +290,8 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         role_selectors.extend(interval_roles);
     }
     let relations = parse_relations(&text_fields, &identities);
+    let synchronous_states =
+        parse_synchronous_states(data, &role_selectors, &identities, catalog_offset);
     let type_descriptors = identities
         .iter()
         .enumerate()
@@ -328,11 +345,60 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         role_selectors,
         text_fields,
         relations,
+        synchronous_states,
         type_descriptors,
         scalar_values,
         string_values,
         integer_values,
     })
+}
+
+fn parse_synchronous_states(
+    data: &[u8],
+    roles: &[LegacyRoleSelector],
+    identities: &[LegacyEntityIdentity],
+    catalog_offset: usize,
+) -> Vec<LegacyRelationSynchronousState> {
+    roles
+        .iter()
+        .filter(|role| role.name == "synchrone")
+        .filter_map(|role| {
+            let at = role_selector_end(role)?;
+            let end = at.checked_add(6)?;
+            let interval_end = identities
+                .iter()
+                .find(|identity| identity.offset > role.offset)
+                .map_or(catalog_offset, |identity| identity.offset);
+            if end > interval_end {
+                return None;
+            }
+            let [0xe8, 0x00, 0x1c, 0x01, state, 0xfe] = *data.get(at..end)? else {
+                return None;
+            };
+            let synchronous = match state {
+                0x81 => false,
+                0x82 => true,
+                _ => return None,
+            };
+            Some(LegacyRelationSynchronousState {
+                role_offset: role.offset,
+                entity_id: role.entity_id,
+                selector: role.selector,
+                synchronous,
+            })
+        })
+        .collect()
+}
+
+fn role_selector_end(role: &LegacyRoleSelector) -> Option<usize> {
+    let selector_len = match role.encoding {
+        LegacyRoleSelectorEncoding::FixedU32 => 5,
+        LegacyRoleSelectorEncoding::Paged => 2,
+    };
+    role.offset
+        .checked_add(1)?
+        .checked_add(role.name.len())?
+        .checked_add(selector_len)
 }
 
 fn parse_type_descriptors(
@@ -828,6 +894,7 @@ mod tests {
         assert_eq!(runs[0].catalog_offset, catalog_offset);
         assert!(runs[0].text_fields.is_empty());
         assert!(runs[0].relations.is_empty());
+        assert!(runs[0].synchronous_states.is_empty());
         assert!(runs[0].type_descriptors.is_empty());
         assert!(runs[0].scalar_values.is_empty());
         assert!(runs[0].string_values.is_empty());
@@ -917,6 +984,63 @@ mod tests {
             [("body", 4134), ("param", 15108), ("paramin", 43)]
         );
         assert_eq!(run.role_selectors[2].entity_id, 1);
+    }
+
+    #[test]
+    fn parses_complete_relation_synchronous_states() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        for (selector, state) in [(15108_u32, 0x81), (15109, 0x82)] {
+            bytes.extend_from_slice(&[
+                10, b's', b'y', b'n', b'c', b'h', b'r', b'o', b'n', b'e', 0x80,
+            ]);
+            bytes.extend_from_slice(&selector.to_le_bytes());
+            bytes.extend_from_slice(&[0xe8, 0x00, 0x1c, 0x01, state, 0xfe]);
+        }
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let states = &parse_runs(&bytes)[0].synchronous_states;
+        assert_eq!(
+            states
+                .iter()
+                .map(|state| (state.selector, state.synchronous))
+                .collect::<Vec<_>>(),
+            [(15108, false), (15109, true)]
+        );
+        assert!(states.iter().all(|state| state.entity_id == 1));
+    }
+
+    #[test]
+    fn rejects_malformed_relation_synchronous_states() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        for payload in [
+            [0xe8, 0x00, 0x1c, 0x01, 0x80, 0xfe],
+            [0xe8, 0x00, 0x1c, 0x01, 0x81, 0xff],
+            [0xe8, 0x00, 0x1d, 0x01, 0x82, 0xfe],
+        ] {
+            bytes.extend_from_slice(&[
+                10, b's', b'y', b'n', b'c', b'h', b'r', b'o', b'n', b'e', 0x80,
+            ]);
+            bytes.extend_from_slice(&15108_u32.to_le_bytes());
+            bytes.extend_from_slice(&payload);
+        }
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        assert!(parse_runs(&bytes)[0].synchronous_states.is_empty());
+
+        let mut crossing = Vec::new();
+        identity(&mut crossing, 1);
+        crossing.extend_from_slice(&[
+            10, b's', b'y', b'n', b'c', b'h', b'r', b'o', b'n', b'e', 0x80,
+        ]);
+        crossing.extend_from_slice(&15108_u32.to_le_bytes());
+        crossing.extend_from_slice(&[0xe8, 0x00, 0x1c]);
+        identity(&mut crossing, 2);
+        crossing.extend_from_slice(&[0x01, 0x82, 0xfe]);
+        crossing.extend_from_slice(CATALOG_OPEN);
+
+        assert!(parse_runs(&crossing)[0].synchronous_states.is_empty());
     }
 
     #[test]

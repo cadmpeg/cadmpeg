@@ -3748,6 +3748,63 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
 }
 
 #[test]
+fn decode_retains_legacy_relation_synchronous_states() {
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend([0x81, 0xfd, 0x8c]);
+    for (selector, state) in [(15108_u32, 0x81), (15109, 0x82)] {
+        bytes.extend([
+            10, b's', b'y', b'n', b'c', b'h', b'r', b'o', b'n', b'e', 0x80,
+        ]);
+        bytes.extend(selector.to_le_bytes());
+        bytes.extend([0xe8, 0x00, 0x1c, 0x01, state, 0xfe]);
+    }
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode legacy relation update states");
+
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_synchronous_state_count"],
+        2
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_synchronous_relation_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_asynchronous_relation_count"],
+        1
+    );
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA native namespace"),
+    )
+    .expect("load retained update states");
+    assert_eq!(
+        native.legacy_entity_runs[0]
+            .synchronous_states
+            .iter()
+            .map(|state| (state.selector, state.synchronous))
+            .collect::<Vec<_>>(),
+        [(15108, false), (15109, true)]
+    );
+
+    let mut invalid = native;
+    invalid.legacy_entity_runs[0].synchronous_states[0].selector += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid relation update state");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
 fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);
