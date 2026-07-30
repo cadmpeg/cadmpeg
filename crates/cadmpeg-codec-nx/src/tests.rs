@@ -11637,6 +11637,79 @@ fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
 }
 
 #[test]
+fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
+    let terminal_stream = || {
+        let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+        let intersection = stream
+            .windows(4)
+            .position(|window| window == [0, 38, 0, 12])
+            .expect("intersection record");
+        put_ref(&mut stream, intersection + 21, 13);
+        for offset in [23, 25, 27] {
+            put_ref(&mut stream, intersection + offset, 1);
+        }
+        stream
+    };
+    let radial_height = (0.01_f64.powi(2) - 0.005_f64.powi(2)).sqrt();
+    let mut sphere = record(53, 99);
+    put_ref(&mut sphere, 2, 13);
+    sphere[18] = b'+';
+    put_vec3(&mut sphere, 19, [0.005, -radial_height, 0.0]);
+    put_f64(&mut sphere, 43, 0.01);
+    put_vec3(&mut sphere, 51, [1.0, 0.0, 0.0]);
+    put_vec3(&mut sphere, 75, [0.0, 1.0, 0.0]);
+
+    let mut torus = record(54, 107);
+    put_ref(&mut torus, 2, 13);
+    torus[18] = b'+';
+    put_vec3(&mut torus, 19, [0.005, -0.03 - radial_height, 0.0]);
+    put_vec3(&mut torus, 43, [1.0, 0.0, 0.0]);
+    put_f64(&mut torus, 67, 0.03);
+    put_f64(&mut torus, 75, 0.01);
+    put_vec3(&mut torus, 83, [0.0, 1.0, 0.0]);
+
+    for (family, record) in [("sphere", sphere), ("torus", torus)] {
+        let mut stream = terminal_stream();
+        stream.extend(record);
+        let result = NxCodec
+            .decode(
+                &mut Cursor::new(prt_with_partition(&stream)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let procedural = &result.ir.model.procedural_curves[0];
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+            parameterization: Some(parameterization),
+            ..
+        } = &procedural.definition
+        else {
+            panic!("exact {family} meridian");
+        };
+        assert!(parameterization.pcurves.iter().any(|pcurve| {
+            matches!(
+                pcurve,
+                PcurveGeometry::Line { direction, .. }
+                    if direction.u == 0.0 && direction.v != 0.0
+            )
+        }));
+        for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let point =
+                cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
+                    .unwrap_or_else(|| panic!("{family} meridian evaluates"));
+            let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
+                &result.ir,
+                &procedural.curve,
+                point,
+                parameter,
+            )
+            .unwrap_or_else(|| panic!("{family} meridian inverts at {parameter}"));
+            assert!((inverse - parameter).abs() < 1.0e-8);
+        }
+        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    }
+}
+
+#[test]
 fn decode_emits_inline_descriptor_intersection_witnesses() {
     let stream = inline_descriptor_intersection_curve_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));

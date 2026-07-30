@@ -8100,14 +8100,44 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
             let candidates = [first_surface, second_surface]
                 .map(|surface| exact_boundary_pcurve(ir, surface, endpoints, range, tolerance));
             let pcurves = match candidates {
-                [Some(first), Some(second)] => coincident_pcurve_pair(
-                    ir,
-                    [first_surface, second_surface],
-                    [&first, &second],
-                    range,
-                    tolerance,
-                )
-                .then_some([first, second])?,
+                [Some(first), Some(second)] => {
+                    if coincident_pcurve_pair(
+                        ir,
+                        [first_surface, second_surface],
+                        [&first, &second],
+                        range,
+                        tolerance,
+                    ) {
+                        [first, second]
+                    } else {
+                        let transferred = [
+                            transfer_intersection_pcurve(
+                                ir,
+                                &procedural.curve,
+                                first_surface,
+                                &first,
+                                second_surface,
+                                range,
+                                tolerance,
+                            )
+                            .map(|transferred| [first.clone(), transferred]),
+                            transfer_intersection_pcurve(
+                                ir,
+                                &procedural.curve,
+                                second_surface,
+                                &second,
+                                first_surface,
+                                range,
+                                tolerance,
+                            )
+                            .map(|transferred| [transferred, second.clone()]),
+                        ];
+                        match transferred {
+                            [Some(pair), None] | [None, Some(pair)] => pair,
+                            _ => return None,
+                        }
+                    }
+                }
                 [Some(first), None] => [
                     first.clone(),
                     transfer_intersection_pcurve(
@@ -8255,7 +8285,10 @@ fn exact_boundary_pcurve(
     }
     if matches!(
         &carrier.geometry,
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
+        SurfaceGeometry::Cylinder { .. }
+            | SurfaceGeometry::Cone { .. }
+            | SurfaceGeometry::Sphere { .. }
+            | SurfaceGeometry::Torus { .. }
     ) {
         let [first, second] =
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
@@ -8506,6 +8539,14 @@ fn boundary_curve_speed_bound(
             if direction.u == 0.0 && direction.v != 0.0 =>
         {
             affine_speed()
+        }
+        SurfaceGeometry::Sphere { radius, .. } if direction.u == 0.0 && direction.v != 0.0 => {
+            let speed = radius.abs() * direction.v.abs();
+            speed.is_finite().then_some(speed)
+        }
+        SurfaceGeometry::Torus { minor_radius, .. } if direction.u == 0.0 && direction.v != 0.0 => {
+            let speed = minor_radius.abs() * direction.v.abs();
+            speed.is_finite().then_some(speed)
         }
         SurfaceGeometry::Nurbs(nurbs) => {
             let (fixed_axis, fixed_parameter, varying_scale) =

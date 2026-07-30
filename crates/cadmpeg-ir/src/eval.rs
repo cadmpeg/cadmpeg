@@ -1376,7 +1376,10 @@ pub fn model_curve_parameter_near_point(
                 (denominator.is_finite() && denominator > 0.0)
                     .then(|| offset.dot(tangent) / denominator)
             }
-            SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
+            SurfaceGeometry::Cylinder { .. }
+            | SurfaceGeometry::Cone { .. }
+            | SurfaceGeometry::Sphere { .. }
+            | SurfaceGeometry::Torus { .. }
                 if direction.u == 0.0 && direction.v != 0.0 =>
             {
                 analytic_surface_parameters(&surface.geometry, point)
@@ -1401,10 +1404,15 @@ pub fn model_curve_parameter_near_point(
             }
             _ => continue,
         };
-        let Some(parameter) = parameter else {
+        let Some(mut parameter) = parameter else {
             continue;
         };
-        if parameter < range[0] || parameter > range[1] {
+        let endpoint_tolerance = 1.0e-12 * (1.0 + range[0].abs().max(range[1].abs()));
+        if parameter < range[0] && range[0] - parameter <= endpoint_tolerance {
+            parameter = range[0];
+        } else if parameter > range[1] && parameter - range[1] <= endpoint_tolerance {
+            parameter = range[1];
+        } else if parameter < range[0] || parameter > range[1] {
             continue;
         }
         let Some(evaluated) = model_curve_point_by_id(ir, curve_id, parameter) else {
