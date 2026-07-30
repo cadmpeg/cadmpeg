@@ -983,6 +983,31 @@ fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_
 }
 
 #[test]
+fn incidence_component_preflight_retains_fixed_chain_frontiers() {
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[1, 3]],
+        vec![[3, 4], [3, 5]],
+        vec![[4, 0]],
+    ];
+    let edge_faces = [[0, 0]; 4];
+
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        1,
+        6,
+        None,
+        None,
+        None,
+        &|_| true,
+    )
+    .expect("fixed-chain component frontier");
+
+    assert_eq!(solutions, vec![vec![[0, 1], [1, 3], [3, 4], [4, 0]]]);
+}
+
+#[test]
 fn partial_incidence_constraint_joins_every_component_it_can_couple() {
     let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
     let active = [true, false, false, true, false, false];

@@ -12450,6 +12450,34 @@ fn decode_normalizes_every_admitted_formula_length_unit_to_millimetres() {
 }
 
 #[test]
+fn decode_normalizes_every_admitted_formula_angle_unit_to_radians() {
+    let expected = 1.0 + std::f64::consts::PI / 200.0 + std::f64::consts::PI / 180.0;
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "ANGLE",
+                Some(expected),
+                "1rad+1grad+1deg",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode complete angle-unit formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("angle-unit formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::features::Angle(expected)
+        ))
+    );
+}
+
+#[test]
 fn decode_evaluates_exponential_and_hyperbolic_functions() {
     let decoded = CatiaCodec
         .decode(

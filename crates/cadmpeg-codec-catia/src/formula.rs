@@ -1232,6 +1232,10 @@ impl FormulaExpressionParser<'_, '_> {
         } else if self.remaining().starts_with("rad") {
             self.at += 3;
             FormulaDimension::ANGLE
+        } else if self.remaining().starts_with("grad") {
+            self.at += 4;
+            value *= std::f64::consts::PI / 200.0;
+            FormulaDimension::ANGLE
         } else if self.remaining().starts_with("deg") {
             self.at += 3;
             value = value.to_radians();
@@ -1390,6 +1394,21 @@ mod parser_tests {
                 evaluate_formula_expression(literal, &bindings).expect("complete length literal");
             assert_eq!(actual.value, expected, "{literal}");
             assert!(actual.dimension == FormulaDimension::LENGTH, "{literal}");
+        }
+    }
+
+    #[test]
+    fn formula_angle_literals_normalize_every_admitted_unit_to_radians() {
+        let bindings = BTreeMap::new();
+        for (literal, expected) in [
+            ("1rad", 1.0),
+            ("1grad", std::f64::consts::PI / 200.0),
+            ("1deg", std::f64::consts::PI / 180.0),
+        ] {
+            let actual =
+                evaluate_formula_expression(literal, &bindings).expect("complete angle literal");
+            assert_eq!(actual.value, expected, "{literal}");
+            assert!(actual.dimension == FormulaDimension::ANGLE, "{literal}");
         }
     }
 }

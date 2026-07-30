@@ -1399,24 +1399,40 @@ fn boundary_domains_close(
     })
 }
 
-fn completed_incidence_faces_close(
+fn component_incidence_faces_viable(
     faces: &HashSet<usize>,
     assignment: &[Option<[usize; 2]>],
+    choices: &[Vec<[usize; 2]>],
     face_edges: &[Vec<usize>],
     domains: Option<&[MeshFaceBoundaryDomain]>,
+    point_count: usize,
 ) -> bool {
     faces.iter().copied().all(|face| {
-        let assigned_edges = face_edges[face]
-            .iter()
-            .copied()
-            .filter(|edge| assignment[*edge].is_some())
-            .collect::<Vec<_>>();
         if domains.is_none() {
-            let points = assignment
-                .iter()
-                .map(|pair| pair.unwrap_or([0; 2]))
-                .collect::<Vec<_>>();
-            return incidence_cycles(&assigned_edges, &points).is_some();
+            let mut degrees = HashMap::<usize, u8>::new();
+            for &edge in &face_edges[face] {
+                let Some(pair) = assignment[edge] else {
+                    continue;
+                };
+                for point in pair {
+                    if point >= point_count {
+                        return false;
+                    }
+                    let degree = degrees.entry(point).or_default();
+                    let Some(next) = degree.checked_add(1) else {
+                        return false;
+                    };
+                    *degree = next;
+                }
+            }
+            return degrees.into_iter().all(|(point, degree)| {
+                degree <= 2
+                    && (degree != 1
+                        || face_edges[face].iter().copied().any(|edge| {
+                            assignment[edge].is_none()
+                                && choices[edge].iter().any(|pair| pair.contains(&point))
+                        }))
+            });
         }
         let mut points = vec![[0; 2]; assignment.len()];
         for &edge in &face_edges[face] {
@@ -1578,11 +1594,13 @@ where
             for &(edge, pair) in solution {
                 completed[edge] = Some(pair);
             }
-            let locally_closed = completed_incidence_faces_close(
+            let locally_closed = component_incidence_faces_viable(
                 &component_faces,
                 &completed,
+                choices,
                 face_edges,
                 mesh_assignments,
+                point_count,
             );
             let locally_closed = locally_closed
                 && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed));
