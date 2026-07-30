@@ -86,7 +86,8 @@ current scores require those matrices and representative fixtures.
   production, containing identity, role representation, and value. Legacy text
   fields retain both `FE`-closed values and values carrying an inline `E3`
   paged-role tail. Field-bound roles retain literal names or exact unresolved
-  schema-selector bytes.
+  schema-selector bytes. Consecutive field-bound roles retain the intervening
+  schema-field code and exact payload.
   Inclusive-length UTF-8 string packets and inline or wide signed-integer
   packets transfer as typed parameters when
   their name and terminal type resolve uniquely.

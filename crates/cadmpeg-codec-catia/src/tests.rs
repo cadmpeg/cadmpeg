@@ -3911,6 +3911,10 @@ fn decode_retains_legacy_relation_synchronous_states() {
         decoded.report.coverage["decoded_legacy_asynchronous_relation_count"],
         1
     );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_schema_field_count"],
+        3
+    );
     let native = crate::native::CatiaNative::load(
         decoded
             .ir
@@ -3927,6 +3931,18 @@ fn decode_retains_legacy_relation_synchronous_states() {
             .collect::<Vec<_>>(),
         [(15108, false), (15109, true), (4669, true)]
     );
+    assert_eq!(
+        native.legacy_entity_runs[0]
+            .schema_fields
+            .iter()
+            .map(|field| (field.field_code, field.payload.as_slice()))
+            .collect::<Vec<_>>(),
+        [
+            (0x1c00, &[0x81, 0xfe][..]),
+            (0x1c00, &[0x82, 0xfe][..]),
+            (0x1c00, &[0x82][..]),
+        ]
+    );
 
     let mut missing_selected_successor = native.clone();
     missing_selected_successor.legacy_entity_runs[0]
@@ -3936,6 +3952,14 @@ fn decode_retains_legacy_relation_synchronous_states() {
     missing_selected_successor
         .store(&mut namespace)
         .expect("store selected state without successor role");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+
+    let mut invalid_field_boundary = native.clone();
+    invalid_field_boundary.legacy_entity_runs[0].schema_fields[0].boundary_role_byte_offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_field_boundary
+        .store(&mut namespace)
+        .expect("store invalid schema-field boundary");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
     let mut invalid = native;
@@ -14292,6 +14316,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .arena_as("legacy_entity_runs")
         .expect("load legacy entity runs");
     previous_runs[0].role_selectors.clear();
+    previous_runs[0].schema_fields.clear();
     for field in &mut previous_runs[0].text_fields {
         if let Some(role) = &mut field.role {
             role.entity_id = 0;

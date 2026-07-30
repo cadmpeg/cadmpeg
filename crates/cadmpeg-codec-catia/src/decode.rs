@@ -332,6 +332,11 @@ fn finish_decode(
         .flat_map(|run| &run.text_fields)
         .filter(|field| field.role.is_some())
         .count();
+    let legacy_schema_field_count = native
+        .legacy_entity_runs
+        .iter()
+        .map(|run| run.schema_fields.len())
+        .sum();
     let legacy_relation_count = native
         .legacy_entity_runs
         .iter()
@@ -1509,6 +1514,10 @@ fn finish_decode(
             legacy_role_text_field_count,
         ),
         (
+            "decoded_legacy_schema_field_count".to_string(),
+            legacy_schema_field_count,
+        ),
+        (
             "decoded_legacy_relation_count".to_string(),
             legacy_relation_count,
         ),
@@ -2062,7 +2071,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} legacy design run(s) with {legacy_entity_identity_count} source-ordered entity identity marker(s), comprising {legacy_identity_lead_81_count} lead-81, {legacy_identity_lead_82_count} lead-82, {legacy_identity_lead_e5_count} lead-E5, and {legacy_identity_lead_fd_count} lead-FD record(s), {legacy_role_selector_count} complete schema role selector(s), including {legacy_selected_role_count} unresolved schema-selected role name(s), {legacy_text_field_count} complete schema text field(s), including {legacy_e3_role_tail_text_field_count} with E3 paged-role tails and {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_synchronous_state_count} relation update-state field(s), comprising {legacy_synchronous_relation_count} synchronous and {legacy_asynchronous_relation_count} asynchronous state(s), {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s), {legacy_string_value_count} string value(s), including {legacy_named_string_value_count} named string(s), and {legacy_integer_value_count} signed integer value(s), including {legacy_named_integer_value_count} named integer(s); {} uniquely named, literal-typed parameter(s), including {} resolved through descriptor selectors, and {} closed zero-input formula(s) transferred, while remaining selector semantics, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
+                "CATIA native data retains {} legacy design run(s) with {legacy_entity_identity_count} source-ordered entity identity marker(s), comprising {legacy_identity_lead_81_count} lead-81, {legacy_identity_lead_82_count} lead-82, {legacy_identity_lead_e5_count} lead-E5, and {legacy_identity_lead_fd_count} lead-FD record(s), {legacy_role_selector_count} complete schema role selector(s), including {legacy_selected_role_count} unresolved schema-selected role name(s), {legacy_schema_field_count} complete role-bounded schema field(s), {legacy_text_field_count} complete schema text field(s), including {legacy_e3_role_tail_text_field_count} with E3 paged-role tails and {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_synchronous_state_count} relation update-state field(s), comprising {legacy_synchronous_relation_count} synchronous and {legacy_asynchronous_relation_count} asynchronous state(s), {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s), {legacy_string_value_count} string value(s), including {legacy_named_string_value_count} named string(s), and {legacy_integer_value_count} signed integer value(s), including {legacy_named_integer_value_count} named integer(s); {} uniquely named, literal-typed parameter(s), including {} resolved through descriptor selectors, and {} closed zero-input formula(s) transferred, while remaining selector semantics, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
                 native.legacy_entity_runs.len(),
                 formula_transfer.legacy_parameter_count,
                 formula_transfer.legacy_selector_parameter_count,

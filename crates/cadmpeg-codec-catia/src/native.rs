@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 218;
+pub const CATIA_NATIVE_VERSION: u32 = 219;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -3070,6 +3070,23 @@ pub struct CatiaLegacyTextField {
     pub value: String,
 }
 
+/// One legacy schema field bounded by consecutive role selectors.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacySchemaField {
+    /// Offset of the `E8 <field-code:u16le> 01` opener.
+    pub byte_offset: u64,
+    /// Stored identity whose interval contains the field.
+    pub entity_id: u32,
+    /// Role selector that binds this field.
+    pub role_byte_offset: u64,
+    /// Following role selector that closes the payload.
+    pub boundary_role_byte_offset: u64,
+    /// Stored schema field code.
+    pub field_code: u16,
+    /// Exact bytes after the opener and before the boundary role.
+    pub payload: Vec<u8>,
+}
+
 /// One typed parameter role in a legacy relation signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyRelationParameter {
@@ -3263,6 +3280,9 @@ pub struct CatiaLegacyEntityRun {
     pub role_selectors: Vec<CatiaLegacyRoleSelector>,
     /// Complete schema text fields in identity-interval order.
     pub text_fields: Vec<CatiaLegacyTextField>,
+    /// Complete role-bounded schema fields in identity-interval order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub schema_fields: Vec<CatiaLegacySchemaField>,
     /// Complete expression/signature pairs.
     pub relations: Vec<CatiaLegacyRelation>,
     /// Complete `synchrone` relation-update fields.
@@ -3771,6 +3791,18 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         value: field.value,
                     })
                     .collect(),
+                schema_fields: run
+                    .schema_fields
+                    .into_iter()
+                    .map(|field| CatiaLegacySchemaField {
+                        byte_offset: field.offset as u64,
+                        entity_id: field.entity_id,
+                        role_byte_offset: field.role_offset as u64,
+                        boundary_role_byte_offset: field.boundary_role_offset as u64,
+                        field_code: field.field_code,
+                        payload: field.payload,
+                    })
+                    .collect(),
                 relations: run
                     .relations
                     .into_iter()
@@ -4014,7 +4046,9 @@ fn valid_legacy_relation_field_pair(
         fields.as_slice(),
         [prelude, selected_expression, selected_signature]
             if prelude.value.is_empty()
-                && prelude.role.is_none()
+                && prelude.role.as_ref().is_none_or(|role| {
+                    matches!(&role.name, CatiaLegacyRoleName::Selector(_))
+                })
                 && prelude.encoding == CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
                 && selected_expression.encoding
                     == CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
@@ -4121,6 +4155,25 @@ fn validate_legacy_entity_runs(
                                 .iter()
                                 .rfind(|identity| identity.byte_offset < role.byte_offset)
                                 .is_some_and(|identity| identity.entity_id == field.entity_id)
+                    })
+            })
+            && run
+                .schema_fields
+                .windows(2)
+                .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
+            && run.schema_fields.iter().all(|field| {
+                field.byte_offset >= run.byte_offset
+                    && field.byte_offset < run.catalog_offset
+                    && field.boundary_role_byte_offset > field.byte_offset
+                    && field.byte_offset.checked_add(4).and_then(|payload_offset| {
+                        payload_offset.checked_add(u64::try_from(field.payload.len()).ok()?)
+                    }) == Some(field.boundary_role_byte_offset)
+                    && run.role_selectors.windows(2).any(|roles| {
+                        roles[0].byte_offset == field.role_byte_offset
+                            && roles[0].entity_id == field.entity_id
+                            && legacy_role_selector_end(&roles[0]) == Some(field.byte_offset)
+                            && roles[1].byte_offset == field.boundary_role_byte_offset
+                            && roles[1].entity_id == field.entity_id
                     })
             })
             && run

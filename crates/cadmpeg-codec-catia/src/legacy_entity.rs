@@ -84,6 +84,23 @@ pub struct LegacyTextField {
     pub value: String,
 }
 
+/// One schema field bounded by consecutive role selectors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacySchemaField {
+    /// Offset of the `E8 <field-code:u16le> 01` opener.
+    pub offset: usize,
+    /// Stored identity whose interval contains the field.
+    pub entity_id: u32,
+    /// Role selector that binds this field.
+    pub role_offset: usize,
+    /// Following role selector that closes the payload.
+    pub boundary_role_offset: usize,
+    /// Stored schema field code.
+    pub field_code: u16,
+    /// Exact bytes after the opener and before the boundary role.
+    pub payload: Vec<u8>,
+}
+
 /// One typed parameter clause in a legacy relation signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyRelationParameter {
@@ -258,6 +275,8 @@ pub struct LegacyEntityRun {
     pub role_selectors: Vec<LegacyRoleSelector>,
     /// Complete schema text fields contained by the identity intervals.
     pub text_fields: Vec<LegacyTextField>,
+    /// Complete role-bounded schema fields.
+    pub schema_fields: Vec<LegacySchemaField>,
     /// Complete expression/signature pairs.
     pub relations: Vec<LegacyRelation>,
     /// Complete `synchrone` relation-update fields.
@@ -323,6 +342,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         role_selectors.extend(interval_roles);
     }
     let relations = parse_relations(&text_fields, &identities);
+    let schema_fields = parse_schema_fields(data, &role_selectors, &text_fields);
     let synchronous_states =
         parse_synchronous_states(data, &role_selectors, &identities, catalog_offset);
     let type_descriptors = identities
@@ -377,6 +397,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         identities,
         role_selectors,
         text_fields,
+        schema_fields,
         relations,
         synchronous_states,
         type_descriptors,
@@ -698,7 +719,10 @@ fn parse_relations(
         let selected_role_pair = match entity_fields {
             [prelude, expression, signature]
                 if prelude.value.is_empty()
-                    && prelude.role.is_none()
+                    && prelude
+                        .role
+                        .as_ref()
+                        .is_none_or(|role| matches!(&role.name, LegacyRoleName::Selector(_)))
                     && prelude.encoding == LegacyTextEncoding::U8InclusiveLengthE3RoleTail
                     && expression.encoding == LegacyTextEncoding::U8InclusiveLengthE3RoleTail
                     && signature.encoding == LegacyTextEncoding::U8InclusiveLengthE3RoleTail
@@ -854,6 +878,57 @@ impl LegacyRoleSelector {
                 LegacyRoleSelectorEncoding::Paged => 2,
             })
     }
+}
+
+fn parse_schema_fields(
+    data: &[u8],
+    roles: &[LegacyRoleSelector],
+    text_fields: &[LegacyTextField],
+) -> Vec<LegacySchemaField> {
+    roles
+        .windows(2)
+        .filter_map(|pair| {
+            let [role, boundary] = pair else {
+                return None;
+            };
+            if role.entity_id != boundary.entity_id {
+                return None;
+            }
+            let offset = role.end_offset()?;
+            let payload_offset = offset.checked_add(4)?;
+            if payload_offset > boundary.offset
+                || data.get(offset) != Some(&0xe8)
+                || data.get(offset + 3) != Some(&0x01)
+            {
+                return None;
+            }
+            let boundary_binds_field = boundary.end_offset().is_some_and(|next_offset| {
+                data.get(next_offset) == Some(&0xe8)
+                    && next_offset.checked_add(3).and_then(|at| data.get(at)) == Some(&0x01)
+            });
+            let boundary_closes_text = text_fields.iter().any(|field| {
+                field.offset == offset
+                    && field.entity_id == role.entity_id
+                    && field.encoding == LegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                    && field.role.as_ref().is_some_and(|bound| bound == role)
+                    && payload_offset
+                        .checked_add(1)
+                        .and_then(|value_offset| value_offset.checked_add(field.value.len()))
+                        == Some(boundary.offset)
+            });
+            if !boundary_binds_field && !boundary_closes_text {
+                return None;
+            }
+            Some(LegacySchemaField {
+                offset,
+                entity_id: role.entity_id,
+                role_offset: role.offset,
+                boundary_role_offset: boundary.offset,
+                field_code: u16::from_le_bytes([*data.get(offset + 1)?, *data.get(offset + 2)?]),
+                payload: data.get(payload_offset..boundary.offset)?.to_vec(),
+            })
+        })
+        .collect()
 }
 
 fn parse_role_selectors(
@@ -1152,6 +1227,18 @@ mod tests {
         assert_eq!(run.synchronous_states.len(), 1);
         assert_eq!(run.synchronous_states[0].selector, 4668);
         assert!(run.synchronous_states[0].synchronous);
+        assert_eq!(
+            run.schema_fields
+                .iter()
+                .map(|field| (
+                    field.field_code,
+                    field.payload.as_slice(),
+                    field.role_offset,
+                    field.boundary_role_offset,
+                ))
+                .collect::<Vec<_>>(),
+            [(0x1728, &[0xfe][..], 8, 16), (0x1c00, &[0x82][..], 16, 24),]
+        );
     }
 
     #[test]
