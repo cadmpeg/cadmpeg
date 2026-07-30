@@ -32575,7 +32575,7 @@ fn build_report(
              closed numeric and string operator and deterministic function values. \
              {unevaluated_curve_expression_record_count} active curve-equation record(s) \
              containing prohibited datum-curve constructs or simultaneous-solve control retain \
-             source and dependencies without assignment values or derived curves."
+             source and dependencies without solve-dependent assignment values or derived curves."
         )
     };
 

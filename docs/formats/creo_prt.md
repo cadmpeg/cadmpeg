@@ -3316,13 +3316,16 @@ ordered unknowns. An intervening top-level single-equals statement involving a
 declared unknown is an equation with arbitrary expressions on both sides.
 Equation dependencies are the identifiers in first-appearance order across the
 left side and then the right side. A valid assignment that does not involve a
-declared unknown is an auxiliary one-way relation in the solve block. Block
-equations and auxiliary relations do not declare neutral parameters outside the
-block. A complete block retains its ordered equations, auxiliary relations, and
-unknowns without supplying assignment values or a derived curve. A malformed
-block is bounded from its `SOLVE` line through its `FOR` line, or through the end
-of the program when unterminated; no bounded line is interpreted as a
-sequential assignment outside the block.
+declared unknown is an auxiliary one-way relation in the solve block. An
+auxiliary relation retains ordinary assignment-target semantics, participates
+in the program identifier namespace, and evaluates when its dependencies have
+values. An equation does not declare a parameter. A complete block retains its
+ordered equations, auxiliary relations, and unknowns without supplying solved
+unknown values or a derived curve. Entering the block invalidates any preceding
+value of each declared unknown; that value does not supply following
+assignments when the block remains unsolved. A malformed block is bounded from
+its `SOLVE` line through its `FOR` line, or through the end of the program when
+unterminated; no bounded line is interpreted as a sequential assignment.
 
 `itos` and `rtos` accept every non-string scalar in canonical relation units.
 The `rtos` decimal count and scientific selector are dimensionless.

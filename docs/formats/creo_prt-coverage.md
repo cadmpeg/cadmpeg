@@ -54,8 +54,9 @@ fixtures, claims above L1 remain unproven.
   Local bindings are case-insensitive, scoped external symbols remain whole,
   and the reserved `PI` and dimensioned gravitational `G` constants evaluate.
   Simultaneous `SOLVE`/`FOR` blocks retain ordered equation sides,
-  dependencies, block-local auxiliary assignments, and unknowns without
-  interpreting block statements as ordinary sequential parameter assignments.
+  dependencies, block-local auxiliary assignments, and unknowns. Auxiliary
+  assignments retain ordinary target, namespace, dependency, and evaluation
+  semantics; simultaneous equations do not become sequential assignments.
   Constructs prohibited in datum-curve equations are retained but do not
   evaluate or generate a derived curve. Positive
   `exists()` queries resolve against the complete local assignment namespace

@@ -725,20 +725,18 @@ pub(crate) fn expression_records_with_model_name(
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
             let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
-            let solve_program = curve_expression_solve_program(&lines);
+            let mut solve_program = curve_expression_solve_program(&lines);
             let mut assignments = evaluate_expression_program(
                 &lines,
                 model_name,
                 &ExternalRelationSymbols::default(),
             );
-            if !prohibited_constructs.is_empty()
-                || !solve_program.blocks.is_empty()
-                || solve_program.unresolved_control
-            {
+            if !prohibited_constructs.is_empty() || solve_program.unresolved_control {
                 for assignment in &mut assignments {
                     assignment.value = None;
                 }
             }
+            synchronize_solve_block_assignments(&mut solve_program.blocks, &assignments);
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -764,13 +762,25 @@ pub(crate) fn reevaluate_expression_records(
     for record in records {
         record.assignments =
             evaluate_expression_program(&record.lines, model_name, external_symbols);
-        if !record.prohibited_constructs.is_empty()
-            || !record.solve_blocks.is_empty()
-            || record.unresolved_solve_control
-        {
+        if !record.prohibited_constructs.is_empty() || record.unresolved_solve_control {
             for assignment in &mut record.assignments {
                 assignment.value = None;
             }
+        }
+        synchronize_solve_block_assignments(&mut record.solve_blocks, &record.assignments);
+    }
+}
+
+fn synchronize_solve_block_assignments(
+    blocks: &mut [CurveExpressionSolveBlock],
+    assignments: &[CurveExpressionAssignment],
+) {
+    for assignment in blocks.iter_mut().flat_map(|block| &mut block.assignments) {
+        if let Some(evaluated) = assignments
+            .iter()
+            .find(|evaluated| evaluated.offset == assignment.offset)
+        {
+            *assignment = evaluated.clone();
         }
     }
 }
@@ -999,6 +1009,7 @@ fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {
 struct CurveExpressionSolveProgram {
     blocks: Vec<CurveExpressionSolveBlock>,
     line_indices: BTreeSet<usize>,
+    executable_line_indices: BTreeSet<usize>,
     unresolved_control: bool,
 }
 
@@ -1011,6 +1022,7 @@ struct PendingCurveExpressionSolveBlock {
 struct PendingCurveExpressionSolveStatement {
     equation: CurveExpressionEquation,
     assignment: Option<CurveExpressionAssignment>,
+    line_index: usize,
 }
 
 fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpressionSolveProgram {
@@ -1045,6 +1057,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             let mut block = pending.take().expect("pending solve block");
             let mut equations = Vec::new();
             let mut assignments = Vec::new();
+            let mut assignment_line_indices = Vec::new();
             if let Some(variables) = &variables {
                 for statement in block.statements {
                     if statement.equation.dependencies.iter().any(|dependency| {
@@ -1054,6 +1067,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                     }) {
                         equations.push(statement.equation);
                     } else if let Some(assignment) = statement.assignment {
+                        assignment_line_indices.push(statement.line_index);
                         assignments.push(assignment);
                     } else {
                         block.valid = false;
@@ -1061,6 +1075,9 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                 }
             }
             if let Some(variables) = variables.filter(|_| block.valid && !equations.is_empty()) {
+                program
+                    .executable_line_indices
+                    .extend(assignment_line_indices);
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
@@ -1107,6 +1124,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                     offset: line.offset,
                 },
                 assignment: expression_assignment(line),
+                line_index: index,
             });
     }
     if pending.is_some() {
@@ -1382,12 +1400,16 @@ fn evaluate_expression_program(
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
 ) -> Vec<CurveExpressionAssignment> {
-    let solve_line_indices = curve_expression_solve_program(lines).line_indices;
+    let solve_program = curve_expression_solve_program(lines);
+    let solve_line_is_executable = |index: &usize| {
+        !solve_program.line_indices.contains(index)
+            || solve_program.executable_line_indices.contains(index)
+    };
     if !expression_program_control_is_valid(lines) {
         return lines
             .iter()
             .enumerate()
-            .filter(|(index, _)| !solve_line_indices.contains(index))
+            .filter(|(index, _)| solve_line_is_executable(index))
             .map(|(_, line)| line)
             .filter_map(expression_assignment)
             .map(|mut assignment| {
@@ -1406,13 +1428,20 @@ fn evaluate_expression_program(
         lines
             .iter()
             .enumerate()
-            .filter(|(index, _)| !solve_line_indices.contains(index))
+            .filter(|(index, _)| solve_line_is_executable(index))
             .filter_map(|(_, line)| expression_assignment(line))
             .filter_map(|assignment| {
                 assignment
                     .scalar_target()
                     .map(|(name, _)| expression_identifier_key(name))
             }),
+    );
+    existing_symbols.extend(
+        solve_program
+            .blocks
+            .iter()
+            .flat_map(|block| &block.variables)
+            .map(|variable| expression_identifier_key(variable)),
     );
     let context = RelationEvaluationContext {
         model_name,
@@ -1430,9 +1459,28 @@ fn evaluate_expression_program(
         .collect::<BTreeSet<_>>();
     let mut stack = Vec::<ConditionalFrame>::new();
     let mut activity = CurveExpressionActivation::Active;
-    let mut assignments = Vec::new();
+    let mut assignments = Vec::<CurveExpressionAssignment>::new();
     for (index, line) in lines.iter().enumerate() {
-        if solve_line_indices.contains(&index) {
+        if let Some(block) = solve_program
+            .blocks
+            .iter()
+            .find(|block| block.offset == line.offset)
+        {
+            for variable in &block.variables {
+                let key = expression_identifier_key(variable);
+                values.remove(&key);
+                defined_symbols.insert(key.clone());
+                for assignment in &mut assignments {
+                    if assignment
+                        .scalar_target()
+                        .is_some_and(|(name, _)| expression_identifier_key(name) == key)
+                    {
+                        assignment.value = None;
+                    }
+                }
+            }
+        }
+        if !solve_line_is_executable(&index) {
             continue;
         }
         let source = line.text.trim();
@@ -4321,11 +4369,15 @@ mod tests {
     fn retains_simultaneous_equations_without_sequential_assignments() {
         let lines = [
             "area=100",
+            "base=10",
+            "width=99",
             "SOLVE",
             "width=height+1",
             "offset=base+1",
             "width*height=area",
             "FOR width, height",
+            "present=exists('width')",
+            "after_width=width",
             "result=area+1",
         ]
         .into_iter()
@@ -4342,8 +4394,8 @@ mod tests {
             panic!("one solve block");
         };
         assert_eq!(block.variables, ["width", "height"]);
-        assert_eq!(block.offset, 1);
-        assert_eq!(block.for_offset, 5);
+        assert_eq!(block.offset, 3);
+        assert_eq!(block.for_offset, 7);
         assert_eq!(block.equations.len(), 2);
         assert_eq!(block.equations[0].left, "width");
         assert_eq!(block.equations[0].right, "height+1");
@@ -4361,11 +4413,29 @@ mod tests {
 
         let assignments =
             evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
-        assert_eq!(assignments.len(), 2);
+        assert_eq!(assignments.len(), 7);
         assert_eq!(assignments[0].parameter_target(), Some(("area", None)));
-        assert_eq!(assignments[1].parameter_target(), Some(("result", None)));
+        assert_eq!(assignments[1].parameter_target(), Some(("base", None)));
+        assert_eq!(assignments[2].parameter_target(), Some(("width", None)));
+        assert_eq!(assignments[2].value, None);
+        assert_eq!(assignments[3].parameter_target(), Some(("offset", None)));
         assert_eq!(
-            assignments[1].value,
+            assignments[3].value,
+            Some(CurveExpressionValue::Number(11.0))
+        );
+        assert_eq!(assignments[4].parameter_target(), Some(("present", None)));
+        assert_eq!(
+            assignments[4].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert_eq!(
+            assignments[5].parameter_target(),
+            Some(("after_width", None))
+        );
+        assert_eq!(assignments[5].value, None);
+        assert_eq!(assignments[6].parameter_target(), Some(("result", None)));
+        assert_eq!(
+            assignments[6].value,
             Some(CurveExpressionValue::Number(101.0))
         );
     }

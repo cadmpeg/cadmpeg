@@ -6232,8 +6232,9 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
 #[test]
 fn decode_retains_simultaneous_curve_expression_blocks() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x07area=100\0SOLVE\0width=height+1\0\
-        offset=base+1\0width*height=area\0FOR width, height\0result=area+1\0"
+        \xe0\x0aexpression\0\xf8\x09area=100\0base=10\0SOLVE\0width=height+1\0\
+        offset=base+1\0width*height=area\0FOR width, height\0\
+        present=exists('width')\0result=area+1\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
@@ -6248,14 +6249,24 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
             .iter()
             .map(|parameter| parameter.name.as_str())
             .collect::<Vec<_>>(),
-        ["area", "result"]
+        ["area", "base", "offset", "present", "result"]
     );
-    assert!(result
-        .ir
-        .model
-        .parameters
-        .iter()
-        .all(|parameter| parameter.value.is_none()));
+    assert_eq!(
+        result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.value.as_ref())
+            .collect::<Vec<_>>(),
+        [
+            Some(&cadmpeg_ir::features::ParameterValue::Real(100.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(10.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(11.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(1.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(101.0)),
+        ]
+    );
 
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
     assert_eq!(native.fields["solve_blocks"][0]["variables"][0], "width");
@@ -6281,8 +6292,16 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         "base"
     );
     assert_eq!(
+        native.fields["solve_blocks"][0]["assignments"][0]["value"],
+        11.0
+    );
+    assert_eq!(
         result.report.coverage["decoded_active_curve_expression_assignment_count"],
-        2
+        5
+    );
+    assert_eq!(
+        result.report.coverage["evaluated_active_curve_expression_assignment_count"],
+        5
     );
     assert_eq!(
         result.report.coverage["decoded_active_curve_expression_solve_block_count"],
