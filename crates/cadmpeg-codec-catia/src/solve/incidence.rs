@@ -20,7 +20,7 @@ use crate::solve::missing_edge::{
 };
 use crate::solve::UnionFind;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;
 
 type MeshEndpointSolutionVisitor<'a> = &'a mut dyn FnMut(&[MeshEndpointPair]) -> ControlFlow<()>;
@@ -501,27 +501,6 @@ struct FaceConfigurationDomain {
     configurations: MeshFaceEndpointConfigurations,
 }
 
-fn face_configurations_compatible(
-    left: &[(usize, [usize; 2])],
-    right: &[(usize, [usize; 2])],
-) -> bool {
-    let (mut left_index, mut right_index) = (0, 0);
-    while left_index < left.len() && right_index < right.len() {
-        match left[left_index].0.cmp(&right[right_index].0) {
-            std::cmp::Ordering::Less => left_index += 1,
-            std::cmp::Ordering::Greater => right_index += 1,
-            std::cmp::Ordering::Equal => {
-                if left[left_index].1 != right[right_index].1 {
-                    return false;
-                }
-                left_index += 1;
-                right_index += 1;
-            }
-        }
-    }
-    true
-}
-
 pub(crate) fn prune_face_configuration_support(
     domains: &mut [MeshFaceEndpointConfigurations],
     budget: &MeshConstraintBudget,
@@ -536,46 +515,78 @@ pub(crate) fn prune_face_configuration_support(
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
-    loop {
-        let mut changed = false;
-        for left in 0..domains.len() {
-            for right in 0..domains.len() {
-                if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
+    let mut neighbors = vec![Vec::new(); domains.len()];
+    let mut queue = VecDeque::new();
+    for left in 0..domains.len() {
+        for right in 0..domains.len() {
+            if left != right && !edge_sets[left].is_disjoint(&edge_sets[right]) {
+                neighbors[left].push(right);
+                queue.push_back((left, right));
+            }
+        }
+    }
+    while let Some((left, right)) = queue.pop_front() {
+        let word_count = domains[right].len().div_ceil(u64::BITS as usize);
+        let mut present = HashMap::<usize, Vec<u64>>::new();
+        let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
+        for (configuration, candidate) in domains[right].iter().enumerate() {
+            if !budget.charge_by(candidate.len().max(1)) {
+                return true;
+            }
+            let word = configuration / u64::BITS as usize;
+            let bit = 1 << (configuration % u64::BITS as usize);
+            for &(edge, pair) in candidate {
+                present.entry(edge).or_insert_with(|| vec![0; word_count])[word] |= bit;
+                matching
+                    .entry((edge, pair))
+                    .or_insert_with(|| vec![0; word_count])[word] |= bit;
+            }
+        }
+        let mut keep = Vec::with_capacity(domains[left].len());
+        for candidate in &domains[left] {
+            if !budget.charge_by(candidate.len().saturating_add(word_count).max(1)) {
+                return true;
+            }
+            let mut viable = vec![u64::MAX; word_count];
+            if let Some(last) = viable.last_mut() {
+                let remainder = domains[right].len() % u64::BITS as usize;
+                if remainder != 0 {
+                    *last = (1 << remainder) - 1;
+                }
+            }
+            for &(edge, pair) in candidate {
+                let Some(edge_present) = present.get(&edge) else {
                     continue;
+                };
+                let edge_matching = matching.get(&(edge, pair));
+                for word in 0..word_count {
+                    viable[word] &=
+                        !edge_present[word] | edge_matching.map_or(0, |matching| matching[word]);
                 }
-                let mut keep = Vec::with_capacity(domains[left].len());
-                for candidate in &domains[left] {
-                    let mut supported = false;
-                    for other in &domains[right] {
-                        let work = candidate.len().saturating_add(other.len()).max(1);
-                        if !budget.charge_by(work) {
-                            return true;
-                        }
-                        if face_configurations_compatible(candidate, other) {
-                            supported = true;
-                            break;
-                        }
-                    }
-                    keep.push(supported);
+                if viable.iter().all(|word| *word == 0) {
+                    break;
                 }
-                if keep.iter().all(|supported| !supported) {
-                    return false;
-                }
-                if keep.iter().any(|supported| !supported) {
-                    let mut index = 0;
-                    domains[left].retain(|_| {
-                        let retain = keep[index];
-                        index += 1;
-                        retain
-                    });
-                    changed = true;
+            }
+            keep.push(viable.iter().any(|word| *word != 0));
+        }
+        if keep.iter().all(|supported| !supported) {
+            return false;
+        }
+        if keep.iter().any(|supported| !supported) {
+            let mut index = 0;
+            domains[left].retain(|_| {
+                let retain = keep[index];
+                index += 1;
+                retain
+            });
+            for &neighbor in &neighbors[left] {
+                if neighbor != right {
+                    queue.push_back((neighbor, left));
                 }
             }
         }
-        if !changed {
-            return true;
-        }
     }
+    true
 }
 
 pub(crate) fn prune_ordered_face_endpoint_support(

@@ -1222,6 +1222,34 @@ fn incidence_face_configuration_support_retains_shared_edge_correlations() {
 }
 
 #[test]
+fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
+    let mut domains = vec![
+        vec![vec![(0, [0, 1])], vec![(0, [0, 2])]],
+        vec![
+            vec![(0, [0, 1]), (1, [1, 2])],
+            vec![(0, [0, 2]), (1, [2, 3])],
+        ],
+        vec![vec![(1, [1, 2])]],
+    ];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_face_configuration_support(&mut domains, &budget));
+    assert_eq!(
+        domains,
+        vec![
+            vec![vec![(0, [0, 1])]],
+            vec![vec![(0, [0, 1]), (1, [1, 2])]],
+            vec![vec![(1, [1, 2])]],
+        ]
+    );
+
+    let mut optional = vec![vec![vec![(0, [0, 1])]], vec![vec![], vec![(0, [0, 2])]]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    assert!(prune_face_configuration_support(&mut optional, &budget));
+    assert_eq!(optional[0], vec![vec![(0, [0, 1])]]);
+}
+
+#[test]
 fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
