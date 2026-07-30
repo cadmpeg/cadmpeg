@@ -1590,8 +1590,9 @@ impl FormulaExpressionParser<'_, '_> {
             }
             ("mod", dividend, Some(divisor))
                 if dividend.dimension == FormulaDimension::SCALAR
-                    && divisor.satisfies_source_type("Integer")
-                    && (!self.evaluate || divisor.value != 0.0) =>
+                    && divisor.dimension == FormulaDimension::SCALAR
+                    && (!self.evaluate
+                        || (divisor.satisfies_source_type("Integer") && divisor.value != 0.0)) =>
             {
                 self.scalar_result(if self.evaluate {
                     dividend.value.trunc() % divisor.value
@@ -1945,6 +1946,7 @@ mod parser_tests {
             ("false ? sqrt(-1) ; 5", true),
             ("true ? 5 ; (-1) ** 0.5", true),
             ("false ? false ? 1 / 0 ; 2 ; 3", true),
+            ("true ? 5 ; mod(2, 1.5)", true),
         ] {
             let value = evaluate_formula_expression(expression, &bindings)
                 .expect("lazy expression is complete");
