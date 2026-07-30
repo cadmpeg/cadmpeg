@@ -140,7 +140,7 @@ current scores require those matrices and representative fixtures.
   occurrence removal, equality, replacement, case conversion, signed-integer
   formatting, Unicode-scalar length and extraction, indexed directional
   search, and finite decimal conversion evaluate with typed results. Length
-  literals normalize
+  and angle values support compatible-unit decimal rounding. Length literals normalize
   `micron`, `mm`, `cm`, `m`, `km`,
   `in`, `ft`, `yard`, and `mile` to millimetres; angle literals normalize
   `rad`, `grad`, and `deg` to radians.

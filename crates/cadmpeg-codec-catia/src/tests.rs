@@ -13404,6 +13404,33 @@ fn decode_evaluates_scalar_rounding_functions() {
 }
 
 #[test]
+fn decode_evaluates_dimensioned_rounding_in_the_selected_unit() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "LENGTH",
+                Some(1_230.0),
+                "round(1234mm,\"cm\",0)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensioned rounding formula");
+
+    let [output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("dimensioned rounding formula output")
+    };
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(1_230.0)
+        ))
+    );
+}
+
+#[test]
 fn decode_evaluates_integer_part_as_an_integer_result() {
     let decoded = CatiaCodec
         .decode(

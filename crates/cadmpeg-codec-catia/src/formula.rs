@@ -909,6 +909,24 @@ impl FormulaDimension {
     }
 }
 
+fn formula_unit(unit: &str) -> Option<(FormulaDimension, f64)> {
+    match unit {
+        "micron" => Some((FormulaDimension::LENGTH, 0.001)),
+        "mm" => Some((FormulaDimension::LENGTH, 1.0)),
+        "cm" => Some((FormulaDimension::LENGTH, 10.0)),
+        "m" => Some((FormulaDimension::LENGTH, 1_000.0)),
+        "km" => Some((FormulaDimension::LENGTH, 1_000_000.0)),
+        "in" => Some((FormulaDimension::LENGTH, 25.4)),
+        "ft" => Some((FormulaDimension::LENGTH, 304.8)),
+        "yard" => Some((FormulaDimension::LENGTH, 914.4)),
+        "mile" => Some((FormulaDimension::LENGTH, 1_609_344.0)),
+        "rad" => Some((FormulaDimension::ANGLE, 1.0)),
+        "grad" => Some((FormulaDimension::ANGLE, std::f64::consts::PI / 200.0)),
+        "deg" => Some((FormulaDimension::ANGLE, std::f64::consts::PI / 180.0)),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy)]
 struct EvaluatedFormulaScalar {
     value: f64,
@@ -1565,6 +1583,47 @@ impl FormulaExpressionParser<'_, '_> {
             }));
         }
 
+        if function == "round" && arguments.len() == 3 {
+            let [EvaluatedFormulaValue::Scalar(value), EvaluatedFormulaValue::String(unit), EvaluatedFormulaValue::Scalar(digits)] =
+                arguments.as_slice()
+            else {
+                return None;
+            };
+            let (unit_dimension, unit_scale) = formula_unit(unit)?;
+            if value.dimension != unit_dimension || digits.dimension != FormulaDimension::SCALAR {
+                return None;
+            }
+            if !self.evaluate {
+                return Some(EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
+                    value: 0.0,
+                    dimension: value.dimension,
+                }));
+            }
+            if !digits.satisfies_source_type("Integer")
+                || digits.value < 0.0
+                || digits.value > f64::from(i32::MAX)
+            {
+                return None;
+            }
+            let quantum = unit_scale * 10.0_f64.powi(-(digits.value as i32));
+            let rounded = if quantum == 0.0 {
+                value.value
+            } else {
+                let scaled = value.value / quantum;
+                if scaled.is_finite() {
+                    scaled.round_ties_even() * quantum
+                } else {
+                    value.value
+                }
+            };
+            return rounded.is_finite().then_some(EvaluatedFormulaValue::Scalar(
+                EvaluatedFormulaScalar {
+                    value: rounded,
+                    dimension: value.dimension,
+                },
+            ));
+        }
+
         let arguments = arguments
             .into_iter()
             .map(EvaluatedFormulaValue::scalar)
@@ -1803,38 +1862,20 @@ impl FormulaExpressionParser<'_, '_> {
         let mut value = self.source[start..self.at].parse::<f64>().ok()?;
         let unit_boundary = self.at;
         self.skip_whitespace();
-        let dimension = if let Some((unit, millimetres)) = [
-            ("micron", 0.001),
-            ("mile", 1_609_344.0),
-            ("yard", 914.4),
-            ("mm", 1.0),
-            ("cm", 10.0),
-            ("km", 1_000_000.0),
-            ("ft", 304.8),
-            ("in", 25.4),
-            ("m", 1_000.0),
+        let Some(unit) = [
+            "micron", "mile", "yard", "grad", "rad", "deg", "mm", "cm", "km", "ft", "in", "m",
         ]
         .into_iter()
-        .find(|(unit, _)| self.remaining().starts_with(unit))
-        {
-            self.at += unit.len();
-            value *= millimetres;
-            FormulaDimension::LENGTH
-        } else if self.remaining().starts_with("rad") {
-            self.at += 3;
-            FormulaDimension::ANGLE
-        } else if self.remaining().starts_with("grad") {
-            self.at += 4;
-            value *= std::f64::consts::PI / 200.0;
-            FormulaDimension::ANGLE
-        } else if self.remaining().starts_with("deg") {
-            self.at += 3;
-            value = value.to_radians();
-            FormulaDimension::ANGLE
-        } else {
+        .find(|unit| self.remaining().starts_with(unit)) else {
             self.at = unit_boundary;
-            FormulaDimension::SCALAR
+            return value.is_finite().then_some(EvaluatedFormulaScalar {
+                value,
+                dimension: FormulaDimension::SCALAR,
+            });
         };
+        let (dimension, scale) = formula_unit(unit)?;
+        self.at += unit.len();
+        value *= scale;
         value
             .is_finite()
             .then_some(EvaluatedFormulaScalar { value, dimension })
@@ -1990,6 +2031,44 @@ mod parser_tests {
     }
 
     #[test]
+    fn formula_dimensioned_rounding_uses_a_compatible_unit_and_decimal_precision() {
+        let bindings = BTreeMap::new();
+        for (expression, expected, dimension) in [
+            ("round(12.333mm,\"mm\",1)", 12.3, FormulaDimension::LENGTH),
+            ("round(1234mm,\"cm\",0)", 1_230.0, FormulaDimension::LENGTH),
+            (
+                "round(45.54deg,\"deg\",1)",
+                45.5_f64.to_radians(),
+                FormulaDimension::ANGLE,
+            ),
+        ] {
+            let value = evaluate_formula_expression(expression, &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .expect("dimensioned rounded value");
+            assert!(value.dimension == dimension, "{expression}");
+            assert!(
+                (value.value - expected).abs() <= f64::EPSILON * expected.abs(),
+                "{expression}: {} != {expected}",
+                value.value
+            );
+        }
+        for expression in [
+            "round(12.3,\"mm\",1)",
+            "round(12.3mm,\"deg\",1)",
+            "round(12.3mm,\"unknown\",1)",
+            "round(12.3mm,\"mm\",-1)",
+            "round(12.3mm,\"mm\",1.5)",
+            "round(12.3mm,\"mm\",1mm)",
+            "round(12.3mm,\"mm\")",
+        ] {
+            assert!(
+                evaluate_formula_expression(expression, &bindings).is_none(),
+                "{expression}"
+            );
+        }
+    }
+
+    #[test]
     fn formula_ternary_depth_is_bounded() {
         let bindings = BTreeMap::new();
         for (depth, accepted) in [(128, true), (129, false)] {
@@ -2092,6 +2171,7 @@ mod parser_tests {
             "true ? 5 ; \"text\".Search(\"e\", 1.5)",
             "true ? 5 ; \"not a number\".ToReal()",
             "true ? \"selected\" ; \"text\" - \"\"",
+            "true ? 5mm ; round(12.3mm,\"mm\",-1)",
         ] {
             assert!(
                 evaluate_formula_expression(expression, &bindings).is_some(),
@@ -2125,6 +2205,7 @@ mod parser_tests {
             "false ? 5 ; exp(10000)",
             "true ? 5 ; \"text\".Search(\"t\", 1mm)",
             "true ? \"selected\" ; \"text\".Extract(1mm, 1)",
+            "true ? 5mm ; round(12.3mm,\"deg\",1)",
         ] {
             assert!(
                 evaluate_formula_expression(expression, &bindings).is_none(),
