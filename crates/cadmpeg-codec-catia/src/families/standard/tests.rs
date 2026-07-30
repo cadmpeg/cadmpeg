@@ -1926,6 +1926,89 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
 }
 
 #[test]
+fn incidence_components_preflight_quotient_impossible_domains() {
+    use std::ops::ControlFlow;
+
+    const BROAD_COMPONENT_COUNT: usize = 15;
+    let mut choices = (0..BROAD_COMPONENT_COUNT)
+        .map(|component| {
+            let first = component * 2;
+            vec![[first, first], [first + 1, first + 1]]
+        })
+        .collect::<Vec<_>>();
+    choices.extend([vec![[30, 30], [31, 31]], vec![[30, 30]], vec![[31, 31]]]);
+    let edge_faces = (0..choices.len())
+        .map(|face| [face, face])
+        .collect::<Vec<_>>();
+    let mut union = UnionFind::new(choices.len() * 2);
+    let mut domains = Vec::with_capacity(choices.len() * 2);
+    let mut members = (0..choices.len() * 2)
+        .map(|node| vec![node])
+        .collect::<Vec<_>>();
+    for edge in 0..choices.len() {
+        union.union(edge * 2, edge * 2 + 1);
+        members[edge * 2].push(edge * 2 + 1);
+        members[edge * 2 + 1].clear();
+        let points = if edge < BROAD_COMPONENT_COUNT {
+            HashSet::from([edge * 2, edge * 2 + 1])
+        } else {
+            HashSet::from([30, 31])
+        };
+        let points = Arc::new(points);
+        domains.extend([points.clone(), points]);
+    }
+    let quotient = MeshQuotient {
+        union,
+        domains,
+        members,
+    };
+    let mut visited = false;
+
+    let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        choices.len(),
+        32,
+        None,
+        Some(&quotient),
+        None,
+        &|_| true,
+        &mut |_| {
+            visited = true;
+            ControlFlow::Continue(())
+        },
+    );
+
+    assert_eq!(outcome, crate::solve::incidence::IncidenceSolve::Rejected);
+    assert!(!visited);
+}
+
+#[test]
+fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
+    let choices = vec![vec![[0, 0]], vec![[0, 0]]];
+    let edge_faces = [[0, 0], [1, 1]];
+    let quotient = MeshQuotient {
+        union: UnionFind::new(4),
+        domains: (0..4).map(|_| Arc::new(HashSet::from([0]))).collect(),
+        members: (0..4).map(|node| vec![node]).collect(),
+    };
+
+    assert_eq!(
+        crate::solve::incidence::component_incidence_pair_solution_outcome(
+            &choices,
+            &edge_faces,
+            2,
+            1,
+            None,
+            Some(&quotient),
+            None,
+            &|_| true,
+        ),
+        crate::solve::incidence::IncidenceSolve::Rejected
+    );
+}
+
+#[test]
 fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
     use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
 

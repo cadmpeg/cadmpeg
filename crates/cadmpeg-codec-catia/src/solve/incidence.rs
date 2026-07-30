@@ -1540,6 +1540,7 @@ where
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
         assignment: &[Option<[usize; 2]>],
         degrees: &[Vec<u8>],
+        point_count: usize,
         budget: &MeshConstraintBudget,
     ) -> ComponentDomain {
         let mut active = vec![false; choices.len()];
@@ -1565,12 +1566,27 @@ where
             for &(edge, pair) in solution {
                 completed[edge] = Some(pair);
             }
-            completed_incidence_faces_close(
+            let locally_closed = completed_incidence_faces_close(
                 &component_faces,
                 &completed,
                 face_edges,
                 mesh_assignments,
-            ) && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed))
+            ) && partial_solution_valid
+                .is_none_or(|constraint| (constraint.valid)(&completed));
+            if !locally_closed {
+                return false;
+            }
+            mesh_quotient.is_none_or(|quotient| {
+                let candidates = completed
+                    .iter()
+                    .enumerate()
+                    .map(|(edge, pair)| {
+                        pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
+                    })
+                    .collect::<Vec<_>>();
+                let mut quotient = quotient.clone();
+                quotient.point_assignment_exists(point_count, &candidates, Some(budget))
+            })
         };
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
         let mut search = IncidenceComponentSearch {
@@ -1578,7 +1594,7 @@ where
             edge_faces,
             face_edges,
             mesh_assignments,
-            mesh_quotient,
+            mesh_quotient: None,
             active,
             edges: component,
             constraints,
@@ -1626,20 +1642,18 @@ where
             if !boundary_domains_close(mesh_assignments, &pairs) || !solution_valid(&pairs) {
                 return Ok(ControlFlow::Continue(()));
             }
-            if mesh_assignments.is_none() {
-                if let Some(quotient) = mesh_quotient {
-                    let singleton = pairs
-                        .iter()
-                        .copied()
-                        .map(|pair| vec![pair])
-                        .collect::<Vec<_>>();
-                    let mut quotient = quotient.clone();
-                    if !quotient.point_assignment_exists(point_count, &singleton, Some(budget)) {
-                        if budget.exhausted.get() {
-                            return Err(());
-                        }
-                        return Ok(ControlFlow::Continue(()));
+            if let Some(quotient) = mesh_quotient {
+                let singleton = pairs
+                    .iter()
+                    .copied()
+                    .map(|pair| vec![pair])
+                    .collect::<Vec<_>>();
+                let mut quotient = quotient.clone();
+                if !quotient.point_assignment_exists(point_count, &singleton, Some(budget)) {
+                    if budget.exhausted.get() {
+                        return Err(());
                     }
+                    return Ok(ControlFlow::Continue(()));
                 }
             }
             *visited = visited.checked_add(1).ok_or(())?;
@@ -1750,12 +1764,25 @@ where
         }
         if components.is_empty() {
             let pairs = fixed.into_iter().collect::<Option<Vec<_>>>()?;
-            if boundary_domains_close(mesh_assignments, &pairs) && solution_valid(&pairs) {
-                visited = 1;
-                let _ = visitor(&pairs);
-                return Some(());
+            if !boundary_domains_close(mesh_assignments, &pairs) || !solution_valid(&pairs) {
+                return None;
             }
-            return None;
+            if let Some(quotient) = mesh_quotient {
+                let singleton = pairs
+                    .iter()
+                    .copied()
+                    .map(|pair| vec![pair])
+                    .collect::<Vec<_>>();
+                let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+                let mut quotient = quotient.clone();
+                if !quotient.point_assignment_exists(point_count, &singleton, Some(&budget)) {
+                    exhausted = budget.exhausted.get();
+                    return None;
+                }
+            }
+            visited = 1;
+            let _ = visitor(&pairs);
+            return Some(());
         }
         let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut component_domains = Vec::with_capacity(components.len());
@@ -1770,6 +1797,7 @@ where
                 partial_solution_valid,
                 &fixed,
                 &degrees,
+                point_count,
                 &budget,
             );
             if domain.solutions.is_empty() && domain.exhausted {
