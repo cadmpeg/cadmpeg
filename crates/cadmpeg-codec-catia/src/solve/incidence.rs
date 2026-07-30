@@ -880,6 +880,95 @@ impl IncidenceComponentSearch<'_, '_> {
             })
         };
 
+        let preserved = selected_faces.into_iter().enumerate().all(|(rank, face)| {
+            if rank > 0 && face == selected_faces[0] {
+                return true;
+            }
+            let start = self
+                .constraints
+                .partition_point(|&(constraint_face, _)| constraint_face < face);
+            let end = self.constraints[start..]
+                .partition_point(|&(constraint_face, _)| constraint_face == face)
+                + start;
+            let constrained_points = &self.constraints[start..end];
+            let is_constrained = |point| {
+                constrained_points
+                    .binary_search_by_key(&point, |&(_, constraint_point)| constraint_point)
+                    .is_ok()
+            };
+            let support_exists = |point| {
+                self.face_edges[face]
+                    .iter()
+                    .copied()
+                    .any(|supporting_edge| {
+                        supporting_edge != edge
+                            && self.active[supporting_edge]
+                            && self.assignment[supporting_edge].is_none()
+                            && self
+                                .candidate_pairs(
+                                    supporting_edge,
+                                    Some(point),
+                                    self.coordinate_domains,
+                                )
+                                .into_iter()
+                                .any(|supporting_pair| {
+                                    supporting_pair.contains(&point)
+                                        && supporting_pair_fits(supporting_edge, supporting_pair)
+                                })
+                    })
+            };
+            let existing_frontier_supported = self.degrees[face]
+                .iter()
+                .filter(|&(&point, _)| {
+                    is_constrained(point) && degree_after_selection(face, point) == 1
+                })
+                .all(|(&point, _)| support_exists(point));
+            existing_frontier_supported
+                && pair
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(point_rank, point)| {
+                        (*point_rank == 0 || *point != pair[0])
+                            && self.degree(face, *point) == 0
+                            && degree_after_selection(face, *point) == 1
+                            && is_constrained(*point)
+                    })
+                    .all(|(_, point)| support_exists(point))
+        });
+        #[cfg(test)]
+        assert_eq!(
+            preserved,
+            self.degree_support_preserved_by_constraint_scan(edge, pair)
+        );
+        preserved
+    }
+
+    #[cfg(test)]
+    fn degree_support_preserved_by_constraint_scan(&self, edge: usize, pair: [usize; 2]) -> bool {
+        let selected_faces = self.edge_faces[edge];
+        let selected_degree = |face: usize, point: usize| {
+            let incident = selected_faces[0] == face || selected_faces[1] == face;
+            incident.then(|| pair.iter().filter(|candidate| **candidate == point).count())
+        };
+        let degree_after_selection = |face: usize, point: usize| {
+            usize::from(self.degree(face, point)) + selected_degree(face, point).unwrap_or_default()
+        };
+        let supporting_pair_fits = |supporting_edge: usize, supporting_pair: [usize; 2]| {
+            let faces = self.edge_faces[supporting_edge];
+            faces.into_iter().enumerate().all(|(rank, face)| {
+                (rank > 0 && face == faces[0])
+                    || supporting_pair
+                        .iter()
+                        .enumerate()
+                        .all(|(point_rank, &point)| {
+                            let multiplicity = 1 + usize::from(
+                                point_rank == 0 && supporting_pair[0] == supporting_pair[1],
+                            );
+                            degree_after_selection(face, point) + multiplicity <= 2
+                        })
+            })
+        };
+
         selected_faces.into_iter().enumerate().all(|(rank, face)| {
             if rank > 0 && face == selected_faces[0] {
                 return true;
