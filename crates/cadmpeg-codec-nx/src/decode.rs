@@ -695,8 +695,6 @@ fn certified_curved_offset_cache_fit(
     tolerance: f64,
     same_basis: bool,
 ) -> Option<f64> {
-    const MAX_RECTANGLES: usize = 1_000_000;
-
     let support_net = HomogeneousSurfaceNet::from_homogeneous_surface(support)?;
     let candidate_net = HomogeneousSurfaceNet::from_homogeneous_surface(candidate)?;
     let residual_net = if same_basis {
@@ -728,13 +726,8 @@ fn certified_curved_offset_cache_fit(
     if rectangles.is_empty() {
         return None;
     }
-    let mut examined = 0usize;
     let mut certified_bound = 0.0_f64;
     while let Some([u0, u1, v0, v1]) = rectangles.pop() {
-        examined += 1;
-        if examined > MAX_RECTANGLES {
-            return None;
-        }
         let u = u0 + (u1 - u0) * 0.5;
         let v = v0 + (v1 - v0) * 0.5;
         let support_bounds = rational_surface_derivative_bounds(&support_net, u, v)?;
@@ -886,20 +879,17 @@ fn subdivide_offset_rectangle(
     [u, v]: [f64; 2],
     split_u: bool,
 ) -> bool {
-    if split_u {
-        if u == u0 || u == u1 {
-            return false;
-        }
-        rectangles.push([u0, u, v0, v1]);
-        rectangles.push([u, u1, v0, v1]);
+    let u_divisible = u != u0 && u != u1;
+    let v_divisible = v != v0 && v != v1;
+    if u_divisible && (split_u || !v_divisible) {
+        rectangles.extend([[u0, u, v0, v1], [u, u1, v0, v1]]);
+        true
+    } else if v_divisible {
+        rectangles.extend([[u0, u1, v0, v], [u0, u1, v, v1]]);
+        true
     } else {
-        if v == v0 || v == v1 {
-            return false;
-        }
-        rectangles.push([u0, u1, v0, v]);
-        rectangles.push([u0, u1, v, v1]);
+        false
     }
-    true
 }
 
 fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
@@ -10670,6 +10660,52 @@ mod tests {
             super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
             Some(0.0)
         );
+    }
+
+    #[test]
+    fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
+        let epsilon = 2.0_f64.powi(-100);
+        let x = [0.0, epsilon / 3.0, 2.0 * epsilon / 3.0, 1.0 + epsilon];
+        let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
+        let support = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 3,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 4,
+            v_count: 2,
+            control_points: (0..4)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let SurfaceGeometry::Nurbs(surface) = &support else {
+            unreachable!();
+        };
+
+        assert!(super::translation_net_normal(surface).is_none());
+        assert_eq!(
+            super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
+        let u0 = 1.0_f64;
+        let u1 = f64::from_bits(u0.to_bits() + 1);
+        let u = u0 + (u1 - u0) * 0.5;
+        let mut rectangles = Vec::new();
+
+        assert!(super::subdivide_offset_rectangle(
+            &mut rectangles,
+            [u0, u1, 0.0, 1.0],
+            [u, 0.5],
+            true,
+        ));
+        assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
     }
 
     #[test]
