@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 234;
+pub const CATIA_NATIVE_VERSION: u32 = 235;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -51,6 +51,9 @@ pub(crate) const CATIA_TYPED_INCIDENCE_CLASS_VERSION: u32 = 233;
 /// Native schema version unifying relation-program entity incidences.
 #[cfg(test)]
 pub(crate) const CATIA_RELATION_TYPED_REFERENCE_VERSION: u32 = 234;
+/// Native schema version retaining the source entity of constraint-range incidences.
+#[cfg(test)]
+pub(crate) const CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION: u32 = 235;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1309,6 +1312,9 @@ pub struct CatiaConstraintRange {
 pub struct CatiaConstraintRangeIncomingReference {
     /// Object record carrying the reference occurrence.
     pub object_record: String,
+    /// Entity paired with the source object record when that record has an identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_entity: Option<CatiaEntityReference>,
     /// Byte offset of the reference field within that object's payload.
     pub payload_offset: u64,
     /// Structural container of the reference occurrence.
@@ -2578,6 +2584,11 @@ fn constraint_range_incoming_references(
                 .filter(move |reference| reference.entity_id == entity_id)
                 .map(|reference| CatiaConstraintRangeIncomingReference {
                     object_record: record.id.clone(),
+                    source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
+                        entity_id,
+                        entity: record.entity_record.clone(),
+                        class_name: record.class_name.clone(),
+                    }),
                     payload_offset: reference.payload_offset,
                     source: reference.source.clone(),
                 })
@@ -8449,7 +8460,9 @@ impl CatiaNative {
                     });
             }
         }
-        if namespace.version < CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION {
+        if namespace.version < CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION
+            || namespace.version < CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION
+        {
             for entity in &mut entity_records {
                 if let Some(range) = &mut entity.constraint_range {
                     range.incoming_references = constraint_range_incoming_references(

@@ -157,11 +157,12 @@ current scores require those matrices and representative fixtures.
   `rad`, `grad`, and `deg` to radians.
   Complete constraint-range productions are counted separately as dimension or
   complex-constraint ranges and finite or unset evaluations. Coverage retains
-  every exact incoming reference occurrence with its source object, payload
-  offset, and field or list position, and partitions ranges with zero, one, or
-  multiple incoming occurrences. An incoming occurrence and
-  design-field containment do not establish constraint identity, ownership,
-  operands, or sketch incidence.
+  every exact incoming reference occurrence with its source object, paired
+  source entity identity and class when present, payload offset, and field or
+  list position, and partitions classified and unclassified source entities
+  and ranges with zero, one, or multiple incoming occurrences. An incoming
+  occurrence and design-field containment do not establish constraint identity,
+  ownership, operands, or sketch incidence.
   Exact `Configuration` records retain the first reference as a selected
   value-schema ordinal, entry, and name, and retain the second reference as an
   independently resolved or unresolved same-graph entity identity with its

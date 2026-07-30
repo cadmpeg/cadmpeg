@@ -11984,6 +11984,19 @@ fn native_namespace_types_dimension_constraint_ranges() {
         incoming[0].object_record,
         unique_native.object_graphs[0].records[1].id
     );
+    let source_entity = incoming[0]
+        .source_entity
+        .as_ref()
+        .expect("source record has a paired entity");
+    assert_eq!(source_entity.entity_id, 2);
+    assert_eq!(
+        source_entity.entity.as_deref(),
+        Some(unique_native.entity_records[1].id.as_str())
+    );
+    assert_eq!(
+        source_entity.class_name,
+        unique_native.object_graphs[0].records[1].class_name
+    );
     assert_eq!(
         incoming[0].payload_offset,
         unique_native.object_graphs[0].records[1].references[0].payload_offset
@@ -11999,6 +12012,15 @@ fn native_namespace_types_dimension_constraint_ranges() {
     assert_eq!(
         uniquely_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
         1
+    );
+    assert_eq!(
+        uniquely_referenced.report.coverage
+            ["decoded_classified_constraint_range_source_entity_count"],
+        usize::from(source_entity.class_name.is_some())
+    );
+    assert_eq!(
+        uniquely_referenced.report.coverage["unclassified_constraint_range_source_entity_count"],
+        usize::from(source_entity.class_name.is_none())
     );
     assert_eq!(
         uniquely_referenced.report.coverage["unreferenced_constraint_range_count"],
@@ -12127,6 +12149,44 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .incoming_references
             .len(),
         1
+    );
+
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    unique_native
+        .store(&mut stored)
+        .expect("store older constraint-range source namespace");
+    stored.version = crate::native::CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION - 1;
+    stored
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("constraint_range")
+        .expect("stored constraint range")
+        .as_object_mut()
+        .expect("stored constraint-range object")
+        .get_mut("incoming_references")
+        .expect("stored incoming references")
+        .as_array_mut()
+        .expect("stored incoming-reference array")[0]
+        .as_object_mut()
+        .expect("stored incoming-reference object")
+        .remove("source_entity");
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("migrate constraint-range source entity");
+    assert_eq!(
+        migrated.entity_records[0]
+            .constraint_range
+            .as_ref()
+            .expect("migrated constraint range")
+            .incoming_references[0]
+            .source_entity,
+        unique_native.entity_records[0]
+            .constraint_range
+            .as_ref()
+            .expect("source constraint range")
+            .incoming_references[0]
+            .source_entity
     );
 }
 

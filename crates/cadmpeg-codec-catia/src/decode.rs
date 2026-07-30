@@ -684,6 +684,14 @@ fn finish_decode(
                 _ => (references + count, zero, one, multiple + 1),
             },
         );
+    let classified_constraint_range_source_entity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.constraint_range.as_ref())
+        .flat_map(|range| &range.incoming_references)
+        .filter_map(|reference| reference.source_entity.as_ref())
+        .filter(|entity| entity.class_name.is_some())
+        .count();
     let definition_value_count = native
         .entity_records
         .iter()
@@ -2108,6 +2116,15 @@ fn finish_decode(
         (
             "decoded_constraint_range_incoming_reference_count".to_string(),
             constraint_range_incoming_reference_count,
+        ),
+        (
+            "decoded_classified_constraint_range_source_entity_count".to_string(),
+            classified_constraint_range_source_entity_count,
+        ),
+        (
+            "unclassified_constraint_range_source_entity_count".to_string(),
+            constraint_range_incoming_reference_count
+                - classified_constraint_range_source_entity_count,
         ),
         (
             "unreferenced_constraint_range_count".to_string(),
