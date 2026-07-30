@@ -2099,48 +2099,44 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     });
                 }
             }
-            if let FeatureDefinition::DatumOffsetPlane {
-                reference,
-                distance,
-            } = &state.definition
-            {
-                if let Some(reference) = reference {
-                    match features.get(reference.0.as_str()) {
-                        None => ref_error(
-                            findings,
-                            &configuration.id.0,
-                            "configuration reference plane",
-                            &reference.0,
-                        ),
-                        Some(reference_ordinal)
-                            if feature_ordinal.is_some_and(|feature_ordinal| {
-                                *reference_ordinal >= feature_ordinal
-                            }) =>
-                        {
-                            findings.push(Finding {
-                                check: Check::ReferentialIntegrity,
-                                severity: Severity::Error,
-                                message: format!(
-                                    "configuration reference plane `{}` does not precede `{}`",
-                                    reference.0, feature.0
-                                ),
-                                entity: Some(configuration.id.0.clone()),
-                            });
-                        }
-                        Some(_) if !state.dependencies.contains(reference) => {
-                            findings.push(Finding {
-                                check: Check::ReferentialIntegrity,
-                                severity: Severity::Error,
-                                message: format!(
-                                    "configuration offset plane omits reference feature `{}` from its dependencies",
-                                    reference.0
-                                ),
-                                entity: Some(configuration.id.0.clone()),
-                            });
-                        }
-                        Some(_) => {}
+            for reference in regeneration_references(&state.definition) {
+                match features.get(reference.0.as_str()) {
+                    None => ref_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration definition feature",
+                        &reference.0,
+                    ),
+                    Some(reference_ordinal)
+                        if feature_ordinal.is_some_and(|feature_ordinal| {
+                            *reference_ordinal >= feature_ordinal
+                        }) =>
+                    {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "configuration definition feature `{}` does not precede `{}`",
+                                reference.0, feature.0
+                            ),
+                            entity: Some(configuration.id.0.clone()),
+                        });
                     }
+                    Some(_) if !state.dependencies.contains(reference) => {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
+                                feature.0, reference.0
+                            ),
+                            entity: Some(configuration.id.0.clone()),
+                        });
+                    }
+                    Some(_) => {}
                 }
+            }
+            if let FeatureDefinition::DatumOffsetPlane { distance, .. } = &state.definition {
                 if !distance.0.is_finite() {
                     geometry_error(
                         findings,
@@ -3883,6 +3879,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                 "sketch block target is not a block definition",
                             );
                         }
+                        Some(_) if !feature.dependencies.contains(block) => {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "sketch block instance omits block feature `{}` from its dependencies",
+                                    block.0
+                                ),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
                         Some(_) => {}
                     }
                 }
@@ -4510,6 +4517,34 @@ fn parameter_value_is_valid(value: &crate::features::ParameterValue) -> bool {
         | crate::features::ParameterValue::Boolean(_)
         | crate::features::ParameterValue::String(_) => true,
     }
+}
+
+fn regeneration_references(
+    definition: &crate::features::FeatureDefinition,
+) -> impl Iterator<Item = &crate::features::FeatureId> {
+    let mut references = Vec::new();
+    match definition {
+        crate::features::FeatureDefinition::DatumOffsetPlane {
+            reference: Some(reference),
+            ..
+        }
+        | crate::features::FeatureDefinition::DerivedGeometry { source: reference }
+        | crate::features::FeatureDefinition::SketchBlockInstance {
+            block: Some(reference),
+            ..
+        } => {
+            references.push(reference);
+        }
+        crate::features::FeatureDefinition::Pattern { seeds, .. } => {
+            references.extend(seeds.iter().filter_map(|seed| match seed {
+                crate::features::PatternSeed::Feature(feature) => Some(feature),
+                crate::features::PatternSeed::Faces(_)
+                | crate::features::PatternSeed::Bodies(_) => None,
+            }));
+        }
+        _ => {}
+    }
+    references.into_iter()
 }
 
 fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {

@@ -3449,16 +3449,20 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 }
 
 #[test]
-fn offset_plane_references_must_be_declared_dependencies_in_every_configuration() {
+fn definition_references_must_be_declared_dependencies_in_every_configuration() {
     use crate::features::{
         ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
-        Feature, FeatureDefinition, FeatureId, Length,
+        Feature, FeatureDefinition, FeatureId, Length, PatternKind, PatternSeed,
     };
     use std::collections::{BTreeMap, HashSet};
 
     let mut ir = unit_cube();
-    let source = FeatureId("synthetic:test:feature#datum-plane".into());
-    let offset = FeatureId("synthetic:test:feature#offset-plane".into());
+    let source = FeatureId("synthetic:test:feature#0-source".into());
+    let offset = FeatureId("synthetic:test:feature#1-offset".into());
+    let derived = FeatureId("synthetic:test:feature#2-derived".into());
+    let pattern = FeatureId("synthetic:test:feature#3-pattern".into());
+    let block = FeatureId("synthetic:test:feature#4-block".into());
+    let instance = FeatureId("synthetic:test:feature#5-instance".into());
     let feature = |id, ordinal, definition| Feature {
         id,
         ordinal,
@@ -3492,7 +3496,40 @@ fn offset_plane_references_must_be_declared_dependencies_in_every_configuration(
                 distance: Length(5.0),
             },
         ),
+        feature(
+            derived.clone(),
+            2,
+            FeatureDefinition::DerivedGeometry {
+                source: source.clone(),
+            },
+        ),
+        feature(
+            pattern.clone(),
+            3,
+            FeatureDefinition::Pattern {
+                seeds: vec![PatternSeed::Feature(source.clone())],
+                pattern: PatternKind::Mirror {
+                    plane_origin: Point3::new(0.0, 0.0, 0.0),
+                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                },
+            },
+        ),
+        feature(
+            block.clone(),
+            4,
+            FeatureDefinition::SketchBlockDefinition { sketch: None },
+        ),
+        feature(
+            instance.clone(),
+            5,
+            FeatureDefinition::SketchBlockInstance {
+                block: Some(block.clone()),
+                placement: Some(crate::transform::Transform::identity()),
+            },
+        ),
     ];
+    ir.model.features[2].dependencies.push(source.clone());
+    ir.model.features[3].dependencies.push(source.clone());
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("synthetic:test:configuration#offset-plane".into()),
         ordinal: 0,
@@ -3505,15 +3542,25 @@ fn offset_plane_references_must_be_declared_dependencies_in_every_configuration(
         suppressed_features: Vec::new(),
         bodies: ConfigurationBodies::Unresolved,
         parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::from([(
-            offset.clone(),
-            ConfigurationFeatureState {
-                suppressed: false,
-                dependencies: Vec::new(),
-                outputs: Vec::new(),
-                definition: ir.model.features[1].definition.clone(),
-            },
-        )]),
+        feature_states: [
+            (offset.clone(), 1),
+            (derived.clone(), 2),
+            (pattern.clone(), 3),
+            (instance.clone(), 5),
+        ]
+        .into_iter()
+        .map(|(feature, index)| {
+            (
+                feature,
+                ConfigurationFeatureState {
+                    suppressed: false,
+                    dependencies: Vec::new(),
+                    outputs: Vec::new(),
+                    definition: ir.model.features[index].definition.clone(),
+                },
+            )
+        })
+        .collect(),
         native_ref: None,
     });
 
@@ -3527,17 +3574,36 @@ fn offset_plane_references_must_be_declared_dependencies_in_every_configuration(
         source.0
     )));
     assert!(findings.contains(&format!(
-        "configuration offset plane omits reference feature `{}` from its dependencies",
-        source.0
+        "sketch block instance omits block feature `{}` from its dependencies",
+        block.0
+    )));
+    for feature in [&offset, &derived, &pattern] {
+        assert!(findings.contains(&format!(
+            "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
+            feature.0, source.0
+        )));
+    }
+    assert!(findings.contains(&format!(
+        "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
+        instance.0, block.0
     )));
 
     ir.model.features[1].dependencies.push(source.clone());
+    ir.model.features[5].dependencies.push(block.clone());
+    for feature in [&offset, &derived, &pattern] {
+        ir.model.configurations[0]
+            .feature_states
+            .get_mut(feature)
+            .expect("configuration feature state")
+            .dependencies
+            .push(source.clone());
+    }
     ir.model.configurations[0]
         .feature_states
-        .get_mut(&offset)
-        .expect("offset-plane state")
+        .get_mut(&instance)
+        .expect("block-instance state")
         .dependencies
-        .push(source);
+        .push(block);
     let state = ir.model.configurations[0]
         .feature_states
         .get_mut(&offset)
@@ -3558,7 +3624,8 @@ fn offset_plane_references_must_be_declared_dependencies_in_every_configuration(
         unreachable!()
     };
     *distance = Length(5.0);
-    assert!(validate(&ir, Vec::new()).is_ok());
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:#?}", report.findings);
 }
 
 #[test]
