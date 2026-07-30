@@ -3818,12 +3818,19 @@ fn feature_operation_geometry_is_validated() {
         FeatureDefinition::Rib {
             construction: RibConstruction {
                 profile: Some(ProfileRef::Native("profile".into())),
-                direction: Some(Vector3::new(0.0, 0.0, 0.0)),
-                thickness: Some(Length(0.0)),
+                direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+                thickness: Some(Length(1.0)),
                 side: Some(RibSide::OneSided),
-                draft: RibDraft::None,
+                draft: RibDraft::Angle(crate::features::Angle(std::f64::consts::FRAC_PI_2)),
             },
             op: BooleanOp::Join,
+        },
+        FeatureDefinition::Draft {
+            faces: FaceSelection::Unresolved,
+            neutral_plane: FaceSelection::Unresolved,
+            pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            angle: Some(crate::features::Angle(std::f64::consts::FRAC_PI_2)),
+            outward: Some(false),
         },
         FeatureDefinition::Hole {
             profile: None,
@@ -4082,6 +4089,7 @@ fn feature_operation_geometry_is_validated() {
         "references missing Form control cage `synthetic:test:subd#missing`",
         "fillet radius is invalid",
         "rib geometry is invalid",
+        "draft geometry is invalid",
         "hole geometry is invalid",
         "thicken thickness is invalid",
         "surface offset is invalid",

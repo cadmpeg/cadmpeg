@@ -2566,7 +2566,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     || construction
                         .thickness
                         .is_some_and(|value| !positive_feature_length(value))
-                    || matches!(construction.draft, crate::features::RibDraft::Angle(value) if !value.0.is_finite())
+                    || matches!(
+                        construction.draft,
+                        crate::features::RibDraft::Angle(value)
+                            if !valid_draft_angle(value)
+                    )
                 {
                     feature_geometry_error(findings, feature, "rib geometry is invalid");
                 }
@@ -2748,7 +2752,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 face_selections.push(faces);
                 face_selections.push(neutral_plane);
                 if pull_direction.is_some_and(|value| !valid_feature_direction(value))
-                    || angle.is_some_and(|value| !value.0.is_finite())
+                    || angle.is_some_and(|value| !valid_draft_angle(value))
                 {
                     feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
@@ -4186,6 +4190,10 @@ fn check_historical_selection<'a, I, F>(
 
 fn positive_feature_length(value: Length) -> bool {
     value.0.is_finite() && value.0 > 0.0
+}
+
+fn valid_draft_angle(value: crate::features::Angle) -> bool {
+    value.0.is_finite() && value.0.abs() < std::f64::consts::FRAC_PI_2
 }
 
 fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {

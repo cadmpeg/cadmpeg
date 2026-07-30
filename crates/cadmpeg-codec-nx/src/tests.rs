@@ -942,6 +942,14 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         &construction,
         BooleanOp::Join,
     ));
+    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId(
+        "face#0".to_string(),
+    )]));
+    construction.draft = RibDraft::Angle(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2));
+    assert!(crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
 }
 
 #[test]
@@ -1873,6 +1881,11 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
             Some(cadmpeg_ir::features::Angle(0.1)),
             None,
+        ),
+        draft(
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+            Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2)),
+            Some(false),
         ),
     ] {
         ir.model.features[0].definition = incomplete;

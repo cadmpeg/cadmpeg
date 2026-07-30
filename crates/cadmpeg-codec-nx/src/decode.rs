@@ -10377,7 +10377,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             } if face_selection_is_incomplete(faces)
                 || face_selection_is_incomplete(neutral_plane)
                 || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
-                || angle.is_none_or(|angle| !angle.0.is_finite())
+                || angle.is_none_or(|angle| !valid_draft_angle(angle))
                 || outward.is_none() =>
             {
                 "draft"
@@ -10975,7 +10975,7 @@ pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: Bool
             .is_none_or(|thickness| !positive_feature_length(thickness))
         || construction.side.is_none()
         || matches!(construction.draft, RibDraft::Unresolved)
-        || matches!(construction.draft, RibDraft::Angle(angle) if !angle.0.is_finite())
+        || matches!(construction.draft, RibDraft::Angle(angle) if !valid_draft_angle(angle))
         || matches!(op, BooleanOp::Unresolved)
 }
 
@@ -11131,6 +11131,10 @@ pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
 
 fn positive_feature_length(length: Length) -> bool {
     length.0.is_finite() && length.0 > 0.0
+}
+
+fn valid_draft_angle(angle: cadmpeg_ir::features::Angle) -> bool {
+    angle.0.is_finite() && angle.0.abs() < std::f64::consts::FRAC_PI_2
 }
 
 fn valid_feature_direction(direction: Vector3) -> bool {
