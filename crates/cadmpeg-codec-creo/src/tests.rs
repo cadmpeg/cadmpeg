@@ -4871,6 +4871,17 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         .declared_count = 2;
     assert!(crate::decode::resolved_section_points(&incomplete_variables).is_empty());
 
+    let mut incomplete_dimensions = definition.clone();
+    incomplete_dimensions
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .declared_count = 3;
+    assert_eq!(
+        crate::decode::resolved_section_coordinates(&incomplete_dimensions).get(&5),
+        Some(&[None, Some(20.0)])
+    );
+
     let mut incomplete_segments = definition;
     incomplete_segments
         .segments

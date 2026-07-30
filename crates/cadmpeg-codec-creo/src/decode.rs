@@ -4163,7 +4163,8 @@ fn section_relation_length_dimension<'a>(
 ) -> Option<&'a crate::feature::FeatureDimension> {
     let dimension = definition
         .dimensions
-        .as_ref()?
+        .as_ref()
+        .filter(|table| feature_dimension_table_complete(table))?
         .rows
         .get(usize::try_from(relation.dimension_id).ok()?)?;
     (dimension.value_unit == crate::feature::DimensionUnit::Millimeters).then_some(dimension)

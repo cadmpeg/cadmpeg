@@ -1731,7 +1731,8 @@ For a type-zero linear-distance relation with operand-vector forms
 the two points along the measured horizontal or vertical segment only when the
 sign is explicit. Sign `1` adds the dimension and sign `f6` subtracts it.
 Sign zero supplies no signed coordinate equation; the segment direction fields
-do not assign the missing sign.
+do not assign the missing sign. The equation requires a complete `dimtab_ptr`;
+rows from a table missing any declared dimension do not supply coordinates.
 Equivalent rows define one coordinate equation. Rows that assign different
 signed differences to the same unordered point pair and coordinate define no
 solved coordinate for that equation.
