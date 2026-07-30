@@ -35,20 +35,28 @@ pub struct CatalogEntry {
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Vec<Catalog> {
-    let candidates = bytes
-        .windows(2)
-        .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x02])
-        .filter_map(|(pos, _)| parse_candidate(bytes, pos))
-        .collect::<Vec<_>>();
     let mut catalogs = Vec::<Catalog>::new();
-    for catalog in candidates {
-        let catalog_end = catalog.pos + catalog.total_len;
-        if catalogs
-            .iter()
-            .any(|outer| outer.pos < catalog.pos && outer.pos + outer.total_len >= catalog_end)
-        {
+    let mut enclosing_end = 0usize;
+    for pos in memchr::memchr_iter(0x7c, bytes) {
+        let Some(marker_tail) = pos.checked_add(1) else {
             continue;
+        };
+        if bytes.get(marker_tail) != Some(&0x02) {
+            continue;
+        }
+        let declared_end = pos
+            .checked_add(2)
+            .and_then(|length_offset| u32_le(bytes, length_offset))
+            .and_then(|length| usize::try_from(length).ok())
+            .and_then(|length| pos.checked_add(length));
+        if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
+            continue;
+        }
+        let Some(catalog) = parse_candidate(bytes, pos) else {
+            continue;
+        };
+        if let Some(catalog_end) = catalog.pos.checked_add(catalog.total_len) {
+            enclosing_end = enclosing_end.max(catalog_end);
         }
         catalogs.push(catalog);
     }

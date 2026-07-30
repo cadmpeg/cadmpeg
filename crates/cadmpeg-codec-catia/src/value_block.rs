@@ -102,20 +102,29 @@ pub enum ValueField {
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
-    let candidates = bytes
-        .windows(2)
-        .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x0b])
-        .filter_map(|(pos, _)| parse_candidate(bytes, pos))
-        .collect::<Vec<_>>();
     let mut blocks = Vec::<ValueBlock>::new();
-    for block in candidates {
-        let block_end = block.pos + block.total_len;
-        if blocks
-            .iter()
-            .any(|outer| outer.pos < block.pos && outer.pos + outer.total_len >= block_end)
-        {
+    let mut enclosing_end = 0usize;
+    for pos in memchr::memchr_iter(0x7c, bytes) {
+        let Some(marker_tail) = pos.checked_add(1) else {
             continue;
+        };
+        if bytes.get(marker_tail) != Some(&0x0b) {
+            continue;
+        }
+        let declared_end = pos
+            .checked_add(2)
+            .and_then(|length_offset| u32_le(bytes, length_offset))
+            .and_then(|length| usize::try_from(length).ok())
+            .and_then(|length| pos.checked_add(length))
+            .and_then(|terminator| terminator.checked_add(1));
+        if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
+            continue;
+        }
+        let Some(block) = parse_candidate(bytes, pos) else {
+            continue;
+        };
+        if let Some(block_end) = block.pos.checked_add(block.total_len) {
+            enclosing_end = enclosing_end.max(block_end);
         }
         blocks.push(block);
     }
