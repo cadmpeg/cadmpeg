@@ -1145,7 +1145,7 @@ mod tests {
                 (
                     &LegacyRoleName::Selector(0xa4),
                     LegacyRoleSelectorEncoding::FixedU32,
-                    115925,
+                    115_925,
                 ),
             ]
         );

@@ -324,27 +324,28 @@ pub struct EntityRecord {
 /// Parse every maximal contiguous run of length-closed `7C05` records.
 #[must_use]
 pub fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
-    let candidates = data
+    let mut roots = Vec::new();
+    let mut enclosing_end = 0usize;
+    for pos in data
         .windows(2)
         .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x05])
-        .filter_map(|(pos, _)| parse_candidate_variants(data, pos))
-        .collect::<Vec<_>>();
-    let roots = candidates
-        .iter()
-        .filter(|candidate| {
-            !candidates.iter().any(|outer| {
-                outer.pos < candidate.pos
-                    && outer.pos.checked_add(outer.total_len).is_some_and(|end| {
-                        candidate
-                            .pos
-                            .checked_add(candidate.total_len)
-                            .is_some_and(|candidate_end| candidate_end <= end)
-                    })
-            })
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+        .filter_map(|(pos, marker)| (marker == [0x7c, 0x05]).then_some(pos))
+    {
+        let Some(total_len) = u32_le(data, pos + 2).and_then(|len| usize::try_from(len).ok())
+        else {
+            continue;
+        };
+        let Some(end) = pos.checked_add(total_len).filter(|end| *end <= data.len()) else {
+            continue;
+        };
+        if end <= enclosing_end {
+            continue;
+        }
+        if let Some(candidate) = parse_candidate_variants(data, pos) {
+            enclosing_end = enclosing_end.max(end);
+            roots.push(candidate);
+        }
+    }
 
     roots
         .into_iter()
@@ -770,6 +771,24 @@ mod tests {
     #[test]
     fn entity_table_run_rejects_an_ambiguous_identity_delimiter() {
         assert!(parse_runs(&record(&[0xe9, 0xea], 90)).is_empty());
+    }
+
+    #[test]
+    fn entity_table_does_not_descend_into_contained_records() {
+        let nested = record(&[0x22], 90);
+        let mut outer = record(&[0x11], 89);
+        outer.extend_from_slice(&nested);
+        let outer_len = u32::try_from(outer.len()).expect("bounded outer record");
+        outer[2..6].copy_from_slice(&outer_len.to_le_bytes());
+
+        let runs = parse_runs(&outer);
+        let [run] = runs.as_slice() else {
+            panic!("one outer entity-table run");
+        };
+        assert_eq!(run.len(), 1);
+        assert_eq!(run[0].entity_id, 89);
+        assert_eq!(run[0].record_suffix.first(), Some(&0xbb));
+        assert_eq!(&run[0].record_suffix[1..], nested);
     }
 
     #[test]
