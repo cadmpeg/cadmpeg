@@ -366,6 +366,9 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   The final stored state for each feature supplies its active recipe, Boolean
   effect, schema parent, and source tag while every preceding state remains an
   ordered native regeneration record.
+  A nonzero geometry-row generator identity with no operation, feature row, or
+  datum definition transfers as stored geometry rather than an invented native
+  operation.
 - **Product structure: Partial.** A unique native model-name header defines one
   part product and one root identity occurrence. The product owns every
   transferred body. Assembly component definitions, child occurrences,

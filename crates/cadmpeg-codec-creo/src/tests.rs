@@ -443,6 +443,37 @@ fn scan_discovers_typed_surface_rows() {
 }
 
 #[test]
+fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.0 == "creo:model:feature#4")
+        .expect("geometry generator feature");
+
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+    ));
+    assert_eq!(
+        result.report.coverage["transferred_geometry_generator_feature_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["transferred_native_feature_count"],
+        0
+    );
+}
+
+#[test]
 fn scan_preserves_linear_extrusion_type_variants() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x2a, 4, 0x01, 0, 8]);

@@ -29425,29 +29425,6 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
-        let mut parameters = BTreeMap::new();
-        if !generator.surface_ids.is_empty() {
-            parameters.insert(
-                "generated_surface_ids".to_string(),
-                generator
-                    .surface_ids
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-        }
-        if !generator.curve_ids.is_empty() {
-            parameters.insert(
-                "generated_curve_ids".to_string(),
-                generator
-                    .curve_ids
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-        }
         annotate(
             &mut annotations,
             &id,
@@ -29468,11 +29445,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             source_text: None,
             source_content: Vec::new(),
             outputs: feature_output_bodies(scan, &ir, feature_id),
-            definition: IrFeatureDefinition::Native {
-                kind: "Geometry Generator".to_string(),
-                parameters,
-                properties: BTreeMap::new(),
-            },
+            definition: IrFeatureDefinition::StoredGeometry,
             native_ref: None,
         });
     }
@@ -30774,12 +30747,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .model
         .features
         .iter()
-        .filter(|feature| {
-            matches!(
-                &feature.definition,
-                IrFeatureDefinition::Native { kind, .. } if kind == "Geometry Generator"
-            )
-        })
+        .filter(|feature| matches!(feature.definition, IrFeatureDefinition::StoredGeometry))
         .count();
     let mut unresolved_datum_plane_feature_count = 0;
     let mut unresolved_datum_coordinate_system_feature_count = 0;

@@ -238,7 +238,10 @@ fixtures, claims above L1 remain unproven.
    It also counts all transferred history features, partitions their
    definitions into typed and native forms, and separately counts typed
    definitions whose model-space construction is explicitly unresolved. Every
-   native definition raises a decode loss note. The unresolved typed count is
+   native definition raises a decode loss note. Geometry rows whose nonzero
+   generator identity has no operation, feature row, or datum definition
+   transfer as stored-geometry features and are counted separately. The
+   unresolved typed count is
    partitioned into datum-plane, datum-coordinate-system, boundary-surface, and
    draft families. Every explicit unresolved definition raises a decode loss
    note. Extrusions are counted separately, with
