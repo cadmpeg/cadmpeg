@@ -10413,6 +10413,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "delete body"
             }
+            FeatureDefinition::ReplaceFace {
+                targets,
+                replacements,
+            } if face_selection_is_incomplete(targets)
+                || face_selection_is_incomplete(replacements)
+                || face_selections_overlap(targets, replacements) =>
+            {
+                "replace face"
+            }
             _ => continue,
         };
         *incomplete_feature_families.entry(family).or_default() += 1;
@@ -10628,6 +10637,7 @@ pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Opti
         FeatureDefinition::Draft { .. } => Some("draft"),
         FeatureDefinition::Pattern { .. } => Some("pattern"),
         FeatureDefinition::Combine { .. } => Some("body combine"),
+        FeatureDefinition::ReplaceFace { .. } => Some("replace face"),
         _ => None,
     }
 }

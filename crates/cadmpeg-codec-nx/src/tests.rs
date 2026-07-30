@@ -1397,6 +1397,42 @@ fn nx_face_blend_completeness_requires_disjoint_supports() {
 }
 
 #[test]
+fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::ids::FaceId;
+
+    let target = FaceId("test:face#target".into());
+    let complete_targets = FaceSelection::Faces(vec![target.clone()]);
+    let complete_replacements = FaceSelection::Faces(vec![FaceId("test:face#replacement".into())]);
+    let overlapping_replacements = FaceSelection::Resolved {
+        faces: vec![target],
+        native: "test:replacement".into(),
+    };
+
+    assert_eq!(
+        crate::decode::body_output_feature_family(&FeatureDefinition::ReplaceFace {
+            targets: complete_targets.clone(),
+            replacements: complete_replacements.clone(),
+        }),
+        Some("replace face")
+    );
+    assert!(!crate::decode::face_selection_is_incomplete(
+        &complete_targets
+    ));
+    assert!(!crate::decode::face_selection_is_incomplete(
+        &complete_replacements
+    ));
+    assert!(!crate::decode::face_selections_overlap(
+        &complete_targets,
+        &complete_replacements
+    ));
+    assert!(crate::decode::face_selections_overlap(
+        &complete_targets,
+        &overlapping_replacements
+    ));
+}
+
+#[test]
 fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,

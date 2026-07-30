@@ -2917,6 +2917,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(targets);
                 face_selections.push(replacements);
+                if face_selections_overlap(targets, replacements) {
+                    feature_geometry_error(findings, feature, "replacement face operands overlap");
+                }
             }
             FeatureDefinition::MoveFace { faces, motion } => {
                 face_selections.push(faces);

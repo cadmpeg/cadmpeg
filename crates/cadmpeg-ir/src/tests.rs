@@ -3313,6 +3313,10 @@ fn feature_operand_roles_must_be_disjoint() {
             },
             approximate: Some(false),
         },
+        FeatureDefinition::ReplaceFace {
+            targets: FaceSelection::Faces(vec![ir.model.faces[0].id.clone()]),
+            replacements: FaceSelection::Faces(vec![ir.model.faces[0].id.clone()]),
+        },
         FeatureDefinition::SewBodies {
             bodies: BodySelection::Local {
                 bodies: vec![body_key],
@@ -3345,6 +3349,7 @@ fn feature_operand_roles_must_be_disjoint() {
         "face blend supports overlap",
         "body trim operands overlap",
         "section operands overlap",
+        "replacement face operands overlap",
         "sew requires at least two bodies",
     ] {
         assert!(findings.iter().any(|finding| finding.message == message));
