@@ -10319,6 +10319,53 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 }
 
 #[test]
+fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
+    use cadmpeg_ir::geometry::Surface;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let horizontal = SurfaceId("synthetic:large-horizontal-plane".into());
+    let vertical = SurfaceId("synthetic:large-vertical-plane".into());
+    let origin = Point3::new(1.0e16, 1.0e16, 0.0);
+    ir.model.surfaces.extend([
+        Surface {
+            id: horizontal.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin,
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: vertical.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin,
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let chart =
+        [0.0, 4.0, 8.0].map(|distance| Point3::new(origin.x + distance, origin.y, origin.z));
+
+    let lanes = crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&horizontal, &vertical],
+        &chart,
+        0.1,
+    )
+    .expect("exact plane partials keep the continuation Jacobian full rank");
+
+    for (ordinal, expected) in [0.0, 4.0, 8.0].into_iter().enumerate() {
+        assert_eq!(lanes[0][ordinal], Point2::new(expected, 0.0));
+        assert_eq!(lanes[1][ordinal], Point2::new(expected, 0.0));
+    }
+}
+
+#[test]
 fn damped_intersection_correction_reduces_a_rank_deficient_system() {
     let matrix = [
         [1.0, 0.0, -1.0, 0.0],

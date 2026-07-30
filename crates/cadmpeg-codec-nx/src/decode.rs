@@ -18,7 +18,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_tangent, model_surface_point_by_id,
     nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_partials, pcurve_uv,
-    surface_point,
+    surface_partials, surface_point,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -5214,6 +5214,15 @@ fn model_surface_derivative(
     domain: Option<([f64; 2], [f64; 2])>,
     periods: [Option<f64>; 2],
 ) -> Option<Vector3> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    if let Some(partials) = surface_partials(&carrier.geometry, parameters.u, parameters.v) {
+        return Some(if along_u { partials.du } else { partials.dv });
+    }
+
     let mut before = parameters;
     let mut after = parameters;
     if along_u {
