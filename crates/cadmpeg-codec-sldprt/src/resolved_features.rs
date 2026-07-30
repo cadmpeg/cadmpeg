@@ -7886,6 +7886,94 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_legacy_repeated_radial_records_define_full_circles() {
+        let mut record = vec![0; 90 + LEGACY_SKETCH_MARKER.len()];
+        record[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        record[5..13].fill(0xff);
+        record[13..17].copy_from_slice(&1u32.to_le_bytes());
+        record[19..25].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        record[25..27].copy_from_slice(&1u16.to_le_bytes());
+        record[31] = 4;
+        record[42..46].copy_from_slice(&[1, 0, 1, 0]);
+        record[46..50].copy_from_slice(&1u32.to_le_bytes());
+        record[50..58].copy_from_slice(&(-1.0f64).to_le_bytes());
+        record[58..62].copy_from_slice(&1u32.to_le_bytes());
+        for cell in record[64..80].chunks_exact_mut(4) {
+            cell.copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        record[82..86].copy_from_slice(&2u32.to_le_bytes());
+        record[86..90].copy_from_slice(&3u32.to_le_bytes());
+        record[90..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        let circle_offset = 500;
+        let mut payload = vec![0; circle_offset + record.len()];
+        for marker_offset in [0, 100, 200, 300] {
+            payload[marker_offset..marker_offset + LEGACY_SKETCH_MARKER.len()]
+                .copy_from_slice(LEGACY_SKETCH_MARKER);
+            payload[marker_offset + 5..marker_offset + 13].fill(0xff);
+            payload[marker_offset + 13..marker_offset + 17].copy_from_slice(&1u32.to_le_bytes());
+            payload[marker_offset + 19..marker_offset + 25]
+                .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+            payload[marker_offset + 31] = 4;
+        }
+        payload[205..213].fill(0);
+        payload[circle_offset..].copy_from_slice(&record);
+        let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let entities = [
+            entity("center", 0, SketchInputKind::Point, Some([0.0, 0.0])),
+            entity("radial", 100, SketchInputKind::Point, Some([0.0, 12.0])),
+            entity("handle", 200, SketchInputKind::Native(1), None),
+            entity(
+                "terminal-radial",
+                300,
+                SketchInputKind::Point,
+                Some([0.0, 5.5]),
+            ),
+            entity(
+                "circle",
+                circle_offset as u64,
+                SketchInputKind::LineOrCircle,
+                None,
+            ),
+        ];
+        let markers = entities.iter().collect::<Vec<_>>();
+
+        assert_eq!(
+            super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+            Some(([0.0, 0.0], 12.0))
+        );
+
+        payload.resize(circle_offset + 131, 0);
+        payload[circle_offset + 42..circle_offset + 46].copy_from_slice(&[3, 0, 3, 0]);
+        payload[circle_offset + 82..circle_offset + 112].fill(0);
+        payload[circle_offset + 112..circle_offset + 114].copy_from_slice(&4u16.to_le_bytes());
+        payload[circle_offset + 114..circle_offset + 118].copy_from_slice(CLASS_MARKER);
+        payload[circle_offset + 118..circle_offset + 120].copy_from_slice(&11u16.to_le_bytes());
+        payload[circle_offset + 120..circle_offset + 131].copy_from_slice(b"sgCircleDim");
+        assert_eq!(
+            super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+            Some(([0.0, 0.0], 5.5))
+        );
+        payload[circle_offset + 120] = b'x';
+        assert_eq!(
+            super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+            None
+        );
+    }
+
+    #[test]
     fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
         let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -28659,6 +28747,13 @@ pub(crate) fn project_marker_backed_sketches(
                                 )
                             })
                             .or_else(|| {
+                                compact_legacy_profile_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
+                            })
+                            .or_else(|| {
                                 coordinate_roster_full_circle(
                                     &lane.native_payload,
                                     marker,
@@ -39621,6 +39716,84 @@ fn compact_profile_full_circle(
     };
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     Some((center, radius))
+}
+
+fn compact_legacy_profile_full_circle(
+    payload: &[u8],
+    circle: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<([f64; 2], f64)> {
+    let offset = usize::try_from(circle.offset).ok()?;
+    if circle.kind != SketchInputKind::LineOrCircle
+        || !compact_legacy_marker_body(payload, offset)
+        || marker_native_code(payload, offset) != Some(1)
+        || payload.get(offset + 19..offset + 23) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 25..offset + 27) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 42) != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload.get(offset + 46..offset + 50) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 58..offset + 62) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 62..offset + 64) != Some(&[0; 2])
+        || payload.get(offset + 64..offset + 80).is_none_or(|cells| {
+            !cells
+                .chunks_exact(4)
+                .all(|cell| cell == (-2i32).to_le_bytes())
+        })
+        || payload.get(offset + 80..offset + 82) != Some(&[0; 2])
+    {
+        return None;
+    }
+    let continued = payload
+        .get(offset + 82..offset + 86)
+        .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && payload
+            .get(offset + 86..offset + 90)
+            .is_some_and(|object| object != [0; 4] && object != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.checked_add(90)?);
+    let terminal = payload.get(offset + 82..offset + 112) == Some(&[0; 30])
+        && payload.get(offset + 112..offset + 114) == Some(&4u16.to_le_bytes())
+        && payload.get(offset + 114..offset + 118) == Some(CLASS_MARKER)
+        && payload.get(offset + 118..offset + 120) == Some(&11u16.to_le_bytes())
+        && payload.get(offset + 120..offset + 131) == Some(b"sgCircleDim");
+    if !continued && !terminal {
+        return None;
+    }
+    let radial_index = usize::from(u16::from_le_bytes(
+        payload.get(offset + 42..offset + 44)?.try_into().ok()?,
+    ));
+    if payload.get(offset + 44..offset + 46)
+        != Some(&u16::try_from(radial_index).ok()?.to_le_bytes())
+    {
+        return None;
+    }
+    let mut points = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == circle.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    points.sort_unstable_by_key(|marker| marker.offset);
+    let center = points.first()?.coordinates_m?;
+    let feature_start = usize::try_from(points.first()?.offset).ok()?;
+    let radial_offset = (feature_start..=offset)
+        .filter(|candidate| sketch_marker_prefix_at(payload, *candidate))
+        .nth(radial_index)?;
+    let mut radial_candidates = points
+        .iter()
+        .filter(|marker| usize::try_from(marker.offset).ok() == Some(radial_offset));
+    let radial = radial_candidates.next()?.coordinates_m?;
+    if radial_candidates.next().is_some() {
+        return None;
+    }
+    let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+    (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
 
 fn legacy_profile_radial_circle(
