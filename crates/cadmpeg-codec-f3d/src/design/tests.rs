@@ -2702,92 +2702,56 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000),
         references
     );
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_candidate_faces(
-            &references[0],
-            &[
-                PersistentSubentityTag {
-                    id: "matching".into(),
-                    target: AttributeTarget::Face(FaceId("face-b".into())),
-                    selector: 1,
-                    token: "13".into(),
-                    design_references: vec![331],
-                    ordinal: 0,
-                },
-                PersistentSubentityTag {
-                    id: "other".into(),
-                    target: AttributeTarget::Face(FaceId("face-a".into())),
-                    selector: 1,
-                    token: "13".into(),
-                    design_references: vec![999],
-                    ordinal: 0,
-                },
-                PersistentSubentityTag {
-                    id: "wrong-selector".into(),
-                    target: AttributeTarget::Face(FaceId("face-c".into())),
-                    selector: 2,
-                    token: "13".into(),
-                    design_references: vec![331],
-                    ordinal: 0,
-                },
-                PersistentSubentityTag {
-                    id: "matching-edge".into(),
-                    target: AttributeTarget::Edge(EdgeId("edge-b".into())),
-                    selector: 1,
-                    token: "13".into(),
-                    design_references: vec![331],
-                    ordinal: 0,
-                },
-            ],
-            None,
-        ),
-        [FaceId("face-b".into())]
+    let tags = [
+        PersistentSubentityTag {
+            id: "matching".into(),
+            target: AttributeTarget::Face(FaceId("face-b".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "other".into(),
+            target: AttributeTarget::Face(FaceId("face-a".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![999],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "alternate-face".into(),
+            target: AttributeTarget::Face(FaceId("face-c".into())),
+            selector: 2,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "matching-edge".into(),
+            target: AttributeTarget::Edge(EdgeId("edge-b".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "alternate-edge".into(),
+            target: AttributeTarget::Edge(EdgeId("edge-c".into())),
+            selector: 2,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+    ];
+    let mut bound = references[0].clone();
+    crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
+        &mut bound, &tags, None,
     );
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_candidate_edges(
-            &references[0],
-            &[PersistentSubentityTag {
-                id: "matching-edge".into(),
-                target: AttributeTarget::Edge(EdgeId("edge-b".into())),
-                selector: 1,
-                token: "13".into(),
-                design_references: vec![331],
-                ordinal: 0,
-            }],
-            None,
-        ),
-        [EdgeId("edge-b".into())]
-    );
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_alternate_selector_faces(
-            &references[0],
-            &[PersistentSubentityTag {
-                id: "alternate-face".into(),
-                target: AttributeTarget::Face(FaceId("face-c".into())),
-                selector: 2,
-                token: "13".into(),
-                design_references: vec![331],
-                ordinal: 0,
-            }],
-            None,
-        ),
-        [FaceId("face-c".into())]
-    );
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_alternate_selector_edges(
-            &references[0],
-            &[PersistentSubentityTag {
-                id: "alternate-edge".into(),
-                target: AttributeTarget::Edge(EdgeId("edge-c".into())),
-                selector: 2,
-                token: "13".into(),
-                design_references: vec![331],
-                ordinal: 0,
-            }],
-            None,
-        ),
-        [EdgeId("edge-c".into())]
-    );
+    assert_eq!(bound.candidate_faces, [FaceId("face-b".into())]);
+    assert_eq!(bound.candidate_edges, [EdgeId("edge-b".into())]);
+    assert_eq!(bound.alternate_selector_faces, [FaceId("face-c".into())]);
+    assert_eq!(bound.alternate_selector_edges, [EdgeId("edge-c".into())]);
     let stream_tags = [
         PersistentSubentityTag {
             id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
@@ -2806,14 +2770,12 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ordinal: 0,
         },
     ];
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_candidate_faces(
-            &references[0],
-            &stream_tags,
-            Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
-        ),
-        [FaceId("face-a".into())]
+    crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
+        &mut bound,
+        &stream_tags,
+        Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
     );
+    assert_eq!(bound.candidate_faces, [FaceId("face-a".into())]);
 }
 
 #[test]

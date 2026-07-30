@@ -282,12 +282,46 @@ pub(crate) fn bind_recipe_reference_candidates(
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
 ) {
-    reference.candidate_faces = recipe_reference_candidate_faces(reference, tags, owner_id);
-    reference.candidate_edges = recipe_reference_candidate_edges(reference, tags, owner_id);
-    reference.alternate_selector_faces =
-        recipe_reference_alternate_selector_faces(reference, tags, owner_id);
-    reference.alternate_selector_edges =
-        recipe_reference_alternate_selector_edges(reference, tags, owner_id);
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    reference.candidate_faces.clear();
+    reference.candidate_edges.clear();
+    reference.alternate_selector_faces.clear();
+    reference.alternate_selector_edges.clear();
+    for tag in tags.iter().filter(|tag| {
+        owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
+            && tag.token == reference.token
+            && tag.design_references.contains(&reference.design_reference)
+    }) {
+        let matching_selector = tag.selector == reference.selector;
+        match (&tag.target, matching_selector) {
+            (AttributeTarget::Face(face), true) => reference.candidate_faces.push(face.clone()),
+            (AttributeTarget::Edge(edge), true) => reference.candidate_edges.push(edge.clone()),
+            (AttributeTarget::Face(face), false) => {
+                reference.alternate_selector_faces.push(face.clone());
+            }
+            (AttributeTarget::Edge(edge), false) => {
+                reference.alternate_selector_edges.push(edge.clone());
+            }
+            _ => {}
+        }
+    }
+    reference
+        .candidate_faces
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.candidate_faces.dedup();
+    reference
+        .candidate_edges
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.candidate_edges.dedup();
+    reference
+        .alternate_selector_faces
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.alternate_selector_faces.dedup();
+    reference
+        .alternate_selector_edges
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.alternate_selector_edges.dedup();
 }
 
 /// Join dimension programs to byte-identical edge-recipe program tails.
@@ -328,106 +362,6 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     ids.sort();
     ids.dedup();
     ids
-}
-
-pub(crate) fn recipe_reference_candidate_edges(
-    reference: &crate::records::DesignRecipeReference,
-    tags: &[PersistentSubentityTag],
-    owner_id: Option<&str>,
-) -> Vec<cadmpeg_ir::ids::EdgeId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let mut edges = tags
-        .iter()
-        .filter(|tag| {
-            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
-                && tag.selector == reference.selector
-                && tag.token == reference.token
-                && tag.design_references.contains(&reference.design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Edge(edge) => Some(edge.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    edges.sort_by(|left, right| left.0.cmp(&right.0));
-    edges.dedup();
-    edges
-}
-
-pub(crate) fn recipe_reference_candidate_faces(
-    reference: &crate::records::DesignRecipeReference,
-    tags: &[PersistentSubentityTag],
-    owner_id: Option<&str>,
-) -> Vec<cadmpeg_ir::ids::FaceId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let mut faces = tags
-        .iter()
-        .filter(|tag| {
-            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
-                && tag.selector == reference.selector
-                && tag.token == reference.token
-                && tag.design_references.contains(&reference.design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Face(face) => Some(face.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    faces.sort_by(|left, right| left.0.cmp(&right.0));
-    faces.dedup();
-    faces
-}
-
-pub(crate) fn recipe_reference_alternate_selector_edges(
-    reference: &crate::records::DesignRecipeReference,
-    tags: &[PersistentSubentityTag],
-    owner_id: Option<&str>,
-) -> Vec<cadmpeg_ir::ids::EdgeId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let mut edges = tags
-        .iter()
-        .filter(|tag| {
-            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
-                && tag.selector != reference.selector
-                && tag.token == reference.token
-                && tag.design_references.contains(&reference.design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Edge(edge) => Some(edge.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    edges.sort_by(|left, right| left.0.cmp(&right.0));
-    edges.dedup();
-    edges
-}
-
-pub(crate) fn recipe_reference_alternate_selector_faces(
-    reference: &crate::records::DesignRecipeReference,
-    tags: &[PersistentSubentityTag],
-    owner_id: Option<&str>,
-) -> Vec<cadmpeg_ir::ids::FaceId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let mut faces = tags
-        .iter()
-        .filter(|tag| {
-            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
-                && tag.selector != reference.selector
-                && tag.token == reference.token
-                && tag.design_references.contains(&reference.design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Face(face) => Some(face.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    faces.sort_by(|left, right| left.0.cmp(&right.0));
-    faces.dedup();
-    faces
 }
 
 pub(crate) fn recipe_record_prefix(
