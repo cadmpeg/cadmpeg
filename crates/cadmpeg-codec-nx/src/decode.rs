@@ -2654,7 +2654,12 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
                     pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index)
                         .or_else(|| uv.last().copied());
                 let parameters = match &surface.geometry {
-                    SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, *point, seed),
+                    SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters_with_tolerance(
+                        nurbs,
+                        *point,
+                        seed,
+                        Some(effective_fit_tolerance),
+                    ),
                     SurfaceGeometry::Procedural { .. } => {
                         let other_side = &context.sides[1 - side];
                         other_side
@@ -3228,10 +3233,12 @@ fn blend_surface_parameters_inner(
     }
     if let Some(fit_tolerance) = fit_tolerance {
         let boundary_parameters = [0usize, 1usize].map(|boundary| {
-            blend_boundary_parameter(ir, surface, point, boundary, depth + 1).filter(|parameter| {
-                blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
-                    .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
-            })
+            blend_boundary_parameter(ir, surface, point, boundary, fit_tolerance, depth + 1).filter(
+                |parameter| {
+                    blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
+                        .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+                },
+            )
         });
         if let Some((parameter, boundary)) = match boundary_parameters {
             [Some(parameter), None] => Some((parameter, 0usize)),
@@ -3584,6 +3591,7 @@ fn blend_boundary_parameter(
     surface: &SurfaceId,
     point: Point3,
     boundary: usize,
+    fit_tolerance: f64,
     depth: usize,
 ) -> Option<f64> {
     (depth < 32).then_some(())?;
@@ -3595,7 +3603,9 @@ fn blend_boundary_parameter(
         .iter()
         .find(|candidate| &candidate.id == support)?;
     let uv = match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, None),
+        SurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_parameters_with_tolerance(nurbs, point, None, Some(fit_tolerance))
+        }
         SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, support, point, None),
         geometry => analytic_surface_parameters(geometry, point),
     }?;
@@ -5056,7 +5066,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
     };
     let domain = surface_parameter_domain(ir, support);
     let mut parameters = seed
-        .or_else(|| initial_surface_parameters(ir, support, point, None))
+        .or_else(|| initial_surface_parameters(ir, support, point, None, fit_tolerance))
         .or_else(|| {
             domain.and_then(|domain| coarse_model_surface_parameters(ir, surface, point, domain))
         })?;
@@ -5133,6 +5143,7 @@ fn initial_surface_parameters(
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
+    fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
     let carrier = ir
         .model
@@ -5140,7 +5151,9 @@ fn initial_surface_parameters(
         .iter()
         .find(|candidate| &candidate.id == surface)?;
     match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, seed),
+        SurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_parameters_with_tolerance(nurbs, point, seed, fit_tolerance)
+        }
         SurfaceGeometry::Procedural { construction } => {
             let procedural =
                 ir.model.procedural_surfaces.iter().find(|candidate| {
@@ -5149,7 +5162,7 @@ fn initial_surface_parameters(
             let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
                 return None;
             };
-            initial_surface_parameters(ir, support, point, seed)
+            initial_surface_parameters(ir, support, point, seed, fit_tolerance)
         }
         geometry => analytic_surface_parameters(geometry, point),
     }
@@ -5278,7 +5291,9 @@ fn continue_surface_intersection_parameters_with_seeds(
             .find(|candidate| &candidate.id == surface)?
             .geometry;
         match geometry {
-            SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, seed),
+            SurfaceGeometry::Nurbs(nurbs) => {
+                nurbs_parameters_with_tolerance(nurbs, point, seed, Some(fit_tolerance))
+            }
             SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance(
                 ir,
                 surface,
@@ -6042,6 +6057,7 @@ fn complete_nurbs_surface_starts(
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
+    fit_tolerance: Option<f64>,
 ) -> Option<Vec<Point2>> {
     const MAX_PATCHES: usize = 1_000_000;
 
@@ -6060,7 +6076,12 @@ fn complete_nurbs_surface_starts(
                     coordinate.is_finite().then(|| scale.max(coordinate))
                 })
             })?;
-    let distance_tolerance = 256.0 * f64::EPSILON * coordinate_scale;
+    let requested_tolerance = match fit_tolerance {
+        Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => tolerance,
+        Some(_) => return None,
+        None => 0.0,
+    };
+    let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
     let squared_tolerance = distance_tolerance * distance_tolerance;
     let squared_distance = |parameters: Point2| {
         let position = cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
@@ -6231,6 +6252,15 @@ pub(crate) fn nurbs_parameters(
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
+    nurbs_parameters_with_tolerance(surface, point, seed, None)
+}
+
+fn nurbs_parameters_with_tolerance(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: Option<f64>,
+) -> Option<Point2> {
     let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
     let u_degree = usize::try_from(surface.u_degree).ok()?;
     let v_degree = usize::try_from(surface.v_degree).ok()?;
@@ -6248,7 +6278,7 @@ pub(crate) fn nurbs_parameters(
         return None;
     }
     let squared_distance = |candidate: Point3| point_distance(candidate, point).powi(2);
-    let starts = complete_nurbs_surface_starts(surface, point, seed)?;
+    let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance)?;
     let mut best = None;
     let mut best_distance = f64::INFINITY;
     let mut best_seed_distance = f64::INFINITY;
@@ -7938,8 +7968,8 @@ fn exact_boundary_pcurve(
     };
     let domain = surface_parameter_domain(ir, surface)?;
     let parameters = [
-        nurbs_parameters(nurbs, endpoints[0], None)?,
-        nurbs_parameters(nurbs, endpoints[1], None)?,
+        nurbs_parameters_with_tolerance(nurbs, endpoints[0], None, Some(tolerance))?,
+        nurbs_parameters_with_tolerance(nurbs, endpoints[1], None, Some(tolerance))?,
     ];
     for index in 0..2 {
         if !parameters[index].u.is_finite() || !parameters[index].v.is_finite() {
@@ -8441,7 +8471,9 @@ fn surface_parameters_for_fit(
         .iter()
         .find(|candidate| &candidate.id == surface)?;
     match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, seed),
+        SurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_parameters_with_tolerance(nurbs, point, seed, Some(tolerance))
+        }
         SurfaceGeometry::Procedural { .. } => {
             offset_surface_parameters_with_tolerance(ir, surface, point, seed, Some(tolerance))
                 .or_else(|| blend_surface_parameters_for_fit(ir, surface, point, seed, tolerance))
@@ -10749,6 +10781,22 @@ mod tests {
         let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
             .expect("absolute placement does not widen rational derivative bounds");
         assert!(bound <= 0.02);
+    }
+
+    #[test]
+    fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
+        let SurfaceGeometry::Nurbs(surface) = quadratic_paraboloid_surface() else {
+            unreachable!();
+        };
+        let mut point = cadmpeg_ir::eval::nurbs_surface_point(&surface, 0.4, 0.6).unwrap();
+        point.z += 0.001;
+
+        let parameters =
+            super::nurbs_parameters_with_tolerance(&surface, point, None, Some(0.01)).unwrap();
+        let mapped =
+            cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
+
+        assert!(super::point_distance(mapped, point) <= 0.01);
     }
 
     #[test]
