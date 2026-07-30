@@ -73,6 +73,9 @@ fixtures, claims above L1 remain unproven.
   material functions and series/list parameter queries retain their argument
   dependencies without treating the function name as a parameter; their values
   remain symbolic until the referenced namespace is decoded.
+  Left-hand `value(parameter,row[,column])` statements retain a typed table-cell
+  target and its complete dependency order without emitting a false scalar
+  parameter.
   Unit declarations on newly created assignment targets define typed parameter
   values and remain separate from parameter identity.
   A unique transferred dimension identity becomes the neutral parameter
@@ -247,10 +250,11 @@ fixtures, claims above L1 remain unproven.
    solver-variable types whose dimension semantics remain unresolved. Every
    unresolved dimension-driven solver variable raises a decode loss note. The
    map likewise counts decoded, transferred, and evaluated active
-   curve-equation assignments separately and partitions them by active,
-   inactive, and unresolved-conditional state. Prohibited active records and
-   their distinct prohibited construct kinds are counted separately, and each
-   nonzero prohibited count raises a decode loss note. Container and census
+   curve-equation assignments separately, counts typed table-cell targets, and
+   partitions assignments by active, inactive, and unresolved-conditional
+   state. Prohibited active records and their distinct prohibited construct
+   kinds are counted separately, and each nonzero prohibited count raises a
+   decode loss note. Container and census
    facts about the file — version line, layout, section table, namespace array
    sizes, principal unit, family-table pointer, and configuration state — remain
    in the source metadata attribute map. Referenced configuration driver tables

@@ -83,10 +83,8 @@ pub struct CurveExpressionLocalSystem {
 /// One executable assignment in a curve expression program.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveExpressionAssignment {
-    /// Assigned identifier.
-    pub name: String,
-    /// Unit expression declared on a newly created parameter target.
-    pub declared_unit: Option<String>,
+    /// Scalar parameter or table cell receiving the right-hand value.
+    pub target: CurveExpressionTarget,
     /// Exact right-hand expression after surrounding ASCII whitespace removal.
     pub expression: String,
     /// Referenced identifiers in first-appearance order.
@@ -97,6 +95,40 @@ pub struct CurveExpressionAssignment {
     pub activation: CurveExpressionActivation,
     /// Byte offset of the assignment source line.
     pub offset: usize,
+}
+
+/// Target of one curve-expression assignment.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CurveExpressionTarget {
+    /// Scalar parameter target.
+    Parameter {
+        /// Assigned identifier.
+        name: String,
+        /// Unit expression declared on a newly created parameter target.
+        declared_unit: Option<String>,
+    },
+    /// Cell of a series or list parameter.
+    TableCell {
+        /// Table-valued parameter identifier.
+        parameter: String,
+        /// Exact one-based row selector expression.
+        row: String,
+        /// Exact column selector expression when present.
+        column: Option<String>,
+    },
+}
+
+impl CurveExpressionAssignment {
+    pub(crate) fn parameter_target(&self) -> Option<(&str, Option<&str>)> {
+        match &self.target {
+            CurveExpressionTarget::Parameter {
+                name,
+                declared_unit,
+            } => Some((name, declared_unit.as_deref())),
+            CurveExpressionTarget::TableCell { .. } => None,
+        }
+    }
 }
 
 /// A deterministic value produced by a curve relation expression.
@@ -724,16 +756,37 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
     if source.starts_with("/*") {
         return None;
     }
-    let (name, expression) = source.split_once('=')?;
-    if expression.trim_start().starts_with('=') {
-        return None;
-    }
-    let (name, declared_unit) = expression_assignment_target(name.trim())?;
+    let (name, expression) = split_expression_assignment(source)?;
+    let target = expression_assignment_target(name.trim())?;
     let expression = expression.trim();
     if expression.is_empty() {
         return None;
     }
     let mut dependencies = Vec::<String>::new();
+    if let CurveExpressionTarget::TableCell {
+        parameter,
+        row,
+        column,
+    } = &target
+    {
+        dependencies.push(parameter.clone());
+        extend_expression_dependencies(&mut dependencies, row)?;
+        if let Some(column) = column {
+            extend_expression_dependencies(&mut dependencies, column)?;
+        }
+    }
+    extend_expression_dependencies(&mut dependencies, expression)?;
+    Some(CurveExpressionAssignment {
+        target,
+        expression: expression.to_owned(),
+        dependencies,
+        value: None,
+        activation: CurveExpressionActivation::Active,
+        offset: line.offset,
+    })
+}
+
+fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &str) -> Option<()> {
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -805,18 +858,67 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
             cursor += 1;
         }
     }
-    Some(CurveExpressionAssignment {
-        name: name.to_owned(),
-        declared_unit: declared_unit.map(str::to_owned),
-        expression: expression.to_owned(),
-        dependencies,
-        value: None,
-        activation: CurveExpressionActivation::Active,
-        offset: line.offset,
-    })
+    Some(())
 }
 
-fn expression_assignment_target(source: &str) -> Option<(&str, Option<&str>)> {
+fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {
+    let bytes = source.as_bytes();
+    let mut nesting = 0usize;
+    let mut delimiter = None;
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if let Some(quote) = delimiter {
+            if bytes[cursor] == quote {
+                delimiter = None;
+            }
+            cursor += 1;
+            continue;
+        }
+        match bytes[cursor] {
+            byte @ (b'\'' | b'"') => delimiter = Some(byte),
+            b'(' => nesting = nesting.checked_add(1)?,
+            b')' => nesting = nesting.checked_sub(1)?,
+            b'=' if nesting == 0
+                && !bytes
+                    .get(..cursor)
+                    .and_then(|prefix| prefix.last())
+                    .is_some_and(|byte| matches!(byte, b'=' | b'!' | b'~' | b'<' | b'>'))
+                && bytes.get(cursor + 1) != Some(&b'=') =>
+            {
+                return Some((source.get(..cursor)?, source.get(cursor + 1..)?));
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
+    if source
+        .get(.."value".len())
+        .is_some_and(|name| name.eq_ignore_ascii_case("value"))
+        && source.as_bytes().get("value".len()) == Some(&b'(')
+        && source.ends_with(')')
+    {
+        let arguments = split_assignment_target_arguments(
+            source.get("value(".len()..source.len().checked_sub(1)?)?,
+        )?;
+        let [parameter, row, rest @ ..] = arguments.as_slice() else {
+            return None;
+        };
+        let column = match rest {
+            [] => None,
+            [column] => Some((*column).to_owned()),
+            _ => return None,
+        };
+        valid_expression_identifier(parameter).then_some(())?;
+        return Some(CurveExpressionTarget::TableCell {
+            parameter: (*parameter).to_owned(),
+            row: (*row).to_owned(),
+            column,
+        });
+    }
     let (name, declared_unit) = if source.ends_with(']') {
         let unit_start = source.rfind('[')?;
         let unit = source.get(unit_start + 1..source.len() - 1)?.trim();
@@ -825,11 +927,49 @@ fn expression_assignment_target(source: &str) -> Option<(&str, Option<&str>)> {
     } else {
         (source, None)
     };
-    let valid_name = !name.is_empty()
+    valid_expression_identifier(name).then(|| CurveExpressionTarget::Parameter {
+        name: name.to_owned(),
+        declared_unit: declared_unit.map(str::to_owned),
+    })
+}
+
+fn valid_expression_identifier(name: &str) -> bool {
+    !name.is_empty()
         && name.bytes().enumerate().all(|(index, byte)| {
             byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
-        });
-    valid_name.then_some((name, declared_unit))
+        })
+}
+
+fn split_assignment_target_arguments(source: &str) -> Option<Vec<&str>> {
+    let mut arguments = Vec::new();
+    let mut start = 0;
+    let mut nesting = 0usize;
+    let mut delimiter = None;
+    for (offset, byte) in source.bytes().enumerate() {
+        if let Some(quote) = delimiter {
+            if byte == quote {
+                delimiter = None;
+            }
+            continue;
+        }
+        match byte {
+            b'\'' | b'"' => delimiter = Some(byte),
+            b'(' => nesting = nesting.checked_add(1)?,
+            b')' => nesting = nesting.checked_sub(1)?,
+            b',' if nesting == 0 => {
+                let argument = source.get(start..offset)?.trim();
+                (!argument.is_empty()).then_some(())?;
+                arguments.push(argument);
+                start = offset + 1;
+            }
+            _ => {}
+        }
+    }
+    (delimiter.is_none() && nesting == 0).then_some(())?;
+    let argument = source.get(start..)?.trim();
+    (!argument.is_empty()).then_some(())?;
+    arguments.push(argument);
+    Some(arguments)
 }
 
 pub(crate) fn expression_identifier_key(name: &str) -> String {
@@ -973,12 +1113,13 @@ fn evaluate_expression_program(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    existing_symbols.extend(
-        lines
-            .iter()
-            .filter_map(expression_assignment)
-            .map(|assignment| expression_identifier_key(&assignment.name)),
-    );
+    existing_symbols.extend(lines.iter().filter_map(expression_assignment).filter_map(
+        |assignment| {
+            assignment
+                .parameter_target()
+                .map(|(name, _)| expression_identifier_key(name))
+        },
+    ));
     let context = RelationEvaluationContext {
         model_name,
         existing_symbols: Some(&existing_symbols),
@@ -1022,16 +1163,22 @@ fn evaluate_expression_program(
             continue;
         };
         assignment.activation = activity;
-        let key = expression_identifier_key(&assignment.name);
-        let declaration_is_valid =
-            assignment.declared_unit.is_none() || !defined_symbols.contains(&key);
+        let Some((name, declared_unit)) = assignment
+            .parameter_target()
+            .map(|(name, unit)| (name.to_owned(), unit.map(str::to_owned)))
+        else {
+            assignments.push(assignment);
+            continue;
+        };
+        let key = expression_identifier_key(&name);
+        let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
         defined_symbols.insert(key.clone());
         match activity {
             CurveExpressionActivation::Active => {
                 assignment.value = declaration_is_valid
                     .then(|| evaluate_relation_expression(&assignment.expression, &values, context))
                     .flatten()
-                    .and_then(|value| match assignment.declared_unit.as_deref() {
+                    .and_then(|value| match declared_unit.as_deref() {
                         None => Some(value),
                         Some(unit) => {
                             let unit = relation_unit(unit)?;
@@ -2600,9 +2747,11 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
     )]);
     let mut defined_symbols = BTreeSet::from(["t".to_string()]);
     for assignment in &record.assignments {
-        let key = expression_identifier_key(&assignment.name);
-        let declaration_is_valid =
-            assignment.declared_unit.is_none() || !defined_symbols.contains(&key);
+        let Some((name, declared_unit)) = assignment.parameter_target() else {
+            continue;
+        };
+        let key = expression_identifier_key(name);
+        let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
         defined_symbols.insert(key.clone());
         match assignment.activation {
             CurveExpressionActivation::Active => {
@@ -2610,9 +2759,7 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
                     .then(|| evaluate_affine_expression(&assignment.expression, &values))
                     .flatten()
                     .and_then(|value| {
-                        assignment
-                            .declared_unit
-                            .as_deref()
+                        declared_unit
                             .map_or(Some(value), |unit| value.with_unit(relation_unit(unit)?))
                     });
                 if let Some(value) = value {
@@ -3805,14 +3952,20 @@ mod tests {
         assert_eq!(records[1].lines[0].text, "r=5");
         assert!(records[0].lines[0].offset < records[0].lines[1].offset);
         assert_eq!(records[0].assignments.len(), 4);
-        assert_eq!(records[0].assignments[0].name, "r");
+        assert_eq!(
+            records[0].assignments[0].parameter_target(),
+            Some(("r", None))
+        );
         assert_eq!(records[0].assignments[0].expression, "5");
         assert!(records[0].assignments[0].dependencies.is_empty());
         assert_eq!(
             records[0].assignments[0].value,
             Some(CurveExpressionValue::Number(5.0))
         );
-        assert_eq!(records[0].assignments[1].name, "theta");
+        assert_eq!(
+            records[0].assignments[1].parameter_target(),
+            Some(("theta", None))
+        );
         assert_eq!(records[0].assignments[1].expression, "t*360");
         assert_eq!(records[0].assignments[1].dependencies, ["t"]);
         assert_eq!(records[0].assignments[1].value, None);
@@ -3839,9 +3992,9 @@ mod tests {
             evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
 
         assert_eq!(assignments.len(), 2);
-        assert_eq!(assignments[0].name, "seen");
+        assert_eq!(assignments[0].parameter_target(), Some(("seen", None)));
         assert_eq!(assignments[0].value, None);
-        assert_eq!(assignments[1].name, "flag");
+        assert_eq!(assignments[1].parameter_target(), Some(("flag", None)));
         assert_eq!(
             assignments[1].value,
             Some(CurveExpressionValue::Number(1.0))
@@ -3866,8 +4019,10 @@ mod tests {
         let assignments =
             evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
 
-        assert_eq!(assignments[0].name, "span");
-        assert_eq!(assignments[0].declared_unit.as_deref(), Some("inch"));
+        assert_eq!(
+            assignments[0].parameter_target(),
+            Some(("span", Some("inch")))
+        );
         assert_eq!(
             assignments[0].value,
             Some(CurveExpressionValue::Length(50.8))
@@ -3876,7 +4031,10 @@ mod tests {
             panic!("dimensioned copy");
         };
         assert!((*copy - 76.2).abs() < 1e-12);
-        assert_eq!(assignments[2].declared_unit.as_deref(), Some("mm"));
+        assert_eq!(
+            assignments[2].parameter_target(),
+            Some(("span", Some("mm")))
+        );
         assert_eq!(assignments[2].value, None);
         assert_eq!(assignments[3].value, None);
     }
@@ -4113,6 +4271,69 @@ mod tests {
         assert_eq!(assignments[25].dependencies, ["table_parameter"]);
         assert_eq!(assignments[26].dependencies, ["table_parameter"]);
         assert_eq!(assignments[27].dependencies, ["table_parameter"]);
+        assert!(assignments
+            .iter()
+            .all(|assignment| assignment.value.is_none()));
+    }
+
+    #[test]
+    fn retains_table_cell_targets_without_defining_scalar_parameters() {
+        let lines = [
+            "value(samples,row_index,column_index)=driver*2",
+            "VALUE(series,2)=5",
+            "after=value(samples,row_index,column_index)",
+            "value(samples,if(row_index==1,2,3),column_index)=driver",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), 4);
+        assert_eq!(
+            assignments[0].target,
+            CurveExpressionTarget::TableCell {
+                parameter: "samples".to_owned(),
+                row: "row_index".to_owned(),
+                column: Some("column_index".to_owned()),
+            }
+        );
+        assert_eq!(
+            assignments[0].dependencies,
+            ["samples", "row_index", "column_index", "driver"]
+        );
+        assert_eq!(
+            assignments[1].target,
+            CurveExpressionTarget::TableCell {
+                parameter: "series".to_owned(),
+                row: "2".to_owned(),
+                column: None,
+            }
+        );
+        assert_eq!(assignments[1].dependencies, ["series"]);
+        assert_eq!(assignments[2].parameter_target(), Some(("after", None)));
+        assert_eq!(
+            assignments[2].dependencies,
+            ["samples", "row_index", "column_index"]
+        );
+        assert_eq!(
+            assignments[3].target,
+            CurveExpressionTarget::TableCell {
+                parameter: "samples".to_owned(),
+                row: "if(row_index==1,2,3)".to_owned(),
+                column: Some("column_index".to_owned()),
+            }
+        );
+        assert_eq!(
+            assignments[3].dependencies,
+            ["samples", "row_index", "column_index", "driver"]
+        );
         assert!(assignments
             .iter()
             .all(|assignment| assignment.value.is_none()));
@@ -4719,7 +4940,7 @@ mod tests {
             assignments[6].value,
             Some(CurveExpressionValue::Number(5.0))
         );
-        assert_eq!(assignments[7].name, "iffy");
+        assert_eq!(assignments[7].parameter_target(), Some(("iffy", None)));
         assert_eq!(
             assignments[7].value,
             Some(CurveExpressionValue::Number(9.0))

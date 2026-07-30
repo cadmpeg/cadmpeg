@@ -459,8 +459,7 @@ struct CreoCurveExpressionLine {
 
 #[derive(Serialize)]
 struct CreoCurveExpressionAssignment {
-    name: String,
-    declared_unit: Option<String>,
+    target: crate::curve::CurveExpressionTarget,
     expression: String,
     dependencies: Vec<String>,
     value: Option<crate::curve::CurveExpressionValue>,
@@ -1445,26 +1444,29 @@ fn curve_expression_parameter_order(
 
 fn curve_expression_parameter_names(
     assignments: &[crate::curve::CurveExpressionAssignment],
-) -> Vec<String> {
+) -> Vec<Option<String>> {
     let counts = assignments
         .iter()
         .fold(BTreeMap::new(), |mut counts, assignment| {
-            *counts
-                .entry(crate::curve::expression_identifier_key(&assignment.name))
-                .or_insert(0usize) += 1;
+            if let Some((name, _)) = assignment.parameter_target() {
+                *counts
+                    .entry(crate::curve::expression_identifier_key(name))
+                    .or_insert(0usize) += 1;
+            }
             counts
         });
     let mut occurrences = BTreeMap::new();
     assignments
         .iter()
         .map(|assignment| {
-            let key = crate::curve::expression_identifier_key(&assignment.name);
+            let (name, _) = assignment.parameter_target()?;
+            let key = crate::curve::expression_identifier_key(name);
             if counts[&key] == 1 {
-                return assignment.name.clone();
+                return Some(name.to_owned());
             }
             let occurrence = occurrences.entry(key).or_insert(0usize);
             *occurrence += 1;
-            format!("{}#{occurrence}", assignment.name)
+            Some(format!("{name}#{occurrence}"))
         })
         .collect()
 }
@@ -1482,7 +1484,7 @@ fn transfer_curve_expression_features(
         .map(|feature| feature.ordinal)
         .max()
         .map_or(0, |value| value + 1);
-    let mut transferred_assignment_count = 0;
+    let mut transferred_parameter_count = 0;
     for (expression_ordinal, record) in scan
         .curves
         .expressions
@@ -1500,8 +1502,11 @@ fn transfer_curve_expression_features(
             if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
                 continue;
             }
+            let Some((name, _)) = assignment.parameter_target() else {
+                continue;
+            };
             assignment_indices_by_name
-                .entry(crate::curve::expression_identifier_key(&assignment.name))
+                .entry(crate::curve::expression_identifier_key(name))
                 .and_modify(|index| *index = None)
                 .or_insert(Some(assignment_ordinal));
         }
@@ -1512,7 +1517,12 @@ fn transfer_curve_expression_features(
         let (parameter_ordinals, cyclic_edges) =
             curve_expression_parameter_order(record, &unique_assignment_indices);
         let parameter_names = curve_expression_parameter_names(&record.assignments);
-        let mut emitted_assignment_indices = (0..record.assignments.len()).collect::<Vec<_>>();
+        let mut emitted_assignment_indices = record
+            .assignments
+            .iter()
+            .enumerate()
+            .filter_map(|(index, assignment)| assignment.parameter_target().map(|_| index))
+            .collect::<Vec<_>>();
         emitted_assignment_indices.sort_by_key(|index| parameter_ordinals[*index]);
         let emitted_ordinals = emitted_assignment_indices
             .into_iter()
@@ -1521,6 +1531,9 @@ fn transfer_curve_expression_features(
             .collect::<BTreeMap<_, _>>();
         let mut source_content = Vec::with_capacity(emitted_ordinals.len());
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+            let Some((assignment_name, declared_unit)) = assignment.parameter_target() else {
+                continue;
+            };
             let Some(&ordinal) = emitted_ordinals.get(&assignment_ordinal) else {
                 continue;
             };
@@ -1605,8 +1618,8 @@ fn transfer_curve_expression_features(
                 "activation".to_string(),
                 assignment.activation.token().to_string(),
             );
-            if let Some(unit) = &assignment.declared_unit {
-                properties.insert("declared_unit".to_string(), unit.clone());
+            if let Some(unit) = declared_unit {
+                properties.insert("declared_unit".to_string(), unit.to_owned());
             }
             if let Some(crate::curve::CurveExpressionValue::Quantity(quantity)) = &assignment.value
             {
@@ -1626,8 +1639,11 @@ fn transfer_curve_expression_features(
                     ),
                 );
             }
-            if parameter_names[assignment_ordinal] != assignment.name {
-                properties.insert("source_name".to_string(), assignment.name.clone());
+            let parameter_name = parameter_names[assignment_ordinal]
+                .as_ref()
+                .expect("emitted parameter assignment has a parameter name");
+            if parameter_name != assignment_name {
+                properties.insert("source_name".to_string(), assignment_name.to_owned());
             }
             if !intrinsic_dependencies.is_empty() {
                 properties.insert(
@@ -1669,7 +1685,7 @@ fn transfer_curve_expression_features(
                 id: parameter_id.clone(),
                 owner: Some(feature_id.clone()),
                 ordinal,
-                name: parameter_names[assignment_ordinal].clone(),
+                name: parameter_name.clone(),
                 expression: assignment.expression.clone(),
                 display: None,
                 value: assignment.value.as_ref().and_then(|value| match value {
@@ -1692,7 +1708,7 @@ fn transfer_curve_expression_features(
                 pmi: None,
                 native_ref: Some(curve_expression_record_id(record)),
             });
-            transferred_assignment_count += 1;
+            transferred_parameter_count += 1;
             source_content.push(FeatureSourceContent::Parameter(parameter_id.clone()));
         }
         annotate(
@@ -1786,7 +1802,7 @@ fn transfer_curve_expression_features(
             native_ref: Some(curve_expression_record_id(record)),
         });
     }
-    transferred_assignment_count
+    transferred_parameter_count
 }
 
 fn feature_definition_has_sketch_design(definition: &crate::feature::FeatureDefinition) -> bool {
@@ -29587,7 +29603,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     reconcile_feature_links(scan, &mut ir, &prototype_feature_dependencies);
     let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(scan, &mut ir, &mut annotations);
-    let transferred_curve_expression_assignment_count =
+    let transferred_curve_expression_parameter_count =
         transfer_curve_expression_features(scan, &mut ir, &mut annotations, &dimension_parameters);
     {
         let active_expressions = scan
@@ -29599,6 +29615,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             .clone()
             .map(|record| record.assignments.len())
             .sum::<usize>();
+        let decoded_curve_expression_table_cell_assignment_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.assignments)
+            .filter(|assignment| {
+                matches!(
+                    &assignment.target,
+                    crate::curve::CurveExpressionTarget::TableCell { .. }
+                )
+            })
+            .count();
         let evaluated_curve_expression_assignment_count = active_expressions
             .clone()
             .flat_map(|record| &record.assignments)
@@ -29625,7 +29651,11 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         );
         coverage.insert(
             "transferred_curve_expression_parameter_count".to_string(),
-            transferred_curve_expression_assignment_count,
+            transferred_curve_expression_parameter_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_table_cell_assignment_count".to_string(),
+            decoded_curve_expression_table_cell_assignment_count,
         );
         coverage.insert(
             "evaluated_active_curve_expression_assignment_count".to_string(),

@@ -1811,8 +1811,7 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                 .assignments
                 .iter()
                 .map(|assignment| CreoCurveExpressionAssignment {
-                    name: assignment.name.clone(),
-                    declared_unit: assignment.declared_unit.clone(),
+                    target: assignment.target.clone(),
                     expression: assignment.expression.clone(),
                     dependencies: assignment.dependencies.clone(),
                     value: assignment.value.clone(),

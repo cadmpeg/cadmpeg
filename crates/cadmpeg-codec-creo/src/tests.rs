@@ -6085,7 +6085,10 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields["entity_id"], 0x094c);
     assert_eq!(records[0].fields["lines"][2]["text"], "theta=w*t*360");
-    assert_eq!(records[0].fields["assignments"][2]["name"], "theta");
+    assert_eq!(
+        records[0].fields["assignments"][2]["target"]["name"],
+        "theta"
+    );
     assert_eq!(records[0].fields["assignments"][2]["dependencies"][0], "w");
     assert_eq!(records[0].fields["assignments"][0]["value"], 5.0);
     assert_eq!(records[0].fields["local_system"]["dimensions"], 4);
@@ -6223,6 +6226,62 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
     assert_eq!(
         coverage["evaluated_active_curve_expression_assignment_count"],
         0
+    );
+}
+
+#[test]
+fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x03\
+        value(samples,row_index,column_index)=driver*2\0\
+        VALUE(series,2)=5\0\
+        after=value(samples,row_index,column_index)\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one scalar curve-expression parameter");
+    };
+    assert_eq!(parameter.name, "after");
+    assert_eq!(
+        parameter.properties["external_dependencies"],
+        "samples,row_index,column_index"
+    );
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let first = &native.fields["assignments"][0];
+    assert_eq!(first["target"]["kind"], "table_cell");
+    assert_eq!(first["target"]["parameter"], "samples");
+    assert_eq!(first["target"]["row"], "row_index");
+    assert_eq!(first["target"]["column"], "column_index");
+    assert_eq!(first["dependencies"][0], "samples");
+    assert_eq!(first["dependencies"][1], "row_index");
+    assert_eq!(first["dependencies"][2], "column_index");
+    assert_eq!(first["dependencies"][3], "driver");
+    let second = &native.fields["assignments"][1];
+    assert_eq!(second["target"]["kind"], "table_cell");
+    assert_eq!(second["target"]["parameter"], "series");
+    assert_eq!(second["target"]["row"], "2");
+    assert!(second["target"]["column"].is_null());
+    assert_eq!(
+        result.ir.model.features[0].source_content,
+        [cadmpeg_ir::features::FeatureSourceContent::Parameter(
+            parameter.id.clone()
+        )]
+    );
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_assignment_count"],
+        3
+    );
+    assert_eq!(
+        result.report.coverage["transferred_curve_expression_parameter_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_table_cell_assignment_count"],
+        2
     );
 }
 
@@ -6394,8 +6453,11 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     };
     assert!((copy.0 - 76.2).abs() < 1e-12);
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
-    assert_eq!(native.fields["assignments"][0]["name"], "span");
-    assert_eq!(native.fields["assignments"][0]["declared_unit"], "inch");
+    assert_eq!(native.fields["assignments"][0]["target"]["name"], "span");
+    assert_eq!(
+        native.fields["assignments"][0]["target"]["declared_unit"],
+        "inch"
+    );
     assert_eq!(parameters[2].properties["declared_unit"], "N/mm^2");
     assert_eq!(
         parameters[2].properties["evaluated_canonical_value"],

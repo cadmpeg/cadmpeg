@@ -3331,6 +3331,13 @@ rather than parameter dependencies. Their arguments retain ordinary parameter
 dependency semantics. Unary `min` and `max` likewise query a series or list
 parameter; their two-argument forms compare ordinary scalar expressions. Query
 results resolve through the referenced table-valued parameter.
+On the left side of an assignment, `value(parameter,row)` and
+`value(parameter,row,column)` select a cell of a list or series parameter.
+`parameter` identifies the table-valued parameter; `row` and the optional
+`column` are selector expressions. A table-cell target mutates that cell and
+does not declare a scalar parameter named `value` or `parameter`. The table
+identifier and selector-expression identifiers precede right-hand identifiers
+in the assignment dependency order.
 
 A `crv_fr_eqn` program containing calls to `abs`, `ceil`, `floor`, `extract`, `if`,
 `itos`, or `search`, or containing `IF`, `ELSE`, or `ENDIF` control lines, is
