@@ -779,6 +779,9 @@ pub struct FeatureVariableRow {
     pub guess: Option<f64>,
     /// Exact encoded scalar body of the pre-solve estimate.
     pub guess_body: Vec<u8>,
+    /// Whether the pre-solve estimate used the nine-byte dimension-driven
+    /// sentinel.
+    pub guess_dimension_driven: bool,
     /// Stored solver-known flag.
     pub known: Option<u32>,
     /// Stored solver homogeneity class.
@@ -2050,7 +2053,7 @@ fn decode_variable_guess(
         }
     }
     let decoded = decode_section_coordinate_scalar(payload, offset, end, cache);
-    if decoded.0.is_none() {
+    if decoded.0.is_none() && !decoded.2 {
         if let Some(next) = unresolved_variable_guess_end(payload, offset, end) {
             return (None, next, false);
         }
@@ -2085,7 +2088,7 @@ fn variable_table(
         let (value, value_end, dimension_driven) =
             decode_section_coordinate_scalar(payload, value_label, close, cache);
         let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
-        let (guess, guess_end, _) =
+        let (guess, guess_end, guess_dimension_driven) =
             decode_section_coordinate_scalar(payload, guess_label, close, cache);
         Some(FeatureVariableRow {
             variable_type,
@@ -2094,6 +2097,7 @@ fn variable_table(
             value_body: payload[value_label..value_end].to_vec(),
             guess,
             guess_body: payload[guess_label..guess_end].to_vec(),
+            guess_dimension_driven,
             known: named_compact_int(payload, b"known\0", cursor, close),
             homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
             uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
@@ -2132,7 +2136,8 @@ fn variable_table(
         cursor = next;
         let value_body = payload[value_start..cursor].to_vec();
         let guess_start = cursor;
-        let (guess, next, _) = decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next, guess_dimension_driven) =
+            decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
         let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::new();
@@ -2154,6 +2159,7 @@ fn variable_table(
             value_body,
             guess,
             guess_body,
+            guess_dimension_driven,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
@@ -2260,7 +2266,8 @@ fn positional_variable_table(
         cursor = next;
         let value_body = payload[value_start..cursor].to_vec();
         let guess_start = cursor;
-        let (guess, next, _) = decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next, guess_dimension_driven) =
+            decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
         let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::with_capacity(3);
@@ -2282,6 +2289,7 @@ fn positional_variable_table(
             value_body,
             guess,
             guess_body,
+            guess_dimension_driven,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
@@ -9525,6 +9533,7 @@ mod tests {
             value_body: Vec::new(),
             guess: None,
             guess_body: Vec::new(),
+            guess_dimension_driven: false,
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -9554,6 +9563,7 @@ mod tests {
             value_body: Vec::new(),
             guess: None,
             guess_body: Vec::new(),
+            guess_dimension_driven: false,
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -10135,6 +10145,7 @@ mod tests {
             value_body: Vec::new(),
             guess: None,
             guess_body: Vec::new(),
+            guess_dimension_driven: false,
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -10357,6 +10368,33 @@ mod tests {
         assert_eq!(row.known, Some(1));
         assert_eq!(row.homogeneity, Some(1));
         assert_eq!(row.uvar_id, Some(518));
+    }
+
+    #[test]
+    fn variable_row_classifies_value_and_guess_sentinels_independently() {
+        let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
+            \x01\x07\xed\x01\x02\x03\x04\x05\x06\x07\x08\
+            \xed\x11\x12\x13\x14\x15\x16\x17\x18\x01\x01\x09\xe2";
+        let variables = variable_table(payload, 0, payload.len(), &scalar::ScalarCache::default())
+            .expect("variable table");
+        let [row] = variables.rows.as_slice() else {
+            panic!("one structurally complete variable row");
+        };
+
+        assert!(variables.is_complete());
+        assert_eq!(
+            row.value_body,
+            [0xed, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+        );
+        assert!(row.dimension_driven);
+        assert_eq!(
+            row.guess_body,
+            [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
+        );
+        assert!(row.guess_dimension_driven);
+        assert_eq!(row.known, Some(1));
+        assert_eq!(row.homogeneity, Some(1));
+        assert_eq!(row.uvar_id, Some(9));
     }
 
     #[test]

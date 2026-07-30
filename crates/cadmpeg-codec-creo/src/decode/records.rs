@@ -1906,6 +1906,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                         value_body: row.value_body.clone(),
                         guess: row.guess,
                         guess_body: row.guess_body.clone(),
+                        guess_dimension_driven: row.guess_dimension_driven,
                         known: row.known,
                         homogeneity: row.homogeneity,
                         uvar_id: row.uvar_id,

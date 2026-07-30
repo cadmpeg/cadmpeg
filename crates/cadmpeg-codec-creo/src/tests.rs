@@ -4065,6 +4065,30 @@ fn scan_decodes_featdefs_var_arr_named_prototype_row() {
 }
 
 #[test]
+fn scan_classifies_named_var_arr_guess_sentinel() {
+    let payload = b"feat_defs_40\0var_arr\0\xf8\x01\xf7\x01\xfb\xe2\
+        \xe0\x05type\0\x01\xe0\x08key\0\x07\xe0\x02value\0\xe4\
+        \xe0\x02guess\0\xed\x11\x12\x13\x14\x15\x16\x17\x18\
+        \xe0\x06known\0\x01\xe0\x0chomogeneity\0\x02\
+        \xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    let variables = scan.features.definitions[0]
+        .variables
+        .as_ref()
+        .expect("var_arr");
+    let [row] = variables.rows.as_slice() else {
+        panic!("one named variable row");
+    };
+    assert_eq!(
+        row.guess_body,
+        [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
+    );
+    assert!(row.guess_dimension_driven);
+}
+
+#[test]
 fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let mut payload =
         b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
@@ -4129,6 +4153,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         variables[0]["guess_body"].as_array().expect("guess body"),
         &[15]
     );
+    assert_eq!(variables[0]["guess_dimension_driven"], false);
     assert_eq!(variables[0]["resolved_value"], 1.0);
     assert_eq!(variables[0]["known"], 1);
     assert_eq!(variables[0]["homogeneity"], 0);
@@ -4631,6 +4656,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 value_body: Vec::new(),
                 guess: None,
                 guess_body: Vec::new(),
+                guess_dimension_driven: false,
                 known: None,
                 homogeneity: None,
                 uvar_id: None,
@@ -5356,6 +5382,7 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         coverage["decoded_feature_dimension_driven_variable_count"],
         0
     );
+    assert_eq!(coverage["decoded_feature_dimension_driven_guess_count"], 0);
     assert_eq!(
         coverage["resolved_feature_dimension_driven_variable_count"],
         0
@@ -5378,7 +5405,9 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
 fn decode_reports_unresolved_dimension_driven_solver_variables() {
     let mut payload =
         b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
-    payload.extend_from_slice(&[1, 7, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f, 0, 1, 3, 0xe2]);
+    payload.extend_from_slice(&[
+        1, 7, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0xed, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 3, 0xe2,
+    ]);
     payload.extend_from_slice(&[7, 8, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f, 0, 1, 4, 0xe2]);
     let data = build_prt("c", &[("FeatDefs", payload)]);
 
@@ -5399,6 +5428,7 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
         coverage["decoded_feature_dimension_driven_other_variable_count"],
         1
     );
+    assert_eq!(coverage["decoded_feature_dimension_driven_guess_count"], 1);
     assert_eq!(
         coverage["resolved_feature_dimension_driven_variable_count"],
         0
@@ -5423,6 +5453,10 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
         coverage["unresolved_feature_dimension_driven_other_variable_count"],
         1
     );
+    assert_eq!(
+        coverage["unresolved_feature_dimension_driven_guess_count"],
+        1
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::LossCategory::Attribute
             && loss.severity == cadmpeg_ir::Severity::Warning
@@ -5430,6 +5464,13 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
                 "2 dimension-driven section solver variable(s) retain unresolved exact values: 1 \
                  coordinate variable(s) lack a complete dimension equation and 1 variable(s) \
                  have a non-coordinate family",
+            )
+    }));
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Attribute
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 section solver variable pre-solve estimate(s) use a dimension-driven sentinel",
             )
     }));
 }

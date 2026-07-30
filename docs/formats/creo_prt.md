@@ -1383,6 +1383,11 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 | `skamp_ptr`   | Counted solver-incidence rows. Each row stores `id`, `type`, `flags`, `status`, and a counted ordered array of section-entity `ent_id`/`sense` pairs. |
 | `triples_ptr` | Counted joins from relation and equation identifiers to `skamp_ptr` incidence identifiers. Each of the three fields independently admits the `f6` null sentinel. |
 
+Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
+The nine-byte `ed <tail8>` form is a dimension-driven sentinel in either lane;
+it does not encode an inline scalar. Each lane retains its own sentinel state
+and exact nine-byte body.
+
 A type-10 circle row stores direction slots `[0, 0, 0]`, point slots
 `[f6, 1]`, a non-null center identifier, zero arc-orientation and
 vertical/horizontal slots, a non-null radius reference, and an `f6` secondary

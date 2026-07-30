@@ -303,6 +303,7 @@ struct CreoSketchVariable {
     resolved_value: Option<f64>,
     guess: Option<f64>,
     guess_body: Vec<u8>,
+    guess_dimension_driven: bool,
     known: Option<u32>,
     homogeneity: Option<u32>,
     uvar_id: Option<u32>,
@@ -31963,6 +31964,14 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
                 coordinates + usize::from(matches!(row.variable_type, 1 | 2)),
             )
         });
+    let decoded_dimension_driven_guess_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.variables.as_ref())
+        .flat_map(|variables| &variables.rows)
+        .filter(|row| row.guess_dimension_driven)
+        .count();
     let resolved_dimension_driven_coordinate_variable_count = scan
         .features
         .definitions
@@ -31997,6 +32006,10 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .saturating_sub(decoded_dimension_driven_coordinate_variable_count),
     );
     coverage.insert(
+        "decoded_feature_dimension_driven_guess_count".to_string(),
+        decoded_dimension_driven_guess_count,
+    );
+    coverage.insert(
         "resolved_feature_dimension_driven_variable_count".to_string(),
         resolved_dimension_driven_coordinate_variable_count,
     );
@@ -32022,6 +32035,10 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         "unresolved_feature_dimension_driven_other_variable_count".to_string(),
         decoded_dimension_driven_variable_count
             .saturating_sub(decoded_dimension_driven_coordinate_variable_count),
+    );
+    coverage.insert(
+        "unresolved_feature_dimension_driven_guess_count".to_string(),
+        decoded_dimension_driven_guess_count,
     );
     coverage.insert(
         "decoded_feature_circle_segment_count".to_string(),
@@ -33040,6 +33057,20 @@ fn build_report(
                  coordinate variable(s) lack a complete dimension equation and {other_variables} \
                  variable(s) have a non-coordinate family whose dimension semantics are \
                  unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_dimension_driven_guesses =
+        count("unresolved_feature_dimension_driven_guess_count");
+    if unresolved_dimension_driven_guesses != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_dimension_driven_guesses} section solver variable pre-solve \
+                 estimate(s) use a dimension-driven sentinel whose dimension join is unresolved."
             ),
             provenance: None,
         });
