@@ -11131,6 +11131,20 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         major_direction: Vector3::new(1.0, 0.0, 0.0),
         focal_distance: 0.5,
     };
+    let ProceduralCurveDefinition::Intersection { context, .. } = &mut varying_frame
+        .model
+        .procedural_curves
+        .iter_mut()
+        .find(|curve| curve.curve == spine)
+        .unwrap()
+        .definition
+    else {
+        unreachable!()
+    };
+    context.sides[0].pcurve = Some(PcurveGeometry::Offset {
+        distance: 0.1,
+        basis: Box::new(context.sides[0].pcurve.take().unwrap()),
+    });
     let parameters = Point2::new(0.4, 0.35);
     let exact = crate::decode::blend_surface_u_derivative(
         &varying_frame,

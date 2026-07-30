@@ -492,6 +492,7 @@ pub fn nurbs_pcurve_uv(
 struct PcurveDifferential {
     point: Point2,
     tangent: Option<Point2>,
+    acceleration: Option<Point2>,
 }
 
 fn nurbs_pcurve_differential(
@@ -505,24 +506,31 @@ fn nurbs_pcurve_differential(
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t);
     let derivative = bspline_basis_derivative(knots, degree, span, t);
+    let second_derivative = bspline_basis_second_derivative(knots, degree, span, t);
     let mut u = 0.0;
     let mut v = 0.0;
     let mut weight_sum = 0.0;
     let mut du = 0.0;
     let mut dv = 0.0;
     let mut weight_derivative = 0.0;
-    for (i, (value, derivative)) in basis.iter().zip(&derivative).enumerate() {
+    let mut ddu = 0.0;
+    let mut ddv = 0.0;
+    let mut weight_second_derivative = 0.0;
+    for i in 0..=degree {
         let index = span - degree + i;
         let weight = weights
             .and_then(|weights| weights.get(index).copied())
             .unwrap_or(1.0);
         let pole = control_points.get(index)?;
-        u += value * weight * pole.u;
-        v += value * weight * pole.v;
-        weight_sum += value * weight;
-        du += derivative * weight * pole.u;
-        dv += derivative * weight * pole.v;
-        weight_derivative += derivative * weight;
+        u += basis[i] * weight * pole.u;
+        v += basis[i] * weight * pole.v;
+        weight_sum += basis[i] * weight;
+        du += derivative[i] * weight * pole.u;
+        dv += derivative[i] * weight * pole.v;
+        weight_derivative += derivative[i] * weight;
+        ddu += second_derivative[i] * weight * pole.u;
+        ddv += second_derivative[i] * weight * pole.v;
+        weight_second_derivative += second_derivative[i] * weight;
     }
     if weight_sum == 0.0 {
         return None;
@@ -532,12 +540,20 @@ fn nurbs_pcurve_differential(
         (du - point.u * weight_derivative) / weight_sum,
         (dv - point.v * weight_derivative) / weight_sum,
     );
+    let acceleration = Point2::new(
+        (ddu - point.u * weight_second_derivative - 2.0 * weight_derivative * tangent.u)
+            / weight_sum,
+        (ddv - point.v * weight_second_derivative - 2.0 * weight_derivative * tangent.v)
+            / weight_sum,
+    );
     if !point.u.is_finite() || !point.v.is_finite() {
         return None;
     }
     Some(PcurveDifferential {
         point,
         tangent: (tangent.u.is_finite() && tangent.v.is_finite()).then_some(tangent),
+        acceleration: (acceleration.u.is_finite() && acceleration.v.is_finite())
+            .then_some(acceleration),
     })
 }
 
@@ -2045,28 +2061,7 @@ pub fn pcurve_tangent(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
 }
 
 fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Point2> {
-    if depth > 256 {
-        return None;
-    }
-    match geometry {
-        PcurveGeometry::Offset { distance, basis } => {
-            let differential = pcurve_uv_differential_inner(basis, t, depth + 1)?;
-            let point = differential.point;
-            let tangent = differential.tangent?;
-            let magnitude = tangent.u.hypot(tangent.v);
-            if !magnitude.is_finite() || magnitude == 0.0 {
-                return None;
-            }
-            let point = Point2::new(
-                point.u - distance * tangent.v / magnitude,
-                point.v + distance * tangent.u / magnitude,
-            );
-            (point.u.is_finite() && point.v.is_finite()).then_some(point)
-        }
-        _ => {
-            pcurve_uv_differential_inner(geometry, t, depth).map(|differential| differential.point)
-        }
-    }
+    pcurve_uv_differential_inner(geometry, t, depth).map(|differential| differential.point)
 }
 
 fn pcurve_uv_differential_inner(
@@ -2077,10 +2072,40 @@ fn pcurve_uv_differential_inner(
     if depth > 256 {
         return None;
     }
+    if let PcurveGeometry::Offset { distance, basis } = geometry {
+        let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
+        let tangent = basis.tangent?;
+        let speed = tangent.u.hypot(tangent.v);
+        if !speed.is_finite() || speed == 0.0 {
+            return None;
+        }
+        let unit = Point2::new(tangent.u / speed, tangent.v / speed);
+        let point = Point2::new(
+            basis.point.u - distance * unit.v,
+            basis.point.v + distance * unit.u,
+        );
+        let tangent = basis.acceleration.map(|acceleration| {
+            let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
+            let unit_derivative = Point2::new(
+                (acceleration.u - tangential_acceleration * unit.u) / speed,
+                (acceleration.v - tangential_acceleration * unit.v) / speed,
+            );
+            Point2::new(
+                tangent.u - distance * unit_derivative.v,
+                tangent.v + distance * unit_derivative.u,
+            )
+        });
+        return Some(PcurveDifferential {
+            point,
+            tangent: tangent.filter(|tangent| tangent.u.is_finite() && tangent.v.is_finite()),
+            acceleration: None,
+        });
+    }
     let pair = match geometry {
         PcurveGeometry::Line { origin, direction } => (
             Point2::new(origin.u + t * direction.u, origin.v + t * direction.v),
             *direction,
+            Point2::new(0.0, 0.0),
         ),
         PcurveGeometry::Circle {
             center,
@@ -2098,6 +2123,10 @@ fn pcurve_uv_differential_inner(
                 Point2::new(
                     radius * (-sine * x_axis.u + cosine * y_axis.u),
                     radius * (-sine * x_axis.v + cosine * y_axis.v),
+                ),
+                Point2::new(
+                    -radius * (cosine * x_axis.u + sine * y_axis.u),
+                    -radius * (cosine * x_axis.v + sine * y_axis.v),
                 ),
             )
         }
@@ -2122,6 +2151,10 @@ fn pcurve_uv_differential_inner(
                     -major_radius * sine * x_axis.u + minor_radius * cosine * y_axis.u,
                     -major_radius * sine * x_axis.v + minor_radius * cosine * y_axis.v,
                 ),
+                Point2::new(
+                    -major_radius * cosine * x_axis.u - minor_radius * sine * y_axis.u,
+                    -major_radius * cosine * x_axis.v - minor_radius * sine * y_axis.v,
+                ),
             )
         }
         PcurveGeometry::Harmonic {
@@ -2140,6 +2173,10 @@ fn pcurve_uv_differential_inner(
                     -sine_parameter * cosine.u + cosine_parameter * sine.u,
                     -sine_parameter * cosine.v + cosine_parameter * sine.v,
                 ),
+                Point2::new(
+                    -cosine_parameter * cosine.u - sine_parameter * sine.u,
+                    -cosine_parameter * cosine.v - sine_parameter * sine.v,
+                ),
             )
         }
         PcurveGeometry::Parabola {
@@ -2155,6 +2192,10 @@ fn pcurve_uv_differential_inner(
             Point2::new(
                 t / (2.0 * focal_distance) * x_axis.u + y_axis.u,
                 t / (2.0 * focal_distance) * x_axis.v + y_axis.v,
+            ),
+            Point2::new(
+                x_axis.u / (2.0 * focal_distance),
+                x_axis.v / (2.0 * focal_distance),
             ),
         ),
         PcurveGeometry::Parabola { .. } => return None,
@@ -2179,6 +2220,10 @@ fn pcurve_uv_differential_inner(
                     major_radius * sine * x_axis.u + minor_radius * cosine * y_axis.u,
                     major_radius * sine * x_axis.v + minor_radius * cosine * y_axis.v,
                 ),
+                Point2::new(
+                    major_radius * cosine * x_axis.u + minor_radius * sine * y_axis.u,
+                    major_radius * cosine * x_axis.v + minor_radius * sine * y_axis.v,
+                ),
             )
         }
         PcurveGeometry::Hyperbolic {
@@ -2197,6 +2242,10 @@ fn pcurve_uv_differential_inner(
                     sine_parameter * cosine.u + cosine_parameter * sine.u,
                     sine_parameter * cosine.v + cosine_parameter * sine.v,
                 ),
+                Point2::new(
+                    cosine_parameter * cosine.u + sine_parameter * sine.u,
+                    cosine_parameter * cosine.v + sine_parameter * sine.v,
+                ),
             )
         }
         PcurveGeometry::PolarHarmonic {
@@ -2213,6 +2262,8 @@ fn pcurve_uv_differential_inner(
             let y = radial_center.v + radial_cos.v * cosine + radial_sin.v * sine;
             let dx = -radial_cos.u * sine + radial_sin.u * cosine;
             let dy = -radial_cos.v * sine + radial_sin.v * cosine;
+            let ddx = -radial_cos.u * cosine - radial_sin.u * sine;
+            let ddy = -radial_cos.v * cosine - radial_sin.v * sine;
             let radius_squared = x * x + y * y;
             if radius_squared == 0.0 {
                 return None;
@@ -2225,6 +2276,12 @@ fn pcurve_uv_differential_inner(
                 Point2::new(
                     (x * dy - y * dx) / radius_squared,
                     -axial_cos * sine + axial_sin * cosine,
+                ),
+                Point2::new(
+                    ((x * ddy - y * ddx) * radius_squared
+                        - (x * dy - y * dx) * 2.0 * (x * dx + y * dy))
+                        / (radius_squared * radius_squared),
+                    -axial_cos * cosine - axial_sin * sine,
                 ),
             )
         }
@@ -2268,7 +2325,33 @@ fn pcurve_uv_differential_inner(
                     )
                 })
                 .filter(|tangent| tangent.u.is_finite() && tangent.v.is_finite());
-            return Some(PcurveDifferential { point, tangent });
+            let acceleration = radial
+                .tangent
+                .zip(radial.acceleration)
+                .zip(axial.acceleration)
+                .map(
+                    |((radial_tangent, radial_acceleration), axial_acceleration)| {
+                        let numerator =
+                            radial.point.u * radial_tangent.v - radial.point.v * radial_tangent.u;
+                        let numerator_derivative = radial.point.u * radial_acceleration.v
+                            - radial.point.v * radial_acceleration.u;
+                        let denominator_derivative = 2.0
+                            * (radial.point.u * radial_tangent.u
+                                + radial.point.v * radial_tangent.v);
+                        Point2::new(
+                            (numerator_derivative * radius_squared
+                                - numerator * denominator_derivative)
+                                / (radius_squared * radius_squared),
+                            axial_acceleration.u,
+                        )
+                    },
+                )
+                .filter(|acceleration| acceleration.u.is_finite() && acceleration.v.is_finite());
+            return Some(PcurveDifferential {
+                point,
+                tangent,
+                acceleration,
+            });
         }
         PcurveGeometry::Nurbs {
             degree,
@@ -2296,6 +2379,7 @@ fn pcurve_uv_differential_inner(
     Some(PcurveDifferential {
         point: pair.0,
         tangent: (pair.1.u.is_finite() && pair.1.v.is_finite()).then_some(pair.1),
+        acceleration: (pair.2.u.is_finite() && pair.2.v.is_finite()).then_some(pair.2),
     })
 }
 
@@ -2798,6 +2882,8 @@ mod tests {
         assert!((point.u - 0.9).abs() < 1e-12);
         assert!((point.v - 5.2).abs() < 1e-12);
         assert_eq!(pcurve_uv(&circle, 0.0), Some(Point2::new(3.0, 0.0)));
+        assert_eq!(pcurve_tangent(&line, 0.5), Some(Point2::new(3.0, 4.0)));
+        assert_eq!(pcurve_tangent(&circle, 0.0), Some(Point2::new(0.0, 3.0)));
 
         let rational_arc = PcurveGeometry::Offset {
             distance: 0.25,
@@ -2816,13 +2902,19 @@ mod tests {
         for parameter in [0.0, 0.5, 1.0] {
             let point = pcurve_uv(&rational_arc, parameter)
                 .expect("regular rational NURBS offset evaluates");
+            let tangent =
+                pcurve_tangent(&rational_arc, parameter).expect("rational offset tangent");
             assert!((point.u.hypot(point.v) - 0.75).abs() < 1e-12);
+            assert!((point.u * tangent.u + point.v * tangent.v).abs() < 1e-12);
         }
 
         let nested = PcurveGeometry::Offset {
             distance: 1.0,
             basis: Box::new(line),
         };
-        assert_eq!(pcurve_uv(&nested, 0.5), None);
+        let nested_point = pcurve_uv(&nested, 0.5).expect("nested offset point");
+        assert!((nested_point.u - 0.1).abs() < 1e-12);
+        assert!((nested_point.v - 5.8).abs() < 1e-12);
+        assert_eq!(pcurve_tangent(&nested, 0.5), None);
     }
 }
