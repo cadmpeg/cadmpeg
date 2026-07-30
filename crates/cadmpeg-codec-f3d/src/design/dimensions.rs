@@ -758,10 +758,12 @@ fn project_all_dimension_constraints(
             let repeated = repeated_linear_dimension(&linear_candidates, parameter_id.clone());
             let radial =
                 unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id);
-            let definition =
-                radial.unwrap_or_else(|| match (linear_candidates.as_slice(), repeated) {
-                    ([definition], _) => definition.clone(),
-                    (_, Some(definition)) => definition,
+            let concentric =
+                concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id);
+            let definition = radial.unwrap_or_else(|| {
+                match (linear_candidates.as_slice(), repeated, concentric) {
+                    ([definition], _, _) => definition.clone(),
+                    (_, Some(definition), _) | (_, _, Some(definition)) => definition,
                     _ => Definition::Native {
                         native_kind: parameter.source_kind.clone(),
                         native_state: None,
@@ -778,7 +780,8 @@ fn project_all_dimension_constraints(
                             })
                             .collect(),
                     },
-                });
+                }
+            });
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
@@ -840,6 +843,14 @@ fn project_all_dimension_constraints(
                         &parameter_id,
                     )
                 })
+                .or_else(|| {
+                    concentric_circle_dimension_definition(
+                        entities,
+                        &sketch,
+                        parameter,
+                        &parameter_id,
+                    )
+                })
                 .unwrap_or_else(|| Definition::Native {
                     native_kind: parameter.source_kind.clone(),
                     native_state: None,
@@ -878,6 +889,66 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Resolve one or more disjoint owner-scoped concentric-circle separations
+/// controlled by one linear parameter.
+pub(crate) fn concentric_circle_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
+        SketchGeometry, SketchLocus,
+    };
+
+    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+        return None;
+    }
+    let evaluated_mm = parameter.evaluated_value * 10.0;
+    if !evaluated_mm.is_finite() {
+        return None;
+    }
+    let circles = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Circle { .. })
+        })
+        .collect::<Vec<_>>();
+    let mut pairs = Vec::new();
+    let mut paired_entities = HashSet::new();
+    for first in 0..circles.len() {
+        for second in first + 1..circles.len() {
+            if !concentric_circle_separation(circles[first], circles[second], evaluated_mm) {
+                continue;
+            }
+            if !paired_entities.insert(circles[first].id.clone())
+                || !paired_entities.insert(circles[second].id.clone())
+            {
+                return None;
+            }
+            pairs.push((circles[first], circles[second]));
+        }
+    }
+    match pairs.as_slice() {
+        [] => None,
+        [(first, second)] => Some(Definition::Distance {
+            entities: vec![first.id.clone(), second.id.clone()],
+            parameter: parameter_id.clone(),
+        }),
+        _ => Some(Definition::RepeatedDistance {
+            measurements: pairs
+                .into_iter()
+                .map(|(first, second)| Measurement::Distance {
+                    first: SketchLocus::Entity(first.id.clone()),
+                    second: SketchLocus::Entity(second.id.clone()),
+                })
+                .collect(),
+            parameter: parameter_id.clone(),
+        }),
+    }
 }
 
 /// Resolve an owner-scoped linear dimension when exactly one point-line pair

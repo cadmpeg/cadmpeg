@@ -11657,6 +11657,92 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
 }
 
 #[test]
+fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
+    let sketch = SketchId("sketch".into());
+    let parameter = DesignParameter {
+        id: "f3d:A:design-parameter#1".into(),
+        byte_offset: 0,
+        class_tag: "305".into(),
+        record_index: 1,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
+        source_ordinal: 1,
+        owner_record_index: Some(2),
+        expression: "2 mm".into(),
+        expression_offset: 0,
+        source_kind: "Linear Dimension-2".into(),
+        source_kind_offset: 0,
+        kind: DesignParameterKind::Dimension,
+        unit: Some("mm".into()),
+        unit_offset: Some(0),
+        name: "d1".into(),
+        name_offset: 0,
+        evaluated_value: 0.2,
+        evaluated_value_offset: 0,
+    };
+    let circle = |name: &str, center, radius| SketchEntity {
+        id: SketchEntityId(name.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center,
+            radius: Length(radius),
+        },
+    };
+    let mut circles = vec![
+        circle("outer-a", Point2::new(0.0, 0.0), 5.0),
+        circle("inner-a", Point2::new(0.0, 0.0), 3.0),
+        circle("outer-b", Point2::new(20.0, 0.0), 8.0),
+        circle("inner-b", Point2::new(20.0, 0.0), 6.0),
+    ];
+    let definition = crate::design::dimensions::concentric_circle_dimension_definition(
+        &circles,
+        &sketch,
+        &parameter,
+        &cadmpeg_ir::features::ParameterId("parameter".into()),
+    )
+    .expect("two disjoint concentric pairs");
+    assert!(matches!(
+        definition,
+        SketchConstraintDefinition::RepeatedDistance {
+            measurements,
+            ..
+        } if measurements == vec![
+            cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance {
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(
+                    SketchEntityId("outer-a".into())
+                ),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(
+                    SketchEntityId("inner-a".into())
+                ),
+            },
+            cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance {
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(
+                    SketchEntityId("outer-b".into())
+                ),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(
+                    SketchEntityId("inner-b".into())
+                ),
+            },
+        ]
+    ));
+
+    circles.push(circle("overlap", Point2::new(0.0, 0.0), 1.0));
+    assert!(
+        crate::design::dimensions::concentric_circle_dimension_definition(
+            &circles,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let placement = |stream: &str| DesignSketchPlacement {
         member_run_head: false,
