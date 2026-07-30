@@ -3586,6 +3586,24 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .losses
         .iter()
         .any(|l| l.category == cadmpeg_ir::report::LossCategory::Topology));
+    assert_eq!(
+        result.report.coverage["attempted_standard_topology_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["attached_standard_topology_count"],
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage
+            .iter()
+            .filter(|(key, _)| key.starts_with("standard_topology_"))
+            .map(|(_, count)| count)
+            .sum::<usize>(),
+        1
+    );
 
     // The produced IR validates (free carriers, no dangling references).
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
@@ -3676,6 +3694,24 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
+    assert_eq!(
+        decoded.report.coverage["attempted_standard_topology_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["attached_standard_topology_count"],
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage
+            .iter()
+            .filter(|(key, _)| key.starts_with("standard_topology_"))
+            .map(|(_, count)| count)
+            .sum::<usize>(),
+        0
+    );
 }
 
 #[test]
@@ -14153,7 +14189,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
     bytes.extend(b"\xfe\xfe\xfe");
     let schema_program_offset = bytes.len();
-    bytes.extend([0x81, 0xe3, 0x04, 0xfe]);
+    bytes.extend([0x81, 0x04, b'F', b'o', b'o', 0x84, 0xfe]);
     let schema_footer_offset = bytes.len();
     bytes.extend(b"\x4e\x11\x00\x00\x00DASSAULT-SYSTEMES\x05\x00\x00\x00CATIA");
 
@@ -14184,7 +14220,16 @@ fn native_round_trips_legacy_entity_identity_runs() {
         schema_program.footer_byte_offset,
         schema_footer_offset as u64
     );
-    assert_eq!(schema_program.data, [0x81, 0xe3, 0x04, 0xfe]);
+    assert_eq!(
+        schema_program.data,
+        [0x81, 0x04, b'F', b'o', b'o', 0x84, 0xfe]
+    );
+    assert_eq!(schema_program.identifiers.len(), 1);
+    assert_eq!(
+        schema_program.identifiers[0].byte_offset,
+        schema_program_offset as u64 + 1
+    );
+    assert_eq!(schema_program.identifiers[0].value, "Foo");
     assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 5);
     assert_eq!(
         native.legacy_entity_runs[0]
@@ -14332,6 +14377,32 @@ fn native_round_trips_legacy_entity_identity_runs() {
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load legacy entity run");
     assert_eq!(loaded.legacy_entity_runs, native.legacy_entity_runs);
 
+    let mut previous_schema_namespace = namespace.clone();
+    let mut previous_schema_runs: Vec<crate::native::CatiaLegacyEntityRun> =
+        previous_schema_namespace
+            .arena_as("legacy_entity_runs")
+            .expect("load previous schema-program runs");
+    previous_schema_runs[0]
+        .schema_program
+        .as_mut()
+        .expect("schema program")
+        .identifiers
+        .clear();
+    previous_schema_namespace
+        .set_arena("legacy_entity_runs", &previous_schema_runs)
+        .expect("store previous schema-program runs");
+    previous_schema_namespace.version = 221;
+    let migrated_schema = crate::native::CatiaNative::load(&previous_schema_namespace)
+        .expect("migrate schema identifiers");
+    assert_eq!(
+        migrated_schema.legacy_entity_runs[0]
+            .schema_program
+            .as_ref()
+            .expect("migrated schema program")
+            .identifiers,
+        schema_program.identifiers
+    );
+
     let mut invalid_schema_program = native.clone();
     invalid_schema_program.legacy_entity_runs[0]
         .schema_program
@@ -14344,6 +14415,19 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .store(&mut invalid_schema_namespace)
         .expect("store invalid schema program");
     assert!(crate::native::CatiaNative::load(&invalid_schema_namespace).is_err());
+
+    let mut invalid_schema_identifier = native.clone();
+    invalid_schema_identifier.legacy_entity_runs[0]
+        .schema_program
+        .as_mut()
+        .expect("schema program")
+        .identifiers[0]
+        .value = "Bar".to_string();
+    let mut invalid_identifier_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_schema_identifier
+        .store(&mut invalid_identifier_namespace)
+        .expect("store invalid schema identifier");
+    assert!(crate::native::CatiaNative::load(&invalid_identifier_namespace).is_err());
 
     let mut previous_field_namespace = namespace.clone();
     let mut previous_field_runs: Vec<crate::native::CatiaLegacyEntityRun> =

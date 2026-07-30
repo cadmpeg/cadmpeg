@@ -82,8 +82,9 @@ current scores require those matrices and representative fixtures.
   relation-update state independently of unresolved relation-expression
   incidence. Legacy identity runs admit and retain the `81`, `82`, `E5`, and
   `FD` record leads. Footer-bounded compact schema programs retain their exact
-  bytes and offsets. Each legacy identity run retains its exact outer container
-  binding. Every complete schema role selector retains its fixed or paged
+  bytes, offsets, and inclusive-length identifier packets. Each legacy identity
+  run retains its exact outer container binding. Every complete schema role
+  selector retains its fixed or paged
   production, containing identity, role representation, and value. Legacy text
   fields retain both `FE`-closed values and values carrying an inline `E3`
   paged-role tail. Field-bound roles retain literal names or exact unresolved

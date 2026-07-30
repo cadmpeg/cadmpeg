@@ -280,6 +280,17 @@ pub struct LegacySchemaProgram {
     pub footer_offset: usize,
     /// Exact program bytes, including the terminal `FE`.
     pub bytes: Vec<u8>,
+    /// Complete inclusive-length identifier packets in source order.
+    pub identifiers: Vec<LegacySchemaIdentifier>,
+}
+
+/// One complete inclusive-length identifier packet in a compact schema program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacySchemaIdentifier {
+    /// Offset of the inclusive-length byte.
+    pub offset: usize,
+    /// Stored identifier.
+    pub value: String,
 }
 
 /// A monotonically identified legacy run terminated by its schema catalog.
@@ -443,11 +454,37 @@ fn parse_schema_program(data: &[u8], catalog_offset: usize) -> Option<LegacySche
             (footer_offset > offset && data.get(footer_offset - 1) == Some(&0xfe))
                 .then_some(footer_offset)
         })?;
+    let bytes = data.get(offset..footer_offset)?.to_vec();
     Some(LegacySchemaProgram {
         offset,
         footer_offset,
-        bytes: data.get(offset..footer_offset)?.to_vec(),
+        identifiers: parse_schema_identifiers(&bytes, offset),
+        bytes,
     })
+}
+
+fn parse_schema_identifiers(bytes: &[u8], program_offset: usize) -> Vec<LegacySchemaIdentifier> {
+    bytes
+        .iter()
+        .enumerate()
+        .filter_map(|(relative, first)| {
+            let value_len = usize::from(*first).checked_sub(1)?;
+            if value_len == 0 {
+                return None;
+            }
+            let value_offset = relative.checked_add(1)?;
+            let end = value_offset.checked_add(value_len)?;
+            let value = std::str::from_utf8(bytes.get(value_offset..end)?).ok()?;
+            if !valid_role_name(value) || bytes.get(end).is_some_and(|following| *following < 0x81)
+            {
+                return None;
+            }
+            Some(LegacySchemaIdentifier {
+                offset: program_offset.checked_add(relative)?,
+                value: value.to_owned(),
+            })
+        })
+        .collect()
 }
 
 fn parse_synchronous_states(
@@ -1253,7 +1290,7 @@ mod tests {
         bytes.extend_from_slice(CATALOG_OPEN);
         bytes.extend_from_slice(SCHEMA_PROGRAM_PREFIX);
         let program_offset = bytes.len();
-        bytes.extend_from_slice(&[0x81, 0xe3, 0x04, 0xfe]);
+        bytes.extend_from_slice(&[0x81, 0x04, b'F', b'o', b'o', 0x84, 0xfe]);
         let footer_offset = bytes.len();
         bytes.extend_from_slice(SCHEMA_PROGRAM_FOOTER);
 
@@ -1264,7 +1301,14 @@ mod tests {
             .expect("complete schema program");
         assert_eq!(program.offset, program_offset);
         assert_eq!(program.footer_offset, footer_offset);
-        assert_eq!(program.bytes, [0x81, 0xe3, 0x04, 0xfe]);
+        assert_eq!(program.bytes, [0x81, 0x04, b'F', b'o', b'o', 0x84, 0xfe]);
+        assert_eq!(
+            program.identifiers,
+            [super::LegacySchemaIdentifier {
+                offset: program_offset + 1,
+                value: "Foo".to_string(),
+            }]
+        );
 
         let mut unterminated = bytes.clone();
         unterminated[footer_offset - 1] = 0x81;

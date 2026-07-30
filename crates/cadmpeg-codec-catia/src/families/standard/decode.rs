@@ -1586,7 +1586,8 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             .then_some(())
             .ok_or(StandardTopologyFailure::InadmissibleNeutralModel)
     });
-    let topology_attached = topology_result.is_ok();
+    let topology_failure = topology_result.as_ref().err().copied();
+    let topology_attached = topology_failure.is_none();
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations;
@@ -1625,8 +1626,22 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
                 .saturating_sub(consolidated_curve_bindings.standard_face_surfaces),
             unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
         },
-        topology_result.err().map(StandardTopologyFailure::message),
+        topology_failure.map(StandardTopologyFailure::message),
     );
+    report.coverage.insert(
+        "attempted_standard_topology_count".to_string(),
+        usize::from(true),
+    );
+    report.coverage.insert(
+        "attached_standard_topology_count".to_string(),
+        usize::from(topology_attached),
+    );
+    for failure in StandardTopologyFailure::ALL {
+        report.coverage.insert(
+            failure.coverage_key().to_string(),
+            usize::from(topology_failure == Some(failure)),
+        );
+    }
     report.coverage.insert(
         "refined_consolidated_analytic_surface_count".to_string(),
         refined_analytic_surfaces.len(),
@@ -1696,6 +1711,40 @@ enum StandardTopologyFailure {
 }
 
 impl StandardTopologyFailure {
+    const ALL: [Self; 11] = [
+        Self::NoCurveSupports,
+        Self::EdgeFaceAssignment,
+        Self::MissingFaceSurface,
+        Self::ConflictingNativeEndpoints,
+        Self::NativeEndpointPropagation,
+        Self::EmptyEndpointDomain,
+        Self::NoTopologySolution,
+        Self::AmbiguousTopologySolution,
+        Self::TopologySearchExhausted,
+        Self::InvalidTopologySolution,
+        Self::InadmissibleNeutralModel,
+    ];
+
+    const fn coverage_key(self) -> &'static str {
+        match self {
+            Self::NoCurveSupports => "standard_topology_no_curve_supports_count",
+            Self::EdgeFaceAssignment => "standard_topology_edge_face_assignment_failure_count",
+            Self::MissingFaceSurface => "standard_topology_missing_face_surface_count",
+            Self::ConflictingNativeEndpoints => {
+                "standard_topology_conflicting_native_endpoints_count"
+            }
+            Self::NativeEndpointPropagation => {
+                "standard_topology_native_endpoint_propagation_failure_count"
+            }
+            Self::EmptyEndpointDomain => "standard_topology_empty_endpoint_domain_count",
+            Self::NoTopologySolution => "standard_topology_no_solution_count",
+            Self::AmbiguousTopologySolution => "standard_topology_ambiguous_solution_count",
+            Self::TopologySearchExhausted => "standard_topology_search_exhausted_count",
+            Self::InvalidTopologySolution => "standard_topology_invalid_solution_count",
+            Self::InadmissibleNeutralModel => "standard_topology_inadmissible_model_count",
+        }
+    }
+
     const fn message(self) -> &'static str {
         match self {
             Self::NoCurveSupports => "the curve support table is absent or empty",

@@ -20,13 +20,15 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 221;
+pub const CATIA_NATIVE_VERSION: u32 = 222;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
 const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
 #[cfg(test)]
 const CATIA_LEGACY_ROLE_FIELD_CODE_VERSION: u32 = 220;
+#[cfg(test)]
+const CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION: u32 = 222;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -2991,6 +2993,18 @@ pub struct CatiaLegacySchemaProgram {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub data: Vec<u8>,
+    /// Complete inclusive-length identifier packets in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identifiers: Vec<CatiaLegacySchemaIdentifier>,
+}
+
+/// One complete inclusive-length identifier packet in a compact schema program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacySchemaIdentifier {
+    /// Offset of the inclusive-length byte.
+    pub byte_offset: u64,
+    /// Stored identifier.
+    pub value: String,
 }
 
 /// Framing production used by a legacy schema text field.
@@ -3754,6 +3768,14 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                     byte_offset: program.offset as u64,
                     footer_byte_offset: program.footer_offset as u64,
                     data: program.bytes,
+                    identifiers: program
+                        .identifiers
+                        .into_iter()
+                        .map(|identifier| CatiaLegacySchemaIdentifier {
+                            byte_offset: identifier.offset as u64,
+                            value: identifier.value,
+                        })
+                        .collect(),
                 }),
                 outer_container: None,
                 identities: run
@@ -3972,6 +3994,40 @@ fn legacy_role_selector_end(role: &CatiaLegacyRoleSelector) -> Option<u64> {
 }
 
 #[cfg(test)]
+fn legacy_schema_identifiers(
+    program: &CatiaLegacySchemaProgram,
+) -> Vec<CatiaLegacySchemaIdentifier> {
+    program
+        .data
+        .iter()
+        .enumerate()
+        .filter_map(|(relative, first)| {
+            let value_len = usize::from(*first).checked_sub(1)?;
+            if value_len == 0 {
+                return None;
+            }
+            let value_offset = relative.checked_add(1)?;
+            let end = value_offset.checked_add(value_len)?;
+            let value = std::str::from_utf8(program.data.get(value_offset..end)?).ok()?;
+            if !valid_legacy_identifier(value)
+                || program
+                    .data
+                    .get(end)
+                    .is_some_and(|following| *following < 0x81)
+            {
+                return None;
+            }
+            Some(CatiaLegacySchemaIdentifier {
+                byte_offset: program
+                    .byte_offset
+                    .checked_add(u64::try_from(relative).ok()?)?,
+                value: value.to_owned(),
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
 fn legacy_schema_boundary_closes_text(
     run: &CatiaLegacyEntityRun,
     field: &CatiaLegacySchemaField,
@@ -4139,6 +4195,7 @@ fn validate_legacy_entity_runs(
                         .ok()
                         .and_then(|len| program.byte_offset.checked_add(len))
                         == Some(program.footer_byte_offset)
+                    && program.identifiers == legacy_schema_identifiers(program)
             })
             && previous_end.is_none_or(|end| end <= run.byte_offset)
             && run.identities.first().is_some_and(|identity| {
@@ -8204,6 +8261,14 @@ impl CatiaNative {
                 }
                 run.role_selectors.sort_by_key(|role| role.byte_offset);
                 run.role_selectors.dedup_by_key(|role| role.byte_offset);
+            }
+        }
+        if namespace.version < CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION {
+            for program in legacy_entity_runs
+                .iter_mut()
+                .filter_map(|run| run.schema_program.as_mut())
+            {
+                program.identifiers = legacy_schema_identifiers(program);
             }
         }
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);
