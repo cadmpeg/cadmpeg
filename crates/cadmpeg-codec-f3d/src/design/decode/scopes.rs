@@ -4,7 +4,7 @@
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::{
-    indexed_record_index, next_indexed_record_offset, valid_sketch_transform,
+    next_indexed_record_offset, valid_sketch_transform, IndexedRecordOffsets,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -27,53 +27,6 @@ use crate::records::{
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use std::collections::{HashMap, HashSet};
-
-/// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
-/// the record index the header carries at `offset + 7`.
-///
-/// An indexed-record header is a three-digit length-prefixed ASCII class tag
-/// followed by a u32 record index, so a header at `offset` always exposes its
-/// index at `offset + 7`. A record index appears once per header, and the
-/// consecutive offsets of one index delimit that record's frames.
-pub(crate) struct IndexedRecordOffsets {
-    by_record_index: HashMap<u32, Vec<usize>>,
-}
-
-impl IndexedRecordOffsets {
-    /// Index every indexed-record header in `bytes` in one forward pass.
-    pub(crate) fn build(bytes: &[u8]) -> Self {
-        let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
-        for at in crate::design::decode::sketch::indexed_record_offsets(bytes) {
-            if let Some(record_index) = indexed_record_index(bytes, at) {
-                by_record_index.entry(record_index).or_default().push(at);
-            }
-        }
-        Self { by_record_index }
-    }
-
-    /// Ascending header offsets carrying `record_index`.
-    fn offsets(&self, record_index: u32) -> &[usize] {
-        self.by_record_index
-            .get(&record_index)
-            .map_or(&[], Vec::as_slice)
-    }
-
-    /// The first header at or after `position` that carries `record_index`.
-    fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize> {
-        let offsets = self.offsets(record_index);
-        offsets
-            .get(offsets.partition_point(|offset| *offset < position))
-            .copied()
-    }
-
-    /// Consecutive header offsets carrying `record_index`, each pair delimiting
-    /// one frame of that record.
-    fn frames(&self, record_index: u32) -> impl Iterator<Item = (usize, usize)> + '_ {
-        self.offsets(record_index)
-            .windows(2)
-            .map(|pair| (pair[0], pair[1]))
-    }
-}
 
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
@@ -2394,17 +2347,16 @@ pub(crate) fn parameter_scope_candidate_headers(
     records: &IndexedRecordOffsets,
 ) -> Vec<DesignRecordHeader> {
     records
-        .by_record_index
-        .iter()
+        .records()
         .flat_map(|(record_index, offsets)| {
             offsets[..offsets.len().saturating_sub(1)]
                 .iter()
-                .filter_map(|at| {
+                .filter_map(move |at| {
                     let (class_tag, _) =
                         lp_ascii_filtered(bytes, *at, 0..=2000, u8::is_ascii_graphic)?;
                     Some(DesignRecordHeader {
                         id: String::new(),
-                        record_index: *record_index,
+                        record_index,
                         class_tag,
                         byte_offset: *at as u64,
                     })

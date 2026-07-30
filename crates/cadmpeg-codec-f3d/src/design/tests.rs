@@ -36,13 +36,13 @@ use crate::design::decode::scopes::{
     exact_joint_origin_frame, exact_path_feature_construction,
     exact_rectangular_pattern_construction, exact_scale_operation, exact_solid_primitive,
     exact_surface_stitch_operation, exact_work_plane_frame, exact_work_point_position,
-    parse_parameter_scope, IndexedRecordOffsets,
+    parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
     next_indexed_record_offset, next_indexed_record_offset_with_index, parse_genesis_entity_header,
     parse_settled_entity_header, parse_sketch_placement_candidates, parse_sketch_relation,
-    parse_sketch_surface,
+    parse_sketch_surface, IndexedRecordOffsets,
 };
 use crate::design::dimensions::{
     bind_dimension_loci, counted_role_relation, directional_point_dimension,
@@ -8153,6 +8153,24 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
 
 #[test]
 fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
+    fn candidates(
+        bytes: &[u8],
+        scope_record_index: u32,
+        entity_id: &str,
+        entity_suffix: u64,
+        record_index: u32,
+    ) -> Vec<DesignSketchPlacement> {
+        let records = IndexedRecordOffsets::build(bytes);
+        parse_sketch_placement_candidates(
+            bytes,
+            scope_record_index,
+            entity_id,
+            entity_suffix,
+            record_index,
+            &records,
+        )
+    }
+
     fn placement_frame(
         record_index: u32,
         length: usize,
@@ -8174,8 +8192,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         bytes
     }
 
-    let compact =
-        parse_sketch_placement_candidates(&placement_frame(185, 201, None), 177, "0_172", 172, 185);
+    let compact = candidates(&placement_frame(185, 201, None), 177, "0_172", 172, 185);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length, 201);
     assert_eq!(compact[0].transform, identity_matrix());
@@ -8187,7 +8204,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         [0.0, 1.0, 0.0, 56.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let explicit = parse_sketch_placement_candidates(
+    let explicit = candidates(
         &placement_frame(1773, 329, Some(transform)),
         1765,
         "0_1761",
@@ -8202,6 +8219,24 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
 
 #[test]
 fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
+    fn candidates(
+        bytes: &[u8],
+        scope_record_index: u32,
+        entity_id: &str,
+        entity_suffix: u64,
+        record_index: u32,
+    ) -> Vec<DesignSketchPlacement> {
+        let records = IndexedRecordOffsets::build(bytes);
+        parse_sketch_placement_candidates(
+            bytes,
+            scope_record_index,
+            entity_id,
+            entity_suffix,
+            record_index,
+            &records,
+        )
+    }
+
     fn genesis_frame(
         record_index: u32,
         length: usize,
@@ -8226,13 +8261,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         bytes
     }
 
-    let compact = parse_sketch_placement_candidates(
-        &genesis_frame(214, 213, 1, None),
-        206,
-        "0_201",
-        201,
-        214,
-    );
+    let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 201, 214);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length, 213);
     assert_eq!(compact[0].transform, identity_matrix());
@@ -8244,7 +8273,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let explicit = parse_sketch_placement_candidates(
+    let explicit = candidates(
         &genesis_frame(3060, 341, 0, Some(transform)),
         3052,
         "0_3048",
@@ -8257,15 +8286,8 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
     assert_eq!(explicit[0].transform_offset, Some(66));
 
     // A mismatched form byte fails both lengths.
-    assert!(parse_sketch_placement_candidates(
-        &genesis_frame(214, 213, 0, None),
-        206,
-        "0_201",
-        201,
-        214
-    )
-    .is_empty());
-    assert!(parse_sketch_placement_candidates(
+    assert!(candidates(&genesis_frame(214, 213, 0, None), 206, "0_201", 201, 214).is_empty());
+    assert!(candidates(
         &genesis_frame(3060, 341, 1, Some(transform)),
         3052,
         "0_3048",
@@ -8279,7 +8301,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
     let mut workplane_like = genesis_frame(214, 213, 1, None);
     workplane_like[57] = 1;
     workplane_like[58..62].copy_from_slice(&788u32.to_le_bytes());
-    assert!(parse_sketch_placement_candidates(&workplane_like, 206, "0_201", 201, 214).is_empty());
+    assert!(candidates(&workplane_like, 206, "0_201", 201, 214).is_empty());
 }
 
 #[test]
@@ -8396,8 +8418,10 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         member_indices: Vec::new(),
         member_offsets: Vec::new(),
     };
-    let placement = crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity)
-        .expect("feature-owned sketch placement");
+    let records = IndexedRecordOffsets::build(&bytes);
+    let placement =
+        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity, &records)
+            .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
     assert_eq!(placement.byte_offset, head_at as u64);
     assert_eq!(placement.paired_byte_offset, paired_at as u64);
@@ -8405,7 +8429,9 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     assert!(placement.member_run_head);
     assert_eq!(placement.scope_record_index, None);
     assert_eq!(
-        crate::design::decode::sketch::parse_legacy_sketch_container_members(&bytes, 0, 100),
+        crate::design::decode::sketch::parse_legacy_sketch_container_members(
+            &bytes, 0, 100, &records,
+        ),
         Some((Vec::new(), Vec::new()))
     );
 
@@ -8420,8 +8446,10 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"284");
     bytes.extend_from_slice(&201u32.to_le_bytes());
-    let compact = crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity)
-        .expect("compact identity sketch placement");
+    let records = IndexedRecordOffsets::build(&bytes);
+    let compact =
+        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity, &records)
+            .expect("compact identity sketch placement");
     assert_eq!(compact.frame_length, 34);
     assert_eq!(compact.transform, identity_matrix());
     assert_eq!(compact.transform_offset, None);

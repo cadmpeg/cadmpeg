@@ -17,6 +17,55 @@ use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::HashMap;
 
+/// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
+/// the record index carried at header offset seven.
+pub(crate) struct IndexedRecordOffsets {
+    by_record_index: HashMap<u32, Vec<usize>>,
+}
+
+impl IndexedRecordOffsets {
+    /// Index every exact indexed-record header in `bytes` in one forward pass.
+    pub(crate) fn build(bytes: &[u8]) -> Self {
+        let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
+        for at in indexed_record_offsets(bytes) {
+            if let Some(record_index) = indexed_record_index(bytes, at) {
+                by_record_index.entry(record_index).or_default().push(at);
+            }
+        }
+        Self { by_record_index }
+    }
+
+    /// Ascending header offsets carrying `record_index`.
+    pub(crate) fn offsets(&self, record_index: u32) -> &[usize] {
+        self.by_record_index
+            .get(&record_index)
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// Record indexes and their ascending header offsets.
+    pub(crate) fn records(&self) -> impl Iterator<Item = (u32, &[usize])> {
+        self.by_record_index
+            .iter()
+            .map(|(record_index, offsets)| (*record_index, offsets.as_slice()))
+    }
+
+    /// The first header at or after `position` that carries `record_index`.
+    pub(crate) fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize> {
+        let offsets = self.offsets(record_index);
+        offsets
+            .get(offsets.partition_point(|offset| *offset < position))
+            .copied()
+    }
+
+    /// Consecutive header offsets carrying `record_index`, each pair delimiting
+    /// one frame of that record.
+    pub(crate) fn frames(&self, record_index: u32) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.offsets(record_index)
+            .windows(2)
+            .map(|pair| (pair[0], pair[1]))
+    }
+}
+
 /// Decode the unique local-to-model placement frame referenced by every
 /// parameter-owning sketch scope, and every member-run head placement. A
 /// localized Sketch scope follows its entity container within the same
@@ -28,6 +77,17 @@ pub fn decode_sketch_placements(
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
+    let mut record_offsets = HashMap::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        record_offsets.insert(
+            ids::native_scope(&entry.name),
+            IndexedRecordOffsets::build(scan.entry_bytes(&entry.name)?),
+        );
+    }
     for scope in scopes
         .iter()
         .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch))
@@ -46,6 +106,9 @@ pub fn decode_sketch_placements(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(records) = record_offsets.get(&ids::native_scope(&entry.name)) else {
+            continue;
+        };
         let start = usize::try_from(scope.byte_offset).ok();
         let end = usize::try_from(scope.paired_byte_offset).ok();
         let Some(frame) = start
@@ -71,6 +134,7 @@ pub fn decode_sketch_placements(
                 entity_id,
                 entity_suffix,
                 record_index,
+                records,
             ));
         }
         if candidates.len() == 1 {
@@ -110,7 +174,10 @@ pub fn decode_sketch_placements(
             continue;
         };
         let bytes = scan.entry_bytes(entry_name)?;
-        let Some(mut placement) = parse_member_run_head_placement(bytes, entity) else {
+        let Some(records) = record_offsets.get(stream) else {
+            continue;
+        };
+        let Some(mut placement) = parse_member_run_head_placement(bytes, entity, records) else {
             continue;
         };
         let next_entity_offset = entities
@@ -152,17 +219,12 @@ pub(crate) const MEMBER_RUN_HEAD_FRAME: usize = 162;
 pub(crate) fn parse_member_run_head_placement(
     bytes: &[u8],
     entity: &DesignEntityHeader,
+    records: &IndexedRecordOffsets,
 ) -> Option<DesignSketchPlacement> {
     let start = usize::try_from(entity.byte_offset).ok()?;
     // Locate the paired same-index record after the entity header.
-    let mut position = start + 1;
-    let paired_at = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
-        if u32_at(bytes, at + 7).map(u64::from) == Some(entity.entity_suffix) && at > start {
-            break at;
-        }
-        position = at + 1;
-    };
+    let entity_index = u32::try_from(entity.entity_suffix).ok()?;
+    let paired_at = records.first_at_or_after(start.checked_add(1)?, entity_index)?;
     let (paired_class_tag, paired_after_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if paired_class_tag.len() != 3 || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -181,14 +243,7 @@ pub(crate) fn parse_member_run_head_placement(
         return None;
     }
     // Locate the head record and decode its transform.
-    let mut position = 0usize;
-    let head_at = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
-        if u32_at(bytes, at + 7) == Some(head_index) {
-            break at;
-        }
-        position = at + 1;
-    };
+    let head_at = records.offsets(head_index).first().copied()?;
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, head_at, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != head_at + 7
         || class_tag.len() != 3
@@ -243,17 +298,10 @@ pub(crate) fn parse_sketch_placement_candidates(
     entity_id: &str,
     entity_suffix: u64,
     record_index: u32,
+    records: &IndexedRecordOffsets,
 ) -> Vec<DesignSketchPlacement> {
-    let mut headers = Vec::new();
-    let mut position = 0usize;
-    while let Some(at) = next_indexed_record_offset(bytes, position) {
-        if u32_at(bytes, at + 7) == Some(record_index) {
-            headers.push(at);
-        }
-        position = at + 1;
-    }
     let mut out = Vec::new();
-    for pair in headers.windows(2) {
+    for pair in records.offsets(record_index).windows(2) {
         let start = pair[0];
         let paired_at = pair[1];
         let frame_length = paired_at.saturating_sub(start);
@@ -816,6 +864,7 @@ pub(crate) fn parse_legacy_sketch_container_members(
     bytes: &[u8],
     primary_at: usize,
     entity_suffix: u32,
+    records: &IndexedRecordOffsets,
 ) -> Option<(Vec<u32>, Vec<u64>)> {
     if let Some(members) = parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix) {
         return Some(members);
@@ -836,7 +885,7 @@ pub(crate) fn parse_legacy_sketch_container_members(
         member_indices: Vec::new(),
         member_offsets: Vec::new(),
     };
-    parse_member_run_head_placement(bytes, &entity)?;
+    parse_member_run_head_placement(bytes, &entity, records)?;
     Some((Vec::new(), Vec::new()))
 }
 
@@ -957,13 +1006,17 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .get(&entry.name)
             .cloned()
             .unwrap_or_default();
+        if candidates.is_empty() {
+            continue;
+        }
+        let records = IndexedRecordOffsets::build(bytes);
         let scope = ids::native_scope(&entry.name);
         let mut existing = out
             .iter()
             .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<std::collections::HashSet<_>>();
-        for start in indexed_offsets {
+        for &start in &indexed_offsets {
             let Some(entity_suffix) = u32_at(bytes, start + 7) else {
                 continue;
             };
@@ -982,7 +1035,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 continue;
             }
             let Some((member_indices, member_offsets)) =
-                parse_legacy_sketch_container_members(bytes, start, entity_suffix)
+                parse_legacy_sketch_container_members(bytes, start, entity_suffix, &records)
             else {
                 continue;
             };
