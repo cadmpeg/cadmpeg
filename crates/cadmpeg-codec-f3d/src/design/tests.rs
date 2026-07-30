@@ -11058,6 +11058,51 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. }
     )));
 
+    let mut radial_parameter = parameter.clone();
+    radial_parameter.source_kind = "Radial Dimension-4".into();
+    let circle = SketchEntity {
+        id: SketchEntityId("radial-circle".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(20.0, 20.0),
+            radius: Length(2.0),
+        },
+    };
+    let mut radial_entities = entities.to_vec();
+    radial_entities.push(circle.clone());
+    let radial_constraints = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&radial_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[recipe(0, 30)],
+            points: &[],
+            curves: &[],
+            entities: &radial_entities,
+        },
+        &[],
+    );
+    assert!(matches!(
+        radial_constraints.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::Radius {
+                entity,
+                parameter: actual_parameter,
+            },
+            ..
+        }] if entity == &circle.id
+            && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+    ));
+
     let curves = [40, 41].map(|record_index| SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,

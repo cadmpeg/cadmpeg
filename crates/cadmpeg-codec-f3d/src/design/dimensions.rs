@@ -756,26 +756,29 @@ fn project_all_dimension_constraints(
                 Vec::default()
             };
             let repeated = repeated_linear_dimension(&linear_candidates, parameter_id.clone());
-            let definition = match (linear_candidates.as_slice(), repeated) {
-                ([definition], _) => definition.clone(),
-                (_, Some(definition)) => definition,
-                _ => Definition::Native {
-                    native_kind: parameter.source_kind.clone(),
-                    native_state: None,
-                    entities: recipe_dimension_candidate_entities(&linear_candidates),
-                    parameter: Some(parameter_id),
-                    operands: records
-                        .into_iter()
-                        .map(|record| SketchNativeOperand {
-                            native_kind: "construction_recipe".into(),
-                            native_field: Some("recipe".into()),
-                            native_role: None,
-                            object_index: record.record_index,
-                            native_ref: Some(record.id.clone()),
-                        })
-                        .collect(),
-                },
-            };
+            let radial =
+                unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id);
+            let definition =
+                radial.unwrap_or_else(|| match (linear_candidates.as_slice(), repeated) {
+                    ([definition], _) => definition.clone(),
+                    (_, Some(definition)) => definition,
+                    _ => Definition::Native {
+                        native_kind: parameter.source_kind.clone(),
+                        native_state: None,
+                        entities: recipe_dimension_candidate_entities(&linear_candidates),
+                        parameter: Some(parameter_id),
+                        operands: records
+                            .into_iter()
+                            .map(|record| SketchNativeOperand {
+                                native_kind: "construction_recipe".into(),
+                                native_field: Some("recipe".into()),
+                                native_role: None,
+                                object_index: record.record_index,
+                                native_ref: Some(record.id.clone()),
+                            })
+                            .collect(),
+                    },
+                });
             Some(SketchConstraint {
                 id: constraint_id,
                 sketch,
