@@ -50,6 +50,14 @@ pub(crate) enum MeshEndpointIncidenceRejection {
     BoundaryReconstruction,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum CoordinateRootClosure {
+    Solved(HashMap<usize, usize>),
+    Rejected,
+    Ambiguous,
+    Exhausted,
+}
+
 #[derive(Debug)]
 pub(crate) enum MeshCandidateSolve {
     Solved(StandardTopology, Vec<usize>),
@@ -431,7 +439,12 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&MeshConstraintBudget>,
     ) -> Option<HashMap<usize, usize>> {
-        self.close_coordinate_roots_with_incidence(point_count, edge_candidates, None, budget)
+        match self.coordinate_root_closure_outcome(point_count, edge_candidates, None, budget) {
+            CoordinateRootClosure::Solved(assignment) => Some(assignment),
+            CoordinateRootClosure::Rejected
+            | CoordinateRootClosure::Ambiguous
+            | CoordinateRootClosure::Exhausted => None,
+        }
     }
 
     pub(crate) fn close_coordinate_roots_for_incidence_with_budget(
@@ -447,12 +460,65 @@ impl MeshQuotient {
             && edge_faces.iter().flatten().all(|face| *face < face_count)
             && boundary_domains.len() == face_count)
             .then_some(())?;
-        self.close_coordinate_roots_with_incidence(
+        match self.coordinate_root_closure_outcome(
+            point_count,
+            edge_candidates,
+            Some((edge_faces, boundary_domains)),
+            budget,
+        ) {
+            CoordinateRootClosure::Solved(assignment) => Some(assignment),
+            CoordinateRootClosure::Rejected
+            | CoordinateRootClosure::Ambiguous
+            | CoordinateRootClosure::Exhausted => None,
+        }
+    }
+
+    pub(crate) fn coordinate_root_closure_outcome_for_incidence(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        edge_faces: &[[usize; 2]],
+        face_count: usize,
+        boundary_domains: &[MeshFaceBoundaryDomain],
+        budget: Option<&MeshConstraintBudget>,
+    ) -> CoordinateRootClosure {
+        if edge_faces.len() != edge_candidates.len()
+            || edge_faces.iter().flatten().any(|face| *face >= face_count)
+            || boundary_domains.len() != face_count
+        {
+            return CoordinateRootClosure::Rejected;
+        }
+        self.coordinate_root_closure_outcome(
             point_count,
             edge_candidates,
             Some((edge_faces, boundary_domains)),
             budget,
         )
+    }
+
+    pub(crate) fn coordinate_root_closure_outcome(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
+        budget: Option<&MeshConstraintBudget>,
+    ) -> CoordinateRootClosure {
+        let ambiguous = Cell::new(false);
+        let result = self.close_coordinate_roots_with_incidence(
+            point_count,
+            edge_candidates,
+            incidence,
+            budget,
+            &ambiguous,
+        );
+        match result {
+            Some(assignment) => CoordinateRootClosure::Solved(assignment),
+            None if budget.is_some_and(|budget| budget.exhausted.get()) => {
+                CoordinateRootClosure::Exhausted
+            }
+            None if ambiguous.get() => CoordinateRootClosure::Ambiguous,
+            None => CoordinateRootClosure::Rejected,
+        }
     }
 
     fn close_coordinate_roots_with_incidence(
@@ -461,6 +527,7 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
         budget: Option<&MeshConstraintBudget>,
+        ambiguous: &Cell<bool>,
     ) -> Option<HashMap<usize, usize>> {
         fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
             candidates.is_empty()
@@ -1563,7 +1630,16 @@ impl MeshQuotient {
             return None;
         }
         if roots.len() == point_count && incidence.is_none() {
-            return self.point_assignment(point_count, edge_candidates, budget);
+            let mut assignments =
+                self.point_assignments_with_budget(point_count, edge_candidates, 2, budget);
+            return match assignments.len() {
+                1 => Some(assignments.remove(0)),
+                length if length > 1 => {
+                    ambiguous.set(true);
+                    None
+                }
+                _ => None,
+            };
         }
         let root_indices = roots
             .iter()
@@ -1780,6 +1856,9 @@ impl MeshQuotient {
                 return None;
             }
             let [local_assignment] = solutions.as_slice() else {
+                if solutions.len() > 1 {
+                    ambiguous.set(true);
+                }
                 return None;
             };
             for (&root, &point) in component.iter().zip(local_assignment) {
@@ -5863,6 +5942,9 @@ where
     if incidence_ambiguous {
         return MeshCandidateSolve::Ambiguous;
     }
+    if matches!(pair_solutions, IncidenceSolve::Ambiguous) {
+        return MeshCandidateSolve::Ambiguous;
+    }
     if incidence_exhausted || matches!(pair_solutions, IncidenceSolve::Exhausted) {
         return MeshCandidateSolve::Exhausted;
     }
@@ -5874,6 +5956,7 @@ where
             MeshEndpointIncidenceRejection::NoAssignment(rejection)
         }
         IncidenceSolve::Solved(_) => MeshEndpointIncidenceRejection::BoundaryReconstruction,
+        IncidenceSolve::Ambiguous => unreachable!("ambiguity returned before fallback"),
         IncidenceSolve::Exhausted => unreachable!("exhaustion returned before fallback"),
     };
     let fallback = (|| {
@@ -5911,4 +5994,19 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
         parse_standard_mesh_candidate_outcome(&[], &[], &[], &[], &[], |_| true),
         MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
     ));
+}
+
+#[test]
+fn coordinate_root_closure_distinguishes_symmetric_assignments() {
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(2),
+        domains: vec![
+            Arc::new(HashSet::from([0, 1])),
+            Arc::new(HashSet::from([0, 1])),
+        ],
+        members: vec![vec![0], vec![1]],
+    };
+    let outcome = quotient.coordinate_root_closure_outcome(2, &[vec![[0, 1]]], None, None);
+
+    assert_eq!(outcome, CoordinateRootClosure::Ambiguous);
 }

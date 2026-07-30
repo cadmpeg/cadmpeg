@@ -158,7 +158,9 @@ current scores require those matrices and representative fixtures.
   distinguishes absence of a complete incidence assignment from failure to
   reconstruct a boundary from complete assignments. Incidence-assignment
   rejection distinguishes input-shape, choice-pruning, fixed-assignment,
-  component-domain, and component-composition failure.
+  component-domain, and component-composition failure. Coordinate-root closure
+  reports distinct complete assignments as topology ambiguity rather than
+  topology rejection.
 - Zero-entity face-local support occurrences with complete lifted endpoint
   tapes form radial endpoint-pair candidates when two occurrences have one
   reciprocal unordered model-space endpoint match and the surrounding

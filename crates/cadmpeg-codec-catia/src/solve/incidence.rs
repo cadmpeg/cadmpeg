@@ -7,9 +7,10 @@ use crate::families::standard::topology::{
 };
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycles_viable_where,
-    mesh_face_endpoint_configurations, MeshConstraintBudget, MeshEndpointPair,
-    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshPartialEndpointConstraint,
-    MeshQuotient, MeshQuotientGaugeState, MAX_MESH_CONSTRAINT_OPERATIONS,
+    mesh_face_endpoint_configurations, CoordinateRootClosure, MeshConstraintBudget,
+    MeshEndpointPair, MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations,
+    MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState,
+    MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -17,6 +18,7 @@ use crate::solve::missing_edge::{
     MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::ControlFlow;
 
@@ -437,6 +439,7 @@ pub(crate) struct IncidenceComponentSearch<'a> {
 pub(crate) enum IncidenceSolve<T> {
     Solved(T),
     Rejected(IncidenceRejection),
+    Ambiguous,
     Exhausted,
 }
 
@@ -454,7 +457,7 @@ impl<T> IncidenceSolve<T> {
     fn into_option(self) -> Option<T> {
         match self {
             Self::Solved(value) => Some(value),
-            Self::Rejected(_) | Self::Exhausted => None,
+            Self::Rejected(_) | Self::Ambiguous | Self::Exhausted => None,
         }
     }
 }
@@ -1625,6 +1628,7 @@ where
         IncidenceSolve::Solved(_) if result_limit_exhausted => IncidenceSolve::Exhausted,
         IncidenceSolve::Solved(_) => IncidenceSolve::Solved(solutions),
         IncidenceSolve::Rejected(rejection) => IncidenceSolve::Rejected(rejection),
+        IncidenceSolve::Ambiguous => IncidenceSolve::Ambiguous,
         IncidenceSolve::Exhausted => IncidenceSolve::Exhausted,
     }
 }
@@ -1647,6 +1651,7 @@ where
 {
     struct ComponentDomain {
         solutions: Vec<Vec<MeshEndpointPair>>,
+        ambiguous: bool,
         exhausted: bool,
     }
 
@@ -1682,6 +1687,8 @@ where
         }
         let mut constraints = constraints.into_iter().collect::<Vec<_>>();
         constraints.sort_unstable();
+        let coordinate_ambiguous = Cell::new(false);
+        let coordinate_exhausted = Cell::new(false);
         let filter = |solution: &[MeshEndpointPair]| {
             let mut completed = assignment.to_vec();
             for &(edge, pair) in solution {
@@ -1695,9 +1702,10 @@ where
                 mesh_assignments,
                 point_count,
             );
-            let locally_closed = locally_closed
-                && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed));
             if !locally_closed {
+                return false;
+            }
+            if !partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed)) {
                 return false;
             }
             mesh_quotient.is_none_or(|quotient| {
@@ -1709,7 +1717,35 @@ where
                     })
                     .collect::<Vec<_>>();
                 let mut quotient = quotient.clone();
-                quotient.point_assignment_exists(point_count, &candidates, Some(budget))
+                let outcome = match mesh_assignments {
+                    Some(domains) => quotient.coordinate_root_closure_outcome_for_incidence(
+                        point_count,
+                        &candidates,
+                        edge_faces,
+                        face_edges.len(),
+                        domains,
+                        Some(budget),
+                    ),
+                    None => {
+                        return quotient.point_assignment_exists(
+                            point_count,
+                            &candidates,
+                            Some(budget),
+                        )
+                    }
+                };
+                match outcome {
+                    CoordinateRootClosure::Solved(_) => true,
+                    CoordinateRootClosure::Ambiguous => {
+                        coordinate_ambiguous.set(true);
+                        false
+                    }
+                    CoordinateRootClosure::Exhausted => {
+                        coordinate_exhausted.set(true);
+                        false
+                    }
+                    CoordinateRootClosure::Rejected => false,
+                }
             })
         };
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
@@ -1734,7 +1770,8 @@ where
         search.search();
         ComponentDomain {
             solutions: search.solutions,
-            exhausted: search.exhausted,
+            ambiguous: coordinate_ambiguous.get(),
+            exhausted: search.exhausted || coordinate_exhausted.get(),
         }
     }
 
@@ -1751,6 +1788,7 @@ where
         budget: &MeshConstraintBudget,
         visitor: &mut V,
         visited: &mut usize,
+        ambiguous: &mut bool,
         component_domains: &[ComponentDomain],
     ) -> Result<ControlFlow<()>, ()>
     where
@@ -1773,11 +1811,32 @@ where
                     .map(|pair| vec![pair])
                     .collect::<Vec<_>>();
                 let mut quotient = quotient.clone();
-                if !quotient.point_assignment_exists(point_count, &singleton, Some(budget)) {
-                    if budget.exhausted.get() {
-                        return Err(());
+                let Some(domains) = mesh_assignments else {
+                    if !quotient.point_assignment_exists(point_count, &singleton, Some(budget)) {
+                        if budget.exhausted.get() {
+                            return Err(());
+                        }
+                        return Ok(ControlFlow::Continue(()));
                     }
-                    return Ok(ControlFlow::Continue(()));
+                    *visited = visited.checked_add(1).ok_or(())?;
+                    return Ok(visitor(&pairs));
+                };
+                let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
+                    point_count,
+                    &singleton,
+                    edge_faces,
+                    domains.len(),
+                    domains,
+                    Some(budget),
+                );
+                match outcome {
+                    CoordinateRootClosure::Solved(_) => {}
+                    CoordinateRootClosure::Ambiguous => {
+                        *ambiguous = true;
+                        return Ok(ControlFlow::Continue(()));
+                    }
+                    CoordinateRootClosure::Exhausted => return Err(()),
+                    CoordinateRootClosure::Rejected => return Ok(ControlFlow::Continue(())),
                 }
             }
             *visited = visited.checked_add(1).ok_or(())?;
@@ -1813,6 +1872,7 @@ where
                 budget,
                 visitor,
                 visited,
+                ambiguous,
                 component_domains,
             );
             for &(edge, pair) in solution.iter().rev() {
@@ -1846,6 +1906,7 @@ where
     }
 
     let mut exhausted = false;
+    let mut ambiguous = false;
     let mut visited = 0usize;
     let mut rejection = IncidenceRejection::InputShape;
     let result = (|| {
@@ -1908,9 +1969,34 @@ where
                     .collect::<Vec<_>>();
                 let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
                 let mut quotient = quotient.clone();
-                if !quotient.point_assignment_exists(point_count, &singleton, Some(&budget)) {
-                    exhausted = budget.exhausted.get();
-                    return None;
+                let Some(domains) = mesh_assignments else {
+                    if !quotient.point_assignment_exists(point_count, &singleton, Some(&budget)) {
+                        exhausted = budget.exhausted.get();
+                        return None;
+                    }
+                    visited = 1;
+                    let _ = visitor(&pairs);
+                    return Some(());
+                };
+                let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
+                    point_count,
+                    &singleton,
+                    edge_faces,
+                    face_count,
+                    domains,
+                    Some(&budget),
+                );
+                match outcome {
+                    CoordinateRootClosure::Solved(_) => {}
+                    CoordinateRootClosure::Ambiguous => {
+                        ambiguous = true;
+                        return Some(());
+                    }
+                    CoordinateRootClosure::Exhausted => {
+                        exhausted = true;
+                        return None;
+                    }
+                    CoordinateRootClosure::Rejected => return None,
                 }
             }
             visited = 1;
@@ -1937,11 +2023,20 @@ where
                 exhausted = true;
                 return None;
             }
+            if domain.ambiguous {
+                ambiguous = true;
+                if domain.solutions.is_empty() {
+                    continue;
+                }
+            }
             if domain.solutions.is_empty() {
                 rejection = IncidenceRejection::ComponentDomain;
                 return None;
             }
             component_domains.push((component, domain));
+        }
+        if ambiguous {
+            return Some(());
         }
         component_domains.sort_by_key(|(component, domain)| {
             (
@@ -1968,6 +2063,7 @@ where
             &budget,
             visitor,
             &mut visited,
+            &mut ambiguous,
             &component_domains,
         )
         .is_err()
@@ -1979,6 +2075,7 @@ where
     })();
     match result {
         Some(()) if visited > 0 => IncidenceSolve::Solved(visited),
+        Some(()) if ambiguous => IncidenceSolve::Ambiguous,
         Some(()) => IncidenceSolve::Rejected(rejection),
         None if exhausted => IncidenceSolve::Exhausted,
         None => IncidenceSolve::Rejected(rejection),
