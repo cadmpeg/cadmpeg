@@ -1432,6 +1432,38 @@ fn configuration_body_membership_round_trips_and_validates() {
     }
     ir.model.configurations[0].feature_states.clear();
 
+    ir.model.configurations[0].suppressed_features = vec![first_feature.clone()];
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        first_feature.clone(),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumPoint {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        },
+    )]);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message
+                == "configuration feature suppression disagrees with suppressed feature list"
+    }));
+    ir.model.configurations[0].feature_states.clear();
+    ir.model.configurations[0].suppressed_features.clear();
+
+    ir.model.configurations[0].active = true;
+    ir.model.features[0].suppressed = Some(true);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message
+                == "active configuration suppression disagrees with current feature state"
+    }));
+    ir.model.configurations[0].active = false;
+    ir.model.features[0].suppressed = Some(false);
+
     ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(vec![
         BodyId("synthetic:test:body#missing".into()),
         BodyId("synthetic:test:body#missing".into()),

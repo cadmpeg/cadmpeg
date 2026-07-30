@@ -2002,6 +2002,22 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 });
             }
         }
+        if configuration.active {
+            for feature in &ir.model.features {
+                if feature.suppressed.is_some_and(|suppressed| {
+                    suppressed_features.contains(&feature.id) != suppressed
+                }) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message:
+                            "active configuration suppression disagrees with current feature state"
+                                .into(),
+                        entity: Some(configuration.id.0.clone()),
+                    });
+                }
+            }
+        }
         for (parameter, value) in &configuration.parameter_values {
             match parameter_values.get(parameter.0.as_str()) {
                 None => ref_error(
@@ -2026,6 +2042,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for (feature, state) in &configuration.feature_states {
+            if suppressed_features.contains(feature) != state.suppressed {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message:
+                        "configuration feature suppression disagrees with suppressed feature list"
+                            .into(),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
             let feature_ordinal = features.get(feature.0.as_str()).copied();
             if feature_ordinal.is_none() {
                 ref_error(

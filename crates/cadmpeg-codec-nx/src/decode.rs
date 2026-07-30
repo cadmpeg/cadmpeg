@@ -10529,6 +10529,19 @@ fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
+    let suppressed_features = configuration
+        .suppressed_features
+        .iter()
+        .collect::<BTreeSet<_>>();
+    if suppressed_features.len() != configuration.suppressed_features.len()
+        || ir.model.features.iter().any(|feature| {
+            feature
+                .suppressed
+                .is_none_or(|suppressed| suppressed_features.contains(&feature.id) != suppressed)
+        })
+    {
+        return true;
+    }
     let Some(bodies) = configuration.bodies.resolved() else {
         return true;
     };

@@ -1832,6 +1832,37 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
+
+    let suppressed = Feature {
+        id: FeatureId("test:feature#suppressed".into()),
+        ordinal: 1,
+        name: None,
+        suppressed: Some(true),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPoint {
+            position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        },
+        native_ref: None,
+    };
+    ir.model.features.push(suppressed.clone());
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("1 NX design configuration")));
+
+    ir.model.configurations[0]
+        .suppressed_features
+        .push(suppressed.id);
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]
