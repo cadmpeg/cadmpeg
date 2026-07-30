@@ -3351,6 +3351,87 @@ fn block_placement_must_be_proper_rigid() {
 }
 
 #[test]
+fn generated_termination_vertices_require_declared_feature_dependencies() {
+    use crate::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
+        GeneratedVertexRef, ProfileRef, Termination, VertexSelection,
+    };
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let source = FeatureId("synthetic:test:feature#0-vertex-source".into());
+    ir.model.features.push(Feature {
+        id: source.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPoint {
+            position: Point3::new(0.0, 0.0, 0.0),
+        },
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#1-extrude".into()),
+        ordinal: 1,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile: ProfileRef::Native("test:profile".into()),
+            direction: ExtrudeDirection::ProfileNormal,
+            start: crate::features::ExtrudeStart::ProfilePlane,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToVertex {
+                        vertex: VertexSelection::Generated {
+                            vertex: GeneratedVertexRef {
+                                feature: source.clone(),
+                                local_id: "vertex-0".into(),
+                            },
+                            native: "test:vertex-selection".into(),
+                        },
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            op: BooleanOp::NewBody,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        },
+        native_ref: None,
+    });
+
+    let message = "generated termination vertex is invalid";
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == message));
+    ir.model.features[1].dependencies.push(source);
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == message));
+}
+
+#[test]
 fn body_combine_requires_exactly_one_resolved_target() {
     use crate::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
     use crate::ids::BodyId;

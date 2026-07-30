@@ -4145,6 +4145,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &ids.faces,
                 );
             }
+            if let Termination::ToVertex {
+                vertex: crate::features::VertexSelection::Generated { vertex, native },
+            } = termination
+            {
+                if native.trim().is_empty()
+                    || vertex.local_id.trim().is_empty()
+                    || features
+                        .get(vertex.feature.0.as_str())
+                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                    || !feature.dependencies.contains(&vertex.feature)
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "generated termination vertex is invalid",
+                    );
+                }
+            }
         }
         for selection in edge_selections {
             let allow_empty = matches!(selection, EdgeSelection::HistoricalPartial { .. });

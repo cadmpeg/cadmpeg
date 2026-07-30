@@ -24,7 +24,7 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, ExtrudeExtent,
-    ExtrudeStart, FaceSelection, FeatureDefinition, HoleKind, Length, LoftPointSection,
+    ExtrudeStart, FaceSelection, FeatureDefinition, FeatureId, HoleKind, Length, LoftPointSection,
     LoftSection, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
     RibDraft, SketchSpace, SweepMode, SweepOrientation, Termination, TrimRegion, VertexSelection,
 };
@@ -10229,7 +10229,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 bottom.as_ref(),
                 *taper_angle,
                 specification.as_deref(),
-            ) =>
+            ) || extent.as_ref().is_some_and(|extent| {
+                termination_dependency_is_incomplete(extent, &feature.dependencies)
+            }) =>
             {
                 "hole"
             }
@@ -10311,7 +10313,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                         if !valid_feature_direction(*direction)
                 )
                 || extrude_start_is_incomplete(start)
-                || extrude_extent_is_incomplete(extent)
+                || extrude_extent_is_incomplete(extent, &feature.dependencies)
                 || matches!(op, BooleanOp::Unresolved)
                 || solid.is_none()
                 || direction_source.as_ref().is_some_and(|source| {
@@ -10932,9 +10934,13 @@ fn chamfer_spec_is_incomplete(spec: &ChamferSpec) -> bool {
     }
 }
 
-pub(crate) fn extrude_extent_is_incomplete(extent: &ExtrudeExtent) -> bool {
+pub(crate) fn extrude_extent_is_incomplete(
+    extent: &ExtrudeExtent,
+    dependencies: &[FeatureId],
+) -> bool {
     let side_is_incomplete = |side: &cadmpeg_ir::features::ExtrudeSide| {
         termination_is_incomplete(&side.termination)
+            || termination_dependency_is_incomplete(&side.termination, dependencies)
             || side.draft.is_some_and(|angle| {
                 !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
             })
@@ -10967,12 +10973,12 @@ pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
         Termination::ToFace { face, offset } => {
             face_selection_is_incomplete(face) || offset.is_some_and(|offset| !offset.0.is_finite())
         }
-        Termination::ToVertex { vertex } => {
-            matches!(
-                vertex,
-                VertexSelection::Unresolved | VertexSelection::Native(_)
-            )
-        }
+        Termination::ToVertex { vertex } => match vertex {
+            VertexSelection::Generated { vertex, native } => {
+                native.trim().is_empty() || vertex.local_id.trim().is_empty()
+            }
+            VertexSelection::Unresolved | VertexSelection::Native(_) => true,
+        },
         Termination::OffsetFromFace { face, offset } => {
             face_selection_is_incomplete(face) || !positive_feature_length(*offset)
         }
@@ -10984,6 +10990,18 @@ pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
         | Termination::ToFirst
         | Termination::ToLast => false,
     }
+}
+
+pub(crate) fn termination_dependency_is_incomplete(
+    termination: &Termination,
+    dependencies: &[FeatureId],
+) -> bool {
+    matches!(
+        termination,
+        Termination::ToVertex {
+            vertex: VertexSelection::Generated { vertex, .. },
+        } if !dependencies.contains(&vertex.feature)
+    )
 }
 
 pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: BooleanOp) -> bool {

@@ -824,19 +824,22 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
                 length: Length(5.0),
             }),
             second: side(Termination::ThroughAll),
-        }
+        },
+        &[],
     ));
     assert!(crate::decode::extrude_extent_is_incomplete(
         &ExtrudeExtent::Symmetric {
             side: side(Termination::Unresolved),
-        }
+        },
+        &[],
     ));
     assert!(crate::decode::extrude_extent_is_incomplete(
         &ExtrudeExtent::OneSided {
             side: side(Termination::Blind {
                 length: Length(f64::NAN),
             }),
-        }
+        },
+        &[],
     ));
     assert!(crate::decode::extrude_extent_is_incomplete(
         &ExtrudeExtent::OneSided {
@@ -845,7 +848,8 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
                 draft: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2,)),
                 offset: None,
             },
-        }
+        },
+        &[],
     ));
     assert!(crate::decode::termination_is_incomplete(
         &Termination::ToFace {
@@ -872,16 +876,24 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
             vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
         }
     ));
-    assert!(!crate::decode::termination_is_incomplete(
-        &Termination::ToVertex {
-            vertex: VertexSelection::Generated {
-                vertex: GeneratedVertexRef {
-                    feature: FeatureId("test:feature#0".into()),
-                    local_id: "vertex-0".into(),
-                },
-                native: "nx:vertex-selection#1".into(),
+    let vertex_feature = FeatureId("test:feature#0".into());
+    let generated_vertex = Termination::ToVertex {
+        vertex: VertexSelection::Generated {
+            vertex: GeneratedVertexRef {
+                feature: vertex_feature.clone(),
+                local_id: "vertex-0".into(),
             },
-        }
+            native: "nx:vertex-selection#1".into(),
+        },
+    };
+    assert!(!crate::decode::termination_is_incomplete(&generated_vertex));
+    assert!(crate::decode::termination_dependency_is_incomplete(
+        &generated_vertex,
+        &[],
+    ));
+    assert!(!crate::decode::termination_dependency_is_incomplete(
+        &generated_vertex,
+        &[vertex_feature],
     ));
     assert!(crate::decode::extrude_start_is_incomplete(
         &ExtrudeStart::FromFace {
