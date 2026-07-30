@@ -6232,8 +6232,8 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
 #[test]
 fn decode_retains_simultaneous_curve_expression_blocks() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x06area=100\0SOLVE\0width=height+1\0\
-        width*height=area\0FOR width, height\0result=area+1\0"
+        \xe0\x0aexpression\0\xf8\x07area=100\0SOLVE\0width=height+1\0\
+        offset=base+1\0width*height=area\0FOR width, height\0result=area+1\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
 
@@ -6273,6 +6273,14 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         "area"
     );
     assert_eq!(
+        native.fields["solve_blocks"][0]["assignments"][0]["target"]["name"],
+        "offset"
+    );
+    assert_eq!(
+        native.fields["solve_blocks"][0]["assignments"][0]["dependencies"][0],
+        "base"
+    );
+    assert_eq!(
         result.report.coverage["decoded_active_curve_expression_assignment_count"],
         2
     );
@@ -6283,6 +6291,10 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
     assert_eq!(
         result.report.coverage["decoded_active_curve_expression_simultaneous_equation_count"],
         2
+    );
+    assert_eq!(
+        result.report.coverage["decoded_active_curve_expression_solve_assignment_count"],
+        1
     );
     assert_eq!(
         result.report.coverage["decoded_active_curve_expression_solve_variable_count"],

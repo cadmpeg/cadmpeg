@@ -106,6 +106,8 @@ pub struct CurveExpressionAssignment {
 pub struct CurveExpressionSolveBlock {
     /// Ordered equations between the `SOLVE` and `FOR` lines.
     pub equations: Vec<CurveExpressionEquation>,
+    /// Ordered one-way relations in the block that do not involve an unknown.
+    pub assignments: Vec<CurveExpressionAssignment>,
     /// Ordered unknowns declared by the terminating `FOR` line.
     pub variables: Vec<String>,
     /// Byte offset of the `SOLVE` line.
@@ -1001,9 +1003,14 @@ struct CurveExpressionSolveProgram {
 }
 
 struct PendingCurveExpressionSolveBlock {
-    equations: Vec<CurveExpressionEquation>,
+    statements: Vec<PendingCurveExpressionSolveStatement>,
     offset: usize,
     valid: bool,
+}
+
+struct PendingCurveExpressionSolveStatement {
+    equation: CurveExpressionEquation,
+    assignment: Option<CurveExpressionAssignment>,
 }
 
 fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpressionSolveProgram {
@@ -1015,7 +1022,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             if starts_relation_keyword(source, "solve") {
                 program.line_indices.insert(index);
                 pending = Some(PendingCurveExpressionSolveBlock {
-                    equations: Vec::new(),
+                    statements: Vec::new(),
                     offset: line.offset,
                     valid: source.eq_ignore_ascii_case("solve"),
                 });
@@ -1035,12 +1042,28 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
         if starts_relation_keyword(source, "for") {
             let variables = conditional_keyword_expression(source, "for")
                 .and_then(curve_expression_solve_variables);
-            let block = pending.take().expect("pending solve block");
-            if let Some(variables) =
-                variables.filter(|_| block.valid && !block.equations.is_empty())
-            {
+            let mut block = pending.take().expect("pending solve block");
+            let mut equations = Vec::new();
+            let mut assignments = Vec::new();
+            if let Some(variables) = &variables {
+                for statement in block.statements {
+                    if statement.equation.dependencies.iter().any(|dependency| {
+                        variables
+                            .iter()
+                            .any(|variable| variable.eq_ignore_ascii_case(dependency))
+                    }) {
+                        equations.push(statement.equation);
+                    } else if let Some(assignment) = statement.assignment {
+                        assignments.push(assignment);
+                    } else {
+                        block.valid = false;
+                    }
+                }
+            }
+            if let Some(variables) = variables.filter(|_| block.valid && !equations.is_empty()) {
                 program.blocks.push(CurveExpressionSolveBlock {
-                    equations: block.equations,
+                    equations,
+                    assignments,
                     variables,
                     offset: block.offset,
                     for_offset: line.offset,
@@ -1075,12 +1098,15 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
         pending
             .as_mut()
             .expect("pending solve block")
-            .equations
-            .push(CurveExpressionEquation {
-                left: left.to_owned(),
-                right: right.to_owned(),
-                dependencies,
-                offset: line.offset,
+            .statements
+            .push(PendingCurveExpressionSolveStatement {
+                equation: CurveExpressionEquation {
+                    left: left.to_owned(),
+                    right: right.to_owned(),
+                    dependencies,
+                    offset: line.offset,
+                },
+                assignment: expression_assignment(line),
             });
     }
     if pending.is_some() {
@@ -4297,6 +4323,7 @@ mod tests {
             "area=100",
             "SOLVE",
             "width=height+1",
+            "offset=base+1",
             "width*height=area",
             "FOR width, height",
             "result=area+1",
@@ -4316,7 +4343,7 @@ mod tests {
         };
         assert_eq!(block.variables, ["width", "height"]);
         assert_eq!(block.offset, 1);
-        assert_eq!(block.for_offset, 4);
+        assert_eq!(block.for_offset, 5);
         assert_eq!(block.equations.len(), 2);
         assert_eq!(block.equations[0].left, "width");
         assert_eq!(block.equations[0].right, "height+1");
@@ -4324,6 +4351,13 @@ mod tests {
         assert_eq!(block.equations[1].left, "width*height");
         assert_eq!(block.equations[1].right, "area");
         assert_eq!(block.equations[1].dependencies, ["width", "height", "area"]);
+        assert_eq!(block.assignments.len(), 1);
+        assert_eq!(
+            block.assignments[0].parameter_target(),
+            Some(("offset", None))
+        );
+        assert_eq!(block.assignments[0].expression, "base+1");
+        assert_eq!(block.assignments[0].dependencies, ["base"]);
 
         let assignments =
             evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());

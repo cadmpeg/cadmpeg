@@ -470,6 +470,7 @@ struct CreoCurveExpressionAssignment {
 #[derive(Serialize)]
 struct CreoCurveExpressionSolveBlock {
     equations: Vec<CreoCurveExpressionEquation>,
+    assignments: Vec<CreoCurveExpressionAssignment>,
     variables: Vec<String>,
     offset: usize,
     for_offset: usize,
@@ -29685,6 +29686,11 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             .flat_map(|record| &record.solve_blocks)
             .map(|block| block.equations.len())
             .sum::<usize>();
+        let decoded_curve_expression_solve_assignment_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .map(|block| block.assignments.len())
+            .sum::<usize>();
         let decoded_curve_expression_solve_variable_count = active_expressions
             .clone()
             .flat_map(|record| &record.solve_blocks)
@@ -29744,6 +29750,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "decoded_active_curve_expression_simultaneous_equation_count".to_string(),
             decoded_curve_expression_simultaneous_equation_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_solve_assignment_count".to_string(),
+            decoded_curve_expression_solve_assignment_count,
         );
         coverage.insert(
             "decoded_active_curve_expression_solve_variable_count".to_string(),

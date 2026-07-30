@@ -1835,6 +1835,18 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                             offset: equation.offset,
                         })
                         .collect(),
+                    assignments: block
+                        .assignments
+                        .iter()
+                        .map(|assignment| CreoCurveExpressionAssignment {
+                            target: assignment.target.clone(),
+                            expression: assignment.expression.clone(),
+                            dependencies: assignment.dependencies.clone(),
+                            value: assignment.value.clone(),
+                            activation: assignment.activation.token(),
+                            offset: assignment.offset,
+                        })
+                        .collect(),
                     variables: block.variables.clone(),
                     offset: block.offset,
                     for_offset: block.for_offset,

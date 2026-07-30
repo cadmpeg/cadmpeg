@@ -3312,14 +3312,17 @@ A curve-from-equation entity stores `expression f8 <count>` followed by exactly 
 
 `SOLVE` opens a simultaneous-equation block and `FOR` followed by one or more
 comma- or whitespace-separated identifiers terminates it and declares the
-ordered unknowns. Every intervening top-level single-equals statement is an
-equation with arbitrary expressions on both sides. Equation dependencies are
-the identifiers in first-appearance order across the left side and then the
-right side. Block equations are not sequential assignments and do not declare
-parameters. A complete block retains its ordered equations and unknowns without
-supplying assignment values or a derived curve. A malformed block is bounded
-from its `SOLVE` line through its `FOR` line, or through the end of the program
-when unterminated; no bounded line is interpreted as a sequential assignment.
+ordered unknowns. An intervening top-level single-equals statement involving a
+declared unknown is an equation with arbitrary expressions on both sides.
+Equation dependencies are the identifiers in first-appearance order across the
+left side and then the right side. A valid assignment that does not involve a
+declared unknown is an auxiliary one-way relation in the solve block. Block
+equations and auxiliary relations do not declare neutral parameters outside the
+block. A complete block retains its ordered equations, auxiliary relations, and
+unknowns without supplying assignment values or a derived curve. A malformed
+block is bounded from its `SOLVE` line through its `FOR` line, or through the end
+of the program when unterminated; no bounded line is interpreted as a
+sequential assignment outside the block.
 
 `itos` and `rtos` accept every non-string scalar in canonical relation units.
 The `rtos` decimal count and scientific selector are dimensionless.
