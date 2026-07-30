@@ -1307,10 +1307,11 @@ pub fn model_curve_point_by_id(
 
 /// Invert a model curve near a caller-selected branch parameter.
 ///
-/// Charted tolerant intersections use an exact affine line on planar supports
-/// or an exact NURBS isocurve from a chart that fixes one surface parameter.
-/// The seed selects between repeated model-space points. The returned parameter
-/// is forward-validated against the complete two-support construction.
+/// Direct analytic and NURBS carriers preserve their native parameterization.
+/// Charted tolerant intersections invert a support chart. The seed selects
+/// between repeated model-space points. The returned parameter is
+/// forward-validated against the direct carrier or complete two-support
+/// construction.
 pub fn model_curve_parameter_near_point(
     ir: &CadIr,
     curve_id: &crate::ids::CurveId,
@@ -1322,8 +1323,16 @@ pub fn model_curve_parameter_near_point(
         .curves
         .iter()
         .find(|candidate| candidate.id == *curve_id)?;
+    if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
+        return direct_curve_parameter_near_point(
+            &curve.geometry,
+            point,
+            seed,
+            ir.tolerances.linear,
+        );
+    }
     let CurveGeometry::Procedural { construction } = &curve.geometry else {
-        return None;
+        unreachable!("direct carriers return before procedural inversion");
     };
     let procedural = ir
         .model
@@ -1379,16 +1388,26 @@ pub fn model_curve_parameter_near_point(
             SurfaceGeometry::Cylinder { .. }
             | SurfaceGeometry::Cone { .. }
             | SurfaceGeometry::Sphere { .. }
-            | SurfaceGeometry::Torus { .. }
-                if direction.u == 0.0 && direction.v != 0.0 =>
-            {
-                analytic_surface_parameters(&surface.geometry, point).map(|mut uv| {
-                    if matches!(&surface.geometry, SurfaceGeometry::Torus { .. }) {
+            | SurfaceGeometry::Torus { .. } => {
+                analytic_surface_parameters(&surface.geometry, point).and_then(|mut uv| {
+                    if direction.v == 0.0 && direction.u != 0.0 {
+                        let expected = origin.u + direction.u * seed;
+                        uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.u - origin.u) / direction.u)
+                    } else if direction.u == 0.0
+                        && direction.v != 0.0
+                        && matches!(&surface.geometry, SurfaceGeometry::Torus { .. })
+                    {
                         let expected = origin.v + direction.v * seed;
                         uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
                             * std::f64::consts::TAU;
+                        Some((uv.v - origin.v) / direction.v)
+                    } else if direction.u == 0.0 && direction.v != 0.0 {
+                        Some((uv.v - origin.v) / direction.v)
+                    } else {
+                        None
                     }
-                    (uv.v - origin.v) / direction.v
                 })
             }
             SurfaceGeometry::Nurbs(surface) => {
@@ -1435,6 +1454,97 @@ pub fn model_curve_parameter_near_point(
     candidates
         .into_iter()
         .min_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()))
+}
+
+fn direct_curve_parameter_near_point(
+    geometry: &CurveGeometry,
+    point: Point3,
+    seed: f64,
+    tolerance: f64,
+) -> Option<f64> {
+    if !seed.is_finite() || !tolerance.is_finite() || tolerance < 0.0 {
+        return None;
+    }
+    let components = |origin: Point3, axis: Vector3, reference: Vector3| -> (f64, f64, f64) {
+        let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+        let transverse = cross(axis, reference);
+        (delta.dot(reference), delta.dot(transverse), delta.dot(axis))
+    };
+    let parameter = match geometry {
+        CurveGeometry::Line { origin, direction } => {
+            let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+            let denominator = direction.dot(*direction);
+            (denominator.is_finite() && denominator > 0.0)
+                .then(|| delta.dot(*direction) / denominator)?
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if *radius == 0.0 {
+                return None;
+            }
+            let (x, y, _) = components(*center, *axis, *ref_direction);
+            let canonical = (y / radius).atan2(x / radius);
+            canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
+        }
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            if *major_radius == 0.0 || *minor_radius == 0.0 {
+                return None;
+            }
+            let (x, y, _) = components(*center, *axis, *major_direction);
+            let canonical = (y / minor_radius).atan2(x / major_radius);
+            canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
+        }
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => {
+            if *focal_distance == 0.0 {
+                return None;
+            }
+            let (_, transverse, _) = components(*vertex, *axis, *major_direction);
+            transverse / (2.0 * focal_distance)
+        }
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            minor_radius,
+            ..
+        } => {
+            if *minor_radius == 0.0 {
+                return None;
+            }
+            let (_, transverse, _) = components(*center, *axis, *major_direction);
+            (transverse / minor_radius).asinh()
+        }
+        CurveGeometry::Nurbs(curve) => {
+            nurbs_curve_parameter_near_point(curve, point, tolerance, seed)?
+        }
+        CurveGeometry::Transformed { .. }
+        | CurveGeometry::Polyline { .. }
+        | CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Unknown { .. } => return None,
+    };
+    let evaluated = curve_point(geometry, parameter)?;
+    let error = ((evaluated.x - point.x).powi(2)
+        + (evaluated.y - point.y).powi(2)
+        + (evaluated.z - point.z).powi(2))
+    .sqrt();
+    (parameter.is_finite() && error.is_finite() && error <= tolerance).then_some(parameter)
 }
 
 fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Point3> {
@@ -2415,13 +2525,70 @@ mod tests {
         surface_second_partials,
     };
     use crate::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
+        Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
         ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
     };
-    use crate::ids::{ProceduralSurfaceId, SurfaceId};
+    use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
     use crate::math::{Point2, Point3, Vector3};
     use crate::transform::Transform;
     use crate::CadIr;
+
+    #[test]
+    fn direct_analytic_curve_inverses_preserve_native_parameters() {
+        let geometries = [
+            CurveGeometry::Line {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            CurveGeometry::Circle {
+                center: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 4.0,
+            },
+            CurveGeometry::Ellipse {
+                center: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                major_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: 4.0,
+                minor_radius: 2.0,
+            },
+            CurveGeometry::Parabola {
+                vertex: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                major_direction: Vector3::new(1.0, 0.0, 0.0),
+                focal_distance: 2.0,
+            },
+            CurveGeometry::Hyperbola {
+                center: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                major_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: 4.0,
+                minor_radius: 2.0,
+            },
+        ];
+        for (index, geometry) in geometries.into_iter().enumerate() {
+            let parameter = if matches!(
+                &geometry,
+                CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+            ) {
+                0.7 + std::f64::consts::TAU
+            } else {
+                0.7
+            };
+            let point = curve_point(&geometry, parameter).unwrap();
+            let id = CurveId(format!("test:inverse:{index}"));
+            let mut ir = CadIr::empty(crate::units::Units::default());
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry,
+                source_object: None,
+            });
+            let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
+                .expect("direct analytic inverse");
+            assert!((inverse - parameter).abs() < 1.0e-12);
+        }
+    }
 
     #[test]
     fn bilinear_surface_partials_follow_stored_parameterization() {

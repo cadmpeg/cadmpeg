@@ -11294,6 +11294,17 @@ mod tests {
                 }
                 true
             }));
+        for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
+            let curve = &ir.model.procedural_curves[0].curve;
+            let point = cadmpeg_ir::eval::model_curve_point_by_id(&ir, curve, parameter)
+                .expect("closed intersection evaluates");
+            let inverse =
+                cadmpeg_ir::eval::model_curve_parameter_near_point(&ir, curve, point, parameter)
+                    .unwrap_or_else(|| {
+                        panic!("closed intersection inverts at parameter {parameter}")
+                    });
+            assert!((inverse - parameter).abs() < 1.0e-10);
+        }
     }
 
     fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
