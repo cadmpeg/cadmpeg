@@ -70,9 +70,9 @@ fixtures, claims above L1 remain unproven.
   rounding, tolerance tests, and trigonometric results preserve dimensional
   validity and typed angular results.
   Context-dependent cabling, case-study, graph, trajectory, mass-property, and
-  material functions retain their argument dependencies without treating the
-  function name as a parameter; their values remain symbolic until the
-  referenced namespace is decoded.
+  material functions and series/list parameter queries retain their argument
+  dependencies without treating the function name as a parameter; their values
+  remain symbolic until the referenced namespace is decoded.
   Unit declarations on newly created assignment targets define typed parameter
   values and remain separate from parameter identity.
   A unique transferred dimension identity becomes the neutral parameter

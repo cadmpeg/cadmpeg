@@ -2173,7 +2173,10 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "cable_len" | "cable_thick" | "cbl_logical_file" | "eang" | "elen" | "edistk"
         | "ecoordx" | "ecoordy" | "evalgraph" | "trajpar_of_pnt" | "massprop_param"
         | "material_param" | "mp_mass" | "mp_assigned_mass" | "mp_surf_area" | "mp_volume"
-        | "mp_cg_x" | "mp_cg_y" | "mp_cg_z" => Some(CreoMathFunction::ContextDependent),
+        | "mp_cg_x" | "mp_cg_y" | "mp_cg_z" | "has_value" | "match_value" | "average"
+        | "value_by_argument" | "weighted_average" | "value" | "count_rows" => {
+            Some(CreoMathFunction::ContextDependent)
+        }
         _ => None,
     }
 }
@@ -4038,6 +4041,15 @@ mod tests {
             "q=mp_cg_x(model_path,coordinate_system,component_path)",
             "r=mp_cg_y(model_path,coordinate_system,component_path)",
             "s=mp_cg_z(model_path,coordinate_system,component_path)",
+            "t=has_value(table_parameter,needle,column)",
+            "u=match_value(table_parameter,needle,column)",
+            "v=average(table_parameter)",
+            "w=value_by_argument(table_parameter,argument,interpolation_order)",
+            "x=weighted_average(table_parameter)",
+            "y=value(table_parameter,row,column)",
+            "z=count_rows(table_parameter)",
+            "aa=min(table_parameter)",
+            "ab=max(table_parameter)",
         ];
         let lines = expressions
             .into_iter()
@@ -4082,6 +4094,25 @@ mod tests {
                 ["model_path", "coordinate_system", "component_path"]
             );
         }
+        for assignment in &assignments[19..21] {
+            assert_eq!(
+                assignment.dependencies,
+                ["table_parameter", "needle", "column"]
+            );
+        }
+        assert_eq!(assignments[21].dependencies, ["table_parameter"]);
+        assert_eq!(
+            assignments[22].dependencies,
+            ["table_parameter", "argument", "interpolation_order"]
+        );
+        assert_eq!(assignments[23].dependencies, ["table_parameter"]);
+        assert_eq!(
+            assignments[24].dependencies,
+            ["table_parameter", "row", "column"]
+        );
+        assert_eq!(assignments[25].dependencies, ["table_parameter"]);
+        assert_eq!(assignments[26].dependencies, ["table_parameter"]);
+        assert_eq!(assignments[27].dependencies, ["table_parameter"]);
         assert!(assignments
             .iter()
             .all(|assignment| assignment.value.is_none()));

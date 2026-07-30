@@ -3324,6 +3324,14 @@ Their arguments retain ordinary string-literal and parameter dependency
 semantics. Their results resolve through model mass properties, material
 assignments, model paths, and coordinate systems.
 
+On the right side of an assignment, the context-dependent function names
+`has_value`, `match_value`, `average`, `value_by_argument`, `weighted_average`,
+`value`, and `count_rows` query series or list parameters. They are operators
+rather than parameter dependencies. Their arguments retain ordinary parameter
+dependency semantics. Unary `min` and `max` likewise query a series or list
+parameter; their two-argument forms compare ordinary scalar expressions. Query
+results resolve through the referenced table-valued parameter.
+
 A `crv_fr_eqn` program containing calls to `abs`, `ceil`, `floor`, `extract`, `if`,
 `itos`, or `search`, or containing `IF`, `ELSE`, or `ENDIF` control lines, is
 not an evaluable datum-curve equation. Its source, assignments, and dependencies
