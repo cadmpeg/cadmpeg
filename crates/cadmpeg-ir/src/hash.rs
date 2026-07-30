@@ -22,7 +22,8 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 ///
 /// The JSON is streamed into the digest, so hashing a document costs a fixed
 /// buffer rather than a serialized copy of it. The bytes hashed are the ones
-/// [`CadIr::to_canonical_json`] would produce.
+/// `serde_json::to_string_pretty` produces, which is what
+/// [`CadIr::to_canonical_json`] returns.
 pub fn canonical_json_sha256<T: Serialize>(value: &T) -> String {
     let mut hasher = Sha256::new();
     let mut writer = std::io::BufWriter::new(DigestWriter(&mut hasher));
@@ -48,6 +49,11 @@ pub fn semantic_document_hash(ir: &CadIr, format: &str, source_image_id: &str) -
         .into_iter()
         .filter(|record| record.id.0 != source_image_id)
         .collect::<Vec<_>>();
+    // A scratch namespace reduces the records through the same conversion and
+    // ordering a stored arena goes through, which is what keeps the digest
+    // equal to the one a normalized copy of the document produces. The typed
+    // records are released before serialization so only the reduced arena stays
+    // resident.
     let mut projected = NativeNamespace::default();
     projected
         .set_arena("unknowns", &unknowns)
@@ -74,7 +80,9 @@ pub fn semantic_document_hash(ir: &CadIr, format: &str, source_image_id: &str) -
 /// A document as the semantic digest sees it.
 ///
 /// Mirrors [`CadIr`]'s serialized shape field for field, borrowing what it can
-/// so that normalizing a document for hashing does not copy it.
+/// so that normalizing a document for hashing does not copy it. A field added
+/// to [`CadIr`] must be added here too; the equivalence test that hashes a
+/// normalized copy of a document fails when the two shapes drift.
 #[derive(Serialize)]
 struct NormalizedDocument<'a> {
     ir_version: &'a str,
