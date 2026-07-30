@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 240;
+pub const CATIA_NATIVE_VERSION: u32 = 241;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -69,6 +69,9 @@ pub(crate) const CATIA_CONFIGURATION_ROW_CHAIN_VERSION: u32 = 239;
 /// Native schema version retaining terminal-null state on every typed incidence.
 #[cfg(test)]
 pub(crate) const CATIA_TYPED_INCIDENCE_NULL_VERSION: u32 = 240;
+/// Native schema version retaining every exact relation-program reference incidence.
+#[cfg(test)]
+pub(crate) const CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION: u32 = 241;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1428,6 +1431,9 @@ pub struct CatiaRelationProgramInstance {
     /// Entity identity stored once as an atom and once as a reference.
     #[serde(default)]
     pub repeated_entity: CatiaEntityReference,
+    /// Every reference occurrence in exact payload order, including repeated identities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reference_incidences: Vec<CatiaEntityReference>,
     /// Selected entity when it carries a complete relation-expression program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<String>,
@@ -3054,6 +3060,21 @@ fn relation_program_instance(
         return None;
     };
     let program_key = (object.parent.clone(), program_entity_id);
+    let reference_incidences = object
+        .payload
+        .fields
+        .iter()
+        .filter_map(|field| match field {
+            PayloadField::Reference { value, .. } => Some(entity_reference(
+                &object.parent,
+                *value,
+                entities,
+                entity_classes,
+                terminal_nulls,
+            )),
+            _ => None,
+        })
+        .collect();
     Some(CatiaRelationProgramInstance {
         framing,
         program_entity: entity_reference(
@@ -3070,6 +3091,7 @@ fn relation_program_instance(
             entity_classes,
             terminal_nulls,
         ),
+        reference_incidences,
         relation_expression: relation_expressions.get(&program_key).cloned(),
         lead12_context_entity,
         lead54_trailing_entity,
@@ -8651,6 +8673,7 @@ impl CatiaNative {
             || namespace.version < CATIA_TYPED_INCIDENCE_CLASS_VERSION
             || namespace.version < CATIA_RELATION_TYPED_REFERENCE_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
         {
             let records_by_id = records
                 .iter()

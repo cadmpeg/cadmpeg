@@ -11143,6 +11143,22 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
     );
     assert_eq!(instance.repeated_entity.class_name.as_deref(), Some("body"));
     assert_eq!(
+        instance
+            .reference_incidences
+            .iter()
+            .map(|reference| reference.entity_id)
+            .collect::<Vec<_>>(),
+        [20, 21, 23, 25, 1, 1, 21, 27]
+    );
+    assert_eq!(
+        instance.reference_incidences[4].class_name.as_deref(),
+        Some("body")
+    );
+    assert_eq!(
+        instance.reference_incidences[5].class_name.as_deref(),
+        Some("body")
+    );
+    assert_eq!(
         instance.relation_expression.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
@@ -11227,6 +11243,18 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     assert_eq!(
         instance.repeated_entity.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
+    );
+    assert_eq!(
+        instance
+            .reference_incidences
+            .iter()
+            .map(|reference| reference.entity_id)
+            .collect::<Vec<_>>(),
+        [5, 20, 1, 21, 5]
+    );
+    assert_eq!(
+        instance.reference_incidences[2].class_name.as_deref(),
+        Some("body")
     );
     assert_eq!(
         instance.relation_expression.as_deref(),
@@ -11331,6 +11359,29 @@ fn decode_reports_exact_relation_program_instances() {
         assert_eq!(
             decoded.report.coverage["decoded_relation_program_instance_count"],
             1
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_relation_program_reference_incidence_count"],
+            8
+        );
+        let resolved_reference_incidences = 1 + usize::from(repeated_reference_entity_id == 1);
+        let null_reference_incidences = usize::from(repeated_reference_entity_id == 3);
+        assert_eq!(
+            decoded.report.coverage["decoded_resolved_relation_program_reference_incidence_count"],
+            resolved_reference_incidences
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_null_relation_program_reference_incidence_count"],
+            null_reference_incidences
+        );
+        assert_eq!(
+            decoded.report.coverage["unresolved_relation_program_reference_incidence_count"],
+            8 - resolved_reference_incidences - null_reference_incidences
+        );
+        assert_eq!(
+            decoded.report.coverage
+                ["decoded_classified_relation_program_reference_incidence_count"],
+            resolved_reference_incidences
         );
         assert_eq!(
             decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
@@ -11441,6 +11492,12 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("store older relation-program namespace");
         for (version, remove_context, remove_trailing, remove_framing) in [
             (
+                crate::native::CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION - 1,
+                false,
+                false,
+                false,
+            ),
+            (
                 crate::native::CATIA_RELATION_TYPED_REFERENCE_VERSION - 1,
                 false,
                 false,
@@ -11491,6 +11548,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             if remove_framing {
                 stored_instance.remove("framing");
             }
+            stored_instance.remove("reference_incidences");
             stored_instance.remove("program_entity");
             stored_instance.remove("repeated_entity");
             for field in ["lead12_context_entity", "lead54_trailing_entity"] {
@@ -11511,6 +11569,22 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 Some(&expected)
             );
         }
+
+        let mut malformed = native;
+        malformed.entity_records[1]
+            .relation_program_instance
+            .as_mut()
+            .expect("decoded relation-program instance")
+            .reference_incidences[0]
+            .entity_id = u32::MAX;
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed
+            .store(&mut namespace)
+            .expect("store malformed relation-program incidences");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
     }
 }
 

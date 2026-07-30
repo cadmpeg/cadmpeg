@@ -127,7 +127,11 @@ current scores require those matrices and representative fixtures.
   instance frames retain their program identity,
   independently resolve it within the same graph, and classify selected
   relation-expression programs without assigning unresolved input and output
-  roles. Coverage partitions compact lead-`12` and separator-form lead-`54`
+  roles. Every exact reference occurrence is retained in payload order with
+  terminal-null state, selected same-graph entity, and selected class,
+  including repeated identities. Coverage partitions resolved, terminal-null,
+  unresolved, classified, and unclassified reference occurrences. It also
+  partitions compact lead-`12` and separator-form lead-`54`
   framings, resolved, terminal-null, unresolved, relation-expression, and other
   program instances, partitions the resolved, terminal-null, and unresolved identity
   repeated in the atom/reference slots, partitions classified and unclassified

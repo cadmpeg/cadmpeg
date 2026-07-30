@@ -775,6 +775,37 @@ fn finish_decode(
         .iter()
         .filter(|record| record.relation_program_instance.is_some())
         .count();
+    let relation_program_reference_incidence_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .map(|instance| instance.reference_incidences.len())
+        .sum::<usize>();
+    let resolved_relation_program_reference_incidence_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .flat_map(|instance| &instance.reference_incidences)
+        .filter(|reference| reference.entity.is_some())
+        .count();
+    let null_relation_program_reference_incidence_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .flat_map(|instance| &instance.reference_incidences)
+        .filter(|reference| reference.is_null)
+        .count();
+    let unresolved_relation_program_reference_incidence_count =
+        relation_program_reference_incidence_count
+            - resolved_relation_program_reference_incidence_count
+            - null_relation_program_reference_incidence_count;
+    let classified_relation_program_reference_incidence_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .flat_map(|instance| &instance.reference_incidences)
+        .filter(|reference| reference.class_name.is_some())
+        .count();
     let (lead12_relation_program_instance_count, lead54_relation_program_instance_count) = native
         .entity_records
         .iter()
@@ -2012,6 +2043,31 @@ fn finish_decode(
         (
             "decoded_relation_program_instance_count".to_string(),
             relation_program_instance_count,
+        ),
+        (
+            "decoded_relation_program_reference_incidence_count".to_string(),
+            relation_program_reference_incidence_count,
+        ),
+        (
+            "decoded_resolved_relation_program_reference_incidence_count".to_string(),
+            resolved_relation_program_reference_incidence_count,
+        ),
+        (
+            "decoded_null_relation_program_reference_incidence_count".to_string(),
+            null_relation_program_reference_incidence_count,
+        ),
+        (
+            "unresolved_relation_program_reference_incidence_count".to_string(),
+            unresolved_relation_program_reference_incidence_count,
+        ),
+        (
+            "decoded_classified_relation_program_reference_incidence_count".to_string(),
+            classified_relation_program_reference_incidence_count,
+        ),
+        (
+            "unclassified_relation_program_reference_incidence_count".to_string(),
+            relation_program_reference_incidence_count
+                - classified_relation_program_reference_incidence_count,
         ),
         (
             "decoded_lead12_relation_program_instance_count".to_string(),
