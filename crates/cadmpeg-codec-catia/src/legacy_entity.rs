@@ -463,7 +463,10 @@ fn parse_schema_program(data: &[u8], catalog_offset: usize) -> Option<LegacySche
     })
 }
 
-fn parse_schema_identifiers(bytes: &[u8], program_offset: usize) -> Vec<LegacySchemaIdentifier> {
+pub(crate) fn parse_schema_identifiers(
+    bytes: &[u8],
+    program_offset: usize,
+) -> Vec<LegacySchemaIdentifier> {
     bytes
         .iter()
         .enumerate()

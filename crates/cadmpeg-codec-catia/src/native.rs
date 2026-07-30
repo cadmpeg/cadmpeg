@@ -3996,35 +3996,17 @@ fn legacy_role_selector_end(role: &CatiaLegacyRoleSelector) -> Option<u64> {
 #[cfg(test)]
 fn legacy_schema_identifiers(
     program: &CatiaLegacySchemaProgram,
-) -> Vec<CatiaLegacySchemaIdentifier> {
-    program
-        .data
-        .iter()
-        .enumerate()
-        .filter_map(|(relative, first)| {
-            let value_len = usize::from(*first).checked_sub(1)?;
-            if value_len == 0 {
-                return None;
-            }
-            let value_offset = relative.checked_add(1)?;
-            let end = value_offset.checked_add(value_len)?;
-            let value = std::str::from_utf8(program.data.get(value_offset..end)?).ok()?;
-            if !valid_legacy_identifier(value)
-                || program
-                    .data
-                    .get(end)
-                    .is_some_and(|following| *following < 0x81)
-            {
-                return None;
-            }
-            Some(CatiaLegacySchemaIdentifier {
-                byte_offset: program
-                    .byte_offset
-                    .checked_add(u64::try_from(relative).ok()?)?,
-                value: value.to_owned(),
+) -> Option<Vec<CatiaLegacySchemaIdentifier>> {
+    let program_offset = usize::try_from(program.byte_offset).ok()?;
+    Some(
+        legacy_entity::parse_schema_identifiers(&program.data, program_offset)
+            .into_iter()
+            .map(|identifier| CatiaLegacySchemaIdentifier {
+                byte_offset: identifier.offset as u64,
+                value: identifier.value,
             })
-        })
-        .collect()
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -4195,7 +4177,8 @@ fn validate_legacy_entity_runs(
                         .ok()
                         .and_then(|len| program.byte_offset.checked_add(len))
                         == Some(program.footer_byte_offset)
-                    && program.identifiers == legacy_schema_identifiers(program)
+                    && legacy_schema_identifiers(program)
+                        .is_some_and(|identifiers| program.identifiers == identifiers)
             })
             && previous_end.is_none_or(|end| end <= run.byte_offset)
             && run.identities.first().is_some_and(|identity| {
@@ -8268,7 +8251,11 @@ impl CatiaNative {
                 .iter_mut()
                 .filter_map(|run| run.schema_program.as_mut())
             {
-                program.identifiers = legacy_schema_identifiers(program);
+                program.identifiers = legacy_schema_identifiers(program).ok_or_else(|| {
+                    cadmpeg_ir::NativeConvertError::InvalidOwner(
+                        "legacy schema-program offset exceeds the platform index range".to_string(),
+                    )
+                })?;
             }
         }
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);
