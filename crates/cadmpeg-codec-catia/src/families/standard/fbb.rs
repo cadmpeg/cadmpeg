@@ -799,32 +799,33 @@ fn packet_triangles(
 }
 
 pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
-    let mut counts = HashMap::<(u32, u32), usize>::new();
+    let mut edge_directions = HashMap::<(u32, u32), u8>::new();
     for &[a, b, c] in triangles {
-        for edge in [(a, b), (b, c), (c, a)] {
-            *counts.entry(edge).or_default() += 1;
-        }
-    }
-    let undirected: HashSet<(u32, u32)> = counts
-        .keys()
-        .map(|&(start, end)| (start.min(end), start.max(end)))
-        .collect();
-    for (low, high) in undirected {
-        if low == high {
-            return None;
-        }
-        let forward = counts.get(&(low, high)).copied().unwrap_or(0);
-        let reverse = counts.get(&(high, low)).copied().unwrap_or(0);
-        if !matches!((forward, reverse), (1, 0 | 1) | (0, 1)) {
-            return None;
+        for (start, end) in [(a, b), (b, c), (c, a)] {
+            if start == end {
+                return None;
+            }
+            let (edge, direction) = if start < end {
+                ((start, end), 1)
+            } else {
+                ((end, start), 2)
+            };
+            let directions = edge_directions.entry(edge).or_default();
+            if *directions & direction != 0 {
+                return None;
+            }
+            *directions |= direction;
         }
     }
     let mut successors = HashMap::new();
-    for (&(start, end), &count) in &counts {
-        if count > 0
-            && counts.get(&(end, start)).copied().unwrap_or(0) == 0
-            && successors.insert(start, end).is_some()
-        {
+    for (&(low, high), &directions) in &edge_directions {
+        let boundary = match directions {
+            1 => Some((low, high)),
+            2 => Some((high, low)),
+            3 => None,
+            _ => return None,
+        };
+        if boundary.is_some_and(|(start, end)| successors.insert(start, end).is_some()) {
             return None;
         }
     }
@@ -940,4 +941,21 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         });
     }
     Some(Boundary { coedges })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::boundary_cycles;
+
+    #[test]
+    fn boundary_cycles_cancel_opposite_triangle_edges() {
+        let triangles = [[0, 1, 2], [0, 2, 3]];
+        assert_eq!(boundary_cycles(&triangles), Some(vec![vec![0, 1, 2, 3]]));
+    }
+
+    #[test]
+    fn boundary_cycles_reject_duplicate_directed_edges() {
+        let triangles = [[0, 1, 2], [0, 1, 3]];
+        assert_eq!(boundary_cycles(&triangles), None);
+    }
 }

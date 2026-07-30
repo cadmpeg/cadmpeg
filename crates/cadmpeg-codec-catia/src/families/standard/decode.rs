@@ -2611,37 +2611,43 @@ fn collect_bezier_point_parameters(
     range: [f64; 2],
     point: Point3,
     tolerance: f64,
-    depth: usize,
+    parameter_resolution: f64,
     parameters: &mut Vec<(f64, f64)>,
 ) {
-    let bounds = |coordinate: fn(Point3) -> f64| {
-        control
-            .iter()
-            .copied()
-            .map(coordinate)
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(low, high), value| {
-                (low.min(value), high.max(value))
-            })
-    };
-    let [(x0, x1), (y0, y1), (z0, z1)] = [bounds(|p| p.x), bounds(|p| p.y), bounds(|p| p.z)];
-    let axis_distance = |value: f64, low: f64, high: f64| {
-        if value < low {
-            low - value
-        } else if value > high {
-            value - high
-        } else {
-            0.0
-        }
-    };
-    let lower_bound = axis_distance(point.x, x0, x1)
-        .hypot(axis_distance(point.y, y0, y1))
-        .hypot(axis_distance(point.z, z0, z1));
-    if lower_bound > tolerance {
-        return;
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+
+    struct Node {
+        control: Vec<Point3>,
+        range: [f64; 2],
+        depth: usize,
     }
-    let diameter = (x1 - x0).hypot(y1 - y0).hypot(z1 - z0);
-    if depth >= 48 || diameter <= tolerance * 1e-4 {
-        let parameter = 0.5 * (range[0] + range[1]);
+
+    let lower_bound = |control: &[Point3]| {
+        let bounds = |coordinate: fn(Point3) -> f64| {
+            control
+                .iter()
+                .copied()
+                .map(coordinate)
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(low, high), value| {
+                    (low.min(value), high.max(value))
+                })
+        };
+        let axis_distance = |value: f64, low: f64, high: f64| {
+            if value < low {
+                low - value
+            } else if value > high {
+                value - high
+            } else {
+                0.0
+            }
+        };
+        let [(x0, x1), (y0, y1), (z0, z1)] = [bounds(|p| p.x), bounds(|p| p.y), bounds(|p| p.z)];
+        axis_distance(point.x, x0, x1)
+            .hypot(axis_distance(point.y, y0, y1))
+            .hypot(axis_distance(point.z, z0, z1))
+    };
+    let midpoint = |control: &[Point3]| {
         let mut level = control.to_vec();
         while level.len() > 1 {
             level = level
@@ -2655,32 +2661,92 @@ fn collect_bezier_point_parameters(
                 })
                 .collect();
         }
-        let distance = level[0].distance_squared(point).sqrt();
-        if distance <= tolerance {
-            parameters.push((parameter, distance));
-        }
+        level.first().copied()
+    };
+
+    let root_lower_bound = lower_bound(control);
+    if root_lower_bound > tolerance {
         return;
     }
-    let Some((left, right)) = split_bezier_half(control) else {
+    let Some(root_midpoint) = midpoint(control) else {
         return;
     };
-    let middle = 0.5 * (range[0] + range[1]);
-    collect_bezier_point_parameters(
-        &left,
-        [range[0], middle],
-        point,
-        tolerance,
-        depth + 1,
-        parameters,
+    let mut best = (
+        0.5 * (range[0] + range[1]),
+        root_midpoint.distance_squared(point).sqrt(),
     );
-    collect_bezier_point_parameters(
-        &right,
-        [middle, range[1]],
-        point,
-        tolerance,
-        depth + 1,
-        parameters,
-    );
+    let Some((&first, &last)) = control.first().zip(control.last()) else {
+        return;
+    };
+    for (parameter, position) in [(range[0], first), (range[1], last)] {
+        let distance = position.distance_squared(point).sqrt();
+        if distance < best.1 {
+            best = (parameter, distance);
+        }
+    }
+
+    let mut nodes = vec![Node {
+        control: control.to_vec(),
+        range,
+        depth: 0,
+    }];
+    let mut queue = BinaryHeap::from([(Reverse(root_lower_bound.to_bits()), 0usize)]);
+    while let Some((Reverse(lower_bits), node_index)) = queue.pop() {
+        let lower = f64::from_bits(lower_bits);
+        if lower > tolerance || lower > best.1 {
+            continue;
+        }
+        let node = &nodes[node_index];
+        if node.depth >= 48 || node.range[1] - node.range[0] <= parameter_resolution {
+            let Some(position) = midpoint(&node.control) else {
+                continue;
+            };
+            let candidate = (
+                0.5 * (node.range[0] + node.range[1]),
+                position.distance_squared(point).sqrt(),
+            );
+            if candidate.1 < best.1 {
+                best = candidate;
+            }
+            if candidate.1 <= tolerance {
+                parameters.push(candidate);
+            }
+            continue;
+        }
+        let Some((left, right)) = split_bezier_half(&node.control) else {
+            continue;
+        };
+        let middle = 0.5 * (node.range[0] + node.range[1]);
+        let depth = node.depth + 1;
+        for (control, range) in [
+            (left, [node.range[0], middle]),
+            (right, [middle, node.range[1]]),
+        ] {
+            let lower = lower_bound(&control);
+            if lower > tolerance || lower > best.1 {
+                continue;
+            }
+            if let Some(position) = midpoint(&control) {
+                let candidate = (
+                    0.5 * (range[0] + range[1]),
+                    position.distance_squared(point).sqrt(),
+                );
+                if candidate.1 < best.1 {
+                    best = candidate;
+                }
+            }
+            let index = nodes.len();
+            nodes.push(Node {
+                control,
+                range,
+                depth,
+            });
+            queue.push((Reverse(lower.to_bits()), index));
+        }
+    }
+    if best.1 <= tolerance {
+        parameters.push(best);
+    }
 }
 
 fn standard_limit_curve_point_parameter(
@@ -2697,19 +2763,6 @@ fn standard_limit_curve_point_parameter(
     {
         return None;
     }
-    let mut parameters = Vec::new();
-    for span in 0..span_count {
-        collect_bezier_point_parameters(
-            &curve.control_points[span * 6..(span + 1) * 6],
-            [curve.knots[span * 6], curve.knots[(span + 1) * 6]],
-            point,
-            tolerance,
-            0,
-            &mut parameters,
-        );
-    }
-    parameters.sort_by(|left, right| left.1.total_cmp(&right.1));
-    let &(parameter, distance) = parameters.first()?;
     let [parameter_start, parameter_end] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?;
     let parameter_span = parameter_end - parameter_start;
     let control_polygon_length = curve
@@ -2725,6 +2778,20 @@ fn standard_limit_curve_point_parameter(
     let parameter_tolerance = (4.0 * tolerance * parameter_span
         / control_polygon_length.max(tolerance))
     .max(1e-9 * parameter_span.max(1.0));
+    let parameter_resolution = 0.05 * parameter_tolerance.min(1e-7 * parameter_span.max(1.0));
+    let mut parameters = Vec::new();
+    for span in 0..span_count {
+        collect_bezier_point_parameters(
+            &curve.control_points[span * 6..(span + 1) * 6],
+            [curve.knots[span * 6], curve.knots[(span + 1) * 6]],
+            point,
+            tolerance,
+            parameter_resolution,
+            &mut parameters,
+        );
+    }
+    parameters.sort_by(|left, right| left.1.total_cmp(&right.1));
+    let &(parameter, distance) = parameters.first()?;
     let ambiguous = parameters.iter().skip(1).any(|&(other, other_distance)| {
         (other - parameter).abs() > parameter_tolerance
             && (other_distance - distance).abs() <= tolerance * 1e-8
