@@ -59,9 +59,10 @@ fixtures, claims above L1 remain unproven.
   semantics; simultaneous equations do not become sequential assignments.
   Complete dimensionally valid affine systems over previously valued numeric
   unknowns evaluate in canonical relation units when they have one finite
-  consistent solution. Fixed Boolean annihilators and identity or zero powers
-  reduce within affine equations even when the base or other operand remains
-  unknown. Unknowns may have different physical dimensions, and
+  consistent solution. Fixed Boolean annihilators, equal conditional branches,
+  signed zero, and identity or zero powers reduce within affine equations even
+  when the controlling operand remains unknown. Unknowns may have different
+  physical dimensions, and
   known dimensioned coefficients participate in the affine system. Nonlinear,
   dimensionally inconsistent, dependency-unresolved, underdetermined, and
   inconsistent systems retain absent aligned solution values.

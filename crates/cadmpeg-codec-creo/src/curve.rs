@@ -2344,6 +2344,9 @@ impl ExpressionValue for SimultaneousAffineValue {
         scope.is_none().then_some(())?;
         match (name, arguments) {
             (CreoMathFunction::If, [condition, when_true, when_false]) => {
+                if when_true.constant_difference(when_false) == Some(0.0) {
+                    return Some(when_true.clone());
+                }
                 let condition = condition.as_curve_value()?;
                 let CurveExpressionValue::Number(condition) = condition else {
                     return None;
@@ -2361,6 +2364,11 @@ impl ExpressionValue for SimultaneousAffineValue {
                 } else {
                     right.clone()
                 });
+            }
+            (CreoMathFunction::Sign, [value, _])
+                if value.coefficients.is_empty() && value.constant == 0.0 =>
+            {
+                return Some(value.clone());
             }
             (CreoMathFunction::Bound, [value, lower, upper]) => {
                 (lower.constant_difference(upper)? < 0.0).then_some(())?;
@@ -5100,6 +5108,36 @@ mod tests {
             [
                 CurveExpressionValue::Length(3.0),
                 CurveExpressionValue::Number(4.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn solves_affine_systems_with_branch_and_sign_invariants() {
+        let lines = [
+            "x=0",
+            "y=0[mm]",
+            "SOLVE",
+            "x=3",
+            "if(x,y,y)+sign(0[mm],x)=4[mm]",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Number(3.0),
+                CurveExpressionValue::Length(4.0),
             ]
         );
     }
