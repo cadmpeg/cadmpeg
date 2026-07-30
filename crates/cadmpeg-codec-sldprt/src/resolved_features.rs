@@ -493,7 +493,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             let linked_point = linked_profile_point(payload, offset);
             let extended_profile_point = extended_profile_point_coordinates(payload, offset);
             let compact_profile_point =
-                extended_compact_linked_profile_point_coordinates(payload, offset);
+                legacy_extended_linked_profile_point_coordinates(payload, offset);
             let packed_profile_point =
                 packed_legacy_linked_profile_point_coordinates(payload, offset);
             let compact_legacy_profile_point =
@@ -937,12 +937,22 @@ fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     (first.is_finite() && second.is_finite()).then_some([first, second])
 }
 
-fn extended_compact_linked_profile_point_coordinates(
+fn legacy_extended_linked_profile_point_coordinates(
     payload: &[u8],
     offset: usize,
 ) -> Option<[f64; 2]> {
-    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+    let marker = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len());
+    let coordinate_tag = payload.get(offset + 56..offset + 58);
+    let valid_marker_and_coordinate_tag = match marker {
+        Some(marker) if marker == LEGACY_EXTENDED_SKETCH_MARKER => {
+            coordinate_tag == Some(&[0x1e, 0x00])
+        }
+        Some(marker) if marker == LEGACY_SKETCH_MARKER => {
+            matches!(coordinate_tag, Some([0x1a | 0x1e, 0x00]))
+        }
+        _ => false,
+    };
+    if !valid_marker_and_coordinate_tag
         || !matches!(marker_native_code(payload, offset), Some(0..=2))
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || !matches!(
@@ -954,7 +964,6 @@ fn extended_compact_linked_profile_point_coordinates(
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
         || !matches!(
             payload.get(offset + 74..offset + 78),
             Some([0x00 | 0x01, 0x00, 0x02 | 0x03, 0x00])
@@ -1917,10 +1926,9 @@ mod marker_tests {
         enrich_history_revolution_inputs, equal_index_coordinate_roster_full_circle,
         explicit_reference_axis_frame, explicit_reference_plane_frame,
         extended_compact_84_construction_line_endpoint_indices, extended_compact_endpoint_markers,
-        extended_compact_linked_profile_point_coordinates, extended_declared_inline_line_endpoints,
-        extended_direct_object_line_endpoint_ids, extended_direct_object_line_endpoints,
-        extended_identity_inline_line_endpoints, extended_linked_inline_line_endpoints,
-        extended_profile_point_coordinates,
+        extended_declared_inline_line_endpoints, extended_direct_object_line_endpoint_ids,
+        extended_direct_object_line_endpoints, extended_identity_inline_line_endpoints,
+        extended_linked_inline_line_endpoints, extended_profile_point_coordinates,
         extended_profile_roster_construction_line_endpoint_indices, extended_radial_circle_index,
         extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
         extended_terminal_repeated_radial_circle_index,
@@ -1931,7 +1939,8 @@ mod marker_tests {
         legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
         legacy_compact_profile_line, legacy_coordinate_circle_radius,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
-        legacy_direct_compact_selected_axis_endpoint_indices, legacy_extended_profile_curve_kind,
+        legacy_direct_compact_selected_axis_endpoint_indices,
+        legacy_extended_linked_profile_point_coordinates, legacy_extended_profile_curve_kind,
         legacy_extended_rectangle_diagonal_endpoint, legacy_feature_input_section,
         legacy_inline_arc_coordinates, legacy_line_handle_coordinates, legacy_linked_coordinates,
         legacy_long_profile_line_endpoint_indices, legacy_offset_plane_face_alias,
@@ -7977,7 +7986,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn extended_compact_linked_profile_point_decodes_distinct_incidence_ids() {
+    fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
         let mut payload = vec![0; 146 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -8000,16 +8009,41 @@ mod marker_tests {
         payload[146..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
         assert_eq!(
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[56..58].copy_from_slice(&[0x1a, 0x00]);
+        assert_eq!(
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
+            Some([0.8, 0.0125])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+        payload[142..146].fill(0xff);
+        assert_eq!(
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
+            Some([0.8, 0.0125])
+        );
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[56..58].copy_from_slice(&[0x1a, 0x00]);
+        assert_eq!(
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
+            None
+        );
+        payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+        payload[142..146].copy_from_slice(&6u32.to_le_bytes());
         payload[134..136].copy_from_slice(&1u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
         payload[134..136].fill(0);
@@ -8021,7 +8055,7 @@ mod marker_tests {
         continuation[146..150].copy_from_slice(&1u32.to_le_bytes());
         continuation[150..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&continuation, 0),
+            legacy_extended_linked_profile_point_coordinates(&continuation, 0),
             Some([0.8, 0.0125])
         );
         assert_eq!(
@@ -8030,58 +8064,58 @@ mod marker_tests {
         );
         continuation[142..146].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&continuation, 0),
+            legacy_extended_linked_profile_point_coordinates(&continuation, 0),
             None
         );
         continuation[142..146].copy_from_slice(&1u32.to_le_bytes());
         continuation[76..78].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&continuation, 0),
+            legacy_extended_linked_profile_point_coordinates(&continuation, 0),
             None
         );
         continuation[76..78].copy_from_slice(&2u16.to_le_bytes());
         continuation[136..140].fill(0);
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&continuation, 0),
+            legacy_extended_linked_profile_point_coordinates(&continuation, 0),
             None
         );
         payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
         payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         payload[80..82].fill(0);
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
         payload[142..146].fill(0xff);
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
         payload[88..90].fill(0);
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             None
         );
         payload[88..90].copy_from_slice(&7u16.to_le_bytes());
         payload[74..76].copy_from_slice(&1u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             None
         );
         payload[74..76].fill(0);
         payload[76..78].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             None
         );
         payload[76..78].copy_from_slice(&2u16.to_le_bytes());
         payload[141] = 1;
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             None
         );
         payload[141] = 0;
@@ -8089,40 +8123,40 @@ mod marker_tests {
         payload[142..146].copy_from_slice(&6u32.to_le_bytes());
         payload[74..76].copy_from_slice(&1u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
         payload[74..76].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             None
         );
         payload[74..76].copy_from_slice(&1u16.to_le_bytes());
         payload[76..78].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
         payload[138..142].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
 
         payload[17..21].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
 
         payload[88..90].copy_from_slice(&8u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             Some([0.8, 0.0125])
         );
         payload[80..82].copy_from_slice(&8u16.to_le_bytes());
         assert_eq!(
-            extended_compact_linked_profile_point_coordinates(&payload, 0),
+            legacy_extended_linked_profile_point_coordinates(&payload, 0),
             None
         );
     }
