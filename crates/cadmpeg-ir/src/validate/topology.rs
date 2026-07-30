@@ -1916,6 +1916,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|feature| feature.id.0.as_str())
         .collect::<HashSet<_>>();
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
+        .collect::<HashMap<_, _>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
@@ -1993,7 +1999,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for (feature, state) in &configuration.feature_states {
-            if !feature_ids.contains(feature.0.as_str()) {
+            let feature_ordinal = features.get(feature.0.as_str()).copied();
+            if feature_ordinal.is_none() {
                 ref_error(
                     findings,
                     &configuration.id.0,
@@ -2001,16 +2008,45 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.0,
                 );
             }
+            let mut dependencies = HashSet::new();
             for dependency in &state.dependencies {
-                if !feature_ids.contains(dependency.0.as_str()) {
-                    ref_error(
+                match features.get(dependency.0.as_str()) {
+                    None => ref_error(
                         findings,
                         &configuration.id.0,
                         "configuration feature dependency",
                         &dependency.0,
-                    );
+                    ),
+                    Some(dependency_ordinal)
+                        if feature_ordinal.is_some_and(|feature_ordinal| {
+                            *dependency_ordinal >= feature_ordinal
+                        }) =>
+                    {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "configuration feature dependency `{}` does not precede `{}`",
+                                dependency.0, feature.0
+                            ),
+                            entity: Some(configuration.id.0.clone()),
+                        });
+                    }
+                    Some(_) => {}
+                }
+                if !dependencies.insert(dependency) {
+                    findings.push(Finding {
+                        check: Check::Counts,
+                        severity: Severity::Error,
+                        message: format!(
+                            "configuration feature state repeats dependency `{}`",
+                            dependency.0
+                        ),
+                        entity: Some(configuration.id.0.clone()),
+                    });
                 }
             }
+            let mut outputs = HashSet::new();
             for output in &state.outputs {
                 if !ids.bodies.contains(&output.0) {
                     ref_error(
@@ -2019,6 +2055,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         "configuration feature output",
                         &output.0,
                     );
+                }
+                if !outputs.insert(output) {
+                    findings.push(Finding {
+                        check: Check::Counts,
+                        severity: Severity::Error,
+                        message: format!(
+                            "configuration feature state repeats output body `{}`",
+                            output.0
+                        ),
+                        entity: Some(configuration.id.0.clone()),
+                    });
                 }
             }
         }
@@ -2031,12 +2078,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             entity: None,
         });
     }
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
-        .collect::<HashMap<_, _>>();
     let parameters_by_id = ir
         .model
         .parameters

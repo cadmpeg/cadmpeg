@@ -1260,7 +1260,7 @@ fn tessellation_counts_must_be_consistent() {
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
     use crate::features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter,
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
         FeatureDefinition, FeatureId, ParameterId, ParameterValue,
     };
     use crate::ids::BodyId;
@@ -1301,7 +1301,10 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.finalize();
     assert!(validate(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(round_trip.model.configurations[0].bodies, vec![body]);
+    assert_eq!(
+        round_trip.model.configurations[0].bodies,
+        vec![body.clone()]
+    );
     assert_eq!(
         round_trip.model.configurations[0].parameter_overrides[&parameter_id],
         "25 mm"
@@ -1361,6 +1364,54 @@ fn configuration_body_membership_round_trips_and_validates() {
         }));
     }
     ir.model.configurations[0].parameter_values.clear();
+    ir.model.configurations[0].feature_states.clear();
+
+    let first_feature = FeatureId("synthetic:test:feature#configuration-first".into());
+    let later_feature = FeatureId("synthetic:test:feature#configuration-later".into());
+    for (ordinal, feature) in [first_feature.clone(), later_feature.clone()]
+        .into_iter()
+        .enumerate()
+    {
+        ir.model.features.push(Feature {
+            id: feature,
+            ordinal: ordinal as u64,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumPoint {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+            native_ref: None,
+        });
+    }
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        first_feature.clone(),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: vec![later_feature.clone(), later_feature.clone()],
+            outputs: vec![body.clone(), body.clone()],
+            definition: FeatureDefinition::DatumPoint {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        },
+    )]);
+    let report = validate(&ir, Vec::new());
+    for message in [
+        "does not precede",
+        "repeats dependency",
+        "repeats output body",
+    ] {
+        assert!(report.findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some(configuration_id.0.as_str())
+                && finding.message.contains(message)
+        }));
+    }
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(vec![
