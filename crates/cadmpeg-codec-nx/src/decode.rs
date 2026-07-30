@@ -10274,7 +10274,16 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 bodies,
                 gap_tolerance,
             } if body_selection_is_incomplete(bodies)
-                || explicit_body_ids(bodies).is_some_and(|bodies| bodies.len() < 2)
+                || match bodies {
+                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                        bodies.len() < 2
+                    }
+                    BodySelection::Local { bodies, .. } => bodies.len() < 2,
+                    BodySelection::Unresolved
+                    | BodySelection::Historical { .. }
+                    | BodySelection::Generated { .. }
+                    | BodySelection::Native(_) => false,
+                }
                 || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance)) =>
             {
                 "sew bodies"
@@ -11324,7 +11333,8 @@ pub(crate) fn loft_section_is_incomplete(section: &LoftSection) -> bool {
     match section {
         LoftSection::Profile(profile) => profile_ref_is_incomplete(profile),
         LoftSection::Point(LoftPointSection::Native(_)) => true,
-        LoftSection::Point(LoftPointSection::Point(_) | LoftPointSection::Vertex(_)) => false,
+        LoftSection::Point(LoftPointSection::Point(point)) => !finite_feature_point(*point),
+        LoftSection::Point(LoftPointSection::Vertex(vertex)) => vertex.0.trim().is_empty(),
     }
 }
 

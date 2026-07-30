@@ -953,6 +953,23 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
 }
 
 #[test]
+fn nx_loft_completeness_validates_point_sections() {
+    use cadmpeg_ir::features::{LoftPointSection, LoftSection};
+    use cadmpeg_ir::ids::VertexId;
+    use cadmpeg_ir::math::Point3;
+
+    assert!(!crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Point(Point3::new(1.0, 2.0, 3.0))),
+    ));
+    assert!(crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Point(Point3::new(1.0, f64::NAN, 3.0,))),
+    ));
+    assert!(crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Vertex(VertexId(" ".into()))),
+    ));
+}
+
+#[test]
 fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
     use cadmpeg_ir::features::{BooleanOp, PathRef, SweepMode, SweepOrientation};
 
@@ -1944,6 +1961,18 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     ir.model.features[0].definition = FeatureDefinition::SewBodies {
         bodies: cadmpeg_ir::features::BodySelection::Bodies(vec![output.clone()]),
+        gap_tolerance: Some(Length(0.01)),
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("sew bodies (1)"));
+
+    ir.model.features[0].definition = FeatureDefinition::SewBodies {
+        bodies: cadmpeg_ir::features::BodySelection::Local {
+            bodies: vec![output.0.clone()],
+            native: "nx:body-selection#sew".into(),
+        },
         gap_tolerance: Some(Length(0.01)),
     };
     losses.clear();
