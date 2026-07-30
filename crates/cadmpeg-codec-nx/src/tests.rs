@@ -1877,7 +1877,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
 #[test]
 fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId, Length};
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let first = ir.model.bodies[0].id.clone();
@@ -1907,6 +1907,19 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
+
+    for tolerance in [Length(0.0), Length(-0.01), Length(f64::NAN)] {
+        let FeatureDefinition::SewBodies { gap_tolerance, .. } =
+            &mut ir.model.features[0].definition
+        else {
+            unreachable!();
+        };
+        *gap_tolerance = Some(tolerance);
+        losses.clear();
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("sew bodies (1)"));
+    }
 }
 
 #[test]

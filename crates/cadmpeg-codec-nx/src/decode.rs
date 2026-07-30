@@ -10261,9 +10261,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "face blend"
             }
-            FeatureDefinition::SewBodies { bodies, .. }
-                if body_selection_is_incomplete(bodies)
-                    || explicit_body_ids(bodies).is_some_and(|bodies| bodies.len() < 2) =>
+            FeatureDefinition::SewBodies {
+                bodies,
+                gap_tolerance,
+            } if body_selection_is_incomplete(bodies)
+                || explicit_body_ids(bodies).is_some_and(|bodies| bodies.len() < 2)
+                || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance)) =>
             {
                 "sew bodies"
             }
