@@ -19,7 +19,7 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_speed_bound,
     nurbs_surface_isocurve, nurbs_surface_partials, pcurve_tangent, pcurve_uv, surface_partials,
-    surface_point, surface_second_partials,
+    surface_second_partials,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -9214,22 +9214,20 @@ fn pcurve_matches_edge_range(
     let Some(edge) = ir.model.edges.iter().find(|edge| &edge.id == edge_id) else {
         return false;
     };
-    let Some(coincident_surface) = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| &surface.id == surface_id)
-        .and_then(|surface| {
-            let [t0, t1] = parameter_range.or_else(|| pcurve_parameter_range(geometry))?;
-            let uv = [pcurve_uv(geometry, t0)?, pcurve_uv(geometry, t1)?];
-            Some([
-                surface_point(&surface.geometry, uv[0].u, uv[0].v)?,
-                surface_point(&surface.geometry, uv[1].u, uv[1].v)?,
-            ])
-        })
+    let Some([t0, t1]) = parameter_range.or_else(|| pcurve_parameter_range(geometry)) else {
+        return false;
+    };
+    let (Some(first_uv), Some(second_uv)) = (pcurve_uv(geometry, t0), pcurve_uv(geometry, t1))
     else {
         return false;
     };
+    let (Some(first), Some(second)) = (
+        decoded_surface_point(ir, surface_id, first_uv.u, first_uv.v),
+        decoded_surface_point(ir, surface_id, second_uv.u, second_uv.v),
+    ) else {
+        return false;
+    };
+    let coincident_surface = [first, second];
     let vertex = |id: &VertexId| {
         let vertex = ir.model.vertices.iter().find(|vertex| &vertex.id == id)?;
         let point = ir
@@ -12349,12 +12347,12 @@ mod tests {
         ir.model.points.extend([
             Point {
                 id: start_point.clone(),
-                position: Point3::new(0.0, 0.0, 0.0),
+                position: Point3::new(0.0, 0.0, 1.0),
                 source_object: None,
             },
             Point {
                 id: end_point.clone(),
-                position: Point3::new(1.0, 0.005, 0.0),
+                position: Point3::new(1.0, 0.005, 1.0),
                 source_object: None,
             },
         ]);
@@ -12381,15 +12379,40 @@ mod tests {
             param_range: None,
             tolerance: None,
         });
+        let support = SurfaceId("nx:test:surface-support#0".into());
         let surface = SurfaceId("nx:test:surface#0".into());
-        ir.model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
+        let construction = ProceduralSurfaceId("nx:test:surface-offset#0".into());
+        ir.model.surfaces.extend([
+            Surface {
+                id: support.clone(),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
             },
-            source_object: None,
+            Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: construction.clone(),
+                },
+                source_object: None,
+            },
+        ]);
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: construction,
+            surface: surface.clone(),
+            definition: ProceduralSurfaceDefinition::Offset {
+                support,
+                distance: 1.0,
+                u_sense: Some(0),
+                v_sense: Some(0),
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
         });
         let pcurve = PcurveGeometry::Nurbs {
             degree: 1,
@@ -12402,6 +12425,13 @@ mod tests {
         assert!(super::orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
         assert!(!super::pcurve_matches_edge(
             &ir, &edge, &surface, &pcurve, None,
+        ));
+        assert!(super::pcurve_matches_edge(
+            &ir,
+            &edge,
+            &surface,
+            &pcurve,
+            Some(0.01),
         ));
         let large_distance = super::point_distance(
             Point3::new(1.0e200, 1.0e200, 1.0e200),
