@@ -3065,6 +3065,48 @@ fn feature_extent_magnitudes_are_validated() {
 }
 
 #[test]
+fn block_placement_must_be_finite_and_affine() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, Length};
+
+    for placement in [
+        {
+            let mut placement = crate::transform::Transform::identity();
+            placement.rows[0][0] = f64::NAN;
+            placement
+        },
+        {
+            let mut placement = crate::transform::Transform::identity();
+            placement.rows[3][0] = 1.0;
+            placement
+        },
+    ] {
+        let mut ir = unit_cube();
+        ir.model.features.push(Feature {
+            id: FeatureId("synthetic:test:feature#invalid-block-placement".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Block {
+                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
+                placement: Some(placement),
+            },
+            native_ref: None,
+        });
+        assert!(validate(&ir, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.message == "block placement is invalid"));
+    }
+}
+
+#[test]
 fn explicit_extrusion_direction_must_be_nonzero() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,

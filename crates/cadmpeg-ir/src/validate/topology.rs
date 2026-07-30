@@ -2191,13 +2191,19 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved => {}
-            FeatureDefinition::Block { dimensions, .. } => {
+            FeatureDefinition::Block {
+                dimensions,
+                placement,
+            } => {
                 if dimensions.is_some_and(|values| {
                     values
                         .into_iter()
                         .any(|value| !positive_feature_length(value))
                 }) {
                     feature_geometry_error(findings, feature, "block dimensions are invalid");
+                }
+                if placement.is_some_and(|placement| !placement.is_affine()) {
+                    feature_geometry_error(findings, feature, "block placement is invalid");
                 }
             }
             FeatureDefinition::ExtractBody { source } => body_selections.push(source),
@@ -3611,14 +3617,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         Some(_) => {}
                     }
                 }
-                if placement.is_some_and(|placement| {
-                    !placement
-                        .rows
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite())
-                        || placement.rows[3] != [0.0, 0.0, 0.0, 1.0]
-                }) {
+                if placement.is_some_and(|placement| !placement.is_affine()) {
                     feature_geometry_error(findings, feature, "sketch block placement is invalid");
                 }
             }

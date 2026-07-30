@@ -31,6 +31,11 @@ impl Transform {
     pub fn is_finite(&self) -> bool {
         self.rows.iter().flatten().all(|value| value.is_finite())
     }
+
+    /// Whether this is a finite affine transform.
+    pub fn is_affine(&self) -> bool {
+        self.is_finite() && self.rows[3] == [0.0, 0.0, 0.0, 1.0]
+    }
 }
 
 impl Default for Transform {

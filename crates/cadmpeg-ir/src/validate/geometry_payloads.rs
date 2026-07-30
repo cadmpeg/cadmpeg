@@ -408,7 +408,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             SurfaceGeometry::Transformed { basis, transform } => {
-                if !valid_affine_transform(*transform) {
+                if !transform.is_affine() {
                     bounds_err(findings, &s.id.0, "surface transform is not finite affine");
                 }
                 if !valid_surface_basis(basis) {
@@ -1817,7 +1817,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             CurveGeometry::Transformed { basis, transform } => {
-                if !valid_affine_transform(*transform) {
+                if !transform.is_affine() {
                     bounds_err(findings, &c.id.0, "curve transform is not finite affine");
                 }
                 if !valid_curve_basis(basis) {
@@ -2532,11 +2532,6 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
     }
 }
 
-fn valid_affine_transform(transform: crate::transform::Transform) -> bool {
-    transform.rows.into_iter().flatten().all(f64::is_finite)
-        && transform.rows[3] == [0.0, 0.0, 0.0, 1.0]
-}
-
 fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
     match geometry {
         SurfaceGeometry::Plane { normal, u_axis, .. } => !degenerate(normal) && !degenerate(u_axis),
@@ -2588,7 +2583,7 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
             chordal_deflection,
         } => valid_polygonal_surface(vertices, triangles, *chordal_deflection),
         SurfaceGeometry::Transformed { basis, transform } => {
-            valid_affine_transform(*transform) && valid_surface_basis(basis)
+            transform.is_affine() && valid_surface_basis(basis)
         }
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => true,
     }
@@ -2633,7 +2628,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
             chordal_deflection,
         } => valid_polyline(points, parameters.as_deref(), *chordal_deflection),
         CurveGeometry::Transformed { basis, transform } => {
-            valid_affine_transform(*transform) && valid_curve_basis(basis)
+            transform.is_affine() && valid_curve_basis(basis)
         }
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
