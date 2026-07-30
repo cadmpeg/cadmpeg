@@ -10095,7 +10095,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 dimensions
                     .into_iter()
                     .any(|dimension| !positive_feature_length(dimension))
-            }) || placement.is_none_or(|placement| !placement.is_affine()) =>
+            }) || placement.is_none_or(|placement| !placement.is_proper_rigid()) =>
             {
                 "block"
             }

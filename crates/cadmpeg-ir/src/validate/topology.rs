@@ -2318,7 +2318,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }) {
                     feature_geometry_error(findings, feature, "block dimensions are invalid");
                 }
-                if placement.is_some_and(|placement| !placement.is_affine()) {
+                if placement.is_some_and(|placement| !placement.is_proper_rigid()) {
                     feature_geometry_error(findings, feature, "block placement is invalid");
                 }
             }

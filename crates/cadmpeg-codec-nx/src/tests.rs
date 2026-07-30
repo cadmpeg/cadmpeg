@@ -1846,17 +1846,28 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
-    let mut non_affine = cadmpeg_ir::transform::Transform::identity();
-    non_affine.rows[3][0] = 1.0;
-    ir.model.features[0].definition = FeatureDefinition::Block {
-        dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-        placement: Some(non_affine),
-    };
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("block (1)"));
+    for invalid_placement in [
+        {
+            let mut placement = cadmpeg_ir::transform::Transform::identity();
+            placement.rows[3][0] = 1.0;
+            placement
+        },
+        {
+            let mut placement = cadmpeg_ir::transform::Transform::identity();
+            placement.rows[0][0] = 2.0;
+            placement
+        },
+    ] {
+        ir.model.features[0].definition = FeatureDefinition::Block {
+            dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
+            placement: Some(invalid_placement),
+        };
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("block (1)"));
+        losses.clear();
+    }
 
-    losses.clear();
     ir.model.features[0].definition = FeatureDefinition::Loft {
         sections: Vec::new(),
         centerline: None,

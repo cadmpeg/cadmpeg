@@ -3171,8 +3171,15 @@ fn feature_extent_magnitudes_are_validated() {
 }
 
 #[test]
-fn block_placement_must_be_finite_and_affine() {
+fn block_placement_must_be_proper_rigid() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, Length};
+
+    let mut rotated = crate::transform::Transform::identity();
+    rotated.rows[0][0] = 0.0;
+    rotated.rows[0][1] = -1.0;
+    rotated.rows[1][0] = 1.0;
+    rotated.rows[1][1] = 0.0;
+    assert!(rotated.is_proper_rigid());
 
     for placement in [
         {
@@ -3183,6 +3190,21 @@ fn block_placement_must_be_finite_and_affine() {
         {
             let mut placement = crate::transform::Transform::identity();
             placement.rows[3][0] = 1.0;
+            placement
+        },
+        {
+            let mut placement = crate::transform::Transform::identity();
+            placement.rows[0][0] = 2.0;
+            placement
+        },
+        {
+            let mut placement = crate::transform::Transform::identity();
+            placement.rows[0][1] = 0.25;
+            placement
+        },
+        {
+            let mut placement = crate::transform::Transform::identity();
+            placement.rows[0][0] = -1.0;
             placement
         },
     ] {
