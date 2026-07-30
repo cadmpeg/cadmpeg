@@ -986,6 +986,21 @@ fn finish_decode(
         .filter_map(|record| record.formula_relation.as_ref())
         .map(|formula| formula.parameter_dependencies.len())
         .sum();
+    let formula_parameter_dependency_candidate_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.formula_relation.as_ref())
+        .flat_map(|formula| &formula.parameter_dependencies)
+        .map(|dependency| dependency.candidates.len())
+        .sum();
+    let classified_formula_parameter_dependency_candidate_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.formula_relation.as_ref())
+        .flat_map(|formula| &formula.parameter_dependencies)
+        .flat_map(|dependency| &dependency.candidates)
+        .filter(|candidate| candidate.class_name.is_some())
+        .count();
     let resolved_formula_parameter_dependency_count = native
         .entity_records
         .iter()
@@ -2257,6 +2272,19 @@ fn finish_decode(
         (
             "decoded_formula_parameter_dependency_count".to_string(),
             formula_parameter_dependency_count,
+        ),
+        (
+            "decoded_formula_parameter_dependency_candidate_count".to_string(),
+            formula_parameter_dependency_candidate_count,
+        ),
+        (
+            "decoded_classified_formula_parameter_dependency_candidate_count".to_string(),
+            classified_formula_parameter_dependency_candidate_count,
+        ),
+        (
+            "unclassified_formula_parameter_dependency_candidate_count".to_string(),
+            formula_parameter_dependency_candidate_count
+                - classified_formula_parameter_dependency_candidate_count,
         ),
         (
             "decoded_resolved_formula_parameter_dependency_count".to_string(),

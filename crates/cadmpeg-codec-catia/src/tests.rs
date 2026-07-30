@@ -13488,11 +13488,22 @@ fn native_namespace_types_and_validates_formula_relations() {
     );
     assert_eq!(formula.output_entity.entity_id, 99);
     assert_eq!(formula.output_entity.entity, None);
+    let parameter_entity = &native.entity_records[2];
     assert_eq!(
         formula.parameter_dependencies,
         [crate::native::CatiaFormulaParameterDependency {
             symbol: "#1_ /2".to_string(),
-            candidates: vec![native.entity_records[2].id.clone()],
+            candidates: vec![crate::native::CatiaEntityReference {
+                entity_id: parameter_entity.entity_id,
+                is_null: false,
+                entity: Some(parameter_entity.id.clone()),
+                class_name: native
+                    .object_graphs
+                    .iter()
+                    .flat_map(|graph| &graph.records)
+                    .find(|record| record.entity_id == Some(parameter_entity.entity_id))
+                    .and_then(|record| record.class_name.clone()),
+            }],
         }]
     );
     let expected_formula = formula.clone();
@@ -13567,6 +13578,40 @@ fn native_namespace_types_and_validates_formula_relations() {
     version_236_namespace.version = crate::native::CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION - 1;
     let migrated = crate::native::CatiaNative::load(&version_236_namespace)
         .expect("migrate formula expression reference");
+    assert_eq!(
+        migrated.entity_records[0].formula_relation,
+        Some(expected_formula.clone())
+    );
+
+    let mut version_237_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_237_namespace)
+        .expect("store current formula dependency references");
+    let candidates = version_237_namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("formula_relation")
+        .expect("stored formula relation")
+        .as_object_mut()
+        .expect("stored formula-relation object")
+        .get_mut("parameter_dependencies")
+        .expect("stored parameter dependencies")
+        .as_array_mut()
+        .expect("stored parameter-dependency array")[0]
+        .as_object_mut()
+        .expect("stored parameter dependency")
+        .get_mut("candidates")
+        .expect("stored dependency candidates")
+        .as_array_mut()
+        .expect("stored candidate array");
+    for candidate in candidates {
+        *candidate = candidate.as_object().expect("stored candidate reference")["entity"].clone();
+    }
+    version_237_namespace.version = crate::native::CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&version_237_namespace)
+        .expect("migrate formula dependency references");
     assert_eq!(
         migrated.entity_records[0].formula_relation,
         Some(expected_formula.clone())
@@ -13680,7 +13725,16 @@ fn formula_relation_resolves_bare_expression_symbols() {
             .parameter_dependencies,
         [crate::native::CatiaFormulaParameterDependency {
             symbol: "#1_".to_string(),
-            candidates: vec![native.entity_records[2].id.clone()],
+            candidates: vec![crate::native::CatiaEntityReference {
+                entity_id: native.entity_records[2].entity_id,
+                is_null: false,
+                entity: Some(native.entity_records[2].id.clone()),
+                class_name: native.object_graphs[0]
+                    .records
+                    .iter()
+                    .find(|record| record.entity_id == Some(native.entity_records[2].entity_id))
+                    .and_then(|record| record.class_name.clone()),
+            }],
         }]
     );
 }
@@ -13905,6 +13959,24 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(
         decoded.report.coverage["unclassified_formula_expression_entity_count"],
         usize::from(!expression_classified)
+    );
+    let dependency_candidate = &native.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation")
+        .parameter_dependencies[0]
+        .candidates[0];
+    assert_eq!(
+        decoded.report.coverage["decoded_formula_parameter_dependency_candidate_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_classified_formula_parameter_dependency_candidate_count"],
+        usize::from(dependency_candidate.class_name.is_some())
+    );
+    assert_eq!(
+        decoded.report.coverage["unclassified_formula_parameter_dependency_candidate_count"],
+        usize::from(dependency_candidate.class_name.is_none())
     );
     assert_eq!(
         decoded.report.coverage["decoded_referenced_relation_expression_count"],

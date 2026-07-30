@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 237;
+pub const CATIA_NATIVE_VERSION: u32 = 238;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -60,6 +60,9 @@ pub(crate) const CATIA_FORMULA_OUTPUT_REFERENCE_VERSION: u32 = 236;
 /// Native namespace version that unifies formula expression incidence.
 #[cfg(test)]
 pub(crate) const CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION: u32 = 237;
+/// Native namespace version that types formula dependency candidate incidences.
+#[cfg(test)]
+pub(crate) const CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION: u32 = 238;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1369,9 +1372,41 @@ pub struct CatiaFormulaRelation {
 pub struct CatiaFormulaParameterDependency {
     /// Exact expression-local symbol occurrence.
     pub symbol: String,
-    /// Entity records carrying matching named parameter bindings.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub candidates: Vec<String>,
+    /// Entity incidences carrying matching named parameter bindings.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_formula_dependency_candidates"
+    )]
+    #[schemars(with = "Vec<CatiaEntityReference>")]
+    pub candidates: Vec<CatiaEntityReference>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CatiaFormulaDependencyCandidate {
+    Reference(CatiaEntityReference),
+    LegacyEntity(String),
+}
+
+fn deserialize_formula_dependency_candidates<'de, D>(
+    deserializer: D,
+) -> Result<Vec<CatiaEntityReference>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<CatiaFormulaDependencyCandidate>::deserialize(deserializer).map(|candidates| {
+        candidates
+            .into_iter()
+            .map(|candidate| match candidate {
+                CatiaFormulaDependencyCandidate::Reference(reference) => reference,
+                CatiaFormulaDependencyCandidate::LegacyEntity(entity) => CatiaEntityReference {
+                    entity: Some(entity),
+                    ..CatiaEntityReference::default()
+                },
+            })
+            .collect()
+    })
 }
 
 /// One exact compound relation-program instance frame.
@@ -3203,7 +3238,7 @@ fn formula_relation(
     relation_expressions: &HashMap<String, String>,
     entities: &HashMap<(String, u32), String>,
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    parameter_bindings: &HashMap<String, HashMap<String, Vec<String>>>,
+    parameter_bindings: &CatiaParameterBindingIndex,
 ) -> Option<CatiaFormulaRelation> {
     let [definition0, definition1] = definitions else {
         return None;
@@ -3276,7 +3311,7 @@ type CatiaRelationExpressionIndex = HashMap<String, String>;
 type CatiaRelationExpressionEntityIndex = HashMap<(String, u32), String>;
 type CatiaEntityByGraphIdentityIndex = HashMap<(String, u32), String>;
 type CatiaEntityClassByGraphIdentityIndex = HashMap<(String, u32), String>;
-type CatiaParameterBindingIndex = HashMap<String, HashMap<String, Vec<String>>>;
+type CatiaParameterBindingIndex = HashMap<String, HashMap<String, Vec<CatiaEntityReference>>>;
 
 fn entity_class_index<'a>(
     records: impl IntoIterator<Item = &'a CatiaObjectRecord>,
@@ -3294,6 +3329,7 @@ fn entity_class_index<'a>(
 
 fn semantic_entity_indices(
     entities: &[CatiaEntityRecord],
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
 ) -> (
     CatiaRelationExpressionIndex,
     CatiaRelationExpressionEntityIndex,
@@ -3339,7 +3375,14 @@ fn semantic_entity_indices(
             .or_default()
             .entry(parameter.binding.value.clone())
             .or_default()
-            .push(entity.id.clone());
+            .push(CatiaEntityReference {
+                entity_id: entity.entity_id,
+                is_null: false,
+                entity: Some(entity.id.clone()),
+                class_name: entity_classes
+                    .get(&(entity.object_graph.clone(), entity.entity_id))
+                    .cloned(),
+            });
     }
     (
         relation_expressions,
@@ -8071,14 +8114,14 @@ impl CatiaNative {
                 );
             }
         }
+        let entity_classes_by_graph_identity =
+            entity_class_index(object_graphs.iter().flat_map(|graph| &graph.records));
         let (
             relation_expressions,
             relation_expression_entities,
             entities_by_graph_identity,
             parameter_bindings,
-        ) = semantic_entity_indices(&entity_records);
-        let entity_classes_by_graph_identity =
-            entity_class_index(object_graphs.iter().flat_map(|graph| &graph.records));
+        ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
         for entity in &mut entity_records {
             let Some(object) = object_graphs
                 .iter()
@@ -8396,13 +8439,13 @@ impl CatiaNative {
                 entity.id
             )));
         }
+        let entity_classes_by_graph_identity = entity_class_index(&records);
         let (
             relation_expressions,
             relation_expression_entities,
             entities_by_graph_identity,
             parameter_bindings,
-        ) = semantic_entity_indices(&entity_records);
-        let entity_classes_by_graph_identity = entity_class_index(&records);
+        ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
         if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
             for graph in &graphs {
                 let terminal_null = entity_records
@@ -8425,6 +8468,7 @@ impl CatiaNative {
             || namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION
             || namespace.version < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
             || namespace.version < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
+            || namespace.version < CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION
         {
             let records_by_id = records
                 .iter()

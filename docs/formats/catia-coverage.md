@@ -110,8 +110,10 @@ current scores require those matrices and representative fixtures.
   classes; the output also retains terminal-null state. Coverage distinguishes
   resolved, terminal-null, unresolved, classified, and unclassified outputs
   and classified or unclassified expression incidences. Every formula
-  symbol occurrence retains all same-graph parameter binding candidates;
-  exactly one candidate resolves the dependency. Every transferred numeric
+  symbol occurrence retains all same-graph parameter binding candidate
+  identities, entities, and classes; coverage partitions classified and
+  unclassified candidates. Exactly one candidate resolves the dependency.
+  Every transferred numeric
   parameter retains its canonical
   `LENGTH`, `ANGLE`, `Real`, or `Integer` value type independently of whether
   an evaluated value exists.

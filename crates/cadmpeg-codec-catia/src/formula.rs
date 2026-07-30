@@ -105,7 +105,11 @@ pub(crate) fn transfer_parameters(
                 all_inputs_complete = false;
                 continue;
             };
-            let Some(entity) = entities.get(parameter.as_str()) else {
+            let Some(entity) = parameter
+                .entity
+                .as_deref()
+                .and_then(|parameter| entities.get(parameter))
+            else {
                 all_inputs_complete = false;
                 continue;
             };
