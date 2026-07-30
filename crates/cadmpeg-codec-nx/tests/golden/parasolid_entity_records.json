@@ -111,7 +111,7 @@
                 "attribute_class_use": "nx:s0:attribute-class-use#50-178",
                 "attribute_definition": "nx:s0:attribute-definition#201",
                 "entity_51_record": "nx:s0:entity-51#50-178",
-                "id": "nx:s0:attribute-class-use#50-178:numeric-class-use#1",
+                "id": "nx:s0:attribute-numeric-class-use#50-178-1",
                 "inflated_offset": 178,
                 "kind": "unsigned_integers",
                 "numeric_use": "nx:s0:entity-51-numeric-use#50-178-1",
@@ -123,7 +123,7 @@
                 "attribute_class_use": "nx:s0:attribute-class-use#50-178",
                 "attribute_definition": "nx:s0:attribute-definition#201",
                 "entity_51_record": "nx:s0:entity-51#50-178",
-                "id": "nx:s0:attribute-class-use#50-178:numeric-class-use#2",
+                "id": "nx:s0:attribute-numeric-class-use#50-178-2",
                 "inflated_offset": 178,
                 "kind": "doubles",
                 "numeric_use": "nx:s0:entity-51-numeric-use#50-178-2",
@@ -225,7 +225,7 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {

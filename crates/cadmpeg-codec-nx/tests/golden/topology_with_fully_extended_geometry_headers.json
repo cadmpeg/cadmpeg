@@ -45,19 +45,12 @@
               }
             },
             "id": "nx:s0:crv#0"
-          },
-          {
-            "geometry": {
-              "kind": "unknown",
-              "record": "nx:container:parasolid#0"
-            },
-            "id": "nx:s0:curve#unknown-9"
           }
         ],
         "drawings": [],
         "edges": [
           {
-            "curve": "nx:s0:curve#unknown-9",
+            "curve": "nx:s0:crv#0",
             "end": "nx:s0:vertex#10",
             "id": "nx:s0:edge#8",
             "start": "nx:s0:vertex#10",
@@ -72,7 +65,7 @@
             ],
             "sense": "forward",
             "shell": "nx:s0:shell#3",
-            "surface": "nx:s0:surface#unknown-6",
+            "surface": "nx:s0:surf#0",
             "tolerance": 0.2
           }
         ],
@@ -154,13 +147,6 @@
               }
             },
             "id": "nx:s0:surf#0"
-          },
-          {
-            "geometry": {
-              "kind": "unknown",
-              "record": "nx:container:parasolid#0"
-            },
-            "id": "nx:s0:surface#unknown-6"
           }
         ],
         "tessellations": [],
@@ -181,9 +167,7 @@
                 "id": "nx:container:parasolid#0",
                 "links": [
                   "nx:s0:surf#0",
-                  "nx:s0:surface#unknown-6",
-                  "nx:s0:crv#0",
-                  "nx:s0:curve#unknown-9"
+                  "nx:s0:crv#0"
                 ]
               }
             ]
@@ -254,9 +238,6 @@
               "geometry": "derived"
             }
           },
-          "nx:s0:curve#unknown-9": {
-            "entity": "unknown"
-          },
           "nx:s0:edge#8": {
             "entity": "byte_exact",
             "fields": {
@@ -287,9 +268,6 @@
               "geometry": "derived"
             }
           },
-          "nx:s0:surface#unknown-6": {
-            "entity": "unknown"
-          },
           "nx:s0:vertex#10": {
             "entity": "byte_exact",
             "fields": {
@@ -312,11 +290,6 @@
             "offset": 329,
             "stream": 0,
             "tag": "LINE"
-          },
-          "nx:s0:curve#unknown-9": {
-            "offset": 196,
-            "stream": 0,
-            "tag": "UNRESOLVED_CURVE_REFERENCE"
           },
           "nx:s0:edge#8": {
             "offset": 196,
@@ -357,11 +330,6 @@
             "offset": 228,
             "stream": 0,
             "tag": "PLANE"
-          },
-          "nx:s0:surface#unknown-6": {
-            "offset": 118,
-            "stream": 0,
-            "tag": "UNRESOLVED_SURFACE_REFERENCE"
           },
           "nx:s0:vertex#10": {
             "offset": 406,

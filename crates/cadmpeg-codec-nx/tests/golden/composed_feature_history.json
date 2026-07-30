@@ -19,7 +19,8 @@
           {
             "definition": {
               "definition": "sketch",
-              "space": "unresolved"
+              "sketch": "nx:feature-history:sketch#0000000000-0000000000",
+              "space": "planar"
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "SKETCH",
@@ -31,6 +32,7 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
               "sketch_construction_inputs": "nx:feature-history:sketch-construction-inputs#0000000000-0000000000",
               "sketch_construction_payload.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000000",
               "sketch_named_point_block_use.0": "nx:feature-history:sketch-named-point-block-use#0000000000-0000000000-0-0-1-0",
@@ -69,6 +71,7 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000001",
               "sketch_construction_inputs": "nx:feature-history:sketch-construction-inputs#0000000000-0000000001",
               "sketch_construction_payload.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
               "sketch_coordinate_pair.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-coordinate-pair-0000000000",
@@ -116,6 +119,8 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000002",
+              "operation_terminal_frame": "nx:feature-history:operation-terminal-frame#0000000000-0000000002",
               "sketch_datum_csys_dependency": "nx:feature-history:sketch-datum-csys-dependency#0000000000-0000000002",
               "sketch_point_dependency_construction_block": "nx:om-data-blocks-0:block#3",
               "sketch_point_dependency_point_block": "nx:om-data-blocks-0:block#2",
@@ -155,7 +160,8 @@
               "object_index.0": "3",
               "object_index.1": "null",
               "object_index.2": "null",
-              "object_index.3": "null"
+              "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000003"
             },
             "source_tag": "DATUM_PLANE",
             "suppressed": null
@@ -188,6 +194,7 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000004",
               "point_construction_header": "nx:feature-history:point-construction-header#0000000000-0000000004",
               "point_construction_mode": "02",
               "point_construction_reference": "7311"
@@ -228,7 +235,9 @@
               "object_index.0": "3",
               "object_index.1": "null",
               "object_index.2": "null",
-              "object_index.3": "null"
+              "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000005",
+              "operation_terminal_frame": "nx:feature-history:operation-terminal-frame#0000000000-0000000005"
             },
             "source_tag": "DRAFT",
             "suppressed": null
@@ -261,6 +270,7 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000006",
               "surface_construction_reference.0": "582",
               "surface_construction_reference.1": "583",
               "surface_construction_reference.10": "592",
@@ -311,6 +321,7 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000007",
               "pattern_reference.0": "801"
             },
             "source_tag": "Geometry Instance",
@@ -348,6 +359,7 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000008",
               "pattern_transform_lane": "nx:feature-history:pattern-transform-lane#0000000000-0000000008"
             },
             "source_tag": "Pattern Feature",
@@ -356,6 +368,9 @@
           {
             "definition": {
               "definition": "extrude",
+              "direction": {
+                "kind": "unresolved"
+              },
               "extent": {
                 "kind": "one_sided",
                 "side": {
@@ -370,7 +385,7 @@
                 "value": "EXTRUDE"
               },
               "start": {
-                "kind": "profile_plane"
+                "kind": "unresolved"
               }
             },
             "dependencies": [
@@ -398,7 +413,8 @@
               "object_index.0": "3",
               "object_index.1": "null",
               "object_index.2": "null",
-              "object_index.3": "null"
+              "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000009"
             },
             "source_tag": "EXTRUDE",
             "suppressed": null
@@ -406,6 +422,9 @@
           {
             "definition": {
               "definition": "extrude",
+              "direction": {
+                "kind": "unresolved"
+              },
               "extent": {
                 "kind": "one_sided",
                 "side": {
@@ -420,7 +439,7 @@
                 "value": "EXTRUDE"
               },
               "start": {
-                "kind": "profile_plane"
+                "kind": "unresolved"
               }
             },
             "dependencies": [
@@ -447,7 +466,8 @@
               "object_index.0": "3",
               "object_index.1": "null",
               "object_index.2": "null",
-              "object_index.3": "null"
+              "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000010"
             },
             "source_tag": "EXTRUDE",
             "suppressed": null
@@ -455,6 +475,9 @@
           {
             "definition": {
               "definition": "extrude",
+              "direction": {
+                "kind": "unresolved"
+              },
               "extent": {
                 "kind": "one_sided",
                 "side": {
@@ -469,7 +492,7 @@
                 "value": "EXTRUDE"
               },
               "start": {
-                "kind": "profile_plane"
+                "kind": "unresolved"
               }
             },
             "dependencies": [
@@ -490,13 +513,14 @@
               "datum_csys_block_use.6": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-6-0000000000-0000000011-0",
               "datum_csys_block_use.7": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-7-0000000000-0000000011-0",
               "datum_plane_block_use.0": "nx:feature-history:datum-plane-block-use#0000000000-0000000003-object-0-0000000000-0000000011-0",
-              "extrude_payload_footer": "nx:feature-history:extrude-payload-footer#0000000000-0000000011",
               "input_block.0": "nx:om-data-blocks-0:block#3",
               "input_block_identity_group.0": "nx:feature-history:input-block-identity-group#0000000000",
               "object_index.0": "3",
               "object_index.1": "null",
               "object_index.2": "null",
-              "object_index.3": "null"
+              "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000011",
+              "operation_terminal_discriminator": "nx:feature-history:operation-terminal-discriminator#0000000000-0000000011"
             },
             "source_tag": "EXTRUDE",
             "suppressed": null
@@ -530,7 +554,9 @@
               "object_index.0": "3",
               "object_index.1": "null",
               "object_index.2": "null",
-              "object_index.3": "null"
+              "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000012",
+              "operation_terminal_frame": "nx:feature-history:operation-terminal-frame#0000000000-0000000012"
             },
             "source_tag": "BLOCK",
             "suppressed": null
@@ -571,6 +597,8 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000013",
+              "operation_terminal_frame": "nx:feature-history:operation-terminal-frame#0000000000-0000000013",
               "projected_curve_reference.0": "712",
               "projected_curve_reference.1": "713",
               "projected_curve_reference.2": "714"
@@ -623,6 +651,7 @@
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
+              "operation_record": "nx:feature-history:operation-record#0000000000-0000000014",
               "simple_hole_repeated_scalar_lane": "nx:feature-history:simple-hole-repeated-scalar-lane#0000000000-0000000014",
               "simple_hole_repeated_scalar_lane_block_references": "nx:feature-history:simple-hole-repeated-scalar-lane-block-references#0000000000-0000000014",
               "simple_hole_template": "nx:feature-history:simple-hole-template#0000000000-0000000014-0000000000"
@@ -647,8 +676,31 @@
         "semantic_annotations": [],
         "shells": [],
         "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
+        "sketch_entities": [
+          {
+            "construction": false,
+            "geometry": {
+              "kind": "point",
+              "position": {
+                "u": 57.149999999999686,
+                "v": 3745382.3999999794
+              }
+            },
+            "id": "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0",
+            "native_ref": "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0",
+            "sketch": "nx:feature-history:sketch#0000000000-0000000000"
+          }
+        ],
+        "sketches": [
+          {
+            "id": "nx:feature-history:sketch#0000000000-0000000000",
+            "name": "SKETCH",
+            "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "placement": {
+              "kind": "unresolved"
+            }
+          }
+        ],
         "spatial_sketch_entities": [],
         "spatial_sketches": [],
         "spreadsheets": [],
@@ -3706,58 +3758,6 @@
                 ]
               }
             ],
-            "feature_extrude_payload_footers": [
-              {
-                "flags": [
-                  1,
-                  2,
-                  1,
-                  1
-                ],
-                "id": "nx:feature-history:extrude-payload-footer#0000000000-0000000011",
-                "mode_indices": [
-                  2,
-                  1
-                ],
-                "operation_label": "nx:feature-history:operation-label#0000000000-0000000011",
-                "raw_trailing_indices": [
-                  [
-                    5
-                  ],
-                  [
-                    128,
-                    255
-                  ]
-                ],
-                "raw_type_indices": [
-                  [
-                    129,
-                    95
-                  ],
-                  [
-                    128,
-                    171
-                  ]
-                ],
-                "source_offset": 1146,
-                "trailing_index_source_offsets": [
-                  1166,
-                  1167
-                ],
-                "trailing_indices": [
-                  5,
-                  255
-                ],
-                "type_index_source_offsets": [
-                  1149,
-                  1151
-                ],
-                "type_indices": [
-                  351,
-                  171
-                ]
-              }
-            ],
             "feature_extrude_payload_headers": [
               {
                 "id": "nx:feature-history:extrude-payload-header#0000000000-0000000010",
@@ -4629,6 +4629,112 @@
                 "source_offset": 1308
               }
             ],
+            "feature_operation_terminal_discriminators": [
+              {
+                "flags": [
+                  1,
+                  2,
+                  1,
+                  1
+                ],
+                "id": "nx:feature-history:operation-terminal-discriminator#0000000000-0000000011",
+                "operation_label": "nx:feature-history:operation-label#0000000000-0000000011",
+                "raw_trailing_indices": [
+                  [
+                    5
+                  ],
+                  [
+                    128,
+                    255
+                  ]
+                ],
+                "raw_type_indices": [
+                  [
+                    129,
+                    95
+                  ],
+                  [
+                    128,
+                    171
+                  ]
+                ],
+                "source_offset": 1146,
+                "trailing_index_source_offsets": [
+                  1166,
+                  1167
+                ],
+                "trailing_indices": [
+                  5,
+                  255
+                ],
+                "type_index_source_offsets": [
+                  1149,
+                  1151
+                ],
+                "type_indices": [
+                  351,
+                  171
+                ]
+              }
+            ],
+            "feature_operation_terminal_frames": [
+              {
+                "id": "nx:feature-history:operation-terminal-frame#0000000000-0000000002",
+                "local_ordinal": 0,
+                "object_index": 0,
+                "object_index_source_offset": 441,
+                "operation_record": "nx:feature-history:operation-record#0000000000-0000000002",
+                "raw_local_ordinal": [
+                  0
+                ],
+                "raw_object_index": [
+                  0
+                ],
+                "source_offset": 439
+              },
+              {
+                "id": "nx:feature-history:operation-terminal-frame#0000000000-0000000005",
+                "local_ordinal": 41,
+                "object_index": 12,
+                "object_index_source_offset": 731,
+                "operation_record": "nx:feature-history:operation-record#0000000000-0000000005",
+                "raw_local_ordinal": [
+                  41
+                ],
+                "raw_object_index": [
+                  12
+                ],
+                "source_offset": 729
+              },
+              {
+                "id": "nx:feature-history:operation-terminal-frame#0000000000-0000000012",
+                "local_ordinal": 0,
+                "object_index": 0,
+                "object_index_source_offset": 1256,
+                "operation_record": "nx:feature-history:operation-record#0000000000-0000000012",
+                "raw_local_ordinal": [
+                  0
+                ],
+                "raw_object_index": [
+                  0
+                ],
+                "source_offset": 1254
+              },
+              {
+                "id": "nx:feature-history:operation-terminal-frame#0000000000-0000000013",
+                "local_ordinal": 2,
+                "object_index": 125,
+                "object_index_source_offset": 1306,
+                "operation_record": "nx:feature-history:operation-record#0000000000-0000000013",
+                "raw_local_ordinal": [
+                  2
+                ],
+                "raw_object_index": [
+                  125
+                ],
+                "source_offset": 1304
+              }
+            ],
             "feature_pattern_references": [
               {
                 "id": "nx:feature-history:pattern-reference#0000000000-0000000007-0000000000",
@@ -4646,8 +4752,12 @@
             "feature_pattern_transform_lanes": [
               {
                 "declared_count": 3,
-                "encoding": "binary32",
+                "encodings": [
+                  "binary32",
+                  "binary32"
+                ],
                 "id": "nx:feature-history:pattern-transform-lane#0000000000-0000000008",
+                "layout": "scalar_rows",
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000008",
                 "raw_selectors": [
                   [
@@ -4672,6 +4782,7 @@
                     0
                   ]
                 ],
+                "row_schema_index": 96,
                 "selector_source_offsets": [
                   972,
                   1002
@@ -5792,7 +5903,7 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {
@@ -5898,7 +6009,13 @@
               "source_content": "derived"
             }
           },
+          "nx:feature-history:sketch#0000000000-0000000000": {
+            "entity": "derived"
+          },
           "nx:feature-history:sketch-datum-csys-dependency#0000000000-0000000002": {
+            "entity": "derived"
+          },
+          "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "entity": "derived"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
@@ -6220,10 +6337,35 @@
             "stream": 0,
             "tag": "FEATURE_OPERATION_RECORD"
           },
+          "nx:feature-history:operation-terminal-frame#0000000000-0000000002": {
+            "offset": 439,
+            "stream": 0,
+            "tag": "FEATURE_OPERATION_TERMINAL_FRAME"
+          },
+          "nx:feature-history:operation-terminal-frame#0000000000-0000000005": {
+            "offset": 729,
+            "stream": 0,
+            "tag": "FEATURE_OPERATION_TERMINAL_FRAME"
+          },
+          "nx:feature-history:operation-terminal-frame#0000000000-0000000012": {
+            "offset": 1254,
+            "stream": 0,
+            "tag": "FEATURE_OPERATION_TERMINAL_FRAME"
+          },
+          "nx:feature-history:operation-terminal-frame#0000000000-0000000013": {
+            "offset": 1304,
+            "stream": 0,
+            "tag": "FEATURE_OPERATION_TERMINAL_FRAME"
+          },
           "nx:feature-history:payload-string#0000000000-0000000014-0000000000": {
             "offset": 1381,
             "stream": 0,
             "tag": "FEATURE_PAYLOAD_STRING"
+          },
+          "nx:feature-history:sketch#0000000000-0000000000": {
+            "offset": 308,
+            "stream": 0,
+            "tag": "SKETCH"
           },
           "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000": {
             "offset": 1594,
@@ -6234,6 +6376,11 @@
             "offset": 321,
             "stream": 0,
             "tag": "SKETCH_DATUM_CSYS_DEPENDENCY"
+          },
+          "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
+            "offset": 321,
+            "stream": 0,
+            "tag": "SKETCH_POINT"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
             "offset": 1594,

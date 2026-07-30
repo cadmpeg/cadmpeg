@@ -44,6 +44,9 @@
             "native_ref": "nx:om-entry-0:expression#97",
             "ordinal": 0,
             "owner": "nx:om-entry-0:feature#equations-70",
+            "properties": {
+              "unit": "millimeter"
+            },
             "value": {
               "kind": "length",
               "value": 25.0
@@ -210,7 +213,7 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {
@@ -273,6 +276,7 @@
               "native_ref": "derived",
               "ordinal": "derived",
               "owner": "derived",
+              "properties": "derived",
               "value": "derived"
             }
           }

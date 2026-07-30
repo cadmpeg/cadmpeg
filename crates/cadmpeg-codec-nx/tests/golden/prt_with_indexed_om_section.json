@@ -71,7 +71,8 @@
             "owner": "nx:om-entry-0:feature#equations-90",
             "properties": {
               "declaration": "nx:om-expression-declarations-0:declaration#1",
-              "declaration_object_id": "258"
+              "declaration_object_id": "258",
+              "unit": "degree"
             },
             "value": {
               "kind": "angle",
@@ -338,7 +339,7 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {

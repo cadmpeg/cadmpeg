@@ -62,8 +62,9 @@
                 "byte_len": 26,
                 "data_block": "nx:om-data-blocks-0:block#0",
                 "id": "nx:om-data-block-control-forms:form#0",
-                "kind": "product_terminated",
-                "prefix_byte_len": 2,
+                "kind": "product_anchored",
+                "leading_value": 0,
+                "leading_value_width": 2,
                 "source_offset": 122,
                 "value_count": 2
               }
@@ -73,7 +74,6 @@
                 "data_block": "nx:om-data-blocks-0:block#0",
                 "id": "nx:om-data-block-control-index-values-0:value#0",
                 "ordinal": 0,
-                "prefix_byte_len": 2,
                 "source_offset": 124,
                 "value": 7
               },
@@ -81,7 +81,6 @@
                 "data_block": "nx:om-data-blocks-0:block#0",
                 "id": "nx:om-data-block-control-index-values-0:value#1",
                 "ordinal": 1,
-                "prefix_byte_len": 2,
                 "source_offset": 128,
                 "value": 4128
               }
@@ -143,7 +142,7 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {

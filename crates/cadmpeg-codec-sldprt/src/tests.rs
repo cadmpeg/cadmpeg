@@ -10163,9 +10163,12 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("configuration design-state edit has no complete native lane encoding"));
+    assert!(
+        error
+            .to_string()
+            .contains("configuration design-state edit has no complete native lane encoding"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
@@ -18923,9 +18926,12 @@ fn decode_preserves_configuration_local_parameter_values() {
             &mut Vec::new(),
         )
         .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("configuration parameter values are inconsistent with their expressions"));
+    assert!(
+        error
+            .to_string()
+            .contains("configuration parameter values are inconsistent with their expressions"),
+        "unexpected error: {error}"
+    );
 
     let mut edited = decoded.ir.clone();
     edited.model.configurations[1]

@@ -245,7 +245,7 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {
@@ -286,7 +286,7 @@
         {
           "category": "design_intent",
           "code": "feature_history_retained",
-          "message": "Activation or complete body membership remains unresolved for 1 NX design configuration(s).",
+          "message": "Activation, complete body membership, evaluated feature state, or evaluated parameter state remains unresolved for 1 NX design configuration(s).",
           "severity": "warning"
         },
         {

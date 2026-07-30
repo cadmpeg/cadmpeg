@@ -65,7 +65,54 @@
         "spatial_sketches": [],
         "spreadsheets": [],
         "subds": [],
-        "surfaces": [],
+        "surfaces": [
+          {
+            "geometry": {
+              "control_points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 20.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 10.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              ],
+              "kind": "nurbs",
+              "u_count": 2,
+              "u_degree": 1,
+              "u_knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "u_periodic": false,
+              "v_count": 2,
+              "v_degree": 1,
+              "v_knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "v_periodic": false
+            },
+            "id": "nx:s0:nurbs-surf#0"
+          }
+        ],
         "tessellations": [],
         "vertices": [],
         "view_presentations": []
@@ -77,6 +124,7 @@
               {
                 "id": "nx:container:parasolid#0",
                 "links": [
+                  "nx:s0:nurbs-surf#0",
                   "nx:s0:nurbs-crv#0"
                 ]
               }
@@ -117,7 +165,7 @@
         {
           "category": "geometry",
           "code": "carrier_summary",
-          "message": "Decoded 0 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 0 analytic surface carrier(s) (0 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (0 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
+          "message": "Decoded 0 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (0 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (0 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
         },
         {
@@ -153,6 +201,12 @@
             "fields": {
               "geometry": "derived"
             }
+          },
+          "nx:s0:nurbs-surf#0": {
+            "entity": "byte_exact",
+            "fields": {
+              "geometry": "derived"
+            }
           }
         },
         "provenance": {
@@ -165,6 +219,11 @@
             "offset": 386,
             "stream": 0,
             "tag": "B_SPLINE_CURVE"
+          },
+          "nx:s0:nurbs-surf#0": {
+            "offset": 50,
+            "stream": 0,
+            "tag": "B_SPLINE_SURFACE"
           }
         },
         "streams": [

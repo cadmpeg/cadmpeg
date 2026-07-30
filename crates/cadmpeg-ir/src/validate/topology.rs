@@ -4678,22 +4678,33 @@ fn check_configuration_output_closure(
         })
         .map(|(feature, _)| feature.clone())
         .collect::<HashSet<_>>();
-    let written_bodies = configuration
+    // Body-to-feature attribution is optional: `outputs` is empty whenever a
+    // format does not record which feature produced a body, and no model-level
+    // check demands it either. Only configurations that attribute at least one
+    // body are held to covering all of them, so that a partial attribution is an
+    // error while a wholly absent one stays silent.
+    if configuration
         .feature_states
         .values()
-        .filter(|state| !state.suppressed)
-        .flat_map(|state| &state.outputs)
-        .collect::<HashSet<_>>();
-    for body in bodies.difference(&written_bodies) {
-        findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: format!(
-                "configuration body `{}` has no unsuppressed feature-state writer",
-                body.0
-            ),
-            entity: Some(configuration.id.0.clone()),
-        });
+        .any(|state| !state.outputs.is_empty())
+    {
+        let written_bodies = configuration
+            .feature_states
+            .values()
+            .filter(|state| !state.suppressed)
+            .flat_map(|state| &state.outputs)
+            .collect::<HashSet<_>>();
+        for body in bodies.difference(&written_bodies) {
+            findings.push(Finding {
+                check: Check::ReferentialIntegrity,
+                severity: Severity::Error,
+                message: format!(
+                    "configuration body `{}` has no unsuppressed feature-state writer",
+                    body.0
+                ),
+                entity: Some(configuration.id.0.clone()),
+            });
+        }
     }
     let mut pending = closure.iter().cloned().collect::<Vec<_>>();
     while let Some(feature) = pending.pop() {
