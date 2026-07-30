@@ -2223,6 +2223,11 @@ impl SimultaneousAffineValue {
             .then_some(difference.constant)
             .filter(|constant| constant.is_finite())
     }
+
+    fn constant_truth(&self) -> Option<bool> {
+        (self.dimension == RelationDimension::default() && self.coefficients.is_empty())
+            .then_some(self.constant != 0.0)
+    }
 }
 
 impl ExpressionValue for SimultaneousAffineValue {
@@ -2299,6 +2304,9 @@ impl ExpressionValue for SimultaneousAffineValue {
     }
 
     fn logical_and(self, right: Self) -> Option<Self> {
+        if self.constant_truth() == Some(false) || right.constant_truth() == Some(false) {
+            return Some(Self::number(0.0));
+        }
         let left = self.as_curve_value()?;
         let right = right.as_curve_value()?;
         let CurveExpressionValue::Number(value) = left.logical_and(right)? else {
@@ -2308,6 +2316,9 @@ impl ExpressionValue for SimultaneousAffineValue {
     }
 
     fn logical_or(self, right: Self) -> Option<Self> {
+        if self.constant_truth() == Some(true) || right.constant_truth() == Some(true) {
+            return Some(Self::number(1.0));
+        }
         let left = self.as_curve_value()?;
         let right = right.as_curve_value()?;
         let CurveExpressionValue::Number(value) = left.logical_or(right)? else {
@@ -5015,6 +5026,49 @@ mod tests {
         );
         assert!(evaluation.solve_solutions.is_empty());
         assert_eq!(evaluation.assignments[0].value, None);
+    }
+
+    #[test]
+    fn solves_affine_systems_with_fixed_boolean_annihilators() {
+        let lines = ["x=0", "y=0", "SOLVE", "x=3", "y+(0&x)+(x&0)=4", "FOR x,y"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Number(3.0),
+                CurveExpressionValue::Number(4.0),
+            ]
+        );
+
+        let lines = ["x=0", "y=0", "SOLVE", "x=3", "y+(1|x)+(x|1)=6", "FOR x,y"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Number(3.0),
+                CurveExpressionValue::Number(4.0),
+            ]
+        );
     }
 
     #[test]
