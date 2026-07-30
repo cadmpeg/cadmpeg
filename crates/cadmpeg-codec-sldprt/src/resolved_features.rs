@@ -506,7 +506,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 terminal_extended_profile_point_coordinates(payload, offset);
             let compact_geometry_locus_point =
                 compact_geometry_locus_point_coordinates(payload, offset);
-            let inline_arc = legacy_inline_arc_coordinates(payload, offset);
+            let inline_arc = inline_arc_coordinates(payload, offset);
             let coordinates_m = linked_point
                 .map(|(coordinates, _)| coordinates)
                 .or(extended_profile_point)
@@ -914,7 +914,7 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if let Some(coordinates) = legacy_declared_handle_coordinates(payload, offset) {
         return Some(coordinates);
     }
-    if let Some([center, _, _]) = legacy_inline_arc_coordinates(payload, offset) {
+    if let Some([center, _, _]) = inline_arc_coordinates(payload, offset) {
         return Some(center);
     }
     let indexed_endpoint_body = extended_tagged_indexed_curve_endpoint_indices(payload, offset)
@@ -1236,7 +1236,41 @@ fn terminal_extended_profile_point_coordinates(payload: &[u8], offset: usize) ->
     finite_coordinate_pair(payload, offset + 58)
 }
 
-fn legacy_inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64; 2]; 3]> {
+fn validated_inline_arc_coordinates(
+    center: [f64; 2],
+    start: [f64; 2],
+    end: [f64; 2],
+) -> Option<[[f64; 2]; 3]> {
+    let start_radius = (start[0] - center[0]).hypot(start[1] - center[1]);
+    let end_radius = (end[0] - center[0]).hypot(end[1] - center[1]);
+    (start != end && start_radius > 0.0 && same_dimension_length(start_radius, end_radius))
+        .then_some([center, start, end])
+}
+
+fn opposite_corner_inline_arc_coordinates(
+    corner: [f64; 2],
+    start: [f64; 2],
+    end: [f64; 2],
+) -> Option<[[f64; 2]; 3]> {
+    let candidates = [
+        ([start[0], end[1]], [end[0], start[1]]),
+        ([end[0], start[1]], [start[0], end[1]]),
+    ];
+    let mut centers = candidates
+        .into_iter()
+        .filter_map(|(candidate_corner, center)| {
+            (same_dimension_length(candidate_corner[0], corner[0])
+                && same_dimension_length(candidate_corner[1], corner[1]))
+            .then_some(center)
+        });
+    let center = centers.next()?;
+    if centers.next().is_some() {
+        return None;
+    }
+    validated_inline_arc_coordinates(center, start, end)
+}
+
+fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64; 2]; 3]> {
     if packed_legacy_marker_body(payload, offset)
         && marker_native_code(payload, offset) == Some(2)
         && payload.get(offset + 19..offset + 23) == Some(&[0x04, 0x00, 0x02, 0x00])
@@ -1261,12 +1295,45 @@ fn legacy_inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64;
         let center = finite_coordinate_pair(payload, offset + 50)?;
         let start = finite_coordinate_pair(payload, offset + 80)?;
         let end = finite_coordinate_pair(payload, offset + 96)?;
-        let start_radius = (start[0] - center[0]).hypot(start[1] - center[1]);
-        let end_radius = (end[0] - center[0]).hypot(end[1] - center[1]);
-        return (start != end
-            && start_radius > 0.0
-            && same_dimension_length(start_radius, end_radius))
-        .then_some([center, start, end]);
+        return validated_inline_arc_coordinates(center, start, end);
+    }
+    let marker = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len());
+    let tag = payload.get(offset + 56..offset + 58);
+    let direct_center_layout = marker == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && tag == Some(&[0x12, 0x00])
+        && payload.get(offset + 128..offset + 134) == Some(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00]);
+    let opposite_corner_layout = marker == Some(LEGACY_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(1)
+        && tag == Some(&[0x1a, 0x00])
+        && payload.get(offset + 128..offset + 134) == Some(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    if (direct_center_layout || opposite_corner_layout)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&[0; 2])
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 74..offset + 76) == Some(&11u16.to_le_bytes())
+        && payload.get(offset + 76..offset + 84) == Some(&[0; 8])
+        && payload.get(offset + 84..offset + 88) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 120..offset + 124) == Some(&[0; 4])
+        && payload
+            .get(offset + 124..offset + 128)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && payload
+            .get(offset + 134..offset + 138)
+            .is_some_and(|object| object != [0; 4] && object != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.checked_add(138)?)
+    {
+        let stored = finite_coordinate_pair(payload, offset + 58)?;
+        let start = finite_coordinate_pair(payload, offset + 88)?;
+        let end = finite_coordinate_pair(payload, offset + 104)?;
+        return if direct_center_layout {
+            validated_inline_arc_coordinates(stored, start, end)
+        } else {
+            opposite_corner_inline_arc_coordinates(stored, start, end)
+        };
     }
     let common = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
         == Some(LEGACY_SKETCH_MARKER)
@@ -1295,27 +1362,7 @@ fn legacy_inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64;
         let corner = finite_coordinate_pair(payload, offset + 58)?;
         let start = finite_coordinate_pair(payload, offset + 88)?;
         let end = finite_coordinate_pair(payload, offset + 104)?;
-        let candidates = [
-            ([start[0], end[1]], [end[0], start[1]]),
-            ([end[0], start[1]], [start[0], end[1]]),
-        ];
-        let centers = candidates
-            .into_iter()
-            .filter_map(|(candidate_corner, center)| {
-                (same_dimension_length(candidate_corner[0], corner[0])
-                    && same_dimension_length(candidate_corner[1], corner[1]))
-                .then_some(center)
-            })
-            .collect::<Vec<_>>();
-        let [center] = centers.as_slice() else {
-            return None;
-        };
-        let start_radius = (start[0] - center[0]).hypot(start[1] - center[1]);
-        let end_radius = (end[0] - center[0]).hypot(end[1] - center[1]);
-        return (start != end
-            && start_radius > 0.0
-            && same_dimension_length(start_radius, end_radius))
-        .then_some([*center, start, end]);
+        return opposite_corner_inline_arc_coordinates(corner, start, end);
     }
     if !common
         || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
@@ -1331,10 +1378,7 @@ fn legacy_inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64;
     let center = finite_coordinate_pair(payload, offset + 66)?;
     let start = finite_coordinate_pair(payload, offset + 96)?;
     let end = finite_coordinate_pair(payload, offset + 112)?;
-    let start_radius = (start[0] - center[0]).hypot(start[1] - center[1]);
-    let end_radius = (end[0] - center[0]).hypot(end[1] - center[1]);
-    (start != end && start_radius > 0.0 && same_dimension_length(start_radius, end_radius))
-        .then_some([center, start, end])
+    validated_inline_arc_coordinates(center, start, end)
 }
 
 fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
@@ -2169,17 +2213,17 @@ mod marker_tests {
         extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
         generated_surface_identities, geometry_locus_profile_vertex,
         history_features_with_object_sources, indexed_arc_uses_coordinate_center,
-        indexed_profile_vertex, indexed_rectangle_from_line_cycle, inline_surface_reference_at,
-        legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
-        legacy_compact_profile_line, legacy_coordinate_circle_radius,
-        legacy_coordinate_roster_selected_axis_endpoint_indices,
+        indexed_profile_vertex, indexed_rectangle_from_line_cycle, inline_arc_coordinates,
+        inline_surface_reference_at, legacy_compact_diameter_arc_center,
+        legacy_compact_direct_endpoint_markers, legacy_compact_profile_line,
+        legacy_coordinate_circle_radius, legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_declared_handle_coordinates, legacy_direct_compact_selected_axis_endpoint_indices,
         legacy_extended_linked_profile_point_coordinates, legacy_extended_profile_curve_kind,
         legacy_extended_rectangle_diagonal_endpoint, legacy_feature_input_section,
-        legacy_inline_arc_coordinates, legacy_linked_coordinates,
-        legacy_long_profile_line_endpoint_indices, legacy_offset_plane_face_alias,
-        legacy_reference_axis_triads, legacy_referenced_wide_arc_endpoint_indices,
-        legacy_single_face_reference_path_at, legacy_single_incidence_profile_point_coordinates,
+        legacy_linked_coordinates, legacy_long_profile_line_endpoint_indices,
+        legacy_offset_plane_face_alias, legacy_reference_axis_triads,
+        legacy_referenced_wide_arc_endpoint_indices, legacy_single_face_reference_path_at,
+        legacy_single_incidence_profile_point_coordinates,
         legacy_state_five_curve_endpoint_indices, legacy_terminal_indexed_profile_line,
         legacy_terminal_profile_endpoint_offset, legacy_undetailed_profile_line,
         legacy_unlocated_geometry_handle, linked_profile_point, marker_coordinates,
@@ -8108,7 +8152,7 @@ mod marker_tests {
         payload[146..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
         assert_eq!(
-            legacy_inline_arc_coordinates(&payload, 0),
+            inline_arc_coordinates(&payload, 0),
             Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
         );
         assert_eq!(marker_coordinates(&payload, 0), Some([2.0, 3.0]));
@@ -8118,7 +8162,7 @@ mod marker_tests {
         );
 
         payload[120..128].copy_from_slice(&5.0f64.to_le_bytes());
-        assert_eq!(legacy_inline_arc_coordinates(&payload, 0), None);
+        assert_eq!(inline_arc_coordinates(&payload, 0), None);
 
         let mut corner = vec![0; 138 + LEGACY_SKETCH_MARKER.len()];
         corner[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -8143,7 +8187,7 @@ mod marker_tests {
         corner[138..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
         assert_eq!(
-            legacy_inline_arc_coordinates(&corner, 0),
+            inline_arc_coordinates(&corner, 0),
             Some([[17.0, 17.0], [20.0, 17.0], [17.0, 20.0]])
         );
         assert_eq!(marker_coordinates(&corner, 0), Some([17.0, 17.0]));
@@ -8171,7 +8215,7 @@ mod marker_tests {
         packed[122..126].copy_from_slice(&9u32.to_le_bytes());
         packed[126..].copy_from_slice(LEGACY_SKETCH_MARKER);
         assert_eq!(
-            legacy_inline_arc_coordinates(&packed, 0),
+            inline_arc_coordinates(&packed, 0),
             Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
         );
         assert_eq!(
@@ -8180,11 +8224,71 @@ mod marker_tests {
         );
         packed[48] = 0x12;
         assert_eq!(
-            legacy_inline_arc_coordinates(&packed, 0),
+            inline_arc_coordinates(&packed, 0),
             Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
         );
         packed[104..112].copy_from_slice(&5.0f64.to_le_bytes());
-        assert_eq!(legacy_inline_arc_coordinates(&packed, 0), None);
+        assert_eq!(inline_arc_coordinates(&packed, 0), None);
+    }
+
+    #[test]
+    fn geometry_locus_inline_arcs_decode_direct_and_opposite_corner_centers() {
+        for (prefix, code, tag, stored, tail, center) in [
+            (
+                LEGACY_EXTENDED_SKETCH_MARKER,
+                2u32,
+                [0x12, 0x00],
+                [2.0f64, 3.0],
+                [0x00, 0x00, 0x02, 0x00, 0x00, 0x00],
+                [2.0f64, 3.0],
+            ),
+            (
+                LEGACY_SKETCH_MARKER,
+                1u32,
+                [0x1a, 0x00],
+                [2.0f64, 3.0],
+                [0x01, 0x00, 0x00, 0x00, 0x00, 0x00],
+                [1.0f64, 4.0],
+            ),
+        ] {
+            let mut payload = vec![0; 138 + prefix.len()];
+            payload[..prefix.len()].copy_from_slice(prefix);
+            payload[5..13].fill(0xff);
+            payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[17..21].copy_from_slice(&code.to_le_bytes());
+            payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+            payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+            payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[56..58].copy_from_slice(&tag);
+            payload[58..66].copy_from_slice(&stored[0].to_le_bytes());
+            payload[66..74].copy_from_slice(&stored[1].to_le_bytes());
+            payload[74..76].copy_from_slice(&11u16.to_le_bytes());
+            payload[84..88].copy_from_slice(&1u32.to_le_bytes());
+            payload[88..96].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[96..104].copy_from_slice(&3.0f64.to_le_bytes());
+            payload[104..112].copy_from_slice(&2.0f64.to_le_bytes());
+            payload[112..120].copy_from_slice(&4.0f64.to_le_bytes());
+            payload[124..128].copy_from_slice(&7u32.to_le_bytes());
+            payload[128..134].copy_from_slice(&tail);
+            payload[134..138].copy_from_slice(&5u32.to_le_bytes());
+            payload[138..].copy_from_slice(prefix);
+
+            assert_eq!(
+                inline_arc_coordinates(&payload, 0),
+                Some([center, [1.0, 3.0], [2.0, 4.0]])
+            );
+            assert_eq!(marker_coordinates(&payload, 0), Some(center));
+            assert_eq!(
+                sketch_input_entities(&payload, "lane")[0].kind,
+                SketchInputKind::Arc
+            );
+
+            payload[112..120].copy_from_slice(&5.0f64.to_le_bytes());
+            assert_eq!(inline_arc_coordinates(&payload, 0), None);
+            payload[112..120].copy_from_slice(&4.0f64.to_le_bytes());
+            payload[128] ^= 1;
+            assert_eq!(inline_arc_coordinates(&payload, 0), None);
+        }
     }
 
     #[test]
@@ -28679,6 +28783,19 @@ pub(crate) fn project_marker_backed_sketches(
                                     start_angle: None,
                                     end_angle: None,
                                 }
+                            } else if let Some([center, start, end]) =
+                                usize::try_from(marker.offset).ok().and_then(|offset| {
+                                    inline_arc_coordinates(&lane.native_payload, offset)
+                                })
+                            {
+                                let (Some(center), Some(start), Some(end)) = (
+                                    project_coordinates(center),
+                                    project_coordinates(start),
+                                    project_coordinates(end),
+                                ) else {
+                                    return None;
+                                };
+                                minor_arc_geometry(start, end, center, QUANTUM)?
                             } else if let ([start, end], Some(point)) = (
                                 endpoints.as_slice(),
                                 marker.coordinates_m.and_then(|_| project(marker)),
@@ -37020,7 +37137,7 @@ fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = compact_legacy_object_line_endpoints(payload, curve, markers) {
         return endpoints.to_vec();
     }
-    if let Some(endpoints) = legacy_inline_arc_endpoint_markers(payload, curve, markers) {
+    if let Some(endpoints) = inline_arc_endpoint_markers(payload, curve, markers) {
         return endpoints.to_vec();
     }
     if let Some(endpoints) = one_based_point_roster_line_endpoint_markers(payload, curve, markers) {
@@ -37254,13 +37371,13 @@ fn legacy_terminal_profile_indexed_endpoints<'a>(
     (first.id != second.id).then_some([first, second])
 }
 
-fn legacy_inline_arc_endpoint_markers<'a>(
+fn inline_arc_endpoint_markers<'a>(
     payload: &[u8],
     arc: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(arc.offset).ok()?;
-    let [_, start, end] = legacy_inline_arc_coordinates(payload, offset)?;
+    let [_, start, end] = inline_arc_coordinates(payload, offset)?;
     let endpoint = |coordinates: [f64; 2]| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == arc.feature_ref
