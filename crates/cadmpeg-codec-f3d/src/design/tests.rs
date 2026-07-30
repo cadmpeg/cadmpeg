@@ -10602,6 +10602,52 @@ fn counted_offset_return_run_pairs_sources_and_results() {
 }
 
 #[test]
+fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
+    let arc = |id: &str, radius| cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(3.0, -4.0),
+            radius: Length(radius),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::FRAC_PI_2),
+        },
+    };
+    let source = arc("generated:arc#source", 2.0);
+    let result = arc("generated:arc#result", 5.0);
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+
+    let definition =
+        exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).expect("concentric arc offset");
+    assert!(matches!(
+        definition,
+        SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        } if pairs.len() == 1
+            && pairs[0].source == source.id
+            && pairs[0].result == result.id
+            && pairs[0].source_reversed
+            && (distance - 3.0).abs() <= 1.0e-9
+    ));
+
+    let mut mismatched = result;
+    mismatched.geometry = SketchGeometry::Arc {
+        center: Point2::new(3.0, -4.0),
+        radius: Length(5.0),
+        start_angle: Angle(0.0),
+        end_angle: Angle(std::f64::consts::PI),
+    };
+    let entities = HashMap::from([(1, &source), (2, &mismatched)]);
+    assert!(exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).is_none());
+}
+
+#[test]
 fn offset_parameter_factor_preserves_curve_direction() {
     assert_eq!(offset_parameter_factor(2.0, 2.0), Some(1.0));
     assert_eq!(offset_parameter_factor(2.0, -2.0), Some(-1.0));

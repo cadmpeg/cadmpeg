@@ -2562,7 +2562,7 @@ pub(crate) fn exact_counted_offset(
         }
         let source = entities.get(source_record_index)?;
         let result = entities.get(result_record_index)?;
-        let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
+        let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
         if distance.abs() <= 1.0e-9 {
             return None;
         }
@@ -2750,6 +2750,50 @@ fn offset_source_reversed(distance: f64, canonical: &mut Option<f64>) -> Option<
         return None;
     }
     Some(distance.is_sign_negative())
+}
+
+fn sketch_curve_offset(
+    source: &cadmpeg_ir::sketches::SketchGeometry,
+    result: &cadmpeg_ir::sketches::SketchGeometry,
+) -> Option<f64> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    match (source, result) {
+        (
+            SketchGeometry::Arc {
+                center: source_center,
+                radius: source_radius,
+                start_angle: source_start,
+                end_angle: source_end,
+            },
+            SketchGeometry::Arc {
+                center: result_center,
+                radius: result_radius,
+                start_angle: result_start,
+                end_angle: result_end,
+            },
+        ) => {
+            let scale = 1.0
+                + source_center
+                    .u
+                    .abs()
+                    .max(source_center.v.abs())
+                    .max(result_center.u.abs())
+                    .max(result_center.v.abs())
+                    .max(source_radius.0)
+                    .max(result_radius.0);
+            let sweep = source_end.0 - source_start.0;
+            (source_radius.0 > 0.0
+                && result_radius.0 > 0.0
+                && sweep.abs() > 1.0e-12
+                && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
+                && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale
+                && (source_start.0 - result_start.0).abs() <= 1.0e-9
+                && (source_end.0 - result_end.0).abs() <= 1.0e-9)
+                .then_some(sweep.signum() * (source_radius.0 - result_radius.0))
+        }
+        _ => parallel_line_offset(source, result),
+    }
 }
 
 fn parallel_line_offset(

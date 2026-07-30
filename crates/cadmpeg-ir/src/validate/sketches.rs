@@ -110,7 +110,48 @@ fn spatial_oriented_endpoints(
     })
 }
 
-fn line_offset_matches(source: &SketchGeometry, result: &SketchGeometry, expected: f64) -> bool {
+fn sketch_curve_offset_matches(
+    source: &SketchGeometry,
+    result: &SketchGeometry,
+    expected: f64,
+) -> bool {
+    if let (
+        SketchGeometry::Arc {
+            center: source_center,
+            radius: source_radius,
+            start_angle: source_start,
+            end_angle: source_end,
+        },
+        SketchGeometry::Arc {
+            center: result_center,
+            radius: result_radius,
+            start_angle: result_start,
+            end_angle: result_end,
+        },
+    ) = (source, result)
+    {
+        let scale = 1.0
+            + source_center
+                .u
+                .abs()
+                .max(source_center.v.abs())
+                .max(result_center.u.abs())
+                .max(result_center.v.abs())
+                .max(source_radius.0)
+                .max(result_radius.0)
+                .max(expected.abs());
+        let sweep = source_end.0 - source_start.0;
+        return source_radius.0 > 0.0
+            && result_radius.0 > 0.0
+            && sweep.abs() > 1.0e-12
+            && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
+            && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale
+            && (source_start.0 - result_start.0).abs() <= 1.0e-9
+            && (source_end.0 - result_end.0).abs() <= 1.0e-9
+            && (sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
+                <= 1.0e-9 * scale;
+    }
+
     let (
         SketchGeometry::Line {
             start: source_start,
@@ -1188,7 +1229,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         } else {
                             distance.0
                         };
-                        line_offset_matches(source, result, expected)
+                        sketch_curve_offset_matches(source, result, expected)
                     });
                 if !valid {
                     finding(
