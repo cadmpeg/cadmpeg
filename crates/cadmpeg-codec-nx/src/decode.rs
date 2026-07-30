@@ -10114,6 +10114,27 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "datum plane"
             }
+            FeatureDefinition::DatumPlane {
+                origin,
+                normal,
+                u_axis,
+            } if datum_plane_is_incomplete(*origin, *normal, *u_axis) => "datum plane",
+            FeatureDefinition::DatumAxis { origin, direction }
+                if !finite_feature_point(*origin) || !valid_feature_direction(*direction) =>
+            {
+                "datum axis"
+            }
+            FeatureDefinition::DatumPoint { position } if !finite_feature_point(*position) => {
+                "datum point"
+            }
+            FeatureDefinition::DatumCoordinateSystem {
+                origin,
+                x_axis,
+                y_axis,
+                z_axis,
+            } if datum_coordinate_system_is_incomplete(*origin, *x_axis, *y_axis, *z_axis) => {
+                "datum coordinate system"
+            }
             FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {
                 "extract body"
             }
@@ -10529,6 +10550,42 @@ fn active_configuration_state_is_incomplete(
                 configuration.parameter_values.get(&parameter.id) != Some(value)
             })
         })
+}
+
+pub(crate) fn datum_plane_is_incomplete(origin: Point3, normal: Vector3, u_axis: Vector3) -> bool {
+    !finite_feature_point(origin)
+        || !valid_feature_direction(normal)
+        || !valid_feature_direction(u_axis)
+        || !directions_are_perpendicular(normal, u_axis)
+}
+
+pub(crate) fn datum_coordinate_system_is_incomplete(
+    origin: Point3,
+    x_axis: Vector3,
+    y_axis: Vector3,
+    z_axis: Vector3,
+) -> bool {
+    if !finite_feature_point(origin)
+        || !unit_feature_direction(x_axis)
+        || !unit_feature_direction(y_axis)
+        || !unit_feature_direction(z_axis)
+        || !directions_are_perpendicular(x_axis, y_axis)
+        || !directions_are_perpendicular(y_axis, z_axis)
+        || !directions_are_perpendicular(z_axis, x_axis)
+    {
+        return true;
+    }
+    let handedness = x_axis.cross(y_axis).dot(z_axis);
+    !handedness.is_finite() || (handedness - 1.0).abs() > 1e-9
+}
+
+fn unit_feature_direction(direction: Vector3) -> bool {
+    valid_feature_direction(direction) && (direction.norm() - 1.0).abs() <= 1e-9
+}
+
+fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
+    let scale = first.norm() * second.norm();
+    scale.is_finite() && first.dot(second).abs() <= 1e-9 * scale
 }
 
 pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Option<&'static str> {

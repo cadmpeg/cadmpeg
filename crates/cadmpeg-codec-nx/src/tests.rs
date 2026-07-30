@@ -633,6 +633,52 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
 }
 
 #[test]
+fn nx_datum_completeness_requires_coherent_finite_frames() {
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let x_axis = Vector3::new(1.0, 0.0, 0.0);
+    let y_axis = Vector3::new(0.0, 1.0, 0.0);
+    let z_axis = Vector3::new(0.0, 0.0, 1.0);
+
+    assert!(!crate::decode::datum_plane_is_incomplete(
+        origin, z_axis, x_axis,
+    ));
+    assert!(crate::decode::datum_plane_is_incomplete(
+        origin,
+        z_axis,
+        Vector3::new(1.0, 0.0, 1.0),
+    ));
+    assert!(crate::decode::datum_plane_is_incomplete(
+        Point3::new(f64::NAN, 2.0, 3.0),
+        z_axis,
+        x_axis,
+    ));
+
+    assert!(!crate::decode::datum_coordinate_system_is_incomplete(
+        origin, x_axis, y_axis, z_axis,
+    ));
+    assert!(crate::decode::datum_coordinate_system_is_incomplete(
+        origin,
+        x_axis,
+        y_axis,
+        Vector3::new(0.0, 0.0, -1.0),
+    ));
+    assert!(crate::decode::datum_coordinate_system_is_incomplete(
+        origin,
+        Vector3::new(2.0, 0.0, 0.0),
+        y_axis,
+        z_axis,
+    ));
+    assert!(crate::decode::datum_coordinate_system_is_incomplete(
+        origin,
+        x_axis,
+        Vector3::new(1e-6, 1.0, 0.0),
+        z_axis,
+    ));
+}
+
+#[test]
 fn nx_extent_completeness_checks_nested_and_face_termination() {
     use cadmpeg_ir::features::FeatureId;
     use cadmpeg_ir::features::{
