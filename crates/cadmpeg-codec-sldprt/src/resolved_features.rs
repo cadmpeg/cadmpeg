@@ -1412,14 +1412,17 @@ fn extended_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[
         && payload.get(offset + 124..offset + 166) == Some(&[0; 42])
         && sketch_marker_prefix_at(payload, offset.saturating_add(170));
     let compact_declaration_tag = match handle_state {
-        2 => [0x01, 0x00],
-        3 => [0x03, 0x00],
+        2 => matches!(
+            payload.get(offset + 96..offset + 98),
+            Some([0x00 | 0x01, 0x00])
+        ),
+        3 => payload.get(offset + 96..offset + 98) == Some(&[0x03, 0x00]),
         _ => unreachable!(),
     };
     let compact_declaration = code == 2
         && payload.get(offset + 78..offset + 84) == Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
         && payload.get(offset + 84..offset + 96) == Some(b"sgLineHandle")
-        && payload.get(offset + 96..offset + 98) == Some(&compact_declaration_tag)
+        && compact_declaration_tag
         && payload.get(offset + 98..offset + 102) == Some(&[0xff; 4])
         && payload
             .get(offset + 102..offset + 104)
@@ -8530,6 +8533,17 @@ mod marker_tests {
             sketch_input_entities(&compact_declaration, "lane")[0].kind,
             SketchInputKind::Point
         );
+        compact_declaration[96..98].fill(0);
+        assert_eq!(
+            extended_profile_point_coordinates(&compact_declaration, 0),
+            Some([0.435, 0.0075])
+        );
+        compact_declaration[96..98].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            extended_profile_point_coordinates(&compact_declaration, 0),
+            None
+        );
+        compact_declaration[96..98].copy_from_slice(&1u16.to_le_bytes());
         compact_declaration[154..158].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(
             extended_profile_point_coordinates(&compact_declaration, 0),
