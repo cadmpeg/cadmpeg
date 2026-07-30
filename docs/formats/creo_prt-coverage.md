@@ -130,9 +130,11 @@ fixtures, claims above L1 remain unproven.
 - Section-coordinate solving accepts a complete variable table or no variable
   table. An incomplete variable table contributes no coordinate equations;
   missing declared rows are counted and raise a decode loss note. Complete
-  endpoints from uniquely joined saved lines and arcs, and the center of a
-  joined saved arc or circle, seed the corresponding segment-point equations
-  even when no variable table is present. A joined saved circle also seeds its
+  variable rows retain the exact encoded value and pre-solve guess bodies
+  independently of scalar interpretation. Complete endpoints from uniquely
+  joined saved lines and arcs, and the center of a joined saved arc or circle,
+  seed the corresponding segment-point equations even when no variable table
+  is present. A joined saved circle also seeds its
   radius-reference component. Disagreement with stored or constraint-derived
   coordinates or radii withholds the inconsistent derivation.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and

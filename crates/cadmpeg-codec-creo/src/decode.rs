@@ -298,9 +298,11 @@ struct CreoSketchVariable {
     variable_type: u32,
     key: u32,
     value: Option<f64>,
+    value_body: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     resolved_value: Option<f64>,
     guess: Option<f64>,
+    guess_body: Vec<u8>,
     known: Option<u32>,
     homogeneity: Option<u32>,
     uvar_id: Option<u32>,

@@ -773,8 +773,12 @@ pub struct FeatureVariableRow {
     pub key: u32,
     /// Solved value when the scalar token is defined inline.
     pub value: Option<f64>,
+    /// Exact encoded scalar body of the stored value.
+    pub value_body: Vec<u8>,
     /// Pre-solve estimate when defined inline.
     pub guess: Option<f64>,
+    /// Exact encoded scalar body of the pre-solve estimate.
+    pub guess_body: Vec<u8>,
     /// Stored solver-known flag.
     pub known: Option<u32>,
     /// Stored solver homogeneity class.
@@ -2078,15 +2082,18 @@ fn variable_table(
         let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
         let key = named_compact_int(payload, b"key\0", cursor, close)?;
         let value_label = find_bytes(payload, b"value\0", cursor, close)? + b"value\0".len();
-        let (value, _, dimension_driven) =
+        let (value, value_end, dimension_driven) =
             decode_section_coordinate_scalar(payload, value_label, close, cache);
         let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
-        let (guess, _, _) = decode_section_coordinate_scalar(payload, guess_label, close, cache);
+        let (guess, guess_end, _) =
+            decode_section_coordinate_scalar(payload, guess_label, close, cache);
         Some(FeatureVariableRow {
             variable_type,
             key,
             value,
+            value_body: payload[value_label..value_end].to_vec(),
             guess,
+            guess_body: payload[guess_label..guess_end].to_vec(),
             known: named_compact_int(payload, b"known\0", cursor, close),
             homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
             uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
@@ -2119,11 +2126,15 @@ fn variable_table(
         }
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
+        let value_start = cursor;
         let (value, next, dimension_driven) =
             decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
+        let value_body = payload[value_start..cursor].to_vec();
+        let guess_start = cursor;
         let (guess, next, _) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
+        let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::new();
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
             if payload[cursor] >= 0xc0 {
@@ -2140,7 +2151,9 @@ fn variable_table(
             variable_type,
             key,
             value,
+            value_body,
             guess,
+            guess_body,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
@@ -2241,11 +2254,15 @@ fn positional_variable_table(
         cursor = next;
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
+        let value_start = cursor;
         let (value, next, dimension_driven) =
             decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
+        let value_body = payload[value_start..cursor].to_vec();
+        let guess_start = cursor;
         let (guess, next, _) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
+        let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::with_capacity(3);
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
             if payload[cursor] >= 0xc0 {
@@ -2262,7 +2279,9 @@ fn positional_variable_table(
             variable_type,
             key,
             value,
+            value_body,
             guess,
+            guess_body,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
@@ -9436,6 +9455,8 @@ mod tests {
         assert_eq!(variables.entity_ref, Some(119));
         assert_eq!(variables.rows.len(), 2);
         assert!(variables.is_complete());
+        assert_eq!(variables.rows[0].value_body, [0x18]);
+        assert_eq!(variables.rows[0].guess_body, [0x18]);
         assert_eq!(variables.rows[0].guess, Some(0.0));
         assert_eq!(variables.rows[0].known, Some(1));
         assert_eq!(variables.rows[0].homogeneity, Some(0));
@@ -9501,7 +9522,9 @@ mod tests {
             variable_type,
             key: 7,
             value: Some(value),
+            value_body: Vec::new(),
             guess: None,
+            guess_body: Vec::new(),
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -9528,7 +9551,9 @@ mod tests {
             variable_type,
             key,
             value: Some(value),
+            value_body: Vec::new(),
             guess: None,
+            guess_body: Vec::new(),
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -10107,7 +10132,9 @@ mod tests {
             variable_type,
             key: 2,
             value: Some(value),
+            value_body: Vec::new(),
             guess: None,
+            guess_body: Vec::new(),
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -10324,7 +10351,9 @@ mod tests {
         assert_eq!(row.variable_type, 0);
         assert_eq!(row.key, 65);
         assert_eq!(row.value, Some(0.0));
+        assert_eq!(row.value_body, [0x18]);
         assert_eq!(row.guess, None);
+        assert_eq!(row.guess_body, [0x20, 0x96, 0x61]);
         assert_eq!(row.known, Some(1));
         assert_eq!(row.homogeneity, Some(1));
         assert_eq!(row.uvar_id, Some(518));

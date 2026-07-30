@@ -4022,10 +4022,14 @@ fn scan_decodes_featdefs_var_arr_section_points() {
     assert_eq!(variables.entity_ref, Some(1));
     assert_eq!(variables.rows.len(), 2);
     assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(variables.rows[0].value_body, [0xe4]);
+    assert_eq!(variables.rows[0].guess_body, [0x0f]);
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(0));
     assert_eq!(variables.rows[0].uvar_id, Some(3));
     assert_eq!(variables.rows[1].value, Some(3.0));
+    assert_eq!(variables.rows[1].value_body, [0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(variables.rows[1].guess_body, [0x0f]);
     assert_eq!(variables.rows[1].known, Some(1));
     assert_eq!(variables.rows[1].homogeneity, Some(0));
     assert_eq!(variables.rows[1].uvar_id, Some(4));
@@ -4052,7 +4056,9 @@ fn scan_decodes_featdefs_var_arr_named_prototype_row() {
     assert_eq!(variables.rows[0].variable_type, 1);
     assert_eq!(variables.rows[0].key, 7);
     assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(variables.rows[0].value_body, [0xe4]);
     assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(variables.rows[0].guess_body, [0x0f]);
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(2));
     assert_eq!(variables.rows[0].uvar_id, Some(3));
@@ -4115,12 +4121,28 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables.len(), 2);
     assert_eq!(variables[0]["key"], 7);
     assert_eq!(variables[0]["value"], 1.0);
+    assert_eq!(
+        variables[0]["value_body"].as_array().expect("value body"),
+        &[228]
+    );
+    assert_eq!(
+        variables[0]["guess_body"].as_array().expect("guess body"),
+        &[15]
+    );
     assert_eq!(variables[0]["resolved_value"], 1.0);
     assert_eq!(variables[0]["known"], 1);
     assert_eq!(variables[0]["homogeneity"], 0);
     assert_eq!(variables[0]["uvar_id"], 3);
     assert_eq!(variables[0]["offset"], variable_offset);
     assert_eq!(variables[1]["value"], 3.0);
+    assert_eq!(
+        variables[1]["value_body"].as_array().expect("value body"),
+        &[70, 8, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        variables[1]["guess_body"].as_array().expect("guess body"),
+        &[15]
+    );
     assert_eq!(variables[1]["resolved_value"], 3.0);
     assert_eq!(variables[1]["known"], 1);
     assert_eq!(variables[1]["homogeneity"], 0);
@@ -4606,7 +4628,9 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 variable_type: 3,
                 key: 6,
                 value: None,
+                value_body: Vec::new(),
                 guess: None,
+                guess_body: Vec::new(),
                 known: None,
                 homogeneity: None,
                 uvar_id: None,
