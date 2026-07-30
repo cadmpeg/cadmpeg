@@ -437,11 +437,12 @@ fn parse_schema_program(data: &[u8], catalog_offset: usize) -> Option<LegacySche
     let search_end = memchr::memmem::find(&data[offset..], CATALOG_OPEN)
         .and_then(|relative| offset.checked_add(relative))
         .unwrap_or(data.len());
-    let footer_offset = memchr::memmem::find(&data[offset..search_end], SCHEMA_PROGRAM_FOOTER)
-        .and_then(|relative| offset.checked_add(relative))?;
-    if footer_offset == offset || data.get(footer_offset - 1) != Some(&0xfe) {
-        return None;
-    }
+    let footer_offset = memchr::memmem::find_iter(&data[offset..search_end], SCHEMA_PROGRAM_FOOTER)
+        .find_map(|relative| {
+            let footer_offset = offset.checked_add(relative)?;
+            (footer_offset > offset && data.get(footer_offset - 1) == Some(&0xfe))
+                .then_some(footer_offset)
+        })?;
     Some(LegacySchemaProgram {
         offset,
         footer_offset,
@@ -1269,7 +1270,7 @@ mod tests {
         unterminated[footer_offset - 1] = 0x81;
         assert!(parse_runs(&unterminated)[0].schema_program.is_none());
 
-        let mut repeated_footer = bytes;
+        let mut repeated_footer = bytes.clone();
         repeated_footer.splice(
             footer_offset..footer_offset,
             SCHEMA_PROGRAM_FOOTER.iter().copied(),
@@ -1280,6 +1281,21 @@ mod tests {
             .as_ref()
             .expect("first complete footer closes the program");
         assert_eq!(repeated.footer_offset, footer_offset);
+
+        let mut incomplete_footer = bytes;
+        incomplete_footer.splice(
+            program_offset + 1..program_offset + 1,
+            SCHEMA_PROGRAM_FOOTER.iter().copied(),
+        );
+        let incomplete_runs = parse_runs(&incomplete_footer);
+        let program = incomplete_runs[0]
+            .schema_program
+            .as_ref()
+            .expect("incomplete footer does not shadow a complete footer");
+        assert_eq!(
+            program.footer_offset,
+            footer_offset + SCHEMA_PROGRAM_FOOTER.len()
+        );
     }
 
     #[test]
