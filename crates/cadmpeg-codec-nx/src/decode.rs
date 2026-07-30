@@ -590,8 +590,12 @@ impl HomogeneousSurfaceNet {
                 };
                 let denominator =
                     knots[derivative_index + degree + 1] - knots[derivative_index + 1];
-                if !denominator.is_finite() || denominator <= 0.0 {
+                if !denominator.is_finite() || denominator < 0.0 {
                     return None;
+                }
+                if denominator == 0.0 {
+                    controls.push([0.0; 4]);
+                    continue;
                 }
                 let factor = degree as f64 / denominator;
                 controls.push(std::array::from_fn(|axis| {
@@ -10179,6 +10183,30 @@ mod tests {
 
         let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
             .expect("each regular knot span certifies independently");
+        assert!((0.01..=0.02).contains(&bound));
+    }
+
+    #[test]
+    fn offset_cache_fit_certifies_regular_c0_knot_spans() {
+        let x = [0.0, 0.25, 0.5, 1.0, 1.5];
+        let z = [0.0, 0.0, 0.1, 0.1, 0.2];
+        let support = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 2,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 5,
+            v_count: 2,
+            control_points: (0..5)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+
+        let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+            .expect("regular spans certify across the C0 knot break");
         assert!((0.01..=0.02).contains(&bound));
     }
 
