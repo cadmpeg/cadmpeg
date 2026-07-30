@@ -541,6 +541,7 @@ fn split_outline_carrier_requires_complementary_square_bounds() {
 #[test]
 fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     let mut replay = crate::surface::TabulatedCylinderCurveReplay {
+        body: Vec::new(),
         surface_id: 7,
         curve_id: 9,
         curve_type: 0x13,
@@ -688,6 +689,7 @@ fn tabulated_cylinder_offset_chart_resolves_signed_unit_axes() {
 #[test]
 fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
     let replay = crate::surface::TabulatedCylinderCurveReplay {
+        body: Vec::new(),
         surface_id: 815,
         curve_id: 1,
         curve_type: 0x13,

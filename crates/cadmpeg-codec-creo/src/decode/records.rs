@@ -1294,6 +1294,7 @@ pub(super) struct CreoCrossSectionCurveRowRecord {
 #[derive(Serialize)]
 pub(super) struct CreoTabulatedCylinderCurveReplayRecord {
     pub(super) id: String,
+    pub(super) body: Vec<u8>,
     pub(super) surface_id: u32,
     pub(super) curve_id: u32,
     pub(super) curve_type: u8,
@@ -1495,6 +1496,7 @@ pub(super) fn tabulated_cylinder_curve_replay_records(
                 "creo:visibgeom:tabulated_cylinder_curve_replay#{}",
                 record.surface_id
             ),
+            body: record.body.clone(),
             surface_id: record.surface_id,
             curve_id: record.curve_id,
             curve_type: record.curve_type,

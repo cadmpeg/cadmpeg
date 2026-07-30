@@ -716,9 +716,11 @@ f7 <successor_ref> <point_0_body>
 and `03` is the cubic degree. The `f8 04` field names four contiguous control
 point entities beginning at `control_point_0_ref`. The four packed point bodies
 are bounded by the reference-bearing first separator, exactly two middle
-separators, and the reference-bearing terminal trailer. A replay belongs to
-the nearest preceding `geom_type = 2c` surface row after the previous replay
-signature. Intervening rows from other surface families do not consume it.
+separators, and the reference-bearing terminal trailer. The byte-exact replay
+body begins at `curve_id_ci` and ends after the terminal `f6 e3`. A replay
+belongs to the nearest preceding `geom_type = 2c` surface row after the
+previous replay signature. Intervening rows from other surface families do not
+consume it.
 Ambiguous separators or a missing unique owner leave the bytes opaque.
 Each packed point body contains two directrix coordinates. A control point is
 numeric only when two defined scalar tokens consume its entire bounded body;

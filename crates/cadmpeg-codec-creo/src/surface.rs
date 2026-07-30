@@ -481,6 +481,9 @@ pub struct LineExtrusionFrame {
 /// cylinder surface row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabulatedCylinderCurveReplay {
+    /// Exact bytes from the replay curve identifier through the terminal
+    /// `f6 e3` trailer.
+    pub body: Vec<u8>,
     /// Owning `geom_type = 2c` surface identifier.
     pub surface_id: u32,
     /// Replayed curve identifier.
@@ -4593,7 +4596,7 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
                     .flatten()
             })
             .collect::<Vec<_>>();
-        let [(terminal, _terminal_end, terminal_reference)] = terminals.as_slice() else {
+        let [(terminal, terminal_end, terminal_reference)] = terminals.as_slice() else {
             continue;
         };
         let middle_separators = (*first_body_start..*terminal)
@@ -4634,6 +4637,7 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
             continue;
         };
         replays.push(TabulatedCylinderCurveReplay {
+            body: payload[replay_offset..*terminal_end].to_vec(),
             surface_id: owner.id,
             curve_id,
             curve_type: 0x13,
@@ -7017,6 +7021,33 @@ mod tests {
         }
 
         assert!(tabulated_cylinder_curve_replays(&payload).is_empty());
+    }
+
+    #[test]
+    fn tabulated_cylinder_replay_retains_its_complete_body() {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 8]);
+        let replay_offset = payload.len();
+        payload.extend_from_slice(&[
+            9, 0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7, 32, 0xfb,
+            0xe2, 0xf7, 36,
+        ]);
+        for separator in [
+            [0x18, 0xf1, 0xf7, 32, 0xe2].as_slice(),
+            [0x18, 0xe2].as_slice(),
+            [0x18, 0xe2].as_slice(),
+            [0x18, 0xf2, 0xf7, 37, 0xf6, 0xe3].as_slice(),
+        ] {
+            payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+            payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+            payload.extend_from_slice(separator);
+        }
+
+        let replays = tabulated_cylinder_curve_replays(&payload);
+        let [replay] = replays.as_slice() else {
+            panic!("one complete replay");
+        };
+        assert_eq!(replay.body, payload[replay_offset..]);
     }
 
     #[test]
