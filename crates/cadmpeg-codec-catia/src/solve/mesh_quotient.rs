@@ -278,6 +278,54 @@ pub(crate) struct MeshCoordinateRootDomains {
     point_count: usize,
 }
 
+pub(crate) struct MeshImplicitEdgeCandidates {
+    left: Vec<usize>,
+    right: Vec<usize>,
+    left_index: usize,
+    right_index: usize,
+    required_point: Option<usize>,
+}
+
+impl MeshImplicitEdgeCandidates {
+    pub(crate) fn width_upper_bound(&self) -> usize {
+        self.left.len().saturating_mul(self.right.len())
+    }
+}
+
+impl Iterator for MeshImplicitEdgeCandidates {
+    type Item = [usize; 2];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.left_index < self.left.len() {
+            let left = self.left[self.left_index];
+            let right = self.right[self.right_index];
+            self.right_index += 1;
+            if self.right_index == self.right.len() {
+                self.left_index += 1;
+                self.right_index = 0;
+            }
+            if self
+                .required_point
+                .is_some_and(|point| left != point && right != point)
+            {
+                continue;
+            }
+            if left > right
+                && self.left.binary_search(&right).is_ok()
+                && self.right.binary_search(&left).is_ok()
+            {
+                continue;
+            }
+            return Some(if left <= right {
+                [left, right]
+            } else {
+                [right, left]
+            });
+        }
+        None
+    }
+}
+
 impl MeshCoordinateRootDomains {
     pub(crate) fn edge_candidates(&self) -> &[Vec<[usize; 2]>] {
         &self.edge_candidates
@@ -353,6 +401,22 @@ impl MeshCoordinateRootDomains {
         pairs.sort_unstable();
         pairs.dedup();
         Some(pairs)
+    }
+
+    pub(crate) fn implicit_edge_candidates(
+        &self,
+        edge: usize,
+        required_point: Option<usize>,
+    ) -> Option<MeshImplicitEdgeCandidates> {
+        self.edge_candidates.get(edge)?.is_empty().then_some(())?;
+        let &[left, right] = self.edges.get(edge)?;
+        Some(MeshImplicitEdgeCandidates {
+            left: self.domains[left].clone(),
+            right: self.domains[right].clone(),
+            left_index: 0,
+            right_index: 0,
+            required_point,
+        })
     }
 
     fn coverage_matching(

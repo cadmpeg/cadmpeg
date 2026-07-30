@@ -10,8 +10,8 @@ use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycles_viable_where,
     mesh_face_endpoint_configurations, CoordinateRootClosure, MeshConstraintBudget,
     MeshCoordinateRootDomains, MeshEndpointPair, MeshEndpointSolutionFilter,
-    MeshFaceEndpointConfigurations, MeshPartialEndpointConstraint, MeshQuotient,
-    MeshQuotientGaugeState, MAX_MESH_CONSTRAINT_OPERATIONS,
+    MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates, MeshPartialEndpointConstraint,
+    MeshQuotient, MeshQuotientGaugeState, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -467,6 +467,25 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) budget: &'a MeshConstraintBudget,
     pub(crate) exhausted: bool,
     pub(crate) stopped: bool,
+}
+
+enum IncidenceBranch {
+    Options(std::vec::IntoIter<(usize, [usize; 2])>),
+    Implicit {
+        edge: usize,
+        candidates: MeshImplicitEdgeCandidates,
+    },
+}
+
+impl Iterator for IncidenceBranch {
+    type Item = (usize, [usize; 2]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Options(options) => options.next(),
+            Self::Implicit { edge, candidates } => candidates.next().map(|pair| (*edge, pair)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -952,17 +971,20 @@ impl IncidenceComponentSearch<'_, '_> {
         options
     }
 
-    pub(crate) fn branch_options(
+    fn branch(
         &self,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    ) -> Option<Vec<(usize, [usize; 2])>> {
+    ) -> Option<IncidenceBranch> {
         let viable = |edge, pair| {
             self.candidate_fits(edge, pair)
                 && coordinate_domains
                     .is_none_or(|domains| domains.supports_edge_candidate(edge, pair))
         };
         for &edge in self.edges {
-            if self.assignment[edge].is_some() || !self.branch_edge_ready(edge) {
+            if self.assignment[edge].is_some()
+                || !self.branch_edge_ready(edge)
+                || self.choices[edge].is_empty()
+            {
                 continue;
             }
             let mut viable = self
@@ -971,9 +993,42 @@ impl IncidenceComponentSearch<'_, '_> {
                 .filter(|pair| viable(edge, *pair));
             let pair = viable.next()?;
             if viable.next().is_none() {
-                return Some(vec![(edge, pair)]);
+                return Some(IncidenceBranch::Options(vec![(edge, pair)].into_iter()));
             }
         }
+        let branch_width = |edge: usize| {
+            coordinate_domains
+                .filter(|_| self.choices[edge].is_empty())
+                .and_then(|domains| domains.implicit_edge_candidates(edge, None))
+                .map_or_else(
+                    || {
+                        self.choices[edge]
+                            .iter()
+                            .filter(|pair| viable(edge, **pair))
+                            .count()
+                    },
+                    |candidates| candidates.width_upper_bound(),
+                )
+        };
+        let edge_branch = |edge: usize| {
+            coordinate_domains
+                .filter(|_| self.choices[edge].is_empty())
+                .and_then(|domains| domains.implicit_edge_candidates(edge, None))
+                .map_or_else(
+                    || {
+                        IncidenceBranch::Options(
+                            self.choices[edge]
+                                .iter()
+                                .copied()
+                                .filter(|pair| viable(edge, *pair))
+                                .map(|pair| (edge, pair))
+                                .collect::<Vec<_>>()
+                                .into_iter(),
+                        )
+                    },
+                    |candidates| IncidenceBranch::Implicit { edge, candidates },
+                )
+        };
         if let Some(constraint) = self.partial_solution_filter {
             let edge = self
                 .edges
@@ -984,20 +1039,9 @@ impl IncidenceComponentSearch<'_, '_> {
                         && self.assignment[edge].is_none()
                         && self.branch_edge_ready(edge)
                 })
-                .min_by_key(|&edge| {
-                    self.candidate_pairs(edge, None, coordinate_domains)
-                        .into_iter()
-                        .filter(|pair| viable(edge, *pair))
-                        .count()
-                });
+                .min_by_key(|&edge| branch_width(edge));
             if let Some(edge) = edge {
-                let options = self
-                    .candidate_pairs(edge, None, coordinate_domains)
-                    .into_iter()
-                    .filter(|pair| viable(edge, *pair))
-                    .map(|pair| (edge, pair))
-                    .collect::<Vec<_>>();
-                return (!options.is_empty()).then_some(options);
+                return Some(edge_branch(edge));
             }
         }
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
@@ -1024,26 +1068,28 @@ impl IncidenceComponentSearch<'_, '_> {
             }
         }
         if constrained.is_some() {
-            return constrained;
+            return constrained
+                .map(Vec::into_iter)
+                .map(IncidenceBranch::Options);
         }
         let edge = self
             .edges
             .iter()
             .copied()
             .filter(|&edge| self.assignment[edge].is_none() && self.branch_edge_ready(edge))
-            .min_by_key(|&edge| {
-                self.candidate_pairs(edge, None, coordinate_domains)
-                    .into_iter()
-                    .filter(|pair| viable(edge, *pair))
-                    .count()
-            });
-        Some(edge.map_or_else(Vec::new, |edge| {
-            self.candidate_pairs(edge, None, coordinate_domains)
-                .into_iter()
-                .filter(|pair| viable(edge, *pair))
-                .map(|pair| (edge, pair))
-                .collect()
-        }))
+            .min_by_key(|&edge| branch_width(edge));
+        Some(edge.map_or_else(
+            || IncidenceBranch::Options(Vec::new().into_iter()),
+            edge_branch,
+        ))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn branch_options(
+        &self,
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) -> Option<Vec<(usize, [usize; 2])>> {
+        Some(self.branch(coordinate_domains)?.collect())
     }
 
     pub(crate) fn adjust(&mut self, edge: usize, pair: [usize; 2], increase: bool) {
@@ -1311,10 +1357,10 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             return;
         }
-        let Some(options) = self.branch_options(coordinate_domains) else {
+        let Some(mut options) = self.branch(coordinate_domains) else {
             return;
         };
-        if options.is_empty() {
+        let Some(first_option) = options.next() else {
             if self
                 .edges
                 .iter()
@@ -1346,8 +1392,8 @@ impl IncidenceComponentSearch<'_, '_> {
                 self.solutions.push(solution);
             }
             return;
-        }
-        for (edge, pair) in options {
+        };
+        for (edge, pair) in std::iter::once(first_option).chain(options) {
             if self.assignment[edge].is_some() {
                 continue;
             }
