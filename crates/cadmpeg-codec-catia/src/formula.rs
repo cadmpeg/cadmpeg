@@ -932,10 +932,11 @@ impl EvaluatedFormulaScalar {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum EvaluatedFormulaValue {
     Scalar(EvaluatedFormulaScalar),
     Boolean(bool),
+    String(String),
 }
 
 impl EvaluatedFormulaValue {
@@ -958,36 +959,46 @@ impl EvaluatedFormulaValue {
                 dimension: FormulaDimension::SCALAR,
             }),
             ParameterValue::Boolean(value) => Self::Boolean(*value),
-            ParameterValue::String(_) => unreachable!(),
+            ParameterValue::String(value) => Self::String(value.clone()),
         }
     }
 
     fn scalar(self) -> Option<EvaluatedFormulaScalar> {
         match self {
             Self::Scalar(value) => Some(value),
-            Self::Boolean(_) => None,
+            Self::Boolean(_) | Self::String(_) => None,
         }
     }
 
     fn boolean(self) -> Option<bool> {
         match self {
             Self::Boolean(value) => Some(value),
-            Self::Scalar(_) => None,
+            Self::Scalar(_) | Self::String(_) => None,
         }
     }
 
-    fn satisfies_source_type(self, source_type: &str) -> bool {
+    #[cfg(test)]
+    fn string(self) -> Option<String> {
+        match self {
+            Self::String(value) => Some(value),
+            Self::Scalar(_) | Self::Boolean(_) => None,
+        }
+    }
+
+    fn satisfies_source_type(&self, source_type: &str) -> bool {
         match self {
             Self::Scalar(value) => value.satisfies_source_type(source_type),
             Self::Boolean(_) => source_type == "Boolean",
+            Self::String(_) => source_type == "String",
         }
     }
 
-    fn agrees_with(self, evaluation: &TypedParameterEvaluation) -> bool {
+    fn agrees_with(&self, evaluation: &TypedParameterEvaluation) -> bool {
         match evaluation {
             TypedParameterEvaluation::Unset => true,
             TypedParameterEvaluation::Value(value) => match (self, value) {
-                (Self::Boolean(left), ParameterValue::Boolean(right)) => left == *right,
+                (Self::Boolean(left), ParameterValue::Boolean(right)) => left == right,
+                (Self::String(left), ParameterValue::String(right)) => left == right,
                 (
                     Self::Scalar(left),
                     value @ (ParameterValue::Length(_)
@@ -1000,7 +1011,7 @@ impl EvaluatedFormulaValue {
                         .expect("numeric parameter produces a scalar");
                     left.dimension == right.dimension && left.value == right.value
                 }
-                (Self::Boolean(_), _)
+                (Self::Boolean(_) | Self::String(_), _)
                 | (Self::Scalar(_), ParameterValue::Boolean(_) | ParameterValue::String(_)) => {
                     false
                 }
@@ -1085,6 +1096,12 @@ impl FormulaExpressionParser<'_, '_> {
             ("<>", EvaluatedFormulaValue::Boolean(left), EvaluatedFormulaValue::Boolean(right)) => {
                 left != right
             }
+            ("==", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
+                left == right
+            }
+            ("<>", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
+                left != right
+            }
             (
                 operator,
                 EvaluatedFormulaValue::Scalar(left),
@@ -1115,6 +1132,17 @@ impl FormulaExpressionParser<'_, '_> {
             }
             self.at += 1;
             let right = self.product(depth)?;
+            if operator == b'+' {
+                if let (EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) =
+                    (&value, &right)
+                {
+                    let mut joined = String::with_capacity(left.len().checked_add(right.len())?);
+                    joined.push_str(left);
+                    joined.push_str(right);
+                    value = EvaluatedFormulaValue::String(joined);
+                    continue;
+                }
+            }
             let mut left = value.scalar()?;
             let right = right.scalar()?;
             if left.dimension != right.dimension {
@@ -1186,7 +1214,7 @@ impl FormulaExpressionParser<'_, '_> {
     }
 
     fn power(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
-        let base = self.primary(depth)?;
+        let base = self.postfix(depth)?;
         self.skip_whitespace();
         if !self.remaining().starts_with("**") {
             return Some(base);
@@ -1220,6 +1248,9 @@ impl FormulaExpressionParser<'_, '_> {
 
     fn primary(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
         self.skip_whitespace();
+        if self.peek()? == b'"' {
+            return self.string_literal().map(EvaluatedFormulaValue::String);
+        }
         if self.consume_keyword("true") {
             return Some(EvaluatedFormulaValue::Boolean(true));
         }
@@ -1266,28 +1297,98 @@ impl FormulaExpressionParser<'_, '_> {
         self.literal().map(EvaluatedFormulaValue::Scalar)
     }
 
+    fn postfix(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
+        let mut value = self.primary(depth)?;
+        loop {
+            self.skip_whitespace();
+            if self.peek() != Some(b'.') {
+                return Some(value);
+            }
+            self.at += 1;
+            let method_start = self.at;
+            while self
+                .peek()
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            {
+                self.at += 1;
+            }
+            (self.at > method_start).then_some(())?;
+            let method = &self.source[method_start..self.at];
+            let arguments = self.function_arguments(Self::nested_depth(depth)?)?;
+            value = match (method, value, arguments.as_slice()) {
+                ("Length", EvaluatedFormulaValue::String(value), []) => {
+                    let length = u32::try_from(value.chars().count()).ok()?;
+                    EvaluatedFormulaValue::Scalar(finite_scalar(f64::from(length))?)
+                }
+                (
+                    "Search",
+                    EvaluatedFormulaValue::String(value),
+                    [EvaluatedFormulaValue::String(needle)],
+                ) => {
+                    let index = if let Some(byte_offset) = value.find(needle.as_str()) {
+                        i64::try_from(value[..byte_offset].chars().count()).ok()?
+                    } else {
+                        -1
+                    };
+                    EvaluatedFormulaValue::Scalar(finite_scalar(index as f64)?)
+                }
+                _ => return None,
+            };
+        }
+    }
+
+    fn string_literal(&mut self) -> Option<String> {
+        (self.peek()? == b'"').then_some(())?;
+        self.at += 1;
+        let start = self.at;
+        while let Some(byte) = self.peek() {
+            if byte == b'"' {
+                let value = self.source.get(start..self.at)?.to_string();
+                self.at += 1;
+                return Some(value);
+            }
+            if byte.is_ascii_control() || byte == b'\\' {
+                return None;
+            }
+            self.at += 1;
+        }
+        None
+    }
+
     fn function_call(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
         let function_start = self.at;
         while self.peek().is_some_and(|byte| byte.is_ascii_alphabetic()) {
             self.at += 1;
         }
         let function = &self.source[function_start..self.at];
-        self.skip_whitespace();
-        (self.peek()? == b'(').then_some(())?;
-        self.at += 1;
-        let argument_depth = Self::nested_depth(depth)?;
-        let mut arguments = Vec::with_capacity(2);
-        loop {
-            arguments.push(self.sum(argument_depth)?.scalar()?);
-            self.skip_whitespace();
-            if self.peek()? == b')' {
-                self.at += 1;
-                break;
+        let arguments = self.function_arguments(Self::nested_depth(depth)?)?;
+
+        if function == "ReplaceSubText" {
+            let [EvaluatedFormulaValue::String(source), EvaluatedFormulaValue::String(from), EvaluatedFormulaValue::String(to)] =
+                arguments.as_slice()
+            else {
+                return None;
+            };
+            if from.is_empty() {
+                return None;
             }
-            (self.peek()? == b',' && arguments.len() < MAX_FORMULA_FUNCTION_ARGUMENTS)
-                .then_some(())?;
-            self.at += 1;
+            return Some(EvaluatedFormulaValue::String(source.replace(from, to)));
         }
+
+        if function == "ToString" {
+            let [EvaluatedFormulaValue::Scalar(value)] = arguments.as_slice() else {
+                return None;
+            };
+            if !value.satisfies_source_type("Integer") {
+                return None;
+            }
+            return Some(EvaluatedFormulaValue::String(format!("{:.0}", value.value)));
+        }
+
+        let arguments = arguments
+            .into_iter()
+            .map(EvaluatedFormulaValue::scalar)
+            .collect::<Option<Vec<_>>>()?;
 
         if matches!(function, "min" | "max") {
             let mut arguments = arguments.into_iter();
@@ -1421,6 +1522,30 @@ impl FormulaExpressionParser<'_, '_> {
         Some(EvaluatedFormulaValue::Scalar(value))
     }
 
+    fn function_arguments(&mut self, depth: usize) -> Option<Vec<EvaluatedFormulaValue>> {
+        self.skip_whitespace();
+        (self.peek()? == b'(').then_some(())?;
+        self.at += 1;
+        let mut arguments = Vec::with_capacity(2);
+        self.skip_whitespace();
+        if self.peek()? == b')' {
+            self.at += 1;
+            return Some(arguments);
+        }
+        loop {
+            arguments.push(self.disjunction(depth)?);
+            self.skip_whitespace();
+            if self.peek()? == b')' {
+                self.at += 1;
+                break;
+            }
+            (self.peek()? == b',' && arguments.len() < MAX_FORMULA_FUNCTION_ARGUMENTS)
+                .then_some(())?;
+            self.at += 1;
+        }
+        Some(arguments)
+    }
+
     fn symbol(&mut self) -> Option<EvaluatedFormulaValue> {
         let start = self.at;
         self.at += 1;
@@ -1444,7 +1569,7 @@ impl FormulaExpressionParser<'_, '_> {
         } else {
             self.at = name_end;
         }
-        self.bindings.get(&self.source[start..name_end]).copied()
+        self.bindings.get(&self.source[start..name_end]).cloned()
     }
 
     fn literal(&mut self) -> Option<EvaluatedFormulaScalar> {
@@ -1684,6 +1809,77 @@ mod parser_tests {
                 .and_then(EvaluatedFormulaValue::boolean),
             Some(true)
         );
+    }
+
+    #[test]
+    fn formula_string_operations_preserve_typed_values() {
+        let bindings = BTreeMap::from([
+            (
+                "#1_",
+                EvaluatedFormulaValue::String("Cilas Evans".to_string()),
+            ),
+            ("#2_", EvaluatedFormulaValue::String("Evans".to_string())),
+            (
+                "#3_",
+                EvaluatedFormulaValue::Scalar(finite_scalar(-1.0).expect("finite integer")),
+            ),
+        ]);
+        assert_eq!(
+            evaluate_formula_expression("#1_.Length()", &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .map(|value| value.value),
+            Some(11.0)
+        );
+        assert_eq!(
+            evaluate_formula_expression("#1_ .Search(#2_)", &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .map(|value| value.value),
+            Some(6.0)
+        );
+        assert_eq!(
+            evaluate_formula_expression("#1_.Search(\"missing\")", &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .map(|value| value.value),
+            Some(-1.0)
+        );
+        assert_eq!(
+            evaluate_formula_expression("ReplaceSubText(#1_,\"Cilas\",\"Easy\")", &bindings)
+                .and_then(EvaluatedFormulaValue::string)
+                .as_deref(),
+            Some("Easy Evans")
+        );
+        assert_eq!(
+            evaluate_formula_expression("\"Revision\" + ToString(#3_)", &bindings)
+                .and_then(EvaluatedFormulaValue::string)
+                .as_deref(),
+            Some("Revision-1")
+        );
+        assert!(
+            evaluate_formula_expression("\"Cilas Evans\" == #1_", &bindings)
+                .and_then(EvaluatedFormulaValue::boolean)
+                .is_some_and(|value| value)
+        );
+    }
+
+    #[test]
+    fn formula_string_operations_reject_untyped_or_incomplete_forms() {
+        let bindings = BTreeMap::new();
+        for expression in [
+            "\"unterminated",
+            "\"unsupported\\\\escape\"",
+            "\"text\" - \"text\"",
+            "\"text\" + 1",
+            "ToString(1.5)",
+            "ReplaceSubText(\"text\",\"\",\"x\")",
+            "\"text\".Search(1)",
+            "\"text\".Length(1)",
+            "\"text\".Unknown()",
+        ] {
+            assert!(
+                evaluate_formula_expression(expression, &bindings).is_none(),
+                "{expression}"
+            );
+        }
     }
 
     #[test]

@@ -4590,6 +4590,82 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 }
 
 #[test]
+fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
+    fn legacy_string_constant(stored: &str) -> Vec<u8> {
+        let mut bytes = zero_entity_catpart();
+        bytes.push(0xea);
+        bytes.extend(1_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        for (role, selector, value) in [
+            (
+                "body",
+                1_u32,
+                "ReplaceSubText(\"Cilas Evans\",\"Cilas\",\"Easy\")",
+            ),
+            ("param", 4_u32, "() : String\n"),
+        ] {
+            bytes.push(u8::try_from(role.len() + 1).expect("short role"));
+            bytes.extend(role.as_bytes());
+            bytes.push(0x80);
+            bytes.extend(selector.to_le_bytes());
+            bytes.extend(b"\xe8\x00\x12\x01");
+            bytes.push(u8::try_from(value.len() + 1).expect("short text"));
+            bytes.extend(value.as_bytes());
+            bytes.push(0xfe);
+        }
+        bytes.push(0xea);
+        bytes.extend(4_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        bytes.extend([0x58, 0xd1, 8]);
+        bytes.extend(b"\xe8\x00\x12\x01\x0fNewResponsible\xfe");
+        bytes.extend([0x5f, 0xd1, 9]);
+        bytes.extend(b"\xe8\xc4\x17\x01\xfe\xfe");
+        bytes.extend(b"\xfe\x85\x93\x82\xfe");
+        bytes.push(u8::try_from(stored.len() + 1).expect("short stored string"));
+        bytes.extend(stored.as_bytes());
+        bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+        bytes
+    }
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_string_constant("Easy Evans")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode closed legacy string formula");
+    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+        panic!("one legacy string formula parameter")
+    };
+    assert_eq!(
+        parameter.expression,
+        "ReplaceSubText(\"Cilas Evans\",\"Cilas\",\"Easy\")"
+    );
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::ParameterValue::String("Easy Evans".to_string()))
+    );
+    assert_eq!(
+        decoded.report.coverage["transferred_legacy_formula_count"],
+        1
+    );
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+
+    let mismatched = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_string_constant("Cilas Evans")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode mismatched legacy string formula");
+    assert!(mismatched.ir.model.parameters[0].expression.is_empty());
+    assert_eq!(
+        mismatched.report.coverage["transferred_legacy_formula_count"],
+        0
+    );
+}
+
+#[test]
 fn decode_zero_entity_transfers_framed_cylinder() {
     let mut cur = Cursor::new(zero_entity_cylinder_catpart());
     let result = CatiaCodec
