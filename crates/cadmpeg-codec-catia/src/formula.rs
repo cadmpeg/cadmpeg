@@ -545,6 +545,53 @@ fn collect_legacy_parameters(
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
+        for integer in &run.integer_values {
+            let Some(name) = &integer.name else {
+                continue;
+            };
+            let Some((value_type, selected)) = resolved_legacy_type(run, integer.entity_id) else {
+                continue;
+            };
+            if !matches!(value_type, "Integer" | "I") {
+                continue;
+            }
+            let Some(key) = integer.id.strip_prefix("catia:legacy:integer#") else {
+                continue;
+            };
+            let id = ParameterId(format!("catia:legacy:parameter#{key}"));
+            if candidates.contains_key(&id) {
+                continue;
+            }
+            let value = ParameterValue::Integer(i64::from(integer.value));
+            candidates.insert(
+                id.clone(),
+                FormulaParameterCandidate {
+                    parameter: DesignParameter {
+                        id: id.clone(),
+                        owner: None,
+                        ordinal: 0,
+                        name: name.clone(),
+                        expression: parameter_expression(&value),
+                        display: None,
+                        value: Some(value),
+                        dependencies: Vec::new(),
+                        properties: parameter_properties("Integer"),
+                        pmi: None,
+                        native_ref: Some(run.id.clone()),
+                    },
+                    parameter_type: "Integer",
+                    formula_output: false,
+                    input_fallback: None,
+                    source_order: integer.byte_offset,
+                },
+            );
+            parameters_by_entity
+                .entry(integer.entity_id)
+                .or_default()
+                .push(id);
+            transfer.parameters += 1;
+            transfer.selector_parameters += usize::from(selected);
+        }
         let mut relations_by_parameter =
             HashMap::<u32, Vec<&crate::native::CatiaLegacyRelation>>::new();
         for relation in &run.relations {

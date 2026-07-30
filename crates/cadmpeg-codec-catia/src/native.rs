@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 213;
+pub const CATIA_NATIVE_VERSION: u32 = 214;
 #[cfg(test)]
 const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
 #[cfg(test)]
@@ -3154,6 +3154,37 @@ pub struct CatiaLegacyStringValue {
     pub value: String,
 }
 
+/// Stored encoding of one complete legacy signed integer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaLegacyIntegerEncoding {
+    /// One byte stores values zero through 126 as `value + 0x81`.
+    Inline,
+    /// `80` introduces one signed little-endian 32-bit value.
+    WideI32,
+}
+
+/// One complete legacy signed-integer packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaLegacyIntegerValue {
+    /// Stable native identity derived from the containing run and packet offset.
+    pub id: String,
+    /// Offset of the packet prefix.
+    pub byte_offset: u64,
+    /// Stored containing identity.
+    pub entity_id: u32,
+    /// Stored integer encoding.
+    pub encoding: CatiaLegacyIntegerEncoding,
+    /// Unique co-owned `name` text field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_field: Option<u64>,
+    /// Unique co-owned stored name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Stored signed value.
+    pub value: i32,
+}
+
 /// A monotonically identified pre-`7C05` run and its terminating catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaLegacyEntityRun {
@@ -3184,6 +3215,9 @@ pub struct CatiaLegacyEntityRun {
     /// Complete UTF-8 string-value packets.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub string_values: Vec<CatiaLegacyStringValue>,
+    /// Complete signed-integer packets.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub integer_values: Vec<CatiaLegacyIntegerValue>,
 }
 
 /// One zero-entity face-local surface-support occurrence.
@@ -3758,6 +3792,26 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         value: value.value,
                     })
                     .collect(),
+                integer_values: run
+                    .integer_values
+                    .into_iter()
+                    .map(|value| CatiaLegacyIntegerValue {
+                        id: format!("catia:legacy:integer#{index:08}-{:016}", value.offset),
+                        byte_offset: value.offset as u64,
+                        entity_id: value.entity_id,
+                        encoding: match value.encoding {
+                            crate::legacy_entity::LegacyIntegerEncoding::Inline => {
+                                CatiaLegacyIntegerEncoding::Inline
+                            }
+                            crate::legacy_entity::LegacyIntegerEncoding::WideI32 => {
+                                CatiaLegacyIntegerEncoding::WideI32
+                            }
+                        },
+                        name_field: value.name_offset.map(|offset| offset as u64),
+                        name: value.name,
+                        value: value.value,
+                    })
+                    .collect(),
             }
         })
         .collect()
@@ -4021,6 +4075,56 @@ fn validate_legacy_entity_runs(
                     && match (&value.name_field, &value.name) {
                         (Some(name_field), Some(name)) => {
                             run.string_values
+                                .iter()
+                                .filter(|candidate| candidate.entity_id == value.entity_id)
+                                .count()
+                                == 1
+                                && run
+                                    .text_fields
+                                    .iter()
+                                    .filter(|field| {
+                                        field.entity_id == value.entity_id
+                                            && field
+                                                .role
+                                                .as_ref()
+                                                .is_some_and(|role| role.name == "name")
+                                    })
+                                    .count()
+                                    == 1
+                                && run.text_fields.iter().any(|field| {
+                                    field.entity_id == value.entity_id
+                                        && field.byte_offset == *name_field
+                                        && field.value == *name
+                                        && field
+                                            .role
+                                            .as_ref()
+                                            .is_some_and(|role| role.name == "name")
+                                })
+                        }
+                        (None, None) => true,
+                        (Some(_), None) | (None, Some(_)) => false,
+                    }
+            })
+            && run
+                .integer_values
+                .windows(2)
+                .all(|pair| pair[0].byte_offset < pair[1].byte_offset)
+            && run.integer_values.iter().all(|value| {
+                value.id == format!("catia:legacy:integer#{index:08}-{:016}", value.byte_offset)
+                    && value.byte_offset >= run.byte_offset
+                    && value.byte_offset < run.catalog_offset
+                    && match value.encoding {
+                        CatiaLegacyIntegerEncoding::Inline => (0..=126).contains(&value.value),
+                        CatiaLegacyIntegerEncoding::WideI32 => true,
+                    }
+                    && run
+                        .identities
+                        .iter()
+                        .rfind(|identity| identity.byte_offset < value.byte_offset)
+                        .is_some_and(|identity| identity.entity_id == value.entity_id)
+                    && match (&value.name_field, &value.name) {
+                        (Some(name_field), Some(name)) => {
+                            run.integer_values
                                 .iter()
                                 .filter(|candidate| candidate.entity_id == value.entity_id)
                                 .count()

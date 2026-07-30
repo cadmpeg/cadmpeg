@@ -81,8 +81,8 @@ current scores require those matrices and representative fixtures.
   run. Each legacy identity run retains its exact outer container binding.
   Every complete schema role selector retains its fixed or paged production,
   containing identity, name, and value. Inclusive-length UTF-8 string packets
-  transfer as typed `String` parameters when their name and terminal type
-  resolve uniquely.
+  and inline or wide signed-integer packets transfer as typed parameters when
+  their name and terminal type resolve uniquely.
   Legacy parameter transfer is restricted to the unique declared part-history
   container; unbound runs remain eligible only in declaration-free fragments.
 - Complete numeric parameters and formula relations transfer when their type,

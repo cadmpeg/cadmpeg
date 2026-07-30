@@ -3834,6 +3834,44 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
 }
 
 #[test]
+fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.push(0x81);
+    bytes.extend([0xfd, 0x8c]);
+    bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+    bytes.extend(b"\xe8\x00\x12\x01");
+    bytes.extend([6, b'C', b'o', b'u', b'n', b't', 0xfe]);
+    bytes.extend(b"\xfe\x84\x92\x82");
+    bytes.extend([8, b'I', b'n', b't', b'e', b'g', b'e', b'r', 0x83]);
+    bytes.extend(b"\xfe\x85\x9d\x82\xfe\x8c");
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode typed legacy integer");
+
+    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+        panic!("one transferred legacy integer")
+    };
+    assert_eq!(parameter.name, "Count");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Integer(11))
+    );
+    assert_eq!(parameter.expression, "11");
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_integer_value_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_legacy_named_integer_value_count"],
+        1
+    );
+}
+
+#[test]
 fn decode_transfers_an_unset_typed_legacy_parameter() {
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);
@@ -13787,7 +13825,7 @@ fn native_store_paths_write_the_current_schema_version() {
 #[test]
 fn native_round_trips_legacy_entity_identity_runs() {
     let mut bytes = Vec::new();
-    for entity_id in [1_u32, 4, 9, 12] {
+    for entity_id in [1_u32, 4, 9, 12, 13] {
         bytes.push(0xea);
         bytes.extend(entity_id.to_le_bytes());
         bytes.extend([0x81, 0xfd, 0x8c]);
@@ -13819,6 +13857,11 @@ fn native_round_trips_legacy_entity_identity_runs() {
             bytes.extend(b"\xe8\x00\x12\x01\x0cResponsible\xfe");
             bytes.extend(b"\xfe\x84\x92\x82\x07String\x83");
             bytes.extend(b"\xfe\x85\x93\x82\xfe\x0cCilas Evans");
+        } else if entity_id == 13 {
+            bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 12]);
+            bytes.extend(b"\xe8\x00\x12\x01\x06Count\xfe");
+            bytes.extend(b"\xfe\x84\x92\x82\x08Integer\x83");
+            bytes.extend(b"\xfe\x85\x9d\x82\xfe\x8c");
         }
     }
     let catalog_offset = bytes.len();
@@ -13832,13 +13875,13 @@ fn native_round_trips_legacy_entity_identity_runs() {
             .iter()
             .map(|identity| identity.entity_id)
             .collect::<Vec<_>>(),
-        [1, 4, 9, 12]
+        [1, 4, 9, 12, 13]
     );
     assert_eq!(
         native.legacy_entity_runs[0].catalog_offset,
         catalog_offset as u64
     );
-    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 4);
+    assert_eq!(native.legacy_entity_runs[0].text_fields.len(), 5);
     assert_eq!(
         native.legacy_entity_runs[0]
             .role_selectors
@@ -13883,6 +13926,12 @@ fn native_round_trips_legacy_entity_identity_runs() {
                 Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
                 12,
             ),
+            (
+                13,
+                "name",
+                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                13,
+            ),
         ]
     );
     assert_eq!(native.legacy_entity_runs[0].text_fields[0].entity_id, 4);
@@ -13910,7 +13959,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].relations[0].inputs[0].parameter,
         "#1_"
     );
-    assert_eq!(native.legacy_entity_runs[0].type_descriptors.len(), 3);
+    assert_eq!(native.legacy_entity_runs[0].type_descriptors.len(), 4);
     assert_eq!(
         native.legacy_entity_runs[0].type_descriptors[0].value,
         crate::native::CatiaLegacyTypeValue::Name {
@@ -13925,6 +13974,12 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].type_descriptors[2].value,
         crate::native::CatiaLegacyTypeValue::Name {
             value: "String".to_string()
+        }
+    );
+    assert_eq!(
+        native.legacy_entity_runs[0].type_descriptors[3].value,
+        crate::native::CatiaLegacyTypeValue::Name {
+            value: "Integer".to_string()
         }
     );
     assert_eq!(native.legacy_entity_runs[0].scalar_values.len(), 1);
@@ -13957,6 +14012,14 @@ fn native_round_trips_legacy_entity_identity_runs() {
         native.legacy_entity_runs[0].string_values[0].value,
         "Cilas Evans"
     );
+    assert_eq!(native.legacy_entity_runs[0].integer_values.len(), 1);
+    assert_eq!(
+        native.legacy_entity_runs[0].integer_values[0]
+            .name
+            .as_deref(),
+        Some("Count")
+    );
+    assert_eq!(native.legacy_entity_runs[0].integer_values[0].value, 11);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -13981,7 +14044,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     previous_namespace.version = 211;
     let migrated =
         crate::native::CatiaNative::load(&previous_namespace).expect("migrate legacy text roles");
-    assert_eq!(migrated.legacy_entity_runs[0].role_selectors.len(), 4);
+    assert_eq!(migrated.legacy_entity_runs[0].role_selectors.len(), 5);
     assert!(migrated.legacy_entity_runs[0]
         .role_selectors
         .iter()
@@ -14013,6 +14076,14 @@ fn native_round_trips_legacy_entity_identity_runs() {
     invalid_scalar_id
         .store(&mut namespace)
         .expect("store invalid legacy scalar identity");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+
+    let mut invalid_integer = native.clone();
+    invalid_integer.legacy_entity_runs[0].integer_values[0].value = -1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_integer
+        .store(&mut namespace)
+        .expect("store invalid inline legacy integer");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 
     let mut invalid_parameter = native.clone();

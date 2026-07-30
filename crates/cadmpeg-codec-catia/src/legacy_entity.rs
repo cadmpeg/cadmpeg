@@ -6,6 +6,7 @@ const TEXT_OPEN: &[u8] = b"\xe8\x00\x12\x01";
 const SCALAR_OPEN: &[u8] = b"\xfe\x85\x88\x82\xfe";
 const NAMED_SCALAR_OPEN: &[u8] = b"\xfe\x84\x88\x82\xfe";
 const STRING_OPEN: &[u8] = b"\xfe\x85\x93\x82\xfe";
+const INTEGER_OPEN: &[u8] = b"\xfe\x85\x9d\x82\xfe";
 const TYPE_OPEN: &[u8] = b"\xfe\x84\x92\x82";
 
 /// Length production used by one legacy schema text field.
@@ -169,6 +170,32 @@ pub struct LegacyStringValue {
     pub value: String,
 }
 
+/// Stored encoding of one legacy signed integer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyIntegerEncoding {
+    /// One byte stores values zero through 126 as `value + 0x81`.
+    Inline,
+    /// `80` introduces one signed little-endian 32-bit value.
+    WideI32,
+}
+
+/// One complete signed-integer packet in an identity interval.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyIntegerValue {
+    /// Offset of the fixed packet prefix.
+    pub offset: usize,
+    /// Stored identity whose interval contains the packet.
+    pub entity_id: u32,
+    /// Stored integer encoding.
+    pub encoding: LegacyIntegerEncoding,
+    /// Unique co-owned `name` text-field opener.
+    pub name_offset: Option<usize>,
+    /// Unique co-owned stored name.
+    pub name: Option<String>,
+    /// Stored signed value.
+    pub value: i32,
+}
+
 /// One stored entity identity in a legacy identity run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LegacyEntityIdentity {
@@ -197,6 +224,8 @@ pub struct LegacyEntityRun {
     pub scalar_values: Vec<LegacyScalarValue>,
     /// Complete UTF-8 string-value packets.
     pub string_values: Vec<LegacyStringValue>,
+    /// Complete signed-integer packets.
+    pub integer_values: Vec<LegacyIntegerValue>,
 }
 
 /// Parse complete legacy identity runs terminated by the fixed schema-catalog opener.
@@ -281,6 +310,18 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         })
         .collect::<Vec<_>>();
     bind_string_names(&text_fields, &mut string_values);
+    let mut integer_values = identities
+        .iter()
+        .enumerate()
+        .flat_map(|(index, identity)| {
+            let start = identity.offset + 6;
+            let end = identities
+                .get(index + 1)
+                .map_or(catalog_offset, |next| next.offset);
+            parse_integer_values(data, start, end, identity.entity_id)
+        })
+        .collect::<Vec<_>>();
+    bind_integer_names(&text_fields, &mut integer_values);
     Some(LegacyEntityRun {
         catalog_offset,
         identities,
@@ -290,6 +331,7 @@ fn parse_run_before(data: &[u8], catalog_offset: usize) -> Option<LegacyEntityRu
         type_descriptors,
         scalar_values,
         string_values,
+        integer_values,
     })
 }
 
@@ -384,14 +426,7 @@ fn bind_scalar_names(fields: &[LegacyTextField], values: &mut [LegacyScalarValue
         if counts.get(&value.entity_id) != Some(&1) {
             continue;
         }
-        let mut names = fields.iter().filter(|field| {
-            field.entity_id == value.entity_id
-                && field.role.as_ref().is_some_and(|role| role.name == "name")
-        });
-        let Some(name) = names.next() else {
-            continue;
-        };
-        if names.next().is_none() {
+        if let Some(name) = unique_co_owned_name(fields, value.entity_id) {
             value.name_offset = Some(name.offset);
             value.name = Some(name.value.clone());
         }
@@ -437,18 +472,75 @@ fn bind_string_names(fields: &[LegacyTextField], values: &mut [LegacyStringValue
         if counts.get(&value.entity_id) != Some(&1) {
             continue;
         }
-        let mut names = fields.iter().filter(|field| {
-            field.entity_id == value.entity_id
-                && field.role.as_ref().is_some_and(|role| role.name == "name")
-        });
-        let Some(name) = names.next() else {
-            continue;
-        };
-        if names.next().is_none() {
+        if let Some(name) = unique_co_owned_name(fields, value.entity_id) {
             value.name_offset = Some(name.offset);
             value.name = Some(name.value.clone());
         }
     }
+}
+
+fn parse_integer_values(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    entity_id: u32,
+) -> Vec<LegacyIntegerValue> {
+    memchr::memmem::find_iter(&data[start..end], INTEGER_OPEN)
+        .filter_map(|relative| {
+            let offset = start + relative;
+            let payload = offset.checked_add(INTEGER_OPEN.len())?;
+            let lead = *data.get(payload)?;
+            let (encoding, value, value_end) = if lead == 0x80 {
+                let value_end = payload.checked_add(5)?;
+                if value_end > end {
+                    return None;
+                }
+                (
+                    LegacyIntegerEncoding::WideI32,
+                    i32::from_le_bytes(data.get(payload + 1..value_end)?.try_into().ok()?),
+                    value_end,
+                )
+            } else {
+                (
+                    LegacyIntegerEncoding::Inline,
+                    i32::from(lead.checked_sub(0x81)?),
+                    payload + 1,
+                )
+            };
+            (value_end <= end).then_some(LegacyIntegerValue {
+                offset,
+                entity_id,
+                encoding,
+                name_offset: None,
+                name: None,
+                value,
+            })
+        })
+        .collect()
+}
+
+fn bind_integer_names(fields: &[LegacyTextField], values: &mut [LegacyIntegerValue]) {
+    let mut counts = std::collections::HashMap::new();
+    for value in values.iter() {
+        *counts.entry(value.entity_id).or_insert(0usize) += 1;
+    }
+    for value in values {
+        if counts.get(&value.entity_id) != Some(&1) {
+            continue;
+        }
+        if let Some(name) = unique_co_owned_name(fields, value.entity_id) {
+            value.name_offset = Some(name.offset);
+            value.name = Some(name.value.clone());
+        }
+    }
+}
+
+fn unique_co_owned_name(fields: &[LegacyTextField], entity_id: u32) -> Option<&LegacyTextField> {
+    let mut names = fields.iter().filter(|field| {
+        field.entity_id == entity_id && field.role.as_ref().is_some_and(|role| role.name == "name")
+    });
+    let name = names.next()?;
+    names.next().is_none().then_some(name)
 }
 
 fn parse_relations(
@@ -711,7 +803,8 @@ fn text_value_allow_empty(bytes: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_runs, CATALOG_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, STRING_OPEN, TEXT_OPEN, TYPE_OPEN,
+        parse_runs, CATALOG_OPEN, INTEGER_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN, STRING_OPEN,
+        TEXT_OPEN, TYPE_OPEN,
     };
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
@@ -738,6 +831,7 @@ mod tests {
         assert!(runs[0].type_descriptors.is_empty());
         assert!(runs[0].scalar_values.is_empty());
         assert!(runs[0].string_values.is_empty());
+        assert!(runs[0].integer_values.is_empty());
         assert_eq!(
             runs[0]
                 .identities
@@ -971,6 +1065,39 @@ mod tests {
         );
         assert_eq!(run.string_values[1].value, "");
         assert!(run.string_values[1].name.is_none());
+    }
+
+    #[test]
+    fn parses_and_names_inline_and_wide_signed_integers() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(&[5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[6, b'C', b'o', b'u', b'n', b't', 0xfe]);
+        bytes.extend_from_slice(INTEGER_OPEN);
+        bytes.push(0x8c);
+        identity(&mut bytes, 2);
+        bytes.extend_from_slice(INTEGER_OPEN);
+        bytes.extend_from_slice(&[0x80, 0xff, 0xff, 0xff, 0xff]);
+        identity(&mut bytes, 3);
+        bytes.extend_from_slice(INTEGER_OPEN);
+        bytes.push(0x80);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let run = &parse_runs(&bytes)[0];
+        assert_eq!(run.integer_values.len(), 2);
+        assert_eq!(run.integer_values[0].value, 11);
+        assert_eq!(run.integer_values[0].name.as_deref(), Some("Count"));
+        assert_eq!(
+            run.integer_values[0].encoding,
+            super::LegacyIntegerEncoding::Inline
+        );
+        assert_eq!(run.integer_values[1].value, -1);
+        assert_eq!(
+            run.integer_values[1].encoding,
+            super::LegacyIntegerEncoding::WideI32
+        );
+        assert!(run.integer_values[1].name.is_none());
     }
 
     #[test]
