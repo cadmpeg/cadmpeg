@@ -130,8 +130,8 @@ current scores require those matrices and representative fixtures.
   expression of an unset parameter when its result type agrees.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, trigonometric calls, absolute values, and
-  square roots. Typed comparisons, Boolean literals, conjunctions, and
-  disjunctions transfer Boolean predicate formulas. String literals,
+  square roots. Typed comparisons, Boolean literals, negation, conjunctions,
+  and disjunctions transfer Boolean predicate formulas. String literals,
   concatenation, equality, replacement, signed-integer formatting,
   Unicode-scalar length, and first-occurrence search evaluate with typed string
   results. Length literals normalize

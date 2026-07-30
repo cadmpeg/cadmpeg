@@ -4511,16 +4511,22 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
 
 #[test]
 fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
-    fn legacy_constant(stored: Option<f64>, parameter_type: &str, relation_type: &str) -> Vec<u8> {
+    fn legacy_constant(
+        expression: &str,
+        stored: Option<f64>,
+        parameter_type: &str,
+        relation_type: &str,
+    ) -> Vec<u8> {
         let mut bytes = zero_entity_catpart();
         bytes.push(0xea);
         bytes.extend(1_u32.to_le_bytes());
         bytes.push(0x81);
         bytes.extend([0xfd, 0x8c]);
         let signature = format!("() : {relation_type}\n");
-        for (role, selector, value) in
-            [("body", 1_u32, "2+3"), ("param", 4_u32, signature.as_str())]
-        {
+        for (role, selector, value) in [
+            ("body", 1_u32, expression),
+            ("param", 4_u32, signature.as_str()),
+        ] {
             bytes.push(u8::try_from(role.len() + 1).expect("short role"));
             bytes.extend(role.as_bytes());
             bytes.push(0x80);
@@ -4554,7 +4560,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(legacy_constant(Some(5.0), "Real", "Real")),
+            &mut Cursor::new(legacy_constant("2+3", Some(5.0), "Real", "Real")),
             &DecodeOptions::default(),
         )
         .expect("decode closed legacy formula");
@@ -4571,7 +4577,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 
     let mismatched = CatiaCodec
         .decode(
-            &mut Cursor::new(legacy_constant(Some(6.0), "Real", "Real")),
+            &mut Cursor::new(legacy_constant("2+3", Some(6.0), "Real", "Real")),
             &DecodeOptions::default(),
         )
         .expect("decode mismatched legacy formula");
@@ -4583,7 +4589,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 
     let unset = CatiaCodec
         .decode(
-            &mut Cursor::new(legacy_constant(None, "Real", "Real")),
+            &mut Cursor::new(legacy_constant("2+3", None, "Real", "Real")),
             &DecodeOptions::default(),
         )
         .expect("decode unset closed legacy formula");
@@ -4596,7 +4602,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 
     let mismatched_unset = CatiaCodec
         .decode(
-            &mut Cursor::new(legacy_constant(None, "LENGTH", "Real")),
+            &mut Cursor::new(legacy_constant("2+3", None, "LENGTH", "Real")),
             &DecodeOptions::default(),
         )
         .expect("decode type-mismatched unset legacy formula");
@@ -4608,6 +4614,26 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert_eq!(
         mismatched_unset.report.coverage["transferred_legacy_formula_count"],
         0
+    );
+
+    let boolean = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_constant("not false", None, "Boolean", "Boolean")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode Boolean negation formula");
+    let [parameter] = boolean.ir.model.parameters.as_slice() else {
+        panic!("one Boolean formula parameter")
+    };
+    assert_eq!(parameter.expression, "not false");
+    assert_eq!(parameter.value, None);
+    assert_eq!(
+        parameter.properties.get("value_type").map(String::as_str),
+        Some("Boolean")
+    );
+    assert_eq!(
+        boolean.report.coverage["transferred_legacy_formula_count"],
+        1
     );
 }
 

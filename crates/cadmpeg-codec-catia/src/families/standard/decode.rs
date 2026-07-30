@@ -3453,7 +3453,6 @@ fn attach_standard_topology(
                 .is_some_and(|options| options[edge].len() > 1)
         })
         .collect::<Vec<_>>();
-    let mut mesh_search_ambiguity = None;
     let mut mesh_search_exhausted = false;
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
@@ -3518,7 +3517,6 @@ fn attach_standard_topology(
             }
             mesh_quotient::MeshCandidateSolve::Ambiguous(ambiguity) => {
                 diagnostics.mesh_ambiguity = Some(ambiguity);
-                mesh_search_ambiguity = Some(ambiguity);
                 None
             }
             mesh_quotient::MeshCandidateSolve::Exhausted => {
@@ -3543,7 +3541,7 @@ fn attach_standard_topology(
     } else {
         return Err(if mesh_search_exhausted {
             StandardTopologyFailure::TopologySearchExhausted
-        } else if mesh_search_ambiguity.is_some() {
+        } else if diagnostics.mesh_ambiguity.is_some() {
             StandardTopologyFailure::AmbiguousTopologySolution
         } else {
             StandardTopologyFailure::NoTopologySolution

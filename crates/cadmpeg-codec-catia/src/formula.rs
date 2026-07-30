@@ -1196,6 +1196,10 @@ impl FormulaExpressionParser<'_, '_> {
 
     fn unary(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
         self.skip_whitespace();
+        if self.consume_keyword("not") {
+            let value = self.unary(Self::nested_depth(depth)?)?.boolean()?;
+            return Some(EvaluatedFormulaValue::Boolean(!value));
+        }
         match self.peek()? {
             b'+' => {
                 self.at += 1;
@@ -1809,6 +1813,17 @@ mod parser_tests {
                 .and_then(EvaluatedFormulaValue::boolean),
             Some(true)
         );
+        assert_eq!(
+            evaluate_formula_expression("not false and false or not (1 > 2)", &bindings)
+                .and_then(EvaluatedFormulaValue::boolean),
+            Some(true)
+        );
+        for expression in ["not 1", "not \"false\"", "notable", "not"] {
+            assert!(
+                evaluate_formula_expression(expression, &bindings).is_none(),
+                "{expression}"
+            );
+        }
     }
 
     #[test]
