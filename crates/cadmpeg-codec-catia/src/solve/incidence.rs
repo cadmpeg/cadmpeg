@@ -813,22 +813,36 @@ impl IncidenceComponentSearch<'_> {
             })
         };
 
-        self.constraints.iter().all(|&(face, point)| {
-            degree_after_selection(face, point) != 1
-                || self.face_edges[face]
-                    .iter()
-                    .copied()
-                    .any(|supporting_edge| {
-                        supporting_edge != edge
-                            && self.active[supporting_edge]
-                            && self.assignment[supporting_edge].is_none()
-                            && self.choices[supporting_edge].iter().copied().any(
-                                |supporting_pair| {
-                                    supporting_pair.contains(&point)
-                                        && supporting_pair_fits(supporting_edge, supporting_pair)
-                                },
-                            )
-                    })
+        selected_faces.into_iter().enumerate().all(|(rank, face)| {
+            if rank > 0 && face == selected_faces[0] {
+                return true;
+            }
+            let start = self
+                .constraints
+                .partition_point(|&(constraint_face, _)| constraint_face < face);
+            let end = self.constraints[start..]
+                .partition_point(|&(constraint_face, _)| constraint_face == face)
+                + start;
+            self.constraints[start..end].iter().all(|&(_, point)| {
+                degree_after_selection(face, point) != 1
+                    || self.face_edges[face]
+                        .iter()
+                        .copied()
+                        .any(|supporting_edge| {
+                            supporting_edge != edge
+                                && self.active[supporting_edge]
+                                && self.assignment[supporting_edge].is_none()
+                                && self.choices[supporting_edge].iter().copied().any(
+                                    |supporting_pair| {
+                                        supporting_pair.contains(&point)
+                                            && supporting_pair_fits(
+                                                supporting_edge,
+                                                supporting_pair,
+                                            )
+                                    },
+                                )
+                        })
+            })
         })
     }
 

@@ -1517,7 +1517,11 @@ impl MeshQuotient {
                         });
                 let boundaries_close = boundary_domains.zip(closed_faces).is_none_or(
                     |(boundary_domains, closed_faces)| {
-                        if budget.is_some_and(|budget| !budget.charge_by(edge_candidates.len())) {
+                        let closed_face_count =
+                            closed_faces.iter().filter(|closed| **closed).count();
+                        if budget.is_some_and(|budget| {
+                            !budget.charge_by(edge_ids.len().saturating_add(closed_face_count))
+                        }) {
                             return false;
                         }
                         let mut selected = vec![None; edge_candidates.len()];
@@ -1529,11 +1533,11 @@ impl MeshQuotient {
                             };
                             selected[edge] = Some([left, right]);
                         }
-                        boundary_domains.iter().enumerate().all(|(face, domain)| {
-                            if !closed_faces[face] {
-                                return true;
-                            }
-                            match domain {
+                        closed_faces
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, closed)| **closed)
+                            .all(|(face, _)| match &boundary_domains[face] {
                                 MeshFaceBoundaryDomain::Ordered(assignments) => {
                                     assignments.iter().any(|assignment| {
                                         labeled_assignment_endpoint_cycles_viable(
@@ -1541,9 +1545,8 @@ impl MeshQuotient {
                                         )
                                     })
                                 }
-                                _ => compact_boundary_domain_viable(domain, &selected, None),
-                            }
-                        })
+                                domain => compact_boundary_domain_viable(domain, &selected, None),
+                            })
                     },
                 );
                 if incidence_closed
