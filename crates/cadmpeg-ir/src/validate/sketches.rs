@@ -1154,6 +1154,28 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             && entities.insert(second.clone())
                     })
             }
+            Constraint::RepeatedLength { entities, .. } => {
+                let distinct = entities.iter().collect::<HashSet<_>>();
+                let lengths = entities
+                    .iter()
+                    .filter_map(|entity| match geometry.get(entity) {
+                        Some(SketchGeometry::Line { start, end }) => {
+                            Some((end.u - start.u).hypot(end.v - start.v))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                entities.len() >= 2
+                    && distinct.len() == entities.len()
+                    && lengths.len() == entities.len()
+                    && lengths[1..].iter().all(|length| {
+                        (length - lengths[0]).abs()
+                            <= ir
+                                .tolerances
+                                .linear
+                                .max(1.0e-9 * (1.0 + length.abs().max(lengths[0].abs())))
+                    })
+            }
             Constraint::RepeatedRadius { entities, .. }
             | Constraint::RepeatedDiameter { entities, .. } => {
                 let distinct = entities.iter().collect::<HashSet<_>>();

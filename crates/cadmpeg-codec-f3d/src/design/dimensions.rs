@@ -833,7 +833,13 @@ fn project_all_dimension_constraints(
             linear_tolerance,
         )
         .or_else(|| {
-            unique_line_length_dimension_definition(entities, &sketch, parameter, &parameter_id)
+            owner_scoped_line_length_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            )
         })
         .or_else(|| {
             unique_parallel_line_dimension_definition(entities, &sketch, parameter, &parameter_id)
@@ -1032,41 +1038,59 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     })
 }
 
-/// Resolve an owner-scoped linear dimension when exactly one line length
-/// satisfies its evaluated measurement.
-pub(crate) fn unique_line_length_dimension_definition(
+/// Resolve the owner-scoped line lengths governed by one linear parameter.
+pub(crate) fn owner_scoped_line_length_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
     };
 
-    if !parameter.source_kind.starts_with("Linear Dimension") || !design_dimension_unit(parameter) {
+    if !parameter.source_kind.starts_with("Linear Dimension")
+        || !design_dimension_unit(parameter)
+        || !linear_tolerance.is_finite()
+        || linear_tolerance < 0.0
+    {
         return None;
     }
     let expected = parameter.evaluated_value * 10.0;
     if !expected.is_finite() {
         return None;
     }
-    let mut matches = entities.iter().filter(|entity| {
-        if &entity.sketch != sketch {
-            return false;
-        }
-        let SketchGeometry::Line { start, end } = &entity.geometry else {
-            return false;
-        };
-        let measured = (end.u - start.u).hypot(end.v - start.v);
-        (measured - expected.abs()).abs() <= 1.0e-9 * (1.0 + measured.abs().max(expected.abs()))
-    });
-    let entity = matches.next()?;
-    matches.next().is_none().then(|| Definition::DistanceLoci {
-        first: SketchLocus::Start(entity.id.clone()),
-        second: SketchLocus::End(entity.id.clone()),
-        parameter: parameter_id.clone(),
-    })
+    let matches = entities
+        .iter()
+        .filter(|entity| {
+            if &entity.sketch != sketch {
+                return false;
+            }
+            let SketchGeometry::Line { start, end } = &entity.geometry else {
+                return false;
+            };
+            let measured = (end.u - start.u).hypot(end.v - start.v);
+            let tolerance =
+                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            (measured - expected.abs()).abs() <= tolerance
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => None,
+        [entity] => Some(Definition::DistanceLoci {
+            first: SketchLocus::Start(entity.id.clone()),
+            second: SketchLocus::End(entity.id.clone()),
+            parameter: parameter_id.clone(),
+        }),
+        _ => Some(Definition::RepeatedLength {
+            entities: matches
+                .into_iter()
+                .map(|entity| entity.id.clone())
+                .collect(),
+            parameter: parameter_id.clone(),
+        }),
+    }
 }
 
 /// Resolve the owner-scoped circular measurements governed by one radial
@@ -1148,6 +1172,7 @@ pub(crate) fn constraint_parameters(
         | Definition::HorizontalDistance { parameter, .. }
         | Definition::VerticalDistance { parameter, .. }
         | Definition::RepeatedDistance { parameter, .. }
+        | Definition::RepeatedLength { parameter, .. }
         | Definition::Angle { parameter, .. }
         | Definition::AngleToAxis { parameter, .. }
         | Definition::Radius { parameter, .. }

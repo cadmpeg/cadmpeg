@@ -982,6 +982,13 @@ pub enum SketchConstraintDefinition {
         /// Shared driving distance parameter.
         parameter: ParameterId,
     },
+    /// Equal-length line entities controlled by one linear parameter.
+    RepeatedLength {
+        /// Distinct line entities sharing the driven length.
+        entities: Vec<SketchEntityId>,
+        /// Shared driving length parameter.
+        parameter: ParameterId,
+    },
     /// Angle controlled by a design parameter.
     Angle {
         /// First angular entity.

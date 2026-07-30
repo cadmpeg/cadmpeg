@@ -49,8 +49,8 @@ use crate::design::dimensions::{
     exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
     exact_offset_constraint, expression_identifiers, indirect_angular_lines,
     null_locus_dimension_definition, offset_parameter_factor,
-    owner_scoped_radial_dimension_definition, point_lies_on_sketch_geometry,
-    radial_dimension_definition, radial_locus_dimension_definition,
+    owner_scoped_line_length_dimension_definition, owner_scoped_radial_dimension_definition,
+    point_lies_on_sketch_geometry, radial_dimension_definition, radial_locus_dimension_definition,
     remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_parallel_line_distance_matches, spatial_point_distance_matches,
     two_locus_distance_dimension, unresolved_parameter_expression_dependency_count,
@@ -129,7 +129,7 @@ use cadmpeg_ir::ids::{EdgeId, FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SpatialSketch, SpatialSketchConstraintDefinition,
+    SketchGeometry, SketchId, SketchLocus, SpatialSketch, SpatialSketchConstraintDefinition,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -3146,6 +3146,64 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter,)
             .is_none()
     );
+}
+
+#[test]
+fn owner_scoped_line_lengths_preserve_repeated_entities() {
+    let sketch = SketchId("f3d:model:sketch#line-length".into());
+    let line = |name: &str, v: f64, length: f64| SketchEntity {
+        id: SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, v),
+            end: Point2::new(length, v),
+        },
+    };
+    let first = line("first", 0.0, 4.0);
+    let second = line("second", 2.0, 4.0 + 5.0e-7);
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "4 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d1",
+        0.4,
+    ))
+    .expect("linear parameter");
+    let parameter_id = cadmpeg_ir::features::ParameterId("parameter#line-length".into());
+
+    assert!(matches!(
+        owner_scoped_line_length_dimension_definition(
+            std::slice::from_ref(&first),
+            &sketch,
+            &parameter,
+            &parameter_id,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Start(ref entity),
+            second: SketchLocus::End(ref other),
+            parameter: ref actual_parameter,
+        }) if entity == &first.id && other == &first.id && actual_parameter == &parameter_id
+    ));
+    assert!(matches!(
+        owner_scoped_line_length_dimension_definition(
+            &[first.clone(), second.clone()],
+            &sketch,
+            &parameter,
+            &parameter_id,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::RepeatedLength {
+            entities,
+            parameter,
+        }) if entities == vec![first.id, second.id]
+            && parameter == parameter_id
+    ));
 }
 
 #[test]
@@ -11545,9 +11603,13 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
     assert!(matches!(
         retained.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Native { .. },
+            definition: SketchConstraintDefinition::RepeatedLength {
+                entities,
+                parameter,
+            },
             ..
-        }]
+        }] if entities.len() == 2
+            && parameter == &neutral_parameter_id_parts(stream, 4)
     ));
 }
 

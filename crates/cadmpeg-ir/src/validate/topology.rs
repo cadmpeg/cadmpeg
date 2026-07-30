@@ -1768,6 +1768,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     .collect(),
                 Some(parameter.0.as_str()),
             ),
+            Definition::RepeatedLength {
+                entities,
+                parameter,
+            } => (entities.clone(), Some(parameter.0.as_str())),
             Definition::Angle {
                 first,
                 second,
