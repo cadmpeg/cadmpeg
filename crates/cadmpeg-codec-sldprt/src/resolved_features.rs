@@ -1297,6 +1297,29 @@ fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64; 2]; 3]
         let end = finite_coordinate_pair(payload, offset + 96)?;
         return validated_inline_arc_coordinates(center, start, end);
     }
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&[0; 2])
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 58) == Some(&[0x1a, 0x00])
+        && payload.get(offset + 74..offset + 76) == Some(&11u16.to_le_bytes())
+        && payload.get(offset + 76..offset + 88) == Some(&[0; 12])
+        && payload.get(offset + 120..offset + 130) == Some(&[0; 10])
+        && payload
+            .get(offset + 130..offset + 134)
+            .is_some_and(|object| object != [0; 4] && object != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.checked_add(134)?)
+    {
+        let center = finite_coordinate_pair(payload, offset + 58)?;
+        let start = finite_coordinate_pair(payload, offset + 88)?;
+        let end = finite_coordinate_pair(payload, offset + 104)?;
+        return validated_inline_arc_coordinates(center, start, end);
+    }
     let marker = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len());
     let tag = payload.get(offset + 56..offset + 58);
     let direct_center_layout = marker == Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -8289,6 +8312,37 @@ mod marker_tests {
             payload[128] ^= 1;
             assert_eq!(inline_arc_coordinates(&payload, 0), None);
         }
+
+        let mut compact = vec![0; 134 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        compact[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        compact[5..13].fill(0xff);
+        compact[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        compact[17..21].copy_from_slice(&2u32.to_le_bytes());
+        compact[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        compact[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        compact[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        compact[56..58].copy_from_slice(&[0x1a, 0x00]);
+        compact[58..66].copy_from_slice(&2.0f64.to_le_bytes());
+        compact[66..74].copy_from_slice(&3.0f64.to_le_bytes());
+        compact[74..76].copy_from_slice(&11u16.to_le_bytes());
+        compact[88..96].copy_from_slice(&1.0f64.to_le_bytes());
+        compact[96..104].copy_from_slice(&3.0f64.to_le_bytes());
+        compact[104..112].copy_from_slice(&2.0f64.to_le_bytes());
+        compact[112..120].copy_from_slice(&4.0f64.to_le_bytes());
+        compact[130..134].copy_from_slice(&5u32.to_le_bytes());
+        compact[134..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+        assert_eq!(
+            inline_arc_coordinates(&compact, 0),
+            Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
+        );
+        assert_eq!(
+            sketch_input_entities(&compact, "lane")[0].kind,
+            SketchInputKind::Arc
+        );
+        compact[130..134].fill(0);
+        assert_eq!(inline_arc_coordinates(&compact, 0), None);
     }
 
     #[test]
