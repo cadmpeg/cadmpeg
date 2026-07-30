@@ -1779,6 +1779,25 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
             usize::from(topology_diagnostics.mesh_ambiguity == Some(ambiguity)),
         );
     }
+    for (key, exhaustion) in [
+        (
+            "standard_topology_mesh_exhaustion_quotient_preparation_count",
+            mesh_quotient::MeshCandidateExhaustion::QuotientPreparation,
+        ),
+        (
+            "standard_topology_mesh_exhaustion_incidence_enumeration_count",
+            mesh_quotient::MeshCandidateExhaustion::IncidenceEnumeration,
+        ),
+        (
+            "standard_topology_mesh_exhaustion_endpoint_resolution_count",
+            mesh_quotient::MeshCandidateExhaustion::EndpointResolution,
+        ),
+    ] {
+        report.coverage.insert(
+            key.to_string(),
+            usize::from(topology_diagnostics.mesh_exhaustion == Some(exhaustion)),
+        );
+    }
     report.coverage.insert(
         "refined_consolidated_analytic_surface_count".to_string(),
         refined_analytic_surfaces.len(),
@@ -1842,6 +1861,7 @@ struct StandardTopologyDiagnostics {
     endpoint_domain_choices: usize,
     mesh_rejection: Option<mesh_quotient::MeshCandidateRejection>,
     mesh_ambiguity: Option<mesh_quotient::MeshCandidateAmbiguity>,
+    mesh_exhaustion: Option<mesh_quotient::MeshCandidateExhaustion>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3519,7 +3539,8 @@ fn attach_standard_topology(
                 diagnostics.mesh_ambiguity = Some(ambiguity);
                 None
             }
-            mesh_quotient::MeshCandidateSolve::Exhausted => {
+            mesh_quotient::MeshCandidateSolve::Exhausted(exhaustion) => {
+                diagnostics.mesh_exhaustion = Some(exhaustion);
                 mesh_search_exhausted = true;
                 None
             }
@@ -6220,20 +6241,26 @@ mod route_tests {
     fn mesh_retry_runs_only_after_exact_rejection() {
         use crate::solve::incidence::IncidenceRejection;
         use crate::solve::mesh_quotient::{
-            MeshCandidateAmbiguity, MeshCandidateRejection, MeshCandidateSolve,
-            MeshEndpointIncidenceRejection,
+            MeshCandidateAmbiguity, MeshCandidateExhaustion, MeshCandidateRejection,
+            MeshCandidateSolve, MeshEndpointIncidenceRejection,
         };
 
         let called = Cell::new(false);
-        let outcome = retry_rejected_mesh_solution(MeshCandidateSolve::Exhausted, || {
-            called.set(true);
-            MeshCandidateSolve::Rejected(MeshCandidateRejection::EndpointIncidence(
-                MeshEndpointIncidenceRejection::NoAssignment(
-                    IncidenceRejection::ComponentComposition,
-                ),
-            ))
-        });
-        assert!(matches!(outcome, MeshCandidateSolve::Exhausted));
+        let outcome = retry_rejected_mesh_solution(
+            MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::IncidenceEnumeration),
+            || {
+                called.set(true);
+                MeshCandidateSolve::Rejected(MeshCandidateRejection::EndpointIncidence(
+                    MeshEndpointIncidenceRejection::NoAssignment(
+                        IncidenceRejection::ComponentComposition,
+                    ),
+                ))
+            },
+        );
+        assert!(matches!(
+            outcome,
+            MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::IncidenceEnumeration)
+        ));
         assert!(!called.get());
 
         let outcome = retry_rejected_mesh_solution(

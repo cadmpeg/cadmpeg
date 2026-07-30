@@ -3837,6 +3837,17 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         result.report.coverage["standard_topology_failure_ambiguous_solution_count"]
     );
     assert_eq!(
+        [
+            "standard_topology_mesh_exhaustion_quotient_preparation_count",
+            "standard_topology_mesh_exhaustion_incidence_enumeration_count",
+            "standard_topology_mesh_exhaustion_endpoint_resolution_count",
+        ]
+        .into_iter()
+        .map(|key| result.report.coverage[key])
+        .sum::<usize>(),
+        result.report.coverage["standard_topology_failure_search_exhausted_count"]
+    );
+    assert_eq!(
         result.report.coverage["standard_topology_empty_endpoint_domain_count"]
             + result.report.coverage["standard_topology_singleton_endpoint_domain_count"]
             + result.report.coverage["standard_topology_multiple_endpoint_domain_count"],
@@ -3995,6 +4006,17 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         .map(|key| decoded.report.coverage[key])
         .sum::<usize>(),
         decoded.report.coverage["standard_topology_failure_ambiguous_solution_count"]
+    );
+    assert_eq!(
+        [
+            "standard_topology_mesh_exhaustion_quotient_preparation_count",
+            "standard_topology_mesh_exhaustion_incidence_enumeration_count",
+            "standard_topology_mesh_exhaustion_endpoint_resolution_count",
+        ]
+        .into_iter()
+        .map(|key| decoded.report.coverage[key])
+        .sum::<usize>(),
+        decoded.report.coverage["standard_topology_failure_search_exhausted_count"]
     );
     assert_eq!(
         decoded.report.coverage["standard_topology_empty_endpoint_domain_count"]

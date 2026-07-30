@@ -214,7 +214,9 @@ current scores require those matrices and representative fixtures.
   component-domain, and component-composition failure. Coordinate-root closure
   reports distinct complete assignments as topology ambiguity rather than
   topology rejection. Topology ambiguity is partitioned into coordinate-root
-  closure, endpoint resolution, and distinct reconstructed topology.
+  closure, endpoint resolution, and distinct reconstructed topology. Bounded
+  search exhaustion is partitioned into quotient preparation, incidence
+  enumeration, and endpoint resolution.
 - Zero-entity face-local support occurrences with complete lifted endpoint
   tapes form radial endpoint-pair candidates when two occurrences have one
   reciprocal unordered model-space endpoint match and the surrounding

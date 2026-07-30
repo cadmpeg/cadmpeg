@@ -66,12 +66,19 @@ pub(crate) enum MeshCandidateAmbiguity {
     DistinctTopologySolutions,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MeshCandidateExhaustion {
+    QuotientPreparation,
+    IncidenceEnumeration,
+    EndpointResolution,
+}
+
 #[derive(Debug)]
 pub(crate) enum MeshCandidateSolve {
     Solved(StandardTopology, Vec<usize>),
     Rejected(MeshCandidateRejection),
     Ambiguous(MeshCandidateAmbiguity),
-    Exhausted,
+    Exhausted(MeshCandidateExhaustion),
 }
 
 enum MeshEndpointResolve {
@@ -5852,7 +5859,7 @@ where
         Some((mesh_quotient, completed_edge_candidates))
     })() else {
         return if preparation_exhausted {
-            MeshCandidateSolve::Exhausted
+            MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::QuotientPreparation)
         } else {
             MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation)
         };
@@ -5956,7 +5963,11 @@ where
         return MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::CoordinateRootClosure);
     }
     if incidence_exhausted || matches!(pair_solutions, IncidenceSolve::Exhausted) {
-        return MeshCandidateSolve::Exhausted;
+        return MeshCandidateSolve::Exhausted(if incidence_exhausted {
+            MeshCandidateExhaustion::EndpointResolution
+        } else {
+            MeshCandidateExhaustion::IncidenceEnumeration
+        });
     }
     if let Some((topology, assignment)) = incidence_solution {
         return MeshCandidateSolve::Solved(topology, assignment);
@@ -5993,7 +6004,9 @@ where
         Some(MeshEndpointResolve::Ambiguous) => {
             MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::EndpointResolution)
         }
-        Some(MeshEndpointResolve::Exhausted) => MeshCandidateSolve::Exhausted,
+        Some(MeshEndpointResolve::Exhausted) => {
+            MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::EndpointResolution)
+        }
         Some(MeshEndpointResolve::Rejected) | None => MeshCandidateSolve::Rejected(
             MeshCandidateRejection::EndpointIncidence(incidence_rejection),
         ),
