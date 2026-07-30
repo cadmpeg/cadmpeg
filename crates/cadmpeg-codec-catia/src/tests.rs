@@ -2282,6 +2282,77 @@ fn standard_catpart_with_unprefixed_parser_version_relation_expression(
     file
 }
 
+fn standard_catpart_with_relation_expression_instance(
+    expression_entity_id: u32,
+    stored_self_entity_id: u32,
+) -> Vec<u8> {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
+    let mut expression_value = Vec::new();
+    for ordinal in 5_u32..=10 {
+        expression_value.push(0x32);
+        expression_value.extend_from_slice(&ordinal.to_le_bytes());
+    }
+    expression_value.push(0xfe);
+
+    let mut stream =
+        entity_table_record_with_definition_and_value(1, &definition, &expression_value);
+    stream.extend(entity_table_record(2));
+    stream.push(0xde);
+
+    let mut instance_payload = Vec::new();
+    let reference = |payload: &mut Vec<u8>, value: u32| {
+        payload.push(0x32);
+        payload.extend_from_slice(&value.to_le_bytes());
+    };
+    let atom = |payload: &mut Vec<u8>, value: u32| {
+        payload.push(0x80);
+        payload.extend_from_slice(&value.to_le_bytes());
+    };
+    reference(&mut instance_payload, 20);
+    atom(&mut instance_payload, 3);
+    reference(&mut instance_payload, 21);
+    atom(&mut instance_payload, 22);
+    atom(&mut instance_payload, 0x3d7d_031f);
+    atom(&mut instance_payload, 5);
+    atom(&mut instance_payload, 89);
+    atom(&mut instance_payload, 1_127_154_762);
+    reference(&mut instance_payload, 23);
+    atom(&mut instance_payload, 24);
+    reference(&mut instance_payload, 25);
+    atom(&mut instance_payload, 2);
+    reference(&mut instance_payload, 24);
+    reference(&mut instance_payload, 26);
+    atom(&mut instance_payload, 2);
+    reference(&mut instance_payload, 21);
+    atom(&mut instance_payload, expression_entity_id);
+    reference(&mut instance_payload, 27);
+    atom(&mut instance_payload, stored_self_entity_id);
+    instance_payload.push(0xfe);
+
+    stream.extend(object_graph_from_records(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x8a, 0x80], &instance_payload),
+    ]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "body",
+        "Boolean",
+        "log(min(100,max(20*#1_,#2_)/#2_))/log(100)/2",
+        "ParserVersion",
+        "param",
+        "(#1_ : #In LENGTH,#2_ : #In LENGTH) : Real\n",
+        "RelationExpFct",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     standard_catpart_with_two_selector_value("Thickness", "#1_ /2", suffix)
 }
@@ -10900,6 +10971,51 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
     );
     assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
     assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+}
+
+#[test]
+fn relation_expression_instance_requires_the_complete_identity_frame() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_expression_instance(1, 2),
+    );
+    let instance = native.entity_records[1]
+        .relation_expression_instance
+        .as_ref()
+        .expect("complete instance frame");
+    assert_eq!(instance.expression_entity_id, 1);
+    assert_eq!(instance.expression, native.entity_records[0].id);
+
+    for file in [
+        standard_catpart_with_relation_expression_instance(3, 2),
+        standard_catpart_with_relation_expression_instance(1, 3),
+    ] {
+        let native = crate::native::CatiaNative::decode(&file);
+        assert_eq!(native.entity_records.len(), 2);
+        assert!(native
+            .entity_records
+            .iter()
+            .all(|entity| entity.relation_expression_instance.is_none()));
+    }
+}
+
+#[test]
+fn decode_reports_exact_relation_expression_instances() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_relation_expression_instance(1, 2)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode relation-expression instance");
+    assert_eq!(
+        decoded.report.coverage["decoded_relation_expression_instance_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_instanced_relation_expression_count"],
+        1
+    );
+    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
+    assert!(decoded.ir.model.parameters.is_empty());
 }
 
 #[test]

@@ -120,7 +120,9 @@ current scores require those matrices and representative fixtures.
   partitions the four framings, typed and untyped signatures, and expressions
   referenced or unreferenced by complete formula relations. Parser-version
   expressions remain native when their formula-instance incidence does not
-  resolve.
+  resolve. Exact compound instance frames retain their same-graph
+  relation-expression identity independently of unresolved input and output
+  roles. Coverage counts instance frames and distinct selected expressions.
   Parameters remain document-scoped until feature-instance ownership resolves.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not

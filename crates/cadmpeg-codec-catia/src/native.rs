@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 224;
+pub const CATIA_NATIVE_VERSION: u32 = 225;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -33,6 +33,8 @@ const CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION: u32 = 222;
 const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 #[cfg(test)]
 const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
+#[cfg(test)]
+const CATIA_RELATION_EXPRESSION_INSTANCE_VERSION: u32 = 225;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1334,6 +1336,15 @@ pub struct CatiaFormulaParameterDependency {
     pub candidates: Vec<String>,
 }
 
+/// One exact compound instance frame selecting a relation-expression entity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaRelationExpressionInstance {
+    /// Stored entity identity in the frame's program slot.
+    pub expression_entity_id: u32,
+    /// Same-graph relation-expression entity selected by that identity.
+    pub expression: String,
+}
+
 /// Field order used by a repeated-reference schema preamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CatiaRepeatedReferenceSchemaOrder {
@@ -1402,6 +1413,9 @@ pub struct CatiaEntityRecord {
     /// Complete value bound by a two-definition role chain.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub definition_chain_value: Option<CatiaDefinitionChainValue>,
+    /// Complete compound instance frame selecting a relation-expression entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation_expression_instance: Option<CatiaRelationExpressionInstance>,
     /// Complete formula-to-expression and formula-to-parameter relation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub formula_relation: Option<CatiaFormulaRelation>,
@@ -2779,6 +2793,58 @@ mod entity_suffix_framing_tests {
     }
 }
 
+fn relation_expression_instance(
+    entity_id: u32,
+    object: &CatiaObjectRecord,
+    relation_expressions: &HashMap<(String, u32), String>,
+) -> Option<CatiaRelationExpressionInstance> {
+    if object.lead != 0x12
+        || object.entity_id != Some(entity_id)
+        || object.owner_entity_id().is_none()
+        || object.class_ref.is_none()
+        || object.storage_ref.is_some()
+    {
+        return None;
+    }
+    let [PayloadField::Reference { .. }, PayloadField::Atom { value: 3, .. }, PayloadField::Reference {
+        value: repeated_reference,
+        ..
+    }, PayloadField::Atom { .. }, PayloadField::Atom { .. }, PayloadField::Atom { value: 5, .. }, PayloadField::Atom { value: 89, .. }, PayloadField::Atom {
+        value: 1_127_154_762,
+        ..
+    }, PayloadField::Reference { .. }, PayloadField::Atom {
+        value: repeated_target,
+        ..
+    }, PayloadField::Reference { .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
+        value: repeated_target_reference,
+        ..
+    }, PayloadField::Reference { .. }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
+        value: repeated_reference_copy,
+        ..
+    }, PayloadField::Atom {
+        value: expression_entity_id,
+        ..
+    }, PayloadField::Reference { .. }, PayloadField::Atom {
+        value: stored_self, ..
+    }, PayloadField::Terminator] = object.payload.fields.as_slice()
+    else {
+        return None;
+    };
+    if repeated_reference != repeated_reference_copy
+        || repeated_target != repeated_target_reference
+        || *stored_self != entity_id
+    {
+        return None;
+    }
+    let expression = relation_expressions
+        .get(&(object.parent.clone(), *expression_entity_id))?
+        .clone();
+    Some(CatiaRelationExpressionInstance {
+        expression_entity_id: *expression_entity_id,
+        expression,
+    })
+}
+
 fn formula_relation(
     definitions: &[CatiaDefinitionSchemaSelection],
     graph_id: &str,
@@ -2849,6 +2915,7 @@ fn formula_relation(
 }
 
 type CatiaRelationExpressionIndex = HashMap<String, (String, String)>;
+type CatiaRelationExpressionEntityIndex = HashMap<(String, u32), String>;
 type CatiaEntityByObjectIndex = HashMap<String, String>;
 type CatiaParameterBindingIndex = HashMap<String, HashMap<String, Vec<String>>>;
 
@@ -2856,6 +2923,7 @@ fn semantic_entity_indices(
     entities: &[CatiaEntityRecord],
 ) -> (
     CatiaRelationExpressionIndex,
+    CatiaRelationExpressionEntityIndex,
     CatiaEntityByObjectIndex,
     CatiaParameterBindingIndex,
 ) {
@@ -2867,6 +2935,16 @@ fn semantic_entity_indices(
                 entity.object_record.clone(),
                 (entity.id.clone(), expression.expression.value.clone()),
             ))
+        })
+        .collect();
+    let relation_expression_entities = entities
+        .iter()
+        .filter(|entity| entity.relation_expression.is_some())
+        .map(|entity| {
+            (
+                (entity.object_graph.clone(), entity.entity_id),
+                entity.id.clone(),
+            )
         })
         .collect();
     let entities_by_object = entities
@@ -2885,7 +2963,12 @@ fn semantic_entity_indices(
             .or_default()
             .push(entity.id.clone());
     }
-    (relation_expressions, entities_by_object, parameter_bindings)
+    (
+        relation_expressions,
+        relation_expression_entities,
+        entities_by_object,
+        parameter_bindings,
+    )
 }
 
 fn relation_symbols(source: &str) -> Vec<String> {
@@ -7607,8 +7690,12 @@ impl CatiaNative {
                 );
             }
         }
-        let (relation_expressions, entities_by_object, parameter_bindings) =
-            semantic_entity_indices(&entity_records);
+        let (
+            relation_expressions,
+            relation_expression_entities,
+            entities_by_object,
+            parameter_bindings,
+        ) = semantic_entity_indices(&entity_records);
         for entity in &mut entity_records {
             let Some(object) = object_graphs
                 .iter()
@@ -7622,6 +7709,11 @@ impl CatiaNative {
             else {
                 continue;
             };
+            entity.relation_expression_instance = relation_expression_instance(
+                entity.entity_id,
+                object,
+                &relation_expression_entities,
+            );
             entity.formula_relation = formula_relation(
                 &entity.definition_schema_selections,
                 &entity.object_graph,
@@ -7906,8 +7998,12 @@ impl CatiaNative {
                 entity.id
             )));
         }
-        let (relation_expressions, entities_by_object, parameter_bindings) =
-            semantic_entity_indices(&entity_records);
+        let (
+            relation_expressions,
+            relation_expression_entities,
+            entities_by_object,
+            parameter_bindings,
+        ) = semantic_entity_indices(&entity_records);
         if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
             for graph in &graphs {
                 let terminal_null = entity_records
@@ -7945,6 +8041,23 @@ impl CatiaNative {
                             &relation_expressions,
                             &entities_by_object,
                             &parameter_bindings,
+                        )
+                    });
+            }
+        }
+        if namespace.version < CATIA_RELATION_EXPRESSION_INSTANCE_VERSION {
+            let records_by_id = records
+                .iter()
+                .map(|record| (record.id.as_str(), record))
+                .collect::<HashMap<_, _>>();
+            for entity in &mut entity_records {
+                entity.relation_expression_instance = records_by_id
+                    .get(entity.object_record.as_str())
+                    .and_then(|object| {
+                        relation_expression_instance(
+                            entity.entity_id,
+                            object,
+                            &relation_expression_entities,
                         )
                     });
             }
@@ -8046,6 +8159,20 @@ impl CatiaNative {
                                 entity.suffix_value.as_ref(),
                                 entity.suffix_schema_selection.as_ref(),
                             )
+                    })
+                    || graph_entities.iter().any(|entity| {
+                        let object = graph
+                            .records
+                            .iter()
+                            .find(|record| record.id == entity.object_record);
+                        entity.relation_expression_instance
+                            != object.and_then(|object| {
+                                relation_expression_instance(
+                                    entity.entity_id,
+                                    object,
+                                    &relation_expression_entities,
+                                )
+                            })
                     })
                     || graph_entities.iter().any(|entity| {
                         let object = graph
@@ -9089,6 +9216,7 @@ fn native_object_graph(
                 constraint_range: None,
                 definition_value: None,
                 definition_chain_value: None,
+                relation_expression_instance: None,
                 formula_relation: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,
