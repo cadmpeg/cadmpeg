@@ -437,13 +437,9 @@ fn parse_schema_program(data: &[u8], catalog_offset: usize) -> Option<LegacySche
     let search_end = memchr::memmem::find(&data[offset..], CATALOG_OPEN)
         .and_then(|relative| offset.checked_add(relative))
         .unwrap_or(data.len());
-    let mut footers = memchr::memmem::find_iter(&data[offset..search_end], SCHEMA_PROGRAM_FOOTER)
-        .filter_map(|relative| offset.checked_add(relative));
-    let footer_offset = footers.next()?;
-    if footers.next().is_some()
-        || footer_offset == offset
-        || data.get(footer_offset - 1) != Some(&0xfe)
-    {
+    let footer_offset = memchr::memmem::find(&data[offset..search_end], SCHEMA_PROGRAM_FOOTER)
+        .and_then(|relative| offset.checked_add(relative))?;
+    if footer_offset == offset || data.get(footer_offset - 1) != Some(&0xfe) {
         return None;
     }
     Some(LegacySchemaProgram {
@@ -1250,7 +1246,7 @@ mod tests {
     }
 
     #[test]
-    fn retains_only_a_uniquely_footer_bounded_schema_program() {
+    fn retains_a_schema_program_closed_by_the_first_complete_footer() {
         let mut bytes = Vec::new();
         identity(&mut bytes, 1);
         bytes.extend_from_slice(CATALOG_OPEN);
@@ -1273,12 +1269,17 @@ mod tests {
         unterminated[footer_offset - 1] = 0x81;
         assert!(parse_runs(&unterminated)[0].schema_program.is_none());
 
-        let mut ambiguous = bytes;
-        ambiguous.splice(
+        let mut repeated_footer = bytes;
+        repeated_footer.splice(
             footer_offset..footer_offset,
             SCHEMA_PROGRAM_FOOTER.iter().copied(),
         );
-        assert!(parse_runs(&ambiguous)[0].schema_program.is_none());
+        let repeated_runs = parse_runs(&repeated_footer);
+        let repeated = repeated_runs[0]
+            .schema_program
+            .as_ref()
+            .expect("first complete footer closes the program");
+        assert_eq!(repeated.footer_offset, footer_offset);
     }
 
     #[test]
