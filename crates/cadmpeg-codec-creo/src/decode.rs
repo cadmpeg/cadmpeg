@@ -397,11 +397,13 @@ struct CreoSketchDimension {
     external_id: u32,
     dimension_type: u32,
     value: Option<f64>,
+    value_body: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     unresolved_value_token: Option<Vec<u8>>,
     unit: &'static str,
     direction_byte: u8,
     auxiliary_value: Option<f64>,
+    auxiliary_body: Vec<u8>,
     offset: usize,
 }
 

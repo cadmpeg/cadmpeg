@@ -2135,6 +2135,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     external_id: dimension.external_id,
                     dimension_type: dimension.dimension_type,
                     value: dimension.value,
+                    value_body: dimension.value_body.clone(),
                     unresolved_value_token: dimension.unresolved_value_token.clone(),
                     unit: match dimension.value_unit {
                         crate::feature::DimensionUnit::Radians => "radians",
@@ -2143,6 +2144,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     },
                     direction_byte: dimension.direction_byte,
                     auxiliary_value: dimension.auxiliary_value,
+                    auxiliary_body: dimension.auxiliary_body.clone(),
                     offset: dimension.offset,
                 })
                 .collect(),

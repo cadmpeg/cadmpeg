@@ -1237,10 +1237,12 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
             |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
                 dimension_type,
                 value: Some(value),
+                value_body: Vec::new(),
                 unresolved_value_token: None,
                 value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: Some(0.0),
+                auxiliary_body: Vec::new(),
                 external_id,
                 offset: 0,
             },
@@ -4859,10 +4861,12 @@ fn saved_line_joins_through_order_table() {
         rows: vec![crate::feature::FeatureDimension {
             dimension_type: 1,
             value: Some(2.0),
+            value_body: Vec::new(),
             unresolved_value_token: None,
             value_unit: crate::feature::DimensionUnit::Millimeters,
             direction_byte: 0,
             auxiliary_value: None,
+            auxiliary_body: Vec::new(),
             external_id: 4,
             offset: 27,
         }],
@@ -6596,10 +6600,12 @@ fn dimension_identity_includes_its_feature_definition() {
     let dimension = crate::feature::FeatureDimension {
         dimension_type: 2,
         value: Some(5.0),
+        value_body: Vec::new(),
         unresolved_value_token: None,
         value_unit: crate::feature::DimensionUnit::Millimeters,
         direction_byte: 0,
         auxiliary_value: None,
+        auxiliary_body: Vec::new(),
         external_id: 3,
         offset: 10,
     };
@@ -6845,6 +6851,7 @@ fn dimension_identity_includes_its_feature_definition() {
     );
     let unresolved_dimension = crate::feature::FeatureDimension {
         value: None,
+        value_body: Vec::new(),
         external_id: 4,
         ..dimension.clone()
     };
@@ -7324,10 +7331,12 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             rows: vec![crate::feature::FeatureDimension {
                 dimension_type: 2,
                 value: Some(3.0),
+                value_body: Vec::new(),
                 unresolved_value_token: None,
                 value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: None,
+                auxiliary_body: Vec::new(),
                 external_id: 42,
                 offset: 75,
             }],

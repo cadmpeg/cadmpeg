@@ -4798,20 +4798,24 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 crate::feature::FeatureDimension {
                     dimension_type: 2,
                     value: Some(12.0),
+                    value_body: Vec::new(),
                     unresolved_value_token: None,
                     value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: Some(0.0),
+                    auxiliary_body: Vec::new(),
                     external_id: 1,
                     offset: 0,
                 },
                 crate::feature::FeatureDimension {
                     dimension_type: 3,
                     value: Some(4.0),
+                    value_body: Vec::new(),
                     unresolved_value_token: None,
                     value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: Some(0.0),
+                    auxiliary_body: Vec::new(),
                     external_id: 2,
                     offset: 0,
                 },
@@ -5194,8 +5198,15 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     );
     assert_eq!(dimensions.rows[0].direction_byte, 1);
     assert_eq!(dimensions.rows[0].auxiliary_value, Some(0.0));
+    assert_eq!(dimensions.rows[0].value_body, [0xe4]);
+    assert_eq!(dimensions.rows[0].auxiliary_body, [0x0f]);
     assert_eq!(dimensions.rows[0].external_id, 42);
     assert_eq!(dimensions.rows[1].value, Some(3.0));
+    assert_eq!(
+        dimensions.rows[1].value_body,
+        [0x46, 0x08, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
     assert_eq!(
         dimensions.rows[1].value_unit,
         crate::feature::DimensionUnit::Millimeters
@@ -5517,6 +5528,10 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(dimensions[1]["unresolved_value_token"][0], 0);
     assert_eq!(dimensions[1]["unresolved_value_token"][1], 4);
     assert_eq!(dimensions[1]["unresolved_value_token"][2], 166);
+    assert_eq!(dimensions[1]["value_body"][0], 0);
+    assert_eq!(dimensions[1]["value_body"][1], 4);
+    assert_eq!(dimensions[1]["value_body"][2], 166);
+    assert_eq!(dimensions[1]["auxiliary_body"][0], 24);
     assert_eq!(dimensions[2]["unresolved_value_token"][0], 1);
     assert_eq!(dimensions[2]["unresolved_value_token"][1], 4);
     assert_eq!(dimensions[2]["unresolved_value_token"][2], 254);

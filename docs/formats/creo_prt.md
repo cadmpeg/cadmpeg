@@ -1830,6 +1830,8 @@ dimension whose `value` is in radians. Types `0x01`, `0x02`, `0x03`, `0x04`,
 and `0x05` are linear dimensions whose values use model millimeters. `ext_id` is the dimension identity
 within the owning feature definition. A neutral parameter and any constraint
 that selects it require exactly one `dimtab_ptr` row with that `ext_id`.
+`value` and `aux_value` are independently bounded scalar bodies. The encoding
+and decoded numeric value of either field do not constrain the other field.
 Every row is a neutral parameter. An undecoded value leaves its expression and
 typed value unresolved without removing its identity. Repeated local identifiers use
 occurrence-qualified parameter identities and names in source order, but no

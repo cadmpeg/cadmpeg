@@ -119,7 +119,8 @@ fixtures, claims above L1 remain unproven.
   modeling-operation precedence.
 - Every decoded section-dimension row transfers as a definition-scoped design
   parameter; table completeness gates ordinal relation joins, not row
-  preservation. Decoded dimensions whose exact scalar encoding remains
+  preservation. Each row retains the exact bounded scalar bodies for its primary
+  and auxiliary values. Decoded dimensions whose primary scalar semantics remain
   unresolved retain the source-native value token and raise a decode loss note.
 - Section-segment coverage counts decoded rows, rows with resolved neutral
   geometry, decoded rows retaining source-native geometry, and declared rows

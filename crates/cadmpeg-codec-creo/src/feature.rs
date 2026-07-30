@@ -1389,6 +1389,8 @@ pub struct FeatureDimension {
     pub dimension_type: u32,
     /// Decoded primary scalar, when its prefix is defined.
     pub value: Option<f64>,
+    /// Exact encoded scalar body of the primary value.
+    pub value_body: Vec<u8>,
     /// Exact bounded placeholder token when the primary scalar is unresolved.
     pub unresolved_value_token: Option<Vec<u8>>,
     /// Unit interpretation selected by the dimension type.
@@ -1397,6 +1399,8 @@ pub struct FeatureDimension {
     pub direction_byte: u8,
     /// Decoded auxiliary scalar, when its prefix is defined.
     pub auxiliary_value: Option<f64>,
+    /// Exact encoded scalar body of the auxiliary value.
+    pub auxiliary_body: Vec<u8>,
     /// External dimension identifier.
     pub external_id: u32,
     /// Byte offset of the row in the original stream.
@@ -4032,25 +4036,29 @@ fn labeled_dimension(
     let value_label = find_bytes(payload, b"value\0", after_type, end)?;
     let value_start = value_label + b"value\0".len();
     let (value, after_value, _) = decode_variable_scalar(payload, value_start, end, cache);
+    let value_body = payload.get(value_start..after_value)?.to_vec();
     let unresolved_value_token = value
         .is_none()
-        .then(|| payload.get(value_start..after_value))
-        .flatten()
+        .then_some(value_body.as_slice())
         .and_then(unresolved_dimension_value_token);
     let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
     let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
     let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
+    let auxiliary_start = auxiliary_label + b"aux_value\0".len();
     let (auxiliary_value, after_auxiliary, _) =
-        decode_variable_scalar(payload, auxiliary_label + b"aux_value\0".len(), end, cache);
+        decode_variable_scalar(payload, auxiliary_start, end, cache);
+    let auxiliary_body = payload.get(auxiliary_start..after_auxiliary)?.to_vec();
     let external_label = find_bytes(payload, b"ext_id\0", after_auxiliary, end)?;
     let (external_id, _) = segment_int(payload, external_label + b"ext_id\0".len());
     Some(FeatureDimension {
         dimension_type,
         value,
+        value_body,
         unresolved_value_token,
         value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
+        auxiliary_body,
         external_id: external_id?,
         offset: type_label,
     })
@@ -4072,10 +4080,10 @@ fn positional_dimension(
         Some(0x18) => (Some(0.0), cursor + 1, false),
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
+    let value_body = payload.get(value_start..cursor)?.to_vec();
     let unresolved_value_token = value
         .is_none()
-        .then(|| payload.get(value_start..cursor))
-        .flatten()
+        .then_some(value_body.as_slice())
         .and_then(unresolved_dimension_value_token);
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
     let auxiliary_start = cursor + 1;
@@ -4085,14 +4093,17 @@ fn positional_dimension(
         let (value, next, _) = decode_variable_scalar(payload, auxiliary_start, end, cache);
         (value, next)
     };
+    let auxiliary_body = payload.get(auxiliary_start..cursor)?.to_vec();
     let (external_id, _) = segment_int(payload, cursor);
     Some(FeatureDimension {
         dimension_type,
         value,
+        value_body,
         unresolved_value_token,
         value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
+        auxiliary_body,
         external_id: external_id?,
         offset: start,
     })
@@ -9258,8 +9269,17 @@ mod tests {
         assert_eq!(dimensions.entity_ref, Some(88));
         assert_eq!(dimensions.rows.len(), 2);
         assert_eq!(dimensions.rows[0].value, Some(3.0));
+        assert_eq!(
+            dimensions.rows[0].value_body,
+            [0x46, 0x08, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(dimensions.rows[0].auxiliary_body, [0x18]);
         assert_eq!(dimensions.rows[0].external_id, 43);
         assert_eq!(dimensions.rows[1].dimension_type, 10);
+        assert_eq!(
+            dimensions.rows[1].value_body,
+            [0x60, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f]
+        );
         assert_eq!(dimensions.rows[1].external_id, 44);
     }
 
@@ -9325,6 +9345,8 @@ mod tests {
             dimensions.rows[1].unresolved_value_token.as_deref(),
             Some(&[0x00, 0x04, 0xa6][..])
         );
+        assert_eq!(dimensions.rows[1].value_body, [0x00, 0x04, 0xa6]);
+        assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
         assert_eq!(dimensions.rows[1].external_id, 44);
         assert_eq!(dimensions.rows[2].value, Some(-1.0));
         assert_eq!(dimensions.rows[2].external_id, 45);
@@ -9349,6 +9371,8 @@ mod tests {
         );
         assert_eq!(positive_row.direction_byte, 0);
         assert_eq!(positive_row.auxiliary_value, Some(0.0));
+        assert_eq!(positive_row.value_body, positive[1..8]);
+        assert_eq!(positive_row.auxiliary_body, [0x18]);
         assert_eq!(positive_row.external_id, 46);
         for (body, external_id, token) in [
             (&opaque_three[..], 47, &[0x00, 0x04, 0xa6][..]),
