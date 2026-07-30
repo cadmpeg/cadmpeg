@@ -10582,22 +10582,52 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
             .map(|(index, parameter)| (&parameter.id, index))
             .collect::<BTreeMap<_, _>>();
         let mut emitted = BTreeSet::new();
+        let mut evaluated = BTreeMap::<ParameterId, f64>::new();
         while let Some(index) = (0..parameters.len()).find(|index| {
             !emitted.contains(index)
                 && expected[*index].as_ref().is_some_and(|dependencies| {
                     dependencies.iter().all(|dependency| {
-                        indices
-                            .get(dependency)
-                            .is_some_and(|dependency| emitted.contains(dependency))
+                        evaluated.contains_key(dependency)
+                            && indices
+                                .get(dependency)
+                                .is_some_and(|index| emitted.contains(index))
                     })
                 })
         }) {
+            let parameter = parameters[index];
+            let unit = parameter.properties.get("unit").map(String::as_str);
+            let value =
+                crate::native::evaluate_parameterized_expression(&parameter.expression, |name| {
+                    let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
+                        return None;
+                    };
+                    evaluated.get(*dependency).copied()
+                });
+            let stored = match (unit, parameter.value.as_ref()) {
+                (Some("millimeter"), Some(cadmpeg_ir::features::ParameterValue::Length(value))) => {
+                    Some(value.0)
+                }
+                (Some("degree"), Some(cadmpeg_ir::features::ParameterValue::Angle(value))) => {
+                    Some(value.0.to_degrees())
+                }
+                (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => Some(*value),
+                (None, Some(cadmpeg_ir::features::ParameterValue::Integer(value))) => {
+                    Some(*value as f64)
+                }
+                _ => None,
+            };
+            if let (Some(value), Some(stored)) = (value, stored) {
+                let tolerance = 64.0 * f64::EPSILON * value.abs().max(stored.abs()).max(1.0);
+                if value.is_finite() && stored.is_finite() && (value - stored).abs() <= tolerance {
+                    evaluated.insert(parameter.id.clone(), value);
+                }
+            }
             emitted.insert(index);
         }
         for (index, parameter) in parameters.into_iter().enumerate() {
             if expected[index].as_ref() != Some(&parameter.dependencies)
                 || !emitted.contains(&index)
-                || parameter.value.is_none()
+                || !evaluated.contains_key(&parameter.id)
             {
                 incomplete.insert(parameter.id.clone());
             }

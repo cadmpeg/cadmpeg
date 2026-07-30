@@ -165,6 +165,28 @@ pub(crate) fn expression_parameter_names(expression: &str) -> Vec<&str> {
     names
 }
 
+pub(crate) fn evaluate_parameterized_expression(
+    expression: &str,
+    mut parameter_value: impl FnMut(&str) -> Option<f64>,
+) -> Option<f64> {
+    let bytes = expression.as_bytes();
+    let mut substituted = String::with_capacity(expression.len());
+    let mut at = 0usize;
+    while at < bytes.len() {
+        if let Some(end) = expression_parameter_reference_end(bytes, at) {
+            let value = parameter_value(&expression[at..end])?;
+            substituted.push('(');
+            substituted.push_str(&value.to_string());
+            substituted.push(')');
+            at = end;
+        } else {
+            substituted.push(char::from(bytes[at]));
+            at += 1;
+        }
+    }
+    crate::om::evaluate_constant_expression(&substituted)
+}
+
 fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> {
     if bytes.get(at) != Some(&b'p')
         || at
@@ -3019,42 +3041,21 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             if name_counts.get(&expression_key) != Some(&1) {
                 continue;
             }
-            let mut substituted = String::with_capacity(expression.expression.len());
-            let bytes = expression.expression.as_bytes();
-            let mut at = 0usize;
-            let mut complete = true;
-            while at < bytes.len() {
-                if let Some(end) = expression_parameter_reference_end(bytes, at) {
-                    let start = at;
-                    at = end;
-                    let name = &expression.expression[start..at];
-                    let key = (
-                        expression_scope(expression).to_string(),
-                        name.to_string(),
-                        expression.unit,
-                    );
-                    let Some(value) = values.get(&key).copied() else {
-                        complete = false;
-                        break;
-                    };
-                    if name_counts.get(&key) != Some(&1) {
-                        complete = false;
-                        break;
-                    }
-                    substituted.push('(');
-                    substituted.push_str(&value.to_string());
-                    substituted.push(')');
-                    continue;
+            let evaluated = evaluate_parameterized_expression(&expression.expression, |name| {
+                let key = (
+                    expression_scope(expression).to_string(),
+                    name.to_string(),
+                    expression.unit,
+                );
+                if name_counts.get(&key) != Some(&1) {
+                    return None;
                 }
-                substituted.push(char::from(bytes[at]));
-                at += 1;
-            }
-            if complete {
-                if let Some(value) = crate::om::evaluate_constant_expression(&substituted) {
-                    expression.value = Some(value);
-                    values.insert(expression_key.clone(), value);
-                    changed = true;
-                }
+                values.get(&key).copied()
+            });
+            if let Some(value) = evaluated {
+                expression.value = Some(value);
+                values.insert(expression_key.clone(), value);
+                changed = true;
             }
         }
         if !changed {
@@ -3533,12 +3534,21 @@ mod tests {
             [ir.model.parameters[2].id.clone()]
         );
         assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
-        for parameter in &mut ir.model.parameters {
+        for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 5.0, 10.0]) {
             parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(1.0),
+                cadmpeg_ir::features::Length(value),
             ));
         }
         assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+
+        let mut inconsistent = ir.clone();
+        inconsistent.model.parameters[1].value = Some(
+            cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::features::Length(1.0)),
+        );
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&inconsistent),
+            [inconsistent.model.parameters[1].id.clone()].into()
+        );
 
         let mut duplicate_name = ir.clone();
         duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
@@ -3670,9 +3680,9 @@ mod tests {
         );
         assert!(ir.model.parameters[2].dependencies.is_empty());
         assert!(ir.model.parameters[3].dependencies.is_empty());
-        for parameter in &mut ir.model.parameters {
+        for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 1.0, 1.0]) {
             parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(1.0),
+                cadmpeg_ir::features::Length(value),
             ));
         }
         assert_eq!(
