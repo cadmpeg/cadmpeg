@@ -8895,6 +8895,48 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         ),
         None
     );
+    let axis_reference_line = crate::feature::FeatureReferenceLineSegment {
+        directions: [Some(0), Some(1), Some(0)],
+        vertical_horizontal: Some(1),
+        ..reference_line.clone()
+    };
+    let mut reference_definition = definition.clone();
+    let reference_segments = reference_definition
+        .segments
+        .as_mut()
+        .expect("segment table");
+    reference_segments.declared_count += 1;
+    reference_segments
+        .reference_line_rows
+        .push(axis_reference_line.clone());
+    assert!(section_skamp_is_line(
+        &reference_definition,
+        &crate::feature::FeatureSkampItem {
+            entity_id: axis_reference_line.external_id,
+            sense: 0,
+        },
+    ));
+    assert_eq!(
+        resolved_section_reference_line_geometry(
+            &reference_definition,
+            &BTreeMap::from([(7, [None, Some(2.0)]), (8, [None, Some(2.0)]),]),
+            &BTreeMap::new(),
+            &axis_reference_line,
+        ),
+        Some(SketchGeometry::ReferenceLine {
+            origin: Point2::new(0.0, 2.0),
+            direction: Point2::new(1.0, 0.0),
+        })
+    );
+    assert_eq!(
+        resolved_section_reference_line_geometry(
+            &reference_definition,
+            &BTreeMap::from([(7, [None, Some(2.0)]), (8, [None, Some(3.0)]),]),
+            &BTreeMap::new(),
+            &axis_reference_line,
+        ),
+        None
+    );
     assert_eq!(
         section_reference_line_geometry(
             &BTreeMap::from([(7, [-4.0, 2.0])]),

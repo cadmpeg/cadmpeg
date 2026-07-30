@@ -35,6 +35,9 @@ fixtures, claims above L1 remain unproven.
 - Section lines with a uniquely proven fixed coordinate and unresolved
   along-line coordinates remain unbounded through solver intersections and
   construction-line transfer; no finite endpoint extent is inferred.
+- Section-reference lines use their stored selector or a consistent
+  perpendicular/parallel incidence component to establish the same unbounded
+  fixed-coordinate construction when both referenced endpoint ordinates agree.
 - Active solver incidences drive coordinate, orientation, equality, radius,
   and supported dimensional equations; disabled incidences remain retained but
   do not affect solved geometry.

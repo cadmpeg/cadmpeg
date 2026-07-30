@@ -2926,10 +2926,15 @@ nullable endpoint references; its center, radius, and secondary-radius fields
 are null, and its arc-orientation field is zero. Its direction triple and
 vertical/horizontal field retain the stored reference-line state. When both
 point references resolve to distinct section coordinates, they are the ordered
-endpoints of the reference-line carrier. Other complete fixed-field segment
-families remain opaque segment rows. The
-entity-reference header and segment rows use the same framing and field order
-as the labelled `segtab_ptr` table.
+endpoints of the reference-line carrier. A type-25 row participates as a line
+in unary horizontal or vertical incidences and in perpendicular or parallel
+line components. When its stored vertical/horizontal selector or one consistent
+incidence component uniquely fixes a coordinate and both referenced endpoint
+ordinates for that coordinate are present and agree, the row defines an
+unbounded axis-parallel reference line. The other endpoint ordinates do not
+define a finite extent. Other complete fixed-field segment families remain
+opaque segment rows. The entity-reference header and segment rows use the same
+framing and field order as the labelled `segtab_ptr` table.
 
 The positional dimension table repeats the labelled template's `dimtab_ptr`
 table-class reference in an unlabeled `f8 <count> f7 <table-class> fb e2`

@@ -2194,6 +2194,40 @@ fn section_reference_line_geometry(
     })
 }
 
+fn resolved_section_reference_line_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureReferenceLineSegment,
+) -> Option<SketchGeometry> {
+    if let Some(geometry) = section_reference_line_geometry(points, segment) {
+        return Some(geometry);
+    }
+    let [Some(start_id), Some(end_id)] = segment.point_ids else {
+        return None;
+    };
+    let fixed_coordinate = section_line_entity_fixed_coordinate(definition, segment.external_id)?;
+    let [Some(first), Some(second)] =
+        [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate])
+    else {
+        return None;
+    };
+    let scale = first.abs().max(second.abs()).max(1.0);
+    ((first - second).abs() <= 1e-9 * scale).then(|| {
+        if fixed_coordinate == 0 {
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(first, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            }
+        } else {
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(0.0, first),
+                direction: Point2::new(1.0, 0.0),
+            }
+        }
+    })
+}
+
 fn section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -3574,6 +3608,15 @@ fn section_line_direct_fixed_coordinates(
         })
         .into_iter()
         .collect::<BTreeSet<_>>();
+    coordinates.extend(
+        unique_reference_line_segment(definition, entity_id)
+            .and_then(|segment| segment.vertical_horizontal)
+            .and_then(|selector| match selector {
+                0 => Some(0),
+                1 => Some(1),
+                _ => None,
+            }),
+    );
     coordinates.extend(
         active_complete_section_skamps(definition).filter_map(|skamp| {
             match (skamp.kind, skamp.items.as_slice()) {
@@ -10627,6 +10670,9 @@ fn section_skamp_is_line(
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
         return true;
     }
+    if unique_reference_line_segment(definition, item.entity_id).is_some() {
+        return true;
+    }
     let has_segment = definition
         .segments
         .iter()
@@ -12349,7 +12395,12 @@ fn transfer_sketches(
             .filter_map(|segment| {
                 Some((
                     segment.offset,
-                    section_reference_line_geometry(&points, segment)?,
+                    resolved_section_reference_line_geometry(
+                        definition,
+                        &variable_points,
+                        &points,
+                        segment,
+                    )?,
                 ))
             })
             .collect::<BTreeMap<_, _>>();
@@ -12786,7 +12837,7 @@ fn transfer_sketches(
                 .unwrap_or_else(|| SketchGeometry::Native {
                     native_kind: "reference_line".to_string(),
                 });
-            let solved_geometry = matches!(geometry, SketchGeometry::Line { .. });
+            let solved_geometry = matches!(geometry, SketchGeometry::ReferenceLine { .. });
             annotate(
                 annotations,
                 &id.0,
