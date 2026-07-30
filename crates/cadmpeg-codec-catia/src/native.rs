@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 225;
+pub const CATIA_NATIVE_VERSION: u32 = 226;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -34,7 +34,7 @@ const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
 #[cfg(test)]
 const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
 #[cfg(test)]
-const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 225;
+const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 226;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1344,6 +1344,12 @@ pub struct CatiaRelationProgramInstance {
     /// Same-graph entity selected by that identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub program: Option<String>,
+    /// Entity identity stored once as an atom and once as a reference.
+    #[serde(default)]
+    pub repeated_reference_entity_id: u32,
+    /// Same-graph entity selected by the repeated reference identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeated_reference_entity: Option<String>,
     /// Selected entity when it carries a complete relation-expression program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<String>,
@@ -2841,11 +2847,14 @@ fn relation_program_instance(
     {
         return None;
     }
-    let key = (object.parent.clone(), *program_entity_id);
+    let program_key = (object.parent.clone(), *program_entity_id);
+    let repeated_reference_key = (object.parent.clone(), *repeated_target);
     Some(CatiaRelationProgramInstance {
         program_entity_id: *program_entity_id,
-        program: entities.get(&key).cloned(),
-        relation_expression: relation_expressions.get(&key).cloned(),
+        program: entities.get(&program_key).cloned(),
+        repeated_reference_entity_id: *repeated_target,
+        repeated_reference_entity: entities.get(&repeated_reference_key).cloned(),
+        relation_expression: relation_expressions.get(&program_key).cloned(),
     })
 }
 

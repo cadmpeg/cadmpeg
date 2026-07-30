@@ -124,7 +124,9 @@ current scores require those matrices and representative fixtures.
   independently resolve it within the same graph, and classify selected
   relation-expression programs without assigning unresolved input and output
   roles. Coverage partitions resolved, unresolved, relation-expression, and
-  other program instances and counts distinct selected expressions.
+  other program instances, partitions the resolved and unresolved identity
+  repeated in the atom/reference slots, and counts distinct selected
+  expressions.
   Parameters remain document-scoped until feature-instance ownership resolves.
   Typed `Boolean` and `String` parameters transfer when their complete
   evaluation production is unset. Binary64 evaluation productions do not

@@ -2284,6 +2284,7 @@ fn standard_catpart_with_unprefixed_parser_version_relation_expression(
 
 fn standard_catpart_with_relation_program_instance(
     program_entity_id: u32,
+    repeated_reference_entity_id: u32,
     stored_self_entity_id: u32,
 ) -> Vec<u8> {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
@@ -2317,10 +2318,10 @@ fn standard_catpart_with_relation_program_instance(
     atom(&mut instance_payload, 89);
     atom(&mut instance_payload, 1_127_154_762);
     reference(&mut instance_payload, 23);
-    atom(&mut instance_payload, 24);
+    atom(&mut instance_payload, repeated_reference_entity_id);
     reference(&mut instance_payload, 25);
     atom(&mut instance_payload, 2);
-    reference(&mut instance_payload, 24);
+    reference(&mut instance_payload, repeated_reference_entity_id);
     reference(&mut instance_payload, 26);
     atom(&mut instance_payload, 2);
     reference(&mut instance_payload, 21);
@@ -10975,8 +10976,9 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
 
 #[test]
 fn relation_program_instance_requires_the_complete_identity_frame() {
-    let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance(1, 2));
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance(1, 1, 2),
+    );
     let instance = native.entity_records[1]
         .relation_program_instance
         .as_ref()
@@ -10986,13 +10988,19 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         instance.program.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
+    assert_eq!(instance.repeated_reference_entity_id, 1);
+    assert_eq!(
+        instance.repeated_reference_entity.as_deref(),
+        Some(native.entity_records[0].id.as_str())
+    );
     assert_eq!(
         instance.relation_expression.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
 
-    let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance(2, 2));
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance(2, 1, 2),
+    );
     let instance = native.entity_records[1]
         .relation_program_instance
         .as_ref()
@@ -11003,17 +11011,21 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
     );
     assert!(instance.relation_expression.is_none());
 
-    let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance(3, 2));
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance(3, 3, 2),
+    );
     let instance = native.entity_records[1]
         .relation_program_instance
         .as_ref()
         .expect("unresolved program identity");
     assert!(instance.program.is_none());
+    assert_eq!(instance.repeated_reference_entity_id, 3);
+    assert!(instance.repeated_reference_entity.is_none());
     assert!(instance.relation_expression.is_none());
 
-    let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance(1, 3));
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance(1, 1, 3),
+    );
     assert!(native
         .entity_records
         .iter()
@@ -11022,13 +11034,25 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
 
 #[test]
 fn decode_reports_exact_relation_program_instances() {
-    for (program_entity_id, resolved, expression, other, unresolved) in
-        [(1, 1, 1, 0, 0), (2, 1, 0, 1, 0), (3, 0, 0, 0, 1)]
-    {
+    for (
+        program_entity_id,
+        repeated_reference_entity_id,
+        resolved,
+        expression,
+        other,
+        unresolved,
+        resolved_repeated,
+    ) in [
+        (1, 1, 1, 1, 0, 0, 1),
+        (2, 1, 1, 0, 1, 0, 1),
+        (3, 1, 0, 0, 0, 1, 1),
+        (1, 3, 1, 1, 0, 0, 0),
+    ] {
         let decoded = CatiaCodec
             .decode(
                 &mut Cursor::new(standard_catpart_with_relation_program_instance(
                     program_entity_id,
+                    repeated_reference_entity_id,
                     2,
                 )),
                 &DecodeOptions::default(),
@@ -11055,6 +11079,14 @@ fn decode_reports_exact_relation_program_instances() {
             unresolved
         );
         assert_eq!(
+            decoded.report.coverage["decoded_resolved_relation_program_repeated_reference_count"],
+            resolved_repeated
+        );
+        assert_eq!(
+            decoded.report.coverage["unresolved_relation_program_repeated_reference_count"],
+            1 - resolved_repeated
+        );
+        assert_eq!(
             decoded.report.coverage["decoded_instanced_relation_expression_count"],
             expression
         );
@@ -11065,17 +11097,29 @@ fn decode_reports_exact_relation_program_instances() {
 
 #[test]
 fn native_load_derives_relation_program_instances_from_older_namespaces() {
-    let mut native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance(1, 2));
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance(1, 1, 2),
+    );
     let expected = native.entity_records[1]
         .relation_program_instance
-        .take()
+        .clone()
         .expect("decoded relation-program instance");
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store older relation-program namespace");
     namespace.version = crate::native::CATIA_NATIVE_VERSION - 1;
+    let stored_instance = namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[1]
+        .fields
+        .get_mut("relation_program_instance")
+        .expect("stored relation-program field")
+        .as_object_mut()
+        .expect("stored relation-program instance");
+    stored_instance.remove("repeated_reference_entity_id");
+    stored_instance.remove("repeated_reference_entity");
 
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate relation-program instance");
