@@ -3308,6 +3308,52 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 }
 
 #[test]
+fn resolved_datum_geometry_must_be_finite_and_coherent() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+
+    let definitions = [
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 1.0),
+        },
+        FeatureDefinition::DatumAxis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 0.0),
+        },
+        FeatureDefinition::DatumPoint {
+            position: Point3::new(f64::NAN, 0.0, 0.0),
+        },
+    ];
+    let mut ir = unit_cube();
+    for (ordinal, definition) in definitions.into_iter().enumerate() {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#invalid-datum-{ordinal}")),
+            ordinal: ordinal as u64,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        });
+    }
+    let findings = validate(&ir, Vec::new()).findings;
+    for message in [
+        "datum-plane frame is invalid",
+        "datum-axis frame is invalid",
+        "datum-point position is invalid",
+    ] {
+        assert!(findings.iter().any(|finding| finding.message == message));
+    }
+}
+
+#[test]
 fn explicit_extrusion_direction_must_be_nonzero() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,

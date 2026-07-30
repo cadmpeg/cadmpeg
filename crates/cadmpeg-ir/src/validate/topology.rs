@@ -3725,11 +3725,33 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
+            FeatureDefinition::DatumPlane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                let scale = normal.norm() * u_axis.norm();
+                if !finite_feature_point(*origin)
+                    || !valid_feature_direction(*normal)
+                    || !valid_feature_direction(*u_axis)
+                    || !scale.is_finite()
+                    || normal.dot(*u_axis).abs() > 1.0e-9 * scale
+                {
+                    feature_geometry_error(findings, feature, "datum-plane frame is invalid");
+                }
+            }
+            FeatureDefinition::DatumAxis { origin, direction } => {
+                if !finite_feature_point(*origin) || !valid_feature_direction(*direction) {
+                    feature_geometry_error(findings, feature, "datum-axis frame is invalid");
+                }
+            }
+            FeatureDefinition::DatumPoint { position } => {
+                if !finite_feature_point(*position) {
+                    feature_geometry_error(findings, feature, "datum-point position is invalid");
+                }
+            }
             FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlaneUnresolved
-            | FeatureDefinition::DatumPlane { .. }
-            | FeatureDefinition::DatumAxis { .. }
-            | FeatureDefinition::DatumPoint { .. }
             | FeatureDefinition::SketchBlockDefinition { .. }
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}
