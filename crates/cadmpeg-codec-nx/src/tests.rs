@@ -630,6 +630,43 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(5.0)),
         Some(&Termination::ThroughAll),
     ));
+    for kind in [
+        HoleKind::Chamfer {
+            diameter: Length(5.0),
+            angle: cadmpeg_ir::features::Angle(0.5),
+        },
+        HoleKind::Counterbore {
+            diameter: Length(4.0),
+            depth: Length(2.0),
+        },
+        HoleKind::CounterboreDrilled {
+            diameter: Length(5.0),
+            depth: Length(2.0),
+            drill_point_angle: cadmpeg_ir::features::Angle(0.5),
+        },
+        HoleKind::Countersink {
+            diameter: Length(4.0),
+            angle: cadmpeg_ir::features::Angle(0.5),
+        },
+        HoleKind::Counterdrill {
+            diameter: Length(5.0),
+            depth: Length(2.0),
+            angle: cadmpeg_ir::features::Angle(0.5),
+        },
+    ] {
+        assert!(crate::decode::hole_feature_is_incomplete(
+            None,
+            None,
+            (
+                Some(Point3::new(1.0, 2.0, 3.0)),
+                Some(Vector3::new(0.0, 0.0, 1.0)),
+            ),
+            &[],
+            (&kind, None),
+            Some(Length(5.0)),
+            Some(&Termination::ThroughAll),
+        ));
+    }
 }
 
 #[test]

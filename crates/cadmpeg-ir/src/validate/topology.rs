@@ -2905,6 +2905,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 profile_filter,
                 face,
                 kind,
+                exit_kind,
                 diameter,
                 extent,
                 direction,
@@ -2918,7 +2919,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 profiles.extend(profile);
                 face_selections.extend(face);
                 extents.extend(extent);
-                let kind_valid = match kind {
+                let treatment_diameter_valid = |value: Length| {
+                    positive_feature_length(value) && diameter.is_some_and(|bore| value.0 > bore.0)
+                };
+                let kind_valid = |kind: &HoleKind| match kind {
                     HoleKind::Unresolved {
                         counterbore_diameter,
                         counterbore_depth,
@@ -2937,7 +2941,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                     HoleKind::Simple => true,
                     HoleKind::Chamfer { diameter, angle } => {
-                        positive_feature_length(*diameter)
+                        treatment_diameter_valid(*diameter)
                             && angle.0.is_finite()
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
@@ -2948,21 +2952,21 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             && drill_point_angle.0 < std::f64::consts::PI
                     }
                     HoleKind::Counterbore { diameter, depth } => {
-                        positive_feature_length(*diameter) && positive_feature_length(*depth)
+                        treatment_diameter_valid(*diameter) && positive_feature_length(*depth)
                     }
                     HoleKind::CounterboreDrilled {
                         diameter,
                         depth,
                         drill_point_angle,
                     } => {
-                        positive_feature_length(*diameter)
+                        treatment_diameter_valid(*diameter)
                             && positive_feature_length(*depth)
                             && drill_point_angle.0.is_finite()
                             && drill_point_angle.0 > 0.0
                             && drill_point_angle.0 < std::f64::consts::PI
                     }
                     HoleKind::Countersink { diameter, angle } => {
-                        positive_feature_length(*diameter)
+                        treatment_diameter_valid(*diameter)
                             && angle.0.is_finite()
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
@@ -2986,7 +2990,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         depth,
                         angle,
                     } => {
-                        positive_feature_length(*diameter)
+                        treatment_diameter_valid(*diameter)
                             && positive_feature_length(*depth)
                             && angle.0.is_finite()
                             && angle.0 > 0.0
@@ -3037,7 +3041,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         }
                 });
                 if diameter.is_some_and(|value| !positive_feature_length(value))
-                    || !kind_valid
+                    || !kind_valid(kind)
+                    || exit_kind.as_ref().is_some_and(|kind| !kind_valid(kind))
                     || !position_valid
                     || !placements_valid
                     || !filter_valid

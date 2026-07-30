@@ -10800,22 +10800,25 @@ fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bo
     let valid_angle = |angle: cadmpeg_ir::features::Angle| {
         angle.0.is_finite() && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
     };
+    let treatment_diameter_is_incomplete = |diameter: Length| {
+        !positive_feature_length(diameter) || bore_diameter.is_none_or(|bore| diameter.0 <= bore.0)
+    };
     match kind {
         HoleKind::Unresolved { .. } => true,
         HoleKind::Simple => false,
         HoleKind::Chamfer { diameter, angle } | HoleKind::Countersink { diameter, angle } => {
-            !positive_feature_length(*diameter) || !valid_angle(*angle)
+            treatment_diameter_is_incomplete(*diameter) || !valid_angle(*angle)
         }
         HoleKind::SimpleDrilled { drill_point_angle } => !valid_angle(*drill_point_angle),
         HoleKind::Counterbore { diameter, depth } => {
-            !positive_feature_length(*diameter) || !positive_feature_length(*depth)
+            treatment_diameter_is_incomplete(*diameter) || !positive_feature_length(*depth)
         }
         HoleKind::CounterboreDrilled {
             diameter,
             depth,
             drill_point_angle,
         } => {
-            !positive_feature_length(*diameter)
+            treatment_diameter_is_incomplete(*diameter)
                 || !positive_feature_length(*depth)
                 || !valid_angle(*drill_point_angle)
         }
@@ -10836,7 +10839,7 @@ fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bo
             depth,
             angle,
         } => {
-            !positive_feature_length(*diameter)
+            treatment_diameter_is_incomplete(*diameter)
                 || !positive_feature_length(*depth)
                 || !valid_angle(*angle)
         }
