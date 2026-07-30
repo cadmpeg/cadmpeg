@@ -1260,8 +1260,8 @@ fn tessellation_counts_must_be_consistent() {
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
     use crate::features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
-        FeatureDefinition, FeatureId, ParameterId, ParameterValue,
+        Angle, ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter,
+        Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
     };
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
@@ -1365,6 +1365,24 @@ fn configuration_body_membership_round_trips_and_validates() {
     }
     ir.model.configurations[0].parameter_values.clear();
     ir.model.configurations[0].feature_states.clear();
+
+    ir.model.parameters[0].value = Some(ParameterValue::Length(Length(10.0)));
+    ir.model.configurations[0].parameter_values =
+        BTreeMap::from([(parameter_id.clone(), ParameterValue::Angle(Angle(1.0)))]);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message == "configuration parameter value is invalid"
+    }));
+    ir.model.configurations[0].parameter_values.clear();
+
+    ir.model.parameters[0].value = Some(ParameterValue::Real(f64::NAN));
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(parameter_id.0.as_str())
+            && finding.message == "parameter value is invalid"
+    }));
+    ir.model.parameters[0].value = None;
 
     let first_feature = FeatureId("synthetic:test:feature#configuration-first".into());
     let later_feature = FeatureId("synthetic:test:feature#configuration-later".into());

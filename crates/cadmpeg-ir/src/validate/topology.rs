@@ -1513,6 +1513,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 entity: Some(parameter.id.0.clone()),
             });
         }
+        if parameter
+            .value
+            .as_ref()
+            .is_some_and(|value| !parameter_value_is_valid(value))
+        {
+            geometry_error(findings, &parameter.id.0, "parameter value is invalid");
+        }
         let mut dependencies = HashSet::new();
         for dependency in &parameter.dependencies {
             if !dependencies.insert(dependency) {
@@ -1910,6 +1917,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|parameter| parameter.id.0.as_str())
         .collect::<HashSet<_>>();
+    let parameter_values = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id.0.as_str(), parameter.value.as_ref()))
+        .collect::<HashMap<_, _>>();
     let feature_ids = ir
         .model
         .features
@@ -1988,14 +2001,27 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 });
             }
         }
-        for parameter in configuration.parameter_values.keys() {
-            if !parameter_ids.contains(parameter.0.as_str()) {
-                ref_error(
+        for (parameter, value) in &configuration.parameter_values {
+            match parameter_values.get(parameter.0.as_str()) {
+                None => ref_error(
                     findings,
                     &configuration.id.0,
                     "configuration parameter value",
                     &parameter.0,
-                );
+                ),
+                Some(baseline)
+                    if !parameter_value_is_valid(value)
+                        || baseline.is_some_and(|baseline| {
+                            std::mem::discriminant(baseline) != std::mem::discriminant(value)
+                        }) =>
+                {
+                    geometry_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration parameter value is invalid",
+                    );
+                }
+                Some(_) => {}
             }
         }
         for (feature, state) in &configuration.feature_states {
@@ -4338,12 +4364,27 @@ fn valid_feature_direction(value: Vector3) -> bool {
     value.norm().is_finite() && value.norm() > 0.0
 }
 
+fn parameter_value_is_valid(value: &crate::features::ParameterValue) -> bool {
+    match value {
+        crate::features::ParameterValue::Length(value) => value.0.is_finite(),
+        crate::features::ParameterValue::Angle(value) => value.0.is_finite(),
+        crate::features::ParameterValue::Real(value) => value.is_finite(),
+        crate::features::ParameterValue::Integer(_)
+        | crate::features::ParameterValue::Boolean(_)
+        | crate::features::ParameterValue::String(_) => true,
+    }
+}
+
 fn feature_geometry_error(findings: &mut Vec<Finding>, feature: &Feature, message: &str) {
+    geometry_error(findings, &feature.id.0, message);
+}
+
+fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
     findings.push(Finding {
         check: Check::GeometricConsistency,
         severity: Severity::Error,
         message: message.into(),
-        entity: Some(feature.id.0.clone()),
+        entity: Some(entity.into()),
     });
 }
 
