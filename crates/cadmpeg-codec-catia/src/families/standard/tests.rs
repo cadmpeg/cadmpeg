@@ -537,6 +537,45 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
 }
 
 #[test]
+fn endpoint_candidate_validation_charges_full_incidence_work() {
+    use crate::solve::incidence::{visit_incidence_endpoint_pair_solutions, IncidenceSolve};
+    use std::ops::ControlFlow;
+
+    let rows = vec![
+        EdgeRow {
+            kind: 1,
+            handles: vec![0, 1],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        };
+        3
+    ];
+    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let edge_faces = [[0, 0]; 3];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let budget = MeshConstraintBudget::new(2);
+    let mut visited = false;
+    let outcome = visit_incidence_endpoint_pair_solutions(
+        &rows,
+        &points,
+        &edge_faces,
+        &candidates,
+        1,
+        None,
+        None,
+        None,
+        Some(&budget),
+        &|_| true,
+        &mut |_| {
+            visited = true;
+            ControlFlow::Continue(())
+        },
+    );
+
+    assert_eq!(outcome, IncidenceSolve::Exhausted);
+    assert!(!visited);
+}
+
+#[test]
 fn incidence_propagation_closes_degree_one_vertices_before_search() {
     let mut choices = vec![vec![[0, 1]], vec![[1, 2], [3, 4]], vec![[2, 0]]];
     let edge_faces = [[0, 0], [0, 0], [0, 0]];

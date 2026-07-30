@@ -2131,6 +2131,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     let mut solution_pairs: Option<Vec<[usize; 2]>> = None;
     let mut assignment_count = 0usize;
     let mut invalid = false;
+    let validation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let outcome = visit_incidence_endpoint_pair_solutions(
         edge_rows,
         vertex_points,
@@ -2140,6 +2141,7 @@ pub(crate) fn reconstruct_incidence_candidates(
         None,
         quotient.as_ref(),
         None,
+        Some(&validation_budget),
         &|_| true,
         &mut |pairs| {
             if assignment_count == MAX_TOPOLOGY_ASSIGNMENTS {
@@ -2198,6 +2200,7 @@ pub(crate) fn visit_incidence_endpoint_pair_solutions<F, V>(
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
     mesh_quotient: Option<&MeshQuotient>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
+    complete_solution_budget: Option<&MeshConstraintBudget>,
     solution_valid: &F,
     visitor: &mut V,
 ) -> IncidenceSolve<usize>
@@ -2220,6 +2223,9 @@ where
         return IncidenceSolve::Rejected(IncidenceRejection::ChoicePruning);
     };
     let complete_valid = |points: &[[usize; 2]]| {
+        if complete_solution_budget.is_some_and(|budget| !budget.charge_by(edge_rows.len())) {
+            return true;
+        }
         solution_valid(points)
             && reconstruct_incidence(
                 edge_rows.to_vec(),
@@ -2230,7 +2236,14 @@ where
             )
             .is_some()
     };
-    visit_component_incidence_pair_solutions(
+    let mut budgeted_visitor = |points: &[[usize; 2]]| {
+        if complete_solution_budget.is_some_and(|budget| budget.exhausted.get()) {
+            ControlFlow::Break(())
+        } else {
+            visitor(points)
+        }
+    };
+    let outcome = visit_component_incidence_pair_solutions(
         &choices,
         edge_faces,
         face_count,
@@ -2239,6 +2252,11 @@ where
         mesh_quotient,
         partial_solution_valid,
         &complete_valid,
-        visitor,
-    )
+        &mut budgeted_visitor,
+    );
+    if complete_solution_budget.is_some_and(|budget| budget.exhausted.get()) {
+        IncidenceSolve::Exhausted
+    } else {
+        outcome
+    }
 }

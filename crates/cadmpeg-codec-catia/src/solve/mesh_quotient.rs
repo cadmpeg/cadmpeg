@@ -5893,6 +5893,7 @@ where
             assignment_predecessors: Some(&assignment_predecessors),
             valid: &constrained_pair_solution_valid,
         }),
+        None,
         &|pairs| {
             constrained_pair_solution_valid(&pairs.iter().copied().map(Some).collect::<Vec<_>>())
         },
