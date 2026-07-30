@@ -10786,10 +10786,18 @@ fn section_skamp_midpoint(
         }
         section_skamp_oriented_line(definition, sketch, item, geometry)
     };
-    let point = |item| section_skamp_point_locus(definition, sketch, item);
-    match (target(first), point(second), target(second), point(first)) {
-        (Some(entity), Some(point), None, _) => Some((point, entity)),
-        (None, _, Some(entity), Some(point)) => Some((point, entity)),
+    let point = |item: &crate::feature::FeatureSkampItem| {
+        section_skamp_point_locus(definition, sketch, item).or_else(|| {
+            (item.sense == 0 && section_skamp_is_circular(definition, item))
+                .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
+        })
+    };
+    let candidate = |target, point| Some((point?, target?));
+    match (
+        candidate(target(first), point(second)),
+        candidate(target(second), point(first)),
+    ) {
+        (Some(candidate), None) | (None, Some(candidate)) => Some(candidate),
         _ => None,
     }
 }

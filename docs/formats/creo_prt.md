@@ -1617,9 +1617,12 @@ bounded line or arc places that point at the entity midpoint. The target entity
 has sense zero. A centered type-47 construction line instead uses sense `4` on
 the target line; its stored center point is the line midpoint. This form
 establishes the other sense-zero solver-only entity as a point independently of
-incidence activity. The point operand is either a sense-zero point entity or an
-endpoint or center locus selected by sense `2`, `3`, or `4`. Operand order does
-not change these roles. A circle is not a bounded midpoint target.
+incidence activity. The point operand is either a sense-zero point entity, the
+center of a sense-zero arc or circle, or an endpoint or center locus selected
+by sense `2`, `3`, or `4`. Exactly one operand pairing must supply a bounded
+target and a point locus; zero or two pairings retain the native incidence.
+Operand order does not change these roles. A circle is not a bounded midpoint
+target.
 A two-item type-37 incidence with two sense-zero operands binds a projected
 reference entity to the regular profile entity copied from it. The reference
 entity identifier immediately precedes the profile entity identifier. The

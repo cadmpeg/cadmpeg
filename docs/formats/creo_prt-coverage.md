@@ -121,7 +121,9 @@ fixtures, claims above L1 remain unproven.
   incidence can therefore transfer as a neutral horizontal or vertical
   constraint on that native line without activating the corroborating equation.
   The type-35 incidence itself transfers as a neutral midpoint constraint when
-  that native line and point locus are both emitted.
+  that native line and point locus are both emitted. A sense-zero circular
+  operand supplies its center as the midpoint locus; it does not become a
+  bounded midpoint target.
 - A type-four incidence with one sense-zero line or arc and one
   endpoint-selected operand transfers as an explicit tangent-loci constraint
   when the selected section-point identifier matches exactly one endpoint of

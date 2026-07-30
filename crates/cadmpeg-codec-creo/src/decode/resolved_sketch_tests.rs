@@ -8336,6 +8336,77 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
         }
     );
+    midpoint_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[1] = crate::feature::FeatureSkampItem {
+        entity_id: 13,
+        sense: 0,
+    };
+    midpoint_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .push(crate::feature::FeatureSkamp {
+            id: 36,
+            kind: 3,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 13,
+                    sense: 4,
+                },
+            ],
+            offset: 84,
+        });
+    synchronize_skamp_count(&mut midpoint_definition);
+    assert!(section_skamp_is_circular(
+        &midpoint_definition,
+        &midpoint_definition
+            .relations
+            .as_ref()
+            .expect("relations")
+            .skamps[0]
+            .items[1],
+    ));
+    assert_eq!(
+        section_skamp_constraints(
+            &midpoint_definition,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Midpoint {
+            point: SketchLocus::Center(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:13".to_string()
+            )),
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+        }
+    );
+    midpoint_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .truncate(1);
+    synchronize_skamp_count(&mut midpoint_definition);
+    midpoint_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[1] = crate::feature::FeatureSkampItem {
+        entity_id: 14,
+        sense: 0,
+    };
     let midpoint_geometry = BTreeMap::from([
         (
             SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
@@ -9084,6 +9155,35 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .definition,
         SketchConstraintDefinition::Vertical { .. }
     ));
+    assert_eq!(
+        section_skamp_constraints_for_geometry(
+            &opaque_line,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&BTreeMap::from([
+                (
+                    SketchEntityId("creo:featdefs:sketch_entity#917:100".to_string()),
+                    SketchGeometry::Line {
+                        start: Point2::new(3.0, -1.0),
+                        end: Point2::new(3.0, 5.0),
+                    },
+                ),
+                (
+                    SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
+                    SketchGeometry::Native {
+                        native_kind: "line".to_string(),
+                    },
+                ),
+            ])),
+        )[1]
+        .0
+        .definition,
+        SketchConstraintDefinition::Midpoint {
+            point: SketchLocus::Center(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:100".to_string()
+            )),
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
+        }
+    );
     let mut opaque_family_collision = opaque_point.clone();
     opaque_family_collision
         .segments
