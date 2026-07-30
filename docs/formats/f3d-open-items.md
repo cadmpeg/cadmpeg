@@ -107,9 +107,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the first two tolerance evaluations of a `tvertex` record hold? What controls the set state of each one?
 
-**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots. A set last slot is the vertex tolerance. A `-1` slot shows an unset evaluation. Any slot can be unset, including all three. When slots two and three are both set, they do not decrease in slot order. A set leading slot is not equal to an incident tolerant-edge tolerance, and not equal to the largest or the smallest incident tolerant-edge tolerance.
+**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots. A set last slot is the vertex tolerance. A `-1` slot shows an unset evaluation. Any slot can be unset, including all three. When slots two and three are both set, they do not decrease in slot order. A set leading slot is not equal to an incident tolerant-edge tolerance, and not equal to the largest or the smallest incident tolerant-edge tolerance. Every set slot is a model-space length that scales with the record's coordinates. No slot is derived: a set slot survives an ASM read-and-write cycle unchanged apart from that length conversion, so the leading slots are stored inputs rather than recomputed evaluations. A leading slot can be set or unset independently of the last slot.
 
-**Need.** We keep the two leading slots without a change. To write them from a neutral model, we must know what they hold.
+**Need.** We keep the two leading slots without a change. To write them from a neutral model, we must know which length each one measures and when a writer must set it.
 
 ### GC-21. Revision-gated `loft_spl_sur` type-zero member and ASM-integer gate
 
@@ -328,9 +328,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the six-byte fields after the Base Feature body suffixes and after the Base Feature record references hold?
 
-**Known.** `f3d.md` §8.1 "A `Base Feature` scope" states that every value has a six-byte trailing field. The fields are zero except one per-scope form that reads as `u16 0` and then `u32 1` across a scope's body-entity run. The decoder keeps each field as six opaque bytes.
+**Known.** `f3d.md` §8.1 "A `Base Feature` scope" states that every value has a six-byte trailing field. The fields are zero except one per-scope form that reads as `u16 0` and then `u32 1` across a scope's body-entity run. The decoder keeps each field as six opaque bytes. A one-body scope zeroes every field in all four runs, so the nonzero form is not the default shape of a body-entity run.
 
-**Need.** We must know the meaning to write a Base Feature from a neutral model.
+**Need.** We must know the meaning to write a Base Feature from a neutral model. The nonzero form has not been seen together with a known distinguishing property of its scope, so we cannot say what selects it.
 
 ### DR-26. Sketch-text fields
 
@@ -384,9 +384,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What are the unit tags of a Distance value other than the inch tag and the centimetre tag?
 
-**Known.** `f3d.md` §8.2 "Boolean stores one u8." gives two tags. Tag `0x2016` is inches. Tag `0x200e` is centimetres. The decoder returns no unit for every other tag.
+**Known.** `f3d.md` §8.2 "Boolean stores one u8." gives two tags. Tag `0x2016` is inches. Tag `0x200e` is centimetres. The decoder returns no unit for every other tag. The tag is a property of the asset and does not track the document display length unit, so varying that unit does not enumerate further tags. The schema `unit` attribute of a Distance property does not predict the tag: a property declared in millimetres serializes with the centimetre tag.
 
-**Need.** A Distance with an unknown tag gets no unit. The neutral model then has a value with no scale.
+**Need.** A Distance with an unknown tag gets no unit. The neutral model then has a value with no scale. Further tags require an asset that stores a Distance in a unit other than inches or centimetres; the appearance library reached from a Fusion document stores every Distance with the centimetre tag.
 
 ### MA-04. Texture map-channel values
 
