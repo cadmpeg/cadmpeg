@@ -8103,6 +8103,31 @@ fn compact_design_objects_use_field_vocabulary_not_anchor_class() {
 }
 
 #[test]
+fn null_storage_roles_are_not_unresolved_storage_links() {
+    let mut bytes = sequential_entity_backed_object_graph(&[
+        object_graph_record(&[0x16, 0x84, 0x80, 0x82], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+    ]);
+    bytes.extend(value_block_stream(&[0x81]));
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "BaseFeature",
+    ]));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode null storage role");
+
+    assert_eq!(
+        decoded.report.coverage["unresolved_storage_record_count"],
+        0
+    );
+}
+
+#[test]
 fn pattern_schema_definition_does_not_create_a_feature_instance() {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
     let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(

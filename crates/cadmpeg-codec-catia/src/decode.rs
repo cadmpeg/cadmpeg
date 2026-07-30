@@ -104,7 +104,12 @@ fn finish_decode(
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .filter(|record| record.storage_ref.is_some() && record.storage_record.is_none())
+        .filter(|record| {
+            record
+                .storage_ref
+                .is_some_and(|storage_ref| storage_ref != 0)
+                && record.storage_record.is_none()
+        })
         .count();
     let repeated_reference_suffix_count = native
         .object_graphs
