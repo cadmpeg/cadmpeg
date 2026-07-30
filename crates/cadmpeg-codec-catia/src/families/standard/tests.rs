@@ -18,8 +18,9 @@ use crate::families::standard::topology::{
     Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, StandardTopology, TrimRecord,
 };
 use crate::solve::incidence::{
-    compact_boundary_domain_viable, prune_face_configuration_support,
-    prune_ordered_face_endpoint_support, reconstruct_incidence_candidates,
+    compact_boundary_domain_viable, prepare_face_configuration_domains,
+    prune_face_configuration_support, prune_ordered_face_endpoint_support,
+    reconstruct_incidence_candidates,
 };
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::mesh_quotient::{
@@ -632,6 +633,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true; 2],
@@ -678,6 +680,7 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true; choices.len()],
@@ -718,6 +721,7 @@ fn incidence_degree_support_scan_exhausts_its_component_budget() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true; 2],
@@ -758,6 +762,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true; 2],
@@ -804,6 +809,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true; EDGE_COUNT],
@@ -847,6 +853,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true; 2],
@@ -899,6 +906,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true, true, false],
@@ -955,6 +963,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true],
@@ -1005,6 +1014,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![false],
@@ -1053,6 +1063,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true],
@@ -1111,6 +1122,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true, true],
@@ -1170,6 +1182,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true; 3],
@@ -1193,6 +1206,110 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
         search.face_configuration_options(),
         Some(vec![vec![(1, [10, 11]), (2, [10, 11])]])
     );
+}
+
+#[test]
+fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[0, 0], [1, 1]]];
+    let edge_faces = [[0, 0]; 2];
+    let face_edges = vec![vec![0, 1]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = MeshConstraintBudget::new(2);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: Some(vec![Some(vec![
+            vec![(0, [0, 0]), (1, [0, 0])],
+            vec![(0, [1, 1]), (1, [1, 1])],
+        ])]),
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(
+        search.face_configuration_options(),
+        Some(vec![
+            vec![(0, [0, 0]), (1, [0, 0])],
+            vec![(0, [1, 1]), (1, [1, 1])]
+        ])
+    );
+    search.assignment[0] = Some([1, 1]);
+    assert_eq!(
+        search.face_configuration_options(),
+        Some(vec![vec![(1, [1, 1])]])
+    );
+    assert!(!propagation_budget.exhausted.get());
+}
+
+#[test]
+fn persistent_face_configuration_preparation_retains_global_contradictions() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1), use_(2)]],
+        }]),
+    ];
+    let choices = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 2]]];
+    let selected = vec![Some([0, 1]), None, Some([0, 2])];
+    let prepared = prepare_face_configuration_domains(
+        Some(&assignments),
+        &choices,
+        &selected,
+        &[false, true, false],
+    )
+    .expect("ordered face factors");
+
+    assert!(prepared.iter().flatten().any(Vec::is_empty));
+
+    let compatible = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 1]]];
+    let selected = vec![Some([0, 1]), None, Some([0, 1])];
+    let prepared = prepare_face_configuration_domains(
+        Some(&assignments),
+        &compatible,
+        &selected,
+        &[false, true, false],
+    )
+    .expect("compatible ordered face factors");
+    assert!(prepared.iter().flatten().all(|domain| domain.len() == 1));
 }
 
 #[test]
@@ -1315,6 +1432,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true, true],
@@ -1366,6 +1484,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: None,
         coordinate_domains: None,
         active: vec![true, true],
@@ -1428,6 +1547,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: Some(&quotient),
         coordinate_domains: None,
         active: vec![true],
@@ -1484,6 +1604,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: Some(&quotient),
         coordinate_domains: None,
         active: vec![true, false],

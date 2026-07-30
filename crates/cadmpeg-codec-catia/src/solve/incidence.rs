@@ -11,7 +11,8 @@ use crate::solve::mesh_quotient::{
     mesh_face_endpoint_configurations, CoordinateRootClosure, MeshConstraintBudget,
     MeshCoordinateRootDomains, MeshEndpointPair, MeshEndpointSolutionFilter,
     MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates, MeshPartialEndpointConstraint,
-    MeshQuotient, MeshQuotientGaugeState, MAX_MESH_CONSTRAINT_OPERATIONS,
+    MeshQuotient, MeshQuotientGaugeState, MAX_FACE_ENDPOINT_CONFIGURATION_WORK,
+    MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -457,6 +458,7 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) edge_faces: &'a [[usize; 2]],
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
+    pub(crate) face_configuration_domains: Option<Vec<Option<MeshFaceEndpointConfigurations>>>,
     pub(crate) mesh_quotient: Option<&'a MeshQuotient>,
     pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains>,
     pub(crate) active: Vec<bool>,
@@ -662,6 +664,70 @@ pub(crate) fn prune_ordered_face_endpoint_support(
             return true;
         }
     }
+}
+
+pub(crate) fn prepare_face_configuration_domains(
+    assignments: Option<&[MeshFaceBoundaryDomain]>,
+    choices: &[Vec<[usize; 2]>],
+    selected: &[Option<[usize; 2]>],
+    active: &[bool],
+) -> Option<Vec<Option<MeshFaceEndpointConfigurations>>> {
+    let assignments = assignments?;
+    let mut domains = vec![None; assignments.len()];
+    for (face, domain) in assignments.iter().enumerate() {
+        let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+            continue;
+        };
+        let mut edges = assignments
+            .iter()
+            .flat_map(|assignment| assignment.boundaries.iter().flatten())
+            .map(|use_| use_.edge)
+            .filter(|edge| active.get(*edge) == Some(&true))
+            .collect::<Vec<_>>();
+        edges.sort_unstable();
+        edges.dedup();
+        if edges.is_empty()
+            || edges.iter().any(|edge| {
+                selected.get(*edge).is_none()
+                    || (selected[*edge].is_none() && choices[*edge].is_empty())
+            })
+        {
+            continue;
+        }
+        let budget = MeshConstraintBudget::new(MAX_FACE_ENDPOINT_CONFIGURATION_WORK);
+        let Some(configurations) =
+            mesh_face_endpoint_configurations(assignments, choices, selected, &budget)
+        else {
+            continue;
+        };
+        domains[face] = Some(configurations);
+    }
+    let retained_faces = domains
+        .iter()
+        .enumerate()
+        .filter_map(|(face, domain)| domain.as_ref().map(|_| face))
+        .collect::<Vec<_>>();
+    let mut configurations = retained_faces
+        .iter()
+        .map(|face| {
+            domains[*face]
+                .as_mut()
+                .map(std::mem::take)
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>();
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    if !prune_face_configuration_support(&mut configurations, &budget) {
+        if let Some(domain) = configurations.first_mut() {
+            domain.clear();
+        }
+    }
+    for (face, configurations) in retained_faces.into_iter().zip(configurations) {
+        if let Some(domain) = &mut domains[face] {
+            *domain = configurations;
+        }
+    }
+    Some(domains)
 }
 
 impl Iterator for IncidenceCandidatePairs {
@@ -1614,16 +1680,35 @@ impl IncidenceComponentSearch<'_, '_> {
             if !self.boundary_propagation_budget.charge() {
                 break;
             }
-            let Some(configurations) = mesh_face_endpoint_configurations(
-                assignments,
-                self.choices,
-                &self.assignment,
-                self.boundary_propagation_budget,
-            ) else {
-                if self.boundary_propagation_budget.exhausted.get() {
-                    break;
-                }
-                continue;
+            let configurations = if let Some(persistent) = self
+                .face_configuration_domains
+                .as_ref()
+                .and_then(|domains| domains.get(face))
+                .and_then(Option::as_ref)
+            {
+                persistent
+                    .iter()
+                    .filter(|configuration| {
+                        configuration.iter().all(|(edge, pair)| {
+                            self.assignment[*edge]
+                                .is_none_or(|selected| same_unordered_pair(selected, *pair))
+                        })
+                    })
+                    .cloned()
+                    .collect()
+            } else {
+                let Some(configurations) = mesh_face_endpoint_configurations(
+                    assignments,
+                    self.choices,
+                    &self.assignment,
+                    self.boundary_propagation_budget,
+                ) else {
+                    if self.boundary_propagation_budget.exhausted.get() {
+                        break;
+                    }
+                    continue;
+                };
+                configurations
             };
             let mut projected = configurations
                 .into_iter()
@@ -2614,6 +2699,8 @@ where
                 supports
             })
             .collect();
+        let face_configuration_domains =
+            prepare_face_configuration_domains(mesh_assignments, choices, assignment, &active);
         let filter = |solution: &[MeshEndpointPair]| {
             let mut completed = assignment.to_vec();
             for &(edge, pair) in solution {
@@ -2648,6 +2735,7 @@ where
             edge_faces,
             face_edges,
             mesh_assignments,
+            face_configuration_domains,
             mesh_quotient: None,
             coordinate_domains,
             active,

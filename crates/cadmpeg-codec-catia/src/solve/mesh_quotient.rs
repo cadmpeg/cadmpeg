@@ -33,6 +33,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
+pub(crate) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
 pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 100_000;
 pub(crate) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
 
@@ -5126,8 +5127,6 @@ pub(crate) fn mesh_face_endpoint_configurations(
     selected: &[Option<[usize; 2]>],
     budget: &MeshConstraintBudget,
 ) -> Option<MeshFaceEndpointConfigurations> {
-    const MAX_WORK: usize = 4_096;
-
     fn insert_pair(
         configuration: &mut MeshFaceEndpointConfiguration,
         edge: usize,
@@ -5152,7 +5151,7 @@ pub(crate) fn mesh_face_endpoint_configurations(
     ) -> Option<MeshFaceEndpointConfigurations> {
         let charge = |work: &mut usize| {
             *work = work.checked_add(1)?;
-            (*work <= MAX_WORK && budget.charge()).then_some(())
+            (*work <= MAX_FACE_ENDPOINT_CONFIGURATION_WORK && budget.charge()).then_some(())
         };
         if boundary.is_empty()
             || boundary
@@ -5235,7 +5234,7 @@ pub(crate) fn mesh_face_endpoint_configurations(
             for stored in combined {
                 for candidate in &boundary {
                     work = work.checked_add(1)?;
-                    if work > MAX_WORK || !budget.charge() {
+                    if work > MAX_FACE_ENDPOINT_CONFIGURATION_WORK || !budget.charge() {
                         return None;
                     }
                     let mut merged = stored.clone();
