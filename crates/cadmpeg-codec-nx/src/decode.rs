@@ -3646,7 +3646,7 @@ pub(crate) fn closest_pcurve_parameters(
                 candidates.push((parameter, distance));
             }
         }
-        return Some(vec![closest_parameter_candidate(candidates, seed)?.0]);
+        return closest_parameter_candidates(candidates, seed);
     }
     let candidates = control_points
         .windows(2)
@@ -3680,6 +3680,14 @@ pub(crate) fn closest_pcurve_parameters(
             ))
         })
         .collect::<Vec<_>>();
+    closest_parameter_candidates(candidates, seed)
+}
+
+fn closest_parameter_candidates(
+    candidates: impl IntoIterator<Item = (f64, f64)>,
+    seed: Option<f64>,
+) -> Option<Vec<f64>> {
+    let candidates = candidates.into_iter().collect::<Vec<_>>();
     let minimum_distance = candidates
         .iter()
         .map(|candidate| candidate.1)
@@ -3701,20 +3709,7 @@ pub(crate) fn closest_pcurve_parameters(
         )
     });
     nearest.dedup_by(|first, second| first.to_bits() == second.to_bits());
-    Some(nearest)
-}
-
-fn closest_parameter_candidate(
-    candidates: impl IntoIterator<Item = (f64, f64)>,
-    seed: Option<f64>,
-) -> Option<(f64, f64)> {
-    candidates.into_iter().min_by(|first, second| {
-        first.1.total_cmp(&second.1).then_with(|| {
-            seed.map_or(std::cmp::Ordering::Equal, |seed| {
-                (first.0 - seed).abs().total_cmp(&(second.0 - seed).abs())
-            })
-        })
-    })
+    (!nearest.is_empty()).then_some(nearest)
 }
 
 fn spine_contact_point(

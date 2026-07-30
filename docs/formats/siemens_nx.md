@@ -1098,6 +1098,8 @@ For a finite NURBS spine, failure of the nearest-centre initial pair invokes a b
 
 When a BLEND_SURF spine is itself a procedural curve represented by a cached carrier, forward support-chart evaluation uses the sum of the chart's `chordal_error` and the spine carrier's cache-fit tolerance. A completed support lane raises the dependent intersection curve's cache-fit tolerance to at least that sum. An exact line or NURBS spine contributes no additional tolerance. This propagation preserves the independently serialized radius and bounds the accumulated deviation of nested cached constructions.
 
+When pcurve inversion produces multiple equal-distance parameters, every parameter remains available to the model-space boundary witness. The preceding accepted parameter orders those candidates but does not eliminate a candidate before forward boundary evaluation. The first candidate whose boundary point reproduces the solved intersection point within `chordal_error` selects the branch.
+
 **Chained blend-on-blend** recurses into the support blend canal. A cyclic support graph does not define a canal and is invalid. Offsetting a constant-radius canal along its normal gives a canal with radius `r+δ`: `B(t,s; r+δ) = B(t,s; r) + δ·n(t,s)`. A spine uses one branch pair `(i0,i1)` for each polyline point.
 
 **Primitive reduction.** A constant-radius blend with a circular spine has torus parameters `major = circle radius`, `minor = r`. A line spine has cylinder radius `r`. Reduction requires `|range[0]| == |range[1]|` and a circular or linear spine with at least five points.

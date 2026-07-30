@@ -10246,6 +10246,60 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
             .unwrap(),
         [2.0, 0.0]
     );
+
+    let mut rational_folded = folded.clone();
+    let PcurveGeometry::Nurbs { weights, .. } = &mut rational_folded else {
+        unreachable!("folded test pcurve is NURBS");
+    };
+    *weights = Some(vec![1.0; 3]);
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(
+            &rational_folded,
+            Point2::new(0.0, 0.0),
+            Some(0.1),
+        )
+        .unwrap(),
+        [0.0, 2.0]
+    );
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(
+            &rational_folded,
+            Point2::new(0.0, 0.0),
+            Some(1.9),
+        )
+        .unwrap(),
+        [2.0, 0.0]
+    );
+
+    let quadratic_folded = PcurveGeometry::Nurbs {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(
+            &quadratic_folded,
+            Point2::new(0.0, 0.0),
+            Some(0.1),
+        )
+        .unwrap(),
+        [0.0, 1.0]
+    );
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(
+            &quadratic_folded,
+            Point2::new(0.0, 0.0),
+            Some(0.9),
+        )
+        .unwrap(),
+        [1.0, 0.0]
+    );
 }
 
 #[test]
