@@ -408,6 +408,11 @@ pub struct FeatureEntityTableEntry {
     pub class_id: u32,
     /// Source section entity identifier carried by class `200` entries.
     pub source_entity_id: Option<u32>,
+    /// Related entity identifier carried by class `210`, related-form class
+    /// `214`, class `219`, and class `2017` entries.
+    pub related_entity_id: Option<u32>,
+    /// One-byte state following a related entity.
+    pub related_entity_state: Option<u8>,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
     /// Byte offset of the entity identifier in the original stream.
@@ -418,7 +423,7 @@ pub struct FeatureEntityTableEntry {
     pub end_offset: usize,
 }
 
-/// One byte-bounded positional `AllFeatur` row for a known geometry owner.
+/// One byte-bounded positional `AllFeatur` row for a known model feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRow {
     /// Feature identifier decoded from the row prefix.
@@ -553,6 +558,8 @@ pub enum AffectedIdKind {
     Parents,
     /// `contours` contour identifiers.
     Contours,
+    /// `qlts_affected` quilt-entity identifiers.
+    Quilts,
 }
 
 /// One complete affected-ID array owned by a feature.
@@ -596,6 +603,27 @@ pub struct FeatureReplayAffectedIds {
     pub offset: usize,
 }
 
+/// Geometry, edge, and quilt operands recovered from a class-946 positional replay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureSurfaceMergeAffectedIds {
+    /// Owning surface-merge feature identifier.
+    pub feature_id: u32,
+    /// Geometry identifiers at the first affected-array schema position.
+    pub geometry_ids: Vec<u32>,
+    /// Edge identifiers at the second affected-array schema position.
+    pub edge_ids: Vec<u32>,
+    /// Quilt identifiers at the third affected-array schema position.
+    pub quilt_ids: Vec<u32>,
+    /// Encoding of the geometry-array extent.
+    pub geometry_extent: ReplayExtentSource,
+    /// Encoding of the edge-array extent.
+    pub edge_extent: ReplayExtentSource,
+    /// Encoding of the quilt-array extent.
+    pub quilt_extent: ReplayExtentSource,
+    /// Byte offset of the replay anchor in the original stream.
+    pub offset: usize,
+}
+
 /// Which named direction lane occurs in a loop-restoration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopRestoreDirectionLane {
@@ -616,6 +644,38 @@ pub struct FeatureLoopRestoreDirection {
     pub value: u32,
     /// Byte offset of the named field header in the original stream.
     pub offset: usize,
+}
+
+/// One ordered feature-local loop identity from a complete `lo_hist` roster.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureLoopHistoryEntry {
+    /// Owning feature identifier.
+    pub feature_id: u32,
+    /// Zero-based position in the feature's loop roster.
+    pub ordinal: u32,
+    /// Feature-local loop identifier.
+    pub loop_id: u32,
+    /// Four required row fields and the optional final field, in stored order.
+    pub field_bytes: Vec<Vec<u8>>,
+    /// Stored row boundary form.
+    pub boundary: FeatureLoopHistoryBoundary,
+    /// Byte offset of the loop identifier in the original stream.
+    pub offset: usize,
+    /// Byte offset immediately after the row, excluding a following named header.
+    pub end_offset: usize,
+}
+
+/// Boundary form terminating one `lo_hist` row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureLoopHistoryBoundary {
+    /// Bare `e3` terminator.
+    CompoundClose,
+    /// `f1 f7 <reference> e3` terminator.
+    ReferenceContinue(u32),
+    /// `f2 f7 <reference> e3` terminator.
+    ReferenceFinal(u32),
+    /// The next named-record header bounds the final row.
+    NamedRecord,
 }
 
 /// Angular termination selected by a rotational feature row.
@@ -700,6 +760,8 @@ pub struct FeatureOutline {
     pub phase: OutlinePhase,
     /// Six feature-local scalar slots; undefined prefixes remain `None`.
     pub local_values: Vec<Option<f64>>,
+    /// Exact encoded scalar body of each feature-local slot.
+    pub local_value_bodies: Vec<Vec<u8>>,
     /// Byte offset of the outline label in the original stream.
     pub offset: usize,
 }
@@ -713,8 +775,15 @@ pub struct FeatureVariableRow {
     pub key: u32,
     /// Solved value when the scalar token is defined inline.
     pub value: Option<f64>,
+    /// Exact encoded scalar body of the stored value.
+    pub value_body: Vec<u8>,
     /// Pre-solve estimate when defined inline.
     pub guess: Option<f64>,
+    /// Exact encoded scalar body of the pre-solve estimate.
+    pub guess_body: Vec<u8>,
+    /// Whether the pre-solve estimate used the nine-byte dimension-driven
+    /// sentinel.
+    pub guess_dimension_driven: bool,
     /// Stored solver-known flag.
     pub known: Option<u32>,
     /// Stored solver homogeneity class.
@@ -851,6 +920,98 @@ pub struct FeatureSegment {
     pub radius2_ref: Option<u32>,
     /// External segment identifier used by the order table.
     pub external_id: u32,
+    /// Exact positional row bytes from the optional type wrapper or family
+    /// discriminator through the `e2` row close. Empty for a labeled
+    /// prototype row.
+    pub body: Vec<u8>,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
+/// One circular type `10` `segtab_ptr` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureCircleSegment {
+    /// Center point ID into the section variable table.
+    pub center_id: u32,
+    /// Radius reference into the section solver namespace.
+    pub radius_ref: u32,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
+/// One point type `1` `segtab_ptr` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeaturePointSegment {
+    /// Point ID stored in the center-point field.
+    pub point_id: u32,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
+/// One centered construction-line type `47` `segtab_ptr` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureCenteredLineSegment {
+    /// Center point reference stored by the section solver.
+    pub center_id: u32,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
+/// One type `25` section-reference line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureReferenceLineSegment {
+    /// Three stored direction fields.
+    pub directions: [Option<u32>; 3],
+    /// Optional endpoint IDs into the section variable table.
+    pub point_ids: [Option<u32>; 2],
+    /// Vertical/horizontal constraint field.
+    pub vertical_horizontal: Option<u32>,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
+/// One type `12` bounded section curve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureBoundedCurveSegment {
+    /// Three stored direction fields.
+    pub directions: [Option<u32>; 3],
+    /// Endpoint IDs into the section variable table.
+    pub point_ids: [u32; 2],
+    /// Stored center-point field.
+    pub center_id: Option<u32>,
+    /// Stored arc-orientation field.
+    pub arc_orientation: Option<u32>,
+    /// Stored vertical/horizontal field.
+    pub vertical_horizontal: Option<u32>,
+    /// Stored radius-reference field.
+    pub radius_ref: Option<u32>,
+    /// Stored secondary-radius-reference field.
+    pub radius2_ref: Option<u32>,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the positional row in the original stream.
+    pub offset: usize,
+}
+
+/// One type `58` saved-conic section row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureConicSegment {
+    /// Center point reference stored by the section solver.
+    pub center_id: u32,
+    /// First coefficient reference stored by the section solver.
+    pub first_coefficient_ref: u32,
+    /// Second coefficient reference stored by the section solver.
+    pub second_coefficient_ref: u32,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
     /// Byte offset of the positional row in the original stream.
     pub offset: usize,
 }
@@ -876,6 +1037,10 @@ pub struct FeatureOpaqueSegment {
     pub radius2_ref: Option<u32>,
     /// External segment identifier used by section tables.
     pub external_id: u32,
+    /// Exact positional row bytes from the optional type wrapper or family
+    /// discriminator through the `e2` row close. Empty for a labeled
+    /// prototype row.
+    pub body: Vec<u8>,
     /// Byte offset of the row in the original stream.
     pub offset: usize,
 }
@@ -885,10 +1050,25 @@ pub struct FeatureOpaqueSegment {
 pub struct FeatureSegmentTable {
     /// Count declared by the `f8` opener.
     pub declared_count: u32,
+    /// Whether the declared count includes an inherited prototype omitted from
+    /// the positional replay body.
+    pub has_elided_prototype: bool,
     /// Entity-table reference following the opener.
     pub entity_ref: Option<u32>,
     /// Fully aligned line and arc rows.
     pub rows: Vec<FeatureSegment>,
+    /// Fully aligned circular rows.
+    pub circle_rows: Vec<FeatureCircleSegment>,
+    /// Fully aligned type-1 point rows.
+    pub point_rows: Vec<FeaturePointSegment>,
+    /// Fully aligned centered construction-line rows.
+    pub centered_line_rows: Vec<FeatureCenteredLineSegment>,
+    /// Fully aligned type-25 section-reference lines.
+    pub reference_line_rows: Vec<FeatureReferenceLineSegment>,
+    /// Fully aligned type-12 bounded section curves.
+    pub bounded_curve_rows: Vec<FeatureBoundedCurveSegment>,
+    /// Fully aligned type-58 saved-conic rows.
+    pub conic_rows: Vec<FeatureConicSegment>,
     /// Fully aligned rows with unsupported segment-family discriminators.
     pub opaque_rows: Vec<FeatureOpaqueSegment>,
     /// Byte offset of the `segtab_ptr` label in the original stream.
@@ -896,25 +1076,48 @@ pub struct FeatureSegmentTable {
 }
 
 impl FeatureSegmentTable {
+    /// Number of decoded rows retained across all segment families.
+    pub(crate) fn retained_row_count(&self) -> usize {
+        self.rows.len()
+            + self.circle_rows.len()
+            + self.point_rows.len()
+            + self.centered_line_rows.len()
+            + self.reference_line_rows.len()
+            + self.bounded_curve_rows.len()
+            + self.conic_rows.len()
+            + self.opaque_rows.len()
+    }
+
     /// Whether every row declared by the table decoded.
     pub fn is_complete(&self) -> bool {
-        usize::try_from(self.declared_count).ok() == Some(self.rows.len() + self.opaque_rows.len())
+        usize::try_from(self.declared_count).ok()
+            == Some(usize::from(self.has_elided_prototype) + self.retained_row_count())
+    }
+
+    /// Number of decoded rows carrying one external identifier.
+    pub(crate) fn external_id_count(&self, external_id: u32) -> usize {
+        self.rows
+            .iter()
+            .map(|row| row.external_id)
+            .chain(self.circle_rows.iter().map(|row| row.external_id))
+            .chain(self.point_rows.iter().map(|row| row.external_id))
+            .chain(self.centered_line_rows.iter().map(|row| row.external_id))
+            .chain(self.reference_line_rows.iter().map(|row| row.external_id))
+            .chain(self.bounded_curve_rows.iter().map(|row| row.external_id))
+            .chain(self.conic_rows.iter().map(|row| row.external_id))
+            .chain(self.opaque_rows.iter().map(|row| row.external_id))
+            .filter(|candidate| *candidate == external_id)
+            .count()
     }
 
     /// Resolve a uniquely identified defining-sketch segment.
     pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
         self.is_complete().then_some(())?;
-        let mut matches = self
+        let segment = self
             .rows
             .iter()
-            .filter(|segment| segment.external_id == external_id);
-        let segment = matches.next()?;
-        (matches.next().is_none()
-            && !self
-                .opaque_rows
-                .iter()
-                .any(|row| row.external_id == external_id))
-        .then_some(segment)
+            .find(|segment| segment.external_id == external_id)?;
+        (self.external_id_count(external_id) == 1).then_some(segment)
     }
 }
 
@@ -1196,6 +1399,8 @@ pub struct FeatureDimension {
     pub dimension_type: u32,
     /// Decoded primary scalar, when its prefix is defined.
     pub value: Option<f64>,
+    /// Exact encoded scalar body of the primary value.
+    pub value_body: Vec<u8>,
     /// Exact bounded placeholder token when the primary scalar is unresolved.
     pub unresolved_value_token: Option<Vec<u8>>,
     /// Unit interpretation selected by the dimension type.
@@ -1204,6 +1409,8 @@ pub struct FeatureDimension {
     pub direction_byte: u8,
     /// Decoded auxiliary scalar, when its prefix is defined.
     pub auxiliary_value: Option<f64>,
+    /// Exact encoded scalar body of the auxiliary value.
+    pub auxiliary_body: Vec<u8>,
     /// External dimension identifier.
     pub external_id: u32,
     /// Byte offset of the row in the original stream.
@@ -1249,8 +1456,8 @@ pub struct FeatureRelation {
 /// Counted `relat_ptr` constraint-relation table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRelationTable {
-    /// Allocation count declared by the table's `f8` opener. Two entries are
-    /// structural; positional row count is `declared_count - 2`.
+    /// Allocation count declared by the table's `f8` opener. One is the empty
+    /// table form; larger counts include two structural entries.
     pub declared_count: u32,
     /// Relation entity-class reference following the opener.
     pub entity_ref: Option<u32>,
@@ -1329,6 +1536,8 @@ pub struct FeatureSavedLine {
     pub attributes: Vec<[u8; 5]>,
     /// Two three-dimensional endpoints in the section sketch frame.
     pub endpoints: [[Option<f64>; 3]; 2],
+    /// Exact row bytes through the final owned token, excluding the structural boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the record preamble in the original stream.
     pub offset: usize,
 }
@@ -1346,6 +1555,8 @@ pub struct FeatureSavedArc {
     pub endpoints: [[Option<f64>; 3]; 2],
     /// Start and end curve parameters.
     pub parameters: [Option<f64>; 2],
+    /// Exact entity-body or positional-row bytes, excluding the structural boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -1359,6 +1570,27 @@ pub struct FeatureSavedCircle {
     pub center: [Option<f64>; 3],
     /// Circle radius.
     pub radius: Option<f64>,
+    /// Exact entity-body bytes, excluding the following entity boundary.
+    pub body: Vec<u8>,
+    /// Byte offset of the entity label in the original stream.
+    pub offset: usize,
+}
+
+/// One solved conic retained in section coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureSavedConic {
+    /// Saved-section entity identifier.
+    pub entity_id: u32,
+    /// Two stored endpoint triples.
+    pub endpoints: [[Option<f64>; 3]; 2],
+    /// Start and end conic parameters.
+    pub parameters: [Option<f64>; 2],
+    /// Semi-axis coefficients.
+    pub coefficients: [Option<f64>; 2],
+    /// Two in-plane axes, positive normal, and origin.
+    pub local_system: Option<[f64; 12]>,
+    /// Exact entity-body bytes, excluding the following entity boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -1372,10 +1604,16 @@ pub struct FeatureSavedSpline {
     pub declared_point_count: Option<u32>,
     /// Complete interpolation-point prefix in stored parameter order.
     pub interpolation_points: Vec<[f64; 3]>,
+    /// Exact `i_pnts` value bytes through the last complete interpolation point.
+    pub interpolation_points_body: Vec<u8>,
     /// Two stored endpoint tangent triples, when every scalar is defined.
     pub endpoint_tangents: Option<[[f64; 3]; 2]>,
+    /// Exact complete `end_tangts` value bytes, including its array wrapper.
+    pub endpoint_tangents_body: Option<Vec<u8>>,
     /// One stored interpolation parameter per point, when complete.
     pub parameters: Option<Vec<f64>>,
+    /// Exact complete `params` value bytes, including its array wrapper.
+    pub parameters_body: Option<Vec<u8>>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -1385,6 +1623,8 @@ pub struct FeatureSavedSpline {
 pub struct FeatureSavedDummy {
     /// Saved-section entity identifier, when stored.
     pub entity_id: Option<u32>,
+    /// Exact entity-body bytes, excluding the following entity boundary.
+    pub body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -1398,6 +1638,8 @@ pub enum FeatureSavedEntity {
     Arc(FeatureSavedArc),
     /// Saved full-circle entity.
     Circle(FeatureSavedCircle),
+    /// Saved conic entity.
+    Conic(FeatureSavedConic),
     /// Saved interpolation-spline entity.
     Spline(FeatureSavedSpline),
     /// Saved non-geometric placeholder.
@@ -1520,8 +1762,8 @@ fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usize, usize, 
         .collect()
 }
 
-/// Decode positional `AllFeatur` rows whose feature identifiers are proven by
-/// geometry ownership. Unknown feature-like byte sequences remain unclaimed.
+/// Decode positional `AllFeatur` rows whose identifiers exist in a decoded
+/// model-feature namespace. Unknown feature-like byte sequences remain unclaimed.
 pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
     row_spans(payload, feature_ids)
         .into_iter()
@@ -1576,7 +1818,18 @@ pub fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
         hits.sort_by_key(|hit| hit.0);
         for (index, &(header, label_at, label, type_byte)) in hits.iter().enumerate() {
             let value = label_at + label.len() + 1;
-            let end = hits.get(index + 1).map_or(row.body.len(), |hit| hit.0);
+            let end = hits.get(index + 1).map_or_else(
+                || {
+                    let post_choice = b"assoc_type\0";
+                    row.body[value..]
+                        .windows(post_choice.len() + 2)
+                        .position(|window| {
+                            window[0] == psb::token::NAMED_RECORD && window[2..] == post_choice[..]
+                        })
+                        .map_or(row.body.len(), |relative| value + relative)
+                },
+                |hit| hit.0,
+            );
             result.push(FeatureChoice {
                 feature_id: row.feature_id,
                 label: String::from_utf8_lossy(label).into_owned(),
@@ -1609,23 +1862,29 @@ fn decode_exact_scalars(
 
 fn decode_optional_scalars(
     payload: &[u8],
-    mut cursor: usize,
     count: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<Option<f64>> {
+) -> (Vec<Option<f64>>, Vec<Vec<u8>>) {
     let mut values = Vec::with_capacity(count);
+    let mut bodies = Vec::with_capacity(count);
+    let mut cursor = 0;
     for _ in 0..count {
+        if cursor >= payload.len() || payload.get(cursor) == Some(&psb::token::NAMED_RECORD) {
+            values.push(None);
+            bodies.push(Vec::new());
+            continue;
+        }
+        let start = cursor;
         if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
             values.push(Some(value));
             cursor = next;
-        } else if cursor < payload.len() {
-            values.push(None);
-            cursor += 1;
         } else {
             values.push(None);
+            cursor += 1;
         }
+        bodies.push(payload[start..cursor].to_vec());
     }
-    values
+    (values, bodies)
 }
 
 fn find_bytes(payload: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -1667,6 +1926,34 @@ fn decode_parameter_scalar(
     None
 }
 
+fn variable_row_trailing_fields(payload: &[u8], mut cursor: usize, end: usize) -> Option<[u32; 3]> {
+    let mut fields = [0; 3];
+    for field in &mut fields {
+        let &head = payload.get(cursor)?;
+        if head >= 0xc0 {
+            return None;
+        }
+        let (value, next) = psb::compact_int(payload, cursor);
+        (next > cursor && next <= end).then_some(())?;
+        *field = value;
+        cursor = next;
+    }
+    (cursor == end).then_some(fields)
+}
+
+fn unresolved_variable_guess_end(payload: &[u8], offset: usize, end: usize) -> Option<usize> {
+    let delimiter = payload
+        .get(offset + 1..end)?
+        .iter()
+        .position(|&byte| byte == 0xe2)
+        .map(|relative| offset + 1 + relative)?;
+    let mut suffixes = (offset + 1..delimiter).filter(|&trailing_start| {
+        variable_row_trailing_fields(payload, trailing_start, delimiter).is_some()
+    });
+    let suffix = suffixes.next()?;
+    suffixes.next().is_none().then_some(suffix)
+}
+
 fn decode_variable_scalar(
     payload: &[u8],
     offset: usize,
@@ -1692,7 +1979,13 @@ fn decode_variable_scalar(
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
-    if prefix == 0x28 && offset + 8 <= end {
+    if prefix == 0x4f && offset + 7 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0x3f;
+        raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
+        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+    }
+    if matches!(prefix, 0x19 | 0x28 | 0x32 | 0x37 | 0x41) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
@@ -1705,16 +1998,20 @@ fn decode_variable_scalar(
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
     let variable_dict = match prefix {
+        0x51 => Some([0x3f, 0xc6]),
         0x53..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
         0xad => Some([0x3f, 0xd9]),
+        0xa7..=0xac | 0xae => Some([0xbf, prefix.wrapping_add(0x2c)]),
         0xb3 => Some([0xbf, 0xe0]),
-        0xc6 => Some([0xbf, 0xf3]),
-        0xc8 => Some([0xbf, 0xf5]),
-        0xcb => Some([0xbf, 0xf8]),
-        0xcc => Some([0xbf, 0xf9]),
+        0xbd => Some([0xbf, 0xea]),
+        0xc3 => Some([0xbf, 0xf0]),
+        0xc6..=0xce => Some([0xbf, prefix.wrapping_add(0x2d)]),
         0xd0 => Some([0xbf, 0xfe]),
         0xd2 => Some([0xc0, 0x00]),
+        0xd4 => Some([0xc0, 0x02]),
         0xd6 => Some([0xc0, 0x04]),
+        0xd8 => Some([0xc0, 0x06]),
+        0xda => Some([0xc0, 0x08]),
         0xdd => Some([0xc0, 0x0c]),
         _ => None,
     };
@@ -1729,6 +2026,9 @@ fn decode_variable_scalar(
             .get(offset + 1)
             .is_some_and(|next| matches!(next, 0x18 | 0xe0 | 0xe2 | 0xe3 | 0x10 | 0xe4 | 0xe6))
     {
+        return (Some(0.0), offset + 1, false);
+    }
+    if prefix == 0x18 && unresolved_variable_guess_end(payload, offset + 1, end).is_some() {
         return (Some(0.0), offset + 1, false);
     }
     if prefix == 0xed && offset + 9 <= end {
@@ -1746,6 +2046,11 @@ fn decode_section_coordinate_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize, bool) {
+    match payload.get(offset) {
+        Some(0x00 | 0x34) if offset + 3 <= end => return (None, offset + 3, false),
+        Some(0x01) if offset + 4 <= end => return (None, offset + 4, false),
+        _ => {}
+    }
     if payload.get(offset) == Some(&0x2d) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
@@ -1753,6 +2058,43 @@ fn decode_section_coordinate_scalar(
         return (Some(f64::from_be_bytes(raw)), offset + 8, false);
     }
     decode_variable_scalar(payload, offset, end, cache)
+}
+
+fn decode_variable_guess(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> (Option<f64>, usize, bool) {
+    if payload.get(offset) == Some(&0x18) {
+        let mut trailing = offset + 1;
+        let complete_suffix = (0..3).all(|_| {
+            if trailing >= end || payload[trailing] >= 0xc0 {
+                return false;
+            }
+            let (_, next) = psb::compact_int(payload, trailing);
+            if next <= trailing {
+                return false;
+            }
+            trailing = next;
+            true
+        });
+        if complete_suffix
+            && (trailing == end
+                || payload
+                    .get(trailing)
+                    .is_some_and(|byte| matches!(byte, 0xe0..=0xe3 | 0xf1..=0xf3)))
+        {
+            return (Some(0.0), offset + 1, false);
+        }
+    }
+    let decoded = decode_section_coordinate_scalar(payload, offset, end, cache);
+    if decoded.0.is_none() && !decoded.2 {
+        if let Some(next) = unresolved_variable_guess_end(payload, offset, end) {
+            return (None, next, false);
+        }
+    }
+    decoded
 }
 
 fn variable_table(
@@ -1779,15 +2121,19 @@ fn variable_table(
         let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
         let key = named_compact_int(payload, b"key\0", cursor, close)?;
         let value_label = find_bytes(payload, b"value\0", cursor, close)? + b"value\0".len();
-        let (value, _, dimension_driven) =
+        let (value, value_end, dimension_driven) =
             decode_section_coordinate_scalar(payload, value_label, close, cache);
         let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
-        let (guess, _, _) = decode_section_coordinate_scalar(payload, guess_label, close, cache);
+        let (guess, guess_end, guess_dimension_driven) =
+            decode_section_coordinate_scalar(payload, guess_label, close, cache);
         Some(FeatureVariableRow {
             variable_type,
             key,
             value,
+            value_body: payload[value_label..value_end].to_vec(),
             guess,
+            guess_body: payload[guess_label..guess_end].to_vec(),
+            guess_dimension_driven,
             known: named_compact_int(payload, b"known\0", cursor, close),
             homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
             uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
@@ -1820,11 +2166,16 @@ fn variable_table(
         }
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
+        let value_start = cursor;
         let (value, next, dimension_driven) =
             decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let (guess, next, _) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let value_body = payload[value_start..cursor].to_vec();
+        let guess_start = cursor;
+        let (guess, next, guess_dimension_driven) =
+            decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
+        let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::new();
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
             if payload[cursor] >= 0xc0 {
@@ -1841,7 +2192,10 @@ fn variable_table(
             variable_type,
             key,
             value,
+            value_body,
             guess,
+            guess_body,
+            guess_dimension_driven,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
@@ -1942,11 +2296,16 @@ fn positional_variable_table(
         cursor = next;
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
+        let value_start = cursor;
         let (value, next, dimension_driven) =
             decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let (guess, next, _) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let value_body = payload[value_start..cursor].to_vec();
+        let guess_start = cursor;
+        let (guess, next, guess_dimension_driven) =
+            decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
+        let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::with_capacity(3);
         while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
             if payload[cursor] >= 0xc0 {
@@ -1963,7 +2322,10 @@ fn positional_variable_table(
             variable_type,
             key,
             value,
+            value_body,
             guess,
+            guess_body,
+            guess_dimension_driven,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
@@ -2024,6 +2386,13 @@ fn next_solver_int(payload: &[u8], offset: &mut usize) -> Option<u32> {
         let low = *payload.get(*offset + 2)?;
         *offset += 3;
         return Some((u32::from(head - 0xc0) << 16) | (u32::from(high) << 8) | u32::from(low));
+    }
+    if head == 0xea {
+        let low = *payload.get(*offset + 1)?;
+        let middle = *payload.get(*offset + 2)?;
+        let high = *payload.get(*offset + 3)?;
+        *offset += 4;
+        return Some(u32::from(low) | (u32::from(middle) << 8) | (u32::from(high) << 16));
     }
     next_segment_int(payload, offset)
 }
@@ -2141,7 +2510,7 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     {
         cursor += 1;
     }
-    segment_table_body(payload, table, cursor, end)
+    segment_table_body(payload, table, cursor, end, false)
 }
 
 fn positional_segment_table(
@@ -2151,7 +2520,7 @@ fn positional_segment_table(
 ) -> Option<FeatureSegmentTable> {
     let name_end = find_bytes(payload, b"S2D", start, start.saturating_add(256).min(end))?;
     let cursor = payload[name_end..end].iter().position(|&byte| byte == 0)? + name_end + 1;
-    segment_table_body(payload, cursor, cursor, end)
+    segment_table_body(payload, cursor, cursor, end, true)
 }
 
 fn segment_table_body(
@@ -2159,6 +2528,7 @@ fn segment_table_body(
     table: usize,
     mut cursor: usize,
     end: usize,
+    has_elided_prototype: bool,
 ) -> Option<FeatureSegmentTable> {
     (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
@@ -2170,7 +2540,13 @@ fn segment_table_body(
     } else {
         None
     };
-    let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], cursor, end)?;
+    let (close, after_close_ref) = (cursor..end).find_map(|offset| {
+        (payload.get(offset..offset + 2) == Some(&[0xf2, psb::token::ENTITY_REF])).then_some(())?;
+        let (class, after_reference) = psb::reference_id(payload, offset + 2).ok()?;
+        (entity_ref.is_none_or(|expected| class == expected)
+            && payload.get(after_reference) == Some(&0xe2))
+        .then_some((offset, after_reference))
+    })?;
     let named_values = |label: &[u8], count: usize| -> Option<(usize, Vec<Option<u32>>)> {
         let offset = find_bytes(payload, label, cursor, close)?;
         let mut p = offset + label.len();
@@ -2205,14 +2581,11 @@ fn segment_table_body(
             radius_ref: radius_ref[0],
             radius2_ref: radius2_ref[0],
             external_id: external_id[0]?,
+            body: Vec::new(),
             offset,
         })
     })();
-    let (_, after_close_ref) = psb::compact_int(payload, close + 2);
-    cursor = after_close_ref;
-    if payload.get(cursor) == Some(&0xe2) {
-        cursor += 1;
-    }
+    cursor = after_close_ref + 1;
     let region_end = [
         b"order_table".as_slice(),
         b"dimtab_ptr\0",
@@ -2227,14 +2600,28 @@ fn segment_table_body(
     .filter_map(|label| find_bytes(payload, label, cursor, end))
     .min()
     .unwrap_or(end);
-    let mut rows = Vec::new();
-    let mut opaque_rows = Vec::new();
+    let mut segments = FeatureSegmentTable {
+        declared_count,
+        has_elided_prototype,
+        entity_ref,
+        rows: Vec::new(),
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: table,
+    };
     if let Some(row) = named_row {
-        retain_segment_row(row, &mut rows, &mut opaque_rows);
+        retain_segment_row(row, &mut segments);
     }
     let first_row = cursor;
-    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
-    while cursor < region_end && rows.len() + opaque_rows.len() < row_limit {
+    let row_limit = usize::try_from(declared_count)
+        .unwrap_or(usize::MAX)
+        .saturating_sub(usize::from(has_elided_prototype));
+    while cursor < region_end && segments.retained_row_count() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
             payload.get(cursor..cursor + 2),
@@ -2246,9 +2633,8 @@ fn segment_table_body(
         };
         if payload.get(kind_offset).is_none_or(|kind| *kind > 0x7f)
             || (row_start != first_row
-                && payload.get(row_start.saturating_sub(1)) != Some(&0xe3)
-                && payload.get(row_start.saturating_sub(4)..row_start)
-                    != Some(&[0xe2, 0x00, 0xf6, 0xe2]))
+                && payload.get(row_start.saturating_sub(1)) != Some(&0xe2)
+                && payload.get(row_start.saturating_sub(1)) != Some(&0xe3))
         {
             cursor += 1;
             continue;
@@ -2310,36 +2696,133 @@ fn segment_table_body(
                     radius_ref,
                     radius2_ref,
                     external_id,
+                    body: payload[row_start..=p].to_vec(),
                     offset: row_start,
                 },
-                &mut rows,
-                &mut opaque_rows,
+                &mut segments,
             );
             cursor = p + 1;
         } else {
             cursor += 1;
         }
     }
-    Some(FeatureSegmentTable {
-        declared_count,
-        entity_ref,
-        rows,
-        opaque_rows,
-        offset: table,
-    })
+    Some(segments)
 }
 
-fn retain_segment_row(
-    row: FeatureOpaqueSegment,
-    rows: &mut Vec<FeatureSegment>,
-    opaque_rows: &mut Vec<FeatureOpaqueSegment>,
-) {
+fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTable) {
+    if row.kind == 10
+        && row.directions == [Some(0); 3]
+        && row.point_ids == [None, Some(1)]
+        && row.arc_orientation == Some(0)
+        && row.vertical_horizontal == Some(0)
+        && row.radius2_ref.is_none()
+    {
+        if let (Some(center_id), Some(radius_ref)) = (row.center_id, row.radius_ref) {
+            segments.circle_rows.push(FeatureCircleSegment {
+                center_id,
+                radius_ref,
+                external_id: row.external_id,
+                offset: row.offset,
+            });
+            return;
+        }
+    }
+    if row.kind == 1
+        && row.directions == [Some(0); 3]
+        && row.point_ids == [None, Some(1)]
+        && row.arc_orientation == Some(0)
+        && row.vertical_horizontal == Some(0)
+        && row.radius_ref.is_none()
+        && row.radius2_ref.is_none()
+    {
+        if let Some(point_id) = row.center_id {
+            segments.point_rows.push(FeaturePointSegment {
+                point_id,
+                external_id: row.external_id,
+                offset: row.offset,
+            });
+            return;
+        }
+    }
+    if row.kind == 47
+        && row.directions == [Some(0); 3]
+        && row.point_ids == [None, Some(1)]
+        && row.arc_orientation == Some(0)
+        && row.vertical_horizontal == Some(0)
+        && row.radius_ref == Some(1)
+        && row.radius2_ref.is_none()
+    {
+        if let Some(center_id) = row.center_id {
+            segments
+                .centered_line_rows
+                .push(FeatureCenteredLineSegment {
+                    center_id,
+                    external_id: row.external_id,
+                    offset: row.offset,
+                });
+            return;
+        }
+    }
+    if row.kind == 25
+        && row.center_id.is_none()
+        && row.arc_orientation == Some(0)
+        && row.radius_ref.is_none()
+        && row.radius2_ref.is_none()
+    {
+        segments
+            .reference_line_rows
+            .push(FeatureReferenceLineSegment {
+                directions: row.directions,
+                point_ids: row.point_ids,
+                vertical_horizontal: row.vertical_horizontal,
+                external_id: row.external_id,
+                offset: row.offset,
+            });
+        return;
+    }
+    if row.kind == 12 {
+        if let [Some(first), Some(second)] = row.point_ids {
+            segments
+                .bounded_curve_rows
+                .push(FeatureBoundedCurveSegment {
+                    directions: row.directions,
+                    point_ids: [first, second],
+                    center_id: row.center_id,
+                    arc_orientation: row.arc_orientation,
+                    vertical_horizontal: row.vertical_horizontal,
+                    radius_ref: row.radius_ref,
+                    radius2_ref: row.radius2_ref,
+                    external_id: row.external_id,
+                    offset: row.offset,
+                });
+            return;
+        }
+    }
+    if row.kind == 58
+        && row.directions == [Some(0); 3]
+        && row.point_ids == [None, Some(1)]
+        && row.arc_orientation == Some(0)
+        && row.vertical_horizontal == Some(2)
+    {
+        if let (Some(center_id), Some(first_coefficient_ref), Some(second_coefficient_ref)) =
+            (row.center_id, row.radius_ref, row.radius2_ref)
+        {
+            segments.conic_rows.push(FeatureConicSegment {
+                center_id,
+                first_coefficient_ref,
+                second_coefficient_ref,
+                external_id: row.external_id,
+                offset: row.offset,
+            });
+            return;
+        }
+    }
     let kind = match row.kind {
         2 => FeatureSegmentKind::Line,
         3 => FeatureSegmentKind::Arc,
         5 => FeatureSegmentKind::Point,
         _ => {
-            opaque_rows.push(row);
+            segments.opaque_rows.push(row);
             return;
         }
     };
@@ -2354,7 +2837,7 @@ fn retain_segment_row(
         };
         point1
     };
-    rows.push(FeatureSegment {
+    segments.rows.push(FeatureSegment {
         kind,
         directions: row.directions,
         point_ids: [point0, point1],
@@ -2364,6 +2847,7 @@ fn retain_segment_row(
         radius_ref: row.radius_ref,
         radius2_ref: row.radius2_ref,
         external_id: row.external_id,
+        body: row.body,
         offset: row.offset,
     });
 }
@@ -3587,25 +4071,29 @@ fn labeled_dimension(
     let value_label = find_bytes(payload, b"value\0", after_type, end)?;
     let value_start = value_label + b"value\0".len();
     let (value, after_value, _) = decode_variable_scalar(payload, value_start, end, cache);
+    let value_body = payload.get(value_start..after_value)?.to_vec();
     let unresolved_value_token = value
         .is_none()
-        .then(|| payload.get(value_start..after_value))
-        .flatten()
+        .then_some(value_body.as_slice())
         .and_then(unresolved_dimension_value_token);
     let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
     let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
     let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
+    let auxiliary_start = auxiliary_label + b"aux_value\0".len();
     let (auxiliary_value, after_auxiliary, _) =
-        decode_variable_scalar(payload, auxiliary_label + b"aux_value\0".len(), end, cache);
+        decode_variable_scalar(payload, auxiliary_start, end, cache);
+    let auxiliary_body = payload.get(auxiliary_start..after_auxiliary)?.to_vec();
     let external_label = find_bytes(payload, b"ext_id\0", after_auxiliary, end)?;
     let (external_id, _) = segment_int(payload, external_label + b"ext_id\0".len());
     Some(FeatureDimension {
         dimension_type,
         value,
+        value_body,
         unresolved_value_token,
         value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
+        auxiliary_body,
         external_id: external_id?,
         offset: type_label,
     })
@@ -3627,10 +4115,10 @@ fn positional_dimension(
         Some(0x18) => (Some(0.0), cursor + 1, false),
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
+    let value_body = payload.get(value_start..cursor)?.to_vec();
     let unresolved_value_token = value
         .is_none()
-        .then(|| payload.get(value_start..cursor))
-        .flatten()
+        .then_some(value_body.as_slice())
         .and_then(unresolved_dimension_value_token);
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
     let auxiliary_start = cursor + 1;
@@ -3640,14 +4128,17 @@ fn positional_dimension(
         let (value, next, _) = decode_variable_scalar(payload, auxiliary_start, end, cache);
         (value, next)
     };
+    let auxiliary_body = payload.get(auxiliary_start..cursor)?.to_vec();
     let (external_id, _) = segment_int(payload, cursor);
     Some(FeatureDimension {
         dimension_type,
         value,
+        value_body,
         unresolved_value_token,
         value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
+        auxiliary_body,
         external_id: external_id?,
         offset: start,
     })
@@ -4754,6 +5245,7 @@ fn saved_line_block(
             cursor = record_offset + 1;
             continue;
         }
+        let record_end = cursor;
         if row_separator {
             cursor += 1;
         }
@@ -4766,6 +5258,7 @@ fn saved_line_block(
                 [values[0], values[1], values[2]],
                 [values[3], values[4], values[5]],
             ],
+            body: payload[record_offset..record_end].to_vec(),
             offset: record_offset,
         }));
     }
@@ -5045,16 +5538,19 @@ fn saved_positional_generated_entities(
                     _ => false,
                 };
                 if orientation_matches {
+                    let body_end = saved_positional_body_end(payload, row_end);
                     entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
                         entity_id,
                         references: Vec::new(),
                         attributes: Vec::new(),
                         endpoints,
+                        body: payload[row_start..body_end].to_vec(),
                         offset: row_start,
                     }));
                 }
             }
             FeatureSegmentKind::Arc => {
+                let body_end = saved_positional_body_end(payload, row_end);
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center: [values[0], values[1], values[2]],
@@ -5064,6 +5560,7 @@ fn saved_positional_generated_entities(
                         [values[7], values[8], values[9]],
                     ],
                     parameters: [values[10], values[11]],
+                    body: payload[row_start..body_end].to_vec(),
                     offset: row_start,
                 }));
             }
@@ -5071,6 +5568,14 @@ fn saved_positional_generated_entities(
         }
     }
     entities
+}
+
+fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
+    if payload.get(row_end.saturating_sub(1)) == Some(&0xe3) {
+        row_end.saturating_sub(1)
+    } else {
+        row_end
+    }
 }
 
 fn saved_circular_entities(
@@ -5099,6 +5604,24 @@ fn saved_circular_entities(
             let radius = saved_named_scalars::<1>(payload, b"radius", body_start, body_end, cache)
                 .unwrap_or([None])[0];
             if kind == "arc" {
+                let positional = saved_positional_generated_entities(
+                    payload,
+                    body_start,
+                    body_end,
+                    cache,
+                    order_table,
+                    segments,
+                );
+                let named_body_end = positional.iter().map(saved_entity_offset).min().map_or(
+                    body_end,
+                    |row_start| {
+                        if payload.get(row_start.saturating_sub(1)) == Some(&0xe3) {
+                            row_start.saturating_sub(1)
+                        } else {
+                            row_start
+                        }
+                    },
+                );
                 let first = saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
                     .unwrap_or([None; 3]);
                 let second =
@@ -5116,26 +5639,79 @@ fn saved_circular_entities(
                     radius,
                     endpoints: [first, second],
                     parameters: [start_parameter, end_parameter],
+                    body: payload[body_start..named_body_end].to_vec(),
                     offset: entity_offset,
                 }));
-                entities.extend(saved_positional_generated_entities(
-                    payload,
-                    body_start,
-                    body_end,
-                    cache,
-                    order_table,
-                    segments,
-                ));
+                entities.extend(positional);
             } else {
                 entities.push(FeatureSavedEntity::Circle(FeatureSavedCircle {
                     entity_id,
                     center,
                     radius,
+                    body: payload[body_start..body_end].to_vec(),
                     offset: entity_offset,
                 }));
             }
             search = body_end;
         }
+    }
+    entities
+}
+
+fn saved_conic_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<FeatureSavedEntity> {
+    let label = b"\xe0\x00entity(conic)\0";
+    let local_system_label = b"\xe0\x02local_sys\0";
+    let mut entities = Vec::new();
+    let mut search = start;
+    while let Some(entity_offset) = find_bytes(payload, label, search, end) {
+        let body_start = entity_offset + label.len();
+        let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
+        let Some(entity_id) = saved_entity_id(payload, body_start, body_end) else {
+            search = body_end;
+            continue;
+        };
+        if named_compact_int(payload, b"\xe0\x01type\0", body_start, body_end) != Some(58) {
+            search = body_end;
+            continue;
+        }
+        let first = saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
+            .unwrap_or([None; 3]);
+        let second = saved_named_scalars::<3>(payload, b"end2", body_start, body_end, cache)
+            .unwrap_or([None; 3]);
+        let start_parameter = saved_named_scalars::<1>(payload, b"t0", body_start, body_end, cache)
+            .unwrap_or([None])[0];
+        let end_parameter = saved_named_scalars::<1>(payload, b"t1", body_start, body_end, cache)
+            .unwrap_or([None])[0];
+        let first_coefficient =
+            saved_named_scalars::<1>(payload, b"c1", body_start, body_end, cache).unwrap_or([None])
+                [0];
+        let second_coefficient =
+            saved_named_scalars::<1>(payload, b"c2", body_start, body_end, cache).unwrap_or([None])
+                [0];
+        let local_system =
+            find_bytes(payload, local_system_label, body_start, body_end).and_then(|offset| {
+                let frame_start = offset + local_system_label.len();
+                scalar::decode_saved_conic_local_system_prefix(
+                    &payload[frame_start..body_end],
+                    cache,
+                )
+                .map(|(frame, _)| frame)
+            });
+        entities.push(FeatureSavedEntity::Conic(FeatureSavedConic {
+            entity_id,
+            endpoints: [first, second],
+            parameters: [start_parameter, end_parameter],
+            coefficients: [first_coefficient, second_coefficient],
+            local_system,
+            body: payload[body_start..body_end].to_vec(),
+            offset: entity_offset,
+        }));
+        search = body_end;
     }
     entities
 }
@@ -5149,6 +5725,7 @@ fn saved_dummy_entities(payload: &[u8], start: usize, end: usize) -> Vec<Feature
         let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
         entities.push(FeatureSavedEntity::Dummy(FeatureSavedDummy {
             entity_id: saved_entity_id(payload, body_start, body_end),
+            body: payload[body_start..body_end].to_vec(),
             offset: entity_offset,
         }));
         search = body_end;
@@ -5163,7 +5740,12 @@ fn saved_spline_entities(
     cache: &scalar::ScalarCache,
 ) -> Vec<FeatureSavedEntity> {
     const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
+    const POINTS_LABEL: &[u8] = b"\xe0\x02i_pnts\0";
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
+    const TANGENTS_LABEL: &[u8] = b"\xe0\x02end_tangts\0";
+    const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
+    const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
+    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
@@ -5174,13 +5756,16 @@ fn saved_spline_entities(
         let mut declared_point_count = None;
         let mut point_count = None;
         let mut points = Vec::new();
+        let mut interpolation_points_body = Vec::new();
         let mut fields_start = body_start;
         if let Some(points_label) = points_label {
+            let value_start = points_label + POINTS_LABEL.len();
             let extents_start = points_label + POINTS.len();
             let (declared, dimensions_end) = psb::compact_int(payload, extents_start);
             let (coordinate_count, mut cursor) = psb::compact_int(payload, dimensions_end);
             if dimensions_end > extents_start && cursor > dimensions_end && coordinate_count == 3 {
                 declared_point_count = Some(declared);
+                interpolation_points_body = payload[value_start..cursor].to_vec();
                 point_count = usize::try_from(declared).ok().filter(|point_count| {
                     point_count.saturating_mul(3)
                         <= body_end.saturating_sub(cursor).saturating_mul(16).max(12)
@@ -5209,31 +5794,33 @@ fn saved_spline_entities(
                         cursor = next_cursor;
                     }
                     fields_start = cursor;
+                    interpolation_points_body = payload[value_start..cursor].to_vec();
                 }
             }
         }
-        let endpoint_tangents = find_bytes(
-            payload,
-            b"\xe0\x02end_tangts\0\xf9\x02\x03",
-            fields_start,
-            body_end,
-        )
-        .and_then(|label| {
-            let mut at = label + b"\xe0\x02end_tangts\0\xf9\x02\x03".len();
-            let mut tangents = [[0.0; 3]; 2];
-            for tangent in &mut tangents {
-                for coordinate in tangent {
-                    let (value, next) = scalar::decode_in_lane(payload, at, cache)?;
-                    (next <= body_end).then_some(())?;
-                    *coordinate = value;
-                    at = next;
+        let decoded_tangents =
+            find_bytes(payload, TANGENTS, fields_start, body_end).and_then(|label| {
+                let value_start = label + TANGENTS_LABEL.len();
+                let mut at = label + TANGENTS.len();
+                let mut tangents = [[0.0; 3]; 2];
+                for tangent in &mut tangents {
+                    for coordinate in tangent {
+                        let (value, next) = scalar::decode_in_lane(payload, at, cache)?;
+                        (next <= body_end).then_some(())?;
+                        *coordinate = value;
+                        at = next;
+                    }
                 }
-            }
-            Some(tangents)
-        });
-        let parameters = point_count.and_then(|point_count| {
-            find_bytes(payload, b"\xe0\x02params\0\xf8", fields_start, body_end).and_then(|label| {
-                let count_at = label + b"\xe0\x02params\0\xf8".len();
+                Some((tangents, payload[value_start..at].to_vec()))
+            });
+        let (endpoint_tangents, endpoint_tangents_body) = decoded_tangents
+            .map_or((None, None), |(tangents, body)| {
+                (Some(tangents), Some(body))
+            });
+        let decoded_parameters = point_count.and_then(|point_count| {
+            find_bytes(payload, PARAMETERS, fields_start, body_end).and_then(|label| {
+                let value_start = label + PARAMETERS_LABEL.len();
+                let count_at = label + PARAMETERS.len();
                 let (count, mut at) = psb::compact_int(payload, count_at);
                 (usize::try_from(count).ok() == Some(point_count) && at > count_at).then_some(())?;
                 let mut values = Vec::with_capacity(point_count);
@@ -5243,15 +5830,22 @@ fn saved_spline_entities(
                     values.push(value);
                     at = next;
                 }
-                Some(values)
+                Some((values, payload[value_start..at].to_vec()))
             })
         });
+        let (parameters, parameters_body) = decoded_parameters
+            .map_or((None, None), |(parameters, body)| {
+                (Some(parameters), Some(body))
+            });
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
             entity_id: saved_entity_id(payload, body_start, entity_id_end),
             declared_point_count,
             interpolation_points: points,
+            interpolation_points_body,
             endpoint_tangents,
+            endpoint_tangents_body,
             parameters,
+            parameters_body,
             offset: entity_offset,
         }));
         search = body_start;
@@ -5291,11 +5885,12 @@ fn saved_spline_parameter(
     scalar::decode_in_lane(payload, offset, cache)
 }
 
-fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
+pub(crate) fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
     match entity {
         FeatureSavedEntity::Line(entity) => entity.offset,
         FeatureSavedEntity::Arc(entity) => entity.offset,
         FeatureSavedEntity::Circle(entity) => entity.offset,
+        FeatureSavedEntity::Conic(entity) => entity.offset,
         FeatureSavedEntity::Spline(entity) => entity.offset,
         FeatureSavedEntity::Dummy(entity) => entity.offset,
     }
@@ -5322,6 +5917,7 @@ fn saved_section(
         order_table,
         segments,
     ));
+    entities.extend(saved_conic_entities(payload, table, end, cache));
     entities.extend(saved_dummy_entities(payload, table, table_end));
     entities.extend(saved_spline_entities(payload, start, end, cache));
     entities.sort_by_key(saved_entity_offset);
@@ -5341,6 +5937,7 @@ fn positional_saved_section(
 ) -> Option<FeatureSavedSection> {
     let mut entities =
         saved_positional_generated_entities(payload, start, end, cache, order_table, segments);
+    entities.extend(saved_conic_entities(payload, start, end, cache));
     entities.sort_by_key(saved_entity_offset);
     let offset = entities.first().map(saved_entity_offset)?;
     Some(FeatureSavedSection { entities, offset })
@@ -5632,6 +6229,7 @@ pub fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
         (b"strong_parents", AffectedIdKind::StrongParents),
         (b"parent_table", AffectedIdKind::Parents),
         (b"contours", AffectedIdKind::Contours),
+        (b"qlts_affected", AffectedIdKind::Quilts),
     ];
     let mut result = Vec::new();
     for row in rows {
@@ -5713,6 +6311,14 @@ fn replay_extent(
     }
 }
 
+fn skip_replay_position_reference(run: &[u8], cursor: usize) -> Option<usize> {
+    if run.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Some(cursor);
+    }
+    let (_, after) = psb::reference_id(run, cursor + 1).ok()?;
+    (run.get(after) == Some(&psb::token::ARRAY_OPEN)).then_some(after)
+}
+
 fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, usize)> {
     // Each id is a compact int of at least one byte, so the count cannot exceed
     // the unread bytes of the run.
@@ -5729,62 +6335,361 @@ fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, us
     Some((ids, cursor))
 }
 
-/// Decode the two affected-ID array positions in class-913 replay rows.
+struct ReplayAffectedPair {
+    geometry_ids: Vec<u32>,
+    edge_ids: Vec<u32>,
+    geometry_extent: ReplayExtentSource,
+    edge_extent: ReplayExtentSource,
+    consumed: usize,
+}
+
+fn replay_affected_pair(run: &[u8], extents: [Option<u32>; 2]) -> Option<ReplayAffectedPair> {
+    let (geometry_count, geometry_extent, cursor) =
+        replay_extent(run, 0, b"geoms_affected", extents[0])?;
+    let (geometry_ids, cursor) = replay_ids(run, geometry_count, cursor)?;
+    let cursor = skip_replay_position_reference(run, cursor)?;
+    let (edge_count, edge_extent, cursor) =
+        replay_extent(run, cursor, b"edgs_affected", extents[1])?;
+    let (edge_ids, cursor) = replay_ids(run, edge_count, cursor)?;
+    Some(ReplayAffectedPair {
+        geometry_ids,
+        edge_ids,
+        geometry_extent,
+        edge_extent,
+        consumed: cursor,
+    })
+}
+
+fn explicit_replay_array(run: &[u8], opener: usize) -> Option<(Vec<u32>, usize)> {
+    (run.get(opener) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (count, cursor) = psb::compact_int(run, opener + 1);
+    (cursor > opener + 1).then_some(())?;
+    replay_ids(run, count, cursor)
+}
+
+fn replay_entity_reference_end(bytes: &[u8], cursor: usize) -> Option<usize> {
+    (bytes.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    psb::reference_id(bytes, cursor + 1)
+        .ok()
+        .map(|(_, after)| after)
+}
+
+fn replay_array_separator(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return true;
+    }
+    if replay_entity_reference_end(bytes, 0) == Some(bytes.len()) {
+        return true;
+    }
+    if bytes.first() == Some(&0xf0) {
+        return replay_entity_reference_end(bytes, 1) == Some(bytes.len());
+    }
+    if bytes.first() != Some(&0xf1) {
+        return false;
+    }
+    let Some(after_reference) = replay_entity_reference_end(bytes, 1) else {
+        return false;
+    };
+    let Some(after_close) = bytes
+        .get(after_reference..)
+        .is_some_and(|tail| tail.starts_with(&[1, psb::token::COMPOUND_CLOSE]))
+        .then_some(after_reference + 2)
+    else {
+        return false;
+    };
+    after_close == bytes.len()
+        || replay_entity_reference_end(bytes, after_close) == Some(bytes.len())
+}
+
+fn replay_array_trailer(bytes: &[u8]) -> bool {
+    if bytes.is_empty() || bytes == [0xf5, 0x96, 0x92, 0x00] {
+        return true;
+    }
+    if bytes.first() != Some(&0xf1) {
+        return false;
+    }
+    replay_entity_reference_end(bytes, 1) == Some(bytes.len())
+}
+
+fn explicit_replay_pair_before_suffix(
+    row: &FeatureRow,
+    suffix: usize,
+) -> Option<(ReplayAffectedPair, usize)> {
+    let arrays = row.body[..suffix]
+        .iter()
+        .enumerate()
+        .filter_map(|(opener, byte)| {
+            (*byte == psb::token::ARRAY_OPEN)
+                .then(|| explicit_replay_array(&row.body[..suffix], opener))
+                .flatten()
+                .map(|(ids, end)| (opener, ids, end))
+        })
+        .collect::<Vec<_>>();
+    let [.., geometry, edges] = arrays.as_slice() else {
+        return None;
+    };
+    replay_array_separator(&row.body[geometry.2..edges.0]).then_some(())?;
+    replay_array_trailer(&row.body[edges.2..suffix]).then_some(())?;
+    Some((
+        ReplayAffectedPair {
+            geometry_ids: geometry.1.clone(),
+            edge_ids: edges.1.clone(),
+            geometry_extent: ReplayExtentSource::Explicit,
+            edge_extent: ReplayExtentSource::Explicit,
+            consumed: edges.2 - geometry.0,
+        },
+        geometry.0,
+    ))
+}
+
+fn unique_unanchored_replay_pair(
+    row: &FeatureRow,
+    extents: [Option<u32>; 2],
+) -> Option<(ReplayAffectedPair, usize)> {
+    let mut candidates = Vec::new();
+    for suffix in row
+        .body
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, window)| (window == [0xe1, 0xe1]).then_some(offset))
+    {
+        let (row_id, after_id) = psb::compact_int(&row.body, suffix + 2);
+        if after_id == suffix + 2 || row.body.get(after_id) != Some(&psb::token::COMPOUND_CLOSE) {
+            continue;
+        }
+        let selector_start = if row.body.get(after_id + 1) == Some(&psb::token::COMPOUND_CLOSE) {
+            after_id + 2
+        } else if row.body.get(after_id + 1) == Some(&psb::token::ENTITY_REF) {
+            let Ok((_, after_reference)) = psb::reference_id(&row.body, after_id + 2) else {
+                continue;
+            };
+            if row.body.get(after_reference) != Some(&psb::token::COMPOUND_CLOSE) {
+                continue;
+            }
+            after_reference + 1
+        } else {
+            continue;
+        };
+        let (_, after_selector) = psb::compact_int(&row.body, selector_start);
+        let (repeated_row_id, after_repeated_id) = psb::compact_int(&row.body, after_selector);
+        if after_selector == selector_start
+            || after_repeated_id == after_selector
+            || repeated_row_id != row_id
+            || !matches!(
+                row.body.get(after_repeated_id..after_repeated_id + 4),
+                Some([0x00, 0xe1, 0x00, 0xe1 | psb::token::COMPOUND_CLOSE])
+            )
+        {
+            continue;
+        }
+        if let Some(pair) = explicit_replay_pair_before_suffix(row, suffix) {
+            candidates.push(pair);
+            continue;
+        }
+        for start in 1..suffix {
+            if row.body[start - 1] != psb::token::COMPOUND_CLOSE {
+                continue;
+            }
+            let Some(pair) = replay_affected_pair(&row.body[start..suffix], extents) else {
+                continue;
+            };
+            if pair.consumed == suffix - start {
+                candidates.push((pair, start));
+            }
+        }
+    }
+    (candidates.len() == 1).then_some(())?;
+    candidates.pop()
+}
+
+/// Decode the two affected-ID array positions in class-913 and class-914 replay rows.
 ///
 /// Array extents are stateful within one `AllFeatur` stream and schema class.
 /// An omitted `f8` opener reuses the preceding extent at the same array
 /// position.
 pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds> {
-    const ANCHOR: &[u8] = &[0xf1, 0xf7, 0x42, 0xd8, 0x80, 0x01, 0xe3];
+    const ANCHOR_PREFIX: &[u8] = &[0xf1, 0xf7, 0x42];
+    const ANCHOR_SUFFIX: &[u8] = &[0x80, 0x01, 0xe3];
+    const ANCHOR_LEN: usize = ANCHOR_PREFIX.len() + 1 + ANCHOR_SUFFIX.len();
     const TERMINATOR: &[u8] = &[0xf5, 0x96, 0x92];
     let mut result = Vec::new();
-    let mut extents = BTreeMap::<usize, [Option<u32>; 2]>::new();
+    let mut extents = BTreeMap::<(usize, u32), [Option<u32>; 2]>::new();
     for row in rows {
-        if row.root_schema_class != Some(913) {
-            continue;
-        }
-        let Some(anchor) = row
-            .body
-            .windows(ANCHOR.len())
-            .rposition(|window| window == ANCHOR)
-        else {
+        let Some(schema_class @ (913 | 914)) = row.root_schema_class else {
             continue;
         };
-        let run_start = anchor + ANCHOR.len();
-        let Some(term_relative) = row.body[run_start..]
-            .windows(TERMINATOR.len())
-            .position(|window| window == TERMINATOR)
-        else {
-            continue;
+        let anchor = row.body.windows(ANCHOR_LEN).rposition(|window| {
+            window.starts_with(ANCHOR_PREFIX)
+                && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
+                && window.ends_with(ANCHOR_SUFFIX)
+        });
+        let state = extents
+            .entry((row.stream_offset, schema_class))
+            .or_default();
+        let (pair, source_offset) = if let Some(anchor) = anchor {
+            let run_start = anchor + ANCHOR_LEN;
+            let Some(term_relative) = row.body[run_start..]
+                .windows(TERMINATOR.len())
+                .position(|window| window == TERMINATOR)
+            else {
+                continue;
+            };
+            let run = &row.body[run_start..run_start + term_relative];
+            let Some(pair) = replay_affected_pair(run, *state) else {
+                continue;
+            };
+            (pair, anchor)
+        } else {
+            let Some(pair) = unique_unanchored_replay_pair(row, *state) else {
+                continue;
+            };
+            pair
         };
-        let run = &row.body[run_start..run_start + term_relative];
-        let state = extents.entry(row.stream_offset).or_default();
-        let Some((geometry_count, geometry_extent, cursor)) =
-            replay_extent(run, 0, b"geoms_affected", state[0])
-        else {
-            continue;
-        };
-        let Some((geometry_ids, cursor)) = replay_ids(run, geometry_count, cursor) else {
-            continue;
-        };
-        let Some((edge_count, edge_extent, cursor)) =
-            replay_extent(run, cursor, b"edgs_affected", state[1])
-        else {
-            continue;
-        };
-        let Some((edge_ids, _)) = replay_ids(run, edge_count, cursor) else {
-            continue;
-        };
-        state[0] = Some(geometry_count);
-        state[1] = Some(edge_count);
+        let ReplayAffectedPair {
+            geometry_ids,
+            edge_ids,
+            geometry_extent,
+            edge_extent,
+            ..
+        } = pair;
+        state[0] = Some(geometry_ids.len() as u32);
+        state[1] = Some(edge_ids.len() as u32);
         result.push(FeatureReplayAffectedIds {
             feature_id: row.feature_id,
             geometry_ids,
             edge_ids,
             geometry_extent,
             edge_extent,
-            offset: row.body_offset + anchor,
+            offset: row.body_offset + source_offset,
         });
+    }
+    result.sort_by_key(|record| record.offset);
+    result
+}
+
+fn unique_named_affected_ids(
+    records: &[FeatureAffectedIds],
+    feature_id: u32,
+    kind: AffectedIdKind,
+) -> Option<&[u32]> {
+    let mut matches = records
+        .iter()
+        .filter(|record| record.feature_id == feature_id && record.kind == kind);
+    let ids = matches.next()?.ids.as_slice();
+    matches
+        .all(|record| record.ids.as_slice() == ids)
+        .then_some(ids)
+}
+
+fn surface_merge_replay_suffix(bytes: &[u8]) -> bool {
+    if bytes.get(..2) != Some(&[0xe1, 0xe1]) {
+        return false;
+    }
+    let (row_id, after_row_id) = psb::compact_int(bytes, 2);
+    if after_row_id == 2 || bytes.get(after_row_id) != Some(&psb::token::COMPOUND_CLOSE) {
+        return false;
+    }
+    if bytes.get(after_row_id + 1) != Some(&psb::token::COMPOUND_CLOSE) {
+        return false;
+    }
+    let selector = after_row_id + 2;
+    let (_, after_selector) = psb::compact_int(bytes, selector);
+    let (repeated_row_id, after_repeated_id) = psb::compact_int(bytes, after_selector);
+    after_selector != selector
+        && repeated_row_id == row_id
+        && bytes.get(after_repeated_id..) == Some(&[0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE])
+}
+
+fn positional_surface_merge_affected_ids(
+    row: &FeatureRow,
+    extents: [Option<u32>; 3],
+) -> Option<FeatureSurfaceMergeAffectedIds> {
+    const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
+    const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
+    let anchors = row
+        .body
+        .windows(ANCHOR.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == ANCHOR).then_some(offset))
+        .collect::<Vec<_>>();
+    let [anchor] = anchors.as_slice() else {
+        return None;
+    };
+    let (_, cursor) = explicit_replay_array(&row.body, anchor + ANCHOR.len())?;
+    if row.body.get(cursor..cursor + 2) != Some(&[0x01, psb::token::COMPOUND_CLOSE]) {
+        return None;
+    }
+    let (geometry_count, geometry_extent, cursor) =
+        replay_extent(&row.body, cursor + 2, b"geoms_affected", extents[0])?;
+    let (geometry_ids, cursor) = replay_ids(&row.body, geometry_count, cursor)?;
+    let (edge_count, edge_extent, cursor) =
+        replay_extent(&row.body, cursor, b"edgs_affected", extents[1])?;
+    let (edge_ids, cursor) = replay_ids(&row.body, edge_count, cursor)?;
+    if row.body.get(cursor..cursor + QUILT_SEPARATOR.len()) != Some(QUILT_SEPARATOR) {
+        return None;
+    }
+    let (quilt_count, quilt_extent, cursor) = replay_extent(
+        &row.body,
+        cursor + QUILT_SEPARATOR.len(),
+        b"qlts_affected",
+        extents[2],
+    )?;
+    let (quilt_ids, cursor) = replay_ids(&row.body, quilt_count, cursor)?;
+    surface_merge_replay_suffix(row.body.get(cursor..)?).then_some(FeatureSurfaceMergeAffectedIds {
+        feature_id: row.feature_id,
+        geometry_ids,
+        edge_ids,
+        quilt_ids,
+        geometry_extent,
+        edge_extent,
+        quilt_extent,
+        offset: row.body_offset + anchor,
+    })
+}
+
+/// Decode affected geometry, edge, and quilt arrays from class-946 replay rows.
+///
+/// Positional rows inherit an omitted array extent from the preceding
+/// class-946 row in the same `AllFeatur` stream.
+pub fn surface_merge_replay_affected_ids(
+    rows: &[FeatureRow],
+    named: &[FeatureAffectedIds],
+) -> Vec<FeatureSurfaceMergeAffectedIds> {
+    let mut result = Vec::new();
+    let mut extents = BTreeMap::<usize, [Option<u32>; 3]>::new();
+    for row in rows {
+        if row.root_schema_class != Some(946) {
+            continue;
+        }
+        let state = extents.entry(row.stream_offset).or_default();
+        let named_arrays = [
+            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Geometry),
+            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Edges),
+            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Quilts),
+        ];
+        if let [Some(geometry), Some(edges), Some(quilts)] = named_arrays {
+            let (Ok(geometry_count), Ok(edge_count), Ok(quilt_count)) = (
+                u32::try_from(geometry.len()),
+                u32::try_from(edges.len()),
+                u32::try_from(quilts.len()),
+            ) else {
+                continue;
+            };
+            *state = [Some(geometry_count), Some(edge_count), Some(quilt_count)];
+            continue;
+        }
+        let Some(record) = positional_surface_merge_affected_ids(row, *state) else {
+            continue;
+        };
+        let (Ok(geometry_count), Ok(edge_count), Ok(quilt_count)) = (
+            u32::try_from(record.geometry_ids.len()),
+            u32::try_from(record.edge_ids.len()),
+            u32::try_from(record.quilt_ids.len()),
+        ) else {
+            continue;
+        };
+        *state = [Some(geometry_count), Some(edge_count), Some(quilt_count)];
+        result.push(record);
     }
     result.sort_by_key(|record| record.offset);
     result
@@ -5832,6 +6737,157 @@ pub fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDir
     }
     result.sort_by_key(|record| record.offset);
     result
+}
+
+/// Decode complete ordered `lo_hist` rosters paired with named loop tables.
+pub fn loop_history_entries(
+    rows: &[FeatureRow],
+    geometry_tables: &[FeatureGeometryTable],
+) -> Vec<FeatureLoopHistoryEntry> {
+    const LABEL: &[u8] = b"\xe0\x01lo_hist\0";
+    const RECORD_WIDTH: u32 = 6;
+    let mut result = Vec::new();
+    for table in geometry_tables
+        .iter()
+        .filter(|table| table.kind == FeatureGeometryTableKind::LoopIds)
+    {
+        let Some(row) = rows.iter().find(|row| {
+            row.feature_id == table.feature_id
+                && table.offset >= row.body_offset
+                && table.offset < row.body_offset.saturating_add(row.body.len())
+        }) else {
+            continue;
+        };
+        let table_offset = table.offset - row.body_offset;
+        let Some(label_offset) = row.body[table_offset..]
+            .windows(LABEL.len())
+            .position(|window| window == LABEL)
+            .map(|offset| table_offset + offset)
+        else {
+            continue;
+        };
+        let label_stream_offset = row.body_offset + label_offset;
+        if geometry_tables.iter().any(|other| {
+            other.kind == FeatureGeometryTableKind::LoopIds
+                && other.feature_id == table.feature_id
+                && other.offset > table.offset
+                && other.offset < label_stream_offset
+        }) {
+            continue;
+        }
+        let array_offset = label_offset + LABEL.len();
+        if row.body.get(array_offset) != Some(&psb::token::ARRAY_OPEN) {
+            continue;
+        }
+        let (width, roster_offset) = psb::compact_int(&row.body, array_offset + 1);
+        if width != RECORD_WIDTH || roster_offset == array_offset + 1 {
+            continue;
+        }
+        let Ok(count) = usize::try_from(table.count) else {
+            continue;
+        };
+        let Some(entries) = loop_history_roster(&row.body, roster_offset, count) else {
+            continue;
+        };
+        result.extend((0..table.count).zip(entries).map(|(ordinal, entry)| {
+            FeatureLoopHistoryEntry {
+                feature_id: row.feature_id,
+                ordinal,
+                loop_id: entry.loop_id,
+                field_bytes: entry.field_bytes,
+                boundary: entry.boundary,
+                offset: row.body_offset + entry.offset,
+                end_offset: row.body_offset + entry.end_offset,
+            }
+        }));
+    }
+    result.sort_by_key(|entry| entry.offset);
+    result
+}
+
+fn loop_history_roster(
+    body: &[u8],
+    mut cursor: usize,
+    count: usize,
+) -> Option<Vec<ParsedLoopHistoryEntry>> {
+    const FIELD_COUNT: usize = 4;
+    (count > 0 && count <= body.len().saturating_sub(cursor) / 2).then_some(())?;
+    let mut entries = Vec::with_capacity(count);
+    for index in 0..count {
+        let offset = cursor;
+        let (loop_id, after_id) = psb::compact_int(body, cursor);
+        (after_id > cursor && body[cursor] <= 0xbf).then_some(())?;
+        cursor = after_id;
+        let mut field_bytes = Vec::with_capacity(FIELD_COUNT + 1);
+        for _ in 0..FIELD_COUNT {
+            let token = psb::token_at(body, cursor)?;
+            (!matches!(
+                token.kind,
+                psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
+            ))
+            .then_some(())?;
+            field_bytes.push(
+                body.get(cursor..cursor.checked_add(token.length)?)?
+                    .to_vec(),
+            );
+            cursor = cursor.checked_add(token.length)?;
+        }
+        let boundary = if body.get(cursor) == Some(&0xe3) {
+            cursor += 1;
+            FeatureLoopHistoryBoundary::CompoundClose
+        } else if body
+            .get(cursor)
+            .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
+        {
+            let marker = body[cursor];
+            (body.get(cursor + 1) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (reference, after_reference) = psb::reference_id(body, cursor + 2).ok()?;
+            (body.get(after_reference) == Some(&0xe3)).then_some(())?;
+            cursor = after_reference + 1;
+            if marker == 0xf1 {
+                FeatureLoopHistoryBoundary::ReferenceContinue(reference)
+            } else {
+                FeatureLoopHistoryBoundary::ReferenceFinal(reference)
+            }
+        } else {
+            (index + 1 == count).then_some(())?;
+            let token = psb::token_at(body, cursor)?;
+            if token.kind != psb::TokenKind::NamedRecord {
+                (!matches!(
+                    token.kind,
+                    psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
+                ))
+                .then_some(())?;
+                field_bytes.push(
+                    body.get(cursor..cursor.checked_add(token.length)?)?
+                        .to_vec(),
+                );
+                cursor = cursor.checked_add(token.length)?;
+                matches!(
+                    psb::token_at(body, cursor).map(|token| token.kind),
+                    Some(psb::TokenKind::NamedRecord)
+                )
+                .then_some(())?;
+            }
+            FeatureLoopHistoryBoundary::NamedRecord
+        };
+        entries.push(ParsedLoopHistoryEntry {
+            loop_id,
+            field_bytes,
+            boundary,
+            offset,
+            end_offset: cursor,
+        });
+    }
+    Some(entries)
+}
+
+struct ParsedLoopHistoryEntry {
+    loop_id: u32,
+    field_bytes: Vec<Vec<u8>>,
+    boundary: FeatureLoopHistoryBoundary,
+    offset: usize,
+    end_offset: usize,
 }
 
 /// Decode full-turn rotational termination from the positional
@@ -5982,9 +7038,12 @@ fn definitions_in_ranges(
         if let Some(info) = find_bytes(payload, b"\xe0\x00feat_outl_info\0", start, end) {
             if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
+                let (local_values, local_value_bodies) =
+                    decode_optional_scalars(&payload[scalar_start..end], 6, &cache);
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
-                    local_values: decode_optional_scalars(payload, scalar_start, 6, &cache),
+                    local_values,
+                    local_value_bodies,
                     offset: label,
                 });
             }
@@ -6010,9 +7069,12 @@ fn definitions_in_ranges(
                 {
                     continue;
                 }
+                let (local_values, local_value_bodies) =
+                    decode_optional_scalars(&payload[after_ref + 4..end], 6, &cache);
                 outlines.push(FeatureOutline {
                     phase,
-                    local_values: decode_optional_scalars(payload, after_ref + 4, 6, &cache),
+                    local_values,
+                    local_value_bodies,
                     offset: label_offset,
                 });
             }
@@ -6108,18 +7170,35 @@ fn definitions_in_ranges(
             replay_skamp_class = named_array_class(payload, b"skamp_ptr\0", start, schema_end);
             replay_triples_class = named_array_class(payload, b"triples_ptr\0", start, schema_end);
         } else if let Some(table) = &mut relations {
-            table.skamps = replay_skamp_class.map_or_else(Vec::new, |table_class| {
-                positional_feature_skamps(payload, start, end, table_class)
-            });
-            table.skamp_header = replay_skamp_class.and_then(|table_class| {
-                positional_solver_table_header(payload, start, end, table_class)
-            });
-            table.triples = replay_triples_class.map_or_else(Vec::new, |table_class| {
-                positional_relation_triples(payload, start, end, table_class)
-            });
-            table.triples_header = replay_triples_class.and_then(|table_class| {
-                positional_solver_table_header(payload, start, end, table_class)
-            });
+            if table.skamp_header.is_none() {
+                if let Some(header) = named_solver_table_header(payload, b"skamp_ptr\0", start, end)
+                {
+                    table.skamps = feature_skamps(payload, start, end);
+                    table.skamp_header = Some(header);
+                } else {
+                    table.skamps = replay_skamp_class.map_or_else(Vec::new, |table_class| {
+                        positional_feature_skamps(payload, start, end, table_class)
+                    });
+                    table.skamp_header = replay_skamp_class.and_then(|table_class| {
+                        positional_solver_table_header(payload, start, end, table_class)
+                    });
+                }
+            }
+            if table.triples_header.is_none() {
+                if let Some(header) =
+                    named_solver_table_header(payload, b"triples_ptr\0", start, end)
+                {
+                    table.triples = feature_relation_triples(payload, start, end);
+                    table.triples_header = Some(header);
+                } else {
+                    table.triples = replay_triples_class.map_or_else(Vec::new, |table_class| {
+                        positional_relation_triples(payload, start, end, table_class)
+                    });
+                    table.triples_header = replay_triples_class.and_then(|table_class| {
+                        positional_solver_table_header(payload, start, end, table_class)
+                    });
+                }
+            }
         }
         let saved_section = saved_section(
             payload,
@@ -6463,17 +7542,7 @@ pub fn bind_trimmed_definition_owners(
     let candidates = definitions
         .iter()
         .map(|definition| {
-            let external_ids = definition
-                .trim_entities
-                .as_ref()
-                .map(|table| {
-                    table
-                        .rows
-                        .iter()
-                        .map(|row| row.external_id)
-                        .collect::<BTreeSet<_>>()
-                })
-                .unwrap_or_default();
+            let external_ids = unique_trimmed_external_ids(definition);
             if definition.owner_feature_id.is_some() || external_ids.is_empty() {
                 return BTreeSet::new();
             }
@@ -6484,11 +7553,7 @@ pub fn bind_trimmed_definition_owners(
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
-                    let source_ids = table
-                        .entries
-                        .iter()
-                        .filter_map(|entry| entry.source_entity_id)
-                        .collect::<BTreeSet<_>>();
+                    let source_ids = generated_source_entity_ids(table);
                     (source_ids == external_ids).then_some(owner)
                 })
                 .collect::<BTreeSet<_>>()
@@ -6511,9 +7576,10 @@ pub fn bind_trimmed_definition_owners(
     }
 }
 
-/// Bind unlabeled positional definitions through exact section-entity IDs in
-/// the owning generated-entity table. Empty and non-unique joins remain
-/// unbound.
+/// Bind unlabeled positional definitions through section-entity IDs in the
+/// owning generated-entity table. A uniquely keyed trimmed-entity roster is
+/// exact; otherwise the generated IDs must be a nonempty subset of the order
+/// table. Empty and non-unique joins remain unbound.
 pub fn bind_replay_definition_owners(
     definitions: &mut [FeatureDefinition],
     entity_tables: &[FeatureEntityTable],
@@ -6522,7 +7588,11 @@ pub fn bind_replay_definition_owners(
     let candidates = definitions
         .iter()
         .map(|definition| {
-            let external_ids = definition
+            if definition.owner_feature_id.is_some() {
+                return BTreeSet::new();
+            }
+            let trimmed_external_ids = unique_trimmed_external_ids(definition);
+            let order_external_ids = definition
                 .order_table
                 .as_ref()
                 .map(|table| {
@@ -6533,8 +7603,23 @@ pub fn bind_replay_definition_owners(
                         .collect::<BTreeSet<_>>()
                 })
                 .unwrap_or_default();
-            if definition.owner_feature_id.is_some() || external_ids.is_empty() {
+            if trimmed_external_ids.is_empty() && order_external_ids.is_empty() {
                 return BTreeSet::new();
+            }
+            let exact_candidates = entity_tables
+                .iter()
+                .filter_map(|table| {
+                    let owner = table.feature_id?;
+                    if claimed_owner_ids.contains(&owner) {
+                        return None;
+                    }
+                    let source_ids = generated_source_entity_ids(table);
+                    (!trimmed_external_ids.is_empty() && source_ids == trimmed_external_ids)
+                        .then_some(owner)
+                })
+                .collect::<BTreeSet<_>>();
+            if !exact_candidates.is_empty() {
+                return exact_candidates;
             }
             entity_tables
                 .iter()
@@ -6543,14 +7628,11 @@ pub fn bind_replay_definition_owners(
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
-                    let source_ids = table
-                        .entries
-                        .iter()
-                        .filter_map(|entry| entry.source_entity_id)
-                        .collect::<BTreeSet<_>>();
-                    (!source_ids.is_empty() && source_ids.is_subset(&external_ids)).then_some(owner)
+                    let source_ids = generated_source_entity_ids(table);
+                    (!source_ids.is_empty() && source_ids.is_subset(&order_external_ids))
+                        .then_some(owner)
                 })
-                .collect::<BTreeSet<_>>()
+                .collect()
         })
         .collect::<Vec<_>>();
     let mut owner_candidate_counts = BTreeMap::new();
@@ -6569,6 +7651,23 @@ pub fn bind_replay_definition_owners(
         definition.id = owner;
         definition.owner_feature_id = Some(owner);
     }
+}
+
+fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> {
+    definition
+        .trim_entities
+        .as_ref()
+        .filter(|table| table.has_unique_external_ids())
+        .map(|table| table.rows.iter().map(|row| row.external_id).collect())
+        .unwrap_or_default()
+}
+
+fn generated_source_entity_ids(table: &FeatureEntityTable) -> BTreeSet<u32> {
+    table
+        .entries
+        .iter()
+        .filter_map(|entry| entry.source_entity_id)
+        .collect()
 }
 
 /// Bind a DEPDB section through the consecutive recipe, internal datum, and
@@ -6715,17 +7814,43 @@ fn read_entries(
                 .flatten()
                 .map(|(class_id, _)| (class_id, after))
         })?;
-        let (source_entity_id, body_start) = if class_id == 200 {
-            match psb::reference_id(payload, after_class) {
-                Ok((order, after_order)) => (Some(order), after_order),
-                Err(_) => (None, after_class),
-            }
+        let (source_entity_id, related_entity_id, related_entity_state, body_start) =
+            if class_id == 200 {
+                match psb::reference_id(payload, after_class) {
+                    Ok((order, after_order)) => (Some(order), None, None, after_order),
+                    Err(_) => (None, None, None, after_class),
+                }
+            } else if matches!(class_id, 210 | 214 | 219 | 2017) {
+                match psb::reference_id(payload, after_class) {
+                    Ok((related, after_related))
+                        if matches!(
+                            (class_id, payload.get(after_related)),
+                            (210 | 214 | 219 | 2017, Some(&0)) | (2017, Some(&1))
+                        ) =>
+                    {
+                        (
+                            None,
+                            Some(related),
+                            payload.get(after_related).copied(),
+                            after_related,
+                        )
+                    }
+                    Err(_) => (None, None, None, after_class),
+                    Ok(_) => (None, None, None, after_class),
+                }
+            } else {
+                (None, None, None, after_class)
+            };
+        let terminal_state = if class_id == 200 {
+            payload
+                .get(body_start)
+                .copied()
+                .filter(|state| matches!(state, 0 | 1))
         } else {
-            (None, after_class)
+            related_entity_state
         };
         let terminal_table_separator = (index + 1 == count
-            && class_id == 200
-            && matches!(payload.get(body_start), Some(0x00 | 0x01))
+            && terminal_state.is_some()
             && payload.get(body_start + 1..body_start + 3)
                 == Some(&[0xf2, psb::token::ENTITY_REF]))
         .then_some(body_start + 1);
@@ -6743,6 +7868,8 @@ fn read_entries(
             entity_id: id,
             class_id,
             source_entity_id,
+            related_entity_id,
+            related_entity_state,
             prefixed,
             offset,
             end_offset,
@@ -6847,6 +7974,72 @@ mod tests {
     }
 
     #[test]
+    fn class_219_generated_entry_retains_its_related_entity() {
+        let payload = [0x85, 0xba, 0x80, 0xdb, 0x84, 0x97, 0, 0xe3];
+        let entries = read_entries(&payload, 0, 1).expect("class-219 generated entry");
+
+        assert_eq!(entries[0].entity_id, 1466);
+        assert_eq!(entries[0].class_id, 219);
+        assert_eq!(entries[0].source_entity_id, None);
+        assert_eq!(entries[0].related_entity_id, Some(1175));
+        assert_eq!(entries[0].related_entity_state, Some(0));
+        assert_eq!(entries[0].end_offset, payload.len());
+    }
+
+    #[test]
+    fn final_class_219_entry_may_terminate_at_the_table_separator() {
+        let payload = [0x85, 0xba, 0x80, 0xdb, 0x84, 0x97, 0, 0xf2, 0xf7];
+        let entries = read_entries(&payload, 0, 1).expect("terminal class-219 entry");
+
+        assert_eq!(entries[0].related_entity_id, Some(1175));
+        assert_eq!(entries[0].end_offset, 7);
+    }
+
+    #[test]
+    fn class_2017_generated_entry_retains_related_entity_and_state() {
+        let payload = [0x92, 0x56, 0x87, 0xe1, 0x92, 0x48, 1, 0xe3];
+        let entries = read_entries(&payload, 0, 1).expect("class-2017 generated entry");
+
+        assert_eq!(entries[0].entity_id, 4694);
+        assert_eq!(entries[0].class_id, 2017);
+        assert_eq!(entries[0].related_entity_id, Some(4680));
+        assert_eq!(entries[0].related_entity_state, Some(1));
+        assert_eq!(entries[0].end_offset, payload.len());
+    }
+
+    #[test]
+    fn final_class_2017_entry_may_terminate_at_the_table_separator() {
+        let payload = [0x94, 0x92, 0x87, 0xe1, 0x94, 0x90, 1, 0xf2, 0xf7];
+        let entries = read_entries(&payload, 0, 1).expect("terminal class-2017 entry");
+
+        assert_eq!(entries[0].related_entity_id, Some(5264));
+        assert_eq!(entries[0].related_entity_state, Some(1));
+        assert_eq!(entries[0].end_offset, 7);
+    }
+
+    #[test]
+    fn class_210_generated_entry_retains_its_nonvisible_entity_link() {
+        let payload = [0x85, 0xb7, 0x80, 0xd2, 0x85, 0x59, 0, 0xe3];
+        let entries = read_entries(&payload, 0, 1).expect("class-210 generated entry");
+
+        assert_eq!(entries[0].entity_id, 1463);
+        assert_eq!(entries[0].class_id, 210);
+        assert_eq!(entries[0].related_entity_id, Some(1369));
+        assert_eq!(entries[0].related_entity_state, Some(0));
+    }
+
+    #[test]
+    fn class_214_generated_entry_retains_its_related_entity() {
+        let payload = [0x85, 0x49, 0x80, 0xd6, 0x80, 0xb8, 0, 0xe3];
+        let entries = read_entries(&payload, 0, 1).expect("class-214 generated entry");
+
+        assert_eq!(entries[0].entity_id, 1353);
+        assert_eq!(entries[0].class_id, 214);
+        assert_eq!(entries[0].related_entity_id, Some(184));
+        assert_eq!(entries[0].related_entity_state, Some(0));
+    }
+
+    #[test]
     fn choice_fields_ignore_overlapping_headers() {
         let choices = [FeatureChoice {
             feature_id: 7,
@@ -6861,6 +8054,31 @@ mod tests {
         assert_eq!(fields.len(), 1);
         assert_eq!(fields[0].offset, 101);
         assert_eq!(fields[0].name, "");
+    }
+
+    #[test]
+    fn final_procedural_choice_ends_before_post_choice_fields() {
+        let body = b"\xe0\x01blend_choice\0\x00\
+                     \xe0\x01misc_choice\0\xf8\x05\x00\
+                     \xe0\x07assoc_type\0\xf1"
+            .to_vec();
+        let rows = [FeatureRow {
+            feature_id: 7,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(917),
+            stream_offset: 10,
+            body,
+            body_offset: 100,
+            offset: 98,
+        }];
+
+        let choices = choices(&rows);
+        assert_eq!(choices.len(), 2);
+        assert_eq!(choices[0].label, "blend_choice");
+        assert_eq!(choices[0].payload, [0]);
+        assert_eq!(choices[1].label, "misc_choice");
+        assert_eq!(choices[1].payload, [0xf8, 0x05, 0]);
+        assert!(choice_fields(&choices).is_empty());
     }
 
     #[test]
@@ -6912,6 +8130,102 @@ mod tests {
     }
 
     #[test]
+    fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
+        let mut body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x03\xf7\x60\xfb\xe3\
+                         \xe0\x01lo_hist\0\xf8\x06"
+            .to_vec();
+        let first_offset = body.len();
+        body.extend_from_slice(&[42, 1, 0xf6, 0xe5, 2, 0xf1, 0xf7, 96, 0xe3]);
+        let second_offset = body.len();
+        body.extend_from_slice(&[43, 3, 0xf6, 0xe5, 4, 0xe3]);
+        let third_offset = body.len();
+        body.extend_from_slice(&[44, 5, 6, 0xe4, 0xf6, 7]);
+        let named_boundary_offset = body.len();
+        body.extend_from_slice(b"\xe0\x00next\0");
+        let rows = [FeatureRow {
+            feature_id: 7,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(917),
+            stream_offset: 10,
+            body,
+            body_offset: 1_000,
+            offset: 998,
+        }];
+
+        let tables = geometry_tables(&rows);
+        let entries = loop_history_entries(&rows, &tables);
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (
+                    entry.feature_id,
+                    entry.ordinal,
+                    entry.loop_id,
+                    entry.offset,
+                    entry.end_offset,
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (7, 0, 42, 1_000 + first_offset, 1_000 + second_offset),
+                (7, 1, 43, 1_000 + second_offset, 1_000 + third_offset),
+                (
+                    7,
+                    2,
+                    44,
+                    1_000 + third_offset,
+                    1_000 + named_boundary_offset
+                ),
+            ]
+        );
+        assert_eq!(
+            entries[0].field_bytes,
+            vec![vec![1], vec![0xf6], vec![0xe5], vec![2]]
+        );
+        assert_eq!(
+            entries[0].boundary,
+            FeatureLoopHistoryBoundary::ReferenceContinue(96)
+        );
+        assert_eq!(
+            entries[1].boundary,
+            FeatureLoopHistoryBoundary::CompoundClose
+        );
+        assert_eq!(entries[2].field_bytes.len(), 5);
+        assert_eq!(entries[2].boundary, FeatureLoopHistoryBoundary::NamedRecord);
+    }
+
+    #[test]
+    fn loop_history_roster_rejects_incomplete_and_early_boundaries() {
+        assert!(loop_history_roster(&[1, 2, 0xe3], 0, 1).is_none());
+        assert!(loop_history_roster(&[1, 2, 3, 4, 5, 0xe3], 0, 2).is_none());
+        let direct_named = loop_history_roster(b"\x01\x02\xf6\xe5\x03\xe0\x00next\0", 0, 1)
+            .expect("direct named boundary");
+        assert_eq!(direct_named.len(), 1);
+        assert_eq!(direct_named[0].loop_id, 1);
+        assert_eq!(direct_named[0].offset, 0);
+        assert_eq!(direct_named[0].end_offset, 5);
+        assert_eq!(
+            direct_named[0].boundary,
+            FeatureLoopHistoryBoundary::NamedRecord
+        );
+
+        let body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x01\xf7\x60\xfb\xe3\
+                     \xe0\x01lo_hist\0\xf8\x05\x2a\xe3"
+            .to_vec();
+        let rows = [FeatureRow {
+            feature_id: 7,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(917),
+            stream_offset: 10,
+            body,
+            body_offset: 1_000,
+            offset: 998,
+        }];
+        assert!(loop_history_entries(&rows, &geometry_tables(&rows)).is_empty());
+    }
+
+    #[test]
     fn entity_graph_requires_the_solid_features_root() {
         let packed_lookalike = b"\xe0\x00SlV\xff\0\xf7\x01";
         assert_eq!(entity_graph(packed_lookalike), (Vec::new(), Vec::new()));
@@ -6957,17 +8271,149 @@ mod tests {
         }
     }
 
+    fn unanchored_replay_row(
+        feature_id: u32,
+        row_id: u8,
+        suffix_reference: Option<u8>,
+        operands: &[u8],
+    ) -> FeatureRow {
+        let mut row = replay_row(feature_id, operands);
+        row.body.clear();
+        row.body.push(psb::token::COMPOUND_CLOSE);
+        row.body.extend_from_slice(operands);
+        row.body
+            .extend_from_slice(&[0xe1, 0xe1, row_id, psb::token::COMPOUND_CLOSE]);
+        if let Some(reference) = suffix_reference {
+            row.body.extend_from_slice(&[
+                psb::token::ENTITY_REF,
+                reference,
+                psb::token::COMPOUND_CLOSE,
+            ]);
+        } else {
+            row.body.push(psb::token::COMPOUND_CLOSE);
+        }
+        row.body
+            .extend_from_slice(&[3, row_id, 0x00, 0xe1, 0x00, psb::token::COMPOUND_CLOSE]);
+        row
+    }
+
+    fn surface_merge_row(feature_id: u32, row_id: u8, operands: &[u8]) -> FeatureRow {
+        let mut body = vec![
+            psb::token::COMPOUND_CLOSE,
+            psb::token::ENTITY_REF,
+            0x80,
+            0x96,
+            psb::token::ARRAY_OPEN,
+            1,
+            99,
+            0x01,
+            psb::token::COMPOUND_CLOSE,
+        ];
+        body.extend_from_slice(operands);
+        body.extend_from_slice(&[
+            0xe1,
+            0xe1,
+            row_id,
+            psb::token::COMPOUND_CLOSE,
+            psb::token::COMPOUND_CLOSE,
+            3,
+            row_id,
+            0x00,
+            0xe1,
+            0x00,
+            psb::token::COMPOUND_CLOSE,
+        ]);
+        FeatureRow {
+            feature_id,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(946),
+            stream_offset: 100,
+            body,
+            body_offset: 200,
+            offset: 190,
+        }
+    }
+
+    #[test]
+    fn positional_surface_merge_replay_inherits_geometry_edge_and_quilt_extents() {
+        let rows = [
+            surface_merge_row(
+                1,
+                40,
+                &[
+                    0xf8, 2, 10, 11, 0xf8, 2, 20, 21, 0xf0, 0xf7, 0x80, 0x99, 0xf8, 2, 30, 31,
+                ],
+            ),
+            surface_merge_row(2, 41, &[12, 13, 22, 23, 0xf0, 0xf7, 0x80, 0x99, 32, 33]),
+        ];
+
+        let decoded = surface_merge_replay_affected_ids(&rows, &[]);
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].geometry_ids, [10, 11]);
+        assert_eq!(decoded[0].edge_ids, [20, 21]);
+        assert_eq!(decoded[0].quilt_ids, [30, 31]);
+        assert_eq!(decoded[1].geometry_ids, [12, 13]);
+        assert_eq!(decoded[1].edge_ids, [22, 23]);
+        assert_eq!(decoded[1].quilt_ids, [32, 33]);
+        assert_eq!(decoded[1].geometry_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[1].edge_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[1].quilt_extent, ReplayExtentSource::Inherited);
+    }
+
+    #[test]
+    fn named_surface_merge_arrays_seed_positional_replay_extents() {
+        let rows = [
+            surface_merge_row(1, 40, &[]),
+            surface_merge_row(2, 41, &[12, 13, 22, 23, 0xf0, 0xf7, 0x80, 0x99, 32, 33]),
+        ];
+        let named = [
+            FeatureAffectedIds {
+                feature_id: 1,
+                kind: AffectedIdKind::Geometry,
+                ids: vec![10, 11],
+                offset: 1,
+            },
+            FeatureAffectedIds {
+                feature_id: 1,
+                kind: AffectedIdKind::Edges,
+                ids: vec![20, 21],
+                offset: 2,
+            },
+            FeatureAffectedIds {
+                feature_id: 1,
+                kind: AffectedIdKind::Quilts,
+                ids: vec![30, 31],
+                offset: 3,
+            },
+        ];
+
+        let decoded = surface_merge_replay_affected_ids(&rows, &named);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].feature_id, 2);
+        assert_eq!(decoded[0].geometry_ids, [12, 13]);
+        assert_eq!(decoded[0].edge_ids, [22, 23]);
+        assert_eq!(decoded[0].quilt_ids, [32, 33]);
+        assert_eq!(decoded[0].geometry_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[0].edge_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[0].quilt_extent, ReplayExtentSource::Inherited);
+    }
+
     #[test]
     fn positional_round_replay_inherits_each_array_extent() {
-        let rows = [
-            replay_row(1, &[0xf8, 2, 10, 11, 0xf8, 3, 20, 21, 22]),
+        let mut rows = [
+            replay_row(1, &[0xf8, 2, 10, 11, 0xf7, 42, 0xf8, 3, 20, 21, 22]),
             replay_row(2, &[12, 13, 23, 24, 25]),
             replay_row(3, &[0xf8, 1, 14, 26, 27, 28]),
         ];
+        rows[0].body[3] = 0xc8;
 
         let decoded = replay_affected_ids(&rows);
 
         assert_eq!(decoded.len(), 3);
+        assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
+        assert_eq!(decoded[0].edge_ids, vec![20, 21, 22]);
         assert_eq!(decoded[1].geometry_ids, vec![12, 13]);
         assert_eq!(decoded[1].edge_ids, vec![23, 24, 25]);
         assert_eq!(decoded[1].geometry_extent, ReplayExtentSource::Inherited);
@@ -6976,6 +8422,75 @@ mod tests {
         assert_eq!(decoded[2].edge_ids, vec![26, 27, 28]);
         assert_eq!(decoded[2].geometry_extent, ReplayExtentSource::Explicit);
         assert_eq!(decoded[2].edge_extent, ReplayExtentSource::Inherited);
+    }
+
+    #[test]
+    fn positional_round_replay_uses_repeated_row_id_suffix() {
+        let rows = [
+            unanchored_replay_row(1, 40, None, &[0xf8, 2, 10, 11, 0xf8, 2, 20, 21]),
+            unanchored_replay_row(2, 41, None, &[12, 13, 22, 23]),
+        ];
+
+        let decoded = replay_affected_ids(&rows);
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
+        assert_eq!(decoded[0].edge_ids, vec![20, 21]);
+        assert_eq!(decoded[1].geometry_ids, vec![12, 13]);
+        assert_eq!(decoded[1].edge_ids, vec![22, 23]);
+        assert_eq!(decoded[1].geometry_extent, ReplayExtentSource::Inherited);
+        assert_eq!(decoded[1].edge_extent, ReplayExtentSource::Inherited);
+    }
+
+    #[test]
+    fn positional_chamfer_replay_uses_referenced_row_id_suffix() {
+        let mut row = unanchored_replay_row(1, 40, Some(74), &[0xf8, 2, 10, 11, 0xf8, 2, 20, 21]);
+        row.root_schema_class = Some(914);
+
+        let decoded = replay_affected_ids(&[row]);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
+        assert_eq!(decoded[0].edge_ids, vec![20, 21]);
+    }
+
+    #[test]
+    fn positional_round_replay_uses_final_explicit_arrays_before_row_suffix() {
+        let mut row = unanchored_replay_row(
+            1,
+            40,
+            None,
+            &[
+                0xf8, 3, 1, 2, 3, 0xf1, 0xf7, 54, 1, 0xe3, 0xf7, 0x80, 0x97, 0xf8, 2, 10, 11, 0xf1,
+                0xf7, 56,
+            ],
+        );
+        row.body.splice(1..1, [0xf8, 4, 30, 31, 32, 33]);
+
+        let decoded = replay_affected_ids(&[row]);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].geometry_ids, vec![1, 2, 3]);
+        assert_eq!(decoded[0].edge_ids, vec![10, 11]);
+        assert_eq!(decoded[0].geometry_extent, ReplayExtentSource::Explicit);
+        assert_eq!(decoded[0].edge_extent, ReplayExtentSource::Explicit);
+    }
+
+    #[test]
+    fn positional_round_replay_accepts_null_row_tail() {
+        let mut row = unanchored_replay_row(
+            1,
+            40,
+            Some(74),
+            &[0xf8, 2, 10, 11, 0xf0, 0xf7, 75, 0xf8, 2, 20, 21],
+        );
+        *row.body.last_mut().expect("suffix tail") = 0xe1;
+
+        let decoded = replay_affected_ids(&[row]);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].geometry_ids, vec![10, 11]);
+        assert_eq!(decoded[0].edge_ids, vec![20, 21]);
     }
 
     #[test]
@@ -7098,6 +8613,8 @@ mod tests {
                     entity_id: index as u32 + 1,
                     class_id: 200,
                     source_entity_id: Some(*source_id),
+                    related_entity_id: None,
+                    related_entity_state: None,
                     prefixed: true,
                     offset: index,
                     end_offset: index + 1,
@@ -7123,6 +8640,57 @@ mod tests {
     }
 
     #[test]
+    fn binds_replay_owner_from_exact_trimmed_entity_set() {
+        let mut definition = pending_trimmed_definition(&[9, 10, 11, 12]);
+        definition.id = 0;
+        definition.order_table = pending_replay(&[10, 11, 12]).order_table;
+        let mut definitions = [definition];
+        bind_replay_definition_owners(
+            &mut definitions,
+            &[
+                generated_entity_table(42, &[12, 11, 10, 9]),
+                generated_entity_table(43, &[10]),
+            ],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(definitions[0].id, 42);
+        assert_eq!(definitions[0].owner_feature_id, Some(42));
+    }
+
+    #[test]
+    fn falls_back_to_replay_order_when_trimmed_entities_do_not_join() {
+        let mut definition = pending_trimmed_definition(&[9, 10]);
+        definition.id = 0;
+        definition.order_table = pending_replay(&[10, 11, 12]).order_table;
+        let mut definitions = [definition];
+        bind_replay_definition_owners(
+            &mut definitions,
+            &[generated_entity_table(42, &[10, 12])],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(definitions[0].id, 42);
+        assert_eq!(definitions[0].owner_feature_id, Some(42));
+    }
+
+    #[test]
+    fn falls_back_to_replay_order_for_duplicate_trimmed_entity_ids() {
+        let mut definition = pending_trimmed_definition(&[9, 9]);
+        definition.id = 0;
+        definition.order_table = pending_replay(&[9]).order_table;
+        let mut definitions = [definition];
+        bind_replay_definition_owners(
+            &mut definitions,
+            &[generated_entity_table(42, &[9])],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(definitions[0].id, 42);
+        assert_eq!(definitions[0].owner_feature_id, Some(42));
+    }
+
+    #[test]
     fn binds_saved_section_owner_from_exact_trimmed_entity_set() {
         let mut definitions = [pending_trimmed_definition(&[9, 10, 11, 14, 21])];
         bind_trimmed_definition_owners(
@@ -7135,7 +8703,7 @@ mod tests {
     }
 
     #[test]
-    fn withholds_saved_section_owner_for_partial_or_reused_entity_sets() {
+    fn withholds_saved_section_owner_for_partial_reused_or_duplicate_entity_sets() {
         let mut partial = [pending_trimmed_definition(&[9, 10, 11])];
         bind_trimmed_definition_owners(&mut partial, &[generated_entity_table(667, &[9, 10])]);
         assert_eq!(partial[0].owner_feature_id, None);
@@ -7148,6 +8716,10 @@ mod tests {
         assert!(reused
             .iter()
             .all(|definition| definition.owner_feature_id.is_none()));
+
+        let mut duplicate = [pending_trimmed_definition(&[9, 9])];
+        bind_trimmed_definition_owners(&mut duplicate, &[generated_entity_table(667, &[9])]);
+        assert_eq!(duplicate[0].owner_feature_id, None);
     }
 
     #[test]
@@ -7188,6 +8760,20 @@ mod tests {
             &BTreeSet::from([42]),
         );
         assert_eq!(claimed[0].owner_feature_id, None);
+
+        let mut exact_ambiguous = pending_trimmed_definition(&[9, 10]);
+        exact_ambiguous.id = 0;
+        exact_ambiguous.order_table = pending_replay(&[9]).order_table;
+        let mut exact_ambiguous = [exact_ambiguous];
+        bind_replay_definition_owners(
+            &mut exact_ambiguous,
+            &[
+                generated_entity_table(42, &[9, 10]),
+                generated_entity_table(43, &[10, 9]),
+            ],
+            &BTreeSet::new(),
+        );
+        assert_eq!(exact_ambiguous[0].owner_feature_id, None);
     }
 
     fn operation(
@@ -7416,7 +9002,7 @@ mod tests {
     #[test]
     fn positional_saved_section_replays_its_segment_table() {
         let mut payload = b"feat_defs_917\0template\0\xe0\x01feat_id\0\x2a\
-            \xe0\x00ref_model_info\0\xe3S2D0004\0\xf8\x02\xf7\x01\xfb\xe2\
+            \xe0\x00ref_model_info\0\xe3S2D0004\0\xf8\x03\xf7\x01\xfb\xe2\
             \xf2\xf7\x01\xe2"
             .to_vec();
         payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
@@ -7425,7 +9011,8 @@ mod tests {
         let decoded = definitions(&payload);
         let segments = decoded[1].segments.as_ref().expect("positional segtab");
 
-        assert_eq!(segments.declared_count, 2);
+        assert_eq!(segments.declared_count, 3);
+        assert!(segments.has_elided_prototype);
         assert_eq!(segments.entity_ref, Some(1));
         assert_eq!(segments.rows.len(), 2);
         assert!(segments.is_complete());
@@ -7447,10 +9034,42 @@ mod tests {
             .expect("first positional segment table");
 
         assert_eq!(segments.declared_count, 3);
+        assert!(segments.has_elided_prototype);
         assert_eq!(segments.rows.len(), 2);
-        assert!(!segments.is_complete());
-        assert!(segments.segment(42).is_none());
+        assert!(segments.is_complete());
+        assert_eq!(segments.segment(42), Some(&segments.rows[0]));
         assert_eq!(segments.rows[0].external_id, 42);
+        assert_eq!(segments.rows[1].external_id, 43);
+    }
+
+    #[test]
+    fn positional_segment_extent_excludes_rows_after_the_declared_extent() {
+        let mut payload = b"\xe3S2D0004\0\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+        payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
+
+        let segments =
+            positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
+
+        assert!(segments.has_elided_prototype);
+        assert_eq!(segments.rows.len(), 1);
+        assert_eq!(segments.rows[0].external_id, 42);
+        assert!(segments.is_complete());
+    }
+
+    #[test]
+    fn positional_segment_rows_follow_variable_structural_trailers() {
+        let mut payload = b"\xe3S2D0004\0\xf8\x03\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]);
+        payload.extend_from_slice(&[0xe3, 0xe2, 0x81, 0x18, 0x07, 0xe2]);
+        payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
+
+        let segments =
+            positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
+
+        assert!(segments.is_complete());
+        assert_eq!(segments.rows.len(), 2);
+        assert_eq!(segments.rows[1].kind, FeatureSegmentKind::Arc);
         assert_eq!(segments.rows[1].external_id, 43);
     }
 
@@ -7464,7 +9083,7 @@ mod tests {
         assert!(!segments.is_complete());
 
         let positional = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
-        let segments = segment_table_body(positional, 0, 0, positional.len())
+        let segments = segment_table_body(positional, 0, 0, positional.len(), false)
             .expect("positional segtab header");
         assert_eq!(segments.declared_count, 2);
         assert_eq!(segments.entity_ref, Some(1));
@@ -7473,7 +9092,14 @@ mod tests {
     }
 
     #[test]
-    fn segment_tables_retain_fully_framed_opaque_families() {
+    fn segment_table_prototype_close_requires_the_header_class() {
+        let payload = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x02\xe2";
+
+        assert!(segment_table_body(payload, 0, 0, payload.len(), true).is_none());
+    }
+
+    #[test]
+    fn segment_tables_type_section_reference_lines() {
         let mut payload = b"segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2\
             type\0\xc0\x80\x01dir\0\xf8\x03\x00\xe5\xe4\
             pointid\0\xf8\x02\xf6\xe4cntrid\0\x00arcorient\0\x00\
@@ -7486,23 +9112,216 @@ mod tests {
 
         assert!(segments.is_complete());
         assert!(segments.rows.is_empty());
-        assert_eq!(segments.opaque_rows.len(), 2);
-        assert_eq!(segments.opaque_rows[0].kind, 1);
-        assert_eq!(segments.opaque_rows[0].point_ids, [None, Some(1)]);
-        assert_eq!(segments.opaque_rows[0].external_id, 4);
-        assert_eq!(segments.opaque_rows[1].kind, 25);
-        assert_eq!(segments.opaque_rows[1].point_ids, [Some(10), Some(11)]);
-        assert_eq!(segments.opaque_rows[1].external_id, 1);
+        assert_eq!(segments.point_rows.len(), 1);
+        assert_eq!(segments.point_rows[0].point_id, 0);
+        assert_eq!(segments.point_rows[0].external_id, 4);
+        assert!(segments.opaque_rows.is_empty());
+        let [reference] = segments.reference_line_rows.as_slice() else {
+            panic!("one reference line");
+        };
+        assert_eq!(reference.directions, [Some(0), Some(1), Some(0)]);
+        assert_eq!(reference.point_ids, [Some(10), Some(11)]);
+        assert_eq!(reference.vertical_horizontal, Some(0));
+        assert_eq!(reference.external_id, 1);
 
         let malformed_known = [
             0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 2, 0, 1, 0, 10, 0xf6, 0xf6, 0, 0,
             0xf6, 0xf6, 1, 0xe2,
         ];
-        let segments = segment_table_body(&malformed_known, 0, 0, malformed_known.len())
+        let segments = segment_table_body(&malformed_known, 0, 0, malformed_known.len(), false)
             .expect("malformed known segment table");
         assert!(!segments.is_complete());
         assert!(segments.rows.is_empty());
         assert!(segments.opaque_rows.is_empty());
+    }
+
+    #[test]
+    fn segment_tables_type_bounded_section_curves() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 12, 0, 0, 0, 2, 3, 0xf6, 1, 0, 2,
+            0xf6, 22, 0xe2,
+        ];
+
+        let segments = segment_table_body(&payload, 0, 0, payload.len(), false)
+            .expect("bounded curve segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.bounded_curve_rows,
+            vec![FeatureBoundedCurveSegment {
+                directions: [Some(0); 3],
+                point_ids: [2, 3],
+                center_id: None,
+                arc_orientation: Some(1),
+                vertical_horizontal: Some(0),
+                radius_ref: Some(2),
+                radius2_ref: None,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+
+        let mut missing_endpoint = payload;
+        missing_endpoint[14] = 0xf6;
+        let segments = segment_table_body(&missing_endpoint, 0, 0, missing_endpoint.len(), false)
+            .expect("incomplete bounded curve segment table");
+        assert!(segments.is_complete());
+        assert!(segments.bounded_curve_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 12);
+    }
+
+    #[test]
+    fn segment_tables_type_complete_circle_rows() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 10, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1,
+            0xf6, 22, 0xe2,
+        ];
+
+        let segments =
+            segment_table_body(&payload, 0, 0, payload.len(), false).expect("circle segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.rows.is_empty());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.circle_rows,
+            vec![FeatureCircleSegment {
+                center_id: 2,
+                radius_ref: 1,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+
+        let mut malformed = payload;
+        malformed[11] = 1;
+        let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
+            .expect("noncanonical circle segment table");
+        assert!(segments.is_complete());
+        assert!(segments.circle_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 10);
+    }
+
+    #[test]
+    fn segment_tables_type_saved_conic_rows() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 58, 0, 0, 0, 0xf6, 1, 4, 0, 2, 0, 1,
+            120, 0xe2,
+        ];
+
+        let segments =
+            segment_table_body(&payload, 0, 0, payload.len(), false).expect("conic segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.conic_rows,
+            vec![FeatureConicSegment {
+                center_id: 4,
+                first_coefficient_ref: 0,
+                second_coefficient_ref: 1,
+                external_id: 120,
+                offset: 10,
+            }]
+        );
+
+        let mut malformed = payload;
+        malformed[18] = 0;
+        let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
+            .expect("noncanonical conic segment table");
+        assert!(segments.is_complete());
+        assert!(segments.conic_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 58);
+    }
+
+    #[test]
+    fn segment_tables_type_complete_point_rows() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 1, 0, 0, 0, 0xf6, 1, 2, 0, 0, 0xf6,
+            0xf6, 22, 0xe2,
+        ];
+
+        let segments =
+            segment_table_body(&payload, 0, 0, payload.len(), false).expect("point segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.rows.is_empty());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.point_rows,
+            vec![FeaturePointSegment {
+                point_id: 2,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+
+        let mut malformed = payload;
+        malformed[19] = 1;
+        let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
+            .expect("noncanonical point segment table");
+        assert!(segments.is_complete());
+        assert!(segments.point_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 1);
+    }
+
+    #[test]
+    fn segment_tables_type_complete_centered_line_rows() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 47, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1,
+            0xf6, 22, 0xe2,
+        ];
+
+        let segments = segment_table_body(&payload, 0, 0, payload.len(), false)
+            .expect("centered line segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.rows.is_empty());
+        assert!(segments.opaque_rows.is_empty());
+        assert_eq!(
+            segments.centered_line_rows,
+            vec![FeatureCenteredLineSegment {
+                center_id: 2,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+
+        let mut other_type_47 = payload;
+        other_type_47[16] = 0;
+        let segments = segment_table_body(&other_type_47, 0, 0, other_type_47.len(), false)
+            .expect("other type-47 segment table");
+        assert!(segments.is_complete());
+        assert_eq!(
+            segments.centered_line_rows,
+            vec![FeatureCenteredLineSegment {
+                center_id: 0,
+                external_id: 22,
+                offset: 10,
+            }]
+        );
+        assert!(segments.opaque_rows.is_empty());
+
+        let mut missing_construction_ref = payload;
+        missing_construction_ref[19] = 0xf6;
+        let segments = segment_table_body(
+            &missing_construction_ref,
+            0,
+            0,
+            missing_construction_ref.len(),
+            false,
+        )
+        .expect("incomplete centered-line segment table");
+        assert!(segments.is_complete());
+        assert!(segments.centered_line_rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 1);
+        assert_eq!(segments.opaque_rows[0].kind, 47);
+        assert_eq!(segments.opaque_rows[0].body, missing_construction_ref[10..]);
     }
 
     #[test]
@@ -7512,7 +9331,8 @@ mod tests {
             0xf6, 3, 0, 0xe6, 0xe2,
         ];
 
-        let segments = segment_table_body(&payload, 0, 0, payload.len()).expect("segment table");
+        let segments =
+            segment_table_body(&payload, 0, 0, payload.len(), false).expect("segment table");
 
         assert!(segments.is_complete());
         assert_eq!(segments.rows.len(), 1);
@@ -7520,6 +9340,11 @@ mod tests {
         assert_eq!(segments.rows[0].directions, [Some(0), Some(0), Some(1)]);
         assert_eq!(segments.rows[0].point_ids, [9, 11]);
         assert_eq!(segments.rows[0].external_id, 0);
+        assert_eq!(
+            segments.rows[0].body,
+            payload[10..],
+            "the retained body includes the optional type wrapper and row close"
+        );
     }
 
     #[test]
@@ -7537,8 +9362,17 @@ mod tests {
         assert_eq!(dimensions.entity_ref, Some(88));
         assert_eq!(dimensions.rows.len(), 2);
         assert_eq!(dimensions.rows[0].value, Some(3.0));
+        assert_eq!(
+            dimensions.rows[0].value_body,
+            [0x46, 0x08, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(dimensions.rows[0].auxiliary_body, [0x18]);
         assert_eq!(dimensions.rows[0].external_id, 43);
         assert_eq!(dimensions.rows[1].dimension_type, 10);
+        assert_eq!(
+            dimensions.rows[1].value_body,
+            [0x60, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f]
+        );
         assert_eq!(dimensions.rows[1].external_id, 44);
     }
 
@@ -7604,6 +9438,8 @@ mod tests {
             dimensions.rows[1].unresolved_value_token.as_deref(),
             Some(&[0x00, 0x04, 0xa6][..])
         );
+        assert_eq!(dimensions.rows[1].value_body, [0x00, 0x04, 0xa6]);
+        assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
         assert_eq!(dimensions.rows[1].external_id, 44);
         assert_eq!(dimensions.rows[2].value, Some(-1.0));
         assert_eq!(dimensions.rows[2].external_id, 45);
@@ -7628,6 +9464,8 @@ mod tests {
         );
         assert_eq!(positive_row.direction_byte, 0);
         assert_eq!(positive_row.auxiliary_value, Some(0.0));
+        assert_eq!(positive_row.value_body, positive[1..8]);
+        assert_eq!(positive_row.auxiliary_body, [0x18]);
         assert_eq!(positive_row.external_id, 46);
         for (body, external_id, token) in [
             (&opaque_three[..], 47, &[0x00, 0x04, 0xa6][..]),
@@ -7742,12 +9580,42 @@ mod tests {
         assert_eq!(variables.entity_ref, Some(119));
         assert_eq!(variables.rows.len(), 2);
         assert!(variables.is_complete());
+        assert_eq!(variables.rows[0].value_body, [0x18]);
+        assert_eq!(variables.rows[0].guess_body, [0x18]);
+        assert_eq!(variables.rows[0].guess, Some(0.0));
+        assert_eq!(variables.rows[0].known, Some(1));
+        assert_eq!(variables.rows[0].homogeneity, Some(0));
         assert_eq!(variables.rows[0].uvar_id, Some(9));
+        assert_eq!(variables.rows[1].guess, Some(0.0));
+        assert_eq!(variables.rows[1].known, Some(1));
+        assert_eq!(variables.rows[1].homogeneity, Some(0));
         assert_eq!(variables.rows[1].uvar_id, Some(10));
         assert_eq!(variables.points.len(), 1);
         assert_eq!(variables.points[0].point_id, 7);
         assert_eq!(variables.points[0].u, Some(0.0));
         assert_eq!(variables.points[0].v, Some(0.0));
+    }
+
+    #[test]
+    fn positional_variable_guess_zero_preserves_compact_trailing_fields_at_table_boundary() {
+        let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
+            \x07\x00\x18\x18\x01\x01\x0f\xf1\xf7\x77\xe2\
+            \x07\x01\x18\x18\x00\x01\x07\xf2next_table\0";
+        let cache = scalar::ScalarCache::from_section(payload);
+
+        let variables = positional_variable_table(payload, 0, payload.len(), 119, &cache)
+            .expect("positional var_arr");
+
+        assert!(variables.is_complete());
+        assert_eq!(variables.rows.len(), 2);
+        assert_eq!(variables.rows[0].guess, Some(0.0));
+        assert_eq!(variables.rows[0].known, Some(1));
+        assert_eq!(variables.rows[0].homogeneity, Some(1));
+        assert_eq!(variables.rows[0].uvar_id, Some(15));
+        assert_eq!(variables.rows[1].guess, Some(0.0));
+        assert_eq!(variables.rows[1].known, Some(0));
+        assert_eq!(variables.rows[1].homogeneity, Some(1));
+        assert_eq!(variables.rows[1].uvar_id, Some(7));
     }
 
     #[test]
@@ -7779,7 +9647,10 @@ mod tests {
             variable_type,
             key: 7,
             value: Some(value),
+            value_body: Vec::new(),
             guess: None,
+            guess_body: Vec::new(),
+            guess_dimension_driven: false,
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -7806,7 +9677,10 @@ mod tests {
             variable_type,
             key,
             value: Some(value),
+            value_body: Vec::new(),
             guess: None,
+            guess_body: Vec::new(),
+            guess_dimension_driven: false,
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -7965,7 +9839,7 @@ mod tests {
         let payload = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
             \x06\x03\xf1\xf7\x60\xe2\x07\x02\xf3\xf7\x58\xe2\
-            \x02\x01\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
+            \x02\x01\xea\x22\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
 
         let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
 
@@ -7976,6 +9850,8 @@ mod tests {
         assert_eq!(skamps[0].items[0].entity_id, 6);
         assert_eq!(skamps[0].items[1].sense, 2);
         assert_eq!(skamps[1].kind, 1);
+        assert_eq!(skamps[1].flags, 34);
+        assert_eq!(skamps[1].status, 35);
         assert_eq!(skamps[1].items[0].entity_id, 8);
     }
 
@@ -8019,6 +9895,59 @@ mod tests {
         let rows = feature_relation_triples(triples, 0, triples.len());
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].relation_id, Some(7));
+    }
+
+    #[test]
+    fn positional_definition_preserves_its_named_solver_tables() {
+        let solver_tables = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+            \xf3\xf7\x6b\xe2\
+            triples_ptr\0\xf4\x04\xf8\x01\xf7\x6d\xfb\xe2\
+            \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\
+            \xe0\x01skamp_id\0\x05\xf1\xf7\x6d\xe2";
+        let mut payload =
+            b"relat_ptr\0\xf4\x04\xf8\x02\xf7\x6a\xfb\xe2schema\xf1\xf7\x6a\xe2".to_vec();
+        payload.extend_from_slice(solver_tables);
+        let positional_start = payload.len();
+        payload.extend_from_slice(solver_tables);
+        payload.extend_from_slice(b"\xf8\x02\xf7\x6a\xfb\xe2");
+        let prototype_offset = payload.len() + 3;
+        assert!((128..=16_383).contains(&prototype_offset));
+        payload.extend_from_slice(&[
+            psb::token::ENTITY_REF,
+            0x80 + u8::try_from(prototype_offset >> 8).expect("prototype offset high byte"),
+            u8::try_from(prototype_offset & 0xff).expect("prototype offset low byte"),
+        ]);
+        payload.extend_from_slice(b"\xf1\xf7\x6a\xe2");
+
+        let definitions = definitions_in_ranges(
+            &payload,
+            &[(0, 1, None, false), (positional_start, 2, None, true)],
+        );
+        let relations = definitions[1].relations.as_ref().expect("relations");
+
+        assert_eq!(relations.skamps.len(), 1);
+        assert_eq!(relations.skamps[0].id, 5);
+        assert_eq!(
+            relations
+                .skamp_header
+                .as_ref()
+                .expect("skamp header")
+                .declared_count,
+            1
+        );
+        assert_eq!(relations.triples.len(), 1);
+        assert_eq!(relations.triples[0].relation_id, Some(7));
+        assert_eq!(
+            relations
+                .triples_header
+                .as_ref()
+                .expect("triples header")
+                .declared_count,
+            1
+        );
     }
 
     #[test]
@@ -8270,15 +10199,23 @@ mod tests {
             radius_ref: None,
             radius2_ref: None,
             external_id,
+            body: Vec::new(),
             offset: 0,
         };
         let segments = FeatureSegmentTable {
             declared_count: 2,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![
                 segment(FeatureSegmentKind::Line, [1, 2], 9),
                 segment(FeatureSegmentKind::Arc, [2, 3], 10),
             ],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -8323,7 +10260,10 @@ mod tests {
             variable_type,
             key: 2,
             value: Some(value),
+            value_body: Vec::new(),
             guess: None,
+            guess_body: Vec::new(),
+            guess_dimension_driven: false,
             known: None,
             homogeneity: None,
             uvar_id: None,
@@ -8488,6 +10428,8 @@ mod tests {
                 [0x80, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
                 1.334_018_271_988_806_7,
             ),
+            ([0x7f, 0xa3, 0xd7, 0x0a, 0x3d, 0x70, 0xa4], 1.29),
+            ([0xc7, 0xa3, 0xd7, 0x0a, 0x3d, 0x70, 0xa4], -1.29),
             (
                 [0xc8, 0x58, 0x23, 0x8b, 0x27, 0x55, 0x6f],
                 -1.334_018_271_988_806_7,
@@ -8511,6 +10453,66 @@ mod tests {
         assert_eq!(value, Some(-0.395_669_107_559_015_74));
         assert_eq!(next, bytes.len());
         assert!(!dimension_driven);
+    }
+
+    #[test]
+    fn decodes_var_arr_positive_subunit_form() {
+        let bytes = [0x4f, 0xdf, 0x46, 0xa2, 0x52, 0x96, 0xd1];
+        let (value, next, dimension_driven) =
+            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+
+        assert_eq!(value, Some(0.488_686_161_664_432_46));
+        assert_eq!(next, bytes.len());
+        assert!(!dimension_driven);
+    }
+
+    #[test]
+    fn variable_row_bounds_an_unresolved_guess_from_its_fixed_suffix() {
+        let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
+            \x00\x41\x18\x20\x96\x61\x01\x01\x82\x06\xe2";
+        let variables = variable_table(payload, 0, payload.len(), &scalar::ScalarCache::default())
+            .expect("variable table");
+        let [row] = variables.rows.as_slice() else {
+            panic!("one structurally complete variable row");
+        };
+
+        assert!(variables.is_complete());
+        assert_eq!(row.variable_type, 0);
+        assert_eq!(row.key, 65);
+        assert_eq!(row.value, Some(0.0));
+        assert_eq!(row.value_body, [0x18]);
+        assert_eq!(row.guess, None);
+        assert_eq!(row.guess_body, [0x20, 0x96, 0x61]);
+        assert_eq!(row.known, Some(1));
+        assert_eq!(row.homogeneity, Some(1));
+        assert_eq!(row.uvar_id, Some(518));
+    }
+
+    #[test]
+    fn variable_row_classifies_value_and_guess_sentinels_independently() {
+        let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
+            \x01\x07\xed\x01\x02\x03\x04\x05\x06\x07\x08\
+            \xed\x11\x12\x13\x14\x15\x16\x17\x18\x01\x01\x09\xe2";
+        let variables = variable_table(payload, 0, payload.len(), &scalar::ScalarCache::default())
+            .expect("variable table");
+        let [row] = variables.rows.as_slice() else {
+            panic!("one structurally complete variable row");
+        };
+
+        assert!(variables.is_complete());
+        assert_eq!(
+            row.value_body,
+            [0xed, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+        );
+        assert!(row.dimension_driven);
+        assert_eq!(
+            row.guess_body,
+            [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
+        );
+        assert!(row.guess_dimension_driven);
+        assert_eq!(row.known, Some(1));
+        assert_eq!(row.homogeneity, Some(1));
+        assert_eq!(row.uvar_id, Some(9));
     }
 
     #[test]
@@ -8545,19 +10547,32 @@ mod tests {
     #[test]
     fn decodes_var_arr_positional_dict_lattice() {
         for (bytes, head) in [
+            ([0x51, 1, 2, 3, 4, 5, 6], [0x3f, 0xc6]),
             ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0x69, 1, 2, 3, 4, 5, 6], [0x3f, 0xde]),
             ([0x9c, 1, 2, 3, 4, 5, 6], [0x40, 0x11]),
             ([0x9d, 1, 2, 3, 4, 5, 6], [0x40, 0x12]),
             ([0x9f, 1, 2, 3, 4, 5, 6], [0x40, 0x14]),
             ([0xa0, 1, 2, 3, 4, 5, 6], [0x40, 0x15]),
+            ([0xa7, 1, 2, 3, 4, 5, 6], [0xbf, 0xd3]),
+            ([0xaa, 1, 2, 3, 4, 5, 6], [0xbf, 0xd6]),
+            ([0xae, 1, 2, 3, 4, 5, 6], [0xbf, 0xda]),
             ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0xb3, 1, 2, 3, 4, 5, 6], [0xbf, 0xe0]),
+            ([0xbd, 1, 2, 3, 4, 5, 6], [0xbf, 0xea]),
+            ([0xc3, 1, 2, 3, 4, 5, 6], [0xbf, 0xf0]),
+            ([0xc9, 1, 2, 3, 4, 5, 6], [0xbf, 0xf6]),
+            ([0xca, 1, 2, 3, 4, 5, 6], [0xbf, 0xf7]),
             ([0xcb, 1, 2, 3, 4, 5, 6], [0xbf, 0xf8]),
             ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
+            ([0xcd, 1, 2, 3, 4, 5, 6], [0xbf, 0xfa]),
+            ([0xce, 1, 2, 3, 4, 5, 6], [0xbf, 0xfb]),
             ([0xd0, 1, 2, 3, 4, 5, 6], [0xbf, 0xfe]),
             ([0xd2, 1, 2, 3, 4, 5, 6], [0xc0, 0x00]),
+            ([0xd4, 1, 2, 3, 4, 5, 6], [0xc0, 0x02]),
             ([0xd6, 1, 2, 3, 4, 5, 6], [0xc0, 0x04]),
+            ([0xd8, 1, 2, 3, 4, 5, 6], [0xc0, 0x06]),
+            ([0xda, 1, 2, 3, 4, 5, 6], [0xc0, 0x08]),
         ] {
             let (value, next, dimension_driven) =
                 decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
@@ -8579,6 +10594,44 @@ mod tests {
                 false,
             )
         );
+        for prefix in [0x19, 0x32, 0x37, 0x41] {
+            let bytes = [prefix, 1, 2, 3, 4, 5, 6, 7];
+            assert_eq!(
+                decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+                (
+                    Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+                    bytes.len(),
+                    false,
+                )
+            );
+        }
+        assert_eq!(
+            decode_section_coordinate_scalar(
+                &[0x34, 0xd0, 0x00],
+                0,
+                3,
+                &scalar::ScalarCache::default()
+            ),
+            (None, 3, false)
+        );
+        assert_eq!(
+            decode_section_coordinate_scalar(
+                &[0x00, 0x04, 0xa6],
+                0,
+                3,
+                &scalar::ScalarCache::default()
+            ),
+            (None, 3, false)
+        );
+        assert_eq!(
+            decode_section_coordinate_scalar(
+                &[0x01, 0x04, 0xfe, 0xf2],
+                0,
+                4,
+                &scalar::ScalarCache::default()
+            ),
+            (None, 4, false)
+        );
     }
 
     #[test]
@@ -8596,6 +10649,8 @@ mod tests {
         assert_eq!(line.entity_id, 5);
         assert_eq!(line.references, [42, 43]);
         assert_eq!(line.endpoints, [[Some(8.0); 3]; 2]);
+        let body_start = b"\xe0\0entity(line)\0".len();
+        assert_eq!(line.body, payload[body_start..payload.len() - 1]);
     }
 
     #[test]
@@ -8613,6 +10668,8 @@ mod tests {
                 [Some(8.0), Some(8.0), Some(8.0)]
             ]
         );
+        let body_start = b"\xe0\0entity(line)\0".len();
+        assert_eq!(line.body, payload[body_start..payload.len() - 1]);
     }
 
     #[test]
@@ -8658,6 +10715,13 @@ mod tests {
         };
         assert_eq!(line.entity_id, 3);
         assert_eq!(line.references, [196]);
+        let body_start = b"\xe0\0entity(line)\0".len();
+        let body_end = payload[body_start..]
+            .windows(b"\xe0\0entity(point)\0".len())
+            .position(|window| window == b"\xe0\0entity(point)\0")
+            .map(|relative| body_start + relative)
+            .expect("point boundary");
+        assert_eq!(line.body, payload[body_start..body_end]);
     }
 
     #[test]
@@ -8856,9 +10920,46 @@ mod tests {
         assert_eq!(arc.radius, None);
         assert_eq!(arc.endpoints, [[None; 3]; 2]);
         assert_eq!(arc.parameters, [None; 2]);
+        let arc_body_start = b"\xe0\x00entity(arc)\0".len();
+        let circle_label = b"\xe0\x00entity(circle)\0";
+        let circle_offset = payload
+            .windows(circle_label.len())
+            .position(|window| window == circle_label)
+            .expect("circle boundary");
+        assert_eq!(arc.body, payload[arc_body_start..circle_offset]);
         assert_eq!(circle.entity_id, 8);
         assert_eq!(circle.center, [None; 3]);
         assert_eq!(circle.radius, Some(0.0));
+        assert_eq!(circle.body, payload[circle_offset + circle_label.len()..]);
+    }
+
+    #[test]
+    fn saved_conic_retains_coefficients_parameters_and_planar_frame() {
+        let payload = b"\xe0\x00entity(conic)\0\
+            \xe0\x01id\0\x02\xe0\x01type\0\x3a\
+            \xe0\x02end1\0\xf8\x03\x18\xe5\
+            \xe0\x02end2\0\xf8\x03\x18\xe5\
+            \xe0\x02t0\0\x0f\xe0\x02t1\0\xf6\
+            \xe0\x02c1\0\xe4\xe0\x02c2\0\xe4\
+            \xe0\x02local_sys\0\xf9\x04\x03\
+            \xe4\x0f\x0f\x0f\xe4\x18\xe5\x0f\x0f\x0f\x0f\
+            \xe0\x01trailing_field\0\x07";
+
+        let entities =
+            saved_conic_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+        let [FeatureSavedEntity::Conic(conic)] = entities.as_slice() else {
+            panic!("one saved conic");
+        };
+
+        assert_eq!(conic.entity_id, 2);
+        assert_eq!(conic.endpoints, [[Some(0.0), Some(1.0), Some(0.0)]; 2]);
+        assert_eq!(conic.parameters, [Some(0.0), None]);
+        assert_eq!(conic.coefficients, [Some(1.0); 2]);
+        assert_eq!(
+            conic.local_system,
+            Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(conic.body, payload[b"\xe0\x00entity(conic)\0".len()..]);
     }
 
     #[test]
@@ -8880,6 +10981,7 @@ mod tests {
         };
         let segments = FeatureSegmentTable {
             declared_count: 1,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![FeatureSegment {
                 kind: FeatureSegmentKind::Arc,
@@ -8891,8 +10993,15 @@ mod tests {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id: 42,
+                body: Vec::new(),
                 offset: 0,
             }],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -8913,6 +11022,7 @@ mod tests {
         assert_eq!(arc.entity_id, 7);
         assert_eq!(arc.center, [Some(0.0); 3]);
         assert_eq!(arc.radius, Some(0.0));
+        assert_eq!(arc.body, payload[1..payload.len() - 1]);
         let section = positional_saved_section(
             &payload,
             0,
@@ -8924,6 +11034,28 @@ mod tests {
         .expect("positional saved section");
         assert_eq!(section.entities.len(), 1);
         assert_eq!(section.offset, 1);
+
+        let named_prefix = b"\xe0\x00entity(arc)\0\xe0\x01id\0\x09";
+        let mut named_payload = named_prefix.to_vec();
+        named_payload.extend_from_slice(&payload);
+        let named_entities = saved_circular_entities(
+            &named_payload,
+            0,
+            named_payload.len(),
+            &scalar::ScalarCache::default(),
+            Some(&order),
+            Some(&segments),
+        );
+        let [FeatureSavedEntity::Arc(named), FeatureSavedEntity::Arc(replay)] =
+            named_entities.as_slice()
+        else {
+            panic!("named arc and replay");
+        };
+        assert_eq!(
+            named.body, b"\xe0\x01id\0\x09",
+            "named body must stop before the replay separator"
+        );
+        assert_eq!(replay.body, payload[1..payload.len() - 1]);
     }
 
     #[test]
@@ -8945,6 +11077,7 @@ mod tests {
         };
         let segments = FeatureSegmentTable {
             declared_count: 1,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![FeatureSegment {
                 kind: FeatureSegmentKind::Arc,
@@ -8956,8 +11089,15 @@ mod tests {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id: 42,
+                body: Vec::new(),
                 offset: 0,
             }],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -8999,6 +11139,7 @@ mod tests {
         };
         let segments = FeatureSegmentTable {
             declared_count: 1,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![FeatureSegment {
                 kind: FeatureSegmentKind::Line,
@@ -9010,8 +11151,15 @@ mod tests {
                 radius_ref: None,
                 radius2_ref: None,
                 external_id: 43,
+                body: Vec::new(),
                 offset: 0,
             }],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         };
@@ -9032,6 +11180,7 @@ mod tests {
         assert_eq!(line.entity_id, 8);
         assert_eq!(line.endpoints[0], [Some(0.0); 3]);
         assert_eq!(line.endpoints[1], [Some(1.0), Some(0.0), Some(0.0)]);
+        assert_eq!(line.body, payload[1..payload.len() - 1]);
     }
 
     #[test]
@@ -9134,10 +11283,22 @@ mod tests {
             [[1.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
         );
         assert_eq!(
+            spline.interpolation_points_body,
+            b"\xf9\x02\x03\xe4\x0f\x0d\x0f\xe4\x0f"
+        );
+        assert_eq!(
             spline.endpoint_tangents,
             Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
         );
+        assert_eq!(
+            spline.endpoint_tangents_body.as_deref(),
+            Some(b"\xf9\x02\x03\xe4\x0f\x0f\xe4\x0f\x0f".as_slice())
+        );
         assert_eq!(spline.parameters, Some(vec![0.0, 1.0]));
+        assert_eq!(
+            spline.parameters_body.as_deref(),
+            Some(b"\xf8\x02\x0f\xe4".as_slice())
+        );
     }
 
     #[test]
@@ -9155,6 +11316,11 @@ mod tests {
         };
         assert_eq!(spline.declared_point_count, Some(136));
         assert_eq!(spline.interpolation_points.len(), 136);
+        assert_eq!(
+            spline.interpolation_points_body,
+            payload
+                [b"\xe0\x00save_entity_ptr(spline)\0\xe3\xe0\x01id\0\x07\xe0\x02i_pnts\0".len()..]
+        );
         assert!(spline
             .interpolation_points
             .iter()
@@ -9177,8 +11343,14 @@ mod tests {
         assert_eq!(spline.entity_id, Some(7));
         assert_eq!(spline.declared_point_count, Some(2));
         assert_eq!(spline.interpolation_points, [[0.0; 3]]);
+        assert_eq!(
+            spline.interpolation_points_body,
+            b"\xf9\x02\x03\x0f\x0f\x0f"
+        );
         assert_eq!(spline.endpoint_tangents, None);
+        assert_eq!(spline.endpoint_tangents_body, None);
         assert_eq!(spline.parameters, None);
+        assert_eq!(spline.parameters_body, None);
     }
 
     #[test]
@@ -9194,6 +11366,22 @@ mod tests {
         assert_eq!(spline.entity_id, Some(7));
         assert_eq!(spline.declared_point_count, None);
         assert!(spline.interpolation_points.is_empty());
+        assert!(spline.interpolation_points_body.is_empty());
+    }
+
+    #[test]
+    fn saved_spline_retains_a_valid_point_wrapper_when_allocation_is_rejected() {
+        let payload = b"\xe0\x00save_entity_ptr(spline)\0\xe3\xe0\x02i_pnts\0\xf9\xbf\xff\x03";
+
+        let entities =
+            saved_spline_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+        let [FeatureSavedEntity::Spline(spline)] = entities.as_slice() else {
+            panic!("saved spline");
+        };
+
+        assert_eq!(spline.declared_point_count, Some(16_383));
+        assert!(spline.interpolation_points.is_empty());
+        assert_eq!(spline.interpolation_points_body, b"\xf9\xbf\xff\x03");
     }
 
     #[test]

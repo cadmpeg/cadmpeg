@@ -746,6 +746,14 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
     }));
+    ir.model.sketch_entities[0].geometry = SketchGeometry::Native {
+        native_kind: "center-bearing-curve".into(),
+    };
+    let report = validate(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint_id.0.as_str())
+            && finding.check == Check::GeometricConsistency
+    }));
 }
 
 #[test]
@@ -1464,6 +1472,95 @@ fn json_round_trips_and_is_deterministic() {
     let parsed = crate::CadIr::from_json(&json1).unwrap();
     assert_eq!(parsed, ir, "round-trip must preserve the document");
     assert_eq!(parsed.to_canonical_json().unwrap(), json1);
+}
+
+#[test]
+fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
+    let feature =
+        crate::features::DatumPlaneReference::Feature(crate::features::FeatureId("feature".into()));
+    assert_eq!(
+        serde_json::to_value(&feature).unwrap(),
+        serde_json::json!("feature")
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::features::DatumPlaneReference>(serde_json::json!(
+            "feature"
+        ))
+        .unwrap(),
+        feature
+    );
+
+    let face = crate::features::DatumPlaneReference::Face {
+        face: crate::features::FaceSelection::Faces(vec![crate::ids::FaceId("face".into())]),
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    assert_eq!(
+        serde_json::from_value::<crate::features::DatumPlaneReference>(
+            serde_json::to_value(&face).unwrap()
+        )
+        .unwrap(),
+        face
+    );
+}
+
+#[test]
+fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
+    use crate::features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, Length};
+
+    let mut ir = unit_cube();
+    let principal = FeatureId("synthetic:test:feature#principal".into());
+    let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
+        id: FeatureId(id.into()),
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        "synthetic:test:feature#offset",
+        0,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(principal.clone())),
+            distance: Length(5.0),
+        },
+    ));
+    ir.model.features.push(feature(
+        principal.0.as_str(),
+        1,
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+    ));
+    ir.finalize();
+
+    let report = validate(&ir, Vec::new());
+    assert!(!report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("datum-plane reference cycle")));
+
+    let offset = ir.model.features[0].id.clone();
+    ir.model.features[1].definition = FeatureDefinition::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Feature(offset)),
+        distance: Length(5.0),
+    };
+    let report = validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("datum-plane reference cycle")));
 }
 
 #[test]
@@ -2288,6 +2385,11 @@ fn sketch_constraint_native_ref_must_resolve() {
             definition: crate::sketches::SketchConstraintDefinition::Native {
                 native_kind: "test".into(),
                 native_state: None,
+                native_flags: Some(0x4000),
+                native_properties: std::collections::BTreeMap::from([(
+                    "mode".to_string(),
+                    "7".to_string(),
+                )]),
                 entities: Vec::new(),
                 parameter: None,
                 operands: vec![crate::sketches::SketchNativeOperand {
@@ -2320,6 +2422,35 @@ fn sketch_constraint_native_ref_must_resolve() {
             && finding.entity.as_deref() == Some(id.0.as_str())
             && finding.message.contains("native:missing-operand#0")
     }));
+    let serialized = serde_json::to_string(&ir).unwrap();
+    let round_trip = CadIr::from_json(&serialized).unwrap();
+    assert!(matches!(
+        round_trip.model.sketch_constraints[0].definition,
+        crate::sketches::SketchConstraintDefinition::Native {
+            native_flags: Some(0x4000),
+            ..
+        }
+    ));
+    let crate::sketches::SketchConstraintDefinition::Native {
+        native_properties, ..
+    } = &round_trip.model.sketch_constraints[0].definition
+    else {
+        unreachable!("test constraint is native")
+    };
+    assert_eq!(native_properties.get("mode").map(String::as_str), Some("7"));
+    let mut legacy = serde_json::from_str::<serde_json::Value>(&serialized).unwrap();
+    legacy["model"]["sketch_constraints"][0]["definition"]
+        .as_object_mut()
+        .unwrap()
+        .remove("native_properties");
+    let legacy = CadIr::from_json(&serde_json::to_string(&legacy).unwrap()).unwrap();
+    let crate::sketches::SketchConstraintDefinition::Native {
+        native_properties, ..
+    } = &legacy.model.sketch_constraints[0].definition
+    else {
+        unreachable!("test constraint is native")
+    };
+    assert!(native_properties.is_empty());
     let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
         &mut ir.model.sketch_constraints[0].definition
     else {

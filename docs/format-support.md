@@ -33,22 +33,22 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 
 ### Current scores
 
-| Codec                                      | Score          | Extras above score                                                                                    |
-| ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
-| FreeCAD `.FCStd` (schema 4, file 1)        | **L9 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                    |
-| Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
-| SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
-| Rhino `.3dm` (archive 50/60/70/80)         | **L9 tested**  |                                                                                                       |
-| CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
-| Siemens NX `.prt` (selected or terminal-lineage-resolved body images) | **L4 claimed** | procedural carriers, topology attributes, external-dependency inspection, named arrangements |
-| Siemens NX `.prt` (unselected multi-partition history) | **L2 claimed** | connected candidate B-reps, external-dependency inspection                              |
-| CATIA V5 `.CATPart` (other layout bands)   | **L1 claimed** |                                                                                                       |
-| Creo Parametric `.prt`                     | **L1 claimed** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features |
-| Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
-| Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
-| STEP Part 21 AP242 editions 1–3            | **L9 tested**  |                                                                                                       |
-| STEP Part 21 AP203 editions 1–2 and AP214  | **L9 tested**  |                                                                                                       |
-| IGES 5.3 Fixed ASCII mechanical/document   | **L8 tested**  | read only                                                                                             |
+| Codec                                                                 | Score          | Extras above score                                                                                    |
+| --------------------------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------- |
+| FreeCAD `.FCStd` (schema 4, file 1)                                   | **L9 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                    |
+| Autodesk Fusion `.f3d`                                                | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
+| SolidWorks `.sldprt`                                                  | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
+| Rhino `.3dm` (archive 50/60/70/80)                                    | **L9 tested**  |                                                                                                       |
+| CATIA V5 `.CATPart` (standard-nested band)                            | **L2 claimed** | conditionally connected B-rep                                                                         |
+| Siemens NX `.prt` (selected or terminal-lineage-resolved body images) | **L4 claimed** | procedural carriers, topology attributes, external-dependency inspection, named arrangements          |
+| Siemens NX `.prt` (unselected multi-partition history)                | **L2 claimed** | connected candidate B-reps, external-dependency inspection                                            |
+| CATIA V5 `.CATPart` (other layout bands)                              | **L1 claimed** |                                                                                                       |
+| Creo Parametric `.prt`                                                | **L1 claimed** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features |
+| Rhino `.3dm` (V3/V4)                                                  | **L1 tested**  | metadata and bounded object-record retention                                                          |
+| Rhino `.3dm` (V1/V2 and archive 5)                                    | **L0 tested**  | header-only inspection; decode is rejected                                                            |
+| STEP Part 21 AP242 editions 1–3                                       | **L9 tested**  |                                                                                                       |
+| STEP Part 21 AP203 editions 1–2 and AP214                             | **L9 tested**  |                                                                                                       |
+| IGES 5.3 Fixed ASCII mechanical/document                              | **L8 tested**  | read only                                                                                             |
 
 Each current score applies to the envelope described in its profile.
 
@@ -296,7 +296,9 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   native endpoints select exactly one of the two candidates.
   Analytic carrier pairs with one derived curve component transfer without
   solved endpoints; present endpoints must agree with that component. Multiple
-  components require endpoints that select exactly one candidate.
+  components require endpoints that select exactly one candidate. Every
+  uniquely identified visible row without a solved carrier retains its native
+  identity and containing geometry record as an explicit unknown carrier.
   Positive-ratio elliptical cones transfer tangent apex generators and
   endpoint-selected two-generator apex sections.
   Coaxial positive-ratio cones with proportional transverse quadratic forms
@@ -352,6 +354,9 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   without a complete position lane or persistent geometry binding remain
   native records.
 - **Design intent: Partial.** Ordered stored feature-operation states and their current-state projection, the configuration driver-table root pointer, dependencies, the implicit `AllFeatur` entity/reference graph and mixed generated-entity tables, order-validated visible-to-nonvisible surface replay associations, placed and unplaced section sketches and their ordered planar-sketch history nodes, source-offset-scoped repeated sketch snapshots, typed and opaque `segtab` entities including type-10 circles, ordered saved lines, arcs, circles, and splines, typed horizontal, vertical, coincidence, point-on-object, tangency, perpendicular, parallel, equal, axial and central symmetry, same-coordinate, and radius/diameter constraints, snapshot-owned dimensions including geometry-free dimension tables and radius/diameter display semantics, curve-equation programs with scalar operators and standard mathematical functions, and cylindrical native-axis helix semantics transfer as typed or native design records. A resolved base linear section sweep carries its resolved sketch profile, direction, blind, symmetric, or two-sided extent, new-body operation, solid construction state, and evaluated output body. A resolved circular section sweep carries its resolved sketch profile, direction, blind extent, Boolean effect, solid construction state, and evaluated output body. A uniquely placed DEPDB rotational section carries its profile, axis, Boolean effect, solid construction state, native definition reference, full-turn angular extent when its angle choice is present, and evaluated output body. Repeated identical full-turn sequences remain separate native regeneration-state records.
+  A class-923 datum without an owned plane row uses its uniquely owned
+  definition's unique complete local-system frame when its stored x and z axes
+  define a valid datum chart; incomplete sibling frames do not compete.
   Solver-only section entity identifiers transfer as shared native construction
   entities, preserving complete incidence references without assigning an
   unsupported geometry family.
@@ -363,6 +368,9 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   The final stored state for each feature supplies its active recipe, Boolean
   effect, schema parent, and source tag while every preceding state remains an
   ordered native regeneration record.
+  A nonzero geometry-row generator identity with no operation, feature row, or
+  datum definition transfers as stored geometry rather than an invented native
+  operation.
 - **Product structure: Partial.** A unique native model-name header defines one
   part product and one root identity occurrence. The product owns every
   transferred body. Assembly component definitions, child occurrences,

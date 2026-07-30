@@ -610,6 +610,7 @@ impl SldprtNative {
                                 offset,
                                 &record.components,
                                 &features,
+                                &record.feature_ref,
                             )
                         })
                         .unwrap_or_default();
@@ -620,6 +621,7 @@ impl SldprtNative {
                                 offset,
                                 &record.components,
                                 &features,
+                                &record.feature_ref,
                             )
                         });
                 }
@@ -649,6 +651,7 @@ impl SldprtNative {
                                 offset,
                                 &record.components,
                                 &features,
+                                &record.feature_ref,
                             )
                         })
                         .unwrap_or_default()
@@ -659,6 +662,7 @@ impl SldprtNative {
                             offset,
                             &record.components,
                             &features,
+                            &record.feature_ref,
                         )
                     }) != record.terminal_feature_ref
             }) {
@@ -669,6 +673,11 @@ impl SldprtNative {
                     ),
                 ));
             }
+            let mut surface_features = features.clone();
+            crate::resolved_features::enrich_feature_object_sources(
+                &mut surface_features,
+                std::slice::from_ref(lane),
+            );
             lane.surface_selections = surface_selections
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -688,33 +697,43 @@ impl SldprtNative {
                             })
                             .unwrap_or_default();
                     }
-                    record.producer_feature_refs =
-                        crate::resolved_features::component_path_features(
-                            &record.components,
-                            &features,
-                        );
                     record.terminal_feature_ref =
-                        crate::resolved_features::component_path_terminal_feature(
+                        usize::try_from(record.offset).ok().and_then(|offset| {
+                            crate::resolved_features::surface_selection_terminal_feature_at(
+                                &lane.native_payload,
+                                offset,
+                                &record.components,
+                                &surface_features,
+                            )
+                        });
+                    record.producer_feature_refs =
+                        crate::resolved_features::surface_selection_producer_features(
                             &record.components,
-                            &features,
+                            record.terminal_feature_ref.as_deref(),
+                            &surface_features,
                         );
                 }
             }
             if let Some(record) = lane.surface_selections.iter().find(|record| {
-                usize::try_from(record.offset).ok().and_then(|offset| {
-                    crate::resolved_features::compact_surface_reference_at(
+                !usize::try_from(record.offset).ok().is_some_and(|offset| {
+                    crate::resolved_features::surface_reference_matches_at(
                         &lane.native_payload,
                         offset,
+                        &record.components,
                     )
-                }) != Some(record.components.clone())
-                    || crate::resolved_features::component_path_features(
-                        &record.components,
-                        &features,
-                    ) != record.producer_feature_refs
-                    || crate::resolved_features::component_path_terminal_feature(
-                        &record.components,
-                        &features,
-                    ) != record.terminal_feature_ref
+                }) || crate::resolved_features::surface_selection_producer_features(
+                    &record.components,
+                    record.terminal_feature_ref.as_deref(),
+                    &surface_features,
+                ) != record.producer_feature_refs
+                    || usize::try_from(record.offset).ok().and_then(|offset| {
+                        crate::resolved_features::surface_selection_terminal_feature_at(
+                            &lane.native_payload,
+                            offset,
+                            &record.components,
+                            &surface_features,
+                        )
+                    }) != record.terminal_feature_ref
             }) {
                 return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
                     format!(
@@ -892,6 +911,7 @@ impl SldprtNative {
                                 offset,
                                 &record.components,
                                 &features,
+                                &record.feature_ref,
                             )
                         })
                         .unwrap_or_default()
@@ -902,6 +922,7 @@ impl SldprtNative {
                             offset,
                             &record.components,
                             &features,
+                            &record.feature_ref,
                         )
                     }) != record.terminal_feature_ref
             }) {
@@ -912,25 +933,36 @@ impl SldprtNative {
                     ),
                 ));
             }
+            let mut surface_features = features.clone();
+            crate::resolved_features::enrich_feature_object_sources(
+                &mut surface_features,
+                std::slice::from_ref(lane),
+            );
             if let Some(record) = lane.surface_selections.iter().find(|record| {
                 record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.components.is_empty()
-                    || crate::resolved_features::component_path_features(
+                    || crate::resolved_features::surface_selection_producer_features(
                         &record.components,
-                        &features,
+                        record.terminal_feature_ref.as_deref(),
+                        &surface_features,
                     ) != record.producer_feature_refs
-                    || crate::resolved_features::component_path_terminal_feature(
-                        &record.components,
-                        &features,
-                    ) != record.terminal_feature_ref
                     || usize::try_from(record.offset).ok().and_then(|offset| {
-                        crate::resolved_features::compact_surface_reference_at(
+                        crate::resolved_features::surface_selection_terminal_feature_at(
                             &lane.native_payload,
                             offset,
+                            &record.components,
+                            &surface_features,
                         )
-                    }) != Some(record.components.clone())
+                    }) != record.terminal_feature_ref
+                    || !usize::try_from(record.offset).ok().is_some_and(|offset| {
+                        crate::resolved_features::surface_reference_matches_at(
+                            &lane.native_payload,
+                            offset,
+                            &record.components,
+                        )
+                    })
             }) {
                 return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
                     format!(

@@ -901,6 +901,8 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
             parameter: None,
             operands: Vec::new(),
             native_state: None,
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
         },
         name: None,
         driving: None,
@@ -1118,7 +1120,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let datum = FeatureId("test:feature#datum-source".into());
     ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(datum.clone()),
+        reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
+            datum.clone(),
+        )),
         distance: Length(5.0),
     };
     losses.clear();

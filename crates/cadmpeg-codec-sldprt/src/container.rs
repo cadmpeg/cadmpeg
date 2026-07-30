@@ -285,6 +285,11 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
+/// Test whether a prefix has the generic Compound File Binary signature.
+pub fn looks_like_compound_file(prefix: &[u8]) -> bool {
+    prefix.starts_with(&COMPOUND_FILE_MAGIC)
+}
+
 fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
     let mut encoded = Vec::with_capacity(text.len() * 2);
     for byte in text {
@@ -683,23 +688,6 @@ fn active_parasolid_summary(
         .max_by_key(|(_, size, _)| *size)
 }
 
-/// Modeller generation carried by the active Parasolid stream schema.
-pub(crate) fn active_parasolid_modeler_generation(scan: &ContainerScan) -> Option<u32> {
-    let (_, _, header) = active_parasolid_summary(scan)?;
-    parasolid_modeler_generation(&header.schema)
-}
-
-pub(crate) fn parasolid_modeler_generation(schema: &str) -> Option<u32> {
-    let body = schema.strip_prefix("SCH_")?;
-    body.strip_prefix("SW_")
-        .unwrap_or(body)
-        .split('_')
-        .next()?
-        .get(..2)?
-        .parse()
-        .ok()
-}
-
 /// Test whether either outer envelope carries a framed Parasolid body stream.
 pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
     active_parasolid_summary(scan).is_some()
@@ -812,18 +800,13 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
 
 #[cfg(test)]
 mod tests {
-    use super::parasolid_modeler_generation;
+    use super::{looks_like_compound_file, looks_like_sldprt};
 
     #[test]
-    fn parasolid_schema_starts_with_the_modeller_generation() {
-        assert_eq!(
-            parasolid_modeler_generation("SCH_3000310_30000_13006"),
-            Some(30)
-        );
-        assert_eq!(
-            parasolid_modeler_generation("SCH_3101284_31100_13006"),
-            Some(31)
-        );
-        assert_eq!(parasolid_modeler_generation("SCH_SW_33103_11000"), Some(33));
+    fn generic_compound_prefix_is_a_weak_container_signal() {
+        let prefix = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0];
+
+        assert!(looks_like_compound_file(&prefix));
+        assert!(!looks_like_sldprt(&prefix));
     }
 }

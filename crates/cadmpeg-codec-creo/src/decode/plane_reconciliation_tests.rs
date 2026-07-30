@@ -1,11 +1,230 @@
 use super::{
-    agreed_plane, agreed_plane_surface, dot, envelope_reconciled_plane_candidate,
-    frame_bound_outline_plane_candidate, held_coordinate_plane, PlaneCandidate, PlaneChart,
-    PlaneEquation,
+    agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
+    analytic_curve_plane, dot, envelope_reconciled_plane_candidate,
+    frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates,
+    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
+    Curve, CurveGeometry, CurveId, PlaneCandidate, PlaneChart, PlaneEquation, Point3,
+    SurfaceGeometry, SurfaceId, Vector3,
 };
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };
+
+#[test]
+fn topology_boundary_points_define_one_plane() {
+    let plane = topology_bound_plane([
+        [4.0, 0.0, 2.0],
+        [1.0, 3.0, 2.0],
+        [1.0, 0.0, 2.0],
+        [4.0, 3.0, 2.0],
+        [1.0, 0.0, 2.0],
+    ])
+    .expect("non-collinear coplanar points");
+    assert_eq!(plane.origin, [1.0, 0.0, 2.0]);
+    assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
+
+    assert!(topology_bound_plane([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]).is_none());
+    assert!(topology_bound_plane([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ])
+    .is_none());
+}
+
+#[test]
+fn analytic_conic_boundary_defines_its_plane() {
+    let plane = analytic_curve_plane(&CurveGeometry::Circle {
+        center: Point3::new(3.0, 4.0, 5.0),
+        axis: Vector3::new(0.0, 0.0, -2.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 7.0,
+    })
+    .expect("circle plane");
+    assert_eq!(plane.origin, [3.0, 4.0, 5.0]);
+    assert_eq!(plane.normal, [0.0, 0.0, -1.0]);
+    assert!(analytic_curve_plane(&CurveGeometry::Line {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        direction: Vector3::new(1.0, 0.0, 0.0),
+    })
+    .is_none());
+}
+
+#[test]
+fn every_solved_boundary_vertex_must_lie_on_the_analytic_plane() {
+    let plane = PlaneEquation {
+        origin: [0.0, 0.0, 2.0],
+        normal: [0.0, 0.0, 1.0],
+    };
+    assert!(agreed_topology_bound_plane([[3.0, 4.0, 2.0]], [plane], []).is_some());
+    assert!(agreed_topology_bound_plane([[3.0, 4.0, 3.0]], [plane], []).is_none());
+}
+
+#[test]
+fn distinct_boundary_lines_define_one_plane() {
+    let line = |origin, direction| BoundaryLine { origin, direction };
+    let plane = topology_bound_line_plane(&[
+        line([0.0, 0.0, 3.0], [1.0, 0.0, 0.0]),
+        line([0.0, 2.0, 3.0], [1.0, 0.0, 0.0]),
+        line([4.0, 0.0, 3.0], [0.0, 1.0, 0.0]),
+    ])
+    .expect("coplanar boundary lines");
+    assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
+
+    assert!(topology_bound_line_plane(&[
+        line([0.0, 0.0, 3.0], [1.0, 0.0, 0.0]),
+        line([0.0, 2.0, 4.0], [1.0, 0.0, 0.0]),
+        line([4.0, 0.0, 3.0], [0.0, 1.0, 0.0]),
+    ])
+    .is_none());
+
+    let analytic = analytic_boundary_line(&CurveGeometry::Line {
+        origin: Point3::new(1.0, 2.0, 3.0),
+        direction: Vector3::new(2.0, 0.0, 0.0),
+    })
+    .expect("analytic line");
+    assert_eq!(analytic.direction, [1.0, 0.0, 0.0]);
+}
+
+#[test]
+fn unique_native_conic_loop_places_its_plane_surface() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 5,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 1,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 10,
+    });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 11,
+            type_byte: 0,
+            feature_id: 1,
+            directions: [0; 2],
+            faces: [5, 0],
+            next_edges: [11, 0],
+            offset: 20,
+        });
+    scan.topology.loops.push(crate::topology::Loop {
+        face_id: 5,
+        half_edges: vec![crate::topology::HalfEdgeId {
+            curve_id: 11,
+            side: 0,
+        }],
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: CurveId("creo:visibgeom:curve#11".to_string()),
+        geometry: CurveGeometry::Circle {
+            center: Point3::new(2.0, 3.0, 4.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+        },
+        source_object: None,
+    });
+
+    let transferred = transfer_topology_bound_planes(
+        &scan,
+        &mut ir,
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+    );
+
+    assert_eq!(transferred, 1);
+    let plane = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == SurfaceId("creo:visibgeom:surface#5".to_string()))
+        .expect("topology-bound plane");
+    let SurfaceGeometry::Plane { origin, normal, .. } = &plane.geometry else {
+        panic!("expected plane geometry");
+    };
+    assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(origin.z, 4.0);
+
+    scan.curves
+        .topology_rows
+        .push(scan.curves.topology_rows[0].clone());
+    ir.model.surfaces.clear();
+    assert_eq!(
+        transfer_topology_bound_planes(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        0
+    );
+}
+
+#[test]
+fn unique_native_line_loop_places_its_plane_surface() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 5,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 1,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 10,
+    });
+    for id in [11, 12] {
+        scan.curves
+            .topology_rows
+            .push(crate::curve::CurveTopologyRow {
+                id,
+                type_byte: 0,
+                feature_id: 1,
+                directions: [0; 2],
+                faces: [5, 0],
+                next_edges: [if id == 11 { 12 } else { 11 }, 0],
+                offset: 20,
+            });
+    }
+    scan.topology.loops.push(crate::topology::Loop {
+        face_id: 5,
+        half_edges: [11, 12]
+            .into_iter()
+            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .collect(),
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    for (id, origin, direction) in [
+        (11, Point3::new(0.0, 0.0, 4.0), Vector3::new(1.0, 0.0, 0.0)),
+        (12, Point3::new(0.0, 2.0, 4.0), Vector3::new(0.0, 1.0, 0.0)),
+    ] {
+        ir.model.curves.push(Curve {
+            id: CurveId(format!("creo:visibgeom:curve#{id}")),
+            geometry: CurveGeometry::Line { origin, direction },
+            source_object: None,
+        });
+    }
+
+    assert_eq!(
+        transfer_topology_bound_planes(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        1
+    );
+    assert!(ir.model.surfaces.iter().any(|surface| {
+        surface.id == SurfaceId("creo:visibgeom:surface#5".to_string())
+            && matches!(
+                &surface.geometry,
+                SurfaceGeometry::Plane { origin, normal, .. }
+                    if origin.z == 4.0 && *normal == Vector3::new(0.0, 0.0, 1.0)
+            )
+    }));
+}
 
 #[test]
 fn reconciles_equivalent_plane_frames_and_rejects_conflicts() {
@@ -153,4 +372,55 @@ fn frame_bound_outline_supplies_the_plane_chart_origin() {
     let mut conflicting = outline;
     conflicting.u_axis = [1.0, 0.0, 0.0];
     assert!(frame_bound_outline_plane_candidate(&frame, &conflicting).is_none());
+}
+
+#[test]
+fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 42,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 10,
+    });
+    scan.planes.envelopes.push(PlaneEnvelopeRecord {
+        surface_id: 42,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[None; 2]; 2],
+            corners_3d: [
+                [Some(-3.0), Some(-4.0), Some(7.0)],
+                [Some(-3.0), Some(-4.0), Some(9.0)],
+            ],
+        },
+        corner_coordinate_equal: [Some(true), Some(true), Some(false)],
+        scalar_tokens: Vec::new(),
+        row_offset: 10,
+        offset: 20,
+    });
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 42,
+        body: Vec::new(),
+        slots: Vec::new(),
+        origin: Some([100.0, 200.0, 300.0]),
+        u_axis: Some([0.0, 0.0, 1.0]),
+        normal: Some([0.0, 1.0, 0.0]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 30,
+    });
+    scan.planes.outlines =
+        crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems);
+
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&42).expect("plane candidates");
+    let (plane, u_axis, _) =
+        agreed_plane_surface(candidates).expect("frame-selected outline plane");
+    assert_eq!(plane.origin, [100.0, -4.0, 300.0]);
+    assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
+    assert_eq!(u_axis, [0.0, 0.0, 1.0]);
 }

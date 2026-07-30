@@ -18,9 +18,10 @@ use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 
 /// A stable, machine-readable identifier for one `.prt` transfer loss.
 ///
-/// Variants are grouped by the decode phase whose transfer degraded. The string
-/// form (via [`CreoLossCode::code`]) is the stable contract; the Rust variant
-/// name may be refactored freely.
+/// Variants are grouped by the decode phase whose transfer degraded, in the
+/// order [`crate::decode`] emits them. The string form (via
+/// [`CreoLossCode::code`]) is the stable contract; the Rust variant name may be
+/// refactored freely.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum CreoLossCode {
@@ -32,6 +33,8 @@ pub(crate) enum CreoLossCode {
     GeneralBrepIncomplete,
     /// Model-space plane carriers transferred from `VisibGeom` support frames.
     PlaneCarriersTransferred,
+    /// Plane carriers transferred from solved native-face boundary geometry.
+    TopologyBoundPlaneCarriersTransferred,
     /// First-instance ND prototype carriers transferred from named parameters.
     FirstInstancePrototypeCarriersTransferred,
     /// Sphere carriers transferred from paired type-26 hemisphere envelopes.
@@ -58,8 +61,14 @@ pub(crate) enum CreoLossCode {
     TopologicalPointCarriersTransferred,
     /// Native topological edges transferred from exact vertex orbits.
     TopologicalEdgeCarriersTransferred,
-    /// Exact line carriers transferred by mapping native linear pcurves.
-    PcurveLineCarriersTransferred,
+    /// Exact analytic carriers transferred by mapping native linear pcurves.
+    AnalyticPcurveCarriersTransferred,
+    /// NURBS boundary carriers transferred from extrusion/adjacent-plane contact.
+    ExtrusionPlaneBoundaryCurveCarriersTransferred,
+    /// NURBS generator carriers transferred from a sweep-direction adjacent plane.
+    ExtrusionPlaneSectionGeneratorCarriersTransferred,
+    /// Shared NURBS generator carriers transferred from opposed extrusion nets.
+    SharedExtrusionGeneratorCarriersTransferred,
     /// Tagged type-26 torus parameter fields retained as native data.
     TorusParameterCoverageRetained,
     /// Remaining per-instance geometry is gated by unresolved decode layers.
@@ -76,8 +85,50 @@ pub(crate) enum CreoLossCode {
     AmbiguousSurfaceRows,
     /// `VisibGeom` curve-topology rows share a non-unique identity; not resolved.
     AmbiguousCurveRows,
+    /// Declared section segment rows did not decode.
+    MissingSectionSegmentRows,
+    /// Declared section relation rows did not decode.
+    MissingSectionRelationRows,
+    /// Section relation tables use the invalid zero allocation count.
+    MalformedSectionRelationTables,
+    /// Declared section incidence rows did not decode.
+    MissingSectionIncidenceRows,
+    /// Declared section relation-incidence join rows did not decode.
+    MissingSectionRelationIncidenceJoinRows,
+    /// Decoded section segments retain native geometry; construction unresolved.
+    UnresolvedSectionSegmentGeometry,
+    /// Active section incidence constraints retain native operands.
+    NativeSectionIncidenceConstraintsRetained,
+    /// Active section dimension relations retain native operands.
+    NativeSectionDimensionRelationsRetained,
+    /// Profile sweep history features retain incomplete construction operands.
+    IncompleteSweepFeaturesRetained,
+    /// Surface construction history features retain incomplete operands.
+    IncompleteSurfaceOperationFeaturesRetained,
+    /// Other construction history features retain unresolved neutral operands.
+    IncompleteOtherConstructionFeaturesRetained,
+    /// Recognized non-sweep history features retain incomplete operands.
+    IncompleteRecognizedFeaturesRetained,
+    /// History feature definitions retain only source-native semantics.
+    NativeOnlyFeatureDefinitionsRetained,
+    /// Typed history features retain an explicitly unresolved construction.
+    ExplicitlyUnresolvedFeatureConstructionsRetained,
+    /// Dimension-driven section solver variables retain unresolved exact values.
+    UnresolvedDimensionDrivenSolverVariables,
+    /// Solver pre-solve estimates use an unresolved dimension-driven sentinel.
+    UnresolvedDimensionDrivenSolverGuesses,
+    /// Declared section solver variable rows did not decode.
+    MissingSectionSolverVariableRows,
+    /// Section dimensions retain native value tokens; scalar encoding unresolved.
+    UnresolvedSectionDimensionValues,
+    /// Referenced configuration driver tables retain unresolved row semantics.
+    UnresolvedConfigurationDriverTables,
     /// Active curve-equation records with prohibited constructs retained unvalued.
     ProhibitedCurveExpressionRecordsRetained,
+    /// Curve-equation simultaneous-solve blocks retain equations without values.
+    UnresolvedCurveExpressionSolveBlocks,
+    /// Curve-equation records retain malformed simultaneous-solve control.
+    UnresolvedCurveExpressionSolveControl,
     /// Prohibited datum-curve constructs across curve-equation records unvalued.
     ProhibitedCurveExpressionKindsRetained,
 }
@@ -90,6 +141,7 @@ impl CreoLossCode {
         Self::NamespaceCensusSummary,
         Self::GeneralBrepIncomplete,
         Self::PlaneCarriersTransferred,
+        Self::TopologyBoundPlaneCarriersTransferred,
         Self::FirstInstancePrototypeCarriersTransferred,
         Self::SphereCarriersTransferred,
         Self::PositionalTorusCarriersTransferred,
@@ -103,7 +155,10 @@ impl CreoLossCode {
         Self::ReferenceEllipseCarriersTransferred,
         Self::TopologicalPointCarriersTransferred,
         Self::TopologicalEdgeCarriersTransferred,
-        Self::PcurveLineCarriersTransferred,
+        Self::AnalyticPcurveCarriersTransferred,
+        Self::ExtrusionPlaneBoundaryCurveCarriersTransferred,
+        Self::ExtrusionPlaneSectionGeneratorCarriersTransferred,
+        Self::SharedExtrusionGeneratorCarriersTransferred,
         Self::TorusParameterCoverageRetained,
         Self::PerInstanceGeometryGated,
         Self::TopologyPartiallyTransferred,
@@ -112,7 +167,28 @@ impl CreoLossCode {
         Self::VisibleCurveRowsUntransferred,
         Self::AmbiguousSurfaceRows,
         Self::AmbiguousCurveRows,
+        Self::MissingSectionSegmentRows,
+        Self::MissingSectionRelationRows,
+        Self::MalformedSectionRelationTables,
+        Self::MissingSectionIncidenceRows,
+        Self::MissingSectionRelationIncidenceJoinRows,
+        Self::UnresolvedSectionSegmentGeometry,
+        Self::NativeSectionIncidenceConstraintsRetained,
+        Self::NativeSectionDimensionRelationsRetained,
+        Self::IncompleteSweepFeaturesRetained,
+        Self::IncompleteSurfaceOperationFeaturesRetained,
+        Self::IncompleteOtherConstructionFeaturesRetained,
+        Self::IncompleteRecognizedFeaturesRetained,
+        Self::NativeOnlyFeatureDefinitionsRetained,
+        Self::ExplicitlyUnresolvedFeatureConstructionsRetained,
+        Self::UnresolvedDimensionDrivenSolverVariables,
+        Self::UnresolvedDimensionDrivenSolverGuesses,
+        Self::MissingSectionSolverVariableRows,
+        Self::UnresolvedSectionDimensionValues,
+        Self::UnresolvedConfigurationDriverTables,
         Self::ProhibitedCurveExpressionRecordsRetained,
+        Self::UnresolvedCurveExpressionSolveBlocks,
+        Self::UnresolvedCurveExpressionSolveControl,
         Self::ProhibitedCurveExpressionKindsRetained,
     ];
 
@@ -125,6 +201,9 @@ impl CreoLossCode {
             Self::NamespaceCensusSummary => "carrier.namespace-census",
             Self::GeneralBrepIncomplete => "geometry.general-brep-incomplete",
             Self::PlaneCarriersTransferred => "carrier.plane-transferred",
+            Self::TopologyBoundPlaneCarriersTransferred => {
+                "carrier.topology-bound-plane-transferred"
+            }
             Self::FirstInstancePrototypeCarriersTransferred => {
                 "carrier.first-instance-prototype-transferred"
             }
@@ -144,7 +223,16 @@ impl CreoLossCode {
             Self::ReferenceEllipseCarriersTransferred => "carrier.reference-ellipse-transferred",
             Self::TopologicalPointCarriersTransferred => "carrier.topological-point-transferred",
             Self::TopologicalEdgeCarriersTransferred => "carrier.topological-edge-transferred",
-            Self::PcurveLineCarriersTransferred => "carrier.pcurve-line-transferred",
+            Self::AnalyticPcurveCarriersTransferred => "carrier.analytic-pcurve-transferred",
+            Self::ExtrusionPlaneBoundaryCurveCarriersTransferred => {
+                "carrier.extrusion-plane-boundary-curve-transferred"
+            }
+            Self::ExtrusionPlaneSectionGeneratorCarriersTransferred => {
+                "carrier.extrusion-plane-section-generator-transferred"
+            }
+            Self::SharedExtrusionGeneratorCarriersTransferred => {
+                "carrier.shared-extrusion-generator-transferred"
+            }
             Self::TorusParameterCoverageRetained => "carrier.torus-parameter-coverage-retained",
             Self::PerInstanceGeometryGated => "geometry.per-instance-gated",
             Self::TopologyPartiallyTransferred => "topology.partially-transferred",
@@ -153,8 +241,55 @@ impl CreoLossCode {
             Self::VisibleCurveRowsUntransferred => "geometry.visible-curve-rows-untransferred",
             Self::AmbiguousSurfaceRows => "geometry.ambiguous-surface-rows",
             Self::AmbiguousCurveRows => "geometry.ambiguous-curve-rows",
+            Self::MissingSectionSegmentRows => "feature.missing-section-segment-rows",
+            Self::MissingSectionRelationRows => "feature.missing-section-relation-rows",
+            Self::MalformedSectionRelationTables => "feature.malformed-section-relation-tables",
+            Self::MissingSectionIncidenceRows => "feature.missing-section-incidence-rows",
+            Self::MissingSectionRelationIncidenceJoinRows => {
+                "feature.missing-section-relation-incidence-join-rows"
+            }
+            Self::UnresolvedSectionSegmentGeometry => "geometry.unresolved-section-segment",
+            Self::NativeSectionIncidenceConstraintsRetained => {
+                "feature.native-section-incidence-constraints"
+            }
+            Self::NativeSectionDimensionRelationsRetained => {
+                "feature.native-section-dimension-relations"
+            }
+            Self::IncompleteSweepFeaturesRetained => "feature.incomplete-sweep-operands",
+            Self::IncompleteSurfaceOperationFeaturesRetained => {
+                "feature.incomplete-surface-operation-operands"
+            }
+            Self::IncompleteOtherConstructionFeaturesRetained => {
+                "feature.incomplete-other-construction-operands"
+            }
+            Self::IncompleteRecognizedFeaturesRetained => {
+                "feature.incomplete-recognized-feature-operands"
+            }
+            Self::NativeOnlyFeatureDefinitionsRetained => "feature.native-only-definitions",
+            Self::ExplicitlyUnresolvedFeatureConstructionsRetained => {
+                "feature.explicitly-unresolved-constructions"
+            }
+            Self::UnresolvedDimensionDrivenSolverVariables => {
+                "feature.unresolved-dimension-driven-variables"
+            }
+            Self::UnresolvedDimensionDrivenSolverGuesses => {
+                "feature.unresolved-dimension-driven-guesses"
+            }
+            Self::MissingSectionSolverVariableRows => {
+                "feature.missing-section-solver-variable-rows"
+            }
+            Self::UnresolvedSectionDimensionValues => "feature.unresolved-section-dimension-values",
+            Self::UnresolvedConfigurationDriverTables => {
+                "feature.unresolved-configuration-driver-tables"
+            }
             Self::ProhibitedCurveExpressionRecordsRetained => {
                 "feature.prohibited-curve-expression-records"
+            }
+            Self::UnresolvedCurveExpressionSolveBlocks => {
+                "feature.unresolved-curve-expression-solve-blocks"
+            }
+            Self::UnresolvedCurveExpressionSolveControl => {
+                "feature.unresolved-curve-expression-solve-control"
             }
             Self::ProhibitedCurveExpressionKindsRetained => {
                 "feature.prohibited-curve-expression-kinds"
@@ -162,42 +297,22 @@ impl CreoLossCode {
         }
     }
 
-    /// The subsystem category this loss belongs to.
-    #[must_use]
-    pub(crate) const fn category(self) -> LossCategory {
+    /// The shared IR code, subsystem category, and severity for this loss.
+    ///
+    /// One exhaustive row per variant, with no catch-all arm: a new variant
+    /// that is not classified here fails to compile rather than silently
+    /// inheriting another loss's category or severity.
+    const fn spec(self) -> (LossCode, LossCategory, Severity) {
+        use LossCategory as Cat;
+        use LossCode as Code;
+        use Severity as Sev;
         match self {
-            Self::TopologicalEdgeCarriersTransferred | Self::TopologyPartiallyTransferred => {
-                LossCategory::Topology
-            }
-            Self::FeatureOperationsRetained
-            | Self::ProhibitedCurveExpressionRecordsRetained
-            | Self::ProhibitedCurveExpressionKindsRetained => LossCategory::Attribute,
-            _ => LossCategory::Geometry,
-        }
-    }
+            Self::ContainerOnlyDecode => (Code::ContainerOnly, Cat::Geometry, Sev::Info),
 
-    /// The severity of this loss.
-    #[must_use]
-    pub(crate) const fn severity(self) -> Severity {
-        match self {
-            Self::GeneralBrepIncomplete
-            | Self::PerInstanceGeometryGated
-            | Self::TopologyPartiallyTransferred => Severity::Blocking,
-            Self::FeatureOperationsRetained
-            | Self::VisibleSurfaceRowsUntransferred
-            | Self::VisibleCurveRowsUntransferred
-            | Self::ProhibitedCurveExpressionRecordsRetained
-            | Self::ProhibitedCurveExpressionKindsRetained => Severity::Warning,
-            _ => Severity::Info,
-        }
-    }
-
-    /// The shared IR loss code this creo loss maps onto.
-    const fn shared_code(self) -> LossCode {
-        match self {
-            Self::ContainerOnlyDecode => LossCode::ContainerOnly,
+            // Carrier summaries: geometry that did transfer exactly.
             Self::NamespaceCensusSummary
             | Self::PlaneCarriersTransferred
+            | Self::TopologyBoundPlaneCarriersTransferred
             | Self::FirstInstancePrototypeCarriersTransferred
             | Self::SphereCarriersTransferred
             | Self::PositionalTorusCarriersTransferred
@@ -210,19 +325,61 @@ impl CreoLossCode {
             | Self::ReferenceCircleCarriersTransferred
             | Self::ReferenceEllipseCarriersTransferred
             | Self::TopologicalPointCarriersTransferred
-            | Self::TopologicalEdgeCarriersTransferred
-            | Self::PcurveLineCarriersTransferred
-            | Self::TorusParameterCoverageRetained => LossCode::CarrierSummary,
-            Self::GeneralBrepIncomplete
-            | Self::PerInstanceGeometryGated
-            | Self::VisibleSurfaceRowsUntransferred
+            | Self::AnalyticPcurveCarriersTransferred
+            | Self::ExtrusionPlaneBoundaryCurveCarriersTransferred
+            | Self::ExtrusionPlaneSectionGeneratorCarriersTransferred
+            | Self::SharedExtrusionGeneratorCarriersTransferred
+            | Self::TorusParameterCoverageRetained => {
+                (Code::CarrierSummary, Cat::Geometry, Sev::Info)
+            }
+            Self::TopologicalEdgeCarriersTransferred => {
+                (Code::CarrierSummary, Cat::Topology, Sev::Info)
+            }
+
+            // Geometry that could not transfer.
+            Self::GeneralBrepIncomplete | Self::PerInstanceGeometryGated => {
+                (Code::GeometryNotTransferred, Cat::Geometry, Sev::Blocking)
+            }
+            Self::VisibleSurfaceRowsUntransferred
             | Self::VisibleCurveRowsUntransferred
-            | Self::AmbiguousSurfaceRows
-            | Self::AmbiguousCurveRows => LossCode::GeometryNotTransferred,
-            Self::TopologyPartiallyTransferred => LossCode::TopologyNotTransferred,
+            | Self::UnresolvedSectionSegmentGeometry => {
+                (Code::GeometryNotTransferred, Cat::Geometry, Sev::Warning)
+            }
+            Self::AmbiguousSurfaceRows | Self::AmbiguousCurveRows => {
+                (Code::GeometryNotTransferred, Cat::Geometry, Sev::Info)
+            }
+
+            // Topology that could not transfer.
+            Self::TopologyPartiallyTransferred => {
+                (Code::TopologyNotTransferred, Cat::Topology, Sev::Blocking)
+            }
+
+            // Feature history retained without complete neutral semantics.
             Self::FeatureOperationsRetained
+            | Self::MissingSectionSegmentRows
+            | Self::MissingSectionRelationRows
+            | Self::MalformedSectionRelationTables
+            | Self::MissingSectionIncidenceRows
+            | Self::MissingSectionRelationIncidenceJoinRows
+            | Self::NativeSectionIncidenceConstraintsRetained
+            | Self::NativeSectionDimensionRelationsRetained
+            | Self::IncompleteSweepFeaturesRetained
+            | Self::IncompleteSurfaceOperationFeaturesRetained
+            | Self::IncompleteOtherConstructionFeaturesRetained
+            | Self::IncompleteRecognizedFeaturesRetained
+            | Self::NativeOnlyFeatureDefinitionsRetained
+            | Self::ExplicitlyUnresolvedFeatureConstructionsRetained
+            | Self::UnresolvedDimensionDrivenSolverVariables
+            | Self::UnresolvedDimensionDrivenSolverGuesses
+            | Self::MissingSectionSolverVariableRows
+            | Self::UnresolvedSectionDimensionValues
+            | Self::UnresolvedConfigurationDriverTables
             | Self::ProhibitedCurveExpressionRecordsRetained
-            | Self::ProhibitedCurveExpressionKindsRetained => LossCode::FeatureHistoryRetained,
+            | Self::UnresolvedCurveExpressionSolveBlocks
+            | Self::UnresolvedCurveExpressionSolveControl
+            | Self::ProhibitedCurveExpressionKindsRetained => {
+                (Code::FeatureHistoryRetained, Cat::Attribute, Sev::Warning)
+            }
         }
     }
 
@@ -234,10 +391,11 @@ impl CreoLossCode {
     /// source span.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
+        let (code, category, severity) = self.spec();
         LossNote {
-            code: self.shared_code(),
-            category: self.category(),
-            severity: self.severity(),
+            code,
+            category,
+            severity,
             message: message.into(),
             provenance: None,
         }
@@ -261,6 +419,7 @@ mod tests {
                 "carrier.namespace-census",
                 "geometry.general-brep-incomplete",
                 "carrier.plane-transferred",
+                "carrier.topology-bound-plane-transferred",
                 "carrier.first-instance-prototype-transferred",
                 "carrier.sphere-transferred",
                 "carrier.positional-torus-transferred",
@@ -274,7 +433,10 @@ mod tests {
                 "carrier.reference-ellipse-transferred",
                 "carrier.topological-point-transferred",
                 "carrier.topological-edge-transferred",
-                "carrier.pcurve-line-transferred",
+                "carrier.analytic-pcurve-transferred",
+                "carrier.extrusion-plane-boundary-curve-transferred",
+                "carrier.extrusion-plane-section-generator-transferred",
+                "carrier.shared-extrusion-generator-transferred",
                 "carrier.torus-parameter-coverage-retained",
                 "geometry.per-instance-gated",
                 "topology.partially-transferred",
@@ -283,7 +445,28 @@ mod tests {
                 "geometry.visible-curve-rows-untransferred",
                 "geometry.ambiguous-surface-rows",
                 "geometry.ambiguous-curve-rows",
+                "feature.missing-section-segment-rows",
+                "feature.missing-section-relation-rows",
+                "feature.malformed-section-relation-tables",
+                "feature.missing-section-incidence-rows",
+                "feature.missing-section-relation-incidence-join-rows",
+                "geometry.unresolved-section-segment",
+                "feature.native-section-incidence-constraints",
+                "feature.native-section-dimension-relations",
+                "feature.incomplete-sweep-operands",
+                "feature.incomplete-surface-operation-operands",
+                "feature.incomplete-other-construction-operands",
+                "feature.incomplete-recognized-feature-operands",
+                "feature.native-only-definitions",
+                "feature.explicitly-unresolved-constructions",
+                "feature.unresolved-dimension-driven-variables",
+                "feature.unresolved-dimension-driven-guesses",
+                "feature.missing-section-solver-variable-rows",
+                "feature.unresolved-section-dimension-values",
+                "feature.unresolved-configuration-driver-tables",
                 "feature.prohibited-curve-expression-records",
+                "feature.unresolved-curve-expression-solve-blocks",
+                "feature.unresolved-curve-expression-solve-control",
                 "feature.prohibited-curve-expression-kinds",
             ]
         );
@@ -306,16 +489,38 @@ mod tests {
         }
     }
 
-    /// The note builder fixes category and severity from the code so a call
-    /// site cannot mislabel a loss it names.
+    /// The note builder takes every classification field from the variant's
+    /// table row, so a call site cannot mislabel a loss it names.
     #[test]
-    fn note_takes_category_and_severity_from_the_code() {
+    fn note_takes_classification_from_the_code() {
         for code in CreoLossCode::ALL {
+            let (shared, category, severity) = code.spec();
             let note = code.note("x");
-            assert_eq!(note.category, code.category());
-            assert_eq!(note.severity, code.severity());
+            assert_eq!(note.code, shared);
+            assert_eq!(note.category, category);
+            assert_eq!(note.severity, severity);
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
+        }
+    }
+
+    /// The `family` prefix of the string code agrees with the shared IR code
+    /// the variant maps onto, so the two classifications cannot drift.
+    #[test]
+    fn code_family_agrees_with_shared_code() {
+        use cadmpeg_ir::report::LossCode;
+        for code in CreoLossCode::ALL {
+            let (shared, ..) = code.spec();
+            let family = code.code().split_once('.').expect("family.detail shape").0;
+            let expected = match shared {
+                LossCode::ContainerOnly => "container",
+                LossCode::CarrierSummary => "carrier",
+                LossCode::GeometryNotTransferred => "geometry",
+                LossCode::TopologyNotTransferred => "topology",
+                LossCode::FeatureHistoryRetained => "feature",
+                other => panic!("unmapped shared code {other:?} for {}", code.code()),
+            };
+            assert_eq!(family, expected, "code {} family mismatch", code.code());
         }
     }
 }

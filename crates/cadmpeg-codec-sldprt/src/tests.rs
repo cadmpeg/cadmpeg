@@ -1719,7 +1719,7 @@ fn detect_high_on_marker_after_header() {
 }
 
 #[test]
-fn detect_high_on_solidworks_compound_document_directory() {
+fn compound_detection_distinguishes_solidworks_and_generic_signals() {
     let mut file = vec![0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     file.resize(512, 0);
     for byte in b"ISolidWorksInformation" {
@@ -1730,7 +1730,7 @@ fn detect_high_on_solidworks_compound_document_directory() {
     let generic_compound_document = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     assert_eq!(
         SldprtCodec.detect(&generic_compound_document),
-        Confidence::No
+        Confidence::Low
     );
 }
 
@@ -1775,7 +1775,7 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     bmp[20..24].copy_from_slice(&1u32.to_le_bytes());
     bmp[24..28].copy_from_slice(&12_345u32.to_le_bytes());
 
-    let xml = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000" swCreationTime="1700000000" swPath="C:\part.SLDPRT"><swModel id="1" swName="Part" swConfigurationName="Default"/></swSolidWorks>"#;
+    let xml = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000" swCreationTime="1700000000" swPath="C:\part.SLDPRT"><swModel id="1" swName="Part" swConfigurationName="Default"/><swConfigurationList><swConfiguration swID="0" swName="Default" swMostRecentConfiguration="NO" swConfigurationNeedsUpdate="YES" swConfigurationFlags="384" swConfigurationAlternateName="Default derived"/></swConfigurationList></swSolidWorks>"#;
     let mut source = outer_header();
     source.extend(make_block(0x10, "PreviewPNG", &png));
     source.extend(make_block(0x11, "PreviewBMP", &bmp));
@@ -1807,6 +1807,13 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     assert_eq!(attributes["sw_path"], r"C:\part.SLDPRT");
     assert_eq!(attributes["sw_name"], "Part");
     assert_eq!(attributes["sw_configuration_name"], "Default");
+    assert_eq!(attributes["sw_configuration_0_needs_update"], "YES");
+    assert_eq!(attributes["sw_configuration_0_most_recent"], "NO");
+    assert_eq!(attributes["sw_configuration_0_flags"], "384");
+    assert_eq!(
+        attributes["sw_configuration_0_alternate_name"],
+        "Default derived"
+    );
 }
 
 #[test]
@@ -2571,7 +2578,7 @@ fn encoder_writes_source_less_line_sketches() {
 }
 
 #[test]
-fn encoder_writes_source_less_spatial_line_sketches() {
+fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::sketches::{
@@ -2590,12 +2597,24 @@ fn encoder_writes_source_less_spatial_line_sketches() {
     let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
     let start = Point3::new(1.25, -2.5, 3.75);
     let end = Point3::new(4.5, 5.25, -6.0);
+    let second_start = Point3::new(-7.0, 8.5, 9.25);
+    let second_end = Point3::new(10.0, -11.5, 12.75);
+    let point = Point3::new(-13.0, 14.25, 15.5);
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
         configuration: Some("0".into()),
         profiles: Vec::new(),
         native_ref: None,
+    });
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#a-point".into()),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point { position: point },
     });
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
         id: entity_id,
@@ -2605,6 +2624,18 @@ fn encoder_writes_source_less_spatial_line_sketches() {
         geometry_ref: None,
         endpoint_refs: Vec::new(),
         geometry: SpatialSketchGeometry::Line { start, end },
+    });
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#second-line".into()),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
     });
     ir.model.features.push(Feature {
         id: FeatureId("synthetic:test:feature#spatial-path".into()),
@@ -2626,21 +2657,71 @@ fn encoder_writes_source_less_spatial_line_sketches() {
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
-    let regenerated = SldprtCodec
+    let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
     assert_eq!(regenerated.ir.model.spatial_sketches.len(), 1);
+    assert_eq!(regenerated.ir.model.spatial_sketch_entities.len(), 3);
     assert!(matches!(
         regenerated.ir.model.spatial_sketch_entities[0].geometry,
+        SpatialSketchGeometry::Point { position }
+            if (position.x - point.x).abs() < 1.0e-12
+                && (position.y - point.y).abs() < 1.0e-12
+                && (position.z - point.z).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        regenerated.ir.model.spatial_sketch_entities[1].geometry,
         SpatialSketchGeometry::Line {
             start: regenerated_start,
             end: regenerated_end,
         } if regenerated_start == start && regenerated_end == end
     ));
     assert!(matches!(
+        regenerated.ir.model.spatial_sketch_entities[2].geometry,
+        SpatialSketchGeometry::Line {
+            start: regenerated_start,
+            end: regenerated_end,
+        } if regenerated_start == second_start && regenerated_end == second_end
+    ));
+    assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::SpatialSketch { sketch: Some(_) }
+    ));
+
+    let edited_start = Point3::new(13.0, 14.0, 15.0);
+    let edited_end = Point3::new(-16.0, 17.0, 18.0);
+    let edited_point = Point3::new(19.0, -20.0, 21.5);
+    regenerated.ir.model.spatial_sketch_entities[0].geometry = SpatialSketchGeometry::Point {
+        position: edited_point,
+    };
+    regenerated.ir.model.spatial_sketch_entities[2].geometry = SpatialSketchGeometry::Line {
+        start: edited_start,
+        end: edited_end,
+    };
+    let mut rewritten = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &regenerated.ir,
+            &regenerated.source_fidelity,
+            &mut rewritten,
+        )
+        .unwrap();
+    let rewritten = SldprtCodec
+        .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(rewritten.ir.model.spatial_sketch_entities.len(), 3);
+    assert!(matches!(
+        rewritten.ir.model.spatial_sketch_entities[0].geometry,
+        SpatialSketchGeometry::Point { position }
+            if (position.x - edited_point.x).abs() < 1.0e-12
+                && (position.y - edited_point.y).abs() < 1.0e-12
+                && (position.z - edited_point.z).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        rewritten.ir.model.spatial_sketch_entities[2].geometry,
+        SpatialSketchGeometry::Line { start, end }
+            if start == edited_start && end == edited_end
     ));
 }
 
@@ -4988,7 +5069,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
 }
 
 #[test]
-fn semantic_writer_remaps_configuration_scoped_sections() {
+fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
     let mut source = outer_header();
     source.extend(make_block(
         0x42,
@@ -5029,7 +5110,7 @@ fn semantic_writer_remaps_configuration_scoped_sections() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-5-ResolvedFeatures") }));
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert_eq!(container::active_configuration_index(&scan), Some(5));
     assert_eq!(
         container::select_active_parasolid(&scan)
@@ -5045,14 +5126,14 @@ fn semantic_writer_remaps_configuration_scoped_sections() {
         .filter_map(|block| block.section.as_deref())
         .filter(|section| {
             *section == "Contents/Config-3-Partition"
-                || *section == "Contents/Config-3-ResolvedFeatures"
+                || *section == "Contents/Config-5-ResolvedFeatures"
         })
         .collect::<Vec<_>>();
     assert!(stale.is_empty(), "stale sections: {stale:?}");
     assert!(!scan.blocks.iter().any(|block| {
         block.section.as_deref().is_some_and(|section| {
             section == "Contents/Config-3-Partition"
-                || section == "Contents/Config-3-ResolvedFeatures"
+                || section == "Contents/Config-5-ResolvedFeatures"
         })
     }));
     let round_trip = SldprtCodec
@@ -5062,7 +5143,7 @@ fn semantic_writer_remaps_configuration_scoped_sections() {
 }
 
 #[test]
-fn semantic_writer_allocates_one_index_for_unassigned_configuration_sections() {
+fn semantic_writer_allocates_partition_index_without_remapping_resolved_features() {
     let mut source = outer_header();
     source.extend(make_block(
         0x42,
@@ -5101,14 +5182,14 @@ fn semantic_writer_allocates_one_index_for_unassigned_configuration_sections() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-ResolvedFeatures") }));
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert!(!scan.blocks.iter().any(|block| {
         matches!(
             block.section.as_deref(),
             Some(
                 "Contents/ResolvedFeatures"
                     | "Contents/Config-3-Partition"
-                    | "Contents/Config-3-ResolvedFeatures"
+                    | "Contents/Config-0-ResolvedFeatures"
             )
         )
     }));
@@ -7662,6 +7743,8 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
         .unwrap();
 
     assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
@@ -12424,6 +12507,57 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
             tools: BodySelection::Unresolved,
             ..
         }
+    ));
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Feature Name="Combine" Type="Localized" id="119"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &combine_payload(false),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-1-ResolvedFeatures",
+        &resolved_selection,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature_id = decoded.ir.model.features[0].id.clone();
+    assert!(decoded.ir.model.configurations[0].active);
+    assert_eq!(decoded.ir.model.configurations[0].source_index, Some(1));
+    assert!(matches!(
+        &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Unresolved,
+            tools: BodySelection::Unresolved,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &decoded.ir.model.configurations[1].feature_states[&feature_id].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Native(target),
+            tools: BodySelection::Native(tools),
+            ..
+        } if target.starts_with("sldprt:feature-input:body-path:")
+            && tools.starts_with("sldprt:feature-input:body-path:")
     ));
 }
 
@@ -19254,6 +19388,36 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_extrusion() {
             profile: ProfileRef::Sketch(id),
             ..
         } if id == &sketch.id
+    ));
+}
+
+#[test]
+fn decode_binds_configuration_sketch_state_after_geometry_projection() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default" id="0"/><Sketch Name="Sketch1" Type="Sketch" id="0"/></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("projected sketch feature");
+    assert!(matches!(
+        &decoded.ir.model.configurations[0].feature_states[&feature.id].definition,
+        FeatureDefinition::Sketch {
+            sketch: Some(configuration_sketch),
+            ..
+        } if decoded.ir.model.sketches.iter().any(|sketch| &sketch.id == configuration_sketch)
     ));
 }
 
