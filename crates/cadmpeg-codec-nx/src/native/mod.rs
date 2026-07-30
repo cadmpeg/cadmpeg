@@ -19,6 +19,7 @@ mod attach;
 pub(crate) mod catalogue;
 mod display_jt;
 mod features;
+pub(crate) mod history;
 mod model;
 mod om;
 mod parasolid;

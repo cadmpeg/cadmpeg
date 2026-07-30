@@ -1360,7 +1360,11 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
 
 #[test]
 fn nx_configuration_completeness_requires_one_active_full_body_set() {
-    use cadmpeg_ir::features::{ConfigurationBodies, ConfigurationId, DesignConfiguration};
+    use cadmpeg_ir::features::{
+        BodySelection, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId,
+        ParameterValue,
+    };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let bodies = ir
@@ -1400,6 +1404,70 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
+
+    ir.model.configurations[0].active = true;
+    let output = ir.model.bodies[0].id.clone();
+    let feature = Feature {
+        id: FeatureId("test:feature#base".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![output.clone()],
+        definition: FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![output]),
+        },
+        native_ref: None,
+    };
+    ir.model.features.push(feature.clone());
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX design configuration"));
+
+    ir.model.configurations[0].feature_states.insert(
+        feature.id.clone(),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: feature.dependencies.clone(),
+            outputs: feature.outputs.clone(),
+            definition: feature.definition.clone(),
+        },
+    );
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    let parameter = DesignParameter {
+        id: ParameterId("test:parameter#length".into()),
+        owner: Some(feature.id),
+        ordinal: 0,
+        name: "length".into(),
+        expression: "2".into(),
+        display: None,
+        value: Some(ParameterValue::Real(2.0)),
+        dependencies: Vec::new(),
+        properties: Default::default(),
+        pmi: None,
+        native_ref: None,
+    };
+    ir.model.parameters.push(parameter.clone());
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX design configuration"));
+
+    ir.model.configurations[0]
+        .parameter_values
+        .insert(parameter.id, parameter.value.expect("evaluated parameter"));
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -12496,7 +12564,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         .message
         .contains("10 NX feature history operation"));
     assert_eq!(losses[1].category, LossCategory::DesignIntent);
-    assert!(losses[1].message.contains("1 NX design configuration"));
+    assert!(losses[1].message.contains("2 NX design configuration"));
     assert_eq!(losses[2].category, LossCategory::DesignIntent);
     assert!(losses[2].message.contains("DELETE (2)"));
     assert_eq!(losses[3].category, LossCategory::DesignIntent);

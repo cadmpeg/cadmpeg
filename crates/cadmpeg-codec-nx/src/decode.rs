@@ -9421,6 +9421,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                         bodies.len() != current_bodies.len()
                             || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
                     }))
+                || (configuration.active
+                    && active_configuration_state_is_incomplete(ir, configuration))
         })
         .count();
     if incomplete_configuration_count != 0 {
@@ -9429,8 +9431,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
-                "Activation or complete body membership remains unresolved for \
-                 {incomplete_configuration_count} NX design configuration(s)."
+                "Activation, complete body membership, evaluated feature state, or evaluated \
+                 parameter state remains unresolved for {incomplete_configuration_count} NX \
+                 design configuration(s)."
             ),
             provenance: None,
         });
@@ -9882,6 +9885,52 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             provenance: None,
         });
     }
+}
+
+fn active_configuration_state_is_incomplete(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> bool {
+    let Some(bodies) = configuration.bodies.resolved() else {
+        return true;
+    };
+    let active_features = if ir.model.features.is_empty() {
+        BTreeSet::new()
+    } else {
+        let Some(active_features) = crate::native::history::active_feature_closure(ir, bodies)
+        else {
+            return true;
+        };
+        active_features
+    };
+    if configuration.feature_states.len() != active_features.len() {
+        return true;
+    }
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (&feature.id, feature))
+        .collect::<BTreeMap<_, _>>();
+    if active_features.iter().any(|id| {
+        let (Some(feature), Some(state)) = (features.get(id), configuration.feature_states.get(id))
+        else {
+            return true;
+        };
+        state.suppressed
+            || state.dependencies != feature.dependencies
+            || state.outputs != feature.outputs
+            || state.definition != feature.definition
+    }) {
+        return true;
+    }
+
+    configuration.parameter_values.len() != ir.model.parameters.len()
+        || ir.model.parameters.iter().any(|parameter| {
+            parameter.value.as_ref().is_none_or(|value| {
+                configuration.parameter_values.get(&parameter.id) != Some(value)
+            })
+        })
 }
 
 pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Option<&'static str> {

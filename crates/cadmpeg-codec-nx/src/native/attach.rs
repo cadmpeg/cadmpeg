@@ -38,6 +38,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::decode::Scan;
+use crate::native::history::active_feature_closure;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
@@ -333,59 +334,6 @@ fn attach_active_configuration_parameter_values(
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = values;
     annotations.derived(&configuration.id.0, "parameter_values");
-}
-
-fn active_feature_closure(ir: &CadIr, bodies: &[BodyId]) -> Option<BTreeSet<FeatureId>> {
-    let feature_indices = ir
-        .model
-        .features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    if feature_indices.len() != ir.model.features.len() {
-        return None;
-    }
-    let active_bodies = bodies.iter().collect::<BTreeSet<_>>();
-    let mut active_features = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
-            feature
-                .outputs
-                .iter()
-                .any(|output| active_bodies.contains(output))
-        })
-        .map(|feature| feature.id.clone())
-        .collect::<BTreeSet<_>>();
-    if active_features.is_empty() {
-        return None;
-    }
-    let mut pending = active_features.iter().cloned().collect::<Vec<_>>();
-    while let Some(feature_id) = pending.pop() {
-        let feature = feature_indices
-            .get(&feature_id)
-            .and_then(|index| ir.model.features.get(*index))?;
-        for dependency in &feature.dependencies {
-            let dependency_feature = feature_indices
-                .get(dependency)
-                .and_then(|index| ir.model.features.get(*index))?;
-            (dependency_feature.ordinal < feature.ordinal).then_some(())?;
-            if active_features.insert(dependency.clone()) {
-                pending.push(dependency.clone());
-            }
-        }
-    }
-    if active_features.iter().any(|id| {
-        feature_indices
-            .get(id)
-            .and_then(|index| ir.model.features.get(*index))
-            .is_some_and(|feature| feature.suppressed == Some(true))
-    }) {
-        return None;
-    }
-    Some(active_features)
 }
 
 fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
