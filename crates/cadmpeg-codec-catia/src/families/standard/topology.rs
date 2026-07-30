@@ -475,6 +475,8 @@ pub(crate) fn complete_duplicate_face_slots(
     edge_classes: Option<&[usize]>,
     mesh_bytes: Option<&[u8]>,
 ) -> Option<Vec<[usize; 2]>> {
+    const MAX_DUPLICATE_FACE_OPERATIONS: usize = 65_536;
+
     struct SearchInputs<'a> {
         unresolved: &'a [usize],
         edge_rows: &'a [EdgeRow],
@@ -490,8 +492,10 @@ pub(crate) fn complete_duplicate_face_slots(
         assignment: &mut [usize],
         used: &mut [bool],
         solutions: &mut Vec<Vec<usize>>,
+        operations: &mut usize,
+        exhausted: &mut bool,
     ) {
-        if solutions.len() > 1 {
+        if *exhausted || solutions.len() > 1 {
             return;
         }
         if used.iter().all(|value| *value) {
@@ -529,17 +533,19 @@ pub(crate) fn complete_duplicate_face_slots(
                 .position(|degree| *degree == 1)
                 .map(|point| (face, point))
         });
-        let choices = inputs
+        let unresolved = inputs
             .unresolved
             .iter()
             .enumerate()
-            .filter(|(index, edge)| {
-                if used[*index] {
-                    return false;
-                }
+            .filter(|(index, _)| !used[*index]);
+        let candidates: Box<dyn Iterator<Item = (usize, &usize)>> = match deficit {
+            Some((_, point)) => Box::new(unresolved.filter(move |(_, edge)| {
                 let [start, end] = inputs.edge_points[**edge];
-                deficit.is_none_or(|(_, point)| start == point || end == point)
-            })
+                start == point || end == point
+            })),
+            None => Box::new(unresolved.take(1)),
+        };
+        let choices = candidates
             .flat_map(|(index, &edge)| {
                 let faces: Box<dyn Iterator<Item = usize>> = match deficit {
                     Some((face, _)) => Box::new(std::iter::once(face)),
@@ -554,6 +560,11 @@ pub(crate) fn complete_duplicate_face_slots(
             })
             .collect::<Vec<_>>();
         for (index, edge, face) in choices {
+            if *operations == MAX_DUPLICATE_FACE_OPERATIONS {
+                *exhausted = true;
+                return;
+            }
+            *operations += 1;
             let [start, end] = inputs.edge_points[edge];
             let start_add = 1 + u8::from(start == end);
             degrees[face][start] += start_add;
@@ -562,11 +573,16 @@ pub(crate) fn complete_duplicate_face_slots(
             }
             assignment[index] = face;
             used[index] = true;
-            search(inputs, degrees, assignment, used, solutions);
+            search(
+                inputs, degrees, assignment, used, solutions, operations, exhausted,
+            );
             used[index] = false;
             degrees[face][start] -= start_add;
             if start != end {
                 degrees[face][end] -= 1;
+            }
+            if *exhausted || solutions.len() > 1 {
+                return;
             }
         }
     }
@@ -621,6 +637,8 @@ pub(crate) fn complete_duplicate_face_slots(
     });
 
     let mut solutions = Vec::new();
+    let mut operations = 0;
+    let mut exhausted = false;
     let inputs = SearchInputs {
         unresolved: &unresolved,
         edge_rows,
@@ -635,7 +653,12 @@ pub(crate) fn complete_duplicate_face_slots(
         &mut vec![0; unresolved.len()],
         &mut vec![false; unresolved.len()],
         &mut solutions,
+        &mut operations,
+        &mut exhausted,
     );
+    if exhausted {
+        return None;
+    }
     if solutions.len() > 1 {
         let bytes = mesh_bytes?;
         solutions.clear();
@@ -653,7 +676,12 @@ pub(crate) fn complete_duplicate_face_slots(
             &mut vec![0; unresolved.len()],
             &mut vec![false; unresolved.len()],
             &mut solutions,
+            &mut operations,
+            &mut exhausted,
         );
+        if exhausted {
+            return None;
+        }
     }
     let [assignment] = solutions.as_slice() else {
         return None;

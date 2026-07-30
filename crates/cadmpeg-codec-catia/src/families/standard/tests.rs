@@ -4636,6 +4636,25 @@ fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradictio
 }
 
 #[test]
+fn independent_duplicate_face_slots_have_one_canonical_search_order() {
+    let rows = (0..12)
+        .map(|edge| EdgeRow {
+            kind: 1,
+            handles: vec![edge],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let serialized = vec![[0, 0]; rows.len()];
+    let points = (0..rows.len())
+        .map(|point| [point, point])
+        .collect::<Vec<_>>();
+
+    let completed = complete_duplicate_face_slots(&rows, &serialized, &points, 2, None, None)
+        .expect("independent closed edges have one face completion");
+    assert_eq!(completed, vec![[0, 1]; rows.len()]);
+}
+
+#[test]
 fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
     let serialized = [[0, 0], [0, 1], [1, 1]];
     let allowed = [vec![1, 2], Vec::new(), vec![0, 2]];
