@@ -1535,8 +1535,15 @@ fn direct_curve_parameter_near_point(
         CurveGeometry::Polyline {
             points, parameters, ..
         } => polyline_parameter_near_point(points, parameters.as_deref(), point, tolerance, seed)?,
-        CurveGeometry::Transformed { .. }
-        | CurveGeometry::Degenerate { .. }
+        CurveGeometry::Transformed { basis, transform } => {
+            let (basis_point, tolerance_scale) = inverse_affine_point(*transform, point)?;
+            let basis_tolerance = tolerance * tolerance_scale;
+            if !basis_tolerance.is_finite() {
+                return None;
+            }
+            direct_curve_parameter_near_point(basis, basis_point, seed, basis_tolerance)?
+        }
+        CurveGeometry::Degenerate { .. }
         | CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Unknown { .. } => return None,
@@ -1547,6 +1554,67 @@ fn direct_curve_parameter_near_point(
         + (evaluated.z - point.z).powi(2))
     .sqrt();
     (parameter.is_finite() && error.is_finite() && error <= tolerance).then_some(parameter)
+}
+
+fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, f64)> {
+    let [first, second, third, bottom] = transform.rows;
+    let [matrix_00, matrix_01, matrix_02, translate_x] = first;
+    let [matrix_10, matrix_11, matrix_12, translate_y] = second;
+    let [matrix_20, matrix_21, matrix_22, translate_z] = third;
+    if bottom != [0.0, 0.0, 0.0, 1.0] {
+        return None;
+    }
+    let cofactors = [
+        [
+            matrix_11 * matrix_22 - matrix_12 * matrix_21,
+            matrix_02 * matrix_21 - matrix_01 * matrix_22,
+            matrix_01 * matrix_12 - matrix_02 * matrix_11,
+        ],
+        [
+            matrix_12 * matrix_20 - matrix_10 * matrix_22,
+            matrix_00 * matrix_22 - matrix_02 * matrix_20,
+            matrix_02 * matrix_10 - matrix_00 * matrix_12,
+        ],
+        [
+            matrix_10 * matrix_21 - matrix_11 * matrix_20,
+            matrix_01 * matrix_20 - matrix_00 * matrix_21,
+            matrix_00 * matrix_11 - matrix_01 * matrix_10,
+        ],
+    ];
+    let determinant =
+        matrix_00 * cofactors[0][0] + matrix_01 * cofactors[1][0] + matrix_02 * cofactors[2][0];
+    if !determinant.is_finite() || determinant == 0.0 {
+        return None;
+    }
+    let inverse = cofactors.map(|row| row.map(|value| value / determinant));
+    if inverse.iter().flatten().any(|value| !value.is_finite()) {
+        return None;
+    }
+    let relative = [
+        point.x - translate_x,
+        point.y - translate_y,
+        point.z - translate_z,
+    ];
+    let coordinates = inverse.map(|row| {
+        row.into_iter()
+            .zip(relative)
+            .map(|(coefficient, coordinate)| coefficient * coordinate)
+            .sum::<f64>()
+    });
+    let tolerance_scale = inverse
+        .iter()
+        .flatten()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    (coordinates
+        .into_iter()
+        .chain([tolerance_scale])
+        .all(f64::is_finite))
+    .then_some((
+        Point3::new(coordinates[0], coordinates[1], coordinates[2]),
+        tolerance_scale,
+    ))
 }
 
 fn polyline_parameter_near_point(
@@ -2715,6 +2783,56 @@ mod tests {
                 .expect("polyline inverse");
             assert!((inverse - expected).abs() < 1.0e-12);
         }
+    }
+
+    #[test]
+    fn transformed_curve_inverse_uses_the_basis_parameterization() {
+        let basis = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.0,
+        };
+        let transform = Transform {
+            rows: [
+                [-2.0, 0.0, 0.0, 1.0e6],
+                [0.0, 0.5, 0.0, -2.0e6],
+                [0.0, 0.0, 3.0, 3.0e6],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        };
+        let geometry = CurveGeometry::Transformed {
+            basis: Box::new(basis.clone()),
+            transform,
+        };
+        let parameter = 0.7 + std::f64::consts::TAU;
+        let point = curve_point(&geometry, parameter).unwrap();
+        let id = CurveId("test:transformed-inverse".into());
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry,
+            source_object: None,
+        });
+        let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
+            .expect("transformed inverse");
+        assert!((inverse - parameter).abs() < 1.0e-10);
+
+        ir.model.curves[0].geometry = CurveGeometry::Transformed {
+            basis: Box::new(basis),
+            transform: Transform {
+                rows: [
+                    [0.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            },
+        };
+        assert!(
+            super::model_curve_parameter_near_point(&ir, &id, Point3::new(0.0, 0.0, 0.0), 0.0,)
+                .is_none()
+        );
     }
 
     #[test]
