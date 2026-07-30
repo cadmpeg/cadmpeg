@@ -625,8 +625,16 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             entity: entity.clone(),
             parameter: parameter.clone(),
         },
+        SketchConstraintDefinition::RepeatedRadius {
+            entities: vec![entity.clone(), entity.clone()],
+            parameter: parameter.clone(),
+        },
         SketchConstraintDefinition::Diameter {
             entity: entity.clone(),
+            parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::RepeatedDiameter {
+            entities: vec![entity.clone(), entity.clone()],
             parameter: parameter.clone(),
         },
         SketchConstraintDefinition::DistanceLoci {

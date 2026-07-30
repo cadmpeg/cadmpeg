@@ -1007,11 +1007,25 @@ pub enum SketchConstraintDefinition {
         /// Driving radius parameter.
         parameter: ParameterId,
     },
+    /// Equal-radius circular entities controlled by one design parameter.
+    RepeatedRadius {
+        /// Distinct circular entities sharing the driven radius.
+        entities: Vec<SketchEntityId>,
+        /// Shared driving radius parameter.
+        parameter: ParameterId,
+    },
     /// Diameter controlled by a design parameter.
     Diameter {
         /// Circular entity.
         entity: SketchEntityId,
         /// Driving diameter parameter.
+        parameter: ParameterId,
+    },
+    /// Equal-diameter circular entities controlled by one design parameter.
+    RepeatedDiameter {
+        /// Distinct circular entities sharing the driven diameter.
+        entities: Vec<SketchEntityId>,
+        /// Shared driving diameter parameter.
         parameter: ParameterId,
     },
     /// Refraction relation between two curve loci and their interface.

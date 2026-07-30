@@ -1154,6 +1154,30 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             && entities.insert(second.clone())
                     })
             }
+            Constraint::RepeatedRadius { entities, .. }
+            | Constraint::RepeatedDiameter { entities, .. } => {
+                let distinct = entities.iter().collect::<HashSet<_>>();
+                let radii = entities
+                    .iter()
+                    .filter_map(|entity| match geometry.get(entity) {
+                        Some(
+                            SketchGeometry::Circle { radius, .. }
+                            | SketchGeometry::Arc { radius, .. },
+                        ) => Some(radius.0),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                entities.len() >= 2
+                    && distinct.len() == entities.len()
+                    && radii.len() == entities.len()
+                    && radii[1..].iter().all(|radius| {
+                        (radius - radii[0]).abs()
+                            <= ir
+                                .tolerances
+                                .linear
+                                .max(1.0e-9 * (1.0 + radius.abs().max(radii[0].abs())))
+                    })
+            }
             Constraint::Offset {
                 pairs,
                 distance,

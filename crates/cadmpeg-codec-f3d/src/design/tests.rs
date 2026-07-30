@@ -48,14 +48,33 @@ use crate::design::dimensions::{
     bind_dimension_loci, counted_role_relation, directional_point_dimension,
     exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
     exact_offset_constraint, expression_identifiers, indirect_angular_lines,
-    null_locus_dimension_definition, offset_parameter_factor, point_lies_on_sketch_geometry,
-    project_dimension_constraints, project_spatial_dimension_constraints,
+    null_locus_dimension_definition, offset_parameter_factor,
+    owner_scoped_radial_dimension_definition, point_lies_on_sketch_geometry,
     radial_dimension_definition, radial_locus_dimension_definition,
     remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_parallel_line_distance_matches, spatial_point_distance_matches,
-    two_locus_distance_dimension, unique_radial_dimension_definition,
-    unresolved_parameter_expression_dependency_count,
+    two_locus_distance_dimension, unresolved_parameter_expression_dependency_count,
 };
+
+fn project_dimension_constraints(
+    inputs: &crate::design::dimensions::DimensionConstraintInputs<'_>,
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
+    crate::design::dimensions::project_dimension_constraints(inputs, spatial_sketches, 1.0e-6)
+}
+
+fn project_spatial_dimension_constraints(
+    inputs: &crate::design::dimensions::DimensionConstraintInputs<'_>,
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
+    crate::design::dimensions::project_spatial_dimension_constraints(
+        inputs,
+        spatial_sketches,
+        spatial_entities,
+        1.0e-6,
+    )
+}
 use crate::design::edge_resolve::{
     feature_input_topology_id, partial_historical_edge_selection,
     resolved_edge_candidate_intersection,
@@ -2986,7 +3005,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
 }
 
 #[test]
-fn radial_dimensions_require_one_exact_circular_measurement() {
+fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     let mut entity = SketchEntity {
         id: SketchEntityId("f3d:model:sketch-entity#circle".into()),
         sketch: SketchId("f3d:model:sketch#radial".into()),
@@ -3048,11 +3067,12 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
     ))
     .expect("diameter parameter");
     assert!(matches!(
-        unique_radial_dimension_definition(
+        owner_scoped_radial_dimension_definition(
             std::slice::from_ref(&entity),
             &entity.sketch,
             &parameter,
             &diameter_parameter,
+            1.0e-6,
         ),
         Some(SketchConstraintDefinition::Diameter {
             entity: ref actual,
@@ -3061,13 +3081,48 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
     ));
     let mut duplicate = entity.clone();
     duplicate.id = SketchEntityId("f3d:model:sketch-entity#duplicate-circle".into());
-    assert!(unique_radial_dimension_definition(
-        &[entity.clone(), duplicate],
-        &entity.sketch,
-        &parameter,
-        &diameter_parameter,
-    )
-    .is_none());
+    let SketchGeometry::Circle { radius, .. } = &mut duplicate.geometry else {
+        unreachable!("test entity is circular")
+    };
+    radius.0 += 5.0e-7;
+    assert!(matches!(
+        owner_scoped_radial_dimension_definition(
+            &[entity.clone(), duplicate.clone()],
+            &entity.sketch,
+            &parameter,
+            &diameter_parameter,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::RepeatedDiameter {
+            entities,
+            parameter,
+        }) if entities == vec![entity.id.clone(), duplicate.id.clone()]
+            && parameter == diameter_parameter
+    ));
+
+    let radial_parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "5 mm",
+        "Radial Dimension-2",
+        Some("mm"),
+        "d2",
+        0.5,
+    ))
+    .expect("radial parameter");
+    assert!(matches!(
+        owner_scoped_radial_dimension_definition(
+            &[entity.clone(), duplicate.clone()],
+            &entity.sketch,
+            &radial_parameter,
+            &radius_parameter,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::RepeatedRadius {
+            entities,
+            parameter,
+        }) if entities == vec![entity.id.clone(), duplicate.id]
+            && parameter == radius_parameter
+    ));
 
     entity.geometry = SketchGeometry::Arc {
         center: Point2::new(2.0, 3.0),

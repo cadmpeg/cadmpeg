@@ -1290,6 +1290,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 crate::design::dimensions::project_dimension_constraints(
                     &constraint_inputs,
                     &ir.model.spatial_sketches,
+                    ir.tolerances.linear,
                 ),
             );
             ir.model.spatial_sketch_constraints.extend(
@@ -1297,6 +1298,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                     &constraint_inputs,
                     &ir.model.spatial_sketches,
                     &ir.model.spatial_sketch_entities,
+                    ir.tolerances.linear,
                 ),
             );
             crate::design::dimensions::bind_offset_dimension_parameters(
@@ -1691,12 +1693,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         .extend(crate::design::dimensions::project_dimension_constraints(
             &constraint_inputs,
             &ir.model.spatial_sketches,
+            ir.tolerances.linear,
         ));
     ir.model.spatial_sketch_constraints.extend(
         crate::design::dimensions::project_spatial_dimension_constraints(
             &constraint_inputs,
             &ir.model.spatial_sketches,
             &ir.model.spatial_sketch_entities,
+            ir.tolerances.linear,
         ),
     );
     crate::design::dimensions::bind_offset_dimension_parameters(

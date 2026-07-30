@@ -37,18 +37,20 @@ pub struct DimensionConstraintInputs<'a> {
 }
 
 /// Project dimensional parameter companions into parameter-backed sketch
-/// constraints. Two-locus dimensions have neutral semantics; aggregate and
+/// constraints. Solved linear measurements use the source kernel's absolute
+/// resolution. Two-locus dimensions have neutral semantics; aggregate and
 /// role-dependent forms remain explicit native constraints.
 pub fn project_dimension_constraints(
     inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     let spatial_sketch_ids = spatial_sketches
         .iter()
         .map(|sketch| sketch.id.clone())
         .collect::<HashSet<_>>();
     let placements = inputs.placements;
-    project_all_dimension_constraints(inputs)
+    project_all_dimension_constraints(inputs, linear_tolerance)
         .into_iter()
         .filter(|constraint| {
             placements
@@ -63,6 +65,7 @@ pub fn project_dimension_constraints(
 
 fn project_all_dimension_constraints(
     inputs: &DimensionConstraintInputs<'_>,
+    linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
         SketchConstraint, SketchConstraintDefinition as Definition, SketchGeometry,
@@ -756,8 +759,13 @@ fn project_all_dimension_constraints(
                 Vec::default()
             };
             let repeated = repeated_linear_dimension(&linear_candidates, parameter_id.clone());
-            let radial =
-                unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id);
+            let radial = owner_scoped_radial_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            );
             let concentric =
                 concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id);
             let definition = radial.unwrap_or_else(|| {
@@ -817,60 +825,45 @@ fn project_all_dimension_constraints(
         let sketch = sketches_by_scope
             .get(&(scope, owner.scope_record_index))?
             .clone();
-        let definition =
-            unique_radial_dimension_definition(entities, &sketch, parameter, &parameter_id)
-                .or_else(|| {
-                    unique_line_length_dimension_definition(
-                        entities,
-                        &sketch,
-                        parameter,
-                        &parameter_id,
-                    )
-                })
-                .or_else(|| {
-                    unique_parallel_line_dimension_definition(
-                        entities,
-                        &sketch,
-                        parameter,
-                        &parameter_id,
-                    )
-                })
-                .or_else(|| {
-                    unique_point_line_dimension_definition(
-                        entities,
-                        &sketch,
-                        parameter,
-                        &parameter_id,
-                    )
-                })
-                .or_else(|| {
-                    concentric_circle_dimension_definition(
-                        entities,
-                        &sketch,
-                        parameter,
-                        &parameter_id,
-                    )
-                })
-                .unwrap_or_else(|| Definition::Native {
-                    native_kind: parameter.source_kind.clone(),
-                    native_state: None,
-                    entities: Vec::new(),
-                    parameter: Some(parameter_id.clone()),
-                    operands: vec![SketchNativeOperand {
-                        native_kind: "dimension_companion".into(),
-                        native_field: Some(
-                            if companion.payload_byte_length == 0 {
-                                "companion"
-                            } else {
-                                "companion_payload"
-                            }
-                            .into(),
-                        ),
-                        native_role: None,
-                        object_index: companion.record_index,
-                        native_ref: Some(companion.id.clone()),
-                    }],
-                });
+        let definition = owner_scoped_radial_dimension_definition(
+            entities,
+            &sketch,
+            parameter,
+            &parameter_id,
+            linear_tolerance,
+        )
+        .or_else(|| {
+            unique_line_length_dimension_definition(entities, &sketch, parameter, &parameter_id)
+        })
+        .or_else(|| {
+            unique_parallel_line_dimension_definition(entities, &sketch, parameter, &parameter_id)
+        })
+        .or_else(|| {
+            unique_point_line_dimension_definition(entities, &sketch, parameter, &parameter_id)
+        })
+        .or_else(|| {
+            concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id)
+        })
+        .unwrap_or_else(|| Definition::Native {
+            native_kind: parameter.source_kind.clone(),
+            native_state: None,
+            entities: Vec::new(),
+            parameter: Some(parameter_id.clone()),
+            operands: vec![SketchNativeOperand {
+                native_kind: "dimension_companion".into(),
+                native_field: Some(
+                    if companion.payload_byte_length == 0 {
+                        "companion"
+                    } else {
+                        "companion_payload"
+                    }
+                    .into(),
+                ),
+                native_role: None,
+                object_index: companion.record_index,
+                native_ref: Some(companion.id.clone()),
+            }],
+        });
         Some(SketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
             sketch,
@@ -1076,30 +1069,69 @@ pub(crate) fn unique_line_length_dimension_definition(
     })
 }
 
-/// Resolve an owner-scoped radial dimension when exactly one circular entity
-/// satisfies its evaluated measurement.
-pub(crate) fn unique_radial_dimension_definition(
+/// Resolve the owner-scoped circular measurements governed by one radial
+/// parameter.
+pub(crate) fn owner_scoped_radial_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+
     if !design_dimension_unit(parameter) {
         return None;
     }
-    let mut definitions = entities
+
+    let definitions = entities
         .iter()
         .filter(|entity| &entity.sketch == sketch)
         .filter_map(|entity| {
-            radial_dimension_definition(
+            radial_dimension_definition_at_tolerance(
                 entity,
                 &parameter.source_kind,
                 parameter.evaluated_value,
                 parameter_id.clone(),
+                linear_tolerance,
             )
-        });
-    let definition = definitions.next()?;
-    definitions.next().is_none().then_some(definition)
+        })
+        .collect::<Vec<_>>();
+    match definitions.as_slice() {
+        [] => None,
+        [definition] => Some(definition.clone()),
+        _ if definitions
+            .iter()
+            .all(|definition| matches!(definition, Definition::Radius { .. })) =>
+        {
+            Some(Definition::RepeatedRadius {
+                entities: definitions
+                    .into_iter()
+                    .filter_map(|definition| match definition {
+                        Definition::Radius { entity, .. } => Some(entity),
+                        _ => None,
+                    })
+                    .collect(),
+                parameter: parameter_id.clone(),
+            })
+        }
+        _ if definitions
+            .iter()
+            .all(|definition| matches!(definition, Definition::Diameter { .. })) =>
+        {
+            Some(Definition::RepeatedDiameter {
+                entities: definitions
+                    .into_iter()
+                    .filter_map(|definition| match definition {
+                        Definition::Diameter { entity, .. } => Some(entity),
+                        _ => None,
+                    })
+                    .collect(),
+                parameter: parameter_id.clone(),
+            })
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn constraint_parameters(
@@ -1119,7 +1151,9 @@ pub(crate) fn constraint_parameters(
         | Definition::Angle { parameter, .. }
         | Definition::AngleToAxis { parameter, .. }
         | Definition::Radius { parameter, .. }
+        | Definition::RepeatedRadius { parameter, .. }
         | Definition::Diameter { parameter, .. }
+        | Definition::RepeatedDiameter { parameter, .. }
         | Definition::SnellsLaw { parameter, .. }
         | Definition::Weight { parameter, .. } => vec![parameter],
         Definition::RectangularPattern { directions, .. } => directions
@@ -1286,6 +1320,7 @@ pub fn project_spatial_dimension_constraints(
     inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+    linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition, SketchNativeOperand, SpatialSketchConstraint,
@@ -1356,7 +1391,7 @@ pub fn project_spatial_dimension_constraints(
         })
         .collect::<HashMap<_, _>>();
     let mut source_parameters = HashSet::new();
-    let mut projected = project_all_dimension_constraints(inputs)
+    let mut projected = project_all_dimension_constraints(inputs, linear_tolerance)
         .into_iter()
         .filter_map(|constraint| {
             let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
@@ -1790,6 +1825,16 @@ pub(crate) fn radial_dimension_definition(
     evaluated_value: f64,
     parameter: cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    radial_dimension_definition_at_tolerance(entity, source_kind, evaluated_value, parameter, 0.0)
+}
+
+fn radial_dimension_definition_at_tolerance(
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    source_kind: &str,
+    evaluated_value: f64,
+    parameter: cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
     };
@@ -1809,7 +1854,12 @@ pub(crate) fn radial_dimension_definition(
     };
     let evaluated = evaluated_value * 10.0;
     let scale = 1.0 + measured.abs().max(evaluated.abs());
-    if !evaluated.is_finite() || (measured - evaluated).abs() > 1.0e-9 * scale {
+    let tolerance = linear_tolerance.max(1.0e-9 * scale);
+    if !evaluated.is_finite()
+        || !tolerance.is_finite()
+        || tolerance < 0.0
+        || (measured - evaluated).abs() > tolerance
+    {
         return None;
     }
     Some(if is_radius {
