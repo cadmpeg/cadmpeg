@@ -3263,10 +3263,84 @@ fn body_combine_requires_exactly_one_resolved_target() {
         },
         native_ref: None,
     });
-    assert!(validate(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message == "body combine target is invalid"));
+    let findings = validate(&ir, Vec::new()).findings;
+    for message in [
+        "body combine target is invalid",
+        "body combine operands overlap",
+    ] {
+        assert!(findings.iter().any(|finding| finding.message == message));
+    }
+}
+
+#[test]
+fn feature_operand_roles_must_be_disjoint() {
+    use crate::features::{
+        BodySelection, BodyTrimSide, FaceSelection, Feature, FeatureDefinition, FeatureId, Length,
+        RadiusSpec,
+    };
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    let body_key = body.0.clone();
+    let face = ir.model.faces[0].id.clone();
+    for (ordinal, definition) in [
+        FeatureDefinition::FaceBlend {
+            first_faces: FaceSelection::Faces(vec![face.clone()]),
+            second_faces: FaceSelection::Faces(vec![face]),
+            radius: RadiusSpec::Constant {
+                radius: Length(1.0),
+            },
+        },
+        FeatureDefinition::TrimBodies {
+            targets: BodySelection::Local {
+                bodies: vec![body_key.clone()],
+                native: "test:selection#targets".into(),
+            },
+            tools: BodySelection::Local {
+                bodies: vec![body_key.clone()],
+                native: "test:selection#tools".into(),
+            },
+            keep: BodyTrimSide::Forward,
+        },
+        FeatureDefinition::SectionShape {
+            first: BodySelection::Local {
+                bodies: vec![body_key.clone()],
+                native: "test:selection#first".into(),
+            },
+            second: BodySelection::Local {
+                bodies: vec![body_key],
+                native: "test:selection#second".into(),
+            },
+            approximate: Some(false),
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#overlap-{ordinal}")),
+            ordinal: ordinal as u64,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        });
+    }
+    let findings = validate(&ir, Vec::new()).findings;
+    for message in [
+        "face blend supports overlap",
+        "body trim operands overlap",
+        "section operands overlap",
+    ] {
+        assert!(findings.iter().any(|finding| finding.message == message));
+    }
 }
 
 #[test]

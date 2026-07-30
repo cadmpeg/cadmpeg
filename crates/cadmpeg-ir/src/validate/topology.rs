@@ -4,8 +4,9 @@
 
 use super::*;
 use crate::features::{
-    ChamferSpec, ExtrudeStart, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length,
-    PatternKind, PatternSeed, PatternStageCombination, PrimitiveSolid, RadiusSpec,
+    BodySelection, ChamferSpec, ExtrudeStart, FaceMotion, FaceSelection, FeatureSourceContent,
+    FlexMode, HoleKind, Length, PatternKind, PatternSeed, PatternStageCombination, PrimitiveSolid,
+    RadiusSpec,
 };
 use crate::math::Point3;
 
@@ -1904,8 +1905,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
 
 fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
     use crate::features::{
-        BodySelection, EdgeSelection, ExtrudeExtent, FaceSelection, FeatureDefinition, PathRef,
-        ProfileRef, RevolveExtent, ScaleCenter, Termination,
+        EdgeSelection, ExtrudeExtent, FeatureDefinition, PathRef, ProfileRef, RevolveExtent,
+        ScaleCenter, Termination,
     };
 
     let mut configuration_ordinals = HashSet::new();
@@ -2330,6 +2331,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(first_faces);
                 face_selections.push(second_faces);
+                if face_selections_overlap(first_faces, second_faces) {
+                    feature_geometry_error(findings, feature, "face blend supports overlap");
+                }
                 if !radius_spec_is_valid(radius) {
                     feature_geometry_error(findings, feature, "face blend radius is invalid");
                 }
@@ -2771,6 +2775,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::SectionShape { first, second, .. } => {
                 body_selections.push(first);
                 body_selections.push(second);
+                if body_selections_overlap(first, second) {
+                    feature_geometry_error(findings, feature, "section operands overlap");
+                }
             }
             FeatureDefinition::MirrorShape {
                 source,
@@ -3014,6 +3021,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Combine { target, tools, .. } => {
                 body_selections.push(target);
                 body_selections.push(tools);
+                if body_selections_overlap(target, tools) {
+                    feature_geometry_error(findings, feature, "body combine operands overlap");
+                }
                 let target_count = match target {
                     BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
                         Some(bodies.len())
@@ -3034,6 +3044,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::TrimBodies { targets, tools, .. } => {
                 body_selections.push(targets);
                 body_selections.push(tools);
+                if body_selections_overlap(targets, tools) {
+                    feature_geometry_error(findings, feature, "body trim operands overlap");
+                }
             }
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 body_selections.push(bodies);
@@ -4394,6 +4407,83 @@ fn parameter_value_is_valid(value: &crate::features::ParameterValue) -> bool {
         crate::features::ParameterValue::Integer(_)
         | crate::features::ParameterValue::Boolean(_)
         | crate::features::ParameterValue::String(_) => true,
+    }
+}
+
+fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
+    fn direct(selection: &FaceSelection) -> Option<&[crate::ids::FaceId]> {
+        match selection {
+            FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
+                Some(faces.as_slice())
+            }
+            _ => None,
+        }
+    }
+    fn historical(
+        selection: &FaceSelection,
+    ) -> Option<(
+        &crate::ids::FeatureInputTopologyId,
+        &[crate::ids::HistoricalFaceId],
+    )> {
+        match selection {
+            FaceSelection::Historical { state, faces, .. }
+            | FaceSelection::HistoricalPartial { state, faces, .. } => {
+                Some((state, faces.as_slice()))
+            }
+            _ => None,
+        }
+    }
+    if let Some((first, second)) = direct(first).zip(direct(second)) {
+        return first.iter().any(|face| second.contains(face));
+    }
+    if let Some(((first_state, first), (second_state, second))) =
+        historical(first).zip(historical(second))
+    {
+        return first_state == second_state && first.iter().any(|face| second.contains(face));
+    }
+    match (first, second) {
+        (
+            FaceSelection::Generated { faces: first, .. },
+            FaceSelection::Generated { faces: second, .. },
+        ) => first.iter().any(|face| second.contains(face)),
+        _ => false,
+    }
+}
+
+fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
+    fn direct(selection: &BodySelection) -> Option<&[crate::ids::BodyId]> {
+        match selection {
+            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                Some(bodies.as_slice())
+            }
+            _ => None,
+        }
+    }
+    if let Some((first, second)) = direct(first).zip(direct(second)) {
+        return first.iter().any(|body| second.contains(body));
+    }
+    match (first, second) {
+        (
+            BodySelection::Historical {
+                state: first_state,
+                bodies: first,
+                ..
+            },
+            BodySelection::Historical {
+                state: second_state,
+                bodies: second,
+                ..
+            },
+        ) => first_state == second_state && first.iter().any(|body| second.contains(body)),
+        (
+            BodySelection::Generated { bodies: first, .. },
+            BodySelection::Generated { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
+        (
+            BodySelection::Local { bodies: first, .. },
+            BodySelection::Local { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
+        _ => false,
     }
 }
 
