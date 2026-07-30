@@ -710,6 +710,34 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
 }
 
 #[test]
+fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
+    use cadmpeg_ir::features::{BooleanOp, PathRef, SweepMode, SweepOrientation};
+
+    assert!(crate::decode::sweep_mode_is_incomplete(SweepMode::Solid {
+        op: BooleanOp::Unresolved,
+    }));
+    assert!(!crate::decode::sweep_mode_is_incomplete(SweepMode::Solid {
+        op: BooleanOp::NewBody,
+    }));
+    assert!(crate::decode::sweep_orientation_is_incomplete(
+        &SweepOrientation::Auxiliary {
+            path: PathRef::Native("nx:auxiliary-path#0".into()),
+            tangent: false,
+            curvilinear: false,
+        }
+    ));
+    assert!(!crate::decode::sweep_orientation_is_incomplete(
+        &SweepOrientation::Auxiliary {
+            path: PathRef::Curves(vec![cadmpeg_ir::ids::CurveId(
+                "test:curve#auxiliary".into(),
+            )]),
+            tangent: false,
+            curvilinear: false,
+        }
+    ));
+}
+
+#[test]
 fn nx_pattern_completeness_requires_every_regeneration_operand() {
     use cadmpeg_ir::features::{
         Length, PathRef, PatternKind, PatternStage, PatternStageCombination,

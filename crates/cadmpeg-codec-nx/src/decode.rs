@@ -24,7 +24,7 @@ use cadmpeg_ir::features::{
     CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, ExtrudeExtent,
     ExtrudeStart, FaceSelection, FeatureDefinition, HoleKind, Length, LoftPointSection,
     LoftSection, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
-    RibDraft, SketchSpace, SweepMode, Termination, TrimRegion, VertexSelection,
+    RibDraft, SketchSpace, SweepMode, SweepOrientation, Termination, TrimRegion, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -9716,8 +9716,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             } if profile.as_ref().is_none_or(profile_ref_is_incomplete)
                 || sections.iter().any(profile_ref_is_incomplete)
                 || path.as_ref().is_none_or(path_ref_is_incomplete)
-                || matches!(mode, SweepMode::Unresolved)
-                || orientation.is_none()
+                || sweep_mode_is_incomplete(*mode)
+                || orientation
+                    .as_ref()
+                    .is_none_or(sweep_orientation_is_incomplete)
                 || transition.is_none()
                 || transformation.is_none() =>
             {
@@ -10103,6 +10105,26 @@ pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: Bool
         || construction.side.is_none()
         || matches!(construction.draft, RibDraft::Unresolved)
         || matches!(op, BooleanOp::Unresolved)
+}
+
+pub(crate) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
+    match mode {
+        SweepMode::Unresolved
+        | SweepMode::Solid {
+            op: BooleanOp::Unresolved,
+        } => true,
+        SweepMode::Solid { .. } | SweepMode::Surface => false,
+    }
+}
+
+pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) -> bool {
+    match orientation {
+        SweepOrientation::Auxiliary { path, .. } => path_ref_is_incomplete(path),
+        SweepOrientation::CorrectedFrenet
+        | SweepOrientation::Fixed
+        | SweepOrientation::Frenet
+        | SweepOrientation::Binormal { .. } => false,
+    }
 }
 
 pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
