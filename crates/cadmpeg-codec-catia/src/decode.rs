@@ -958,13 +958,19 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.formula_relation.as_ref())
-        .filter(|formula| formula.parameter.is_some())
+        .filter(|formula| formula.output_entity.entity.is_some())
         .count();
     let null_formula_output_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.formula_relation.as_ref())
-        .filter(|formula| formula.parameter_is_null)
+        .filter(|formula| formula.output_entity.is_null)
+        .count();
+    let classified_formula_output_entity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.formula_relation.as_ref())
+        .filter(|formula| formula.output_entity.class_name.is_some())
         .count();
     let unresolved_formula_output_count =
         formula_relation_count - resolved_formula_output_count - null_formula_output_count;
@@ -2221,6 +2227,14 @@ fn finish_decode(
         (
             "decoded_null_formula_output_count".to_string(),
             null_formula_output_count,
+        ),
+        (
+            "decoded_classified_formula_output_entity_count".to_string(),
+            classified_formula_output_entity_count,
+        ),
+        (
+            "unclassified_formula_output_entity_count".to_string(),
+            formula_relation_count - classified_formula_output_entity_count,
         ),
         (
             "unresolved_formula_output_count".to_string(),

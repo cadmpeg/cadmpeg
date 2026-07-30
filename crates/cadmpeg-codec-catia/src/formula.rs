@@ -35,7 +35,14 @@ pub(crate) fn transfer_parameters(
         .filter(|entity| {
             graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
         })
-        .filter_map(|entity| entity.formula_relation.as_ref()?.parameter.as_deref())
+        .filter_map(|entity| {
+            entity
+                .formula_relation
+                .as_ref()?
+                .output_entity
+                .entity
+                .as_deref()
+        })
         .fold(
             HashMap::<ParameterId, usize>::new(),
             |mut counts, parameter| {
@@ -162,7 +169,8 @@ pub(crate) fn transfer_parameters(
             .map(|candidate| (candidate.parameter.clone(), candidate.parameter_type))
             .collect::<Vec<_>>();
         if let Some(output) = formula
-            .parameter
+            .output_entity
+            .entity
             .as_deref()
             .filter(|_| evaluated_expression.is_some())
             .and_then(|id| entities.get(id))

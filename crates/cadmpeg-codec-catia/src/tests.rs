@@ -13473,8 +13473,8 @@ fn native_namespace_types_and_validates_formula_relations() {
         .as_ref()
         .expect("complete formula relation");
     assert_eq!(formula.expression, native.entity_records[1].id);
-    assert_eq!(formula.parameter_entity_id, 99);
-    assert_eq!(formula.parameter, None);
+    assert_eq!(formula.output_entity.entity_id, 99);
+    assert_eq!(formula.output_entity.entity, None);
     assert_eq!(
         formula.parameter_dependencies,
         [crate::native::CatiaFormulaParameterDependency {
@@ -13483,6 +13483,43 @@ fn native_namespace_types_and_validates_formula_relations() {
         }]
     );
     let expected_formula = formula.clone();
+
+    let mut version_235_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_235_namespace)
+        .expect("store current formula output reference");
+    let formula_fields = version_235_namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("formula_relation")
+        .expect("stored formula relation")
+        .as_object_mut()
+        .expect("stored formula-relation object");
+    let output = formula_fields
+        .remove("output_entity")
+        .expect("stored output entity");
+    let output = output.as_object().expect("stored output-entity object");
+    formula_fields.insert(
+        "parameter_entity_id".to_string(),
+        output["entity_id"].clone(),
+    );
+    formula_fields.insert(
+        "parameter_is_null".to_string(),
+        output.get("is_null").cloned().unwrap_or_default(),
+    );
+    formula_fields.insert(
+        "parameter".to_string(),
+        output.get("entity").cloned().unwrap_or_default(),
+    );
+    version_235_namespace.version = crate::native::CATIA_FORMULA_OUTPUT_REFERENCE_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&version_235_namespace)
+        .expect("migrate formula output reference");
+    assert_eq!(
+        migrated.entity_records[0].formula_relation,
+        Some(expected_formula.clone())
+    );
 
     let mut version_205_namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -13514,7 +13551,8 @@ fn native_namespace_types_and_validates_formula_relations() {
         .formula_relation
         .as_mut()
         .expect("complete formula relation")
-        .parameter_entity_id = 98;
+        .output_entity
+        .entity_id = 98;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
@@ -13637,9 +13675,9 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .formula_relation
         .as_ref()
         .expect("complete formula relation");
-    assert_eq!(formula.parameter_entity_id, 5);
-    assert!(formula.parameter_is_null);
-    assert_eq!(formula.parameter, None);
+    assert_eq!(formula.output_entity.entity_id, 5);
+    assert!(formula.output_entity.is_null);
+    assert_eq!(formula.output_entity.entity, None);
     let formula_record = native.object_graphs[0]
         .records
         .iter()
@@ -13670,7 +13708,8 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .formula_relation
         .as_mut()
         .expect("complete formula relation")
-        .parameter_is_null = false;
+        .output_entity
+        .is_null = false;
     version_210_namespace
         .set_arena("entity_records", &version_210_entities)
         .expect("store version 210 entity records");
@@ -13683,7 +13722,8 @@ fn terminal_entity_identity_is_a_null_formula_output() {
             .formula_relation
             .as_ref()
             .expect("migrated formula relation")
-            .parameter_is_null
+            .output_entity
+            .is_null
     );
 
     let decoded = CatiaCodec
@@ -13691,6 +13731,14 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .expect("decode formula with null output");
     assert_eq!(
         decoded.report.coverage["decoded_null_formula_output_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_classified_formula_output_entity_count"],
+        0
+    );
+    assert_eq!(
+        decoded.report.coverage["unclassified_formula_output_entity_count"],
         1
     );
     assert_eq!(
@@ -13738,11 +13786,27 @@ fn formula_input_with_additional_object_payload_remains_unresolved() {
 fn decode_transfers_a_closed_length_formula_and_its_input() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 
+    let bytes = standard_catpart_with_formula_relation(4, false);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let output_entity = &native.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation")
+        .output_entity;
+    assert_eq!(output_entity.entity_id, 4);
+    assert!(output_entity.entity.is_some());
+    assert_eq!(
+        output_entity.class_name,
+        native
+            .object_graphs
+            .iter()
+            .flat_map(|graph| &graph.records)
+            .find(|record| record.entity_id == Some(4))
+            .and_then(|record| record.class_name.clone())
+    );
+
     let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_formula_relation(4, false)),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode closed length formula");
     let [input, output] = decoded.ir.model.parameters.as_slice() else {
         panic!("closed formula parameters")
@@ -13767,6 +13831,14 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(
         decoded.report.coverage["decoded_resolved_formula_output_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_classified_formula_output_entity_count"],
+        usize::from(output_entity.class_name.is_some())
+    );
+    assert_eq!(
+        decoded.report.coverage["unclassified_formula_output_entity_count"],
+        usize::from(output_entity.class_name.is_none())
     );
     assert_eq!(
         decoded.report.coverage["decoded_referenced_relation_expression_count"],

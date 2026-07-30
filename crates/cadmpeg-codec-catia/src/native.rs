@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 235;
+pub const CATIA_NATIVE_VERSION: u32 = 236;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -54,6 +54,9 @@ pub(crate) const CATIA_RELATION_TYPED_REFERENCE_VERSION: u32 = 234;
 /// Native schema version retaining the source entity of constraint-range incidences.
 #[cfg(test)]
 pub(crate) const CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION: u32 = 235;
+/// Native namespace version that unifies formula output incidence.
+#[cfg(test)]
+pub(crate) const CATIA_FORMULA_OUTPUT_REFERENCE_VERSION: u32 = 236;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1349,14 +1352,9 @@ pub struct CatiaDefinitionChainValue {
 pub struct CatiaFormulaRelation {
     /// Complete relation-expression entity selected by the second payload reference.
     pub expression: String,
-    /// Stored parameter identity selected by the third payload reference.
-    pub parameter_entity_id: u32,
-    /// The stored parameter identity is the graph's terminal null identity.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub parameter_is_null: bool,
-    /// Parameter entity when the stored identity resolves inside the same graph.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameter: Option<String>,
+    /// Output parameter incidence selected by the third payload reference.
+    #[serde(default)]
+    pub output_entity: CatiaEntityReference,
     /// Named parameter records selected by expression-local symbols, in occurrence order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parameter_dependencies: Vec<CatiaFormulaParameterDependency>,
@@ -1400,6 +1398,9 @@ pub struct CatiaRelationProgramInstance {
 pub struct CatiaEntityReference {
     /// Stored entity identity.
     pub entity_id: u32,
+    /// The stored identity is the graph's terminal null identity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_null: bool,
     /// Same-graph entity selected by that identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity: Option<String>,
@@ -2586,6 +2587,7 @@ fn constraint_range_incoming_references(
                     object_record: record.id.clone(),
                     source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
                         entity_id,
+                        is_null: false,
                         entity: record.entity_record.clone(),
                         class_name: record.class_name.clone(),
                     }),
@@ -2964,6 +2966,7 @@ fn relation_program_instance(
             repeated_reference_entity_id,
             Some(CatiaEntityReference {
                 entity_id: context_entity_id,
+                is_null: false,
                 entity: entities.get(&context_key).cloned(),
                 class_name: entity_classes.get(&context_key).cloned(),
             }),
@@ -2980,6 +2983,7 @@ fn relation_program_instance(
             None,
             Some(CatiaEntityReference {
                 entity_id: trailing_entity_id,
+                is_null: false,
                 entity: entities.get(&trailing_key).cloned(),
                 class_name: entity_classes.get(&trailing_key).cloned(),
             }),
@@ -3017,6 +3021,7 @@ fn entity_reference(
     let key = (graph_id.to_owned(), entity_id);
     CatiaEntityReference {
         entity_id,
+        is_null: false,
         entity: entities.get(&key).cloned(),
         class_name: entity_classes.get(&key).cloned(),
     }
@@ -3189,11 +3194,11 @@ fn relation_program_instance_lead_54(
 
 fn formula_relation(
     definitions: &[CatiaDefinitionSchemaSelection],
-    graph_id: &str,
     entity_id: u32,
     object: &CatiaObjectRecord,
     relation_expressions: &HashMap<String, (String, String)>,
-    entities_by_object: &HashMap<String, String>,
+    entities: &HashMap<(String, u32), String>,
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     parameter_bindings: &HashMap<String, HashMap<String, Vec<String>>>,
 ) -> Option<CatiaFormulaRelation> {
     let [definition0, definition1] = definitions else {
@@ -3236,7 +3241,7 @@ fn formula_relation(
         .into_iter()
         .map(|symbol| {
             let candidates = parameter_bindings
-                .get(graph_id)
+                .get(&object.parent)
                 .and_then(|bindings| bindings.get(&symbol))
                 .cloned()
                 .unwrap_or_default();
@@ -3245,13 +3250,15 @@ fn formula_relation(
         .collect();
     Some(CatiaFormulaRelation {
         expression: expression.clone(),
-        parameter_entity_id: *parameter_entity_id,
-        parameter_is_null: parameter_reference.is_null,
-        parameter: parameter_reference
-            .target
-            .as_ref()
-            .and_then(|object| entities_by_object.get(object))
-            .cloned(),
+        output_entity: CatiaEntityReference {
+            is_null: parameter_reference.is_null,
+            ..entity_reference(
+                &object.parent,
+                *parameter_entity_id,
+                entities,
+                entity_classes,
+            )
+        },
         parameter_dependencies,
     })
 }
@@ -3260,7 +3267,6 @@ type CatiaRelationExpressionIndex = HashMap<String, (String, String)>;
 type CatiaRelationExpressionEntityIndex = HashMap<(String, u32), String>;
 type CatiaEntityByGraphIdentityIndex = HashMap<(String, u32), String>;
 type CatiaEntityClassByGraphIdentityIndex = HashMap<(String, u32), String>;
-type CatiaEntityByObjectIndex = HashMap<String, String>;
 type CatiaParameterBindingIndex = HashMap<String, HashMap<String, Vec<String>>>;
 
 fn entity_class_index<'a>(
@@ -3283,7 +3289,6 @@ fn semantic_entity_indices(
     CatiaRelationExpressionIndex,
     CatiaRelationExpressionEntityIndex,
     CatiaEntityByGraphIdentityIndex,
-    CatiaEntityByObjectIndex,
     CatiaParameterBindingIndex,
 ) {
     let relation_expressions = entities
@@ -3315,10 +3320,6 @@ fn semantic_entity_indices(
             )
         })
         .collect();
-    let entities_by_object = entities
-        .iter()
-        .map(|entity| (entity.object_record.clone(), entity.id.clone()))
-        .collect();
     let mut parameter_bindings = CatiaParameterBindingIndex::new();
     for entity in entities {
         let Some(parameter) = &entity.parameter_value else {
@@ -3335,7 +3336,6 @@ fn semantic_entity_indices(
         relation_expressions,
         relation_expression_entities,
         entities_by_graph_identity,
-        entities_by_object,
         parameter_bindings,
     )
 }
@@ -8066,7 +8066,6 @@ impl CatiaNative {
             relation_expressions,
             relation_expression_entities,
             entities_by_graph_identity,
-            entities_by_object,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records);
         let entity_classes_by_graph_identity =
@@ -8106,11 +8105,11 @@ impl CatiaNative {
             );
             entity.formula_relation = formula_relation(
                 &entity.definition_schema_selections,
-                &entity.object_graph,
                 entity.entity_id,
                 object,
                 &relation_expressions,
-                &entities_by_object,
+                &entities_by_graph_identity,
+                &entity_classes_by_graph_identity,
                 &parameter_bindings,
             );
         }
@@ -8392,7 +8391,6 @@ impl CatiaNative {
             relation_expressions,
             relation_expression_entities,
             entities_by_graph_identity,
-            entities_by_object,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records);
         let entity_classes_by_graph_identity = entity_class_index(&records);
@@ -8416,6 +8414,7 @@ impl CatiaNative {
         }
         if namespace.version < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
             || namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION
+            || namespace.version < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -8427,11 +8426,11 @@ impl CatiaNative {
                     .and_then(|object| {
                         formula_relation(
                             &entity.definition_schema_selections,
-                            &entity.object_graph,
                             entity.entity_id,
                             object,
                             &relation_expressions,
-                            &entities_by_object,
+                            &entities_by_graph_identity,
+                            &entity_classes_by_graph_identity,
                             &parameter_bindings,
                         )
                     });
@@ -8662,11 +8661,11 @@ impl CatiaNative {
                             != object.and_then(|object| {
                                 formula_relation(
                                     &entity.definition_schema_selections,
-                                    &entity.object_graph,
                                     entity.entity_id,
                                     object,
                                     &relation_expressions,
-                                    &entities_by_object,
+                                    &entities_by_graph_identity,
+                                    &entity_classes_by_graph_identity,
                                     &parameter_bindings,
                                 )
                             })
