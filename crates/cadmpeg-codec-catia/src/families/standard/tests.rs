@@ -1412,6 +1412,22 @@ fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
 }
 
 #[test]
+fn incidence_face_singleton_support_tracks_multiword_configuration_masks() {
+    let wide = (0..130)
+        .map(|point| vec![(0, [point, point])])
+        .collect::<Vec<_>>();
+    let mut domains = vec![wide, vec![vec![(0, [129, 129])]]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_face_configuration_singleton_support(
+        &mut domains,
+        &budget,
+    ));
+    assert_eq!(domains[0], vec![vec![(0, [129, 129])]]);
+    assert_eq!(domains[1], vec![vec![(0, [129, 129])]]);
+}
+
+#[test]
 fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,

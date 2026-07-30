@@ -595,48 +595,227 @@ pub(crate) fn prune_face_configuration_singleton_support(
     domains: &mut [MeshFaceEndpointConfigurations],
     budget: &MeshConstraintBudget,
 ) -> bool {
+    struct FaceFactorArc {
+        left: usize,
+        right: usize,
+        supports: Vec<Vec<u64>>,
+    }
+
+    fn full_mask(len: usize) -> Vec<u64> {
+        let mut mask = vec![u64::MAX; len.div_ceil(u64::BITS as usize)];
+        if let Some(last) = mask.last_mut() {
+            let remainder = len % u64::BITS as usize;
+            if remainder != 0 {
+                *last = (1 << remainder) - 1;
+            }
+        }
+        mask
+    }
+
+    fn mask_contains(mask: &[u64], index: usize) -> bool {
+        mask.get(index / u64::BITS as usize)
+            .is_some_and(|word| word & (1 << (index % u64::BITS as usize)) != 0)
+    }
+
+    fn retain_masks(domains: &mut [MeshFaceEndpointConfigurations], active: &[Vec<u64>]) {
+        for (domain, mask) in domains.iter_mut().zip(active) {
+            let mut index = 0;
+            domain.retain(|_| {
+                let retain = mask_contains(mask, index);
+                index += 1;
+                retain
+            });
+        }
+    }
+
+    fn propagate(
+        arcs: &[FaceFactorArc],
+        incoming: &[Vec<usize>],
+        active: &mut [Vec<u64>],
+        initial: impl IntoIterator<Item = usize>,
+        budget: &MeshConstraintBudget,
+    ) -> Option<bool> {
+        let mut queue = initial.into_iter().collect::<VecDeque<_>>();
+        while let Some(arc_index) = queue.pop_front() {
+            let arc = &arcs[arc_index];
+            let mut changed = false;
+            for (configuration, supports) in arc.supports.iter().enumerate() {
+                if !mask_contains(&active[arc.left], configuration) {
+                    continue;
+                }
+                if !budget.charge_by(supports.len().max(1)) {
+                    return None;
+                }
+                if supports
+                    .iter()
+                    .zip(&active[arc.right])
+                    .any(|(supports, active)| supports & active != 0)
+                {
+                    continue;
+                }
+                active[arc.left][configuration / u64::BITS as usize] &=
+                    !(1 << (configuration % u64::BITS as usize));
+                changed = true;
+            }
+            if !changed {
+                continue;
+            }
+            if active[arc.left].iter().all(|word| *word == 0) {
+                return Some(false);
+            }
+            queue.extend(incoming[arc.left].iter().copied());
+        }
+        Some(true)
+    }
+
+    let edge_sets = domains
+        .iter()
+        .map(|domain| {
+            domain
+                .iter()
+                .flatten()
+                .map(|(edge, _)| *edge)
+                .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut right_indexes = Vec::with_capacity(domains.len());
+    for domain in domains.iter() {
+        let word_count = domain.len().div_ceil(u64::BITS as usize);
+        let mut present = HashMap::<usize, Vec<u64>>::new();
+        let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
+        for (configuration, candidate) in domain.iter().enumerate() {
+            if !budget.charge_by(candidate.len().max(1)) {
+                return true;
+            }
+            let word = configuration / u64::BITS as usize;
+            let bit = 1 << (configuration % u64::BITS as usize);
+            for &(edge, pair) in candidate {
+                present.entry(edge).or_insert_with(|| vec![0; word_count])[word] |= bit;
+                matching
+                    .entry((edge, pair))
+                    .or_insert_with(|| vec![0; word_count])[word] |= bit;
+            }
+        }
+        right_indexes.push((present, matching));
+    }
+    let mut arcs = Vec::new();
+    let mut incoming = vec![Vec::new(); domains.len()];
+    for left in 0..domains.len() {
+        for right in 0..domains.len() {
+            if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
+                continue;
+            }
+            let word_count = domains[right].len().div_ceil(u64::BITS as usize);
+            let (present, matching) = &right_indexes[right];
+            let mut configuration_supports = Vec::with_capacity(domains[left].len());
+            for candidate in &domains[left] {
+                if !budget.charge_by(candidate.len().saturating_add(word_count).max(1)) {
+                    return true;
+                }
+                let mut supports = full_mask(domains[right].len());
+                for &(edge, pair) in candidate {
+                    let Some(edge_present) = present.get(&edge) else {
+                        continue;
+                    };
+                    let edge_matching = matching.get(&(edge, pair));
+                    for word in 0..word_count {
+                        supports[word] &=
+                            !edge_present[word] | edge_matching.map_or(0, |mask| mask[word]);
+                    }
+                }
+                configuration_supports.push(supports);
+            }
+            let arc = arcs.len();
+            arcs.push(FaceFactorArc {
+                left,
+                right,
+                supports: configuration_supports,
+            });
+            incoming[right].push(arc);
+        }
+    }
+    let mut active = domains
+        .iter()
+        .map(|domain| full_mask(domain.len()))
+        .collect::<Vec<_>>();
+    let active_clone_work = active.iter().map(Vec::len).sum::<usize>().max(1);
+    match propagate(&arcs, &incoming, &mut active, 0..arcs.len(), budget) {
+        Some(true) => {}
+        Some(false) => return false,
+        None => return true,
+    }
     loop {
         let mut changed = false;
         let mut order = (0..domains.len()).collect::<Vec<_>>();
-        order.sort_unstable_by_key(|domain| domains[*domain].len());
+        order.sort_unstable_by_key(|domain| {
+            active[*domain]
+                .iter()
+                .map(|word| word.count_ones() as usize)
+                .sum::<usize>()
+        });
         for domain in order {
-            if domains[domain].len() <= 1 {
+            let mut domain_changed = false;
+            let active_count = active[domain]
+                .iter()
+                .map(|word| word.count_ones() as usize)
+                .sum::<usize>();
+            if active_count <= 1 {
                 continue;
             }
-            let clone_work = domains.iter().map(Vec::len).sum::<usize>().max(1);
-            let mut keep = Vec::with_capacity(domains[domain].len());
-            for configuration in &domains[domain] {
-                if !budget.charge_by(clone_work) {
+            for configuration in 0..domains[domain].len() {
+                if !mask_contains(&active[domain], configuration) {
+                    continue;
+                }
+                if !budget.charge_by(active_clone_work) {
+                    retain_masks(domains, &active);
                     return true;
                 }
-                let mut trial = domains.to_vec();
-                trial[domain] = vec![configuration.clone()];
-                let viable = prune_face_configuration_support(&mut trial, budget);
-                if budget.exhausted.get() {
-                    return true;
+                let mut trial = active.clone();
+                trial[domain].fill(0);
+                trial[domain][configuration / u64::BITS as usize] =
+                    1 << (configuration % u64::BITS as usize);
+                match propagate(
+                    &arcs,
+                    &incoming,
+                    &mut trial,
+                    incoming[domain].iter().copied(),
+                    budget,
+                ) {
+                    Some(true) => {}
+                    Some(false) => {
+                        active[domain][configuration / u64::BITS as usize] &=
+                            !(1 << (configuration % u64::BITS as usize));
+                        changed = true;
+                        domain_changed = true;
+                    }
+                    None => {
+                        retain_masks(domains, &active);
+                        return true;
+                    }
                 }
-                keep.push(viable);
             }
-            if keep.iter().all(|supported| !supported) {
+            if active[domain].iter().all(|word| *word == 0) {
                 return false;
             }
-            if keep.iter().any(|supported| !supported) {
-                let mut index = 0;
-                domains[domain].retain(|_| {
-                    let retain = keep[index];
-                    index += 1;
-                    retain
-                });
-                changed = true;
-                if !prune_face_configuration_support(domains, budget) {
-                    return false;
-                }
-                if budget.exhausted.get() {
-                    return true;
+            if domain_changed {
+                match propagate(
+                    &arcs,
+                    &incoming,
+                    &mut active,
+                    incoming[domain].iter().copied(),
+                    budget,
+                ) {
+                    Some(true) => {}
+                    Some(false) => return false,
+                    None => {
+                        retain_masks(domains, &active);
+                        return true;
+                    }
                 }
             }
         }
         if !changed {
+            retain_masks(domains, &active);
             return true;
         }
     }
