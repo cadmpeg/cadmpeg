@@ -1406,6 +1406,18 @@ fn completed_incidence_faces_close(
     domains: Option<&[MeshFaceBoundaryDomain]>,
 ) -> bool {
     faces.iter().copied().all(|face| {
+        let assigned_edges = face_edges[face]
+            .iter()
+            .copied()
+            .filter(|edge| assignment[*edge].is_some())
+            .collect::<Vec<_>>();
+        if domains.is_none() {
+            let points = assignment
+                .iter()
+                .map(|pair| pair.unwrap_or([0; 2]))
+                .collect::<Vec<_>>();
+            return incidence_cycles(&assigned_edges, &points).is_some();
+        }
         let mut points = vec![[0; 2]; assignment.len()];
         for &edge in &face_edges[face] {
             let Some(pair) = assignment[edge] else {
@@ -1571,8 +1583,9 @@ where
                 &completed,
                 face_edges,
                 mesh_assignments,
-            ) && partial_solution_valid
-                .is_none_or(|constraint| (constraint.valid)(&completed));
+            );
+            let locally_closed = locally_closed
+                && partial_solution_valid.is_none_or(|constraint| (constraint.valid)(&completed));
             if !locally_closed {
                 return false;
             }

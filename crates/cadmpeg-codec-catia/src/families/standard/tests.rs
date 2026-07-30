@@ -963,6 +963,26 @@ fn incidence_components_join_only_through_shared_face_vertices() {
 }
 
 #[test]
+fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_face() {
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
+    let edge_faces = [[0, 0], [0, 0]];
+
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        1,
+        4,
+        None,
+        None,
+        None,
+        &|_| true,
+    )
+    .expect("independent same-face cycle solutions");
+
+    assert_eq!(solutions.len(), 4);
+}
+
+#[test]
 fn partial_incidence_constraint_joins_every_component_it_can_couple() {
     let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
     let active = [true, false, false, true, false, false];
