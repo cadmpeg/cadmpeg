@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 233;
+pub const CATIA_NATIVE_VERSION: u32 = 234;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -48,6 +48,9 @@ pub(crate) const CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION: u32 = 232;
 /// Native schema version retaining selected entity classes on typed incidences.
 #[cfg(test)]
 pub(crate) const CATIA_TYPED_INCIDENCE_CLASS_VERSION: u32 = 233;
+/// Native schema version unifying relation-program entity incidences.
+#[cfg(test)]
+pub(crate) const CATIA_RELATION_TYPED_REFERENCE_VERSION: u32 = 234;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1369,17 +1372,12 @@ pub struct CatiaRelationProgramInstance {
     /// Exact object-head and payload production.
     #[serde(default)]
     pub framing: CatiaRelationProgramInstanceFraming,
-    /// Stored entity identity in the frame's program slot.
-    pub program_entity_id: u32,
-    /// Same-graph entity selected by that identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub program: Option<String>,
+    /// Entity incidence carried by the frame's program slot.
+    #[serde(default)]
+    pub program_entity: CatiaEntityReference,
     /// Entity identity stored once as an atom and once as a reference.
     #[serde(default)]
-    pub repeated_reference_entity_id: u32,
-    /// Same-graph entity selected by the repeated reference identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repeated_reference_entity: Option<String>,
+    pub repeated_entity: CatiaEntityReference,
     /// Selected entity when it carries a complete relation-expression program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<String>,
@@ -1392,7 +1390,7 @@ pub struct CatiaRelationProgramInstance {
 }
 
 /// One stored entity identity and its optional same-graph resolution.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntityReference {
     /// Stored entity identity.
     pub entity_id: u32,
@@ -2979,13 +2977,20 @@ fn relation_program_instance(
         return None;
     };
     let program_key = (object.parent.clone(), program_entity_id);
-    let repeated_reference_key = (object.parent.clone(), repeated_reference_entity_id);
     Some(CatiaRelationProgramInstance {
         framing,
-        program_entity_id,
-        program: entities.get(&program_key).cloned(),
-        repeated_reference_entity_id,
-        repeated_reference_entity: entities.get(&repeated_reference_key).cloned(),
+        program_entity: entity_reference(
+            &object.parent,
+            program_entity_id,
+            entities,
+            entity_classes,
+        ),
+        repeated_entity: entity_reference(
+            &object.parent,
+            repeated_reference_entity_id,
+            entities,
+            entity_classes,
+        ),
         relation_expression: relation_expressions.get(&program_key).cloned(),
         lead12_context_entity,
         lead54_trailing_entity,
@@ -8424,6 +8429,7 @@ impl CatiaNative {
         if namespace.version < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
             || namespace.version < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_CLASS_VERSION
+            || namespace.version < CATIA_RELATION_TYPED_REFERENCE_VERSION
         {
             let records_by_id = records
                 .iter()

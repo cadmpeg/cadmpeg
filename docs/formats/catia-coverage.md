@@ -127,7 +127,8 @@ current scores require those matrices and representative fixtures.
   roles. Coverage partitions compact lead-`12` and separator-form lead-`54`
   framings, resolved, unresolved, relation-expression, and other program
   instances, partitions the resolved and unresolved identity
-  repeated in the atom/reference slots, and counts distinct selected
+  repeated in the atom/reference slots, partitions classified and unclassified
+  program and repeated-identity entities, and counts distinct selected
   expressions. Compact-form coverage also partitions its resolved and
   unresolved `ref(h)` context identity and classifies selected `paramout`, other
   named, and unclassified context entities without assigning a parameter role.

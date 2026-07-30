@@ -851,7 +851,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.program.is_some())
+        .filter(|instance| instance.program_entity.entity.is_some())
         .count();
     let unresolved_relation_program_instance_count =
         relation_program_instance_count - resolved_relation_program_instance_count;
@@ -859,10 +859,22 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.repeated_reference_entity.is_some())
+        .filter(|instance| instance.repeated_entity.entity.is_some())
         .count();
     let unresolved_relation_program_repeated_reference_count =
         relation_program_instance_count - resolved_relation_program_repeated_reference_count;
+    let classified_relation_program_entity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter(|instance| instance.program_entity.class_name.is_some())
+        .count();
+    let classified_relation_program_repeated_entity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter(|instance| instance.repeated_entity.class_name.is_some())
+        .count();
     let relation_expression_instance_count = native
         .entity_records
         .iter()
@@ -1980,6 +1992,22 @@ fn finish_decode(
         (
             "unresolved_relation_program_repeated_reference_count".to_string(),
             unresolved_relation_program_repeated_reference_count,
+        ),
+        (
+            "decoded_classified_relation_program_entity_count".to_string(),
+            classified_relation_program_entity_count,
+        ),
+        (
+            "unclassified_relation_program_entity_count".to_string(),
+            relation_program_instance_count - classified_relation_program_entity_count,
+        ),
+        (
+            "decoded_classified_relation_program_repeated_entity_count".to_string(),
+            classified_relation_program_repeated_entity_count,
+        ),
+        (
+            "unclassified_relation_program_repeated_entity_count".to_string(),
+            relation_program_instance_count - classified_relation_program_repeated_entity_count,
         ),
         (
             "decoded_relation_expression_program_instance_count".to_string(),

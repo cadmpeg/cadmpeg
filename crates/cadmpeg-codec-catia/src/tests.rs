@@ -11094,16 +11094,18 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         instance.framing,
         crate::native::CatiaRelationProgramInstanceFraming::Lead12
     );
-    assert_eq!(instance.program_entity_id, 1);
+    assert_eq!(instance.program_entity.entity_id, 1);
     assert_eq!(
-        instance.program.as_deref(),
+        instance.program_entity.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
-    assert_eq!(instance.repeated_reference_entity_id, 1);
+    assert_eq!(instance.program_entity.class_name.as_deref(), Some("body"));
+    assert_eq!(instance.repeated_entity.entity_id, 1);
     assert_eq!(
-        instance.repeated_reference_entity.as_deref(),
+        instance.repeated_entity.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
+    assert_eq!(instance.repeated_entity.class_name.as_deref(), Some("body"));
     assert_eq!(
         instance.relation_expression.as_deref(),
         Some(native.entity_records[0].id.as_str())
@@ -11127,7 +11129,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         .as_ref()
         .expect("resolved non-expression program");
     assert_eq!(
-        instance.program.as_deref(),
+        instance.program_entity.entity.as_deref(),
         Some(native.entity_records[1].id.as_str())
     );
     assert!(instance.relation_expression.is_none());
@@ -11145,9 +11147,9 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         .relation_program_instance
         .as_ref()
         .expect("unresolved program identity");
-    assert!(instance.program.is_none());
-    assert_eq!(instance.repeated_reference_entity_id, 3);
-    assert!(instance.repeated_reference_entity.is_none());
+    assert!(instance.program_entity.entity.is_none());
+    assert_eq!(instance.repeated_entity.entity_id, 3);
+    assert!(instance.repeated_entity.entity.is_none());
     assert!(instance.relation_expression.is_none());
 
     let native = crate::native::CatiaNative::decode(
@@ -11183,11 +11185,11 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     );
     assert_eq!(trailing.class_name.as_deref(), Some("body"));
     assert_eq!(
-        instance.program.as_deref(),
+        instance.program_entity.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(
-        instance.repeated_reference_entity.as_deref(),
+        instance.repeated_entity.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(
@@ -11245,8 +11247,8 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         .relation_program_instance
         .as_ref()
         .expect("unresolved repeated identity");
-    assert_eq!(instance.repeated_reference_entity_id, 3);
-    assert!(instance.repeated_reference_entity.is_none());
+    assert_eq!(instance.repeated_entity.entity_id, 3);
+    assert!(instance.repeated_entity.entity.is_none());
     let trailing = instance
         .lead54_trailing_entity
         .as_ref()
@@ -11348,6 +11350,24 @@ fn decode_reports_exact_relation_program_instances() {
             decoded.report.coverage["unresolved_relation_program_repeated_reference_count"],
             1 - resolved_repeated
         );
+        let classified_program = usize::from(program_entity_id <= 2);
+        assert_eq!(
+            decoded.report.coverage["decoded_classified_relation_program_entity_count"],
+            classified_program
+        );
+        assert_eq!(
+            decoded.report.coverage["unclassified_relation_program_entity_count"],
+            1 - classified_program
+        );
+        let classified_repeated = usize::from(repeated_reference_entity_id == 1);
+        assert_eq!(
+            decoded.report.coverage["decoded_classified_relation_program_repeated_entity_count"],
+            classified_repeated
+        );
+        assert_eq!(
+            decoded.report.coverage["unclassified_relation_program_repeated_entity_count"],
+            1 - classified_repeated
+        );
         assert_eq!(
             decoded.report.coverage["decoded_instanced_relation_expression_count"],
             expression
@@ -11375,10 +11395,9 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         native
             .store(&mut stored)
             .expect("store older relation-program namespace");
-        for (version, remove_context, remove_trailing, remove_framing, remove_repeated_reference) in [
+        for (version, remove_context, remove_trailing, remove_framing) in [
             (
-                crate::native::CATIA_TYPED_INCIDENCE_CLASS_VERSION - 1,
-                false,
+                crate::native::CATIA_RELATION_TYPED_REFERENCE_VERSION - 1,
                 false,
                 false,
                 false,
@@ -11388,13 +11407,11 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 true,
                 false,
                 false,
-                false,
             ),
             (
                 crate::native::CATIA_RELATION_PROGRAM_CONTEXT_VERSION - 2,
                 true,
                 true,
-                false,
                 false,
             ),
             (
@@ -11402,11 +11419,9 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 true,
                 true,
                 true,
-                false,
             ),
             (
                 crate::native::CATIA_RELATION_PROGRAM_INSTANCE_VERSION - 1,
-                true,
                 true,
                 true,
                 true,
@@ -11432,10 +11447,8 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             if remove_framing {
                 stored_instance.remove("framing");
             }
-            if remove_repeated_reference {
-                stored_instance.remove("repeated_reference_entity_id");
-                stored_instance.remove("repeated_reference_entity");
-            }
+            stored_instance.remove("program_entity");
+            stored_instance.remove("repeated_entity");
             for field in ["lead12_context_entity", "lead54_trailing_entity"] {
                 if let Some(reference) = stored_instance
                     .get_mut(field)
