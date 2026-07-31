@@ -50,6 +50,32 @@ pub enum NumericTupleItem {
     },
 }
 
+/// One lexical token in a reference-signature descriptor program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReferenceSignatureToken {
+    /// One maximal ASCII alphabetic run.
+    Identifier {
+        /// Exact identifier text.
+        text: String,
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+    /// One maximal ASCII decimal run.
+    Decimal {
+        /// Exact decimal digits.
+        digits: String,
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+    /// One punctuation byte.
+    Punctuation {
+        /// Exact punctuation byte.
+        byte: u8,
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+}
+
 /// One fully consumed reference-signature production in a nested `7C07` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ReferenceSignature {
@@ -63,6 +89,9 @@ pub struct ReferenceSignature {
     pub layout_atom: u32,
     /// Printable signature bytes between `0x81` and the first terminator.
     pub signature: String,
+    /// Source-ordered lexical tokens spanning the complete signature.
+    #[serde(default)]
+    pub signature_tokens: Vec<ReferenceSignatureToken>,
     /// Byte offset of the first signature byte within the `7C07` payload.
     #[serde(default)]
     pub signature_offset: usize,
@@ -75,6 +104,51 @@ pub struct ReferenceSignature {
     pub closing_atom: u32,
     /// Compact closing-frame type atom following `0xE9`.
     pub closing_type_atom: u32,
+}
+
+fn reference_signature_tokens(
+    signature: &str,
+    signature_offset: usize,
+) -> Option<Vec<ReferenceSignatureToken>> {
+    let bytes = signature.as_bytes();
+    let mut tokens = Vec::new();
+    let mut at = 0;
+    let mut depth = 0_usize;
+    while at < bytes.len() {
+        let start = at;
+        let token = if bytes[at].is_ascii_alphabetic() {
+            at += 1;
+            while bytes.get(at).is_some_and(u8::is_ascii_alphabetic) {
+                at += 1;
+            }
+            ReferenceSignatureToken::Identifier {
+                text: signature[start..at].to_owned(),
+                offset: signature_offset + start,
+            }
+        } else if bytes[at].is_ascii_digit() {
+            at += 1;
+            while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+                at += 1;
+            }
+            ReferenceSignatureToken::Decimal {
+                digits: signature[start..at].to_owned(),
+                offset: signature_offset + start,
+            }
+        } else {
+            match bytes[start] {
+                b'(' => depth = depth.checked_add(1)?,
+                b')' => depth = depth.checked_sub(1)?,
+                _ => {}
+            }
+            at += 1;
+            ReferenceSignatureToken::Punctuation {
+                byte: bytes[start],
+                offset: signature_offset + start,
+            }
+        };
+        tokens.push(token);
+    }
+    (depth == 0).then_some(tokens)
 }
 
 /// One exact packet in a tokenized `7C07` value program.
@@ -653,6 +727,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     let signature = std::str::from_utf8(signature_bytes).ok()?.to_owned();
+    let signature_tokens = reference_signature_tokens(&signature, signature_offset)?;
     at = signature_end + 1;
     let second_reference_offset = at;
     if payload.get(at) != Some(&0x32) {
@@ -675,6 +750,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         type_atom,
         layout_atom,
         signature,
+        signature_tokens,
         signature_offset,
         second_reference,
         second_reference_offset,
@@ -714,7 +790,7 @@ mod tests {
     use super::{
         parse_definition_schema_selectors, parse_numeric_tuple, parse_reference_signature,
         parse_runs, value_packets, DefinitionSchemaSelector, EntityValuePacket, NumericTuple,
-        NumericTupleItem, ReferenceSignature,
+        NumericTupleItem, ReferenceSignature, ReferenceSignatureToken,
     };
     use crate::value_block;
 
@@ -869,6 +945,48 @@ mod tests {
                 type_atom: 3851,
                 layout_atom: 12,
                 signature: "(E,0(E,4))".to_owned(),
+                signature_tokens: vec![
+                    ReferenceSignatureToken::Punctuation {
+                        byte: b'(',
+                        offset: 12,
+                    },
+                    ReferenceSignatureToken::Identifier {
+                        text: "E".to_owned(),
+                        offset: 13,
+                    },
+                    ReferenceSignatureToken::Punctuation {
+                        byte: b',',
+                        offset: 14,
+                    },
+                    ReferenceSignatureToken::Decimal {
+                        digits: "0".to_owned(),
+                        offset: 15,
+                    },
+                    ReferenceSignatureToken::Punctuation {
+                        byte: b'(',
+                        offset: 16,
+                    },
+                    ReferenceSignatureToken::Identifier {
+                        text: "E".to_owned(),
+                        offset: 17,
+                    },
+                    ReferenceSignatureToken::Punctuation {
+                        byte: b',',
+                        offset: 18,
+                    },
+                    ReferenceSignatureToken::Decimal {
+                        digits: "4".to_owned(),
+                        offset: 19,
+                    },
+                    ReferenceSignatureToken::Punctuation {
+                        byte: b')',
+                        offset: 20,
+                    },
+                    ReferenceSignatureToken::Punctuation {
+                        byte: b')',
+                        offset: 21,
+                    },
+                ],
                 signature_offset: 12,
                 second_reference: 208,
                 second_reference_offset: 23,
@@ -883,6 +1001,16 @@ mod tests {
         let payload = [
             0x90, 0x32, 0xcf, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b')',
             0xfe, 0x32, 0xd0, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+        ];
+
+        assert_eq!(parse_reference_signature(&payload), None);
+    }
+
+    #[test]
+    fn reference_signature_requires_balanced_descriptor_delimiters() {
+        let payload = [
+            0x32, 1, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x84, 0x81, b'E', b')', 0xfe, 0x32, 2,
+            0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
         ];
 
         assert_eq!(parse_reference_signature(&payload), None);

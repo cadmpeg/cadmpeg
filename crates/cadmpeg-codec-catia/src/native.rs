@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 260;
+pub const CATIA_NATIVE_VERSION: u32 = 261;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -129,6 +129,9 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION: u32 = 259;
 /// Native schema version resolving reference-signature entity incidences.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION: u32 = 260;
+/// Native schema version tokenizing reference-signature descriptor programs.
+#[cfg(test)]
+pub(crate) const CATIA_REFERENCE_SIGNATURE_TOKEN_VERSION: u32 = 261;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -9263,6 +9266,19 @@ impl CatiaNative {
                         &entity_references,
                     ));
                 }
+            }
+        }
+        if namespace.version < CATIA_REFERENCE_SIGNATURE_TOKEN_VERSION {
+            for entity in &mut entity_records {
+                let Some(signature) = &mut entity.reference_signature else {
+                    continue;
+                };
+                let Some(production) =
+                    entity_table::parse_reference_signature(&entity.value_payload)
+                else {
+                    continue;
+                };
+                signature.production = production;
             }
         }
         if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
