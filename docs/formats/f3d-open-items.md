@@ -415,18 +415,21 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. T-splines
 
-### TS-01. `0m cg` derived-grip fields
+### TS-01. `0m cg` wedge partition
 
-**Question.** What do the individual scalar values and index values inside a `0m cg` derived-grip record hold?
+**Question.** How does a `0m cg` record's grip run divide into wedges? Two sub-questions remain:
 
-**Known.** `f3d.md` §1.1.1 "Each `0g x y z weight`" gives the record category. A `0m cg` record describes derived grip connectivity. It does not replace the primary topology map. The decoder discards the record fields.
+- whether the cross term pairs wedge `k` with wedge `k + 1` or with wedge `k - 1`
+- whether the cross term is the product of the two spoke lengths or their minimum
 
-**Need.** We must know the field meanings to keep grip connectivity in a neutral model.
+**Known.** `f3d.md` §1.1.1 "A `0m cg vertex wedges S G`" gives the record's fields and fixes the length of `G` at `sum(S[k] + S[k] * S[(k + 1) mod wedges])`. That sum is invariant under reversing the neighbour direction, so the arity rule does not distinguish the two pairings; it only distinguishes the per-wedge block sizes. The two forms of the cross term agree whenever every spoke length is zero or one.
 
-### TS-02. Cage-object join for more than one Form scope
+**Need.** A neutral model that keeps grip connectivity must place each grip index in the correct wedge, which the arity rule alone does not fix. A cage with a spoke length of two or more, or one whose per-wedge grip positions can be matched geometrically, settles both sub-questions.
 
-**Question.** Which cage-object identity join divides the active TSM entries between two or more Form scopes?
+### TS-02. `0m cg` wedge count
 
-**Known.** `f3d.md` §1.1.1 "A Form scope owns" gives the single-Form case. One Form whose list count equals every active-folder TSM entry owns those cages in archive order.
+**Question.** What fixes a `0m cg` record's wedge count?
 
-**Need.** With two or more Form scopes, we cannot give each cage to the correct Form.
+**Known.** `f3d.md` §1.1.1 "A `0m cg vertex wedges S G`" defines the count as the number of wedges around the named vertex. It is not the vertex's valence and it is not the number of incident faces: records exist whose vertex has either quantity different from the stored count.
+
+**Need.** Without the rule we cannot write a `0m cg` record for a vertex, only retain one.
