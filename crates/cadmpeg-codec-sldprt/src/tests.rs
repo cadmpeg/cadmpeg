@@ -17591,14 +17591,6 @@ fn semantic_writer_types_resolved_relation_scalar() {
         .expect("projected D1 parameter");
     parameter.expression = "0.5".into();
     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Real(0.5));
-    // Retyping the parameter has to retype its per-configuration values too, or
-    // the configuration keeps a value of the parameter's previous variant.
-    let parameter_id = parameter.id.clone();
-    for configuration in &mut decoded.ir.model.configurations {
-        if let Some(value) = configuration.parameter_values.get_mut(&parameter_id) {
-            *value = cadmpeg_ir::features::ParameterValue::Real(0.5);
-        }
-    }
 
     let mut encoded = Vec::new();
     SldprtCodec

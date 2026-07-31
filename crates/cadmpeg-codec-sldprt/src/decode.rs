@@ -1701,7 +1701,6 @@ fn build_geometry_ir(
     );
     sync_active_configuration_cosmetic_thread_faces(&mut ir);
     stamp_feature_baseline(&mut ir);
-    snapshot_active_configuration(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -1714,7 +1713,12 @@ fn build_geometry_ir(
         );
     }
     native.store(ir.native.namespace_mut("sldprt"))?;
+    // The baseline has to describe native-backed configuration state only, so
+    // it is stamped before the read-side snapshot is fabricated. Stamping after
+    // would bake fabricated state into a hash the write path compares against a
+    // projection that can only ever re-derive the native-backed part.
     stamp_configuration_baseline(&mut ir);
+    snapshot_active_configuration(&mut ir);
     let mut unknowns = brep.unknowns;
     for face_color in brep.face_colors {
         let id = AppearanceId(format!(
@@ -2415,8 +2419,8 @@ fn build_metadata_ir(
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
     mark_active_configuration(&mut ir);
-    snapshot_active_configuration(&mut ir);
     stamp_configuration_baseline(&mut ir);
+    snapshot_active_configuration(&mut ir);
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     set_semantic_hash(&mut ir);
     Ok((ir, annotations, unknowns))
@@ -2615,6 +2619,16 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = parameter_values;
     configuration.feature_states = feature_states;
+    // This design state is a read-side presentation of model-level state, not
+    // configuration-local data the native records carry. Naming the
+    // configuration it was fabricated on lets the write path tell it apart from
+    // state that came out of a feature-input lane.
+    let id = configuration.id.0.clone();
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert("sldprt_configuration_snapshot_synthesized".into(), id);
+    }
 }
 
 fn sync_active_configuration_cosmetic_thread_faces(ir: &mut CadIr) {
