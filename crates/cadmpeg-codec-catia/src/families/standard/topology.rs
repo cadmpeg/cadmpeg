@@ -9,7 +9,7 @@ use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::missing_edge::{standard_mesh_boundary_assignments, MeshFaceBoundaryAssignment};
 use crate::solve::UnionFind;
 use cadmpeg_ir::topology::BodyKind;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Reconstructed standard-nested (or FBB-only) topology: the counted spine's
 /// face boundaries recovered from the trim-mesh triangle packets, plus the
@@ -423,13 +423,15 @@ pub(crate) fn reconstruct_incidence_with_edge_classes_and_mesh(
         mesh_bytes,
     )?;
     let edge_faces = completed_edge_faces.as_slice();
+    let mut face_edges = vec![Vec::new(); face_count];
+    for (edge, &[left, right]) in edge_faces.iter().enumerate() {
+        face_edges.get_mut(left)?.push(edge);
+        if right != left {
+            face_edges.get_mut(right)?.push(edge);
+        }
+    }
     let mut faces = Vec::with_capacity(face_count);
-    for face in 0..face_count {
-        let incident: Vec<usize> = edge_faces
-            .iter()
-            .enumerate()
-            .filter_map(|(edge, adjacent)| adjacent.contains(&face).then_some(edge))
-            .collect();
+    for incident in face_edges {
         let cycles = incidence_cycles(&incident, edge_points)?;
         faces.push(FaceTopology {
             boundaries: cycles
@@ -473,6 +475,8 @@ pub(crate) fn complete_duplicate_face_slots(
     edge_classes: Option<&[usize]>,
     mesh_bytes: Option<&[u8]>,
 ) -> Option<Vec<[usize; 2]>> {
+    const MAX_DUPLICATE_FACE_OPERATIONS: usize = 65_536;
+
     struct SearchInputs<'a> {
         unresolved: &'a [usize],
         edge_rows: &'a [EdgeRow],
@@ -484,18 +488,20 @@ pub(crate) fn complete_duplicate_face_slots(
 
     pub(crate) fn search(
         inputs: &SearchInputs<'_>,
-        degrees: &mut [Vec<u8>],
+        degrees: &mut [BTreeMap<usize, u8>],
         assignment: &mut [usize],
         used: &mut [bool],
         solutions: &mut Vec<Vec<usize>>,
+        operations: &mut usize,
+        exhausted: &mut bool,
     ) {
-        if solutions.len() > 1 {
+        if *exhausted || solutions.len() > 1 {
             return;
         }
         if used.iter().all(|value| *value) {
             let closed = degrees
                 .iter()
-                .all(|face| face.iter().all(|degree| matches!(degree, 0 | 2)));
+                .all(|face| face.values().all(|degree| *degree == 2));
             let mesh_valid = closed
                 && inputs.mesh_bytes.is_none_or(|bytes| {
                     let mut completed = inputs.edge_faces.to_vec();
@@ -524,20 +530,21 @@ pub(crate) fn complete_duplicate_face_slots(
         let deficit = degrees.iter().enumerate().find_map(|(face, values)| {
             values
                 .iter()
-                .position(|degree| *degree == 1)
-                .map(|point| (face, point))
+                .find_map(|(&point, &degree)| (degree == 1).then_some((face, point)))
         });
-        let choices = inputs
+        let unresolved = inputs
             .unresolved
             .iter()
             .enumerate()
-            .filter(|(index, edge)| {
-                if used[*index] {
-                    return false;
-                }
+            .filter(|(index, _)| !used[*index]);
+        let candidates: Box<dyn Iterator<Item = (usize, &usize)>> = match deficit {
+            Some((_, point)) => Box::new(unresolved.filter(move |(_, edge)| {
                 let [start, end] = inputs.edge_points[**edge];
-                deficit.is_none_or(|(_, point)| start == point || end == point)
-            })
+                start == point || end == point
+            })),
+            None => Box::new(unresolved.take(1)),
+        };
+        let choices = candidates
             .flat_map(|(index, &edge)| {
                 let faces: Box<dyn Iterator<Item = usize>> = match deficit {
                     Some((face, _)) => Box::new(std::iter::once(face)),
@@ -547,24 +554,45 @@ pub(crate) fn complete_duplicate_face_slots(
             })
             .filter(|(_, edge, face)| {
                 let [start, end] = inputs.edge_points[*edge];
-                degrees[*face][start] + 1 + u8::from(start == end) <= 2
-                    && (start == end || degrees[*face][end] < 2)
+                degrees[*face].get(&start).copied().unwrap_or_default() + 1 + u8::from(start == end)
+                    <= 2
+                    && (start == end || degrees[*face].get(&end).copied().unwrap_or_default() < 2)
             })
             .collect::<Vec<_>>();
         for (index, edge, face) in choices {
+            if *operations == MAX_DUPLICATE_FACE_OPERATIONS {
+                *exhausted = true;
+                return;
+            }
+            *operations += 1;
             let [start, end] = inputs.edge_points[edge];
             let start_add = 1 + u8::from(start == end);
-            degrees[face][start] += start_add;
+            *degrees[face].entry(start).or_default() += start_add;
             if start != end {
-                degrees[face][end] += 1;
+                *degrees[face].entry(end).or_default() += 1;
             }
             assignment[index] = face;
             used[index] = true;
-            search(inputs, degrees, assignment, used, solutions);
+            search(
+                inputs, degrees, assignment, used, solutions, operations, exhausted,
+            );
             used[index] = false;
-            degrees[face][start] -= start_add;
+            let start_degree = degrees[face]
+                .get_mut(&start)
+                .expect("assigned start degree");
+            *start_degree -= start_add;
+            if *start_degree == 0 {
+                degrees[face].remove(&start);
+            }
             if start != end {
-                degrees[face][end] -= 1;
+                let end_degree = degrees[face].get_mut(&end).expect("assigned end degree");
+                *end_degree -= 1;
+                if *end_degree == 0 {
+                    degrees[face].remove(&end);
+                }
+            }
+            if *exhausted || solutions.len() > 1 {
+                return;
             }
         }
     }
@@ -585,13 +613,7 @@ pub(crate) fn complete_duplicate_face_slots(
     if unresolved.is_empty() {
         return Some(completed);
     }
-    let point_count = edge_points
-        .iter()
-        .flatten()
-        .max()
-        .copied()
-        .map(|point| point + 1)?;
-    let mut degrees = vec![vec![0u8; point_count]; face_count];
+    let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
     for (edge, faces) in edge_faces.iter().enumerate() {
         let mut incident = *faces;
         incident.sort_unstable();
@@ -601,11 +623,16 @@ pub(crate) fn complete_duplicate_face_slots(
             &incident[..]
         } {
             for &point in &edge_points[edge] {
-                degrees[face][point] = degrees[face][point].checked_add(1)?;
+                let degree = degrees[face].entry(point).or_default();
+                *degree = degree.checked_add(1)?;
             }
         }
     }
-    if degrees.iter().flatten().any(|degree| *degree > 2) {
+    if degrees
+        .iter()
+        .flat_map(BTreeMap::values)
+        .any(|degree| *degree > 2)
+    {
         return None;
     }
     unresolved.sort_by_key(|&edge| {
@@ -613,12 +640,15 @@ pub(crate) fn complete_duplicate_face_slots(
         degrees
             .iter()
             .filter(|face| {
-                face[start] + 1 + u8::from(start == end) <= 2 && (start == end || face[end] < 2)
+                face.get(&start).copied().unwrap_or_default() + 1 + u8::from(start == end) <= 2
+                    && (start == end || face.get(&end).copied().unwrap_or_default() < 2)
             })
             .count()
     });
 
     let mut solutions = Vec::new();
+    let mut operations = 0;
+    let mut exhausted = false;
     let inputs = SearchInputs {
         unresolved: &unresolved,
         edge_rows,
@@ -633,7 +663,12 @@ pub(crate) fn complete_duplicate_face_slots(
         &mut vec![0; unresolved.len()],
         &mut vec![false; unresolved.len()],
         &mut solutions,
+        &mut operations,
+        &mut exhausted,
     );
+    if exhausted {
+        return None;
+    }
     if solutions.len() > 1 {
         let bytes = mesh_bytes?;
         solutions.clear();
@@ -651,7 +686,12 @@ pub(crate) fn complete_duplicate_face_slots(
             &mut vec![0; unresolved.len()],
             &mut vec![false; unresolved.len()],
             &mut solutions,
+            &mut operations,
+            &mut exhausted,
         );
+        if exhausted {
+            return None;
+        }
     }
     let [assignment] = solutions.as_slice() else {
         return None;
@@ -733,11 +773,36 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
             }
         }
     }
-    let mut constraints = vec![Vec::<(usize, bool)>::new(); boundary_nodes.len()];
+    let flips = solve_boundary_orientation_constraints(boundary_nodes.len(), &edge_uses, true)?;
+    for ((face_index, boundary_index), flip) in boundary_nodes.into_iter().zip(flips) {
+        if flip {
+            let boundary = &mut faces[face_index].boundaries[boundary_index];
+            boundary.coedges.reverse();
+            for coedge in &mut boundary.coedges {
+                coedge.reversed = !coedge.reversed;
+                std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
+            }
+        }
+    }
+    Some(())
+}
+
+pub(crate) fn solve_boundary_orientation_constraints(
+    boundary_count: usize,
+    edge_uses: &HashMap<usize, Vec<(usize, bool)>>,
+    require_paired_uses: bool,
+) -> Option<Vec<bool>> {
+    let mut constraints = vec![Vec::<(usize, bool)>::new(); boundary_count];
     for uses in edge_uses.values() {
         let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
+            if !require_paired_uses && uses.len() == 1 {
+                continue;
+            }
             return None;
         };
+        if *left_node >= boundary_count || *right_node >= boundary_count {
+            return None;
+        }
         let parity = left_reversed == right_reversed;
         if left_node == right_node {
             if parity {
@@ -749,8 +814,8 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
         }
     }
 
-    let mut flips = vec![None; boundary_nodes.len()];
-    for root in 0..boundary_nodes.len() {
+    let mut flips = vec![None; boundary_count];
+    for root in 0..boundary_count {
         if flips[root].is_some() {
             continue;
         }
@@ -771,17 +836,7 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
             }
         }
     }
-    for ((face_index, boundary_index), flip) in boundary_nodes.into_iter().zip(flips) {
-        if flip? {
-            let boundary = &mut faces[face_index].boundaries[boundary_index];
-            boundary.coedges.reverse();
-            for coedge in &mut boundary.coedges {
-                coedge.reversed = !coedge.reversed;
-                std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
-            }
-        }
-    }
-    Some(())
+    flips.into_iter().collect()
 }
 
 pub(crate) fn incidence_cycles(
@@ -810,7 +865,19 @@ pub(crate) fn incidence_cycles(
         .copied()
         .filter(|edge| edge_points[*edge][0] != edge_points[*edge][1])
         .collect();
-    while let Some(&first) = unseen.iter().min() {
+    let mut ordered_unseen = unseen.iter().copied().collect::<Vec<_>>();
+    ordered_unseen.sort_unstable();
+    let mut next_unseen = 0;
+    loop {
+        while ordered_unseen
+            .get(next_unseen)
+            .is_some_and(|edge| !unseen.contains(edge))
+        {
+            next_unseen += 1;
+        }
+        let Some(&first) = ordered_unseen.get(next_unseen) else {
+            break;
+        };
         let start_vertex = edge_points[first][0];
         let mut vertex = start_vertex;
         let mut edge = first;

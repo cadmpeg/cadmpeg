@@ -3,29 +3,47 @@
 //! Decodes `a5`/`a8` NURBS surface carriers, common-form and consolidated
 //! rolling-ball jets, guide-curve jets, and object-stream UV pcurves.
 
-use cadmpeg_ir::geometry::{
-    NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
-use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::HashSet;
-
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
 use crate::wire::records::{
     a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
 };
+use cadmpeg_ir::geometry::{
+    NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
+    RollingBallJetSite, SurfaceGeometry,
+};
+use cadmpeg_ir::le::{u16_at as u16_le, u32_at as u32_le};
+use cadmpeg_ir::math::{Point3, Vector3};
 
-/// A decoded common-form object-stream NURBS surface (`a8 03 34`).
+/// Native identity form of one decoded freeform surface carrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FreeformSurfaceIdentity {
+    /// Common-form `a8 03 34` carrier with an inline persistent object id.
+    Object(u32),
+    /// Consolidated `a5 03 34` carrier identified by its framed source offset.
+    FrameOffset(usize),
+}
+
+/// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
-pub struct A8Surface {
+pub struct FreeformSurface {
     /// Source offset of the framed record.
     pub pos: usize,
-    /// The inline persistent object id.
-    pub object_id: u32,
+    /// Identity form carried by this storage family.
+    pub identity: FreeformSurfaceIdentity,
     /// The decoded NURBS carrier.
     pub geometry: SurfaceGeometry,
+}
+
+impl FreeformSurface {
+    /// Return the inline persistent object id when this is an A8 carrier.
+    #[must_use]
+    pub fn object_id(&self) -> Option<u32> {
+        match self.identity {
+            FreeformSurfaceIdentity::Object(object_id) => Some(object_id),
+            FreeformSurfaceIdentity::FrameOffset(_) => None,
+        }
+    }
 }
 
 /// Parameter lattice decoded from an `a8 03 34` surface record independently
@@ -127,6 +145,48 @@ pub struct A5FreeformCurve {
     pub first_derivatives: Vec<[f64; 10]>,
     /// Ten second-derivative channels per knot.
     pub second_derivatives: Vec<[f64; 10]>,
+}
+
+/// Lower either limiting locus of a complete rolling-ball jet to its exact
+/// degree-5 NURBS representation.
+pub(crate) fn rolling_ball_limit_curve(
+    jet: &A5FreeformCurve,
+    second_limit: bool,
+) -> Option<NurbsCurve> {
+    let offset = usize::from(second_limit) * 3;
+    let positions = jet
+        .sites
+        .iter()
+        .map(|site| {
+            if second_limit {
+                site.limit2
+            } else {
+                site.limit1
+            }
+        })
+        .collect::<Vec<_>>();
+    let first = jet
+        .first_derivatives
+        .iter()
+        .map(|values| [values[offset], values[offset + 1], values[offset + 2]])
+        .collect::<Vec<_>>();
+    let second = jet
+        .second_derivatives
+        .iter()
+        .map(|values| [values[offset], values[offset + 1], values[offset + 2]])
+        .collect::<Vec<_>>();
+    let (knots, control_points) =
+        crate::nurbs::quintic_jet_bspline3(jet.degree, &jet.knots, &positions, &first, &second)?;
+    Some(NurbsCurve {
+        degree: jet.degree,
+        knots,
+        control_points: control_points
+            .into_iter()
+            .map(|point| Point3::new(point[0], point[1], point[2]))
+            .collect(),
+        weights: None,
+        periodic: false,
+    })
 }
 
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
@@ -386,6 +446,9 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         end,
         header_token,
     } = frame;
+    if data.get(pos) == Some(&0xa5) && !matches!(header_token, 5 | 9 | 13 | 29) {
+        return None;
+    }
     let mut at = payload;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
@@ -447,9 +510,13 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
         let radius = distance3(center, limit1);
         let other = distance3(center, limit2);
         let chord = distance3(limit1, limit2);
-        if radius <= f64::EPSILON
-            || (radius - other).abs() > 1e-9 * radius.max(1.0)
-            || (v[9] - 2.0 * (chord / (2.0 * radius)).clamp(-1.0, 1.0).asin()).abs() > 1e-9
+        let radius_scale = radius.max(other);
+        let relative_radius_difference = ((radius / radius_scale) - (other / radius_scale)).abs();
+        if !radius.is_finite()
+            || radius <= 0.0
+            || !other.is_finite()
+            || relative_radius_difference > 1e-9
+            || (v[9] - 2.0 * ((chord / radius) * 0.5).clamp(-1.0, 1.0).asin()).abs() > 1e-9
         {
             return None;
         }
@@ -465,7 +532,7 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
 }
 
 fn distance3(a: [f64; 3], b: [f64; 3]) -> f64 {
-    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    (a[0] - b[0]).hypot(a[1] - b[1]).hypot(a[2] - b[2])
 }
 
 /// Decode framed `a8 03 20` UV jet records.
@@ -483,7 +550,9 @@ pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
 pub fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     let mut out = Vec::new();
     for pos in 0..data.len().saturating_sub(11) {
-        if data.get(pos + 1..pos + 3) != Some(&[0x03, 0x20]) {
+        if !matches!(data.get(pos + 1), Some(0x03 | 0x13 | 0x83))
+            || data.get(pos + 2) != Some(&0x20)
+        {
             continue;
         }
         let Some((payload, length, object_id)) = (match data[pos] {
@@ -580,7 +649,7 @@ fn parse_object_stream_pcurve(
             .chain(&ddu)
             .chain(&ddv)
             .chain(&range)
-            .any(|x| !x.is_finite() || x.abs() >= 1e12)
+            .any(|x| !x.is_finite())
     {
         return None;
     }
@@ -603,7 +672,8 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
-pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
+#[cfg(any(test, feature = "fuzz"))]
+pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
 }
 
@@ -611,19 +681,26 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
 /// parameter records whose pole grids occupy a uniquely bounded external
 /// allocation.
 #[must_use]
-pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
-    let mut surfaces = a8_surfaces(data);
-    let inline_positions = surfaces
-        .iter()
-        .map(|surface| surface.pos)
-        .collect::<HashSet<_>>();
-    surfaces.extend(
-        a8_surface_headers(data)
-            .into_iter()
-            .filter(|header| !inline_positions.contains(&header.pos))
-            .filter_map(|header| a8_surface_from_external_grid(data, &header)),
-    );
-    surfaces.sort_by_key(|surface| surface.pos);
+pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
+    let mut surfaces = Vec::new();
+    let mut search = 0usize;
+    while let Some(relative) = data[search..]
+        .windows(3)
+        .position(|bytes| bytes == [0xa8, 0x03, 0x34])
+    {
+        let pos = search + relative;
+        search = pos + 3;
+        let Some(parsed) = parse_a8_surface_header(data, pos) else {
+            continue;
+        };
+        if parsed.header.poles_elided {
+            if let Some(surface) = a8_surface_from_external_grid(data, &parsed.header) {
+                surfaces.push(surface);
+            }
+        } else if let Some(surface) = a8_surface_from_parsed(data, parsed) {
+            surfaces.push(surface);
+        }
+    }
     surfaces
 }
 
@@ -647,13 +724,17 @@ pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
 /// grid allocation. The allocation occupies the complete unframed gap between
 /// a length-closed `b5 03 21` pcurve and the following A/B-family frame.
 #[must_use]
-pub fn a8_surface_from_external_grid(data: &[u8], header: &A8SurfaceHeader) -> Option<A8Surface> {
+pub fn a8_surface_from_external_grid(
+    data: &[u8],
+    header: &A8SurfaceHeader,
+) -> Option<FreeformSurface> {
     if !header.poles_elided {
         return None;
     }
-    let poles = usize::try_from(header.u_count)
-        .ok()?
-        .checked_mul(usize::try_from(header.v_count).ok()?)?;
+    let poles = crate::nurbs_surface_control_count(
+        usize::try_from(header.u_count).ok()?,
+        usize::try_from(header.v_count).ok()?,
+    )?;
     let weight_bytes = if header.rational {
         poles.checked_mul(8)?
     } else {
@@ -696,7 +777,7 @@ pub fn a8_surface_from_external_grid(data: &[u8], header: &A8SurfaceHeader) -> O
             || control_points
                 .iter()
                 .flat_map(|point| [point.x, point.y, point.z])
-                .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e9)
+                .any(|coordinate| !coordinate.is_finite())
         {
             continue;
         }
@@ -721,9 +802,9 @@ pub fn a8_surface_from_external_grid(data: &[u8], header: &A8SurfaceHeader) -> O
     let [(control_points, weights)] = candidates.as_slice() else {
         return None;
     };
-    Some(A8Surface {
+    Some(FreeformSurface {
         pos: header.pos,
-        object_id: header.object_id,
+        identity: FreeformSurfaceIdentity::Object(header.object_id),
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
             u_degree: header.u_degree,
             v_degree: header.v_degree,
@@ -741,19 +822,20 @@ pub fn a8_surface_from_external_grid(data: &[u8], header: &A8SurfaceHeader) -> O
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
-pub fn a5_surfaces(data: &[u8]) -> Vec<A8Surface> {
+pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     a_family_frames(data, 0x34)
         .into_iter()
         .filter_map(|frame| a5_surface(data, frame))
         .collect()
 }
 
+#[cfg(any(test, feature = "fuzz"))]
 fn scan_surfaces(
     data: &[u8],
     marker: [u8; 3],
     advance: usize,
-    decode: fn(&[u8], usize) -> Option<A8Surface>,
-) -> Vec<A8Surface> {
+    decode: fn(&[u8], usize) -> Option<FreeformSurface>,
+) -> Vec<FreeformSurface> {
     let mut out = Vec::new();
     let mut start = 0usize;
     while let Some(relative) = data[start..]
@@ -770,7 +852,7 @@ fn scan_surfaces(
     out
 }
 
-fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<A8Surface> {
+fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> {
     let ConsolidatedFrame {
         pos, payload, end, ..
     } = frame;
@@ -792,7 +874,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<A8Surface> {
     if !monotonic(&u_distinct) || !monotonic(&v_distinct) {
         return None;
     }
-    let poles = (u_count as usize).checked_mul(v_count as usize)?;
+    let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
     if at.checked_add(poles.checked_mul(24)?)? > end {
         return None;
     }
@@ -804,7 +886,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<A8Surface> {
     if control_points
         .iter()
         .flat_map(|point| [point.x, point.y, point.z])
-        .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e12)
+        .any(|coordinate| !coordinate.is_finite())
     {
         return None;
     }
@@ -824,9 +906,9 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<A8Surface> {
     {
         return None;
     }
-    Some(A8Surface {
+    Some(FreeformSurface {
         pos,
-        object_id: 0,
+        identity: FreeformSurfaceIdentity::FrameOffset(pos),
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
             u_degree,
             v_degree,
@@ -917,13 +999,19 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
     })
 }
 
-fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
+#[cfg(any(test, feature = "fuzz"))]
+fn a8_surface(data: &[u8], pos: usize) -> Option<FreeformSurface> {
+    a8_surface_from_parsed(data, parse_a8_surface_header(data, pos)?)
+}
+
+fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<FreeformSurface> {
     let ParsedA8SurfaceHeader {
         header,
         mut pole_start,
         end,
-    } = parse_a8_surface_header(data, pos)?;
+    } = parsed;
     let A8SurfaceHeader {
+        pos,
         object_id,
         u_degree,
         v_degree,
@@ -940,7 +1028,7 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
     if poles_elided {
         return None;
     }
-    let poles = (u_count as usize).checked_mul(v_count as usize)?;
+    let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
     let pole_bytes = poles.checked_mul(24)?;
     if pole_start.checked_add(pole_bytes)? > end {
         return None;
@@ -953,7 +1041,7 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
     if control_points
         .iter()
         .flat_map(|point| [point.x, point.y, point.z])
-        .any(|coordinate| !coordinate.is_finite() || coordinate.abs() >= 1e12)
+        .any(|coordinate| !coordinate.is_finite())
     {
         return None;
     }
@@ -961,7 +1049,7 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
         let values = f64_values(data, &mut pole_start, poles, end)?;
         values
             .iter()
-            .all(|weight| *weight != 0.0)
+            .all(|weight| weight.is_finite() && *weight != 0.0)
             .then_some(values)?
     } else {
         Vec::new()
@@ -969,9 +1057,9 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
     if pole_start > end {
         return None;
     }
-    Some(A8Surface {
+    Some(FreeformSurface {
         pos,
-        object_id,
+        identity: FreeformSurfaceIdentity::Object(object_id),
         geometry: SurfaceGeometry::Nurbs(NurbsSurface {
             u_degree,
             v_degree,
@@ -1087,7 +1175,11 @@ fn a5_weights(bytes: &[u8], at: &mut usize, rows: usize, cols: usize) -> Option<
         copies += 1;
         *at += 1;
     }
-    if copies + 1 != rows || row.contains(&0.0) {
+    if copies + 1 != rows
+        || row
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight == 0.0)
+    {
         return None;
     }
     Some((0..rows).flat_map(|_| row.iter().copied()).collect())

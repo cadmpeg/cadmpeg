@@ -173,7 +173,7 @@ fn nurbs_weights_valid(weights: Option<&[f64]>, pole_count: usize) -> bool {
         weights.len() == pole_count
             && weights
                 .iter()
-                .all(|weight| weight.is_finite() && weight.abs() > f64::EPSILON)
+                .all(|weight| weight.is_finite() && *weight != 0.0)
     })
 }
 
@@ -332,7 +332,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &s.id.0, "sphere frame is not orthonormal");
                 }
-                if !radius.is_finite() || radius.abs() <= f64::EPSILON {
+                if !radius.is_finite() || *radius == 0.0 {
                     bounds_err(findings, &s.id.0, "sphere radius is zero or not finite");
                 }
             }
@@ -349,10 +349,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &s.id.0, "torus frame is not orthonormal");
                 }
-                if nonpositive(*major_radius)
-                    || !minor_radius.is_finite()
-                    || minor_radius.abs() <= f64::EPSILON
-                {
+                if nonpositive(*major_radius) || !minor_radius.is_finite() || *minor_radius == 0.0 {
                     bounds_err(
                         findings,
                         &s.id.0,
@@ -1830,7 +1827,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
     for pcurve in &ir.model.pcurves {
         let point_finite = |point: &crate::math::Point2| point.u.is_finite() && point.v.is_finite();
         let direction_valid = |direction: &crate::math::Point2| {
-            point_finite(direction) && direction.u.hypot(direction.v) > f64::EPSILON
+            point_finite(direction) && direction.u.hypot(direction.v) > 0.0
         };
         let valid = match &pcurve.geometry {
             crate::geometry::PcurveGeometry::Line { origin, direction } => {
@@ -1947,6 +1944,17 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .iter()
                                 .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
+            }
+            crate::geometry::PcurveGeometry::SphericalGreatCircle {
+                azimuth_origin,
+                azimuth_rate,
+                plane_phase,
+                plane_slope,
+            } => {
+                [azimuth_origin, azimuth_rate, plane_phase, plane_slope]
+                    .into_iter()
+                    .all(|value| value.is_finite())
+                    && *azimuth_rate != 0.0
             }
             crate::geometry::PcurveGeometry::Nurbs {
                 degree,
@@ -2498,6 +2506,15 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                             .all(|weight| weight.is_finite() && *weight > 0.0)
                 })
         }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            plane_slope,
+        } => {
+            finite(&[*azimuth_origin, *azimuth_rate, *plane_phase, *plane_slope])
+                && *azimuth_rate != 0.0
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -2559,7 +2576,9 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
             ref_direction,
             radius,
             ..
-        } => !degenerate(axis) && !degenerate(ref_direction) && radius.abs() > f64::EPSILON,
+        } => {
+            !degenerate(axis) && !degenerate(ref_direction) && radius.is_finite() && *radius != 0.0
+        }
         SurfaceGeometry::Torus {
             axis,
             ref_direction,
@@ -2570,7 +2589,8 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
             !degenerate(axis)
                 && !degenerate(ref_direction)
                 && !nonpositive(*major_radius)
-                && minor_radius.abs() > f64::EPSILON
+                && minor_radius.is_finite()
+                && *minor_radius != 0.0
         }
         SurfaceGeometry::Nurbs(n) => {
             n.control_points.len() == n.u_count as usize * n.v_count as usize
@@ -2727,9 +2747,13 @@ pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::support_context_is_finite;
-    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry};
-    use crate::math::Point2;
+    use super::{
+        nurbs_weights_valid, pcurve_basis_is_valid, support_context_is_finite, valid_surface_basis,
+    };
+    use crate::geometry::{
+        IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry, SurfaceGeometry,
+    };
+    use crate::math::{Point2, Point3, Vector3};
 
     fn context(pcurve: bool, pcurve_parameter_range: Option<[f64; 2]>) -> IntcurveSupportContext {
         IntcurveSupportContext {
@@ -2770,5 +2794,38 @@ mod tests {
             true,
             Some([f64::NAN, 2.0])
         )));
+    }
+
+    #[test]
+    fn exact_geometry_scalars_require_finite_nonzero_values_without_a_size_floor() {
+        let tiny = 1e-200;
+        assert!(nurbs_weights_valid(Some(&[tiny, -tiny]), 2));
+        assert!(!nurbs_weights_valid(Some(&[tiny, 0.0]), 2));
+        assert!(!nurbs_weights_valid(Some(&[tiny, f64::NAN]), 2));
+
+        assert!(pcurve_basis_is_valid(
+            &PcurveGeometry::SphericalGreatCircle {
+                azimuth_origin: 0.0,
+                azimuth_rate: tiny,
+                plane_phase: 0.0,
+                plane_slope: 0.0,
+            }
+        ));
+
+        let axis = Vector3::new(0.0, 0.0, 1.0);
+        let ref_direction = Vector3::new(1.0, 0.0, 0.0);
+        assert!(valid_surface_basis(&SurfaceGeometry::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis,
+            ref_direction,
+            radius: tiny,
+        }));
+        assert!(valid_surface_basis(&SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis,
+            ref_direction,
+            major_radius: tiny,
+            minor_radius: -tiny,
+        }));
     }
 }

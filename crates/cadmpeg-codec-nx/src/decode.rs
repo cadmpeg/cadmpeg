@@ -7794,6 +7794,24 @@ fn reverse_pcurve_over_range(
                 periodic: *periodic,
             })
         }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            plane_slope,
+        } => {
+            let reversed_origin = azimuth_origin + azimuth_rate * reflection;
+            let reversed_rate = -*azimuth_rate;
+            [reversed_origin, reversed_rate, *plane_phase, *plane_slope]
+                .into_iter()
+                .all(f64::is_finite)
+                .then_some(PcurveGeometry::SphericalGreatCircle {
+                    azimuth_origin: reversed_origin,
+                    azimuth_rate: reversed_rate,
+                    plane_phase: *plane_phase,
+                    plane_slope: *plane_slope,
+                })
+        }
         PcurveGeometry::Circle {
             center,
             x_axis,

@@ -45,7 +45,11 @@ pub(crate) mod assemble;
 pub(crate) mod catalog;
 pub(crate) mod container;
 pub(crate) mod decode;
+pub(crate) mod design_feature;
+pub(crate) mod entity_table;
 pub(crate) mod families;
+pub(crate) mod formula;
+pub(crate) mod legacy_entity;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod object_graph;
@@ -60,6 +64,17 @@ pub mod fuzz;
 /// Maximum number of exact rational-quadratic spans materialized for one
 /// angular curve or surface direction from untrusted native parameters.
 pub(crate) const MAX_EXACT_ARC_SPANS: usize = 4_096;
+
+/// Maximum number of control points materialized for one NURBS surface from
+/// untrusted native cardinalities.
+pub(crate) const MAX_NURBS_SURFACE_CONTROL_POINTS: usize = 1_000_000;
+
+/// Multiplies two NURBS surface dimensions within the materialization limit.
+pub(crate) fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Option<usize> {
+    u_count
+        .checked_mul(v_count)
+        .filter(|count| *count <= MAX_NURBS_SURFACE_CONTROL_POINTS)
+}
 
 use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
 use cadmpeg_ir::decode::{DecodeContext, View};
