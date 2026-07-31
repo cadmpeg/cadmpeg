@@ -762,6 +762,9 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     let second_reference = u32_le(payload, at + 1)?;
+    if first_reference.checked_add(1) != Some(second_reference) {
+        return None;
+    }
     let (closing_atom, next) = one_byte_atom(payload, at + 5)?;
     at = next;
     if payload.get(at) != Some(&0xe9) {
@@ -1016,6 +1019,10 @@ mod tests {
                 closing_type_atom: 3864,
             })
         );
+
+        let mut nonconsecutive = payload;
+        nonconsecutive[24] += 1;
+        assert_eq!(parse_reference_signature(&nonconsecutive), None);
     }
 
     #[test]

@@ -10978,7 +10978,7 @@ fn decode_reports_complete_numeric_entity_value_tuples_separately_from_packets()
 #[test]
 fn native_namespace_retains_and_validates_complete_entity_reference_signatures() {
     let value = [
-        0x32, 1, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b')', 0xfe, 0x32,
+        0x32, 2, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b')', 0xfe, 0x32,
         3, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
     ];
     let records = [
@@ -10999,11 +10999,11 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .reference_signature
         .as_ref()
         .expect("complete reference signature");
-    assert_eq!(signature.production.first_reference, 1);
-    assert_eq!(signature.first_entity.entity_id, 1);
+    assert_eq!(signature.production.first_reference, 2);
+    assert_eq!(signature.first_entity.entity_id, 2);
     assert_eq!(
         signature.first_entity.entity.as_deref(),
-        Some(native.entity_records[0].id.as_str())
+        Some(native.entity_records[1].id.as_str())
     );
     assert!(!signature.first_entity.is_null);
     assert_eq!(signature.production.second_reference, 3);
@@ -11078,6 +11078,18 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .remove("signature_syntax");
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("parse reference-signature syntax");
+    assert_eq!(
+        migrated.entity_records[0].reference_signature,
+        Some(expected.clone())
+    );
+
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut stored)
+        .expect("store consecutive reference-signature pair");
+    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_PAIR_VERSION - 1;
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("validate reference-signature pair");
     assert_eq!(
         migrated.entity_records[0].reference_signature,
         Some(expected)

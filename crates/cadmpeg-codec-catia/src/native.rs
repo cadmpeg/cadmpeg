@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 262;
+pub const CATIA_NATIVE_VERSION: u32 = 263;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -132,6 +132,9 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION: u32 = 260;
 /// Native schema version retaining reference-signature descriptor syntax trees.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_SYNTAX_VERSION: u32 = 262;
+/// Native schema version requiring consecutive reference-signature identities.
+#[cfg(test)]
+pub(crate) const CATIA_REFERENCE_SIGNATURE_PAIR_VERSION: u32 = 263;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -9279,6 +9282,21 @@ impl CatiaNative {
                     continue;
                 };
                 signature.production = production;
+            }
+        }
+        if namespace.version < CATIA_REFERENCE_SIGNATURE_PAIR_VERSION {
+            let entity_references = CatiaEntityReferenceIndex {
+                entities: &entities_by_graph_identity,
+                classes: &entity_classes_by_graph_identity,
+                terminal_nulls: &terminal_nulls_by_graph,
+            };
+            for entity in &mut entity_records {
+                entity.reference_signature = entity_table::parse_reference_signature(
+                    &entity.value_payload,
+                )
+                .map(|production| {
+                    reference_signature(production, &entity.object_graph, &entity_references)
+                });
             }
         }
         if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
