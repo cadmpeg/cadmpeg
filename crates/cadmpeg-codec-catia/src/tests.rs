@@ -14152,10 +14152,14 @@ fn native_namespace_binds_two_definition_value_chains() {
         native.entity_records[0].definition_chain_value,
         Some(CatiaDefinitionChainValue {
             selector: CatiaEntitySchemaValue {
+                offset: native.entity_records[0].definition_schema_selections[0].offset,
+                ordinal: native.entity_records[0].definition_schema_selections[0].ordinal,
                 entry: native.catalogs[0].entries[4].id.clone(),
                 value: "FeatureFEDGE".to_string(),
             },
             role: CatiaEntitySchemaValue {
+                offset: native.entity_records[0].definition_schema_selections[1].offset,
+                ordinal: native.entity_records[0].definition_schema_selections[1].ordinal,
                 entry: native.catalogs[0].entries[5].id.clone(),
                 value: "Real".to_string(),
             },
@@ -14435,6 +14439,8 @@ fn native_namespace_binds_and_validates_definition_values() {
         native.entity_records[0].definition_value,
         Some(CatiaDefinitionValue {
             definition: CatiaEntitySchemaValue {
+                offset: native.entity_records[0].definition_schema_selections[0].offset,
+                ordinal: native.entity_records[0].definition_schema_selections[0].ordinal,
                 entry: native.catalogs[0].entries[4].id.clone(),
                 value: "Thickness".to_string(),
             },
@@ -14576,6 +14582,90 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
         crate::native::CatiaEntitySuffixPayload::ControlE8
     ));
     assert!(control.entity_records[0].parameter_value.is_none());
+}
+
+#[test]
+fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(4, false));
+    let expression_entity = &native.entity_records[1];
+    let expression = expression_entity
+        .relation_expression
+        .as_ref()
+        .expect("complete relation expression");
+    assert_eq!(
+        (expression.expression.offset, expression.expression.ordinal),
+        (
+            expression_entity.value_schema_selections[1].offset,
+            expression_entity.value_schema_selections[1].ordinal,
+        )
+    );
+    let parameter_entity = &native.entity_records[2];
+    let parameter = parameter_entity
+        .parameter_value
+        .as_ref()
+        .expect("complete named parameter");
+    assert_eq!(
+        (parameter.name.offset, parameter.name.ordinal),
+        (
+            parameter_entity.value_schema_selections[0].offset,
+            parameter_entity.value_schema_selections[0].ordinal,
+        )
+    );
+    assert_eq!(
+        (parameter.binding.offset, parameter.binding.ordinal),
+        (
+            parameter_entity.value_schema_selections[1].offset,
+            parameter_entity.value_schema_selections[1].ordinal,
+        )
+    );
+
+    let mut stale = native.clone();
+    let expression = stale.entity_records[1]
+        .relation_expression
+        .as_mut()
+        .expect("complete relation expression");
+    expression.expression.offset = 0;
+    expression.expression.ordinal = 0;
+    let parameter = stale.entity_records[2]
+        .parameter_value
+        .as_mut()
+        .expect("complete named parameter");
+    parameter.name.offset = 0;
+    parameter.name.ordinal = 0;
+    parameter.binding.offset = 0;
+    parameter.binding.ordinal = 0;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    stale
+        .store(&mut namespace)
+        .expect("store stale typed schema incidences");
+    namespace.version = crate::native::CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION - 1;
+    let migrated =
+        crate::native::CatiaNative::load(&namespace).expect("migrate typed schema incidences");
+    assert_eq!(
+        migrated.entity_records[1].relation_expression,
+        native.entity_records[1].relation_expression
+    );
+    assert_eq!(
+        migrated.entity_records[2].parameter_value,
+        native.entity_records[2].parameter_value
+    );
+
+    let mut malformed = native;
+    malformed.entity_records[2]
+        .parameter_value
+        .as_mut()
+        .expect("complete named parameter")
+        .name
+        .offset = u64::MAX;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed typed schema incidence");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]

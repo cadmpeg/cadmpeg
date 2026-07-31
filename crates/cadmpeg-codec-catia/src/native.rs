@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 251;
+pub const CATIA_NATIVE_VERSION: u32 = 252;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -102,6 +102,9 @@ pub(crate) const CATIA_FORMULA_REFERENCE_OFFSET_VERSION: u32 = 250;
 /// Native schema version retaining configuration payload occurrence offsets.
 #[cfg(test)]
 pub(crate) const CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION: u32 = 251;
+/// Native schema version retaining typed entity-schema selector incidences.
+#[cfg(test)]
+pub(crate) const CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION: u32 = 252;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1057,9 +1060,15 @@ pub struct CatiaRepeatedReferenceSchemaSelection {
     pub name: Option<String>,
 }
 
-/// One exact schema entry selected by a typed entity-value program.
+/// One exact schema selector used by a typed entity program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntitySchemaValue {
+    /// Byte offset of the selector within its definition or value payload.
+    #[serde(default)]
+    pub offset: u64,
+    /// Stored zero-based source-schema ordinal.
+    #[serde(default)]
+    pub ordinal: u32,
     /// Selected source-schema entry.
     pub entry: String,
     /// UTF-8 value stored by the selected entry.
@@ -2556,6 +2565,8 @@ fn relation_expression(
         return None;
     }
     let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
+        offset: selection.offset,
+        ordinal: selection.ordinal,
         entry: selection.entry.clone(),
         value: selection.name.clone(),
     };
@@ -2730,6 +2741,8 @@ fn parameter_value(
         return None;
     };
     let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
+        offset: selection.offset,
+        ordinal: selection.ordinal,
         entry: selection.entry.clone(),
         value: selection.name.clone(),
     };
@@ -2776,10 +2789,14 @@ fn constraint_range(
     };
     Some(CatiaConstraintRange {
         range: CatiaEntitySchemaValue {
+            offset: range.offset,
+            ordinal: range.ordinal,
             entry: range.entry.clone(),
             value: range.name.clone(),
         },
         constraint: CatiaEntitySchemaValue {
+            offset: constraint.offset,
+            ordinal: constraint.ordinal,
             entry: constraint.entry.clone(),
             value: constraint.name.clone(),
         },
@@ -2868,6 +2885,8 @@ fn definition_value(
     let suffix_value = suffix_value?;
     Some(CatiaDefinitionValue {
         definition: CatiaEntitySchemaValue {
+            offset: definition.offset,
+            ordinal: definition.ordinal,
             entry: definition.entry.clone()?,
             value: definition.name.clone()?,
         },
@@ -2895,10 +2914,14 @@ fn definition_chain_value(
         return None;
     };
     let selector_value = CatiaEntitySchemaValue {
+        offset: selector.offset,
+        ordinal: selector.ordinal,
         entry: selector.entry.clone()?,
         value: selector.name.clone()?,
     };
     let role = CatiaEntitySchemaValue {
+        offset: role.offset,
+        ordinal: role.ordinal,
         entry: role.entry.clone()?,
         value: role.name.clone()?,
     };
@@ -8935,11 +8958,38 @@ impl CatiaNative {
                 entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
             }
         }
-        if namespace.version < CATIA_RELATION_SIGNATURE_PARAMETER_VERSION {
+        if namespace.version < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION {
             for entity in &mut entity_records {
                 entity.relation_expression = relation_expression(
                     &entity.definition_schema_selections,
                     &entity.value_schema_selections,
+                );
+                entity.parameter_value = parameter_value(
+                    entity.lead,
+                    &entity.value_schema_selections,
+                    entity.suffix_value.as_ref(),
+                );
+                entity.constraint_range = resolved_constraint_range(
+                    entity.lead,
+                    &entity.value_schema_selections,
+                    entity.suffix_value.as_ref(),
+                    &records,
+                    &entity.object_graph,
+                    entity.entity_id,
+                );
+                entity.definition_value = definition_value(
+                    entity.lead,
+                    &entity.definition_schema_selections,
+                    &entity.value_fields,
+                    entity.suffix_value.as_ref(),
+                    entity.suffix_schema_selection.as_ref(),
+                );
+                entity.definition_chain_value = definition_chain_value(
+                    entity.lead,
+                    &entity.definition_schema_selections,
+                    &entity.value_fields,
+                    entity.suffix_value.as_ref(),
+                    entity.suffix_schema_selection.as_ref(),
                 );
             }
         }

@@ -73,9 +73,11 @@ current scores require those matrices and representative fixtures.
   values as disjoint typed productions.
 - Complete two-definition value chains retain the repeated schema selector,
   second role definition, catalog-resolved selected value, and structural
-  ownership. Each design object retains its chain-value entity identities in
-  field order. Finite and unset evaluations, atoms, controls, separators, and
-  nested schema selectors are counted independently.
+  ownership. Every typed definition or value role retains its selector offset,
+  ordinal, selected catalog entry, and value. Each design object retains its
+  chain-value entity identities in field order. Finite and unset evaluations,
+  atoms, controls, separators, and nested schema selectors are counted
+  independently.
 - Relation-expression coverage partitions distinct expressions referenced by
   formulas, compound relation-program instances, either incidence, and neither
   incidence. An expression selected by both incidence forms is counted once in
