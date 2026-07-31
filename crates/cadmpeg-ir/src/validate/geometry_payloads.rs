@@ -1708,12 +1708,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let Some(form) = revision_surface_form(&procedural.definition) {
+        if let Some((enumeration, parameterization)) = revision_tail_form(&procedural.definition) {
             // Tail enum `0` stores a solved cache and its fit tolerance; `2`
             // stores the parameterization instead. No other value is defined.
-            let form_matches = match form.tail_enum {
-                0 => form.tail_parameterization.is_none(),
-                2 => form.tail_parameterization.is_some(),
+            let form_matches = match enumeration {
+                0 => parameterization.is_none(),
+                2 => parameterization.is_some(),
                 _ => false,
             };
             if !form_matches {
@@ -2708,11 +2708,15 @@ pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], 
     }
 }
 
-/// The shared revision-gated form carried by a procedural surface definition.
-fn revision_surface_form(
+/// The shared revision-gated surface tail's form enum and the parameterization
+/// paired with it, from whichever carrier the definition uses.
+fn revision_tail_form(
     definition: &ProceduralSurfaceDefinition,
-) -> Option<&crate::geometry::RevisionSurfaceForm> {
-    match definition {
+) -> Option<(
+    i64,
+    Option<&crate::geometry::RevisionSurfaceParameterization>,
+)> {
+    let form = match definition {
         ProceduralSurfaceDefinition::Exact { revision_form, .. }
         | ProceduralSurfaceDefinition::Taper { revision_form, .. }
         | ProceduralSurfaceDefinition::Revolution { revision_form, .. }
@@ -2721,8 +2725,24 @@ fn revision_surface_form(
         ProceduralSurfaceDefinition::TSpline { construction } => {
             construction.revision_form.as_ref()
         }
+        ProceduralSurfaceDefinition::VariableBlend { construction } => {
+            return Some((
+                construction.cache_selector,
+                construction.tail_parameterization.as_ref(),
+            ))
+        }
+        ProceduralSurfaceDefinition::Blend {
+            native: Some(construction),
+            ..
+        } => {
+            return Some((
+                construction.cache_selector,
+                construction.tail_parameterization.as_ref(),
+            ))
+        }
         _ => None,
-    }
+    }?;
+    Some((form.tail_enum, form.tail_parameterization.as_ref()))
 }
 
 pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {

@@ -3299,7 +3299,82 @@ fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
     synthetic_cyl_spl_sur_with_cache_smbh(true)
 }
 
+/// Append the head of the shared revision-gated surface tail. Form `0` stores
+/// the solved cache followed by its fit tolerance; form `2` stores the U
+/// parameter interval and the V parameter interval in the optional bool-gated
+/// encoding, then the U closure, V closure, U singularity, and V singularity
+/// enums. Every slot carries a distinct value so a reordering fails loudly.
+fn append_revision_surface_tail_head(bytes: &mut Vec<u8>, form: i64, fit_tolerance: f64) {
+    push_tagged_i64(bytes, 0x15, form);
+    if form == 0 {
+        bytes.extend_from_slice(&generated_surface_block());
+        t_dbl(bytes, fit_tolerance);
+        return;
+    }
+    for value in [0.25, 0.75, -1.5, 3.5] {
+        bytes.push(0x0a);
+        t_dbl(bytes, value);
+    }
+    for value in [1, 2, 3, 4] {
+        push_tagged_i64(bytes, 0x15, value);
+    }
+}
+
+/// Append the six counted discontinuity arrays and the boolean closing the
+/// shared revision-gated surface tail.
+fn append_revision_surface_tail_discontinuities(bytes: &mut Vec<u8>) {
+    for values in [
+        &[0.25][..],
+        &[][..],
+        &[0.5, 0.75][..],
+        &[1.5][..],
+        &[][..],
+        &[2.5, 3.5][..],
+    ] {
+        t_long(bytes, i64::try_from(values.len()).unwrap());
+        for value in values {
+            t_dbl(bytes, *value);
+        }
+    }
+    bytes.push(0x0b);
+}
+
+/// The discontinuity arrays `append_revision_surface_tail_discontinuities`
+/// writes.
+fn expected_revision_surface_tail_discontinuities() -> [Vec<f64>; 6] {
+    [
+        vec![0.25],
+        vec![],
+        vec![0.5, 0.75],
+        vec![1.5],
+        vec![],
+        vec![2.5, 3.5],
+    ]
+}
+
+/// The parameterization `append_revision_surface_tail_head` writes for form `2`.
+fn expected_revision_surface_tail_parameterization(
+) -> cadmpeg_ir::geometry::RevisionSurfaceParameterization {
+    cadmpeg_ir::geometry::RevisionSurfaceParameterization {
+        u_interval: [Some(0.25), Some(0.75)],
+        v_interval: [Some(-1.5), Some(3.5)],
+        u_closure: 1,
+        v_closure: 2,
+        u_singularity: 3,
+        v_singularity: 4,
+    }
+}
+
 fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
+    synthetic_versioned_cyl_spl_sur_with_tail_smbh(0)
+}
+
+/// A revision-gated `cyl_spl_sur` closing with the shared surface tail. Its
+/// directrix scope carries a surface block and a trailing scalar of its own, so
+/// a decoder that locates the face cache by scanning the scope rather than by
+/// parsing the tail picks that block up and reads its trailing scalar as the
+/// fit tolerance.
+fn synthetic_versioned_cyl_spl_sur_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -3321,6 +3396,8 @@ fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
     surface.push(0x0f);
     t_ident(&mut surface, "exact_int_cur");
     surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.009);
     surface.push(0x10);
     surface.push(0x0a);
     t_dbl(&mut surface, 0.25);
@@ -3328,8 +3405,8 @@ fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
     t_dbl(&mut surface, 0.75);
     t_vec(&mut surface, [0.0, 0.0, 2.0]);
     t_pos(&mut surface, [4.0, 5.0, 6.0]);
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.002);
+    append_revision_surface_tail_head(&mut surface, tail_form, 0.002);
+    append_revision_surface_tail_discontinuities(&mut surface);
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old_offset..old_offset + old_len, surface);
@@ -4833,6 +4910,10 @@ fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) 
 }
 
 fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
+    synthetic_full_rolling_ball_with_tail_smbh(name, 0)
+}
+
+fn synthetic_full_rolling_ball_with_tail_smbh(name: &str, tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -4867,15 +4948,8 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
         t_dbl(&mut surface, value);
     }
     t_long(&mut surface, 17);
-    push_tagged_i64(&mut surface, 0x15, 0);
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.004);
-    for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-        t_long(&mut surface, i64::try_from(values.len()).unwrap());
-        for value in values {
-            t_dbl(&mut surface, *value);
-        }
-    }
+    append_revision_surface_tail_head(&mut surface, tail_form, 0.004);
+    append_revision_surface_tail_discontinuities(&mut surface);
     if matches!(name, "sss_blend_spl_sur" | "sssblndsur") {
         push_u8_string(&mut surface, "third");
         t_ident(&mut surface, "plane");
@@ -4890,6 +4964,9 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
         t_long(&mut surface, 23);
         t_ident(&mut surface, "nullbs");
         surface.push(0x0b);
+    }
+    for value in [11, 12, 13] {
+        t_long(&mut surface, value);
     }
     surface.push(0x10);
     t_end(&mut surface);
@@ -5011,6 +5088,20 @@ fn synthetic_variable_blend_smbh_with_selector(
         cross_section_selector,
         v_range,
         FirstRadiusLaw::TwoEnds,
+        0,
+    )
+}
+
+/// The same stream whose shared revision-gated surface tail takes the given
+/// form.
+fn synthetic_variable_blend_smbh_with_tail_form(name: &str, tail_form: i64) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(
+        name,
+        false,
+        None,
+        [None, None],
+        FirstRadiusLaw::TwoEnds,
+        tail_form,
     )
 }
 
@@ -5026,13 +5117,21 @@ fn synthetic_variable_blend_smbh_with_interp_radius(
         cross_section_selector,
         [None, None],
         FirstRadiusLaw::Interp,
+        0,
     )
 }
 
 /// The same stream with an `edge_offset` first radius law carrying no leading
 /// sub-discriminator.
 fn synthetic_variable_blend_smbh_with_edge_offset_radius(name: &str) -> Vec<u8> {
-    synthetic_variable_blend_smbh_inner(name, false, None, [None, None], FirstRadiusLaw::EdgeOffset)
+    synthetic_variable_blend_smbh_inner(
+        name,
+        false,
+        None,
+        [None, None],
+        FirstRadiusLaw::EdgeOffset,
+        0,
+    )
 }
 
 fn synthetic_variable_blend_smbh_inner(
@@ -5041,6 +5140,7 @@ fn synthetic_variable_blend_smbh_inner(
     cross_section_selector: Option<i64>,
     v_range: [Option<f64>; 2],
     first_value: FirstRadiusLaw,
+    tail_form: i64,
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -5113,9 +5213,7 @@ fn synthetic_variable_blend_smbh_inner(
     t_dbl(&mut surface, 0.125);
     t_dbl(&mut surface, 0.6);
     t_long(&mut surface, 12);
-    push_tagged_i64(&mut surface, 0x15, 0);
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.004);
+    append_revision_surface_tail_head(&mut surface, tail_form, 0.004);
     for values in [
         &[0.125][..],
         &[][..],
@@ -16746,10 +16844,13 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         assert_eq!(native.parameters, [0.1, 0.2]);
         assert_eq!(native.tail, 17);
         assert_eq!(native.cache_selector, 0);
+        assert_eq!(native.tail_parameterization, None);
         assert_eq!(
             native.discontinuities,
-            [vec![0.25], vec![], vec![0.5, 0.75]]
+            expected_revision_surface_tail_discontinuities()
         );
+        assert!(!native.tail_flag);
+        assert_eq!(native.tail_extensions, [11, 12, 13]);
         assert_eq!(native.third.is_some(), name.starts_with("sss"));
         if let Some(third) = &native.third {
             assert_eq!(third.label, "third");
@@ -16855,6 +16956,121 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                 if curve.degree == 1 && curve.knots == [-1.0, -1.0, 2.0, 2.0]
         ));
+    }
+}
+
+/// Tail form `2` stores no cache and no fit tolerance: it stores the U
+/// parameter interval, the V parameter interval, and the U closure, V closure,
+/// U singularity, and V singularity enums. The carrier fields that follow the
+/// tail decode at their stored values only when the tail is framed exactly.
+#[test]
+fn parameterized_tail_form_decodes_in_every_blend_carrier() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_variable_blend_smbh_with_tail_form("var_blend_spl_sur", 2),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized variable-blend decode");
+    let procedural = &decoded.ir.model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition else {
+        panic!("expected variable-blend construction")
+    };
+    assert_eq!(construction.cache_selector, 2);
+    assert_eq!(
+        construction.tail_parameterization,
+        Some(expected_revision_surface_tail_parameterization())
+    );
+    // Fields after the tail; a misframed tail shifts every one of them.
+    assert_eq!(construction.tail_extensions, [31, 32, 33]);
+    assert_eq!(construction.post_range, [Some(0.0), Some(1.0)]);
+
+    for name in ["rb_blend_spl_sur", "sss_blend_spl_sur"] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_full_rolling_ball_with_tail_smbh(
+                    name, 2,
+                ))),
+                &DecodeOptions::default(),
+            )
+            .expect("parameterized rolling-ball decode");
+        let procedural = &decoded.ir.model.procedural_surfaces[0];
+        assert_eq!(procedural.cache_fit_tolerance, None);
+        let ProceduralSurfaceDefinition::Blend {
+            native: Some(native),
+            ..
+        } = &procedural.definition
+        else {
+            panic!("expected complete rolling-ball graph")
+        };
+        assert_eq!(native.cache_selector, 2);
+        assert_eq!(
+            native.tail_parameterization,
+            Some(expected_revision_surface_tail_parameterization())
+        );
+        assert_eq!(
+            native.discontinuities,
+            expected_revision_surface_tail_discontinuities()
+        );
+        assert!(!native.tail_flag);
+        assert_eq!(native.third.is_some(), name.starts_with("sss"));
+        // Fields after the tail; a misframed tail shifts every one of them.
+        assert_eq!(native.tail_extensions, [11, 12, 13]);
+    }
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_versioned_cyl_spl_sur_with_tail_smbh(2),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized extrusion decode");
+    let procedural = &decoded.ir.model.procedural_surfaces[0];
+    // Form `2` stores no cache and no fit tolerance. The surface block inside
+    // the directrix scope is not this record's cache and its trailing scalar is
+    // not this record's fit tolerance.
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert!(matches!(
+        procedural.definition,
+        ProceduralSurfaceDefinition::Extrusion {
+            parameter_interval: Some([0.25, 0.75]),
+            ..
+        }
+    ));
+}
+
+/// Tail form `2` stores no solved cache, so a blend record carrying it leaves
+/// its face without a NURBS carrier. Source-less generation refuses such a
+/// record outright rather than emitting a record whose tail claims a cache.
+#[test]
+fn parameterized_blend_tails_refuse_source_less_generation() {
+    for stream in [
+        synthetic_full_rolling_ball_with_tail_smbh("rb_blend_spl_sur", 2),
+        synthetic_variable_blend_smbh_with_tail_form("var_blend_spl_sur", 2),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&stream)),
+                &DecodeOptions::default(),
+            )
+            .expect("parameterized blend decode");
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        let error = F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect_err("parameterized blend has no solved carrier to generate from");
+        assert!(
+            matches!(error, cadmpeg_ir::codec::CodecError::NotImplemented(_)),
+            "{error:?}"
+        );
+        assert!(encoded.is_empty());
     }
 }
 

@@ -276,11 +276,19 @@ impl CadIr {
             .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
     }
 
+    /// Deserialize every reserved native `unknowns` arena.
+    pub fn all_native_unknowns(
+        &self,
+    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
+        self.all_native_unknowns_iter().collect()
+    }
+
     /// Deserialize every reserved native `unknowns` arena one record at a time.
     ///
-    /// Each record is converted as it is read, so a caller that only scans the
-    /// population — collecting link targets or record ids — keeps just what it
-    /// retains resident rather than the whole typed population at once.
+    /// A caller that only scans the population — collecting link targets or
+    /// record ids — should consume this rather than
+    /// [`all_native_unknowns`](Self::all_native_unknowns), so only what it keeps
+    /// stays resident instead of the whole typed population alongside it.
     pub fn all_native_unknowns_iter(
         &self,
     ) -> impl Iterator<Item = Result<NativeUnknownRecord, crate::native::NativeConvertError>> + '_

@@ -253,7 +253,10 @@ pub struct EmbeddedVariableBlend {
     /// Signed integer immediately before the cache selector, taking the
     /// values `-1` and `1`.
     pub(crate) shape_tail: i64,
+    /// Enum opening the shared revision-gated surface tail.
     pub(crate) cache_selector: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved cache.
+    pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
     pub(crate) discontinuities: [Vec<f64>; 6],
     pub(crate) tail_flag: bool,
     pub(crate) tail_extensions: [i64; 3],
@@ -329,9 +332,14 @@ pub struct EmbeddedRollingBall {
     pub(crate) shape_prefix: i64,
     pub(crate) parameters: [f64; 2],
     pub(crate) tail: i64,
+    /// Enum opening the shared revision-gated surface tail.
     pub(crate) cache_selector: i64,
-    pub(crate) discontinuities: [Vec<f64>; 3],
+    /// Parameterization stored by tail-enum form `2` in place of a solved cache.
+    pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    pub(crate) discontinuities: [Vec<f64>; 6],
+    pub(crate) tail_flag: bool,
     pub(crate) third: Option<Box<EmbeddedRollingBallThirdSide>>,
+    pub(crate) tail_extensions: [i64; 3],
 }
 
 pub(crate) struct EmbeddedG2Side {
@@ -3064,25 +3072,25 @@ fn decode_comp_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
 }
 
 /// The shared revision-gated surface tail, decoded.
-struct RevisionSurfaceTail {
+pub(crate) struct RevisionSurfaceTail {
     /// Enum opening the tail, selecting the approximation-cache form.
-    enumeration: i64,
+    pub(crate) enumeration: i64,
     /// Fit tolerance of the solved cache. Carried by form `0` only.
-    fit_tolerance: Option<f64>,
+    pub(crate) fit_tolerance: Option<f64>,
     /// Parameter intervals and closure/singularity enums. Carried by form `2`
     /// only.
-    parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    pub(crate) parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays.
-    discontinuities: [Vec<f64>; 6],
+    pub(crate) discontinuities: [Vec<f64>; 6],
     /// Boolean terminating the tail.
-    tail_flag: bool,
+    pub(crate) tail_flag: bool,
 }
 
 impl RevisionSurfaceTail {
     /// Destructure a solved-cache tail, for carriers whose IR retains no slot
     /// for the form-`2` parameterization. Fails on any other form so the
     /// containing record is retained verbatim rather than decoded lossily.
-    fn into_solved(self) -> Option<(i64, f64, [Vec<f64>; 6], bool)> {
+    pub(crate) fn into_solved(self) -> Option<(i64, f64, [Vec<f64>; 6], bool)> {
         Some((
             self.enumeration,
             self.fit_tolerance?,
@@ -3101,7 +3109,7 @@ impl RevisionSurfaceTail {
 /// counted discontinuity arrays and one boolean. Other values have no defined
 /// grammar; they fail so the containing record is retained verbatim through the
 /// native-preservation path rather than misparsed.
-fn decode_revision_surface_tail(
+pub(crate) fn decode_revision_surface_tail(
     span: &[u8],
     position: &mut usize,
     int_width: usize,

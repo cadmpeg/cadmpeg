@@ -2015,6 +2015,7 @@ fn emit_variable_blend_surface(
             shape_length: construction.shape_length,
             shape_tail: construction.shape_tail,
             cache_selector: construction.cache_selector,
+            tail_parameterization: construction.tail_parameterization,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             tail_extensions: construction.tail_extensions,
@@ -2458,8 +2459,11 @@ fn emit_blend_surface(
             parameters: native.parameters,
             tail: native.tail,
             cache_selector: native.cache_selector,
+            tail_parameterization: native.tail_parameterization,
             discontinuities: native.discontinuities,
+            tail_flag: native.tail_flag,
             third,
+            tail_extensions: native.tail_extensions,
         })
     });
     if resolved_supports

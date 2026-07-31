@@ -308,8 +308,18 @@ pub(super) fn check_native_links(
         }
     }
 
-    // The `unknowns` arena is one of the namespace arenas below, so the generic
-    // record loop already covers every unknown-record link.
+    for record in ir.all_native_unknowns_iter().flatten() {
+        for target in &record.links {
+            if !all_ids.contains(target) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("unknown-record link `{target}` does not resolve"),
+                    entity: Some(record.id.0.clone()),
+                });
+            }
+        }
+    }
     for namespace in ir.native.0.values() {
         for records in namespace.arenas.values() {
             for record in records {

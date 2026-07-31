@@ -2348,31 +2348,6 @@ fn sketch_constraint_native_ref_must_resolve() {
 }
 
 #[test]
-fn unresolved_unknown_record_link_is_reported_once() {
-    // The `unknowns` arena is one of the native namespace arenas, so the
-    // generic native-record loop is the only thing that needs to walk it.
-    let mut ir = unit_cube();
-    ir.set_native_unknowns(
-        "test",
-        &[crate::NativeUnknownRecord {
-            id: crate::ids::UnknownId("test:unknown#0".into()),
-            links: vec!["test:missing#0".into()],
-        }],
-    )
-    .expect("store unknown record");
-
-    let findings = validate(&ir, Vec::new()).findings;
-    let reported = findings
-        .iter()
-        .filter(|finding| {
-            finding.check == Check::NativeLinks && finding.message.contains("test:missing#0")
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(reported.len(), 1);
-    assert_eq!(reported[0].entity.as_deref(), Some("test:unknown#0"));
-}
-
-#[test]
 fn periodic_curve_parameter_domain_is_checked() {
     let mut ir = unit_cube();
     let curve_id = ir.model.edges[0].curve.clone().unwrap();

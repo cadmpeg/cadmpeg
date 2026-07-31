@@ -1463,13 +1463,25 @@ pub struct RollingBallConstruction {
     pub parameters: [f64; 2],
     /// Native long following the trailing scalars.
     pub tail: i64,
-    /// Native selector preceding the solved surface cache.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub cache_selector: i64,
-    /// Three ordered ASM discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 3],
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
+    /// Six ordered ASM discontinuity arrays closing the shared tail.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native Boolean closing the shared tail.
+    #[serde(default)]
+    pub tail_flag: bool,
     /// Third side present only for `sss_blend_spl_sur`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub third: Option<Box<RollingBallThirdSide>>,
+    /// Three ASM integers preceding the subtype close.
+    #[serde(default)]
+    pub tail_extensions: [i64; 3],
 }
 
 /// Geometry role selected by a variable-blend support-side discriminator.
@@ -1708,9 +1720,15 @@ pub struct VariableBlendConstruction {
     pub shape_length: f64,
     /// Non-negative integer immediately before the cache selector.
     pub shape_tail: i64,
-    /// Native selector preceding the solved surface cache.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub cache_selector: i64,
-    /// Six ordered ASM discontinuity arrays following the fit tolerance.
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
+    /// Six ordered ASM discontinuity arrays closing the shared tail.
     pub discontinuities: [Vec<f64>; 6],
     /// Native Boolean following the discontinuity arrays.
     pub tail_flag: bool,

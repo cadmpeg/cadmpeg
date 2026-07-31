@@ -3648,9 +3648,13 @@ fn encode_native_variable_blend(
     construction: &cadmpeg_ir::geometry::VariableBlendConstruction,
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
-    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
-        CodecError::Malformed("variable blend requires a native cache-fit tolerance".into())
-    })?;
+    // Only tail form `0` stores a fit tolerance; form `2` stores none.
+    let cache_fit_tolerance = procedural.cache_fit_tolerance;
+    if construction.cache_selector == 0 && cache_fit_tolerance.is_none() {
+        return Err(CodecError::Malformed(
+            "variable blend requires a native cache-fit tolerance".into(),
+        ));
+    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(
@@ -3749,20 +3753,14 @@ fn encode_native_variable_blend(
     native_f64(bytes, construction.shape_parameter);
     native_f64(bytes, construction.shape_length / LEN_TO_MM);
     native_i64(bytes, construction.shape_tail);
-    native_enum(bytes, construction.cache_selector);
-    native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
-    for values in &construction.discontinuities {
-        native_i64(
-            bytes,
-            i64::try_from(values.len()).map_err(|_| {
-                CodecError::NotImplemented("variable-blend discontinuity count exceeds i64".into())
-            })?,
-        );
-        for value in values {
-            native_f64(bytes, *value);
-        }
-    }
+    native_revision_tail_head(
+        bytes,
+        construction.cache_selector,
+        construction.tail_parameterization.as_ref(),
+        solved_cache,
+        cache_fit_tolerance,
+    )?;
+    native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
     bytes.push(native_bool(construction.tail_flag));
     for extension in construction.tail_extensions {
         native_i64(bytes, extension);
@@ -3963,9 +3961,13 @@ fn encode_complete_native_rolling_ball(
     construction: &cadmpeg_ir::geometry::RollingBallConstruction,
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
-    let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
-        CodecError::Malformed("rolling-ball blend requires a native cache-fit tolerance".into())
-    })?;
+    // Only tail form `0` stores a fit tolerance; form `2` stores none.
+    let cache_fit_tolerance = procedural.cache_fit_tolerance;
+    if construction.cache_selector == 0 && cache_fit_tolerance.is_none() {
+        return Err(CodecError::Malformed(
+            "rolling-ball blend requires a native cache-fit tolerance".into(),
+        ));
+    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(
@@ -4017,22 +4019,20 @@ fn encode_complete_native_rolling_ball(
         native_f64(bytes, parameter);
     }
     native_i64(bytes, construction.tail);
-    native_enum(bytes, construction.cache_selector);
-    native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
-    for values in &construction.discontinuities {
-        native_i64(
-            bytes,
-            i64::try_from(values.len()).map_err(|_| {
-                CodecError::NotImplemented("rolling-ball discontinuity count exceeds i64".into())
-            })?,
-        );
-        for value in values {
-            native_f64(bytes, *value);
-        }
-    }
+    native_revision_tail_head(
+        bytes,
+        construction.cache_selector,
+        construction.tail_parameterization.as_ref(),
+        solved_cache,
+        cache_fit_tolerance,
+    )?;
+    native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
+    bytes.push(native_bool(construction.tail_flag));
     if let Some(third) = &construction.third {
         native_rolling_ball_third_side(bytes, target, third)?;
+    }
+    for extension in construction.tail_extensions {
+        native_i64(bytes, extension);
     }
     bytes.push(0x10);
     Ok(())
@@ -5493,8 +5493,35 @@ fn native_revision_surface_tail(
     solved_cache: &cadmpeg_ir::geometry::NurbsSurface,
     cache_fit_tolerance: Option<f64>,
 ) -> Result<(), CodecError> {
-    native_enum(bytes, form.tail_enum);
-    match (form.tail_enum, &form.tail_parameterization) {
+    native_revision_tail_head(
+        bytes,
+        form.tail_enum,
+        form.tail_parameterization.as_ref(),
+        solved_cache,
+        cache_fit_tolerance,
+    )?;
+    native_revision_tail_discontinuities(bytes, &form.discontinuities)?;
+    bytes.push(native_bool(form.tail_flag));
+    for flag in &form.trailing_flags {
+        bytes.push(native_bool(*flag));
+    }
+    Ok(())
+}
+
+/// Emit the form-selecting head of the shared revision-gated surface tail: the
+/// enum and the payload it selects. Form `0` writes the solved cache and its
+/// fit tolerance; form `2` writes the U parameter interval and the V parameter
+/// interval followed by the U closure, V closure, U singularity, and V
+/// singularity enums. No other value has a defined payload.
+fn native_revision_tail_head(
+    bytes: &mut Vec<u8>,
+    enumeration: i64,
+    parameterization: Option<&cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    solved_cache: &cadmpeg_ir::geometry::NurbsSurface,
+    cache_fit_tolerance: Option<f64>,
+) -> Result<(), CodecError> {
+    native_enum(bytes, enumeration);
+    match (enumeration, parameterization) {
         (0, None) => {
             native_nurbs_surface(bytes, solved_cache)?;
             native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM);
@@ -5522,20 +5549,25 @@ fn native_revision_surface_tail(
             ));
         }
     }
-    for discontinuities in &form.discontinuities {
+    Ok(())
+}
+
+/// Emit the six counted discontinuity arrays closing the shared revision-gated
+/// surface tail.
+fn native_revision_tail_discontinuities(
+    bytes: &mut Vec<u8>,
+    discontinuities: &[Vec<f64>; 6],
+) -> Result<(), CodecError> {
+    for values in discontinuities {
         native_i64(
             bytes,
-            i64::try_from(discontinuities.len()).map_err(|_| {
+            i64::try_from(values.len()).map_err(|_| {
                 CodecError::NotImplemented("discontinuity count exceeds i64".into())
             })?,
         );
-        for value in discontinuities {
+        for value in values {
             native_f64(bytes, *value);
         }
-    }
-    bytes.push(native_bool(form.tail_flag));
-    for flag in &form.trailing_flags {
-        bytes.push(native_bool(*flag));
     }
     Ok(())
 }
@@ -5948,4 +5980,91 @@ fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), CodecErr
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod revision_surface_tail_tests {
+    use super::*;
+
+    /// A stand-in for the solved cache slot. Neither form under test reaches
+    /// it: form `2` writes no cache, and a mismatched pair is refused before
+    /// the cache is read.
+    fn unused_cache() -> NurbsSurface {
+        NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: Vec::new(),
+            v_knots: Vec::new(),
+            u_count: 0,
+            v_count: 0,
+            control_points: Vec::new(),
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        }
+    }
+
+    /// The writer's form-`2` tail head and discontinuity block are what the
+    /// decoder reads back: the U parameter interval, the V parameter interval,
+    /// the U closure, V closure, U singularity, and V singularity enums, six
+    /// counted arrays, and the closing boolean, consuming the exact span.
+    #[test]
+    fn parameterized_tail_head_round_trips_through_the_decoder() {
+        let parameterization = cadmpeg_ir::geometry::RevisionSurfaceParameterization {
+            u_interval: [Some(0.25), None],
+            v_interval: [Some(-1.5), Some(3.5)],
+            u_closure: 1,
+            v_closure: 2,
+            u_singularity: 3,
+            v_singularity: 4,
+        };
+        let discontinuities = [
+            vec![0.125],
+            Vec::new(),
+            vec![0.25, 0.375],
+            vec![0.5],
+            Vec::new(),
+            vec![0.625, 0.75],
+        ];
+        let mut bytes = Vec::new();
+        native_revision_tail_head(
+            &mut bytes,
+            2,
+            Some(&parameterization),
+            &unused_cache(),
+            None,
+        )
+        .expect("parameterized tail head");
+        native_revision_tail_discontinuities(&mut bytes, &discontinuities)
+            .expect("tail discontinuities");
+        bytes.push(native_bool(false));
+
+        let mut position = 0usize;
+        let tail =
+            crate::nurbs::proc_surface::decode_revision_surface_tail(&bytes, &mut position, 8)
+                .expect("decoded parameterized tail");
+        assert_eq!(position, bytes.len());
+        assert_eq!(tail.enumeration, 2);
+        assert_eq!(tail.fit_tolerance, None);
+        assert_eq!(tail.parameterization, Some(parameterization));
+        assert_eq!(tail.discontinuities, discontinuities);
+        assert!(!tail.tail_flag);
+    }
+
+    /// An enum and a stored parameterization that disagree have no layout. The
+    /// writer refuses the pair instead of guessing which one to emit.
+    #[test]
+    fn mismatched_tail_form_and_parameterization_are_refused() {
+        let mut bytes = Vec::new();
+        assert!(native_revision_tail_head(
+            &mut bytes,
+            0,
+            Some(&cadmpeg_ir::geometry::RevisionSurfaceParameterization::default()),
+            &unused_cache(),
+            Some(0.5),
+        )
+        .is_err());
+        let mut bytes = Vec::new();
+        assert!(native_revision_tail_head(&mut bytes, 2, None, &unused_cache(), None).is_err());
+    }
 }

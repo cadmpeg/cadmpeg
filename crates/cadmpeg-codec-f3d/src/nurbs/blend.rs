@@ -11,15 +11,16 @@ use crate::nurbs::proc_curve::{
     decode_embedded_surface_with_ranges, decode_optional_embedded_surface_with_bounds,
 };
 use crate::nurbs::proc_surface::{
-    decode_nullable_embedded_pcurve, DecodedProceduralSurface, DecodedProceduralSurfaceDefinition,
-    EmbeddedRollingBall, EmbeddedRollingBallRadiusSelector, EmbeddedRollingBallSide,
-    EmbeddedRollingBallThirdSide, EmbeddedVariableBlend, EmbeddedVertexBlend,
-    EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry,
+    decode_nullable_embedded_pcurve, decode_revision_surface_tail, DecodedProceduralSurface,
+    DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedRollingBallRadiusSelector,
+    EmbeddedRollingBallSide, EmbeddedRollingBallThirdSide, EmbeddedVariableBlend,
+    EmbeddedVertexBlend, EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry,
+    RevisionSurfaceTail,
 };
 use crate::nurbs::reader::{
-    marker_at, marker_positions, take_bool, take_f64, take_float_array, take_native_ident,
-    take_native_string, take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector,
-    INT_WIDTHS, LEN_TO_MM,
+    marker_at, marker_positions, take_bool, take_f64, take_native_ident, take_native_string,
+    take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector, INT_WIDTHS,
+    LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
     find_subtype_marker, first_construction_subtype, next_token, subtype_span, SubtypeTables,
@@ -47,37 +48,39 @@ pub(crate) fn decode_cyl_spl_sur_at(
     let directrix = decode_curve_cache_at(span, int_width)?;
 
     let mut position = name.len() + 3;
-    let (parameter_interval, direction, native_position) = if span.get(position) == Some(&0x04) {
-        take_tagged_int(span, &mut position, 0x04, int_width)?;
-        (take_native_ident(span, &mut position)? == "intcurve").then_some(())?;
-        take_bool(span, &mut position)?;
-        let directrix_scope = subtype_span(span, position, int_width)?;
-        position += directrix_scope.len();
-        let start = take_optional_range_value(span, &mut position)?;
-        let end = take_optional_range_value(span, &mut position)?;
-        (
-            [start?, end?],
-            take_native_vec3(span, &mut position, 0x14)?,
-            take_native_vec3(span, &mut position, 0x13)?,
-        )
-    } else {
-        (
-            [
+    // The revision-gated layout stores the directrix as a nested intcurve scope
+    // and ends with the shared revision-gated surface tail, so its cache is
+    // located by parsing that tail. The compact layout has no tail: its optional
+    // final surface cache is the last surface block in the scope.
+    let (parameter_interval, direction, native_position, cache_fit_tolerance) =
+        if span.get(position) == Some(&0x04) {
+            take_tagged_int(span, &mut position, 0x04, int_width)?;
+            (take_native_ident(span, &mut position)? == "intcurve").then_some(())?;
+            take_bool(span, &mut position)?;
+            let directrix_scope = subtype_span(span, position, int_width)?;
+            position += directrix_scope.len();
+            let start = take_optional_range_value(span, &mut position)?;
+            let end = take_optional_range_value(span, &mut position)?;
+            let interval = [start?, end?];
+            let direction = take_native_vec3(span, &mut position, 0x14)?;
+            let native_position = take_native_vec3(span, &mut position, 0x13)?;
+            let tail = decode_revision_surface_tail(span, &mut position, int_width)?;
+            (interval, direction, native_position, tail.fit_tolerance)
+        } else {
+            let interval = [
                 take_f64(span, &mut position)?,
                 take_f64(span, &mut position)?,
-            ],
-            take_native_vec3(span, &mut position, 0x14)?,
-            take_native_vec3(span, &mut position, 0x13)?,
-        )
-    };
-    let decoded_cache = marker_positions(span)
-        .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
-        .next_back();
-    let cache_fit_tolerance = decoded_cache
-        .as_ref()
-        .filter(|cache| span.get(cache.end) == Some(&0x06))
-        .and_then(|cache| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM));
+            ];
+            let direction = take_native_vec3(span, &mut position, 0x14)?;
+            let native_position = take_native_vec3(span, &mut position, 0x13)?;
+            let cache_fit_tolerance = marker_positions(span)
+                .into_iter()
+                .filter_map(|at| decode_surface_block(span, at, int_width))
+                .next_back()
+                .filter(|cache| span.get(cache.end) == Some(&0x06))
+                .and_then(|cache| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM));
+            (interval, direction, native_position, cache_fit_tolerance)
+        };
 
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Extrusion {
@@ -865,19 +868,13 @@ pub(crate) fn decode_var_blend_spl_sur(
     let shape_parameter = take_f64(span, &mut position)?;
     let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
     let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let cache_selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
-    let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-    ];
-    let tail_flag = take_bool(span, &mut position)?;
+    let RevisionSurfaceTail {
+        enumeration: cache_selector,
+        fit_tolerance: cache_fit_tolerance,
+        parameterization: tail_parameterization,
+        discontinuities,
+        tail_flag,
+    } = decode_revision_surface_tail(span, &mut position, int_width)?;
     let tail_extensions = [
         take_tagged_int(span, &mut position, 0x04, int_width)?,
         take_tagged_int(span, &mut position, 0x04, int_width)?,
@@ -937,6 +934,7 @@ pub(crate) fn decode_var_blend_spl_sur(
                 shape_length,
                 shape_tail,
                 cache_selector,
+                tail_parameterization,
                 discontinuities,
                 tail_flag,
                 tail_extensions,
@@ -1284,15 +1282,13 @@ pub(crate) fn decode_full_rb_blend_spl_sur(
         take_f64(span, &mut position)?,
     ];
     let tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let cache_selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
-    let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-    ];
+    let RevisionSurfaceTail {
+        enumeration: cache_selector,
+        fit_tolerance: cache_fit_tolerance,
+        parameterization: tail_parameterization,
+        discontinuities,
+        tail_flag,
+    } = decode_revision_surface_tail(span, &mut position, int_width)?;
     let third = if has_third {
         Some(Box::new(decode_rolling_ball_third_side(
             span,
@@ -1302,6 +1298,11 @@ pub(crate) fn decode_full_rb_blend_spl_sur(
     } else {
         None
     };
+    let tail_extensions = [
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+        take_tagged_int(span, &mut position, 0x04, int_width)?,
+    ];
     let radius = if offsets[0] == offsets[1] {
         BlendRadiusLaw::Constant {
             signed_radius: offsets[0],
@@ -1334,8 +1335,11 @@ pub(crate) fn decode_full_rb_blend_spl_sur(
                 parameters,
                 tail,
                 cache_selector,
+                tail_parameterization,
                 discontinuities,
+                tail_flag,
                 third,
+                tail_extensions,
             })),
         },
         cache_fit_tolerance,
