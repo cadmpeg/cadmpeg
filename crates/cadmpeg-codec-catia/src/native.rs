@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 259;
+pub const CATIA_NATIVE_VERSION: u32 = 260;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -126,6 +126,9 @@ pub(crate) const CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION: u32 = 258;
 /// Native schema version retaining reference-signature field incidences.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION: u32 = 259;
+/// Native schema version resolving reference-signature entity incidences.
+#[cfg(test)]
+pub(crate) const CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION: u32 = 260;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1645,6 +1648,20 @@ pub struct CatiaEntityReference {
     pub class_name: Option<String>,
 }
 
+/// One complete reference-signature packet and its same-graph entity incidences.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaReferenceSignature {
+    /// Exact complete packet production.
+    #[serde(flatten)]
+    pub production: entity_table::ReferenceSignature,
+    /// Entity incidence selected by the first fixed-width reference.
+    #[serde(default)]
+    pub first_entity: CatiaEntityReference,
+    /// Entity incidence selected by the second fixed-width reference.
+    #[serde(default)]
+    pub second_entity: CatiaEntityReference,
+}
+
 /// One exact self-defining `Configuration` object production.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConfigurationRecord {
@@ -1800,7 +1817,7 @@ pub struct CatiaEntityRecord {
     pub numeric_tuple: Option<entity_table::NumericTuple>,
     /// Complete reference signature when the entire `7C07` payload has that production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference_signature: Option<entity_table::ReferenceSignature>,
+    pub reference_signature: Option<CatiaReferenceSignature>,
     /// Exact bytes after the nested `7C07` frame.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
@@ -2529,8 +2546,11 @@ fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         && record.value_packets
             == entity_table::value_packets(&record.value_payload, &record.value_fields)
         && record.numeric_tuple == entity_table::parse_numeric_tuple(&record.value_payload)
-        && record.reference_signature
-            == entity_table::parse_reference_signature(&record.value_payload)
+        && record
+            .reference_signature
+            .as_ref()
+            .map(|signature| &signature.production)
+            == entity_table::parse_reference_signature(&record.value_payload).as_ref()
         && record.suffix_value == entity_suffix_value(&record.record_suffix)
 }
 
@@ -3442,6 +3462,32 @@ fn entity_reference(
         is_null: terminal_nulls.get(graph_id).copied() == Some(entity_id),
         entity: entities.get(&key).cloned(),
         class_name: entity_classes.get(&key).cloned(),
+    }
+}
+
+fn reference_signature(
+    production: entity_table::ReferenceSignature,
+    graph_id: &str,
+    entity_references: &CatiaEntityReferenceIndex<'_>,
+) -> CatiaReferenceSignature {
+    let first_entity = entity_reference(
+        graph_id,
+        production.first_reference,
+        entity_references.entities,
+        entity_references.classes,
+        entity_references.terminal_nulls,
+    );
+    let second_entity = entity_reference(
+        graph_id,
+        production.second_reference,
+        entity_references.entities,
+        entity_references.classes,
+        entity_references.terminal_nulls,
+    );
+    CatiaReferenceSignature {
+        production,
+        first_entity,
+        second_entity,
     }
 }
 
@@ -8765,7 +8811,19 @@ impl CatiaNative {
             terminal_nulls_by_graph,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
+        let entity_references = CatiaEntityReferenceIndex {
+            entities: &entities_by_graph_identity,
+            classes: &entity_classes_by_graph_identity,
+            terminal_nulls: &terminal_nulls_by_graph,
+        };
         for entity in &mut entity_records {
+            if let Some(signature) = entity.reference_signature.take() {
+                entity.reference_signature = Some(reference_signature(
+                    signature.production,
+                    &entity.object_graph,
+                    &entity_references,
+                ));
+            }
             let Some(object) = object_graphs
                 .iter()
                 .find(|graph| graph.id == entity.object_graph)
@@ -8781,11 +8839,7 @@ impl CatiaNative {
             entity.relation_program_instance = relation_program_instance(
                 entity.entity_id,
                 object,
-                &CatiaEntityReferenceIndex {
-                    entities: &entities_by_graph_identity,
-                    classes: &entity_classes_by_graph_identity,
-                    terminal_nulls: &terminal_nulls_by_graph,
-                },
+                &entity_references,
                 &relation_expression_entities,
                 &parameter_bindings,
             );
@@ -8809,11 +8863,7 @@ impl CatiaNative {
                 entity.entity_id,
                 object,
                 &relation_expressions,
-                &CatiaEntityReferenceIndex {
-                    entities: &entities_by_graph_identity,
-                    classes: &entity_classes_by_graph_identity,
-                    terminal_nulls: &terminal_nulls_by_graph,
-                },
+                &entity_references,
                 &parameter_bindings,
             );
         }
@@ -9057,8 +9107,14 @@ impl CatiaNative {
             namespace.arena_as("configuration_row_chains")?;
         if namespace.version < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
             for entity in &mut entity_records {
-                entity.reference_signature =
-                    entity_table::parse_reference_signature(&entity.value_payload);
+                entity.reference_signature = entity_table::parse_reference_signature(
+                    &entity.value_payload,
+                )
+                .map(|production| CatiaReferenceSignature {
+                    production,
+                    first_entity: CatiaEntityReference::default(),
+                    second_entity: CatiaEntityReference::default(),
+                });
             }
         }
         if namespace.version < CATIA_SUFFIX_FRAMING_VERSION {
@@ -9193,6 +9249,22 @@ impl CatiaNative {
             terminal_nulls_by_graph,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
+        if namespace.version < CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION {
+            let entity_references = CatiaEntityReferenceIndex {
+                entities: &entities_by_graph_identity,
+                classes: &entity_classes_by_graph_identity,
+                terminal_nulls: &terminal_nulls_by_graph,
+            };
+            for entity in &mut entity_records {
+                if let Some(signature) = entity.reference_signature.take() {
+                    entity.reference_signature = Some(reference_signature(
+                        signature.production,
+                        &entity.object_graph,
+                        &entity_references,
+                    ));
+                }
+            }
+        }
         if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
             for graph in &graphs {
                 let terminal_null = entity_records
@@ -9372,6 +9444,22 @@ impl CatiaNative {
                     || graph_entities
                         .iter()
                         .any(|entity| !valid_entity_record_shape(entity))
+                    || graph_entities.iter().any(|entity| {
+                        entity.reference_signature
+                            != entity_table::parse_reference_signature(&entity.value_payload).map(
+                                |production| {
+                                    reference_signature(
+                                        production,
+                                        &graph.id,
+                                        &CatiaEntityReferenceIndex {
+                                            entities: &entities_by_graph_identity,
+                                            classes: &entity_classes_by_graph_identity,
+                                            terminal_nulls: &terminal_nulls_by_graph,
+                                        },
+                                    )
+                                },
+                            )
+                    })
                     || graph_entities.iter().any(|entity| {
                         entity.definition_schema_selections
                             != definition_schema_selections(
@@ -10553,7 +10641,13 @@ fn native_object_graph(
                 formula_relation: None,
                 value_packets,
                 numeric_tuple: entity.numeric_tuple,
-                reference_signature: entity.reference_signature,
+                reference_signature: entity.reference_signature.map(|production| {
+                    CatiaReferenceSignature {
+                        production,
+                        first_entity: CatiaEntityReference::default(),
+                        second_entity: CatiaEntityReference::default(),
+                    }
+                }),
                 record_suffix: entity.record_suffix,
                 suffix_value: None,
                 suffix_framing: None,

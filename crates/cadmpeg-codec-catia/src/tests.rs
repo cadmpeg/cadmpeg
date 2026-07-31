@@ -10978,11 +10978,19 @@ fn decode_reports_complete_numeric_entity_value_tuples_separately_from_packets()
 #[test]
 fn native_namespace_retains_and_validates_complete_entity_reference_signatures() {
     let value = [
-        0x32, 0xcf, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b')', 0xfe,
-        0x32, 0xd0, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+        0x32, 1, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b')', 0xfe, 0x32,
+        3, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
     ];
-    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let records = [
+        object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x81], &[0xfe]),
+    ];
     let mut bytes = entity_table_record_with_value(1, &value);
+    bytes.extend(entity_table_record_with_definition_and_value(
+        2,
+        &[0x01],
+        &[0xfe],
+    ));
     bytes.push(0xde);
     bytes.extend(object_graph_from_records(&records));
 
@@ -10991,11 +10999,20 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .reference_signature
         .as_ref()
         .expect("complete reference signature");
-    assert_eq!(signature.first_reference, 207);
-    assert_eq!(signature.second_reference, 208);
-    assert_eq!(signature.second_reference_offset, 16);
-    assert_eq!(signature.signature, "(E)");
-    assert_eq!(signature.signature_offset, 12);
+    assert_eq!(signature.production.first_reference, 1);
+    assert_eq!(signature.first_entity.entity_id, 1);
+    assert_eq!(
+        signature.first_entity.entity.as_deref(),
+        Some(native.entity_records[0].id.as_str())
+    );
+    assert!(!signature.first_entity.is_null);
+    assert_eq!(signature.production.second_reference, 3);
+    assert_eq!(signature.second_entity.entity_id, 3);
+    assert!(signature.second_entity.entity.is_none());
+    assert!(signature.second_entity.is_null);
+    assert_eq!(signature.production.second_reference_offset, 16);
+    assert_eq!(signature.production.signature, "(E)");
+    assert_eq!(signature.production.signature_offset, 12);
 
     let expected = signature.clone();
     let mut stored = cadmpeg_ir::NativeNamespace::default();
@@ -11018,7 +11035,54 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         crate::native::CatiaNative::load(&stored).expect("migrate reference-signature incidences");
     assert_eq!(
         migrated.entity_records[0].reference_signature,
+        Some(expected.clone())
+    );
+
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut stored)
+        .expect("store resolved reference-signature incidences");
+    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION - 1;
+    let stored_signature = stored
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("reference_signature")
+        .expect("stored reference signature")
+        .as_object_mut()
+        .expect("stored reference-signature object");
+    stored_signature.remove("first_entity");
+    stored_signature.remove("second_entity");
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("resolve reference-signature incidences");
+    assert_eq!(
+        migrated.entity_records[0].reference_signature,
         Some(expected)
+    );
+
+    let mut file = standard_catpart();
+    file.splice(16..16, bytes.clone());
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode reference-signature incidences");
+    assert_eq!(
+        decoded.report.coverage["decoded_reference_signature_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_resolved_reference_signature_entity_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_null_reference_signature_entity_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_unresolved_reference_signature_entity_count"],
+        0
     );
 
     let mut malformed = native;
@@ -11026,7 +11090,8 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .reference_signature
         .as_mut()
         .expect("complete reference signature")
-        .second_reference += 1;
+        .second_entity
+        .entity_id += 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
@@ -11041,6 +11106,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .reference_signature
         .as_mut()
         .expect("complete reference signature")
+        .production
         .signature_offset += 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
