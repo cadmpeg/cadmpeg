@@ -349,10 +349,9 @@ fn read_property(
     property: &Property,
     id: &str,
 ) -> Result<PropertyValue, CodecError> {
-    if property.carrier == Carrier::TextureUri {
-        return read_texture_uri(bytes, at, id);
-    }
-    if !property.multiple {
+    // A `TextureURI` carries its own kind byte in place of a count, so its
+    // `allowmultiplevalues="true"` declaration adds no count prefix.
+    if !property.multiple || property.carrier == Carrier::TextureUri {
         return read_value(bytes, at, property.carrier, id);
     }
     let count = read_count(bytes, at, id)?;
