@@ -11300,6 +11300,14 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
             .collect::<Vec<_>>(),
         ["#1_", "#2_", "#2_"]
     );
+    assert_eq!(
+        instance
+            .parameter_dependencies
+            .iter()
+            .map(|dependency| dependency.source_offset)
+            .collect::<Vec<_>>(),
+        [19, 23, 28]
+    );
     assert!(instance
         .parameter_dependencies
         .iter()
@@ -11379,6 +11387,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
     };
     let dependency =
         |symbol: &str, candidates: Vec<_>| crate::native::CatiaRelationParameterDependency {
+            source_offset: 0,
             symbol: symbol.to_string(),
             candidates,
         };
@@ -11938,6 +11947,36 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 Some(&expected)
             );
         }
+
+        let mut namespace = stored.clone();
+        namespace.version = crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1;
+        let dependencies = namespace
+            .arenas
+            .get_mut("entity_records")
+            .expect("stored entity records")[1]
+            .fields
+            .get_mut("relation_program_instance")
+            .expect("stored relation-program field")
+            .as_object_mut()
+            .expect("stored relation-program instance")
+            .get_mut("parameter_dependencies")
+            .expect("stored parameter dependencies")
+            .as_array_mut()
+            .expect("stored parameter dependencies");
+        for dependency in dependencies {
+            dependency
+                .as_object_mut()
+                .expect("stored parameter dependency")
+                .remove("source_offset");
+        }
+        let migrated = crate::native::CatiaNative::load(&namespace)
+            .expect("migrate relation-program dependency offsets");
+        assert_eq!(
+            migrated.entity_records[1]
+                .relation_program_instance
+                .as_ref(),
+            Some(&expected)
+        );
 
         let mut malformed_dependencies = native.clone();
         malformed_dependencies.entity_records[1]
@@ -14369,6 +14408,7 @@ fn native_namespace_types_and_validates_formula_relations() {
     assert_eq!(
         formula.parameter_dependencies,
         [crate::native::CatiaRelationParameterDependency {
+            source_offset: 0,
             symbol: "#1_ /2".to_string(),
             candidates: vec![crate::native::CatiaEntityReference {
                 entity_id: parameter_entity.entity_id,
@@ -14494,6 +14534,34 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
+    let mut version_245_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_245_namespace)
+        .expect("store current formula dependency offsets");
+    version_245_namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("formula_relation")
+        .expect("stored formula relation")
+        .as_object_mut()
+        .expect("stored formula-relation object")
+        .get_mut("parameter_dependencies")
+        .expect("stored parameter dependencies")
+        .as_array_mut()
+        .expect("stored parameter-dependency array")[0]
+        .as_object_mut()
+        .expect("stored parameter dependency")
+        .remove("source_offset");
+    version_245_namespace.version = crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&version_245_namespace)
+        .expect("migrate formula dependency offsets");
+    assert_eq!(
+        migrated.entity_records[0].formula_relation,
+        Some(expected_formula.clone())
+    );
+
     let mut version_205_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_205_namespace)
@@ -14571,7 +14639,7 @@ fn formula_parameter_dependency_retains_an_unmatched_symbol() {
         &[("#1_", "LENGTH", "Thickness", "#2_ /2", 35.0)],
         "LENGTH",
         Some(33.0),
-        "#1_ /2-2mm",
+        "µ+#1_ /2-2mm",
     ));
     let dependency = &native.entity_records[0]
         .formula_relation
@@ -14580,6 +14648,7 @@ fn formula_parameter_dependency_retains_an_unmatched_symbol() {
         .parameter_dependencies[0];
 
     assert_eq!(dependency.symbol, "#1_ /2");
+    assert_eq!(dependency.source_offset, 3);
     assert!(dependency.candidates.is_empty());
 }
 
@@ -14601,6 +14670,7 @@ fn formula_relation_resolves_bare_expression_symbols() {
             .expect("complete formula relation")
             .parameter_dependencies,
         [crate::native::CatiaRelationParameterDependency {
+            source_offset: 0,
             symbol: "#1_".to_string(),
             candidates: vec![crate::native::CatiaEntityReference {
                 entity_id: native.entity_records[2].entity_id,

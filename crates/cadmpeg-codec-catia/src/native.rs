@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 245;
+pub const CATIA_NATIVE_VERSION: u32 = 246;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -84,6 +84,9 @@ pub(crate) const CATIA_CONFIGURATION_ROW_INTERVAL_VERSION: u32 = 244;
 /// Native schema version retaining constraint-range storage incidences.
 #[cfg(test)]
 pub(crate) const CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION: u32 = 245;
+/// Native schema version retaining each relation-symbol occurrence offset.
+#[cfg(test)]
+pub(crate) const CATIA_RELATION_DEPENDENCY_OFFSET_VERSION: u32 = 246;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1415,6 +1418,9 @@ pub struct CatiaFormulaRelation {
 /// One relation-expression symbol and every matching named parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaRelationParameterDependency {
+    /// UTF-8 byte offset of this occurrence within the source expression.
+    #[serde(default)]
+    pub source_offset: u64,
     /// Exact expression-local symbol occurrence.
     pub symbol: String,
     /// Entity incidences carrying matching named parameter bindings.
@@ -3675,13 +3681,17 @@ fn relation_parameter_dependencies(
 ) -> Vec<CatiaRelationParameterDependency> {
     relation_symbols(source)
         .into_iter()
-        .map(|symbol| {
+        .map(|(source_offset, symbol)| {
             let candidates = parameter_bindings
                 .get(graph)
                 .and_then(|bindings| bindings.get(&symbol))
                 .cloned()
                 .unwrap_or_default();
-            CatiaRelationParameterDependency { symbol, candidates }
+            CatiaRelationParameterDependency {
+                source_offset,
+                symbol,
+                candidates,
+            }
         })
         .collect()
 }
@@ -3747,7 +3757,7 @@ pub(crate) fn resolved_relation_program_inputs(
         .collect()
 }
 
-fn relation_symbols(source: &str) -> Vec<String> {
+fn relation_symbols(source: &str) -> Vec<(u64, String)> {
     let bytes = source.as_bytes();
     let mut symbols = Vec::new();
     let mut at = 0;
@@ -3772,7 +3782,7 @@ fn relation_symbols(source: &str) -> Vec<String> {
             at += 1;
         }
         if bytes.get(at) != Some(&b'/') {
-            symbols.push(source[start..bare_end].to_string());
+            symbols.push((start as u64, source[start..bare_end].to_string()));
             at = bare_end;
             continue;
         }
@@ -3785,7 +3795,7 @@ fn relation_symbols(source: &str) -> Vec<String> {
             at = start + 1;
             continue;
         }
-        symbols.push(source[start..at].to_string());
+        symbols.push((start as u64, source[start..at].to_string()));
     }
     symbols
 }
@@ -8877,6 +8887,7 @@ impl CatiaNative {
             || namespace.version < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
             || namespace.version < CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -8909,6 +8920,7 @@ impl CatiaNative {
             || namespace.version < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
             || namespace.version < CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION
             || namespace.version < CATIA_RELATION_PROGRAM_INPUT_VERSION
+            || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
         {
             let records_by_id = records
                 .iter()
