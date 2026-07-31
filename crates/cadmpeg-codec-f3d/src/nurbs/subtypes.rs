@@ -253,6 +253,10 @@ pub(crate) fn subtype_span(bytes: &[u8], start: usize, int_width: usize) -> Opti
     None
 }
 
+/// Offset of the token after the one at `pos`, or `None` when the tag is
+/// unrecognized or its payload runs past the end. `0x04`, `0x0c` and `0x15`
+/// carry an `int_width` payload; `0x09` and `0x12` carry an `int_width` string
+/// length prefix, unlike the one- and two-byte prefixes of `0x07` and `0x08`.
 pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: usize) -> Option<usize> {
     let tag = *bytes.get(pos)?;
     let fixed = match tag {
@@ -271,10 +275,8 @@ pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: usize) -> Option<u
             ))
         }
         0x09 | 0x12 => {
-            5 + usize::try_from(u32::from_le_bytes(
-                bytes.get(pos + 1..pos + 5)?.try_into().ok()?,
-            ))
-            .ok()?
+            let length = read_int(bytes, pos + 1, int_width)?;
+            1 + int_width + usize::try_from(length).ok()?
         }
         _ => return None,
     };

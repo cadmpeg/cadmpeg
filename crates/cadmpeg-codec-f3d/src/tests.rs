@@ -19162,6 +19162,27 @@ fn subtype_reference_resolves_surface_cache() {
 }
 
 #[test]
+fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
+    for ref_width in [4usize, 8] {
+        // The last four payload bytes spell a definition opening. Only a walker
+        // that consumes the length prefix at `ref_width` steps past them.
+        let payload = [b'0', b'1', b'2', b'3', 0x0f, 0x0d, 0x01, b'x'];
+
+        let mut active = Vec::new();
+        t_ident(&mut active, "tspl");
+        active.push(0x09);
+        active.extend_from_slice(&payload.len().to_le_bytes()[..ref_width]);
+        active.extend_from_slice(&payload);
+        let definition = active.len();
+        active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
+        active.push(0x11);
+
+        let tables = crate::nurbs::subtypes::SubtypeTables::from_stream(&active);
+        assert_eq!(tables.for_width(ref_width), [definition]);
+    }
+}
+
+#[test]
 fn rgb_attribute_chain_decodes_body_color() {
     use std::collections::HashMap;
 
