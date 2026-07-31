@@ -68,14 +68,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-18. Blend-value selector values
 
-**Question.** We must find two answers:
+**Question.** We must find three answers:
 
-- the selector values other than `0`, `1`, `3`, and `7`
-- the cross-section a selector gives over a two-radii radius law
+- the selector values other than `0`, `1`, `2`, `3`, and `7`
+- the cross-section selector `2` builds
+- the relation between a selector-seven `edge_offset` length and the solved second-side contact distance
 
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layout of selectors `0`, `1`, `3`, and `7`, the side ordering of the two shape scalars of `1` and `7`, and the separation of the cross-section laws of `0`, `1`, and `7`. Selectors `0`, `1`, and `7` are accepted on read after a two-radii radius-law sequence and are retained with their exact payloads, so the selector set is not partitioned by radius cardinality and neither is the payload width. Each of those records has a cache marked current, so the retained cache is the one the record carried and it does not show what the selector makes of a two-radii law. A record whose cache is not marked current gives the cross-section the selector builds, so a carrier with a two-radii law and a cache that is not current separates the second question.
+**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layouts of selectors `0`, `1`, `2`, `3`, and `7`, the cross-section family of each selector other than `2`, the side order, and the contact offsets. Selector `2` carries no payload of its own, and every record with selector `2` stores a cache marked current, so the retained cache does not show the cross-section the selector builds. A rebuilt selector-seven surface meets its first side at the stored offset exactly and its second side short of the stored offset by near one per cent, far above the achieved fit tolerance, so the selector-seven offset is not exactly the second-side contact distance and no other relation is established.
 
-**Need.** The decoder rejects every other selector value. We cannot read those records. A two-radii law and a single-radius law may give the same selector two different cross-sections, and we would write the wrong surface from a neutral model that carries two radii.
+**Need.** The decoder rejects every selector value outside `0`, `1`, `2`, `3`, and `7`, and we cannot read those records. A selector-2 record whose cache is not current would rebuild into an unknown cross-section. **Blocked on a specimen:** a document whose selector carries another value bounds the value set, and a document whose selector-2 record stores a cache that is not marked current shows the selector-2 cross-section; no such document is available to read.
 
 ### GC-19. First `tvertex` tolerance evaluation
 
