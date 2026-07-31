@@ -1483,6 +1483,9 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].active = false;
     ir.model.features[0].suppressed = Some(false);
 
+    // A body no state claims is silent: formats that do not record which
+    // feature produced a body leave `outputs` empty, and that absence is not
+    // evidence the body is unproduced.
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         first_feature.clone(),
         ConfigurationFeatureState {
@@ -1495,6 +1498,31 @@ fn configuration_body_membership_round_trips_and_validates() {
         },
     )]);
     let report = validate(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message
+                == format!(
+                    "configuration body `{}` has no unsuppressed feature-state writer",
+                    body.0
+                )
+    }));
+
+    // Once a configuration attributes the body, the writer must be unsuppressed.
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        first_feature.clone(),
+        ConfigurationFeatureState {
+            suppressed: true,
+            dependencies: Vec::new(),
+            outputs: vec![body.clone()],
+            definition: FeatureDefinition::DatumPoint {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        },
+    )]);
+    ir.model.configurations[0]
+        .suppressed_features
+        .push(first_feature.clone());
+    let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message
@@ -1503,6 +1531,7 @@ fn configuration_body_membership_round_trips_and_validates() {
                     body.0
                 )
     }));
+    ir.model.configurations[0].suppressed_features.clear();
 
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         later_feature.clone(),
@@ -1692,6 +1721,95 @@ fn json_round_trips_and_is_deterministic() {
     let parsed = crate::CadIr::from_json(&json1).unwrap();
     assert_eq!(parsed, ir, "round-trip must preserve the document");
     assert_eq!(parsed.to_canonical_json().unwrap(), json1);
+}
+
+#[test]
+fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
+    let feature =
+        crate::features::DatumPlaneReference::Feature(crate::features::FeatureId("feature".into()));
+    assert_eq!(
+        serde_json::to_value(&feature).unwrap(),
+        serde_json::json!("feature")
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::features::DatumPlaneReference>(serde_json::json!(
+            "feature"
+        ))
+        .unwrap(),
+        feature
+    );
+
+    let face = crate::features::DatumPlaneReference::Face {
+        face: crate::features::FaceSelection::Faces(vec![crate::ids::FaceId("face".into())]),
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    assert_eq!(
+        serde_json::from_value::<crate::features::DatumPlaneReference>(
+            serde_json::to_value(&face).unwrap()
+        )
+        .unwrap(),
+        face
+    );
+}
+
+#[test]
+fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
+    use crate::features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, Length};
+
+    let mut ir = unit_cube();
+    let principal = FeatureId("synthetic:test:feature#principal".into());
+    let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
+        id: FeatureId(id.into()),
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        "synthetic:test:feature#offset",
+        0,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(principal.clone())),
+            distance: Length(5.0),
+        },
+    ));
+    ir.model.features.push(feature(
+        principal.0.as_str(),
+        1,
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+    ));
+    ir.finalize();
+
+    let report = validate(&ir, Vec::new());
+    assert!(!report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("datum-plane reference cycle")));
+
+    let offset = ir.model.features[0].id.clone();
+    ir.model.features[1].definition = FeatureDefinition::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Feature(offset)),
+        distance: Length(5.0),
+    };
+    let report = validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("datum-plane reference cycle")));
 }
 
 #[test]
@@ -3736,9 +3854,9 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 fn definition_references_must_be_declared_dependencies_in_every_configuration() {
     use crate::features::{
         BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-        FeatureDefinition, FeatureId, GeneratedCurveRef, Length, PatternKind, PatternSeed,
-        ProfileRef, Termination,
+        DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+        ExtrudeStart, Feature, FeatureDefinition, FeatureId, GeneratedCurveRef, Length,
+        PatternKind, PatternSeed, ProfileRef, Termination,
     };
     use std::collections::{BTreeMap, HashSet};
 
@@ -3779,7 +3897,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             offset.clone(),
             1,
             FeatureDefinition::DatumOffsetPlane {
-                reference: Some(source.clone()),
+                reference: Some(DatumPlaneReference::Feature(source.clone())),
                 distance: Length(5.0),
             },
         ),

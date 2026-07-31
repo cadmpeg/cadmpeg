@@ -650,6 +650,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         },
         HoleKind::Counterdrill {
             diameter: Length(5.0),
+            entry_diameter: None,
             depth: Length(2.0),
             angle: cadmpeg_ir::features::Angle(0.5),
         },
@@ -2207,7 +2208,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let datum = FeatureId("test:feature#datum-source".into());
     ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(datum.clone()),
+        reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
+            datum.clone(),
+        )),
         distance: Length(5.0),
     };
     losses.clear();

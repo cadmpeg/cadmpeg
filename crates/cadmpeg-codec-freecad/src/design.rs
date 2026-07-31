@@ -3374,6 +3374,7 @@ fn hole_definition(
         },
         3 => HoleKind::Counterdrill {
             diameter: Length(positive("HoleCutDiameter")?),
+            entry_diameter: None,
             depth: Length(positive("HoleCutDepth")?),
             angle: cut_angle()?,
         },

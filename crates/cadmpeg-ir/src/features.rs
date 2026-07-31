@@ -343,6 +343,28 @@ pub enum FeatureSourceContent {
     Feature(FeatureId),
 }
 
+/// Parametric support of an offset datum plane.
+///
+/// The untagged representation retains the legacy feature-id string while face
+/// selections use their existing tagged object representation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum DatumPlaneReference {
+    /// Another datum-plane feature.
+    Feature(FeatureId),
+    /// A selected planar face and its serialized support frame.
+    Face {
+        /// Selected support face.
+        face: FaceSelection,
+        /// Point on the support plane.
+        origin: Point3,
+        /// Support-plane normal.
+        normal: Vector3,
+        /// Positive-u direction in the support plane.
+        u_axis: Vector3,
+    },
+}
+
 /// Neutral construction semantics, with an explicit native escape hatch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "definition", rename_all = "snake_case")]
@@ -402,9 +424,9 @@ pub enum FeatureDefinition {
     DatumPlaneUnresolved,
     /// Reference plane offset from another datum plane.
     DatumOffsetPlane {
-        /// Source plane, when its feature reference is available.
+        /// Source plane or planar face, when its identity is available.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        reference: Option<FeatureId>,
+        reference: Option<DatumPlaneReference>,
         /// Signed normal offset from the source plane.
         distance: Length,
     },
@@ -3029,8 +3051,11 @@ pub enum HoleKind {
     },
     /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
-        /// Entry-recess diameter.
+        /// Cylindrical entry-recess diameter.
         diameter: Length,
+        /// Diameter at the reference surface before the conical transition.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry_diameter: Option<Length>,
         /// Cylindrical recess depth.
         depth: Length,
         /// Included conical entry angle.
