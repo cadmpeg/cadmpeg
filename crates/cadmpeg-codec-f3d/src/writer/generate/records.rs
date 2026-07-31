@@ -914,7 +914,7 @@ pub(crate) fn encode_design_metastream(
     bindings: DesignBindingsValidated<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let native = bindings.native();
-    if native.design_objects.is_empty() {
+    if native.design_types.is_empty() {
         return Ok(None);
     }
 
@@ -931,34 +931,34 @@ pub(crate) fn encode_design_metastream(
     native_lp_ascii(&mut out, "Fusion")?;
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    let type_count = u32::try_from(native.design_objects.len()).map_err(|_| {
+    let type_count = u32::try_from(native.design_types.len()).map_err(|_| {
         CodecError::Malformed("Design MetaStream registers more than u32::MAX types".into())
     })?;
     out.extend_from_slice(&type_count.to_le_bytes());
     let mut next_entity_id = 1u64;
-    for object in &native.design_objects {
-        validate_guid(&object.type_guid, "Design type GUID")?;
-        native_lp_ascii(&mut out, &object.type_guid)?;
-        match &object.base_type_guid {
+    for design_type in &native.design_types {
+        validate_guid(&design_type.type_guid, "Design type GUID")?;
+        native_lp_ascii(&mut out, &design_type.type_guid)?;
+        match &design_type.base_type_guid {
             Some(base) => {
                 validate_guid(base, "Design base type GUID")?;
                 native_lp_ascii(&mut out, base)?;
             }
             None => out.extend_from_slice(&0u32.to_le_bytes()),
         }
-        out.extend_from_slice(&object.version.to_le_bytes());
-        if crate::bytes::is_guid_relaxed(&object.module) {
+        out.extend_from_slice(&design_type.version.to_le_bytes());
+        if crate::bytes::is_guid_relaxed(&design_type.module) {
             return Err(CodecError::Malformed(format!(
                 "Design type module name is GUID-shaped: {}",
-                object.module
+                design_type.module
             )));
         }
-        native_lp_ascii(&mut out, &object.module)?;
-        let count = u32::try_from(object.entity_ids.len()).map_err(|_| {
+        native_lp_ascii(&mut out, &design_type.module)?;
+        let count = u32::try_from(design_type.entity_ids.len()).map_err(|_| {
             CodecError::Malformed("Design type owns more than u32::MAX entities".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
-        for entity_id in &object.entity_ids {
+        for entity_id in &design_type.entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
             next_entity_id = next_entity_id.max(entity_id.saturating_add(1));
         }

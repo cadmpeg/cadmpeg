@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parse sketch placements, objects, headers, relations, and geometry.
+//! Parse sketch placements, `MetaStream` types, headers, relations, and geometry.
 
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignEntityHeader, DesignObject, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    DesignType, LostEdgeReference, PersistentReference, PersistentReferenceKind,
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
     SketchRelationOperand, SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
 };
@@ -599,8 +599,8 @@ fn skip_counted_run(bytes: &[u8], at: usize, stride: usize) -> Option<usize> {
 /// empty for a root type, a u32 type version, an LP-ASCII add-in name, and a
 /// u32-counted run of u64 design-entity ids. The whole stream must close on its
 /// own end, which pins the header shape; a stream that does not is rejected
-/// whole rather than parsed in part. Returned objects carry no `id`.
-pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignObject>> {
+/// whole rather than parsed in part. Returned entries carry no `id`.
+pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignType>> {
     // Header: short segment type name, segment id, asset GUID, serializer
     // magic and its magic-gated integer group, full segment type name, add-in
     // name, and the segment type code.
@@ -637,7 +637,7 @@ pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignObject>>
             .and_then(|size| ids_at.checked_add(size))?;
         let raw_ids = bytes.get(ids_at..ids_end)?;
         at = ids_end;
-        out.push(DesignObject {
+        out.push(DesignType {
             id: String::new(),
             byte_offset: entry_at as u64,
             type_guid,
@@ -688,19 +688,19 @@ pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignObject>>
 /// Decode the type table of every design `MetaStream` entry in `scan`
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)). A stream that does not close on its own end contributes
 /// nothing.
-pub fn decode_objects(scan: &ContainerScan) -> Result<Vec<DesignObject>, CodecError> {
+pub fn decode_types(scan: &ContainerScan) -> Result<Vec<DesignType>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
     {
-        let Some(objects) = parse_design_type_table(scan.entry_bytes(&entry.name)?) else {
+        let Some(types) = parse_design_type_table(scan.entry_bytes(&entry.name)?) else {
             continue;
         };
-        out.extend(objects.into_iter().map(|mut object| {
-            object.id = ids::native_design_object_id(&entry.name, object.byte_offset);
-            object
+        out.extend(types.into_iter().map(|mut design_type| {
+            design_type.id = ids::native_design_type_id(&entry.name, design_type.byte_offset);
+            design_type
         }));
     }
     Ok(out)
@@ -915,16 +915,16 @@ pub(crate) fn parse_legacy_sketch_container_members(
 pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
     let mut entity_modules = HashMap::new();
-    let objects = decode_objects(scan)?;
+    let types = decode_types(scan)?;
     let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
-    for object in objects {
-        for &entity_id in &object.entity_ids {
+    for design_type in types {
+        for &entity_id in &design_type.entity_ids {
             entity_modules
                 .entry(entity_id)
-                .or_insert_with(|| object.module.clone());
+                .or_insert_with(|| design_type.module.clone());
         }
-        if object.module == DESIGN_MODULE_SKETCH {
-            let Some(stream) = native_stream(&object.id) else {
+        if design_type.module == DESIGN_MODULE_SKETCH {
+            let Some(stream) = native_stream(&design_type.id) else {
                 continue;
             };
             let Some(meta_name) = stream.strip_prefix(ids::SCHEME_PREFIX) else {
@@ -938,7 +938,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 .entry(bulk_name)
                 .or_default()
                 .extend(
-                    object
+                    design_type
                         .entity_ids
                         .into_iter()
                         .filter_map(|identity| u32::try_from(identity).ok()),

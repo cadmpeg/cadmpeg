@@ -351,34 +351,34 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut scope_bindings = HashSet::new();
     let mut geometry_records = HashSet::new();
     let geometry_entities = native
-        .design_objects
+        .design_types
         .iter()
-        .filter(|object| {
+        .filter(|design_type| {
             matches!(
-                object.module.as_str(),
+                design_type.module.as_str(),
                 records::DESIGN_MODULE_BODY | records::DESIGN_MODULE_GEOMETRY
             )
         })
-        .flat_map(|object| {
-            let design_segment = ids::design_segment(&object.id);
-            object
+        .flat_map(|design_type| {
+            let design_segment = ids::design_segment(&design_type.id);
+            design_type
                 .entity_ids
                 .iter()
                 .map(move |suffix| (design_segment, *suffix))
         })
         .collect::<HashSet<_>>();
     let component_entities = native
-        .design_objects
+        .design_types
         .iter()
-        .filter(|object| {
+        .filter(|design_type| {
             matches!(
-                object.module.as_str(),
+                design_type.module.as_str(),
                 records::DESIGN_MODULE_FUSION | records::DESIGN_MODULE_COMPONENT
             )
         })
-        .flat_map(|object| {
-            let design_segment = ids::design_segment(&object.id);
-            object
+        .flat_map(|design_type| {
+            let design_segment = ids::design_segment(&design_type.id);
+            design_type
                 .entity_ids
                 .iter()
                 .map(move |suffix| (design_segment, *suffix))

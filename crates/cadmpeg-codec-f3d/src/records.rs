@@ -2923,7 +2923,7 @@ pub enum DesignConfigurationKind {
 /// registers a record type and lists the design entities whose `BulkStream`
 /// records carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignObject {
+pub struct DesignType {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of this type-table entry in its Design `MetaStream`.

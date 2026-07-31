@@ -8560,28 +8560,28 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
         (second, "", 7, "MSketch", &[20]),
         (third, second, 11, "Body", &[30, 31, 32]),
     ]);
-    let objects = parse_design_type_table(&bytes).expect("a segment closing on its own end parses");
-    assert_eq!(objects.len(), 3);
+    let types = parse_design_type_table(&bytes).expect("a segment closing on its own end parses");
+    assert_eq!(types.len(), 3);
 
     // Every field of an entry belongs to that entry, not to its successor.
-    assert_eq!(objects[0].type_guid, first);
-    assert_eq!(objects[0].base_type_guid.as_deref(), Some(base));
-    assert_eq!(objects[0].version, 3);
-    assert_eq!(objects[0].module, "Fusion");
-    assert_eq!(objects[0].entity_ids, [10, 11]);
+    assert_eq!(types[0].type_guid, first);
+    assert_eq!(types[0].base_type_guid.as_deref(), Some(base));
+    assert_eq!(types[0].version, 3);
+    assert_eq!(types[0].module, "Fusion");
+    assert_eq!(types[0].entity_ids, [10, 11]);
 
-    assert_eq!(objects[1].type_guid, second);
-    assert_eq!(objects[1].base_type_guid, None);
-    assert_eq!(objects[1].base_type_guid_offset, None);
-    assert_eq!(objects[1].version, 7);
-    assert_eq!(objects[1].module, crate::records::DESIGN_MODULE_SKETCH);
-    assert_eq!(objects[1].entity_ids, [20]);
+    assert_eq!(types[1].type_guid, second);
+    assert_eq!(types[1].base_type_guid, None);
+    assert_eq!(types[1].base_type_guid_offset, None);
+    assert_eq!(types[1].version, 7);
+    assert_eq!(types[1].module, crate::records::DESIGN_MODULE_SKETCH);
+    assert_eq!(types[1].entity_ids, [20]);
 
-    assert_eq!(objects[2].type_guid, third);
-    assert_eq!(objects[2].base_type_guid.as_deref(), Some(second));
-    assert_eq!(objects[2].version, 11);
-    assert_eq!(objects[2].module, crate::records::DESIGN_MODULE_BODY);
-    assert_eq!(objects[2].entity_ids, [30, 31, 32]);
+    assert_eq!(types[2].type_guid, third);
+    assert_eq!(types[2].base_type_guid.as_deref(), Some(second));
+    assert_eq!(types[2].version, 11);
+    assert_eq!(types[2].module, crate::records::DESIGN_MODULE_BODY);
+    assert_eq!(types[2].entity_ids, [30, 31, 32]);
 
     // Every reported offset addresses the field it names.
     let string_at = |offset: u64, length: usize| {
@@ -8596,14 +8596,24 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
                 .expect("4-byte field"),
         )
     };
-    for object in &objects {
-        assert!(object.byte_offset < object.type_guid_offset);
-        assert_eq!(string_at(object.type_guid_offset, 36), object.type_guid);
-        assert_eq!(u32_at(object.version_offset), object.version);
-        if let (Some(base), Some(offset)) = (&object.base_type_guid, object.base_type_guid_offset) {
+    for design_type in &types {
+        assert!(design_type.byte_offset < design_type.type_guid_offset);
+        assert_eq!(
+            string_at(design_type.type_guid_offset, 36),
+            design_type.type_guid
+        );
+        assert_eq!(u32_at(design_type.version_offset), design_type.version);
+        if let (Some(base), Some(offset)) = (
+            &design_type.base_type_guid,
+            design_type.base_type_guid_offset,
+        ) {
             assert_eq!(&string_at(offset, 36), base);
         }
-        for (entity_id, offset) in object.entity_ids.iter().zip(&object.entity_id_offsets) {
+        for (entity_id, offset) in design_type
+            .entity_ids
+            .iter()
+            .zip(&design_type.entity_id_offsets)
+        {
             assert_eq!(
                 u64::from_le_bytes(
                     bytes[*offset as usize..*offset as usize + 8]
@@ -8623,14 +8633,14 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
 }
 
 #[test]
-fn generated_source_less_writes_design_object_metastream() {
-    use crate::records::DesignObject;
+fn generated_source_less_writes_design_type_metastream() {
+    use crate::records::DesignType;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_objects = vec![
-        DesignObject {
-            id: "generated:design-object#0".into(),
+    native.design_types = vec![
+        DesignType {
+            id: "generated:design-type#0".into(),
             byte_offset: 0,
             module: "Fusion".to_owned(),
             entity_ids: vec![1, 2],
@@ -8642,8 +8652,8 @@ fn generated_source_less_writes_design_object_metastream() {
             version: 7,
             version_offset: 0,
         },
-        DesignObject {
-            id: "generated:design-object#1".into(),
+        DesignType {
+            id: "generated:design-type#1".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entity_ids: vec![277],
@@ -8655,8 +8665,8 @@ fn generated_source_less_writes_design_object_metastream() {
             version: 9,
             version_offset: 0,
         },
-        DesignObject {
-            id: "generated:design-object#2".into(),
+        DesignType {
+            id: "generated:design-type#2".into(),
             byte_offset: 0,
             module: "FutureFeature".to_owned(),
             entity_ids: vec![999],
@@ -8676,7 +8686,7 @@ fn generated_source_less_writes_design_object_metastream() {
         .encode(&source_less, &mut encoded)
         .expect("source-less Design MetaStream encode");
     let mut guid_module = source_less.clone();
-    f3d_native_mut(&mut guid_module).design_objects[2].module =
+    f3d_native_mut(&mut guid_module).design_types[2].module =
         "11111111-2222-3333-4444-555555555555".into();
     let error = F3dCodec
         .encode(&guid_module, &mut Vec::new())
@@ -8684,7 +8694,7 @@ fn generated_source_less_writes_design_object_metastream() {
     assert!(error
         .to_string()
         .contains("Design type module name is GUID-shaped"));
-    f3d_native_mut(&mut source_less).design_objects[0].base_type_guid =
+    f3d_native_mut(&mut source_less).design_types[0].base_type_guid =
         Some("22222222-3333-4444-5555-666666666666".into());
     let error = F3dCodec
         .encode(&source_less, &mut Vec::new())
@@ -8695,19 +8705,19 @@ fn generated_source_less_writes_design_object_metastream() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design MetaStream round trip");
-    let objects = &f3d_native(&round_trip.ir).design_objects;
-    assert_eq!(objects.len(), 3);
-    let fusion = objects
+    let types = &f3d_native(&round_trip.ir).design_types;
+    assert_eq!(types.len(), 3);
+    let fusion = types
         .iter()
-        .find(|object| object.type_guid == "11111111-2222-3333-4444-555555555555")
+        .find(|design_type| design_type.type_guid == "11111111-2222-3333-4444-555555555555")
         .expect("Fusion type");
     assert_eq!(fusion.module, "Fusion");
     assert_eq!(fusion.entity_ids, [1, 2]);
     assert_eq!(fusion.version, 7);
     assert_eq!(fusion.base_type_guid, None);
-    let sketch = objects
+    let sketch = types
         .iter()
-        .find(|object| object.module == crate::records::DESIGN_MODULE_SKETCH)
+        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_SKETCH)
         .expect("sketch-module type");
     assert_eq!(sketch.entity_ids, [277]);
     assert_eq!(
@@ -8715,9 +8725,9 @@ fn generated_source_less_writes_design_object_metastream() {
         Some("11111111-2222-3333-4444-555555555555")
     );
     assert_eq!(sketch.version, 9);
-    let future = objects
+    let future = types
         .iter()
-        .find(|object| object.module == "FutureFeature")
+        .find(|design_type| design_type.module == "FutureFeature")
         .expect("forward-compatible module");
     assert_eq!(future.entity_ids, [999]);
     assert_eq!(future.version, 11);
@@ -8907,12 +8917,12 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
 
 #[test]
 fn generated_source_less_writes_design_ownership_and_record_headers() {
-    use crate::records::{DesignBodyMember, DesignEntityHeader, DesignObject, DesignRecordHeader};
+    use crate::records::{DesignBodyMember, DesignEntityHeader, DesignRecordHeader, DesignType};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_objects = vec![DesignObject {
-        id: "generated:design-object#0".into(),
+    native.design_types = vec![DesignType {
+        id: "generated:design-type#0".into(),
         byte_offset: 0,
         module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
         entity_ids: vec![277],
@@ -9011,14 +9021,14 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
 #[test]
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     use crate::records::{
-        DesignEntityHeader, DesignObject, SketchConstraintKind, SketchCurveGeometry,
+        DesignEntityHeader, DesignType, SketchConstraintKind, SketchCurveGeometry,
         SketchCurveIdentity, SketchPoint, SketchRelation,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_objects = vec![DesignObject {
+    native.design_types = vec![DesignType {
         id: "generated:sketch-object#0".into(),
         byte_offset: 0,
         module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
@@ -9480,7 +9490,7 @@ fn generated_source_less_rejects_lossy_act_layouts() {
 fn generated_source_less_writes_protein_appearance_and_body_binding() {
     use std::collections::BTreeMap;
 
-    use crate::records::{DesignMaterialAssignment, DesignObject};
+    use crate::records::{DesignMaterialAssignment, DesignType};
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::topology::Color;
@@ -9517,7 +9527,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         channels: BTreeMap::new(),
     }];
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_objects = vec![DesignObject {
+    native.design_types = vec![DesignType {
         id: "generated:body-object#0".into(),
         byte_offset: 0,
         module: "Body".to_owned(),
@@ -10249,9 +10259,9 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     header.record_reference = Some(585);
     header.reference_indices.swap(0, 1);
     let object = native
-        .design_objects
+        .design_types
         .iter_mut()
-        .find(|object| object.module == crate::records::DESIGN_MODULE_BODY)
+        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_BODY)
         .expect("generated body design object");
     assert!(object.byte_offset < object.version_offset);
     assert_eq!(object.entity_id_offsets.len(), 1);
@@ -10358,9 +10368,9 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(header.record_reference, Some(585));
     assert_eq!(header.reference_indices, [44, 33]);
     let object = f3d_native(&round_trip.ir)
-        .design_objects
+        .design_types
         .iter()
-        .find(|object| object.module == crate::records::DESIGN_MODULE_BODY)
+        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_BODY)
         .cloned()
         .expect("round-trip body design object");
     assert_eq!(object.entity_ids, [986]);
@@ -21376,11 +21386,11 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_objects.len(), 3);
+    assert_eq!(f3d_native(&result.ir).design_types.len(), 3);
     let sketch = f3d_native(&result.ir)
-        .design_objects
+        .design_types
         .iter()
-        .find(|object| object.module == crate::records::DESIGN_MODULE_SKETCH)
+        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_SKETCH)
         .cloned()
         .unwrap();
     assert_eq!(sketch.entity_ids, vec![277]);

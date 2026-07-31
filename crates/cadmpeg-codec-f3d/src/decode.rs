@@ -1018,7 +1018,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 crate::design::decode::sketch::decode_lost_edge_references(&scan)?;
             native.design_material_assignments =
                 crate::materials::decode_design_assignments(&scan)?;
-            native.design_objects = crate::design::decode::sketch::decode_objects(&scan)?;
+            native.design_types = crate::design::decode::sketch::decode_types(&scan)?;
             native.design_parameters = crate::design::decode::parameters::decode_parameters(&scan)?;
             native.design_entity_headers =
                 crate::design::decode::sketch::decode_entity_headers(&scan)?;
@@ -1429,7 +1429,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.lost_edge_references =
         crate::design::decode::sketch::decode_lost_edge_references(&scan)?;
     native.design_material_assignments = crate::materials::decode_design_assignments(&scan)?;
-    native.design_objects = crate::design::decode::sketch::decode_objects(&scan)?;
+    native.design_types = crate::design::decode::sketch::decode_types(&scan)?;
     native.design_parameters = crate::design::decode::parameters::decode_parameters(&scan)?;
     native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(&scan)?;
     native.design_record_headers =
@@ -1944,8 +1944,8 @@ fn populate_annotations(
         for entity in &native.lost_edge_references {
             note(&entity.id, "EDGE_REFERENCE_LOST");
         }
-        for entity in &native.design_objects {
-            note(&entity.id, "design_object");
+        for entity in &native.design_types {
+            note(&entity.id, "design_type");
         }
         for entity in &native.design_parameters {
             note(&entity.id, "design_parameter");

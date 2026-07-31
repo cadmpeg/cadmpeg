@@ -15,9 +15,9 @@ use crate::records::{
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
     DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFilletRadiusGroup, DesignMaterialAssignment, DesignObject, DesignParameter,
-    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
+    DesignFilletRadiusGroup, DesignMaterialAssignment, DesignParameter, DesignParameterCompanion,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    DesignType, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
     MeshSurfaceSentinel, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
     TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
@@ -63,13 +63,13 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_face_operands",
     "design_fillet_radius_groups",
     "design_material_assignments",
-    "design_objects",
     "design_parameter_companions",
     "design_parameter_owners",
     "design_parameter_scopes",
     "design_parameters",
     "design_record_headers",
     "design_sketch_placements",
+    "design_types",
     "edge_continuities",
     "edge_ownerships",
     "face_sidedness",
@@ -102,7 +102,7 @@ macro_rules! f3d_arenas {
             act_root_components: ActRootComponent;
             body_native_keys: BodyNativeKey;
             body_visibilities: BodyVisibility;
-            design_objects: DesignObject;
+            design_types: DesignType;
             design_body_recipe_operands: DesignBodyRecipeOperand;
             design_canvas_images: DesignCanvasImage;
             design_component_occurrences: DesignComponentOccurrence;
@@ -241,9 +241,9 @@ pub struct F3dNative {
     /// Design browser-node visibility joined to solved ASM bodies.
     #[serde(default)]
     pub body_visibilities: Vec<BodyVisibility>,
-    /// Design `MetaStream` object-table records.
+    /// Design `MetaStream` type-table entries.
     #[serde(default)]
-    pub design_objects: Vec<DesignObject>,
+    pub design_types: Vec<DesignType>,
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
     pub design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
@@ -419,7 +419,7 @@ impl Default for F3dNative {
             act_root_components: Vec::new(),
             body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
-            design_objects: Vec::new(),
+            design_types: Vec::new(),
             design_body_recipe_operands: Vec::new(),
             design_canvas_images: Vec::new(),
             design_component_occurrences: Vec::new(),

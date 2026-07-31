@@ -1305,39 +1305,39 @@ pub(crate) fn validate_act_root_edits(
     Ok(edits)
 }
 
-pub(crate) struct DesignObjectEdit {
+pub(crate) struct DesignTypeEdit {
     pub(crate) integers: Vec<(u64, Vec<u8>)>,
     pub(crate) strings: Vec<(u64, Vec<u8>)>,
 }
 
-pub(crate) fn validate_design_object_edits(
+pub(crate) fn validate_design_type_edits(
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<String, Vec<DesignObjectEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<DesignTypeEdit>>, CodecError> {
     let baseline_native = f3d_native(baseline)?;
     let target_native = f3d_native(target)?;
     let baseline = baseline_native
         .as_ref()
-        .map(|native| &native.design_objects[..])
+        .map(|native| &native.design_types[..])
         .unwrap_or_default();
     let target = target_native
         .as_ref()
-        .map(|native| &native.design_objects[..])
+        .map(|native| &native.design_types[..])
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|object| (object.id.as_str(), object))
+        .map(|design_type| (design_type.id.as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|object| (object.id.as_str(), object))
+        .map(|design_type| (design_type.id.as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
-            "F3D design-object regeneration requires the unchanged object-id set".into(),
+            "F3D design-type regeneration requires the unchanged type-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<DesignObjectEdit>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<DesignTypeEdit>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
@@ -1347,14 +1347,14 @@ pub(crate) fn validate_design_object_edits(
         normalized.version = before.version;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D design-object edit changes fields outside its fixed object payload: {id}"
+                "F3D design-type edit changes fields outside its fixed type payload: {id}"
             )));
         }
         if after.entity_ids.len() != before.entity_ids.len()
             || after.entity_ids.len() != after.entity_id_offsets.len()
         {
             return Err(CodecError::NotImplemented(format!(
-                "F3D design object {id} must retain its entity-id cardinality"
+                "F3D design type {id} must retain its entity-id cardinality"
             )));
         }
         let mut integers = after
@@ -1383,7 +1383,9 @@ pub(crate) fn validate_design_object_edits(
             validate_fixed_design_string(id, before_base, after_base)?;
             strings.push((
                 after.base_type_guid_offset.ok_or_else(|| {
-                    CodecError::Malformed(format!("F3D object {id} has no base-type-GUID offset"))
+                    CodecError::Malformed(format!(
+                        "F3D design type {id} has no base-type-GUID offset"
+                    ))
                 })?,
                 after_base.as_bytes().to_vec(),
             ));
@@ -1393,13 +1395,13 @@ pub(crate) fn validate_design_object_edits(
         }
         let stream = id
             .strip_prefix(crate::ids::SCHEME_PREFIX)
-            .and_then(|id| id.rsplit_once(":design-object#"))
+            .and_then(|id| id.rsplit_once(":design-type#"))
             .map(|(stream, _)| stream.to_owned())
-            .ok_or_else(|| CodecError::Malformed(format!("invalid design-object id {id}")))?;
+            .ok_or_else(|| CodecError::Malformed(format!("invalid design-type id {id}")))?;
         edits
             .entry(stream)
             .or_default()
-            .push(DesignObjectEdit { integers, strings });
+            .push(DesignTypeEdit { integers, strings });
     }
     Ok(edits)
 }

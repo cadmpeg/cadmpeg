@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::math::Point3;
 
 use super::edits::{
-    ActGuidEdit, BodyMemberEdit, ConstructionRecipeEdit, DesignObjectEdit, EntityHeaderEdit,
+    ActGuidEdit, BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
     HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
 };
 use super::geometry::{active_ref_width, patch_integer_field, required_payload_field};
@@ -209,18 +209,18 @@ fn patch_bytes_at(
     Ok(())
 }
 
-pub(crate) fn patch_design_objects(
+pub(crate) fn patch_design_types(
     bytes: &mut [u8],
-    edits: &[DesignObjectEdit],
+    edits: &[DesignTypeEdit],
 ) -> Result<(), CodecError> {
     for edit in edits {
         for (offset, encoded) in edit.integers.iter().chain(&edit.strings) {
             let start = usize::try_from(*offset).map_err(|_| {
-                CodecError::Malformed("design-object offset exceeds address space".into())
+                CodecError::Malformed("design-type offset exceeds address space".into())
             })?;
             bytes
                 .get_mut(start..start + encoded.len())
-                .ok_or_else(|| CodecError::Malformed("design-object field is truncated".into()))?
+                .ok_or_else(|| CodecError::Malformed("design-type field is truncated".into()))?
                 .copy_from_slice(encoded);
         }
     }

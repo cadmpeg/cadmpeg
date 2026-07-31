@@ -552,9 +552,9 @@ native_record_id!(
     "lost-edge-reference"
 );
 native_record_id!(
-    /// The native design-object record key.
-    native_design_object_id,
-    "design-object"
+    /// The native design-type record key.
+    native_design_type_id,
+    "design-type"
 );
 native_record_id!(
     /// The native design-entity-header record key.
@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
-        let meta = "f3d:Asset/Design1/MetaStream.dat:design-object#10";
+        let meta = "f3d:Asset/Design1/MetaStream.dat:design-type#10";
         let bulk = "f3d:Asset/Design1/BulkStream.dat:design-canvas-image#20";
         assert_eq!(design_segment(meta), Some("f3d:Asset/Design1"));
         assert_eq!(design_segment(meta), design_segment(bulk));

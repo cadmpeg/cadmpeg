@@ -23,7 +23,7 @@ use edits::{
     validate_act_root_edits, validate_body_color_edits, validate_body_member_edits,
     validate_body_native_key_edits, validate_body_transform_edits, validate_body_visibility_edits,
     validate_coedge_sense_edits, validate_configuration_edits, validate_construction_recipe_edits,
-    validate_creation_timestamp_edits, validate_curve_edits, validate_design_object_edits,
+    validate_creation_timestamp_edits, validate_curve_edits, validate_design_type_edits,
     validate_edge_continuity_edits, validate_edge_ownership_edits, validate_edge_range_edits,
     validate_entity_header_edits, validate_face_color_edits, validate_face_sense_edits,
     validate_face_sidedness_edits, validate_history_state_edits, validate_lost_edge_edits,
@@ -39,7 +39,7 @@ use geometry::patch_geometry;
 use records::{
     patch_act_entities, patch_act_guids, patch_act_roots, patch_body_members,
     patch_body_native_keys, patch_body_visibilities, patch_construction_recipes,
-    patch_design_body_keys, patch_design_objects, patch_edge_ownerships, patch_entity_headers,
+    patch_design_body_keys, patch_design_types, patch_edge_ownerships, patch_entity_headers,
     patch_history_states, patch_lost_edge_references, patch_material_assignments,
     patch_persistent_references, patch_sketch_curves, patch_sketch_points, patch_sketch_relations,
     patch_tolerant_coedge_parameters, patch_transform_hints, patch_wire_topologies,
@@ -159,7 +159,7 @@ pub fn write_semantic(
     let construction_recipe_edits = validate_construction_recipe_edits(&baseline.ir, target)?;
     let body_member_edits = validate_body_member_edits(&baseline.ir, target)?;
     let entity_header_edits = validate_entity_header_edits(&baseline.ir, target)?;
-    let design_object_edits = validate_design_object_edits(&baseline.ir, target)?;
+    let design_type_edits = validate_design_type_edits(&baseline.ir, target)?;
     let lost_edge_edits = validate_lost_edge_edits(&baseline.ir, target)?;
     let material_assignment_edits = validate_material_assignment_edits(&baseline.ir, target)?;
     let protein_appearance_edits = validate_material_assignment_appearances(&baseline.ir, target)?;
@@ -303,8 +303,8 @@ pub fn write_semantic(
             .design_entity_headers
             .clone_from(&target_native.design_entity_headers);
         supported
-            .design_objects
-            .clone_from(&target_native.design_objects);
+            .design_types
+            .clone_from(&target_native.design_types);
         supported
             .lost_edge_references
             .clone_from(&target_native.lost_edge_references);
@@ -604,8 +604,8 @@ pub fn write_semantic(
             if let Some(edits) = entity_header_edits.get(&name) {
                 patch_entity_headers(&mut bytes, edits)?;
             }
-            if let Some(edits) = design_object_edits.get(&name) {
-                patch_design_objects(&mut bytes, edits)?;
+            if let Some(edits) = design_type_edits.get(&name) {
+                patch_design_types(&mut bytes, edits)?;
             }
             if let Some(edits) = lost_edge_edits.get(&name) {
                 patch_lost_edge_references(&mut bytes, edits)?;

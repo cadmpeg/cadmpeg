@@ -334,22 +334,22 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             )));
         }
     }
-    let mut objects_by_guid = BTreeMap::new();
+    let mut types_by_guid = BTreeMap::new();
     let mut entity_modules = BTreeMap::new();
-    for object in &native.design_objects {
-        if objects_by_guid
-            .insert(object.type_guid.as_str(), object)
+    for design_type in &native.design_types {
+        if types_by_guid
+            .insert(design_type.type_guid.as_str(), design_type)
             .is_some()
         {
             return Err(CodecError::Malformed(format!(
                 "duplicate F3D Design type GUID: {}",
-                object.type_guid
+                design_type.type_guid
             )));
         }
-        for entity_id in &object.entity_ids {
+        for entity_id in &design_type.entity_ids {
             if entity_modules
-                .insert(*entity_id, object.module.clone())
-                .is_some_and(|before| before != object.module)
+                .insert(*entity_id, design_type.module.clone())
+                .is_some_and(|before| before != design_type.module)
             {
                 return Err(CodecError::Malformed(format!(
                     "F3D Design entity {entity_id} is registered by conflicting modules"
@@ -359,19 +359,19 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     }
     // A base type need not be registered by the same segment, so an unresolved
     // base GUID is legal; a resolved chain must still terminate.
-    for object in &native.design_objects {
-        if object.base_type_guid.as_deref() == Some(object.type_guid.as_str()) {
+    for design_type in &native.design_types {
+        if design_type.base_type_guid.as_deref() == Some(design_type.type_guid.as_str()) {
             return Err(CodecError::Malformed(format!(
                 "F3D Design type {} is its own base type",
-                object.id
+                design_type.id
             )));
         }
         let mut ancestors = BTreeSet::new();
-        let mut cursor = object;
+        let mut cursor = design_type;
         while let Some(base) = cursor
             .base_type_guid
             .as_deref()
-            .and_then(|base| objects_by_guid.get(base))
+            .and_then(|base| types_by_guid.get(base))
         {
             if !ancestors.insert(base.type_guid.as_str()) {
                 return Err(CodecError::Malformed(format!(
