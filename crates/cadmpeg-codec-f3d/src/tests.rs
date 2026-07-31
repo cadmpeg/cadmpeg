@@ -4936,6 +4936,21 @@ fn append_generated_variable_blend_value(
     }
 }
 
+/// An `edge_offset` radius law with no leading sub-discriminator: the
+/// law-domain parameter range and one offset length.
+fn append_generated_variable_blend_edge_offset_value(
+    bytes: &mut Vec<u8>,
+    parameters: [f64; 2],
+    offset: f64,
+) {
+    push_u8_string(bytes, "edge_offset");
+    push_tagged_i64(bytes, 0x15, 3);
+    bytes.push(0x0a);
+    for value in parameters.into_iter().chain([offset]) {
+        t_dbl(bytes, value);
+    }
+}
+
 /// An `interp` radius law: the law-domain parameter range, a `(u,radius)` BS2
 /// function, the extension enum, the point count, and one radius point. The
 /// payload ends at that point — nothing gates a trailing scalar pair.
@@ -4961,6 +4976,16 @@ fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) {
     }
 }
 
+/// Which radius law the synthetic stream stores as its first blend value.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FirstRadiusLaw {
+    TwoEnds,
+    Interp,
+    /// `edge_offset` with no leading sub-discriminator: two law-domain
+    /// parameters and one offset length.
+    EdgeOffset,
+}
+
 fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
     synthetic_variable_blend_smbh_with_selector(name, false, None, [None, None])
 }
@@ -4980,7 +5005,13 @@ fn synthetic_variable_blend_smbh_with_selector(
     cross_section_selector: Option<i64>,
     v_range: [Option<f64>; 2],
 ) -> Vec<u8> {
-    synthetic_variable_blend_smbh_inner(name, two_radii, cross_section_selector, v_range, false)
+    synthetic_variable_blend_smbh_inner(
+        name,
+        two_radii,
+        cross_section_selector,
+        v_range,
+        FirstRadiusLaw::TwoEnds,
+    )
 }
 
 /// The same stream with an `interp` first radius law, which places a radius
@@ -4989,7 +5020,19 @@ fn synthetic_variable_blend_smbh_with_interp_radius(
     name: &str,
     cross_section_selector: Option<i64>,
 ) -> Vec<u8> {
-    synthetic_variable_blend_smbh_inner(name, false, cross_section_selector, [None, None], true)
+    synthetic_variable_blend_smbh_inner(
+        name,
+        false,
+        cross_section_selector,
+        [None, None],
+        FirstRadiusLaw::Interp,
+    )
+}
+
+/// The same stream with an `edge_offset` first radius law carrying no leading
+/// sub-discriminator.
+fn synthetic_variable_blend_smbh_with_edge_offset_radius(name: &str) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(name, false, None, [None, None], FirstRadiusLaw::EdgeOffset)
 }
 
 fn synthetic_variable_blend_smbh_inner(
@@ -4997,7 +5040,7 @@ fn synthetic_variable_blend_smbh_inner(
     two_radii: bool,
     cross_section_selector: Option<i64>,
     v_range: [Option<f64>; 2],
-    interp_first_value: bool,
+    first_value: FirstRadiusLaw,
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -5021,10 +5064,14 @@ fn synthetic_variable_blend_smbh_inner(
     t_dbl(&mut surface, 0.4);
     surface.push(0x15);
     surface.extend_from_slice(&i64::from(two_radii).to_le_bytes());
-    if interp_first_value {
-        append_generated_variable_blend_interp_value(&mut surface);
-    } else {
-        append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
+    match first_value {
+        FirstRadiusLaw::Interp => append_generated_variable_blend_interp_value(&mut surface),
+        FirstRadiusLaw::EdgeOffset => {
+            append_generated_variable_blend_edge_offset_value(&mut surface, [0.25, 0.75], 1.5);
+        }
+        FirstRadiusLaw::TwoEnds => {
+            append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
+        }
     }
     if !two_radii {
         if let Some(selector) = cross_section_selector {
@@ -16882,6 +16929,37 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
 
         assert_revision_surface_round_trip(smbh, "variable_blend");
     }
+}
+
+#[test]
+fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendValuePayload};
+
+    // `edge_offset` without the leading sub-discriminator stores its law-domain
+    // parameter range and one offset: the second field is a parameter, and only
+    // the third is a length, so only the third takes the centimetre-to-
+    // millimetre conversion.
+    let smbh = synthetic_variable_blend_smbh_with_edge_offset_radius("srf_srf_v_bl_spl_sur");
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("edge-offset variable-blend decode");
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected variable blend")
+    };
+    let VariableBlendValuePayload::EdgeOffset { scalars, lengths } =
+        &construction.first_value.payload
+    else {
+        panic!("expected edge-offset radius law")
+    };
+    assert_eq!(scalars, &[0.25, 0.75]);
+    assert_eq!(lengths, &[15.0]);
+
+    assert_revision_surface_round_trip(smbh, "variable_blend");
 }
 
 #[test]

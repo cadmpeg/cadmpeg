@@ -410,12 +410,12 @@ fn decode_variable_blend_value(
             scalars: vec![take_f64(bytes, position)?, take_f64(bytes, position)?],
             lengths: vec![take_f64(bytes, position)? * LEN_TO_MM],
         },
+        // Without the leading sub-discriminator the payload is the law-domain
+        // parameter range and one offset, so the second field is a parameter and
+        // only the third is a length.
         "edge_offset" if discriminator == 1 => VariableBlendValuePayload::EdgeOffset {
-            scalars: vec![take_f64(bytes, position)?],
-            lengths: vec![
-                take_f64(bytes, position)? * LEN_TO_MM,
-                take_f64(bytes, position)? * LEN_TO_MM,
-            ],
+            scalars: vec![take_f64(bytes, position)?, take_f64(bytes, position)?],
+            lengths: vec![take_f64(bytes, position)? * LEN_TO_MM],
         },
         "functional" => {
             let parameter = take_f64(bytes, position)?;

@@ -3126,12 +3126,7 @@ fn native_variable_blend_value(
             native_f64(bytes, *width);
         }
         VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
-            let expected = if value.discriminator == 0 {
-                (2, 1)
-            } else {
-                (1, 2)
-            };
-            if (scalars.len(), lengths.len()) != expected {
+            if (scalars.len(), lengths.len()) != (2, 1) {
                 return Err(CodecError::Malformed(
                     "variable edge-offset payload has inconsistent arity".into(),
                 ));
