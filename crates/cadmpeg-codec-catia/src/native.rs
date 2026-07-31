@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 250;
+pub const CATIA_NATIVE_VERSION: u32 = 251;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -99,6 +99,9 @@ pub(crate) const CATIA_RELATION_SIGNATURE_PARAMETER_VERSION: u32 = 249;
 /// Native schema version retaining formula reference occurrence offsets.
 #[cfg(test)]
 pub(crate) const CATIA_FORMULA_REFERENCE_OFFSET_VERSION: u32 = 250;
+/// Native schema version retaining configuration payload occurrence offsets.
+#[cfg(test)]
+pub(crate) const CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION: u32 = 251;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1590,6 +1593,9 @@ pub struct CatiaEntityReference {
 /// One exact self-defining `Configuration` object production.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConfigurationRecord {
+    /// Byte offset of the schema reference within the object payload.
+    #[serde(default)]
+    pub schema_payload_offset: u64,
     /// Stored value-schema ordinal selected by the first reference.
     pub schema_ordinal: u32,
     /// Selected schema-catalog entry.
@@ -1597,7 +1603,8 @@ pub struct CatiaConfigurationRecord {
     /// Selected schema-catalog name.
     pub schema_name: String,
     /// Entity selected by the second stored reference.
-    pub entity_reference: CatiaEntityReference,
+    #[serde(deserialize_with = "deserialize_payload_entity_reference")]
+    pub entity_reference: CatiaPayloadEntityReference,
 }
 
 /// One exact `configrow` successor-link production.
@@ -1605,6 +1612,9 @@ pub struct CatiaConfigurationRecord {
 pub struct CatiaConfigurationRowLink {
     /// Stored class identity whose catalog name is `configrow`.
     pub class_reference: CatiaEntityReference,
+    /// Byte offset of the successor atom within the object payload.
+    #[serde(default)]
+    pub successor_payload_offset: u64,
     /// Stored successor identity.
     pub successor: CatiaEntityReference,
 }
@@ -3308,10 +3318,10 @@ fn configuration_record(
     }
     let [PayloadField::Reference {
         value: schema_ordinal,
-        ..
+        offset: schema_offset,
     }, PayloadField::Atom { value: 2, .. }, PayloadField::Reference {
         value: referenced_entity_id,
-        ..
+        offset: entity_offset,
     }, PayloadField::Atom { value: 129, .. }, PayloadField::Terminator] =
         object.payload.fields.as_slice()
     else {
@@ -3325,16 +3335,20 @@ fn configuration_record(
         return None;
     }
     Some(CatiaConfigurationRecord {
+        schema_payload_offset: u64::try_from(*schema_offset).ok()?,
         schema_ordinal: *schema_ordinal,
         schema_entry: selection.entry.clone(),
         schema_name: selection.name.clone(),
-        entity_reference: entity_reference(
-            &object.parent,
-            *referenced_entity_id,
-            entities,
-            entity_classes,
-            terminal_nulls,
-        ),
+        entity_reference: CatiaPayloadEntityReference {
+            payload_offset: u64::try_from(*entity_offset).ok()?,
+            reference: entity_reference(
+                &object.parent,
+                *referenced_entity_id,
+                entities,
+                entity_classes,
+                terminal_nulls,
+            ),
+        },
     })
 }
 
@@ -3356,7 +3370,7 @@ fn configuration_row_link(
     let class_entity_id = object.class_ref?;
     let [PayloadField::Atom { value: 250, .. }, PayloadField::Atom {
         value: successor_entity_id,
-        ..
+        offset: successor_offset,
     }, PayloadField::Terminator] = object.payload.fields.as_slice()
     else {
         return None;
@@ -3369,6 +3383,7 @@ fn configuration_row_link(
             entity_classes,
             terminal_nulls,
         ),
+        successor_payload_offset: u64::try_from(*successor_offset).ok()?,
         successor: entity_reference(
             &object.parent,
             *successor_entity_id,
@@ -9080,6 +9095,7 @@ impl CatiaNative {
             || namespace.version < CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_CLASS_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION
         {
             let records_by_id = records
                 .iter()

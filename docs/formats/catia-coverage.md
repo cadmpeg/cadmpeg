@@ -194,11 +194,13 @@ current scores require those matrices and representative fixtures.
   unclassified source entities, and ranges with zero, one, or multiple total
   incoming occurrences. An incoming occurrence and design-field containment do
   not establish constraint identity, ownership, operands, or sketch incidence.
-  Exact `Configuration` records retain the first reference as a selected
-  value-schema ordinal, entry, and name, and retain the second reference as an
-  independently resolved, terminal-null, or unresolved same-graph entity
-  identity with its selected object class when present. Exact
-  `configrow` successor links retain their class and successor identities.
+  Exact `Configuration` records retain the first reference's payload-relative
+  byte offset, selected value-schema ordinal, entry, and name, and retain the
+  second reference as an independently resolved, terminal-null, or unresolved
+  same-graph entity identity with its payload-relative byte offset and selected
+  object class when present. Exact `configrow` successor links retain their
+  class and successor identities and the successor atom's payload-relative byte
+  offset.
   Coverage partitions schema references, resolved, terminal-null, and
   unresolved entity references, classified and unclassified referenced
   entities, row classes, and row successors. Complete root-to-terminal chains

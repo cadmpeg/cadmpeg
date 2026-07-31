@@ -12107,13 +12107,19 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         .expect("complete Configuration production");
     assert_eq!(configuration.schema_ordinal, 8);
     assert_eq!(configuration.schema_name, "Boolean");
-    assert_eq!(configuration.entity_reference.entity_id, 5);
+    assert_eq!(configuration.schema_payload_offset, 0);
+    assert_eq!(configuration.entity_reference.payload_offset, 10);
+    assert_eq!(configuration.entity_reference.reference.entity_id, 5);
     assert_eq!(
-        configuration.entity_reference.entity.as_deref(),
+        configuration.entity_reference.reference.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(
-        configuration.entity_reference.class_name.as_deref(),
+        configuration
+            .entity_reference
+            .reference
+            .class_name
+            .as_deref(),
         Some("Configuration")
     );
     let row = native.entity_records[1]
@@ -12126,6 +12132,7 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         Some(native.entity_records[1].id.as_str())
     );
     assert_eq!(row.class_reference.class_name.as_deref(), Some("configrow"));
+    assert_eq!(row.successor_payload_offset, 5);
     assert_eq!(row.successor.entity_id, 7);
     assert_eq!(
         row.successor.entity.as_deref(),
@@ -12288,7 +12295,7 @@ fn configuration_productions_preserve_unresolved_identities() {
         .as_ref()
         .expect("complete Configuration production");
     assert_eq!(configuration.schema_name, "Boolean");
-    assert!(configuration.entity_reference.entity.is_none());
+    assert!(configuration.entity_reference.reference.entity.is_none());
     let row = native.entity_records[1]
         .configuration_row_link
         .as_ref()
@@ -12351,8 +12358,8 @@ fn configuration_productions_distinguish_terminal_null_identities() {
         .configuration_record
         .as_ref()
         .expect("complete Configuration production");
-    assert!(configuration.entity_reference.is_null);
-    assert!(configuration.entity_reference.entity.is_none());
+    assert!(configuration.entity_reference.reference.is_null);
+    assert!(configuration.entity_reference.reference.entity.is_none());
     let row = native.entity_records[1]
         .configuration_row_link
         .as_ref()
@@ -12433,6 +12440,45 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         native.configuration_row_chains
     );
 
+    let mut version_250 = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_250)
+        .expect("store configuration payload offsets");
+    let entities = version_250
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records");
+    let configuration = entities[0]
+        .fields
+        .get_mut("configuration_record")
+        .expect("stored configuration record")
+        .as_object_mut()
+        .expect("stored configuration object");
+    configuration.remove("schema_payload_offset");
+    let entity_reference = configuration["entity_reference"]
+        .as_object()
+        .expect("stored configuration incidence")["reference"]
+        .clone();
+    configuration.insert("entity_reference".to_string(), entity_reference);
+    entities[1]
+        .fields
+        .get_mut("configuration_row_link")
+        .expect("stored configuration-row link")
+        .as_object_mut()
+        .expect("stored configuration-row object")
+        .remove("successor_payload_offset");
+    version_250.version = crate::native::CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&version_250)
+        .expect("migrate configuration payload offsets");
+    assert_eq!(
+        migrated.entity_records[0].configuration_record,
+        native.entity_records[0].configuration_record
+    );
+    assert_eq!(
+        migrated.entity_records[1].configuration_row_link,
+        native.entity_records[1].configuration_row_link
+    );
+
     let interval_native =
         crate::native::CatiaNative::decode(&standard_catpart_with_configuration_row_chain());
     let mut older = cadmpeg_ir::NativeNamespace::default();
@@ -12475,7 +12521,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .configuration_record
         .as_mut()
         .expect("complete Configuration production");
-    configuration.entity_reference.is_null = false;
+    configuration.entity_reference.reference.is_null = false;
     let row = stale_nulls.entity_records[1]
         .configuration_row_link
         .as_mut()
@@ -12500,6 +12546,27 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     malformed_chain
         .store(&mut current)
         .expect("store malformed configuration chain");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&current),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut malformed_offsets = native.clone();
+    let configuration = malformed_offsets.entity_records[0]
+        .configuration_record
+        .as_mut()
+        .expect("decoded configuration record");
+    configuration.schema_payload_offset += 1;
+    configuration.entity_reference.payload_offset += 1;
+    malformed_offsets.entity_records[1]
+        .configuration_row_link
+        .as_mut()
+        .expect("decoded configrow link")
+        .successor_payload_offset += 1;
+    let mut current = cadmpeg_ir::NativeNamespace::default();
+    malformed_offsets
+        .store(&mut current)
+        .expect("store malformed configuration offsets");
     assert!(matches!(
         crate::native::CatiaNative::load(&current),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
