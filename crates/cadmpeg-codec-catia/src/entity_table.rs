@@ -63,8 +63,14 @@ pub struct ReferenceSignature {
     pub layout_atom: u32,
     /// Printable signature bytes between `0x81` and the first terminator.
     pub signature: String,
+    /// Byte offset of the first signature byte within the `7C07` payload.
+    #[serde(default)]
+    pub signature_offset: usize,
     /// Second fixed-width reference.
     pub second_reference: u32,
+    /// Byte offset of the second reference marker within the `7C07` payload.
+    #[serde(default)]
+    pub second_reference_offset: usize,
     /// One-byte atom preceding the closing nested frame.
     pub closing_atom: u32,
     /// Compact closing-frame type atom following `0xE9`.
@@ -637,7 +643,8 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
     }
     at += 1;
     let signature_end = payload.get(at..)?.iter().position(|byte| *byte == 0xfe)? + at;
-    let signature_bytes = payload.get(at..signature_end)?;
+    let signature_offset = at;
+    let signature_bytes = payload.get(signature_offset..signature_end)?;
     if signature_bytes.is_empty()
         || !signature_bytes
             .iter()
@@ -647,6 +654,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
     }
     let signature = std::str::from_utf8(signature_bytes).ok()?.to_owned();
     at = signature_end + 1;
+    let second_reference_offset = at;
     if payload.get(at) != Some(&0x32) {
         return None;
     }
@@ -667,7 +675,9 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         type_atom,
         layout_atom,
         signature,
+        signature_offset,
         second_reference,
+        second_reference_offset,
         closing_atom,
         closing_type_atom,
     })
@@ -859,7 +869,9 @@ mod tests {
                 type_atom: 3851,
                 layout_atom: 12,
                 signature: "(E,0(E,4))".to_owned(),
+                signature_offset: 12,
                 second_reference: 208,
+                second_reference_offset: 23,
                 closing_atom: 3,
                 closing_type_atom: 3864,
             })

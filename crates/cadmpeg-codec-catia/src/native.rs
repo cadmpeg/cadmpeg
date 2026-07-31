@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 258;
+pub const CATIA_NATIVE_VERSION: u32 = 259;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -123,6 +123,9 @@ pub(crate) const CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION: u32 = 257;
 /// Native schema version requiring exact relation-signature outer whitespace.
 #[cfg(test)]
 pub(crate) const CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION: u32 = 258;
+/// Native schema version retaining reference-signature field incidences.
+#[cfg(test)]
+pub(crate) const CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION: u32 = 259;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -9052,6 +9055,12 @@ impl CatiaNative {
         let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
         let mut configuration_row_chains: Vec<CatiaConfigurationRowChain> =
             namespace.arena_as("configuration_row_chains")?;
+        if namespace.version < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
+            for entity in &mut entity_records {
+                entity.reference_signature =
+                    entity_table::parse_reference_signature(&entity.value_payload);
+            }
+        }
         if namespace.version < CATIA_SUFFIX_FRAMING_VERSION {
             for entity in &mut entity_records {
                 entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
