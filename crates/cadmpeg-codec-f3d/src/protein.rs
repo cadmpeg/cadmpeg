@@ -8,7 +8,10 @@ use cadmpeg_ir::codec::CodecError;
 
 use crate::bytes::take_lp_utf8_capped;
 
+const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
+const CONTINUATION_MARKER: &[u8] = b"\x80\x00\x00\x00";
+const TERMINAL_MARKER: &[u8] = b"\xff\xff\xff\xff";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Carrier {
@@ -20,6 +23,7 @@ enum Carrier {
     Distance,
     String,
     Uuid,
+    Url,
     Color,
     Reference,
     TextureUri,
@@ -29,11 +33,13 @@ enum Carrier {
 struct Property {
     carrier: Carrier,
     connectable: bool,
+    multiple: bool,
 }
 
 #[derive(Debug, Default)]
 struct Schema {
     base: Option<String>,
+    asset_type: Option<String>,
     properties: BTreeMap<String, Property>,
 }
 
@@ -50,11 +56,17 @@ pub(crate) enum PropertyValue {
     Boolean(bool),
     Integer(u32),
     Float(f64),
-    Distance { unit: u32, value: f64 },
+    Distance {
+        unit: u32,
+        value: f64,
+    },
     String(String),
     Color([f64; 4]),
     Reference,
     TextureUri(Vec<String>),
+    /// A member declared `allowmultiplevalues="true"` on a carrier other than
+    /// `TextureURI`: a `u32` count followed by that many carrier values.
+    Multiple(Vec<PropertyValue>),
 }
 
 /// One paged Protein instance record.
@@ -66,24 +78,63 @@ pub(crate) struct DecodedRecord {
     pub(crate) properties: BTreeMap<String, DecodedProperty>,
 }
 
-/// Decode every supported `InstanceProperties` record using the schemas
-/// packaged in the same Protein archive. A record whose schema-specific value
-/// block cannot be consumed is isolated at the next paged-record marker.
-pub(crate) fn decode(protein: &[u8], logical: &[u8]) -> Result<Vec<DecodedRecord>, CodecError> {
+/// Decode every `InstanceProperties` record in the paged `instance` stream
+/// using the schemas packaged in the same Protein archive. Records whose value
+/// block cannot be consumed are dropped; page framing keeps the remaining
+/// records decodable.
+pub(crate) fn decode(protein: &[u8], instance: &[u8]) -> Result<Vec<DecodedRecord>, CodecError> {
     let schemas = schemas(protein)?;
-    let starts = logical
-        .windows(RECORD_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, marker)| (marker == RECORD_MARKER).then_some(offset))
-        .collect::<Vec<_>>();
+    let Some(pages) = paged_records(instance) else {
+        return Ok(Vec::new());
+    };
     let mut records = Vec::new();
-    for (ordinal, start) in starts.iter().copied().enumerate() {
-        let end = starts.get(ordinal + 1).copied().unwrap_or(logical.len());
-        if let Ok(Some(record)) = decode_record(&logical[start..end], &schemas) {
+    for record in pages {
+        if let Ok(Some(record)) = decode_record(&record, &schemas) {
             records.push(record);
         }
     }
     Ok(records)
+}
+
+/// Split a paged `InstanceProperties` stream into logical records.
+///
+/// The stream is a 16-byte header followed by fixed [`PAGE_SIZE`] pages. A page
+/// whose bytes 4..8 hold [`RECORD_MARKER`] opens a record, [`CONTINUATION_MARKER`]
+/// extends it, and a page opening with [`TERMINAL_MARKER`] closes it and carries
+/// the used byte count as a `u16` at offset 4. Every record is returned with the
+/// opening marker restored so record offsets match the on-page layout.
+fn paged_records(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+    if bytes.len() < 16 + PAGE_SIZE
+        || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
+        || !(bytes.len() - 16).is_multiple_of(PAGE_SIZE)
+    {
+        return None;
+    }
+    let mut records = Vec::new();
+    let mut current: Option<Vec<u8>> = None;
+    for page in bytes[16..].chunks_exact(PAGE_SIZE) {
+        if page.get(4..8) == Some(RECORD_MARKER) {
+            if let Some(record) = current.take() {
+                records.push(record);
+            }
+            let mut record = RECORD_MARKER.to_vec();
+            record.extend_from_slice(&page[8..]);
+            current = Some(record);
+        } else if page.get(4..8) == Some(CONTINUATION_MARKER) {
+            current.as_mut()?.extend_from_slice(&page[8..]);
+        } else if page.get(0..4) == Some(TERMINAL_MARKER) {
+            let used = u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize;
+            let mut record = current.take()?;
+            record.extend_from_slice(page.get(8..8 + used)?);
+            records.push(record);
+        } else {
+            return None;
+        }
+    }
+    if let Some(record) = current {
+        records.push(record);
+    }
+    Some(records)
 }
 
 /// Whether the Protein archive packages schema XML documents.
@@ -135,13 +186,15 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
                 schema.base = node.attribute("val").map(str::to_owned);
                 continue;
             }
+            if node.has_tag_name("type") {
+                schema.asset_type = node.attribute("val").map(str::to_owned);
+                continue;
+            }
             if node.has_tag_name("PropertyAlias") {
                 continue;
             }
             if node.attribute("readonly") == Some("true")
                 || node.attribute("definitionIteratorData") == Some("true")
-                || node.attribute("metadata") == Some("true")
-                || node.attribute("public") == Some("false")
             {
                 continue;
             }
@@ -159,6 +212,7 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
                 Property {
                     carrier,
                     connectable: node.attribute("allowconnectedassets").is_some(),
+                    multiple: node.attribute("allowmultiplevalues") == Some("true"),
                 },
             );
         }
@@ -180,6 +234,7 @@ fn carrier(name: &str) -> Option<Carrier> {
         "Distance" => Carrier::Distance,
         "String" => Carrier::String,
         "Uuid" => Carrier::Uuid,
+        "URL" => Carrier::Url,
         "Color" => Carrier::Color,
         "Reference" => Carrier::Reference,
         "TextureURI" => Carrier::TextureUri,
@@ -226,44 +281,29 @@ fn decode_record(
     let Some(base) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
+    // The fourth header string is byte-degenerate with `AssetLibID`, the first
+    // member of `CommonSchema` in serialization order; both are empty in every
+    // record, so `instance_property_serializes` drops the member here.
     let Some(_) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
-    if schema == "PhysMatSchema"
-        || schema.starts_with("Structural")
-        || schema.starts_with("Thermal")
-    {
-        return Ok(Some(DecodedRecord {
-            schema,
-            guid,
-            base,
-            properties: BTreeMap::new(),
-        }));
-    }
+    let is_texture = schemas
+        .get(&schema)
+        .and_then(|schema| schema.asset_type.as_deref())
+        == Some("texture");
     let properties = property_closure(&schema, schemas, &mut BTreeSet::new())?;
     let mut values = BTreeMap::new();
     for (id, property) in properties {
-        if !instance_property_serializes(&schema, &id) {
+        if !instance_property_serializes(is_texture, &id) {
             continue;
         }
-        if id == "surface_albedo" && choice_at(record, at).is_some_and(|value| value <= 2) {
-            take::<4>(record, &mut at).ok_or_else(|| {
-                CodecError::Malformed("Protein surface albedo prelude is truncated".into())
-            })?;
-        }
-        if id == "texture_RealWorldOffsetX" {
-            take::<4>(record, &mut at).ok_or_else(|| {
-                CodecError::Malformed("Protein texture mapping prelude is truncated".into())
-            })?;
-        }
         let property_at = at;
-        let value = read_value(record, &mut at, property.carrier, &id, property.connectable)
-            .map_err(|error| {
-                CodecError::Malformed(format!(
+        let value = read_property(record, &mut at, &property, &id).map_err(|error| {
+            CodecError::Malformed(format!(
                 "Protein {schema} instance {guid} property {id} at {property_at}..{at}/{}: {error}",
                 record.len()
             ))
-            })?;
+        })?;
         let connections = if property.connectable || property.carrier == Carrier::Reference {
             read_connections(record, &mut at).map_err(|error| {
                 CodecError::Malformed(format!(
@@ -276,6 +316,12 @@ fn decode_record(
         };
         values.insert(id, DecodedProperty { value, connections });
     }
+    if at != record.len() {
+        return Err(CodecError::Malformed(format!(
+            "Protein {schema} instance {guid} consumed {at} of {} record bytes",
+            record.len()
+        )));
+    }
     Ok(Some(DecodedRecord {
         schema,
         guid,
@@ -284,18 +330,74 @@ fn decode_record(
     }))
 }
 
-fn choice_at(bytes: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
-}
-
-fn instance_property_serializes(schema: &str, id: &str) -> bool {
+/// Narrow the inherited member set to the members a record actually serializes.
+///
+/// `AssetLibID` is consumed as the fourth record header string. `swatch` is
+/// absent from texture assets; it is empty in every texture record, so the bytes
+/// cannot say whether the writer omits `swatch` or `ExchangeGUID` there.
+fn instance_property_serializes(is_texture: bool, id: &str) -> bool {
     match id {
-        "ExchangeGUID" => !matches!(schema, "BumpMapSchema" | "PrismMetalSchema"),
-        "common_Shared_Asset" => schema == "BumpMapSchema",
-        "common_Tint_color_colorspace" => schema != "BumpMapSchema",
-        "interior_model" => schema == "PrismMetalSchema",
+        "AssetLibID" => false,
+        "swatch" => !is_texture,
         _ => true,
     }
+}
+
+fn read_property(
+    bytes: &[u8],
+    at: &mut usize,
+    property: &Property,
+    id: &str,
+) -> Result<PropertyValue, CodecError> {
+    if property.carrier == Carrier::TextureUri {
+        return read_texture_uri(bytes, at, id);
+    }
+    if !property.multiple {
+        return read_value(bytes, at, property.carrier, id);
+    }
+    let count = read_count(bytes, at, id)?;
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        values.push(read_value(bytes, at, property.carrier, id)?);
+    }
+    Ok(PropertyValue::Multiple(values))
+}
+
+/// A `TextureURI` value: a kind byte, then either a counted list of paths
+/// (kind 0, used for cloud resource references) or a single path (kind 1).
+fn read_texture_uri(bytes: &[u8], at: &mut usize, id: &str) -> Result<PropertyValue, CodecError> {
+    let malformed = || CodecError::Malformed(format!("Protein property {id} is truncated"));
+    let kind = take::<1>(bytes, at).ok_or_else(malformed)?[0];
+    if kind == 1 {
+        return Ok(PropertyValue::TextureUri(vec![take_lp_utf8_capped(
+            bytes, at, 1_048_576,
+        )
+        .ok_or_else(malformed)?]));
+    }
+    if kind != 0 {
+        return Err(CodecError::Malformed(format!(
+            "Protein TextureURI property {id} has invalid kind {kind}"
+        )));
+    }
+    let count = read_count(bytes, at, id)?;
+    let mut paths = Vec::with_capacity(count);
+    for _ in 0..count {
+        paths.push(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?);
+    }
+    Ok(PropertyValue::TextureUri(paths))
+}
+
+fn read_count(bytes: &[u8], at: &mut usize, id: &str) -> Result<usize, CodecError> {
+    let raw = take(bytes, at)
+        .ok_or_else(|| CodecError::Malformed(format!("Protein property {id} is truncated")))?;
+    let count = usize::try_from(u32::from_le_bytes(raw))
+        .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
+    if count > 1_024 {
+        return Err(CodecError::Malformed(format!(
+            "Protein property {id} has implausible value count {count}"
+        )));
+    }
+    Ok(count)
 }
 
 fn read_value(
@@ -303,7 +405,6 @@ fn read_value(
     at: &mut usize,
     carrier: Carrier,
     id: &str,
-    connectable: bool,
 ) -> Result<PropertyValue, CodecError> {
     let malformed = || CodecError::Malformed(format!("Protein property {id} is truncated"));
     Ok(match carrier {
@@ -324,19 +425,10 @@ fn read_value(
             unit: u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
             value: f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
         },
-        Carrier::String | Carrier::Uuid => {
+        Carrier::String | Carrier::Uuid | Carrier::Url => {
             PropertyValue::String(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?)
         }
         Carrier::Color => {
-            if connectable || id != "common_Tint_color" {
-                let marker = take::<1>(bytes, at).ok_or_else(malformed)?;
-                if marker != [0] {
-                    return Err(CodecError::Malformed(format!(
-                        "Protein Color property {id} has invalid value marker {}",
-                        marker[0]
-                    )));
-                }
-            }
             let mut rgba = [0.0; 4];
             for value in &mut rgba {
                 *value = f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?);
@@ -344,50 +436,38 @@ fn read_value(
             PropertyValue::Color(rgba)
         }
         Carrier::Reference => PropertyValue::Reference,
-        Carrier::TextureUri => {
-            take::<1>(bytes, at).ok_or_else(malformed)?;
-            let count = usize::try_from(u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?))
-                .map_err(|_| {
-                    CodecError::Malformed("Protein TextureURI count exceeds usize".into())
-                })?;
-            if count > 1_024 {
-                return Err(CodecError::Malformed(format!(
-                    "Protein TextureURI property {id} has implausible path count {count}"
-                )));
-            }
-            let mut paths = Vec::with_capacity(count);
-            for _ in 0..count {
-                paths.push(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?);
-            }
-            PropertyValue::TextureUri(paths)
-        }
+        Carrier::TextureUri => return read_texture_uri(bytes, at, id),
     })
 }
 
+/// The connection block that follows every connectable member and every
+/// `Reference`: a presence byte, then a kind byte, a `u32` count, and that many
+/// length-prefixed connected-asset GUIDs.
 fn read_connections(bytes: &[u8], at: &mut usize) -> Result<Vec<String>, CodecError> {
-    let Some(flag) = take::<1>(bytes, at) else {
+    let Some(present) = take::<1>(bytes, at) else {
         return Err(CodecError::Malformed(
             "Protein property connection flag is truncated".into(),
         ));
     };
-    if flag == [0] {
+    if present == [0] {
         return Ok(Vec::new());
     }
-    if flag != [1] {
+    if present != [1] {
         return Err(CodecError::Malformed(format!(
             "Protein property has invalid connection flag {}",
-            flag[0]
+            present[0]
         )));
     }
-    let count = usize::try_from(u32::from_le_bytes(take(bytes, at).ok_or_else(|| {
-        CodecError::Malformed("Protein property connection count is truncated".into())
-    })?))
-    .map_err(|_| CodecError::Malformed("Protein connection count exceeds usize".into()))?;
-    if count > 1_024 {
+    let kind = take::<1>(bytes, at).ok_or_else(|| {
+        CodecError::Malformed("Protein property connection kind is truncated".into())
+    })?;
+    if kind != [1] {
         return Err(CodecError::Malformed(format!(
-            "Protein property has implausible connection count {count}"
+            "Protein property has invalid connection kind {}",
+            kind[0]
         )));
     }
+    let count = read_count(bytes, at, "connection")?;
     let mut connections = Vec::with_capacity(count);
     for _ in 0..count {
         connections.push(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(|| {
@@ -411,57 +491,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inherited_property_selection_is_schema_defined() {
-        assert!(!instance_property_serializes(
-            "BumpMapSchema",
-            "ExchangeGUID"
-        ));
-        assert!(!instance_property_serializes(
-            "BumpMapSchema",
+    fn inherited_property_selection_drops_the_header_slot_and_texture_swatch() {
+        assert!(!instance_property_serializes(false, "AssetLibID"));
+        assert!(instance_property_serializes(false, "ExchangeGUID"));
+        assert!(instance_property_serializes(true, "ExchangeGUID"));
+        assert!(instance_property_serializes(false, "swatch"));
+        assert!(!instance_property_serializes(true, "swatch"));
+        assert!(instance_property_serializes(true, "interior_model"));
+        assert!(instance_property_serializes(false, "common_Shared_Asset"));
+        assert!(instance_property_serializes(
+            false,
             "common_Tint_color_colorspace"
-        ));
-        assert!(instance_property_serializes(
-            "BumpMapSchema",
-            "common_Shared_Asset"
-        ));
-        assert!(!instance_property_serializes(
-            "UnifiedBitmapSchema",
-            "common_Shared_Asset"
-        ));
-        assert!(instance_property_serializes(
-            "PrismMetalSchema",
-            "interior_model"
-        ));
-        assert!(!instance_property_serializes(
-            "PrismOpaqueSchema",
-            "interior_model"
         ));
     }
 
     #[test]
-    fn color_and_connection_carriers_distinguish_their_prefixes() {
+    fn color_carries_no_marker_byte_whether_or_not_it_is_connectable() {
         let rgba = [0.1_f64, 0.2, 0.3, 1.0];
-        let mut prefixed = vec![0];
-        prefixed.extend(rgba.into_iter().flat_map(f64::to_le_bytes));
-        let mut at = 0;
-        assert_eq!(
-            read_value(&prefixed, &mut at, Carrier::Color, "generic_diffuse", true).unwrap(),
-            PropertyValue::Color(rgba)
-        );
-        assert_eq!(at, prefixed.len());
-
         let bare = rgba
             .into_iter()
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
-        let mut at = 0;
-        assert_eq!(
-            read_value(&bare, &mut at, Carrier::Color, "common_Tint_color", false).unwrap(),
-            PropertyValue::Color(rgba)
-        );
-        assert_eq!(at, bare.len());
+        for id in ["metal_f0", "common_Tint_color"] {
+            let mut at = 0;
+            assert_eq!(
+                read_value(&bare, &mut at, Carrier::Color, id).unwrap(),
+                PropertyValue::Color(rgba)
+            );
+            assert_eq!(at, bare.len());
+        }
+    }
 
-        let mut connections = vec![1];
+    #[test]
+    fn connection_and_texture_uri_blocks_carry_a_kind_byte() {
+        let mut connections = vec![1, 1];
         connections.extend_from_slice(&2u32.to_le_bytes());
         push_lp(&mut connections, "first-guid");
         push_lp(&mut connections, "second-guid");
@@ -471,6 +534,29 @@ mod tests {
             ["first-guid", "second-guid"]
         );
         assert_eq!(at, connections.len());
+
+        let mut at = 0;
+        assert!(read_connections(&[0], &mut at).unwrap().is_empty());
+        assert_eq!(at, 1);
+
+        let mut counted = vec![0];
+        counted.extend_from_slice(&1u32.to_le_bytes());
+        push_lp(&mut counted, "cloud/resource/one");
+        let mut at = 0;
+        assert_eq!(
+            read_texture_uri(&counted, &mut at, "unifiedbitmap_Bitmap").unwrap(),
+            PropertyValue::TextureUri(vec!["cloud/resource/one".into()])
+        );
+        assert_eq!(at, counted.len());
+
+        let mut single = vec![1];
+        push_lp(&mut single, "local_bitmap.png");
+        let mut at = 0;
+        assert_eq!(
+            read_texture_uri(&single, &mut at, "unifiedbitmap_Bitmap").unwrap(),
+            PropertyValue::TextureUri(vec!["local_bitmap.png".into()])
+        );
+        assert_eq!(at, single.len());
     }
 
     #[test]
@@ -480,9 +566,11 @@ mod tests {
                 "Schemas/CommonSchema.xml",
                 r#"<Schema>
                     <UID val="CommonSchema"/>
-                    <Color id="A_color" allowconnectedassets="true"/>
+                    <String id="AssetLibID" val=""/>
+                    <Uuid id="ExchangeGUID" val=""/>
+                    <Color id="a_color" allowconnectedassets="single"/>
                     <Boolean id="ignored_readonly" readonly="true"/>
-                    <Integer id="ignored_non_public" public="false"/>
+                    <Integer id="revision" public="false" val="1"/>
                 </Schema>"#,
             ),
             (
@@ -490,74 +578,190 @@ mod tests {
                 r#"<Schema>
                     <UID val="TextureSchema"/>
                     <Base val="CommonSchema"/>
-                    <PropertyAlias id="renamed_color" property="A_color"/>
-                    <Distance id="B_distance"/>
-                    <TextureURI id="C_uri"/>
-                    <Float id="D_unit_float" unit="unitless"/>
-                    <Reference id="E_reference"/>
+                    <PropertyAlias id="renamed_color" property="a_color"/>
+                    <Distance id="b_distance"/>
+                    <TextureURI id="c_uri" allowmultiplevalues="true"/>
+                    <Float id="d_unit_float" unit="unitless"/>
+                    <Reference id="e_reference"/>
+                    <Float id="f_profile" allowmultiplevalues="true"/>
+                    <String id="swatch" public="false" val=""/>
                     <Integer id="ignored_definition" definitionIteratorData="true"/>
-                    <String id="ignored_metadata" metadata="true"/>
+                    <String id="metadata_still_serializes" metadata="true"/>
                 </Schema>"#,
             ),
         ]);
-        let mut logical = RECORD_MARKER.to_vec();
-        for value in ["TextureSchema", "asset-guid", "Texture", ""] {
-            push_lp(&mut logical, value);
-        }
-        logical.push(0);
+        let mut values = Vec::new();
+        push_lp(&mut values, ""); // ExchangeGUID
         for value in [0.1_f64, 0.2, 0.3, 1.0] {
-            logical.extend_from_slice(&value.to_le_bytes());
+            values.extend_from_slice(&value.to_le_bytes()); // a_color, no marker
         }
-        push_connections(&mut logical, &["first-guid", "second-guid"]);
-        logical.extend_from_slice(&0x2016_u32.to_le_bytes());
-        logical.extend_from_slice(&2.5_f64.to_le_bytes());
-        logical.push(0);
-        logical.extend_from_slice(&2u32.to_le_bytes());
-        push_lp(&mut logical, "cloud/resource/one");
-        push_lp(&mut logical, "cloud/resource/two");
-        logical.extend_from_slice(&0x200e_u32.to_le_bytes());
-        logical.extend_from_slice(&4.5_f64.to_le_bytes());
-        push_connections(&mut logical, &["reference-guid"]);
+        push_connections(&mut values, &["first-guid", "second-guid"]);
+        values.extend_from_slice(&0x2016_u32.to_le_bytes());
+        values.extend_from_slice(&2.5_f64.to_le_bytes()); // b_distance
+        values.push(0);
+        values.extend_from_slice(&2u32.to_le_bytes());
+        push_lp(&mut values, "cloud/resource/one");
+        push_lp(&mut values, "cloud/resource/two"); // c_uri
+        values.extend_from_slice(&0x200e_u32.to_le_bytes());
+        values.extend_from_slice(&4.5_f64.to_le_bytes()); // d_unit_float
+        push_connections(&mut values, &["reference-guid"]); // e_reference
+        values.extend_from_slice(&2u32.to_le_bytes());
+        values.extend_from_slice(&0.25_f64.to_le_bytes());
+        values.extend_from_slice(&0.75_f64.to_le_bytes()); // f_profile
+        push_lp(&mut values, "Comments"); // metadata_still_serializes
+        values.extend_from_slice(&1u32.to_le_bytes()); // revision
+        push_lp(&mut values, "Swatch-Torus"); // swatch
 
-        let mut instance_stream = RECORD_MARKER.to_vec();
-        for value in ["TextureSchema", "truncated-guid", "Truncated", ""] {
-            push_lp(&mut instance_stream, value);
+        let mut record = Vec::new();
+        for value in ["TextureSchema", "asset-guid", "Texture", ""] {
+            push_lp(&mut record, value);
         }
-        instance_stream.extend_from_slice(&logical);
-        let records = decode(&protein, &instance_stream).expect("schema record decodes");
+        record.extend_from_slice(&values);
+
+        let records = decode(&protein, &paged_stream(&[&record])).expect("schema record decodes");
         assert_eq!(records.len(), 1);
         let properties = &records[0].properties;
         assert_eq!(
-            properties["A_color"],
+            properties["a_color"],
             DecodedProperty {
                 value: PropertyValue::Color([0.1, 0.2, 0.3, 1.0]),
                 connections: vec!["first-guid".into(), "second-guid".into()],
             }
         );
         assert_eq!(
-            properties["B_distance"].value,
+            properties["b_distance"].value,
             PropertyValue::Distance {
                 unit: 0x2016,
                 value: 2.5,
             }
         );
         assert_eq!(
-            properties["C_uri"].value,
+            properties["c_uri"].value,
             PropertyValue::TextureUri(vec![
                 "cloud/resource/one".into(),
                 "cloud/resource/two".into(),
             ])
         );
-        assert_eq!(properties["D_unit_float"].value, PropertyValue::Float(4.5));
+        assert_eq!(properties["d_unit_float"].value, PropertyValue::Float(4.5));
         assert_eq!(
-            properties["E_reference"].connections,
+            properties["e_reference"].connections,
             vec!["reference-guid"]
         );
+        assert_eq!(
+            properties["f_profile"].value,
+            PropertyValue::Multiple(vec![PropertyValue::Float(0.25), PropertyValue::Float(0.75)])
+        );
+        assert_eq!(
+            properties["metadata_still_serializes"].value,
+            PropertyValue::String("Comments".into())
+        );
+        // `public="false"` does not suppress serialization.
+        assert_eq!(properties["revision"].value, PropertyValue::Integer(1));
+        assert_eq!(
+            properties["swatch"].value,
+            PropertyValue::String("Swatch-Torus".into())
+        );
+        assert_eq!(
+            properties["ExchangeGUID"].value,
+            PropertyValue::String(String::new())
+        );
+        // Consumed as the fourth record header string.
+        assert!(!properties.contains_key("AssetLibID"));
         assert!(!properties.contains_key("renamed_color"));
         assert!(!properties.contains_key("ignored_readonly"));
-        assert!(!properties.contains_key("ignored_non_public"));
         assert!(!properties.contains_key("ignored_definition"));
-        assert!(!properties.contains_key("ignored_metadata"));
+    }
+
+    #[test]
+    fn texture_schemas_omit_the_swatch_slot() {
+        let protein = schema_archive(&[(
+            "Schemas/BitmapSchema.xml",
+            r#"<Schema>
+                <UID val="BitmapSchema"/>
+                <type val="texture"/>
+                <String id="AssetLibID" val=""/>
+                <String id="swatch" public="false" val=""/>
+                <Integer id="version" public="false" val="4"/>
+            </Schema>"#,
+        )]);
+        let mut record = Vec::new();
+        let padded_name = "Bitmap".repeat(32);
+        for value in ["BitmapSchema", "asset-guid", &padded_name, ""] {
+            push_lp(&mut record, value);
+        }
+        record.extend_from_slice(&4u32.to_le_bytes());
+        let records = decode(&protein, &paged_stream(&[&record])).expect("texture record decodes");
+        assert_eq!(records.len(), 1);
+        assert!(!records[0].properties.contains_key("swatch"));
+        assert_eq!(
+            records[0].properties["version"].value,
+            PropertyValue::Integer(4)
+        );
+    }
+
+    #[test]
+    fn a_record_spanning_several_pages_ends_at_its_terminal_page() {
+        let long = "x".repeat(400);
+        let mut first = Vec::new();
+        for value in ["S", "guid-one", &long, ""] {
+            push_lp(&mut first, value);
+        }
+        let short = "y".repeat(140);
+        let mut second = Vec::new();
+        for value in ["S", "guid-two", &short, ""] {
+            push_lp(&mut second, value);
+        }
+        let stream = paged_stream(&[&first, &second]);
+        let records = paged_records(&stream).expect("stream is paged");
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0], [RECORD_MARKER, &first].concat());
+        assert_eq!(records[1], [RECORD_MARKER, &second].concat());
+        assert!(stream.len() > 16 + 3 * PAGE_SIZE, "record one spans pages");
+
+        assert!(paged_records(&[]).is_none());
+        let mut truncated = stream.clone();
+        truncated.truncate(16 + PAGE_SIZE + 1);
+        assert!(paged_records(&truncated).is_none());
+    }
+
+    /// Lay records out as `InstanceProperties.bin` does: a 16-byte stream header,
+    /// then a marker page, continuation pages, and a terminal page per record.
+    fn paged_stream(records: &[&[u8]]) -> Vec<u8> {
+        const BODY: usize = PAGE_SIZE - 8;
+        let mut out = (PAGE_SIZE as u32).to_le_bytes().to_vec();
+        out.resize(16, 0);
+        let mut page = |header: [u8; 8], body: &[u8]| {
+            out.extend_from_slice(&header);
+            out.extend_from_slice(body);
+            out.resize(out.len() + BODY - body.len(), 0);
+        };
+        let opening = |marker: &[u8]| {
+            let mut header = [0_u8; 8];
+            header[4..8].copy_from_slice(marker);
+            header
+        };
+        for record in records {
+            // A marker or continuation page always contributes its whole body,
+            // so only the terminal page can hold a partial tail.
+            assert!(
+                record.len() >= BODY,
+                "a record fills at least one page body"
+            );
+            let (head, rest) = record.split_at(BODY);
+            page(opening(RECORD_MARKER), head);
+            let mut chunks = rest.chunks(BODY).peekable();
+            while let Some(chunk) = chunks.next() {
+                if chunks.peek().is_some() {
+                    page(opening(CONTINUATION_MARKER), chunk);
+                } else {
+                    let mut header = [0_u8; 8];
+                    header[0..4].copy_from_slice(TERMINAL_MARKER);
+                    header[4..6].copy_from_slice(&(chunk.len() as u16).to_le_bytes());
+                    page(header, chunk);
+                }
+            }
+        }
+        out
     }
 
     fn schema_archive(entries: &[(&str, &str)]) -> Vec<u8> {
@@ -577,7 +781,7 @@ mod tests {
     }
 
     fn push_connections(bytes: &mut Vec<u8>, values: &[&str]) {
-        bytes.push(1);
+        bytes.extend_from_slice(&[1, 1]);
         bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
         for value in values {
             push_lp(bytes, value);

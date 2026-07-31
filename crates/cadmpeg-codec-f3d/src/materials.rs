@@ -383,7 +383,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         };
         let catalog = definition_catalog(payload);
         let mut appearances = if crate::protein::has_schemas(payload) {
-            let records = crate::protein::decode(payload, &logical)?;
+            let records = crate::protein::decode(payload, &instance)?;
             let mut decoded = appearances_from_schema_records(&records);
             let decoded_ids = decoded
                 .iter()
