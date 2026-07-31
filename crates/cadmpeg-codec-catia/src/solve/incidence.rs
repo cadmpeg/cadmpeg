@@ -1851,6 +1851,7 @@ impl IncidenceComponentSearch<'_, '_> {
         point: usize,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
         limit: usize,
+        viability: &mut HashMap<MeshEndpointPair, bool>,
     ) -> IncidenceConstraintOptions {
         let mut any_viable = false;
         let mut options = HashSet::new();
@@ -1860,10 +1861,14 @@ impl IncidenceComponentSearch<'_, '_> {
             .filter(|&edge| self.active[edge] && self.assignment[edge].is_none())
         {
             for pair in self.candidate_pairs(edge, Some(point), coordinate_domains) {
-                if !self.candidate_fits_in(edge, pair, coordinate_domains)
-                    || coordinate_domains
-                        .is_some_and(|domains| !domains.supports_edge_candidate(edge, pair))
-                {
+                let viable = viability.get(&(edge, pair)).copied().unwrap_or_else(|| {
+                    let viable = self.candidate_fits_in(edge, pair, coordinate_domains)
+                        && coordinate_domains
+                            .is_none_or(|domains| domains.supports_edge_candidate(edge, pair));
+                    viability.insert((edge, pair), viable);
+                    viable
+                });
+                if !viable {
                     continue;
                 }
                 any_viable = true;
@@ -1956,12 +1961,13 @@ impl IncidenceComponentSearch<'_, '_> {
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
     ) -> Option<IncidenceBranch> {
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
+        let mut viability = HashMap::new();
         for &(face, point) in &self.constraints {
             if self.degree(face, point) != 1 {
                 continue;
             }
             let limit = constrained.as_ref().map_or(usize::MAX, Vec::len);
-            match self.constraint_options(face, point, coordinate_domains, limit) {
+            match self.constraint_options(face, point, coordinate_domains, limit, &mut viability) {
                 IncidenceConstraintOptions::Unsupported => return None,
                 IncidenceConstraintOptions::Deferred | IncidenceConstraintOptions::AtLeastLimit => {
                 }
