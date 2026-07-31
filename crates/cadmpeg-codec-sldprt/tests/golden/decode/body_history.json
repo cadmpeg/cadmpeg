@@ -51,11 +51,50 @@
           "bodies": [
             "sldprt:brep:body#0"
           ],
+          "feature_states": {
+            "sldprt:model:feature#247:0": {
+              "definition": {
+                "definition": "extrude",
+                "extent": {
+                  "kind": "one_sided",
+                  "side": {
+                    "termination": {
+                      "kind": "blind",
+                      "length": 12.5
+                    }
+                  }
+                },
+                "op": "join",
+                "profile": {
+                  "kind": "unresolved",
+                  "value": "sldprt:history:feature#247:0"
+                },
+                "solid": true,
+                "start": {
+                  "kind": "profile_plane"
+                }
+              },
+              "suppressed": false
+            },
+            "sldprt:model:feature#247:1": {
+              "definition": {
+                "definition": "native",
+                "kind": "EquationDrivenCurve"
+              },
+              "suppressed": false
+            }
+          },
           "id": "sldprt:model:configuration#247:0",
           "material": "Steel",
           "name": "Default",
           "native_ref": "sldprt:history:configuration#247:0",
           "ordinal": 0,
+          "parameter_values": {
+            "sldprt:model:parameter#247:0:0": {
+              "kind": "length",
+              "value": 12.5
+            }
+          },
           "properties": {
             "DisplayState": "Shaded"
           },
@@ -381,15 +420,16 @@
         "active_parasolid_block": "Contents/Config-0-Partition",
         "block_count": "2",
         "bmp_thumbnail_count": "0",
-        "brep_semantic_sha256": "58a4e58c33fb8e248108e1179883f25c47280d6fedd47b7f0252f7705aba80bb",
+        "brep_semantic_sha256": "cc485132daddcf80fb061a32a37e0627d44861b46bd5f98667e5a1b3d3e2b925",
         "compound_stream_count": "0",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
         "png_preview_count": "0",
-        "semantic_sha256": "94378df715979c917634ee8cf56acd62c938ae3ceab87ad92e6c494656415236",
+        "semantic_sha256": "272422b7edf9230e959c459be7ef7c6695e8b07124583dc9f0d3f3849821f666",
         "sldprt_configuration_feature_states_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_parameter_values_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#247:0",
         "sldprt_native_configuration_sha256": "447c7dda045069252cb7c70de5013090fe1146ad98ef8618c0b954e5c01ebf92",
         "sldprt_native_history_sha256": "8d20c9d3ec679aa7fd590ee8f3c7afd2a4d6c71aea31460692f70ddb8f5c7081",
         "sldprt_native_parameter_sha256": "be06a56cb696745554da5ee23598aabc0da501daf52a306d98488d3472fa6bff",
@@ -419,12 +459,6 @@
         "category": "topology",
         "code": "topology_gauge_substituted",
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
-        "severity": "warning"
-      },
-      {
-        "category": "other",
-        "code": "feature_history_retained",
-        "message": "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot.",
         "severity": "warning"
       },
       {

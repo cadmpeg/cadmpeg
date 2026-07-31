@@ -3842,7 +3842,7 @@ fn encoder_writes_source_less_native_features() {
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),
             parent: None,
-            dependencies: Vec::new(),
+            dependencies: vec![seed_id.clone()],
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -10248,9 +10248,12 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("configuration design-state edit has no complete native lane encoding"));
+    assert!(
+        error
+            .to_string()
+            .contains("configuration design-state edit has no complete native lane encoding"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
@@ -10699,21 +10702,29 @@ fn decode_resolves_feature_topology_selections() {
         PathRef, ProfileRef, Termination,
     };
 
-    let body_bytes = triangle_body();
+    // Two bodies so the combine has disjoint operands: a body cannot be both
+    // the target and the tool of its own boolean.
+    let mut body_bytes = Vec::new();
+    body_bytes.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
+    body_bytes.extend(entity51(2, 501, 0x0017, &[701, 0, 0, 0, 0, 0]));
+    body_bytes.extend(owned_triangle(0, 700, 0.0));
+    body_bytes.extend(owned_triangle(200, 701, 10.0));
     let base = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body_bytes)),
             &DecodeOptions::default(),
         )
         .unwrap();
+    assert_eq!(base.ir.model.bodies.len(), 2);
     let body = &base.ir.model.bodies[0].id.0;
+    let tool_body = &base.ir.model.bodies[1].id.0;
     let face = &base.ir.model.faces[0].id.0;
     let edge = &base.ir.model.edges[0].id.0;
     let keywords = format!(
         r#"<Keywords>
             <Fillet Name="Round" Type="Fillet" id="1" Edges="{edge}"><Dimension Name="Radius">1mm</Dimension></Fillet>
             <DeleteFace Name="Delete" Type="DeleteFace" id="2" Faces="{face}" Heal="true"/>
-            <Combine Name="Union" Type="Combine" id="3" Target="{body}" Tools="{body}" Operation="Join"/>
+            <Combine Name="Union" Type="Combine" id="3" Target="{body}" Tools="{tool_body}" Operation="Join"/>
             <Extrusion Name="UpTo" Type="BossExtrude" id="4" Profile="{face}" EndCondition="ToFace" Face="{face}" Operation="Join"/>
             <Hole Name="Drill" Type="Hole" id="5" Face="{face}" EndCondition="ThroughAll"><Dimension Name="Diameter">2mm</Dimension></Hole>
             <Sweep Name="Rail" Type="Sweep" id="6" Profile="{face}" Path="{edge}" Operation="NewBody"/>
@@ -10727,6 +10738,7 @@ fn decode_resolves_feature_topology_selections() {
     let edge_id = decoded.ir.model.edges[0].id.clone();
     let face_id = decoded.ir.model.faces[0].id.clone();
     let body_id = decoded.ir.model.bodies[0].id.clone();
+    let tool_body_id = decoded.ir.model.bodies[1].id.clone();
 
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
@@ -10796,7 +10808,7 @@ fn decode_resolves_feature_topology_selections() {
         &mut decoded.ir.model.features[2].definition
     {
         *target = BodySelection::Bodies(vec![body_id.clone()]);
-        *tools = BodySelection::Bodies(vec![body_id.clone()]);
+        *tools = BodySelection::Bodies(vec![tool_body_id.clone()]);
     }
     if let FeatureDefinition::Extrude {
         extent:
@@ -10826,7 +10838,7 @@ fn decode_resolves_feature_topology_selections() {
     assert_eq!(records[0].properties["Edges"], edge_id.0);
     assert_eq!(records[1].properties["Faces"], face_id.0);
     assert_eq!(records[2].properties["Target"], body_id.0);
-    assert_eq!(records[2].properties["Tools"], body_id.0);
+    assert_eq!(records[2].properties["Tools"], tool_body_id.0);
     assert_eq!(records[3].properties["Face"], face_id.0);
     assert_eq!(records[3].properties["Profile"], face_id.0);
     assert_eq!(records[4].properties["Face"], face_id.0);
@@ -19059,9 +19071,12 @@ fn decode_preserves_configuration_local_parameter_values() {
             &mut Vec::new(),
         )
         .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("configuration parameter values are inconsistent with their expressions"));
+    assert!(
+        error
+            .to_string()
+            .contains("configuration parameter values are inconsistent with their expressions"),
+        "unexpected error: {error}"
+    );
 
     let mut edited = decoded.ir.clone();
     edited.model.configurations[1]

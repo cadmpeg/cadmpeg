@@ -23,7 +23,7 @@ use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{self, BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
 
 /// The delta-extended semantic bytes per stream: the topology-merged view plus each
-/// unpaired delta stream's procedural residual, with paired delta streams folded into
+/// unpaired delta stream's semantic residual, with paired delta streams folded into
 /// their partition and then cleared. This is the byte view the decode geometry path's
 /// scanners read.
 pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
@@ -32,13 +32,12 @@ pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
     let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
     for (delta, stream) in scan.streams.iter().enumerate() {
         if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            semantic[delta]
-                .extend_from_slice(&crate::deltas::procedural_residual(&stream.inflated));
+            semantic[delta].extend_from_slice(&crate::deltas::semantic_residual(&stream.inflated));
         }
     }
     for (partition, deltas) in pairs {
         for delta in deltas {
-            semantic[partition].extend_from_slice(&crate::deltas::procedural_residual(
+            semantic[partition].extend_from_slice(&crate::deltas::semantic_residual(
                 &scan.streams[delta].inflated,
             ));
             semantic[delta].clear();

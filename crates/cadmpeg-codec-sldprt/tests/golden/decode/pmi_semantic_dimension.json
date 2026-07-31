@@ -51,9 +51,24 @@
           "bodies": [
             "sldprt:brep:body#0"
           ],
+          "feature_states": {
+            "sldprt:model:feature#247:0": {
+              "definition": {
+                "definition": "sketch",
+                "space": "planar"
+              },
+              "suppressed": false
+            }
+          },
           "id": "sldprt:model:configuration#partition:0",
           "name": "Config-0",
           "ordinal": 0,
+          "parameter_values": {
+            "sldprt:model:parameter#247:0:0": {
+              "kind": "length",
+              "value": 25.0
+            }
+          },
           "source_index": 0
         }
       ],
@@ -322,15 +337,16 @@
         "active_parasolid_block": "Contents/Config-0-Partition",
         "block_count": "3",
         "bmp_thumbnail_count": "0",
-        "brep_semantic_sha256": "b015d28146110e43442bf84e96dbdffa912522d2e4e5902854454c46e23edd94",
+        "brep_semantic_sha256": "a24338c997ee884300e9311e5a8b6bb43de20a85ba4f95bd8ad686c857bbd26d",
         "compound_stream_count": "0",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
         "png_preview_count": "0",
-        "semantic_sha256": "bab89791d2ce80638a12e518d99689cde098f6ae31f60e2d9f8c0aa2dd175887",
+        "semantic_sha256": "bb96c17ff208690ff7507f65e7df632fe5bb6e75996e9790a3f194456b2cec8d",
         "sldprt_configuration_feature_states_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_parameter_values_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_history_sha256": "60b76159cc83ada9797a76df14e46f6765fac90c27b9c36708bbe809dfae54bd",
         "sldprt_native_parameter_sha256": "1718f0d95d62a12ee309b49e3becbe96555ccada9473b4780220b214ad6edca2",
@@ -366,12 +382,6 @@
         "category": "other",
         "code": "feature_history_retained",
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
-        "severity": "warning"
-      },
-      {
-        "category": "other",
-        "code": "feature_history_retained",
-        "message": "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot.",
         "severity": "warning"
       },
       {

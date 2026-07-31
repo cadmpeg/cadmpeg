@@ -407,7 +407,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             SurfaceGeometry::Transformed { basis, transform } => {
-                if !valid_affine_transform(*transform) {
+                if !transform.is_affine() {
                     bounds_err(findings, &s.id.0, "surface transform is not finite affine");
                 }
                 if !valid_surface_basis(basis) {
@@ -1816,7 +1816,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             CurveGeometry::Transformed { basis, transform } => {
-                if !valid_affine_transform(*transform) {
+                if !transform.is_affine() {
                     bounds_err(findings, &c.id.0, "curve transform is not finite affine");
                 }
                 if !valid_curve_basis(basis) {
@@ -1858,6 +1858,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && direction_valid(y_axis)
                     && !nonpositive(*major_radius)
                     && !nonpositive(*minor_radius)
+            }
+            crate::geometry::PcurveGeometry::Harmonic {
+                center,
+                cosine,
+                sine,
+            }
+            | crate::geometry::PcurveGeometry::Hyperbolic {
+                center,
+                cosine,
+                sine,
+            } => {
+                point_finite(center)
+                    && point_finite(cosine)
+                    && point_finite(sine)
+                    && (direction_valid(cosine) || direction_valid(sine))
             }
             crate::geometry::PcurveGeometry::Parabola {
                 vertex,
@@ -2207,6 +2222,38 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
+        if let ProceduralCurveDefinition::TolerantIntersection {
+            supports,
+            endpoints,
+            tolerance,
+            parameterization,
+        } = &procedural.definition
+        {
+            let point_is_finite = |point: &crate::math::Point3| {
+                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+            };
+            let parameterization_is_valid = parameterization.as_ref().is_none_or(|value| {
+                value
+                    .parameter_range
+                    .iter()
+                    .all(|parameter| parameter.is_finite())
+                    && value.parameter_range[0] < value.parameter_range[1]
+                    && value.pcurves.iter().all(pcurve_basis_is_valid)
+            });
+            if supports[0] == supports[1]
+                || !endpoints.iter().all(point_is_finite)
+                || !tolerance.is_finite()
+                || *tolerance < 0.0
+                || !parameterization_is_valid
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "tolerant intersection supports or endpoint bounds are invalid",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::Offset {
             distance,
             direction,
@@ -2389,6 +2436,18 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                 && *major_radius > 0.0
                 && *minor_radius > 0.0
         }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            point(center) && point(cosine) && point(sine) && (direction(cosine) || direction(sine))
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -2472,11 +2531,6 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
     }
 }
 
-fn valid_affine_transform(transform: crate::transform::Transform) -> bool {
-    transform.rows.into_iter().flatten().all(f64::is_finite)
-        && transform.rows[3] == [0.0, 0.0, 0.0, 1.0]
-}
-
 fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
     match geometry {
         SurfaceGeometry::Plane { normal, u_axis, .. } => !degenerate(normal) && !degenerate(u_axis),
@@ -2528,7 +2582,7 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
             chordal_deflection,
         } => valid_polygonal_surface(vertices, triangles, *chordal_deflection),
         SurfaceGeometry::Transformed { basis, transform } => {
-            valid_affine_transform(*transform) && valid_surface_basis(basis)
+            transform.is_affine() && valid_surface_basis(basis)
         }
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => true,
     }
@@ -2573,7 +2627,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
             chordal_deflection,
         } => valid_polyline(points, parameters.as_deref(), *chordal_deflection),
         CurveGeometry::Transformed { basis, transform } => {
-            valid_affine_transform(*transform) && valid_curve_basis(basis)
+            transform.is_affine() && valid_curve_basis(basis)
         }
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }

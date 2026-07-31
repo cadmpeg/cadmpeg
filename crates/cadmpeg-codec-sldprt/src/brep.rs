@@ -23,6 +23,7 @@ use cadmpeg_ir::wire::be::{
     f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32_at as u32_be,
 };
 
+mod attrib;
 mod blend;
 pub(crate) mod entity;
 mod intersection;

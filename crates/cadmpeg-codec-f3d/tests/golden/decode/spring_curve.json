@@ -11,7 +11,7 @@
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026",
-        "semantic_sha256": "3634b033e421656394a1c5115ba9dba7b1eec203fc5b2715133ba5bf642768fd",
+        "semantic_sha256": "c24792cb1d6723d389563438816f0bd08c17ad37b8787b7490129601bad5d7b6",
         "zip_entry_count": "2"
       }
     },
@@ -215,7 +215,7 @@
             },
             "radius": 10.0,
             "ratio": 0.4,
-            "half_angle": 0.5235987755982989
+            "half_angle": 0.5235987755982988
           }
         },
         {
