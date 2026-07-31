@@ -7,12 +7,13 @@ use crate::families::standard::topology::{
     StandardTopology,
 };
 use crate::solve::mesh_quotient::{
-    initial_mesh_quotient, mesh_assignment_endpoint_cycles_viable_by,
-    mesh_assignment_endpoint_cycles_viable_where, mesh_face_endpoint_configurations,
-    CoordinateRootClosure, MeshConstraintBudget, MeshCoordinateRootDomains, MeshEndpointCandidates,
-    MeshEndpointPair, MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations,
-    MeshImplicitEdgeCandidates, MeshPartialEndpointConstraint, MeshQuotient,
-    MeshQuotientGaugeState, MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
+    initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
+    mesh_assignment_endpoint_cycles_viable_by, mesh_assignment_endpoint_cycles_viable_where,
+    mesh_face_endpoint_configurations, CoordinateRootClosure, MeshConstraintBudget,
+    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshEndpointPair,
+    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates,
+    MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState,
+    MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -1037,6 +1038,90 @@ pub(crate) fn prune_ordered_face_endpoint_support(
                     return false;
                 }
                 if retained.len() != choices[edge].len() {
+                    choices[edge] = retained;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            return true;
+        }
+    }
+}
+
+pub(crate) fn prune_implicit_ordered_face_endpoint_support(
+    domains: &[MeshFaceBoundaryDomain],
+    choices: &mut [Vec<[usize; 2]>],
+    coordinate_domains: &MeshCoordinateRootDomains,
+    budget: &MeshConstraintBudget,
+) -> bool {
+    loop {
+        let mut changed = false;
+        for domain in domains {
+            let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+                continue;
+            };
+            let mut face_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
+            let mut assignment_found = false;
+            for assignment in assignments {
+                let Some(support) = mesh_assignment_endpoint_cycle_support_by(
+                    assignment,
+                    Some(budget),
+                    |edge| {
+                        choices
+                            .get(edge)
+                            .filter(|values| !values.is_empty())
+                            .map(|values| MeshEndpointCandidates::Explicit(values.as_slice()))
+                            .or_else(|| {
+                                coordinate_domains
+                                    .implicit_edge_candidates(edge, None)
+                                    .map(MeshEndpointCandidates::Implicit)
+                            })
+                    },
+                    |_, _| true,
+                ) else {
+                    return true;
+                };
+                if support.is_empty() {
+                    continue;
+                }
+                assignment_found = true;
+                for (edge, pairs) in support {
+                    face_support.entry(edge).or_default().extend(pairs);
+                }
+            }
+            if !assignment_found {
+                return false;
+            }
+            for (edge, supported) in face_support {
+                let Some(current) = choices.get(edge) else {
+                    return false;
+                };
+                let values = if current.is_empty() {
+                    let Some(values) = coordinate_domains.implicit_edge_candidates(edge, None)
+                    else {
+                        return false;
+                    };
+                    values.collect::<Vec<_>>()
+                } else {
+                    current.clone()
+                };
+                let mut retained = Vec::new();
+                for mut pair in values {
+                    if !budget.charge() {
+                        return true;
+                    }
+                    pair.sort_unstable();
+                    if supported.contains(&pair) {
+                        retained.push(pair);
+                    }
+                }
+                retained.sort_unstable();
+                retained.dedup();
+                if retained.is_empty() {
+                    return false;
+                }
+                if retained != choices[edge] {
                     choices[edge] = retained;
                     changed = true;
                 }
@@ -3584,6 +3669,23 @@ where
             .to_vec();
         let mut narrowed_choices = base_choices.clone();
         if let Some(domains) = mesh_assignments {
+            let implicit_support_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let implicit_support_viable = coordinate_domains.as_ref().is_none_or(|coordinate| {
+                prune_implicit_ordered_face_endpoint_support(
+                    domains,
+                    &mut narrowed_choices,
+                    coordinate,
+                    &implicit_support_budget,
+                )
+            });
+            if !implicit_support_viable {
+                rejection = IncidenceRejection::ChoicePruning;
+                return None;
+            }
+            if implicit_support_budget.exhausted.get() {
+                narrowed_choices.clone_from(&base_choices);
+            }
+            let implicit_choices = narrowed_choices.clone();
             let face_support_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             if !prune_ordered_face_endpoint_support(
                 domains,
@@ -3594,7 +3696,7 @@ where
                 return None;
             }
             if face_support_budget.exhausted.get() {
-                narrowed_choices.clone_from(&base_choices);
+                narrowed_choices = implicit_choices;
             } else if let Some(domains) = coordinate_domains.take() {
                 let refinement_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
                 match domains.refine_candidates(&narrowed_choices, Some(&refinement_budget)) {

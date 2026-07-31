@@ -28,7 +28,7 @@ use crate::solve::missing_edge::{
 };
 use crate::solve::UnionFind;
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
@@ -5116,6 +5116,170 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
         },
         allowed,
     )
+}
+
+pub(crate) fn mesh_assignment_endpoint_cycle_support_by<'a>(
+    assignment: &MeshFaceBoundaryAssignment,
+    budget: Option<&MeshConstraintBudget>,
+    candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
+    allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
+) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
+    const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
+
+    type EndpointRelation = BTreeMap<usize, BTreeSet<usize>>;
+
+    fn compose_relations(
+        left: &EndpointRelation,
+        right: &EndpointRelation,
+        budget: Option<&MeshConstraintBudget>,
+    ) -> Option<EndpointRelation> {
+        let mut composed = EndpointRelation::new();
+        let mut state_count = 0usize;
+        for (&start, middles) in left {
+            for middle in middles {
+                let Some(ends) = right.get(middle) else {
+                    continue;
+                };
+                for &end in ends {
+                    if budget.is_some_and(|budget| !budget.charge()) {
+                        return None;
+                    }
+                    if composed.entry(start).or_default().insert(end) {
+                        state_count = state_count.checked_add(1)?;
+                        if state_count > MAX_LOCAL_ENDPOINT_STATES {
+                            return None;
+                        }
+                    }
+                }
+            }
+        }
+        Some(composed)
+    }
+
+    fn identity_relation(points: &BTreeSet<usize>) -> EndpointRelation {
+        points
+            .iter()
+            .map(|&point| (point, BTreeSet::from([point])))
+            .collect()
+    }
+
+    let charge = || budget.is_none_or(MeshConstraintBudget::charge);
+    let mut assignment_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
+    for boundary in &assignment.boundaries {
+        if boundary.is_empty() {
+            return Some(HashMap::new());
+        }
+        let mut points = BTreeSet::new();
+        let mut layers = Vec::<(usize, Vec<[usize; 2]>, EndpointRelation)>::new();
+        for use_ in boundary {
+            let values = match candidates(use_.edge)? {
+                MeshEndpointCandidates::Explicit(values) => values.to_vec(),
+                MeshEndpointCandidates::Implicit(values) => values
+                    .take(MAX_LOCAL_ENDPOINT_STATES + 1)
+                    .collect::<Vec<_>>(),
+                MeshEndpointCandidates::Selected(value) => vec![value],
+            };
+            if values.len() > MAX_LOCAL_ENDPOINT_STATES {
+                return None;
+            }
+            let mut retained = Vec::new();
+            let mut relation = EndpointRelation::new();
+            for mut pair in values {
+                pair.sort_unstable();
+                if !allowed(use_.edge, pair) {
+                    continue;
+                }
+                retained.push(pair);
+                points.extend(pair);
+                for (rank, (start, end)) in [(pair[0], pair[1]), (pair[1], pair[0])]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if rank == 1 && pair[0] == pair[1] {
+                        continue;
+                    }
+                    if !charge() {
+                        return None;
+                    }
+                    relation.entry(start).or_default().insert(end);
+                }
+            }
+            retained.sort_unstable();
+            retained.dedup();
+            if retained.is_empty() {
+                return Some(HashMap::new());
+            }
+            layers.push((use_.edge, retained, relation));
+        }
+        if points.len() > MAX_LOCAL_ENDPOINT_STATES {
+            return None;
+        }
+        let identity = identity_relation(&points);
+        let mut prefixes = Vec::with_capacity(layers.len() + 1);
+        prefixes.push(identity.clone());
+        for (_, _, relation) in &layers {
+            let composed =
+                compose_relations(prefixes.last().expect("prefix identity"), relation, budget)?;
+            prefixes.push(composed);
+        }
+        let mut suffixes = vec![EndpointRelation::new(); layers.len() + 1];
+        suffixes[layers.len()] = identity;
+        for layer in (0..layers.len()).rev() {
+            suffixes[layer] = compose_relations(&layers[layer].2, &suffixes[layer + 1], budget)?;
+        }
+        let mut boundary_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
+        for (layer, (edge, candidates, _)) in layers.into_iter().enumerate() {
+            let mut layer_support = HashSet::new();
+            for pair in candidates {
+                let supported = [(pair[0], pair[1]), (pair[1], pair[0])]
+                    .into_iter()
+                    .enumerate()
+                    .any(|(rank, (start, end))| {
+                        if rank == 1 && pair[0] == pair[1] {
+                            return false;
+                        }
+                        let Some(anchors) = suffixes[layer + 1].get(&end) else {
+                            return false;
+                        };
+                        anchors.iter().any(|anchor| {
+                            if !charge() {
+                                return false;
+                            }
+                            prefixes[layer]
+                                .get(anchor)
+                                .is_some_and(|ends| ends.contains(&start))
+                        })
+                    });
+                if budget.is_some_and(|budget| budget.exhausted.get()) {
+                    return None;
+                }
+                if supported {
+                    layer_support.insert(pair);
+                }
+            }
+            boundary_support
+                .entry(edge)
+                .and_modify(|retained| retained.retain(|pair| layer_support.contains(pair)))
+                .or_insert(layer_support);
+        }
+        if boundary.iter().any(|use_| {
+            boundary_support
+                .get(&use_.edge)
+                .is_none_or(HashSet::is_empty)
+        }) {
+            return Some(HashMap::new());
+        }
+        for (edge, supported) in boundary_support {
+            assignment_support
+                .entry(edge)
+                .and_modify(|retained| retained.retain(|pair| supported.contains(pair)))
+                .or_insert(supported);
+        }
+        if assignment_support.values().any(HashSet::is_empty) {
+            return Some(HashMap::new());
+        }
+    }
+    Some(assignment_support)
 }
 
 fn mesh_assignment_endpoint_cycles_viable_with(

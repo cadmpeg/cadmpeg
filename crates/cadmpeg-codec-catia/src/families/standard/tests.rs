@@ -5860,6 +5860,101 @@ fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
 }
 
 #[test]
+fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
+    let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]], vec![[0, 3]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let budget = MeshConstraintBudget::new(1_000);
+    let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+        &assignment,
+        Some(&budget),
+        |edge| {
+            candidates
+                .get(edge)
+                .map(|values| crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values))
+        },
+        |_, _| true,
+    )
+    .expect("bounded layered-cycle support");
+
+    assert_eq!(support[&0], HashSet::from([[0, 1]]));
+    assert_eq!(support[&1], HashSet::from([[1, 3]]));
+    assert_eq!(support[&2], HashSet::from([[0, 3]]));
+    assert!(!budget.exhausted.get());
+}
+
+#[test]
+fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
+    let candidates = [vec![[0, 1]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+        &assignment,
+        None,
+        |edge| {
+            candidates
+                .get(edge)
+                .map(|values| crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values))
+        },
+        |_, _| true,
+    )
+    .expect("one-layer support");
+
+    assert!(support.is_empty());
+}
+
+#[test]
+fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
+    let mut choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &choices,
+        4,
+        &[[10, 11], [12, 13], [14, 15]],
+    )
+    .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(4, &choices, None)
+        .expect("implicit coordinate domains");
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment])];
+    let budget = MeshConstraintBudget::new(10_000);
+
+    assert!(
+        crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+            &domains,
+            &mut choices,
+            &coordinate_domains,
+            &budget,
+        )
+    );
+    assert_eq!(choices[1], vec![[1, 3], [2, 3]]);
+    assert!(!budget.exhausted.get());
+}
+
+#[test]
 fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..4)
