@@ -125,12 +125,12 @@ fn face_on_unknown_surface_validates_clean() {
     let mut ir = unit_cube();
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId("synthetic:cube:unknown#0".into());
-    ir.push_native_unknown(
+    ir.set_native_unknowns(
         "synthetic",
-        NativeUnknownRecord {
+        &[NativeUnknownRecord {
             id: rec.clone(),
             links: Vec::new(),
-        },
+        }],
     )
     .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
@@ -281,12 +281,12 @@ fn unknown_surface_dangling_record_is_flagged() {
 fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube();
     let rec = UnknownId("synthetic:cube:unknown#0".into());
-    ir.push_native_unknown(
+    ir.set_native_unknowns(
         "synthetic",
-        NativeUnknownRecord {
+        &[NativeUnknownRecord {
             id: rec.clone(),
             links: Vec::new(),
-        },
+        }],
     )
     .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));

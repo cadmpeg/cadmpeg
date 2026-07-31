@@ -337,18 +337,6 @@ impl CadIr {
         namespace.arenas.insert("unknowns".into(), converted);
     }
 
-    /// Append one record to the reserved `unknowns` arena for `format`.
-    pub fn push_native_unknown(
-        &mut self,
-        format: &str,
-        record: NativeUnknownRecord,
-    ) -> Result<(), crate::native::NativeConvertError> {
-        let mut records = self.native_unknowns(format)?;
-        records.retain(|existing| existing.id != record.id);
-        records.push(record);
-        self.set_native_unknowns(format, &records)
-    }
-
     /// Return the `format` namespace, versioning a newly created one.
     fn unknowns_namespace_mut(&mut self, format: &str) -> &mut crate::native::NativeNamespace {
         let namespace = self.native.namespace_mut(format);
