@@ -1483,56 +1483,6 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].active = false;
     ir.model.features[0].suppressed = Some(false);
 
-    // A body no state claims is silent: formats that do not record which
-    // feature produced a body leave `outputs` empty, and that absence is not
-    // evidence the body is unproduced.
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        first_feature.clone(),
-        ConfigurationFeatureState {
-            suppressed: false,
-            dependencies: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::DatumPoint {
-                position: Point3::new(0.0, 0.0, 0.0),
-            },
-        },
-    )]);
-    let report = validate(&ir, Vec::new());
-    assert!(!report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message
-                == format!(
-                    "configuration body `{}` has no unsuppressed feature-state writer",
-                    body.0
-                )
-    }));
-
-    // Once a configuration attributes the body, the writer must be unsuppressed.
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        first_feature.clone(),
-        ConfigurationFeatureState {
-            suppressed: true,
-            dependencies: Vec::new(),
-            outputs: vec![body.clone()],
-            definition: FeatureDefinition::DatumPoint {
-                position: Point3::new(0.0, 0.0, 0.0),
-            },
-        },
-    )]);
-    ir.model.configurations[0]
-        .suppressed_features
-        .push(first_feature.clone());
-    let report = validate(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message
-                == format!(
-                    "configuration body `{}` has no unsuppressed feature-state writer",
-                    body.0
-                )
-    }));
-    ir.model.configurations[0].suppressed_features.clear();
-
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         later_feature.clone(),
         ConfigurationFeatureState {
@@ -1544,15 +1494,9 @@ fn configuration_body_membership_round_trips_and_validates() {
             },
         },
     )]);
-    let report = validate(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message
-                == format!(
-                    "configuration output closure omits dependency state `{}`",
-                    first_feature.0
-                )
-    }));
+    // A dependency with no state in this configuration inherits its model-level
+    // state; `feature_states` is allowed to be sparse, so that is not a finding.
+    assert!(validate(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.insert(
         first_feature.clone(),
         ConfigurationFeatureState {
@@ -1572,7 +1516,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message
                 == format!(
-                    "configuration output closure uses suppressed dependency state `{}`",
+                    "configuration state closure uses suppressed dependency state `{}`",
                     first_feature.0
                 )
     }));

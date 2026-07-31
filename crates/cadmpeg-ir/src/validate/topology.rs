@@ -2201,7 +2201,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
         }
-        check_configuration_output_closure(configuration, findings);
+        check_configuration_state_closure(configuration, findings);
     }
     if active_configurations > 1 {
         findings.push(Finding {
@@ -4768,78 +4768,55 @@ fn termination_magnitude_is_valid(termination: &crate::features::Termination) ->
     }
 }
 
-fn check_configuration_output_closure(
+/// Check that a configuration's stated design state is self-contained: every
+/// dependency an unsuppressed feature state names must itself have an
+/// unsuppressed state in the same configuration.
+///
+/// This deliberately says nothing about which feature produced which body. No
+/// format guarantees total body-to-feature attribution -- SLDPRT resolves
+/// configuration bodies from per-configuration Parasolid partitions and carries
+/// no producer identity the decoder can reconcile to a final body at all, and
+/// the formats that do attribute cover only part of their features -- so an
+/// unclaimed body means the producer went unrecorded, not that the body is
+/// unproduced. Codecs report that gap as a design loss, which is the layer that
+/// can weigh it against what the specific format is known to encode. Whether a
+/// configuration's dependency graph is closed is independent of attribution, so
+/// the walk seeds from every unsuppressed state rather than from the states
+/// that happen to claim a body.
+///
+/// A dependency with no state in the configuration is not an omission.
+/// `feature_states` may be sparse -- a configuration that overrides only some
+/// features carries states only for those, and a dependency with no state
+/// inherits its model-level one. Nor is the converse case worth a finding: the
+/// dependency itself is already required to name a model feature, so a map that
+/// did enumerate every feature would necessarily carry a state for it and the
+/// check could never fire. Only an explicitly suppressed dependency is
+/// incoherent, and that is incoherent however sparse the map is.
+fn check_configuration_state_closure(
     configuration: &crate::features::DesignConfiguration,
     findings: &mut Vec<Finding>,
 ) {
-    let Some(bodies) = configuration.bodies.resolved() else {
-        return;
-    };
-    if bodies.is_empty() || configuration.feature_states.is_empty() {
+    if configuration.feature_states.is_empty() {
         return;
     }
-    let bodies = bodies.iter().collect::<HashSet<_>>();
     let mut closure = configuration
         .feature_states
         .iter()
-        .filter(|(_, state)| {
-            !state.suppressed && state.outputs.iter().any(|body| bodies.contains(body))
-        })
+        .filter(|(_, state)| !state.suppressed)
         .map(|(feature, _)| feature.clone())
         .collect::<HashSet<_>>();
-    // Body-to-feature attribution is optional and may be partial. A
-    // configuration's bodies and its feature-state outputs come from
-    // independent sources -- SLDPRT resolves bodies from per-configuration
-    // Parasolid partitions but only fills `outputs` when a native record
-    // carries a `Scope` property -- so a body absent from every `outputs` has
-    // an unrecorded producer rather than no producer. Only a body some state
-    // does claim is held to having an unsuppressed claimant, which is what
-    // distinguishes a suppressed writer from an unrecorded one.
-    let attributed_bodies = configuration
-        .feature_states
-        .values()
-        .flat_map(|state| &state.outputs)
-        .collect::<HashSet<_>>();
-    let written_bodies = configuration
-        .feature_states
-        .values()
-        .filter(|state| !state.suppressed)
-        .flat_map(|state| &state.outputs)
-        .collect::<HashSet<_>>();
-    for body in bodies
-        .difference(&written_bodies)
-        .filter(|body| attributed_bodies.contains(*body))
-    {
-        findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: format!(
-                "configuration body `{}` has no unsuppressed feature-state writer",
-                body.0
-            ),
-            entity: Some(configuration.id.0.clone()),
-        });
-    }
     let mut pending = closure.iter().cloned().collect::<Vec<_>>();
     while let Some(feature) = pending.pop() {
         let state = &configuration.feature_states[&feature];
         for dependency in &state.dependencies {
             match configuration.feature_states.get(dependency) {
-                None => findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!(
-                        "configuration output closure omits dependency state `{}`",
-                        dependency.0
-                    ),
-                    entity: Some(configuration.id.0.clone()),
-                }),
+                None => {}
                 Some(dependency_state) if dependency_state.suppressed => {
                     findings.push(Finding {
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
                         message: format!(
-                            "configuration output closure uses suppressed dependency state `{}`",
+                            "configuration state closure uses suppressed dependency state `{}`",
                             dependency.0
                         ),
                         entity: Some(configuration.id.0.clone()),
