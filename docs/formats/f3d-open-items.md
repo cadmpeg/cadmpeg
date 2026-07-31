@@ -303,12 +303,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do these sketch-text fields hold?
 
-- the two bytes between the height and the anchor coordinates, and the eleven bytes between those coordinates and the text string, of a `txt_tag` record
+- the two bytes between the height and the anchor coordinates, the eleven bytes between those coordinates and the text string, and the four bytes of the twenty-nine-byte run before the font-family count that the leading byte, the width factor, and the colour components do not fill, of a `txt_tag` record
 - the flag bytes after the two alignment enums
 - the thirty bytes of the class tail
 - the field that holds the text rotation
 
-**Known.** `f3d.md` §8.1 "A sketch-text record carries" gives the identity keys, the class GUID, and the members up to the height. `f3d.md` §8.1 "A record whose identity key is" gives the anchor-point coordinates of the `txt_tag` form. `f3d.md` §8.1 "Two optional parameter-reference members" and `f3d.md` §8.1 "The class tail opens with" give the remaining members. The byte runs named above have a width and no meaning, and no known field holds a rotation.
+**Known.** `f3d.md` §8.1 "A sketch-text record carries" gives the identity keys, the class GUID, and the members up to the height. `f3d.md` §8.1 "A record whose identity key is" gives the anchor-point coordinates of the `txt_tag` form. `f3d.md` §8.1 "Two optional parameter-reference members" and `f3d.md` §8.1 "The class tail opens with" give the remaining members. The byte runs named above have a width and no meaning, and no known field holds a rotation. Every byte of the run before the font-family count is zero except the four immediately before that count, which hold f32 `1`, so the position of the four unfilled bytes within the run is not fixed by the record.
 
 **Need.** We must know the meanings to write sketch text from a neutral model. **Blocked on a specimen:** a document whose sketch texts carry two or more different heights and a nonzero rotation locates the rotation field and separates the unnamed byte runs from constants, and no such document is available to read.
 
