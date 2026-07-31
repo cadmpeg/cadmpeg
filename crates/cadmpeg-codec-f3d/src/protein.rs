@@ -39,7 +39,6 @@ struct Property {
 #[derive(Debug, Default)]
 struct Schema {
     base: Option<String>,
-    asset_type: Option<String>,
     properties: BTreeMap<String, Property>,
 }
 
@@ -186,10 +185,6 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
                 schema.base = node.attribute("val").map(str::to_owned);
                 continue;
             }
-            if node.has_tag_name("type") {
-                schema.asset_type = node.attribute("val").map(str::to_owned);
-                continue;
-            }
             if node.has_tag_name("PropertyAlias") {
                 continue;
             }
@@ -287,14 +282,10 @@ fn decode_record(
     let Some(_) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
-    let is_texture = schemas
-        .get(&schema)
-        .and_then(|schema| schema.asset_type.as_deref())
-        == Some("texture");
     let properties = property_closure(&schema, schemas, &mut BTreeSet::new())?;
     let mut values = BTreeMap::new();
     for (id, property) in properties {
-        if !instance_property_serializes(is_texture, &id) {
+        if !instance_property_serializes(&id) {
             continue;
         }
         let property_at = at;
@@ -332,15 +323,17 @@ fn decode_record(
 
 /// Narrow the inherited member set to the members a record actually serializes.
 ///
-/// `AssetLibID` is consumed as the fourth record header string. `swatch` is
-/// absent from texture assets; it is empty in every texture record, so the bytes
-/// cannot say whether the writer omits `swatch` or `ExchangeGUID` there.
-fn instance_property_serializes(is_texture: bool, id: &str) -> bool {
-    match id {
-        "AssetLibID" => false,
-        "swatch" => !is_texture,
-        _ => true,
-    }
+/// Two four-byte slots the closure lists do not appear in the value block.
+/// `AssetLibID` is consumed as the fourth record header string. The second slot
+/// belongs to `TextureMap2dSchema`: of `texture_MapChannel`,
+/// `texture_MapChannel_ID_Advanced`, `texture_MapChannel_UVWSource_Advanced` and
+/// `swatch`, exactly one is absent, and the two serialized integers hold `1` and
+/// `0`. Dropping `texture_MapChannel_ID_Advanced` or `texture_MapChannel` leaves
+/// every remaining member at its schema default; dropping either of the other two
+/// forces a member away from its default, so both are excluded. Which of the
+/// surviving pair the writer omits is not decidable from the bytes.
+fn instance_property_serializes(id: &str) -> bool {
+    !matches!(id, "AssetLibID" | "texture_MapChannel_ID_Advanced")
 }
 
 fn read_property(
@@ -491,17 +484,19 @@ mod tests {
 
     #[test]
     fn inherited_property_selection_drops_the_header_slot_and_texture_swatch() {
-        assert!(!instance_property_serializes(false, "AssetLibID"));
-        assert!(instance_property_serializes(false, "ExchangeGUID"));
-        assert!(instance_property_serializes(true, "ExchangeGUID"));
-        assert!(instance_property_serializes(false, "swatch"));
-        assert!(!instance_property_serializes(true, "swatch"));
-        assert!(instance_property_serializes(true, "interior_model"));
-        assert!(instance_property_serializes(false, "common_Shared_Asset"));
-        assert!(instance_property_serializes(
-            false,
-            "common_Tint_color_colorspace"
+        assert!(!instance_property_serializes("AssetLibID"));
+        assert!(!instance_property_serializes(
+            "texture_MapChannel_ID_Advanced"
         ));
+        assert!(instance_property_serializes("ExchangeGUID"));
+        assert!(instance_property_serializes("swatch"));
+        assert!(instance_property_serializes("interior_model"));
+        assert!(instance_property_serializes("texture_MapChannel"));
+        assert!(instance_property_serializes(
+            "texture_MapChannel_UVWSource_Advanced"
+        ));
+        assert!(instance_property_serializes("common_Shared_Asset"));
+        assert!(instance_property_serializes("common_Tint_color_colorspace"));
     }
 
     #[test]
@@ -672,15 +667,16 @@ mod tests {
     }
 
     #[test]
-    fn texture_schemas_omit_the_swatch_slot() {
+    fn texture_records_omit_the_advanced_map_channel_id() {
         let protein = schema_archive(&[(
             "Schemas/BitmapSchema.xml",
             r#"<Schema>
                 <UID val="BitmapSchema"/>
-                <type val="texture"/>
                 <String id="AssetLibID" val=""/>
+                <Integer id="texture_MapChannel" val="1"/>
+                <Integer id="texture_MapChannel_ID_Advanced" val="1"/>
+                <Integer id="texture_MapChannel_UVWSource_Advanced" val="0"/>
                 <String id="swatch" public="false" val=""/>
-                <Integer id="version" public="false" val="4"/>
             </Schema>"#,
         )]);
         let mut record = Vec::new();
@@ -688,13 +684,24 @@ mod tests {
         for value in ["BitmapSchema", "asset-guid", &padded_name, ""] {
             push_lp(&mut record, value);
         }
-        record.extend_from_slice(&4u32.to_le_bytes());
+        push_lp(&mut record, ""); // swatch
+        record.extend_from_slice(&1u32.to_le_bytes()); // texture_MapChannel
+        record.extend_from_slice(&0u32.to_le_bytes()); // ..._UVWSource_Advanced
         let records = decode(&protein, &paged_stream(&[&record])).expect("texture record decodes");
         assert_eq!(records.len(), 1);
-        assert!(!records[0].properties.contains_key("swatch"));
+        let properties = &records[0].properties;
+        assert!(!properties.contains_key("texture_MapChannel_ID_Advanced"));
         assert_eq!(
-            records[0].properties["version"].value,
-            PropertyValue::Integer(4)
+            properties["texture_MapChannel"].value,
+            PropertyValue::Integer(1)
+        );
+        assert_eq!(
+            properties["texture_MapChannel_UVWSource_Advanced"].value,
+            PropertyValue::Integer(0)
+        );
+        assert_eq!(
+            properties["swatch"].value,
+            PropertyValue::String(String::new())
         );
     }
 
