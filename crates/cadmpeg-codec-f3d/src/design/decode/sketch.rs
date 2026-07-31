@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse sketch placements, `MetaStream` types, headers, relations, and geometry.
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
+use crate::bytes::{
+    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
+};
 use crate::container::{role, ContainerScan};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -1519,6 +1521,43 @@ pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, Co
     Ok(out)
 }
 
+/// Read a class property block: a presence byte, and when it is `01`, a u32
+/// count and that many `(key, type name, value)` triples.
+///
+/// Which keys a record carries varies by record, so a caller addresses a
+/// property by name. Reading the block by fixed offset misframes every record
+/// whose key set differs from the one the offsets were taken from.
+pub(crate) fn read_property_block(
+    payload: &[u8],
+    cursor: &mut usize,
+) -> Option<Vec<(String, u64)>> {
+    let mut properties = Vec::new();
+    match payload.get(*cursor)? {
+        0 => *cursor += 1,
+        1 => {
+            *cursor += 1;
+            let count = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            if count > MAX_RELATION_RUN {
+                return None;
+            }
+            *cursor += 4;
+            for _ in 0..count {
+                let (key, after_key) =
+                    lp_ascii_filtered(payload, *cursor, 0..=256, u8::is_ascii_graphic)?;
+                let (type_name, after_type) =
+                    lp_ascii_filtered(payload, after_key, 0..=256, u8::is_ascii_graphic)?;
+                if type_name != "IntrinsicMetaTypeuint64" {
+                    return None;
+                }
+                properties.push((key, read_u64(payload, after_type)?));
+                *cursor = after_type.checked_add(8)?;
+            }
+        }
+        _ => return None,
+    }
+    Some(properties)
+}
+
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
 pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
@@ -1561,6 +1600,154 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
     Ok(out)
 }
 
+/// Whether a sketch-text record carries one of the two parameter-reference
+/// members. A record either writes the member, whose own presence byte then
+/// says whether it targets a parameter, or omits the member entirely; nothing
+/// ahead of the slot distinguishes the two.
+#[derive(Clone, Copy)]
+enum TextReferenceSlot {
+    Omitted,
+    Written,
+}
+
+const TEXT_REFERENCE_SLOTS: [TextReferenceSlot; 2] =
+    [TextReferenceSlot::Omitted, TextReferenceSlot::Written];
+
+/// Bytes between the placement transform and the owning-sketch reference.
+const SKETCH_TEXT_TRAILING_RUN: usize = 30;
+
+/// Read one parameter-reference slot in the given form, advancing `cursor` by
+/// what that form occupies. An omitted member reads as a null reference.
+fn read_text_reference(
+    payload: &[u8],
+    cursor: &mut usize,
+    slot: TextReferenceSlot,
+) -> Option<Reference> {
+    match slot {
+        TextReferenceSlot::Omitted => Some(Reference::default()),
+        TextReferenceSlot::Written => take_reference(payload, cursor),
+    }
+}
+
+/// The record index a reference names, absent when the reference is null.
+fn reference_index(reference: &Reference) -> Option<u32> {
+    reference
+        .target
+        .and_then(|target| u32::try_from(target).ok())
+}
+
+/// Class-level fields of a sketch-text record, ending at the text height.
+struct SketchTextHead {
+    entity_genesis: Option<u64>,
+    persistent_id: u64,
+    base_id: Option<u64>,
+    font_family: String,
+    height: f64,
+    width_factor: f64,
+    cursor: usize,
+}
+
+/// Fields following the height, whose framing depends on the two slot forms.
+struct SketchTextTail {
+    first_reference: Option<u32>,
+    second_reference: Option<u32>,
+    text: String,
+    owner_reference: u32,
+}
+
+/// Read the record prefix, property block, and the metrics up to the height.
+fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
+    // Record prefix: the LP-ASCII class tag, the u64 entity ID, and the
+    // LP-ASCII record name.
+    let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
+    let (_, mut cursor) = lp_ascii_filtered(
+        payload,
+        after_tag.checked_add(8)?,
+        0..=256,
+        u8::is_ascii_graphic,
+    )?;
+    // The class writes no leading block, so the property-block presence byte
+    // follows the leading-block presence byte directly. The block carries the
+    // text identities under keys that vary by record, so each is addressed by
+    // name: only `textex_tag` occurs in every record.
+    (payload.get(cursor)? == &0).then_some(())?;
+    cursor += 1;
+    let properties = read_property_block(payload, &mut cursor)?;
+    let property = |key: &str| {
+        properties
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| *value)
+    };
+    (payload.get(cursor)? == &1).then_some(())?;
+    cursor += 1;
+    let width_factor = f64_at(payload, cursor)?;
+    // Four f32 RGBA colour components.
+    cursor = cursor.checked_add(24)?;
+    let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if font_count == 0 || font_count > 1_024 {
+        return None;
+    }
+    let (font_family, after_font) = utf16le_at(payload, cursor + 4, font_count)?;
+    cursor = after_font;
+    (payload.get(cursor)? == &0).then_some(())?;
+    cursor += 1;
+    let height = f64_at(payload, cursor)? * 10.0;
+    cursor = cursor.checked_add(8)?;
+    (height.is_finite() && height > 0.0 && width_factor.is_finite() && width_factor >= 0.0)
+        .then_some(())?;
+    Some(SketchTextHead {
+        entity_genesis: property("EntityGenesis"),
+        persistent_id: property("textex_tag")?,
+        base_id: property("txt_tag_base"),
+        font_family,
+        height,
+        width_factor,
+        cursor,
+    })
+}
+
+/// Read the alignment fields, text content, and class tail under one pair of
+/// slot forms, requiring the walk to end exactly on the owning-sketch
+/// reference.
+fn decode_sketch_text_tail(
+    payload: &[u8],
+    mut cursor: usize,
+    first_slot: TextReferenceSlot,
+    second_slot: TextReferenceSlot,
+) -> Option<SketchTextTail> {
+    let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
+    // Horizontal alignment enum and three flag bytes.
+    u32_at(payload, cursor)?;
+    cursor = cursor.checked_add(7)?;
+    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if text_count == 0 || text_count > 1_048_576 {
+        return None;
+    }
+    let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
+    cursor = after_text;
+    let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
+    // Vertical alignment enum, one flag byte, and the font weight.
+    u32_at(payload, cursor)?;
+    cursor = cursor.checked_add(9)?;
+    // The class tail opens with the text-type enum, which gates the placement
+    // transform: frame text stores a 4x4 transform, path text stores none.
+    let transform = match u32_at(payload, cursor)? {
+        0 => 128,
+        1 => 0,
+        _ => return None,
+    };
+    cursor = cursor.checked_add(5 + transform + SKETCH_TEXT_TRAILING_RUN)?;
+    let owner = take_reference(payload, &mut cursor)?;
+    (cursor == payload.len()).then_some(())?;
+    Some(SketchTextTail {
+        first_reference: reference_index(&first_reference),
+        second_reference: reference_index(&second_reference),
+        text,
+        owner_reference: reference_index(&owner)?,
+    })
+}
+
 pub(crate) fn decode_sketch_text_record(
     payload: &[u8],
     stream: &str,
@@ -1568,89 +1755,37 @@ pub(crate) fn decode_sketch_text_record(
     record_index: u32,
     byte_offset: usize,
 ) -> Option<SketchText> {
-    if payload.get(20) != Some(&1)
-        || u32_at(payload, 21) != Some(3)
-        || u32_at(payload, 25) != Some(13)
-        || payload.get(29..42) != Some(b"EntityGenesis")
-        || u32_at(payload, 42) != Some(23)
-        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
-        || u32_at(payload, 77) != Some(10)
-        || payload.get(81..91) != Some(b"textex_tag")
-        || u32_at(payload, 91) != Some(23)
-        || payload.get(95..118) != Some(b"IntrinsicMetaTypeuint64")
-        || u32_at(payload, 126) != Some(12)
-        || payload.get(130..142) != Some(b"txt_tag_base")
-        || u32_at(payload, 142) != Some(23)
-        || payload.get(146..169) != Some(b"IntrinsicMetaTypeuint64")
-        || payload.get(177) != Some(&1)
-    {
-        return None;
+    let head = decode_sketch_text_head(payload)?;
+    let mut closed = None;
+    for first_slot in TEXT_REFERENCE_SLOTS {
+        for second_slot in TEXT_REFERENCE_SLOTS {
+            let Some(tail) = decode_sketch_text_tail(payload, head.cursor, first_slot, second_slot)
+            else {
+                continue;
+            };
+            // Two slot forms both ending on the owning-sketch reference leave
+            // the parameter references undetermined.
+            if closed.replace(tail).is_some() {
+                return None;
+            }
+        }
     }
-    let entity_genesis = read_u64(payload, 69)?;
-    let persistent_id = read_u64(payload, 118)?;
-    let base_id = read_u64(payload, 169)?;
-    let height = f64_at(payload, 178)? * 10.0;
-    let rotation = f64_at(payload, 186)?;
-    let baseline_shift = f32::from_le_bytes(payload.get(194..198)?.try_into().ok()?);
-    let vertical_scale = f32::from_le_bytes(payload.get(198..202)?.try_into().ok()?);
-    let font_count = usize::try_from(u32_at(payload, 202)?).ok()?;
-    if font_count == 0 || font_count > 1_024 {
-        return None;
-    }
-    let (font_family, after_font) = utf16le_at(payload, 206, font_count)?;
-    if payload.get(after_font) != Some(&0) {
-        return None;
-    }
-    let width_factor = f64_at(payload, after_font + 1)?;
-    let first_reference = after_font.checked_add(9)?;
-    if payload.get(first_reference) != Some(&1)
-        || payload.get(first_reference + 5..first_reference + 11) != Some(&[0; 6])
-        || payload.get(first_reference + 11) != Some(&1)
-        || payload.get(first_reference + 12..first_reference + 18) != Some(&[0; 6])
-    {
-        return None;
-    }
-    let text_count_at = first_reference.checked_add(18)?;
-    let text_count = usize::try_from(u32_at(payload, text_count_at)?).ok()?;
-    if text_count == 0 || text_count > 1_048_576 {
-        return None;
-    }
-    let (text, after_text) = utf16le_at(payload, text_count_at + 4, text_count)?;
-    if payload.get(after_text) != Some(&1)
-        || payload.get(after_text + 5..after_text + 11) != Some(&[0; 6])
-        || payload.len() < 11
-    {
-        return None;
-    }
-    let owner_at = payload.len() - 11;
-    if payload.get(owner_at) != Some(&1)
-        || payload.get(owner_at + 5..owner_at + 11) != Some(&[0; 6])
-        || !height.is_finite()
-        || height <= 0.0
-        || !rotation.is_finite()
-        || !baseline_shift.is_finite()
-        || !vertical_scale.is_finite()
-        || vertical_scale <= 0.0
-        || !width_factor.is_finite()
-        || width_factor <= 0.0
-    {
-        return None;
-    }
+    let tail = closed?;
     Some(SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),
         record_index,
-        owner_reference: u32_at(payload, owner_at + 1)?,
+        owner_reference: tail.owner_reference,
         class_tag,
         byte_offset: byte_offset as u64,
-        entity_genesis,
-        persistent_id,
-        base_id,
-        text,
-        font_family,
-        height,
-        width_factor,
-        first_reference: u32_at(payload, first_reference + 1)?,
-        second_reference: u32_at(payload, after_text + 1)?,
+        entity_genesis: head.entity_genesis,
+        persistent_id: head.persistent_id,
+        base_id: head.base_id,
+        text: tail.text,
+        font_family: head.font_family,
+        height: head.height,
+        width_factor: head.width_factor,
+        first_reference: tail.first_reference,
+        second_reference: tail.second_reference,
         raw_bytes: payload.to_vec(),
     })
 }
@@ -2851,34 +2986,10 @@ fn parse_relation(payload: &[u8], framing: RelationFraming) -> Option<ParsedSket
     // The base class level opens with its property-block presence byte. The
     // block is `u32 count` and that many `(key, type name, value)` triples;
     // `EntityGenesis` is one such key.
-    let mut entity_genesis = None;
-    match payload.get(cursor)? {
-        0 => cursor += 1,
-        1 => {
-            cursor += 1;
-            let property_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
-            if property_count > MAX_RELATION_RUN {
-                return None;
-            }
-            cursor += 4;
-            for _ in 0..property_count {
-                let (key, after_key) =
-                    lp_ascii_filtered(payload, cursor, 0..=256, u8::is_ascii_graphic)?;
-                let (type_name, after_type) =
-                    lp_ascii_filtered(payload, after_key, 0..=256, u8::is_ascii_graphic)?;
-                if type_name != "IntrinsicMetaTypeuint64" {
-                    return None;
-                }
-                let value =
-                    u64::from_le_bytes(payload.get(after_type..after_type + 8)?.try_into().ok()?);
-                if key == "EntityGenesis" {
-                    entity_genesis = Some(value);
-                }
-                cursor = after_type + 8;
-            }
-        }
-        _ => return None,
-    }
+    let entity_genesis = read_property_block(payload, &mut cursor)?
+        .into_iter()
+        .find(|(key, _)| key == "EntityGenesis")
+        .map(|(_, value)| value);
     let mut auxiliary_references = Vec::new();
     let mut auxiliary_reference_offsets = Vec::new();
     let mut text_glyph_transforms = None;

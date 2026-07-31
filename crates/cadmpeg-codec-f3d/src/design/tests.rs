@@ -15341,8 +15341,10 @@ fn genesis_relation_parses_text_path_glyph_run() {
     );
 }
 
-#[test]
-fn sketch_text_record_decodes_typed_content_and_metrics() {
+/// Build one sketch-text record: `properties` are the property-block keys in
+/// stream order, `slots` says whether each parameter-reference member is
+/// written, and `path` selects path text over frame text with its transform.
+fn sketch_text_record(properties: &[(&str, u64)], slots: [Option<u32>; 2], path: bool) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -15357,54 +15359,127 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     bytes.extend_from_slice(&304u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 5]);
     bytes.push(1);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    push_ascii(&mut bytes, "EntityGenesis");
-    push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
-    bytes.extend_from_slice(&4u64.to_le_bytes());
-    push_ascii(&mut bytes, "textex_tag");
-    push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
-    bytes.extend_from_slice(&109u64.to_le_bytes());
-    push_ascii(&mut bytes, "txt_tag_base");
-    push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
-    bytes.extend_from_slice(&305u64.to_le_bytes());
+    bytes.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    for (key, value) in properties {
+        push_ascii(&mut bytes, key);
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
     bytes.push(1);
-    bytes.extend_from_slice(&1.0f64.to_le_bytes());
-    bytes.extend_from_slice(&0.0f64.to_le_bytes());
-    bytes.extend_from_slice(&0.0f32.to_le_bytes());
-    bytes.extend_from_slice(&1.0f32.to_le_bytes());
+    bytes.extend_from_slice(&0.8f64.to_le_bytes());
+    for component in [0.0f32, 0.0, 0.0, 1.0] {
+        bytes.extend_from_slice(&component.to_le_bytes());
+    }
     push_utf16(&mut bytes, "Arial");
     bytes.push(0);
-    bytes.extend_from_slice(&0.8f64.to_le_bytes());
-    push_reference(&mut bytes, 307);
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.push(1);
-    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1.0f64.to_le_bytes());
+    if let Some(reference) = slots[0] {
+        push_reference(&mut bytes, reference);
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 3]);
     push_utf16(&mut bytes, "path text");
-    push_reference(&mut bytes, 310);
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.extend_from_slice(&[0; 16]);
+    if let Some(reference) = slots[1] {
+        push_reference(&mut bytes, reference);
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&400i32.to_le_bytes());
+    bytes.extend_from_slice(&u32::from(path).to_le_bytes());
+    bytes.push(u8::from(path));
+    if !path {
+        bytes.extend_from_slice(&[0; 128]);
+    }
+    bytes.extend_from_slice(&[0; 30]);
     push_reference(&mut bytes, 201);
     bytes.extend_from_slice(&[0; 6]);
+    bytes
+}
 
-    let text = crate::design::decode::sketch::decode_sketch_text_record(
-        &bytes,
+fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::SketchText> {
+    crate::design::decode::sketch::decode_sketch_text_record(
+        bytes,
         "Design/BulkStream.dat",
         "329".into(),
         304,
         7,
     )
-    .expect("sketch text record");
+}
+
+#[test]
+fn sketch_text_record_decodes_typed_content_and_metrics() {
+    let bytes = sketch_text_record(
+        &[
+            ("EntityGenesis", 4),
+            ("textex_tag", 109),
+            ("txt_tag_base", 305),
+        ],
+        [Some(307), Some(310)],
+        true,
+    );
+    let text = decode_sketch_text(&bytes).expect("sketch text record");
     assert_eq!(text.record_index, 304);
     assert_eq!(text.owner_reference, 201);
-    assert_eq!(text.entity_genesis, 4);
+    assert_eq!(text.entity_genesis, Some(4));
     assert_eq!(text.persistent_id, 109);
-    assert_eq!(text.base_id, 305);
+    assert_eq!(text.base_id, Some(305));
     assert_eq!(text.text, "path text");
     assert_eq!(text.font_family, "Arial");
+    // The height is the field after the font family, in centimetres; the width
+    // factor is the field before it.
     assert_eq!(text.height, 10.0);
     assert_eq!(text.width_factor, 0.8);
-    assert_eq!(text.first_reference, 307);
-    assert_eq!(text.second_reference, 310);
+    assert_eq!(text.first_reference, Some(307));
+    assert_eq!(text.second_reference, Some(310));
+}
+
+#[test]
+fn sketch_text_record_decodes_without_the_optional_property_keys() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        true,
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.entity_genesis, None);
+    assert_eq!(text.base_id, None);
+    assert_eq!(text.persistent_id, 109);
+    assert_eq!(text.first_reference, None);
+    assert_eq!(text.second_reference, None);
+    assert_eq!(text.height, 10.0);
+    assert_eq!(text.width_factor, 0.8);
+}
+
+#[test]
+fn frame_sketch_text_record_carries_a_placement_transform() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109), ("txt_tag_base", 305)],
+        [None, None],
+        false,
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.base_id, Some(305));
+    assert_eq!(text.owner_reference, 201);
+    // Frame text stores 128 more bytes than path text.
+    assert_eq!(
+        text.raw_bytes.len(),
+        sketch_text_record(
+            &[("textex_tag", 109), ("txt_tag_base", 305)],
+            [None, None],
+            true
+        )
+        .len()
+            + 128
+    );
+}
+
+#[test]
+fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
+    let mut bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], true);
+    bytes.push(0);
+    assert!(decode_sketch_text(&bytes).is_none());
 }
 
 #[test]

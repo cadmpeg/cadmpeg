@@ -3299,12 +3299,14 @@ pub struct SketchText {
     pub class_tag: String,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
-    /// Persistent genesis identity carried ahead of the text identities.
-    pub entity_genesis: u64,
+    /// Persistent genesis identity, a property key absent from most records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_genesis: Option<u64>,
     /// Persistent identity of the text entity.
     pub persistent_id: u64,
-    /// Persistent base identity of the text entity.
-    pub base_id: u64,
+    /// Persistent base identity, a property key absent from some records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_id: Option<u64>,
     /// Unicode text content.
     pub text: String,
     /// Font-family name.
@@ -3313,10 +3315,14 @@ pub struct SketchText {
     pub height: f64,
     /// Horizontal scale relative to the nominal font width.
     pub width_factor: f64,
-    /// First record reference following the font-width carrier.
-    pub first_reference: u32,
-    /// Second record reference following the text content.
-    pub second_reference: u32,
+    /// Parameter record driving the height, absent when the record omits the
+    /// member or writes it null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_reference: Option<u32>,
+    /// Parameter record driving the text content, absent when the record omits
+    /// the member or writes it null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_reference: Option<u32>,
     /// Complete source record bytes for native replay and rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
