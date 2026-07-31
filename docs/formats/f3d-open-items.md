@@ -126,13 +126,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We cannot read a record with a value other than `0`.
 
-### GC-24. Law formula text infix operator `O` and `MTRAIL` construction inputs
+### GC-24. Binding of the law formula text infix operator `O`
 
-**Question.** What are the semantics of the infix operator `O` in stored law formula text? What construction inputs does an `MTRAIL` law require beyond its curve operand?
+**Question.** What are the precedence and associativity of the infix operator `O` in stored law formula text?
 
-**Known.** `f3d.md` §7.3 "**Law formulas**" gives `MTRAIL` as unary over stored curve law data and `DOMAIN` as an odd-arity wrapper carrying term-domain bound pairs. The infix `O` remains undefined, and the `MTRAIL` initial vector, tolerance, and mode are not stored in the formula text.
+**Known.** `f3d.md` §7.3 "**Law formulas**" gives `O` as composition with the right operand innermost, and gives the `MTRAIL` curve as a rail direction requiring no further construction input. A writer parenthesizes both `O` operands, so stored text never exercises the operator's binding against a neighbouring operator and never chains two occurrences.
 
-**Need.** We must know the `O` semantics to evaluate or rebuild a law that uses it, and the `MTRAIL` inputs to rebuild that law.
+**Need.** We must know the binding to parse law text that a different writer produced without full parenthesization. Text this codec emits is unaffected, because it parenthesizes both operands.
 
 ## 2. Container, header, and design records
 
