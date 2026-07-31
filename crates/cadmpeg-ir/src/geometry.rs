@@ -1064,8 +1064,14 @@ pub struct RevisionSurfaceForm {
     /// Carrier-specific boolean run preceding the shared tail.
     #[serde(default)]
     pub flags: Vec<bool>,
-    /// Enum opening the shared revision-gated surface tail.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
@@ -1074,6 +1080,30 @@ pub struct RevisionSurfaceForm {
     /// Boolean run following the shared tail.
     #[serde(default)]
     pub trailing_flags: Vec<bool>,
+}
+
+/// Parameterization carried by tail-enum form `2` of the shared revision-gated
+/// spline-surface tail. This form stores no approximation cache and no fit
+/// tolerance; it stores the two parameter intervals followed by four enums, in
+/// the order the fields appear below.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct RevisionSurfaceParameterization {
+    /// U parameter interval, an ordered `[lo, hi]` pair of optional bounds.
+    /// `None` is a false bound-presence flag.
+    #[serde(default)]
+    pub u_interval: [Option<f64>; 2],
+    /// V parameter interval, an ordered `[lo, hi]` pair of optional bounds.
+    /// `None` is a false bound-presence flag.
+    #[serde(default)]
+    pub v_interval: [Option<f64>; 2],
+    /// U closure enum.
+    pub u_closure: i64,
+    /// V closure enum.
+    pub v_closure: i64,
+    /// U singularity enum.
+    pub u_singularity: i64,
+    /// V singularity enum.
+    pub v_singularity: i64,
 }
 
 /// Subtype-specific tail of a native taper spline surface.

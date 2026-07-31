@@ -1690,8 +1690,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             ..
         } = &procedural.definition
         {
-            let flags_shape_ok = if revision_form.is_some() {
-                extension_flags.len() == 2
+            // A revision-gated offset stores its four-boolean carrier run in
+            // the revision form and has no ASM extension tail of its own.
+            let flags_shape_ok = if let Some(form) = revision_form {
+                extension_flags.is_empty() && form.flags.len() == 4
             } else {
                 matches!(
                     extension_flags.as_slice(),
@@ -1703,6 +1705,22 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     &procedural.id.0,
                     "offset spline surface distance or extension flags are invalid",
+                );
+            }
+        }
+        if let Some(form) = revision_surface_form(&procedural.definition) {
+            // Tail enum `0` stores a solved cache and its fit tolerance; `2`
+            // stores the parameterization instead. No other value is defined.
+            let form_matches = match form.tail_enum {
+                0 => form.tail_parameterization.is_none(),
+                2 => form.tail_parameterization.is_some(),
+                _ => false,
+            };
+            if !form_matches {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "revision-gated surface tail enum does not match its stored cache form",
                 );
             }
         }
@@ -2687,6 +2705,23 @@ pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], 
             format!("{dir}-{issue}")
         };
         bounds_err(findings, id, &label);
+    }
+}
+
+/// The shared revision-gated form carried by a procedural surface definition.
+fn revision_surface_form(
+    definition: &ProceduralSurfaceDefinition,
+) -> Option<&crate::geometry::RevisionSurfaceForm> {
+    match definition {
+        ProceduralSurfaceDefinition::Exact { revision_form, .. }
+        | ProceduralSurfaceDefinition::Taper { revision_form, .. }
+        | ProceduralSurfaceDefinition::Revolution { revision_form, .. }
+        | ProceduralSurfaceDefinition::Sum { revision_form, .. }
+        | ProceduralSurfaceDefinition::Offset { revision_form, .. } => revision_form.as_ref(),
+        ProceduralSurfaceDefinition::TSpline { construction } => {
+            construction.revision_form.as_ref()
+        }
+        _ => None,
     }
 }
 

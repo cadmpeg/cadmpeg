@@ -480,7 +480,7 @@ fn decode_g2_blend_spl_sur(
         let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
         let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
         let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?;
+            decode_revision_surface_tail(span, &mut position, int_width)?.into_solved()?;
         let tail_extensions = [
             take_tagged_int(span, &mut position, 0x04, int_width)?,
             take_tagged_int(span, &mut position, 0x04, int_width)?,
@@ -1471,7 +1471,7 @@ fn decode_revision_loft(
         take_tagged_int(span, &mut position, 0x04, int_width)?,
     ];
     let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-        decode_revision_surface_tail(span, &mut position, int_width)?;
+        decode_revision_surface_tail(span, &mut position, int_width)?.into_solved()?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
@@ -1687,7 +1687,7 @@ fn decode_revision_compound_loft(
     let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
     (revision > 0).then_some(())?;
     let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-        decode_revision_surface_tail(span, &mut position, int_width)?;
+        decode_revision_surface_tail(span, &mut position, int_width)?.into_solved()?;
     let asm_extension_present = revision_loft_carries_asm_extension(active_bytes);
     let (base_profile, base_path) = decode_revision_cl_scale(
         span,
@@ -2941,8 +2941,13 @@ fn decode_taper_spl_sur(
         ];
         let pcurve = decode_nullable_embedded_pcurve(span, &mut position, int_width)?;
         let parameter = take_f64(span, &mut position)?;
-        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let RevisionSurfaceTail {
+            enumeration: tail_enum,
+            fit_tolerance,
+            parameterization,
+            discontinuities,
+            tail_flag,
+        } = decode_revision_surface_tail(span, &mut position, int_width)?;
         // The single trailing logical after the shared tail is the record's own
         // orthogonal-sense field, positionally matching the text form's single
         // boolean. `tail_flag` above is the shared-tail illegal-region flag.
@@ -2961,12 +2966,13 @@ fn decode_taper_spl_sur(
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
                     tail_enum,
+                    tail_parameterization: parameterization,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: Some(fit_tolerance),
+            cache_fit_tolerance: fit_tolerance,
         });
     }
     let support = decode_embedded_surface(span, &mut position, int_width)?;
@@ -3057,22 +3063,79 @@ fn decode_comp_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
     })
 }
 
-/// Parse the shared revision-gated surface tail: enum, solved cache, fit
-/// tolerance, six discontinuity arrays, and one boolean.
+/// The shared revision-gated surface tail, decoded.
+struct RevisionSurfaceTail {
+    /// Enum opening the tail, selecting the approximation-cache form.
+    enumeration: i64,
+    /// Fit tolerance of the solved cache. Carried by form `0` only.
+    fit_tolerance: Option<f64>,
+    /// Parameter intervals and closure/singularity enums. Carried by form `2`
+    /// only.
+    parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Six ordered discontinuity arrays.
+    discontinuities: [Vec<f64>; 6],
+    /// Boolean terminating the tail.
+    tail_flag: bool,
+}
+
+impl RevisionSurfaceTail {
+    /// Destructure a solved-cache tail, for carriers whose IR retains no slot
+    /// for the form-`2` parameterization. Fails on any other form so the
+    /// containing record is retained verbatim rather than decoded lossily.
+    fn into_solved(self) -> Option<(i64, f64, [Vec<f64>; 6], bool)> {
+        Some((
+            self.enumeration,
+            self.fit_tolerance?,
+            self.discontinuities,
+            self.tail_flag,
+        ))
+    }
+}
+
+/// Parse the shared revision-gated surface tail. It opens with an enum
+/// selecting the approximation-cache form: `0` stores the solved NURBS surface
+/// followed by its fit tolerance; `2` stores no cache and no fit tolerance, and
+/// instead stores the U parameter interval and the V parameter interval in the
+/// optional bool-gated encoding followed by four enums holding U closure, V
+/// closure, U singularity, and V singularity. Both forms then continue into six
+/// counted discontinuity arrays and one boolean. Other values have no defined
+/// grammar; they fail so the containing record is retained verbatim through the
+/// native-preservation path rather than misparsed.
 fn decode_revision_surface_tail(
     span: &[u8],
     position: &mut usize,
     int_width: usize,
-) -> Option<(i64, f64, [Vec<f64>; 6], bool)> {
-    let tail_enum = take_tagged_int(span, position, 0x15, int_width)?;
-    // Only the selector-zero grammar, in which a solved cache follows, is
-    // defined. A non-zero selector has no known tail grammar; fail so the
-    // containing record is retained verbatim through the native-preservation
-    // path rather than misparsed against the cache layout.
-    (tail_enum == 0).then_some(())?;
-    let cache = decode_surface_block(span, *position, int_width)?;
-    *position = cache.end;
-    let fit_tolerance = take_f64(span, position)? * LEN_TO_MM;
+) -> Option<RevisionSurfaceTail> {
+    let enumeration = take_tagged_int(span, position, 0x15, int_width)?;
+    let (fit_tolerance, parameterization) = match enumeration {
+        0 => {
+            let cache = decode_surface_block(span, *position, int_width)?;
+            *position = cache.end;
+            (Some(take_f64(span, position)? * LEN_TO_MM), None)
+        }
+        2 => {
+            let u_interval = [
+                take_optional_range_value(span, position)?,
+                take_optional_range_value(span, position)?,
+            ];
+            let v_interval = [
+                take_optional_range_value(span, position)?,
+                take_optional_range_value(span, position)?,
+            ];
+            (
+                None,
+                Some(cadmpeg_ir::geometry::RevisionSurfaceParameterization {
+                    u_interval,
+                    v_interval,
+                    u_closure: take_tagged_int(span, position, 0x15, int_width)?,
+                    v_closure: take_tagged_int(span, position, 0x15, int_width)?,
+                    u_singularity: take_tagged_int(span, position, 0x15, int_width)?,
+                    v_singularity: take_tagged_int(span, position, 0x15, int_width)?,
+                }),
+            )
+        }
+        _ => return None,
+    };
     let discontinuities = [
         take_float_array(span, position, int_width)?,
         take_float_array(span, position, int_width)?,
@@ -3082,7 +3145,13 @@ fn decode_revision_surface_tail(
         take_float_array(span, position, int_width)?,
     ];
     let tail_flag = take_bool(span, position)?;
-    Some((tail_enum, fit_tolerance, discontinuities, tail_flag))
+    Some(RevisionSurfaceTail {
+        enumeration,
+        fit_tolerance,
+        parameterization,
+        discontinuities,
+        tail_flag,
+    })
 }
 
 fn decode_off_spl_sur(
@@ -3122,8 +3191,13 @@ fn decode_off_spl_sur(
         for _ in 0..4 {
             flags.push(take_bool(span, &mut position)?);
         }
-        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let RevisionSurfaceTail {
+            enumeration: tail_enum,
+            fit_tolerance,
+            parameterization,
+            discontinuities,
+            tail_flag,
+        } = decode_revision_surface_tail(span, &mut position, int_width)?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Offset {
                 support,
@@ -3138,12 +3212,13 @@ fn decode_off_spl_sur(
                     second_endpoints: [None; 2],
                     flags,
                     tail_enum,
+                    tail_parameterization: parameterization,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: Some(fit_tolerance),
+            cache_fit_tolerance: fit_tolerance,
         });
     }
     let support = decode_embedded_surface(span, &mut position, int_width)?;
@@ -3212,8 +3287,13 @@ fn decode_rot_spl_sur(
         ];
         let origin = take_native_vec3(span, &mut position, 0x13)?;
         let axis = take_native_vec3(span, &mut position, 0x14)?;
-        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let RevisionSurfaceTail {
+            enumeration: tail_enum,
+            fit_tolerance,
+            parameterization,
+            discontinuities,
+            tail_flag,
+        } = decode_revision_surface_tail(span, &mut position, int_width)?;
         let cache = marker_positions(span)
             .into_iter()
             .filter_map(|at| decode_surface_block(span, at, int_width))
@@ -3244,12 +3324,13 @@ fn decode_rot_spl_sur(
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
                     tail_enum,
+                    tail_parameterization: parameterization,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: Some(fit_tolerance),
+            cache_fit_tolerance: fit_tolerance,
         });
     }
     let directrix = marker_positions(span)
@@ -3333,8 +3414,13 @@ fn decode_sum_spl_sur(
             take_optional_range_value(span, &mut position)?,
         ];
         let origin = take_native_vec3(span, &mut position, 0x13)?;
-        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let RevisionSurfaceTail {
+            enumeration: tail_enum,
+            fit_tolerance,
+            parameterization,
+            discontinuities,
+            tail_flag,
+        } = decode_revision_surface_tail(span, &mut position, int_width)?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Sum {
                 first: CurveGeometry::Nurbs(first),
@@ -3351,12 +3437,13 @@ fn decode_sum_spl_sur(
                     second_endpoints,
                     flags: Vec::new(),
                     tail_enum,
+                    tail_parameterization: parameterization,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: Some(fit_tolerance),
+            cache_fit_tolerance: fit_tolerance,
         });
     }
     let mut decoded_curves = marker_positions(span)
@@ -3427,8 +3514,13 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
             .then_some(())?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
-        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let RevisionSurfaceTail {
+            enumeration: tail_enum,
+            fit_tolerance,
+            parameterization,
+            discontinuities,
+            tail_flag,
+        } = decode_revision_surface_tail(span, &mut position, int_width)?;
         // The two unextended parameter intervals, each an ordered [lo, hi] pair
         // of optional bounds. This subtype serializes them U-then-V; the loft
         // wrap ranges sharing `RevisionRanges` serialize V-then-U, so the order
@@ -3458,12 +3550,13 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
                     tail_enum,
+                    tail_parameterization: parameterization,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
                 }),
             },
-            cache_fit_tolerance: Some(fit_tolerance),
+            cache_fit_tolerance: fit_tolerance,
         });
     }
     let cache = marker_positions(span)
@@ -3520,13 +3613,18 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
         (first_construction_subtype(record_bytes).as_deref() == Some("t_spl_sur")).then_some(())?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
-        let (tail_enum, fit_tolerance, tail_discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let RevisionSurfaceTail {
+            enumeration: tail_enum,
+            fit_tolerance,
+            parameterization,
+            discontinuities: tail_discontinuities,
+            tail_flag,
+        } = decode_revision_surface_tail(span, &mut position, int_width)?;
         let mut bounds = [None; 4];
         for bound in &mut bounds {
             *bound = take_optional_range_value(span, &mut position)?;
         }
-        cache_fit_tolerance = Some(fit_tolerance);
+        cache_fit_tolerance = fit_tolerance;
         discontinuities = tail_discontinuities.clone();
         discontinuity_flag = tail_flag;
         parameter_ranges = [
@@ -3541,6 +3639,7 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
             second_endpoints: [None; 2],
             flags: Vec::new(),
             tail_enum,
+            tail_parameterization: parameterization,
             discontinuities: tail_discontinuities,
             tail_flag,
             trailing_flags: Vec::new(),
@@ -4114,18 +4213,78 @@ fn decode_procedural_resolving_refs(
 mod tail_selector_tests {
     use super::*;
 
-    /// A shared revision-gated surface tail whose opening selector is non-zero
-    /// has no defined grammar. The helper must reject it so the containing
-    /// record is retained verbatim rather than misparsed against the
-    /// selector-zero solved-cache layout.
+    /// A four-byte enum field.
+    fn push_enum(span: &mut Vec<u8>, value: i32) {
+        span.push(0x15);
+        span.extend_from_slice(&value.to_le_bytes());
+    }
+
+    /// A four-byte counted float array of `count` zeros.
+    fn push_float_array(span: &mut Vec<u8>, count: i32) {
+        span.push(0x04);
+        span.extend_from_slice(&count.to_le_bytes());
+        for _ in 0..count {
+            span.push(0x06);
+            span.extend_from_slice(&0.0f64.to_le_bytes());
+        }
+    }
+
+    /// A shared revision-gated surface tail whose opening enum selects a
+    /// cache form with no defined grammar. The helper must reject it so the
+    /// containing record is retained verbatim rather than misparsed.
     #[test]
-    fn nonzero_tail_selector_is_rejected_for_verbatim_retention() {
-        // 0x15-tagged four-byte selector with value 1, followed by bytes that
+    fn undefined_tail_form_is_rejected_for_verbatim_retention() {
+        // 0x15-tagged four-byte enum with value 1, followed by bytes that
         // could otherwise be mistaken for a solved cache block.
         let span = [
             0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
         let mut position = 0usize;
-        assert_eq!(decode_revision_surface_tail(&span, &mut position, 4), None,);
+        assert!(decode_revision_surface_tail(&span, &mut position, 4).is_none());
+    }
+
+    /// Tail form `2` stores no cache and no fit tolerance: the U parameter
+    /// interval, the V parameter interval, then U closure, V closure, U
+    /// singularity, and V singularity.
+    #[test]
+    fn parameterized_tail_form_decodes_intervals_then_closure_enums() {
+        let mut span = Vec::new();
+        push_enum(&mut span, 2);
+        // U interval: present lower bound, absent upper bound.
+        span.push(0x0a);
+        span.push(0x06);
+        span.extend_from_slice(&0.25f64.to_le_bytes());
+        span.push(0x0b);
+        // V interval: both bounds present.
+        for value in [(-1.5f64), 3.5] {
+            span.push(0x0a);
+            span.push(0x06);
+            span.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [1, 0, 2, 3] {
+            push_enum(&mut span, value);
+        }
+        push_float_array(&mut span, 1);
+        for _ in 0..5 {
+            push_float_array(&mut span, 0);
+        }
+        span.push(0x0b);
+
+        let mut position = 0usize;
+        let tail =
+            decode_revision_surface_tail(&span, &mut position, 4).expect("parameterized tail");
+        assert_eq!(position, span.len());
+        assert_eq!(tail.enumeration, 2);
+        assert_eq!(tail.fit_tolerance, None);
+        let parameterization = tail.parameterization.expect("parameterization");
+        assert_eq!(parameterization.u_interval, [Some(0.25), None]);
+        assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);
+        assert_eq!(parameterization.u_closure, 1);
+        assert_eq!(parameterization.v_closure, 0);
+        assert_eq!(parameterization.u_singularity, 2);
+        assert_eq!(parameterization.v_singularity, 3);
+        assert_eq!(tail.discontinuities[0], [0.0]);
+        assert!(tail.discontinuities[1..].iter().all(Vec::is_empty));
+        assert!(!tail.tail_flag);
     }
 }

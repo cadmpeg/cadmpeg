@@ -5487,8 +5487,11 @@ fn native_embedded_surface_with_bounds(
     Ok(())
 }
 
-/// Emit the shared revision-gated surface tail: enum, solved cache, fit
-/// tolerance, six discontinuity arrays, tail boolean, and trailing booleans.
+/// Emit the shared revision-gated surface tail: the approximation-cache form
+/// enum and its payload, six discontinuity arrays, the tail boolean, and the
+/// trailing booleans. Form `0` writes the solved cache and its fit tolerance;
+/// form `2` writes the U and V parameter intervals followed by the U closure,
+/// V closure, U singularity, and V singularity enums.
 fn native_revision_surface_tail(
     bytes: &mut Vec<u8>,
     form: &cadmpeg_ir::geometry::RevisionSurfaceForm,
@@ -5496,8 +5499,34 @@ fn native_revision_surface_tail(
     cache_fit_tolerance: Option<f64>,
 ) -> Result<(), CodecError> {
     native_enum(bytes, form.tail_enum);
-    native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM);
+    match (form.tail_enum, &form.tail_parameterization) {
+        (0, None) => {
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM);
+        }
+        (2, Some(parameterization)) => {
+            for bound in parameterization
+                .u_interval
+                .iter()
+                .chain(&parameterization.v_interval)
+            {
+                native_optional_f64(bytes, *bound);
+            }
+            for value in [
+                parameterization.u_closure,
+                parameterization.v_closure,
+                parameterization.u_singularity,
+                parameterization.v_singularity,
+            ] {
+                native_enum(bytes, value);
+            }
+        }
+        _ => {
+            return Err(CodecError::Malformed(
+                "revision-gated surface tail enum does not match its stored cache form".into(),
+            ));
+        }
+    }
     for discontinuities in &form.discontinuities {
         native_i64(
             bytes,

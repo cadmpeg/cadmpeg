@@ -2315,6 +2315,31 @@ fn push_revision_surface_tail(surface: &mut Vec<u8>) {
     surface.push(0x0b);
 }
 
+/// The shared revision-gated surface tail in cache form `2`: no solved cache
+/// and no fit tolerance, the U parameter interval, the V parameter interval,
+/// then the U closure, V closure, U singularity, and V singularity enums.
+fn push_parameterized_revision_surface_tail(surface: &mut Vec<u8>) {
+    surface.push(0x15);
+    surface.extend_from_slice(&2i64.to_le_bytes());
+    // U interval: present lower bound, absent upper bound.
+    surface.push(0x0a);
+    t_dbl(surface, 0.25);
+    surface.push(0x0b);
+    // V interval: both bounds present.
+    for value in [-1.5, 3.5] {
+        surface.push(0x0a);
+        t_dbl(surface, value);
+    }
+    for value in [1, 0, 2, 3] {
+        surface.push(0x15);
+        surface.extend_from_slice(&i64::from(value).to_le_bytes());
+    }
+    for _ in 0..6 {
+        t_long(surface, 0);
+    }
+    surface.push(0x0b);
+}
+
 /// Replace record 9 of the mixed stream with a revision-gated spline-surface
 /// record whose subtype body is built by `body`.
 fn synthetic_revision_surface_smbh(subtype: &str, body: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
@@ -2439,6 +2464,62 @@ fn generated_revision_offset_surface_round_trips() {
         revision_form.as_ref().expect("revision form").flags,
         [false, true, false, false]
     );
+}
+
+#[test]
+fn generated_parameterized_revision_offset_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("off_spl_sur", |surface| {
+        t_ident(surface, "spline");
+        surface.extend_from_slice(&generated_surface_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.0);
+        surface.push(0x0b);
+        surface.push(0x0a);
+        t_dbl(surface, 2.0);
+        surface.push(0x0b);
+        t_dbl(surface, 0.3);
+        for flag in [false, true, false, false] {
+            surface.push(if flag { 0x0a } else { 0x0b });
+        }
+        push_parameterized_revision_surface_tail(surface);
+    });
+    assert_revision_surface_round_trip(smbh.clone(), "offset");
+
+    let subtype = synthetic_revision_surface_subtype_span(&smbh);
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized revision offset decode");
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    // Cache form 2 stores no fit tolerance.
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { revision_form, .. } =
+        &procedural.definition
+    else {
+        panic!("expected offset surface construction")
+    };
+    let form = revision_form.as_ref().expect("revision form");
+    assert_eq!(form.tail_enum, 2);
+    let parameterization = form
+        .tail_parameterization
+        .as_ref()
+        .expect("tail parameterization");
+    assert_eq!(parameterization.u_interval, [Some(0.25), None]);
+    assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);
+    assert_eq!(
+        (parameterization.u_closure, parameterization.v_closure),
+        (1, 0)
+    );
+    assert_eq!(
+        (
+            parameterization.u_singularity,
+            parameterization.v_singularity
+        ),
+        (2, 3)
+    );
+    assert_eq!(regenerated_procedural_surface_span(&result.ir), subtype);
 }
 
 #[test]
@@ -2639,6 +2720,19 @@ fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::CadIr) -> Vec<
         .to_vec()
 }
 
+/// The subtype span of the synthetic stream's revision-gated surface record.
+fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
+    let start = asm_header::record_stream_start(smbh).unwrap();
+    let limit = asm_header::solved_record_limit(smbh).unwrap();
+    let records = crate::sab::frame(smbh, start, limit, 8).unwrap();
+    let record = &records[9];
+    let slice = &smbh[record.offset..record.offset + record.len];
+    let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
+    crate::nurbs::subtypes::subtype_span(slice, inner, 8)
+        .unwrap()
+        .to_vec()
+}
+
 #[test]
 fn generated_revision_loft_surface_round_trips() {
     let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
@@ -2657,17 +2751,7 @@ fn revision_loft_member_omits_the_asm_integer_in_an_early_save_format_stream() {
         }),
         22600,
     );
-    let subtype = {
-        let start = asm_header::record_stream_start(&smbh).unwrap();
-        let limit = asm_header::solved_record_limit(&smbh).unwrap();
-        let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
-        let record = &records[9];
-        let slice = &smbh[record.offset..record.offset + record.len];
-        let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
-        crate::nurbs::subtypes::subtype_span(slice, inner, 8)
-            .unwrap()
-            .to_vec()
-    };
+    let subtype = synthetic_revision_surface_subtype_span(&smbh);
 
     let decoded = F3dCodec
         .decode(
