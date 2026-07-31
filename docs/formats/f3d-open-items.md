@@ -362,11 +362,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### MA-03. Distance unit-tag values
 
-**Question.** What are the unit tags of a Distance value other than the inch tag and the centimetre tag?
+**Question.** What are the unit tags of a Distance value other than the three known length tags?
 
-**Known.** `f3d.md` §8.2 "Boolean stores one u8." gives two tags. Tag `0x2016` is inches. Tag `0x200e` is centimetres. The decoder returns no unit for every other tag. The tag is a property of the asset and does not track the document display length unit, so varying that unit does not enumerate further tags. The schema `unit` attribute of a Distance property does not predict the tag: a property declared in millimetres serializes with the centimetre tag.
+**Known.** `f3d.md` §8.2 "Boolean stores one u8." gives the tag structure `(quantity class << 12) | unit index`, with the unit index one-based, and gives three length tags: `0x200d` is centimetre, `0x200e` is millimetre, and `0x2016` is inch. The decoder converts these three to millimetres and returns no unit for every other tag. The tag is a property of the asset and does not track the document display length unit, so a change of that unit does not enumerate further tags. The schema `unit` attribute of a Distance property does not predict the tag, and one record mixes tags across its own members, so the attribute does not bound the tag set.
 
-**Need.** A Distance with an unknown tag gets no unit. The neutral model then has a value with no scale. Further tags require an asset that stores a Distance in a unit other than inches or centimetres; the appearance library reached from a Fusion document stores every Distance with the centimetre tag.
+**Need.** A Distance with an unknown tag gets no unit. The neutral model then has a value with no scale. We must know which further unit indexes the length class `0x2` has, and whether a Distance takes a quantity class other than length.
 
 ### MA-04. Texture map-channel values
 
