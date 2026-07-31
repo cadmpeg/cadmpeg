@@ -440,3 +440,35 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `f3d.md` §1.1.1 "A `0m cg vertex wedges S G`" defines the count as the number of wedges around the named vertex. It is not the vertex's valence and it is not the number of incident faces: records exist whose vertex has either quantity different from the stored count.
 
 **Need.** Without the rule we cannot write a `0m cg` record for a vertex, only retain one.
+
+## 6. Mesh geometry
+
+### PM-01. `.paramesh` undecoded streams and container fields
+
+**Question.** We must find five answers:
+
+- what the `r0`, `r0i`, and `r1` streams hold
+- what the last value of the `t` stream encodes
+- what the `r2` per-triangle value selects
+- what each descriptor-map key selects
+- what the protobuf message fields other than the stream registry, the resource GUIDs, and `fusion_uuid` hold
+
+**Known.** `f3d.md` §1.1.2 "The container layout is" gives the container framing, and `f3d.md` §1.1.2 "A kind-3 body is" gives the chunk bodies and the compression. The `v`, `t`, `r3`, and `r4` streams are decoded. `r2` carries the value `0` in every record available. `r0` decompresses to a byte count that is not a multiple of one f32 triple per vertex or per triangle, so it is not a plain per-vertex or per-triangle vector stream. The last `t` value read as a further index difference gives an index outside the vertex range in one container and inside it in another, so that reading is wrong and no other reading is established.
+
+**Need.** The decoder keeps the undecoded streams as opaque bytes. We must know their contents, the descriptor keys, and the message fields to write a container from a neutral model.
+
+### PM-02. Mesh Design-record classes without decoded content
+
+**Question.** What do the five mesh-joined record classes hold?
+
+- `443807AD-8025-41A3-8A50-5157579C3D78` (add-in `ParaMesh`)
+- `6FC173DC-C7E3-402C-A8C0-891A26DADF8D` (add-in `ParaMesh`)
+- `E5B3F49A-D8D0-4EEF-BC2B-FCDDAEF9745E` (add-in `ParaMesh`)
+- `99F6967E-ED35-4222-B906-5CCF0AC70B53` (add-in `Fusion`)
+- `f85f2e62-7627-4922-a16d-53e1275d2aac` (add-in `Scene`)
+
+Is the `EA90DA22-556C-4C61-89BB-20C2681B7A9D` scale matrix the complete map from container coordinates to model space?
+
+**Known.** `f3d.md` §8.1 "A mesh body's geometry container" gives the three decoded classes. Each of the five classes above occurs once per mesh body and does not occur in a document without one. The `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record stores two equal scale matrices; which of the two governs, and whether any other field takes part in the coordinate map, is not established.
+
+**Need.** We must know the five payloads to write a mesh body from a neutral model, and the coordinate map to place a mesh whose scale matrix is not `diag(0.1, 0.1, 0.1, 1)`.

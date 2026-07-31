@@ -19,7 +19,7 @@
 | `<folder>/FusionACTSegmentType1/BulkStream.dat`                                  | Active Component Tree entity/appearance tables                                                                                                                        |
 | `<folder>/FusionBrowserSegmentType1/BulkStream.dat`                              | Fusion UI browser tree                                                                                                                                                |
 | `<folder>/Previews/*`, `<folder>/Images.BlobParts/*`                             | thumbnails / appearance images; never geometry                                                                                                                        |
-| `ParaMeshGeometry.BlobParts/*.paramesh`                                          | secondary mesh; not the exact source                                                                                                                                  |
+| `<folder>/ParaMeshGeometry.BlobParts/*.paramesh`                                 | mesh-body geometry containers (§1.1.2)                                                                                                                                |
 | `<folder>/OGS.BlobFolder/OGS/<scene>/*`                                          | display scene graph (`world`) and its vertex and index buffer arenas (`stream_mesh_NNN`, `Fusion_mesh_NNN`); each drawable node carries the design entity ID it draws |
 | `<folder>/TSplines.BlobParts/*.tsm`                                              | T-spline control-cage source of Form bodies; the exact face geometry is the B-rep stream's `t_spl_sur` carriers                                                       |
 | `Manifest.dat` (top-level and per-asset)                                         | document, asset, and segment registry (see §1.3)                                                                                                                      |
@@ -45,6 +45,44 @@ The terminal `tol` and `geom-tol` values are centimetres. `ver`, `behavior-versi
 A Form scope owns an indexed cage-list record. After its indexed-record header, that record stores six zero bytes, `u8 1`, the owning scope's u64 record index, two zero bytes, a u32 cage count, and that many entries of `u8 1 + u64 cage-object reference + two zero bytes`. Its result-body bindings identify the B-rep bodies committed by the operation.
 
 Each cage object reaches a serializer record that stores two zero bytes, the LP-UTF16 blob-part entry name `TSpline.<uuid>.tsm`, and a reference to the cage's surface record. That entry name is the cage-to-archive join: within one document the serializer entry names and the `TSplines.BlobParts` entries are in bijection. The join is explicit, so it does not depend on archive order or on counting, and it divides the cages between two or more Form scopes. Each cage object also carries a back reference to its owning Form scope, and that partition agrees with the Form cage lists. A Form scope owns zero or more cages, and a document holding cages need not hold a Form scope; neither case changes the entry-name join. The `.tsm` program itself carries no identity and cannot be matched on content.
+
+### 1.1.2 Mesh geometry containers
+
+A `<folder>/ParaMeshGeometry.BlobParts/ParaMeshGeometry.<uuid>.paramesh` entry holds one mesh body's geometry. A document whose bodies are all mesh bodies carries an empty `Breps.BlobParts/` directory entry and no BREP stream: the mesh containers hold the model geometry, and three Design-segment records join each container to its body (§8.1).
+
+The container layout is:
+
+```
+0x00  89 55 44 50 4D 45 53 48 0D 0A 1A 0A   magic
+0x0C  u32  2                                container version
+0x10  32 zero bytes                         reserved
+0x30  u64  protobuf byte count
+0x38  u32  1
+0x3C  protobuf message
+then chunks to the end of the entry:
+      u64  body byte count
+      u32  chunk kind                       3 name table, 4 stream data
+      body
+```
+
+The protobuf message registers the container's streams and resource GUIDs and carries a `fusion_uuid` key whose ASCII GUID equals the GUID stored by the container's Design-segment GUID record (§8.1). That GUID is independent of the `<uuid>` in the entry name.
+
+A kind-3 body is a MessagePack map from stream name to integer stream id. A kind-4 body is a u16 descriptor byte count, a MessagePack descriptor map of that many bytes, a u32 uncompressed byte count, the two LZMA1 property bytes `5D 14` (`lc` 3, `lp` 0, `pb` 2, a 1 MiB dictionary), and a raw LZMA1 stream that decompresses to exactly the declared count. The kind-4 chunks follow the name table in ascending stream-id order. The descriptor keys are `D`, `T`, `U`, and `d`.
+
+The streams are:
+
+| Name  | Id | Content                                  |
+| ----- | -- | ---------------------------------------- |
+| `v`   | 2  | one f32 coordinate triple per vertex     |
+| `t`   | 3  | one u32 per triangle corner, delta-coded |
+| `r0`  | 4  | undecoded                                |
+| `r0i` | 5  | undecoded                                |
+| `r1`  | 6  | undecoded                                |
+| `r2`  | 7  | one u32 per triangle                     |
+| `r3`  | 8  | one RGBA f32 quad per vertex             |
+| `r4`  | 9  | an XML `<Attrib>` document               |
+
+`v` coordinates are not model centimetres: the mesh-body Design record (§8.1) stores the scale matrix that relates them to model space. In `t`, each value is the two's-complement difference between consecutive corner indices with an implicit initial index of zero; the values before the last yield the corner-index sequence, and the last value does not continue it. `r3` and `r4` are present exactly when the container carries per-vertex colour. The `r4` document is `<Attrib><TriName>color_tt<guid></TriName><AmtName>mecol</AmtName></Attrib>`, and its GUID equals a resource GUID in the protobuf message.
 
 ### 1.2 Stored property and configuration entries
 
@@ -762,6 +800,8 @@ A `BulkStream` record begins with an LP-ASCII decimal class tag, the u64 entity 
 The design `BulkStream` caches each body's axis-aligned bounding box in the three indexed records whose identities are the body entity suffix plus one, two, and three. Each record contains a `u8 1` marker followed by the same six contiguous f64 values in centimetres, ordered `(xmax, ymax, zmax, xmin, ymin, zmin)`. Every maximum is greater than or equal to its corresponding minimum, and a body has positive extent on at least one axis. The three marker-and-sextuple frames are byte-identical despite the records' different dynamic class tags and prefix lengths. Model-space bounds convert each coordinate to millimetres. The body entity suffix joins the cache to every BREP body-map pair carrying that suffix in the same Design stream.
 
 The design BulkStream BREP body map is `u32 count`, followed by `count` ordered pairs of `u64 body_selector, u64 entity_suffix`, then `u64 trailing_record_ref`, `u32 pad`, `u32 char_count`, and a UTF-16LE `BREP.<uuid>.smb` or `BREP.<uuid>.smbh` basename. `entity_suffix` is the numeric suffix of the design entity ID. The basename qualifies the selector namespace and selects the BREP blob contributing the mapped bodies to the document model. When that blob has at least one non-null body key, `body_selector` matches exactly one nonnegative ASM body key; null-key bodies do not participate in the map. When every body key in the blob is null, `body_selector` is the zero-based body-record ordinal. Every ordered pair resolves to exactly one solved body under its blob's selector mode. Multiple referenced blobs contribute independent topology graphs to one document model. Retained nonnegative body-key edits update the ASM field and every joined Design body-map occurrence atomically.
+
+A mesh body's geometry container (§1.1.2) joins the Design stream through three record classes whose type-table add-in name is `ParaMesh`. The entry-name class `A1BAA3F6-4B67-4A0D-BACC-75F38A2230F3` stores the u32-count UTF-16LE blob-part entry name `ParaMeshGeometry.<uuid>.paramesh` and a reference to the GUID record. The GUID class `A8338A26-5436-433C-8BAC-C3CF024AD595` stores the LP-ASCII GUID that the container's protobuf message carries as `fusion_uuid`, and a reference to the entry-name record; the two records reference each other, and the stored GUID is independent of the entry-name `<uuid>`. The mesh-body class `EA90DA22-556C-4C61-89BB-20C2681B7A9D` carries the body display name, appearance and physical-material tokens between the `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C` and `BA5EE55E-9982-449B-9D66-9F036540E140` marker GUIDs, and two 4×4 f64 scale matrices whose diagonal is `(0.1, 0.1, 0.1, 1)` and whose other cells are zero. Each diagonal value is the f64 nearest float `0.1` (`0x3FB99999A0000000`); the matrix carries the scale between the container's vertex coordinates and model centimetres.
 
 The design BulkStream carries the document's unit settings in a `UnitSystems` collection. The collection is the LP-ASCII name `UnitSystems`, two zero bytes, `u32 6`, and six `01 + u32 record_index + six zero bytes` references. The six referenced records are the unit systems `CmMKS`, `MmMKS`, `MMKS`, `InchImperial`, `Imperial`, and `Custom`, in that order. A unit-system record stores an LP-ASCII key, an LP-ASCII label, byte `01`, the LP-ASCII name `<key>UnitSystemName`, the LP-ASCII namespace `NaFusion`, four zero bytes, `u32 19`, and nineteen `01 + u32 record_index + six zero bytes` references to its unit entries. A unit entry stores an LP-ASCII key, an LP-ASCII label, byte `01`, an LP-ASCII property name, the LP-ASCII namespace `NsCommonData`, four zero bytes, a `u32` UTF-16 code-unit count, and that many code units holding the unit name. Seventeen entries are the quantity families `Length`, `Mass`, `Time`, `Temperature`, `Speed`, `Volume`, `Pressure`, `Force`, `Power`, `Energy`, `Current`, `Substance`, `Luminosity`, `Angle`, `Currency`, `Percentage`, and `Pieces`; the remaining two are `ModelingLength` and `ModelingMass`.
 
