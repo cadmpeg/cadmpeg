@@ -113,10 +113,11 @@ current scores require those matrices and representative fixtures.
   incidences with their stored identities, same-graph entities, and entity
   classes; the output also retains terminal-null state. Coverage distinguishes
   resolved, terminal-null, unresolved, classified, and unclassified outputs
-  and classified or unclassified expression incidences. Every formula
-  symbol occurrence retains all same-graph parameter binding candidate
-  identities, entities, and classes; coverage partitions classified and
-  unclassified candidates. Exactly one candidate resolves the dependency.
+  and classified or unclassified expression incidences. Every formula symbol
+  occurrence retains its UTF-8 byte offset, exact text, and all same-graph
+  parameter binding candidate identities, entities, and classes; coverage
+  partitions classified and unclassified candidates. Exactly one candidate
+  resolves the dependency.
   Every transferred numeric
   parameter retains its canonical
   `LENGTH`, `ANGLE`, `Real`, or `Integer` value type independently of whether
@@ -132,16 +133,18 @@ current scores require those matrices and representative fixtures.
   independently resolve it within the same graph, and classify selected
   relation-expression programs without assigning unresolved input and output
   roles. Every exact reference occurrence is retained in payload order with
-  terminal-null state, selected same-graph entity, and selected class,
-  including repeated identities. Coverage partitions resolved, terminal-null,
-  unresolved, classified, and unclassified reference occurrences. It also
+  its payload-relative byte offset, terminal-null state, selected same-graph
+  entity, and selected class, including repeated identities. Coverage
+  partitions resolved, terminal-null, unresolved, classified, and unclassified
+  reference occurrences. It also
   partitions compact lead-`12` and separator-form lead-`54`
   framings, resolved, terminal-null, unresolved, relation-expression, and other
   program instances, partitions the resolved, terminal-null, and unresolved identity
   repeated in the atom/reference slots, partitions classified and unclassified
   program and repeated-identity entities, and counts distinct selected
   expressions. A program instance selecting a complete relation expression
-  retains every source-symbol occurrence and all same-graph named parameter
+  retains every source-symbol occurrence with its UTF-8 byte offset and exact
+  text and all same-graph named parameter
   candidates; coverage partitions uniquely resolved, ambiguous, and other
   unresolved dependencies. When its typed signature and every source occurrence
   uniquely bind all distinct declared inputs, the instance retains complete

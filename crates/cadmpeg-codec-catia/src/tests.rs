@@ -11276,17 +11276,31 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         instance
             .reference_incidences
             .iter()
-            .map(|reference| reference.entity_id)
+            .map(|incidence| incidence.reference.entity_id)
             .collect::<Vec<_>>(),
         [20, 21, 23, 25, 1, 1, 21, 27]
     );
     assert_eq!(
-        instance.reference_incidences[4].class_name.as_deref(),
+        instance.reference_incidences[4]
+            .reference
+            .class_name
+            .as_deref(),
         Some("body")
     );
     assert_eq!(
-        instance.reference_incidences[5].class_name.as_deref(),
+        instance.reference_incidences[5]
+            .reference
+            .class_name
+            .as_deref(),
         Some("body")
+    );
+    assert_eq!(
+        instance
+            .reference_incidences
+            .iter()
+            .map(|incidence| incidence.payload_offset)
+            .collect::<Vec<_>>(),
+        [0, 10, 40, 50, 60, 65, 75, 85]
     );
     assert_eq!(
         instance.relation_expression.as_deref(),
@@ -11558,13 +11572,24 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         instance
             .reference_incidences
             .iter()
-            .map(|reference| reference.entity_id)
+            .map(|incidence| incidence.reference.entity_id)
             .collect::<Vec<_>>(),
         [5, 20, 1, 21, 5]
     );
     assert_eq!(
-        instance.reference_incidences[2].class_name.as_deref(),
+        instance.reference_incidences[2]
+            .reference
+            .class_name
+            .as_deref(),
         Some("body")
+    );
+    assert_eq!(
+        instance
+            .reference_incidences
+            .iter()
+            .map(|incidence| incidence.payload_offset)
+            .collect::<Vec<_>>(),
+        [10, 35, 55, 60, 70]
     );
     assert_eq!(
         instance.relation_expression.as_deref(),
@@ -11949,6 +11974,34 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         }
 
         let mut namespace = stored.clone();
+        namespace.version = crate::native::CATIA_RELATION_REFERENCE_OFFSET_VERSION - 1;
+        let incidences = namespace
+            .arenas
+            .get_mut("entity_records")
+            .expect("stored entity records")[1]
+            .fields
+            .get_mut("relation_program_instance")
+            .expect("stored relation-program field")
+            .as_object_mut()
+            .expect("stored relation-program instance")
+            .get_mut("reference_incidences")
+            .expect("stored reference incidences")
+            .as_array_mut()
+            .expect("stored reference incidences");
+        for incidence in incidences {
+            *incidence =
+                incidence.as_object().expect("stored reference incidence")["reference"].clone();
+        }
+        let migrated = crate::native::CatiaNative::load(&namespace)
+            .expect("migrate relation-program reference offsets");
+        assert_eq!(
+            migrated.entity_records[1]
+                .relation_program_instance
+                .as_ref(),
+            Some(&expected)
+        );
+
+        let mut namespace = stored.clone();
         namespace.version = crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1;
         let dependencies = namespace
             .arenas
@@ -12009,12 +12062,29 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
 
+        let mut malformed_offset = native.clone();
+        malformed_offset.entity_records[1]
+            .relation_program_instance
+            .as_mut()
+            .expect("decoded relation-program instance")
+            .reference_incidences[0]
+            .payload_offset = u64::MAX;
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed_offset
+            .store(&mut namespace)
+            .expect("store malformed relation-program incidence offset");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+
         let mut malformed = native;
         malformed.entity_records[1]
             .relation_program_instance
             .as_mut()
             .expect("decoded relation-program instance")
             .reference_incidences[0]
+            .reference
             .entity_id = u32::MAX;
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed

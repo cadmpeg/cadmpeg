@@ -821,14 +821,14 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
         .flat_map(|instance| &instance.reference_incidences)
-        .filter(|reference| reference.entity.is_some())
+        .filter(|incidence| incidence.reference.entity.is_some())
         .count();
     let null_relation_program_reference_incidence_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
         .flat_map(|instance| &instance.reference_incidences)
-        .filter(|reference| reference.is_null)
+        .filter(|incidence| incidence.reference.is_null)
         .count();
     let unresolved_relation_program_reference_incidence_count =
         relation_program_reference_incidence_count
@@ -839,7 +839,7 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
         .flat_map(|instance| &instance.reference_incidences)
-        .filter(|reference| reference.class_name.is_some())
+        .filter(|incidence| incidence.reference.class_name.is_some())
         .count();
     let (lead12_relation_program_instance_count, lead54_relation_program_instance_count) = native
         .entity_records
