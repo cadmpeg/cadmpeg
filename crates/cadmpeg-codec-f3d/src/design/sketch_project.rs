@@ -266,18 +266,21 @@ pub fn project_spatial_sketch_design(
         .collect::<HashMap<_, _>>();
     let mut spline_segments = HashMap::new();
     for relation in relations {
+        // Only the second reference run of a relation record is in semantic
+        // order: the control polygon ends with the spline there, and the
+        // interleaved first run orders its members by nothing a reader can use.
+        let members = &relation.return_members;
         if relation.unknown_constraint_bits != 0
             || relation.constraint_kinds != [SketchConstraintKind::SplineGroup]
-            || relation.members.len() < 2
-            || relation.members.iter().collect::<HashSet<_>>().len() != relation.members.len()
+            || members.len() < 2
+            || members.iter().collect::<HashSet<_>>().len() != members.len()
         {
             continue;
         }
         let Some(scope) = native_stream(&relation.id) else {
             continue;
         };
-        let Some(curve) = relation
-            .members
+        let Some(curve) = members
             .last()
             .and_then(|record| curves_by_record.get(&(scope, *record)))
         else {
@@ -288,11 +291,11 @@ pub fn project_spatial_sketch_design(
             continue;
         };
         if curve.owner_reference != Some(relation.owner_reference)
-            || control_points.len() != relation.members.len()
+            || control_points.len() != members.len()
         {
             continue;
         }
-        let segments = relation.members[..relation.members.len() - 1]
+        let segments = members[..members.len() - 1]
             .iter()
             .zip(control_points.windows(2))
             .map(|(record, points)| {

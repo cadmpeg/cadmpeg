@@ -83,6 +83,102 @@ pub(crate) fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> O
     Some(value)
 }
 
+/// One reference member of a Fusion segment record
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)
+/// "**References.**").
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Reference {
+    /// Target entity ID, or `None` for the one-byte null form.
+    pub(crate) target: Option<u64>,
+    /// Target segment ID when the reference leaves its own segment.
+    pub(crate) segment: Option<u32>,
+    /// `RedirectionsStream.dat` `neutronRole` of a cross-document reference.
+    pub(crate) link_name: Option<String>,
+}
+
+/// Take one reference, advancing `at` past every byte it owns.
+///
+/// The width is not fixed: a null reference is one byte, a same-segment
+/// reference eleven, a cross-segment reference fifteen, and a cross-document
+/// reference carries an asset GUID, a type GUID, a link name, and an optional
+/// version tail. Any arithmetic that assumes one width desynchronizes on the
+/// first record that reaches another segment.
+pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> {
+    let mut cursor = *at;
+    let present = *bytes.get(cursor)?;
+    cursor += 1;
+    if present == 0 {
+        *at = cursor;
+        return Some(Reference::default());
+    }
+    if present != 1 {
+        return None;
+    }
+    let target = u64::from_le_bytes(bytes.get(cursor..cursor + 8)?.try_into().ok()?);
+    cursor += 8;
+    // One container generation writes the target's type GUID inline, between
+    // the entity ID and the `cross_document` flag.
+    if u32_at(bytes, cursor) == Some(36) {
+        let (guid, end) = lp_ascii_filtered(bytes, cursor, 36..=36, u8::is_ascii_graphic)?;
+        if !is_guid_hyphenated(&guid) {
+            return None;
+        }
+        cursor = end;
+    }
+    let mut reference = Reference {
+        target: Some(target),
+        ..Reference::default()
+    };
+    match *bytes.get(cursor)? {
+        0 => {
+            cursor += 1;
+            match *bytes.get(cursor)? {
+                0 => cursor += 1,
+                1 => {
+                    reference.segment = u32_at(bytes, cursor + 1);
+                    cursor += 5;
+                }
+                _ => return None,
+            }
+        }
+        1 => {
+            cursor += 1;
+            reference.segment = u32_at(bytes, cursor);
+            cursor += 4;
+            let (_asset, end) = lp_utf16_bounded(bytes, cursor, 0..=64)?;
+            cursor = end;
+            match *bytes.get(cursor)? {
+                1 => cursor += 1,
+                0 => {
+                    cursor += 1;
+                    let (guid, end) =
+                        lp_ascii_filtered(bytes, cursor, 36..=36, u8::is_ascii_graphic)?;
+                    if !is_guid_hyphenated(&guid) {
+                        return None;
+                    }
+                    let (link_name, end) = lp_utf16_bounded(bytes, end, 0..=64)?;
+                    reference.link_name = Some(link_name);
+                    cursor = end;
+                    match *bytes.get(cursor)? {
+                        0 => cursor += 1,
+                        1 => {
+                            let (_property_key, end) =
+                                lp_utf16_bounded(bytes, cursor + 1, 36..=36)?;
+                            let (_version_urn, end) = lp_utf16_bounded(bytes, end, 0..=256)?;
+                            cursor = end;
+                        }
+                        _ => return None,
+                    }
+                }
+                _ => return None,
+            }
+        }
+        _ => return None,
+    }
+    *at = cursor;
+    Some(reference)
+}
+
 /// Whether `value` is a 36-character hyphenated hexadecimal GUID.
 pub(crate) fn is_guid_hyphenated(value: &str) -> bool {
     value.len() == 36

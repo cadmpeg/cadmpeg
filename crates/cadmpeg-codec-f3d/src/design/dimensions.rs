@@ -4174,33 +4174,11 @@ pub(crate) fn exact_offset_constraint(
     {
         return None;
     }
-    let offset_members = if relation.constraint_kinds == [SketchConstraintKind::Offset] {
-        let source_count = relation.members.len() / 2;
-        if !relation.members.len().is_multiple_of(2)
-            || relation.member_roles.len() != relation.members.len()
-            || source_count == 0
-            || relation.member_roles[..source_count].contains(&1)
-            || relation.member_roles[source_count..]
-                .iter()
-                .any(|role| *role != 1)
-        {
-            return None;
-        }
-        let sources = relation.members[..source_count]
-            .iter()
-            .copied()
-            .collect::<HashSet<_>>();
-        let results = relation.members[source_count..]
-            .iter()
-            .copied()
-            .collect::<HashSet<_>>();
-        if sources.len() != source_count || results.len() != source_count {
-            return None;
-        }
-        Some((sources, results))
-    } else {
-        None
-    };
+    // The second reference run carries the bijection in order. A stored offset
+    // relation's sources can be another offset relation's results, so their
+    // secondary identities are not null and only the run order separates the
+    // two sides.
+    let ordered_pairs = relation.constraint_kinds == [SketchConstraintKind::Offset];
     let mut pairs = Vec::new();
     let mut used_entities = HashSet::new();
     let mut canonical_distance: Option<f64> = None;
@@ -4224,13 +4202,7 @@ pub(crate) fn exact_offset_constraint(
                 _ => return None,
             };
         let (source_record_index, result_record_index) =
-            if let Some((sources, results)) = &offset_members {
-                if sources.contains(&first_record_index) && results.contains(&second_record_index) {
-                    (first_record_index, second_record_index)
-                } else {
-                    return None;
-                }
-            } else if first_secondary_id == 0 && second_secondary_id != 0 {
+            if ordered_pairs || (first_secondary_id == 0 && second_secondary_id != 0) {
                 (first_record_index, second_record_index)
             } else {
                 return None;
