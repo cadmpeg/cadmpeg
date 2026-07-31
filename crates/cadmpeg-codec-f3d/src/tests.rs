@@ -8069,6 +8069,50 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     );
 }
 
+/// A form-`2` extrusion stores its parameterization in place of a solved cache.
+/// It regenerates from that parameterization, with no cache to draw on.
+#[test]
+fn generated_source_less_writes_parameterized_extrusion_definition() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_versioned_cyl_spl_sur_with_tail_smbh(2),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized extrusion decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let expected = source_less.model.procedural_surfaces[0].clone();
+    assert_eq!(expected.cache_fit_tolerance, None);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("parameterized extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("parameterized extrusion round trip");
+    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    assert_eq!(actual.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::Extrusion {
+        revision_form: Some(form),
+        ..
+    } = &actual.definition
+    else {
+        panic!("expected a parameterized revision-gated extrusion")
+    };
+    assert_eq!(form.tail_enum, 2);
+    assert_eq!(
+        form.tail_parameterization,
+        Some(expected_revision_surface_tail_parameterization())
+    );
+    assert_eq!(actual.definition, expected.definition);
+}
+
 #[test]
 fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry};
@@ -17164,11 +17208,14 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     assert!(!form.tail_flag);
 }
 
-/// Tail form `2` stores no solved cache, so a blend record carrying it leaves
-/// its face without a NURBS carrier. Source-less generation refuses such a
-/// record outright rather than emitting a record whose tail claims a cache.
+/// Tail form `2` stores no solved cache, so a blend record carrying it owns
+/// every surface block it holds as a construction support and rests on its
+/// procedural carrier. Source-less generation writes the construction back from
+/// the stored parameterization rather than needing a cache it never had.
 #[test]
-fn parameterized_blend_tails_refuse_source_less_generation() {
+fn parameterized_blend_tails_round_trip_source_less_generation() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
     for stream in [
         synthetic_full_rolling_ball_with_tail_smbh("rb_blend_spl_sur", 2),
         synthetic_variable_blend_smbh_with_tail_form("var_blend_spl_sur", 2),
@@ -17182,15 +17229,44 @@ fn parameterized_blend_tails_refuse_source_less_generation() {
         let mut source_less = decoded.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let expected = source_less.model.procedural_surfaces[0].clone();
+        assert_eq!(expected.cache_fit_tolerance, None);
+        let carrier = source_less
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == expected.surface)
+            .expect("blend surface carrier");
+        assert!(matches!(
+            carrier.geometry,
+            SurfaceGeometry::Procedural { .. }
+        ));
+
         let mut encoded = Vec::new();
-        let error = F3dCodec
+        F3dCodec
             .encode(&source_less, &mut encoded)
-            .expect_err("parameterized blend has no solved carrier to generate from");
-        assert!(
-            matches!(error, cadmpeg_ir::codec::CodecError::NotImplemented(_)),
-            "{error:?}"
+            .expect("parameterized blend encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("parameterized blend round trip");
+        let actual = &round_trip.ir.model.procedural_surfaces[0];
+        assert_eq!(actual.cache_fit_tolerance, None);
+        let (enumeration, parameterization) = match &actual.definition {
+            ProceduralSurfaceDefinition::Blend {
+                native: Some(native),
+                ..
+            } => (native.cache_selector, native.tail_parameterization.clone()),
+            ProceduralSurfaceDefinition::VariableBlend { construction } => (
+                construction.cache_selector,
+                construction.tail_parameterization.clone(),
+            ),
+            other => panic!("expected a parameterized blend construction: {other:?}"),
+        };
+        assert_eq!(enumeration, 2);
+        assert_eq!(
+            parameterization,
+            Some(expected_revision_surface_tail_parameterization())
         );
-        assert!(encoded.is_empty());
     }
 }
 

@@ -631,6 +631,15 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
             construction.shape,
             EmbeddedScaledCompoundLoftShape::None { .. }
         ),
+        // Tail form `2` stores no solved cache, so every surface block a blend
+        // record holds is a support of its construction.
+        DecodedProceduralSurfaceDefinition::Blend {
+            native: Some(construction),
+            ..
+        } => construction.cache_selector == 2,
+        DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
+            construction.cache_selector == 2
+        }
         _ => false,
     }
 }

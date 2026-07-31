@@ -774,7 +774,13 @@ fn native_procedural_surface_definition(
             encode_native_revision_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
         ProceduralSurfaceDefinition::VariableBlend { construction } => {
-            encode_native_variable_blend(bytes, target, procedural, construction, solved_cache)?;
+            encode_native_variable_blend(
+                bytes,
+                target,
+                procedural,
+                construction,
+                Some(solved_cache),
+            )?;
         }
         ProceduralSurfaceDefinition::VertexBlend { .. } => {
             return Err(CodecError::NotImplemented(format!(
@@ -1150,7 +1156,7 @@ fn native_procedural_surface_definition(
                     target,
                     procedural,
                     native,
-                    solved_cache,
+                    Some(solved_cache),
                 )?;
             } else {
                 encode_native_rolling_ball(
@@ -2095,6 +2101,24 @@ fn native_cacheless_procedural_surface_definition(
     if let ProceduralSurfaceDefinition::VertexBlend { construction } = &procedural.definition {
         encode_native_vertex_blend(bytes, target, construction)?;
         return Ok(true);
+    }
+    // Tail form `2` stores the parameterization in place of a solved cache, so
+    // a blend record carrying it regenerates without one.
+    if let ProceduralSurfaceDefinition::Blend {
+        native: Some(construction),
+        ..
+    } = &procedural.definition
+    {
+        if construction.cache_selector == 2 {
+            encode_complete_native_rolling_ball(bytes, target, procedural, construction, None)?;
+            return Ok(true);
+        }
+    }
+    if let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition {
+        if construction.cache_selector == 2 {
+            encode_native_variable_blend(bytes, target, procedural, construction, None)?;
+            return Ok(true);
+        }
     }
     Ok(false)
 }
@@ -3685,7 +3709,7 @@ fn encode_native_variable_blend(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::VariableBlendConstruction,
-    solved_cache: &NurbsSurface,
+    solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
     // Only tail form `0` stores a fit tolerance; form `2` stores none.
     let cache_fit_tolerance = procedural.cache_fit_tolerance;
@@ -3796,7 +3820,7 @@ fn encode_native_variable_blend(
         bytes,
         construction.cache_selector,
         construction.tail_parameterization.as_ref(),
-        Some(solved_cache),
+        solved_cache,
         cache_fit_tolerance,
     )?;
     native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
@@ -3998,7 +4022,7 @@ fn encode_complete_native_rolling_ball(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::RollingBallConstruction,
-    solved_cache: &NurbsSurface,
+    solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
     // Only tail form `0` stores a fit tolerance; form `2` stores none.
     let cache_fit_tolerance = procedural.cache_fit_tolerance;
@@ -4062,7 +4086,7 @@ fn encode_complete_native_rolling_ball(
         bytes,
         construction.cache_selector,
         construction.tail_parameterization.as_ref(),
-        Some(solved_cache),
+        solved_cache,
         cache_fit_tolerance,
     )?;
     native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
