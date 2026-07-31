@@ -95,24 +95,24 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report);
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
-    decode_result(ir, report, annotations, &unknowns)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
-    unknowns: &[UnknownRecord],
+    unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,

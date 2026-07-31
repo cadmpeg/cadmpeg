@@ -105,47 +105,67 @@ impl SourceFidelity {
     }
 
     /// Retains source records without adding them to the product model.
-    pub fn retain_unknown_records(&mut self, stream: &str, records: &[UnknownRecord]) {
+    ///
+    /// The records are consumed: their retained bytes move into the sidecar
+    /// rather than being copied into it.
+    pub fn retain_unknown_records(
+        &mut self,
+        stream: &str,
+        records: impl IntoIterator<Item = UnknownRecord>,
+    ) {
         self.retained_records
-            .extend(records.iter().map(|record| RetainedSourceRecord {
-                id: record.id.to_string(),
+            .extend(records.into_iter().map(|record| RetainedSourceRecord {
+                id: record.id.0,
                 stream: stream.into(),
                 offset: record.offset,
                 byte_len: record.byte_len,
-                sha256: record.sha256.clone(),
-                data: record.data.clone(),
+                sha256: record.sha256,
+                data: record.data,
             }));
     }
 
     /// Stores source bytes in the sidecar and references in the product model.
+    ///
+    /// The records are consumed and split as they arrive: the retained bytes
+    /// move into the sidecar and the identity and links move into the product
+    /// arena, so neither the retained source image nor the derived product
+    /// references are ever duplicated. A caller that still needs a record
+    /// afterwards clones that record itself.
     pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
         format: &str,
-        records: &[UnknownRecord],
+        records: impl IntoIterator<Item = UnknownRecord>,
     ) -> Result<(), NativeConvertError> {
-        self.retained_records.extend(records.iter().map(|record| {
-            let stream = self
-                .annotations
-                .provenance
-                .get(&record.id.0)
-                .and_then(|provenance| self.annotations.streams.get(provenance.stream as usize))
-                .cloned()
-                .unwrap_or_else(|| "source".into());
-            RetainedSourceRecord {
-                id: record.id.to_string(),
-                stream,
-                offset: record.offset,
-                byte_len: record.byte_len,
-                sha256: record.sha256.clone(),
-                data: record.data.clone(),
-            }
-        }));
-        let product_records = records
-            .iter()
-            .map(crate::NativeUnknownRecord::from)
-            .collect::<Vec<_>>();
-        ir.set_native_unknowns(format, &product_records)
+        let Self {
+            annotations,
+            retained_records,
+            ..
+        } = self;
+        ir.set_native_unknowns_from(
+            format,
+            records.into_iter().map(|record| {
+                let stream = annotations
+                    .provenance
+                    .get(&record.id.0)
+                    .and_then(|provenance| annotations.streams.get(provenance.stream as usize))
+                    .cloned()
+                    .unwrap_or_else(|| "source".into());
+                let product = crate::NativeUnknownRecord {
+                    id: record.id.clone(),
+                    links: record.links,
+                };
+                retained_records.push(RetainedSourceRecord {
+                    id: record.id.0,
+                    stream,
+                    offset: record.offset,
+                    byte_len: record.byte_len,
+                    sha256: record.sha256,
+                    data: record.data,
+                });
+                product
+            }),
+        )
     }
 
     /// Joins product references with retained source records.

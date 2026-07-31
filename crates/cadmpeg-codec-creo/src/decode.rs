@@ -22700,7 +22700,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
     };
-    source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
         ir,
         report,

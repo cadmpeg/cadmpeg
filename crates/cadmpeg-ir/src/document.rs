@@ -296,11 +296,22 @@ impl CadIr {
         format: &str,
         records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
-        let namespace = self.native.namespace_mut(format);
-        if namespace.version == 0 {
-            namespace.version = 1;
-        }
-        namespace.set_arena("unknowns", records)
+        self.set_native_unknowns_from(format, records.iter())
+    }
+
+    /// Replace the reserved `unknowns` arena for `format` one record at a time.
+    ///
+    /// A caller that derives its product references from a larger population
+    /// should derive them inside the iterator: each reference is serialized as
+    /// it is produced, so the derived population is never resident alongside the
+    /// arena built from it.
+    pub fn set_native_unknowns_from<T: Serialize, I: IntoIterator<Item = T>>(
+        &mut self,
+        format: &str,
+        records: I,
+    ) -> Result<(), crate::native::NativeConvertError> {
+        self.unknowns_namespace_mut(format)
+            .set_arena_from("unknowns", records)
     }
 
     /// Replace the reserved `unknowns` arena for `format`, consuming the records.
@@ -308,10 +319,7 @@ impl CadIr {
     /// Codecs retaining large source populations should use this form to avoid
     /// keeping typed and generic native copies alive at the same time.
     pub fn set_native_unknowns_owned(&mut self, format: &str, records: Vec<UnknownRecord>) {
-        let namespace = self.native.namespace_mut(format);
-        if namespace.version == 0 {
-            namespace.version = 1;
-        }
+        let namespace = self.unknowns_namespace_mut(format);
         let mut converted = records
             .into_iter()
             .map(UnknownRecord::into_native_record)
@@ -330,6 +338,15 @@ impl CadIr {
         records.retain(|existing| existing.id != record.id);
         records.push(record);
         self.set_native_unknowns(format, &records)
+    }
+
+    /// Return the `format` namespace, versioning a newly created one.
+    fn unknowns_namespace_mut(&mut self, format: &str) -> &mut crate::native::NativeNamespace {
+        let namespace = self.native.namespace_mut(format);
+        if namespace.version == 0 {
+            namespace.version = 1;
+        }
+        namespace
     }
 
     /// Construct an empty current-version document with default tolerances.

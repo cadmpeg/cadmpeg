@@ -1812,14 +1812,6 @@ impl<'a> DecodeContext<'a> {
         crate::presentation::install(self.scan, &mut self.ir);
         crate::product::install(self.scan, &mut self.ir);
         crate::views::install(self.scan, &mut self.ir);
-        let unknown_refs = self
-            .unknowns
-            .iter()
-            .map(NativeUnknownRecord::from)
-            .collect::<Vec<_>>();
-        self.ir
-            .set_native_unknowns("rhino", &unknown_refs)
-            .expect("Rhino unknown records serialize");
         self.ir.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let decoded = self
@@ -1945,7 +1937,7 @@ impl<'a> DecodeContext<'a> {
             ..Default::default()
         };
         source_fidelity
-            .attach_native_unknown_records(&mut self.ir, "rhino", &self.unknowns)
+            .attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)
             .expect("Rhino source records separate from product identities");
         DecodeResult::with_source_fidelity(
             self.ir,

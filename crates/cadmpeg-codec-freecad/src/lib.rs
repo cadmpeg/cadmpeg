@@ -1193,7 +1193,7 @@ impl Codec for FcstdCodec {
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
-                &[UnknownRecord {
+                [UnknownRecord {
                     id: UnknownId(native::native_id("thumbnail", name)),
                     offset: 0,
                     byte_len: bytes.len() as u64,

@@ -911,7 +911,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         if let Ok(Some(table)) = crate::xref::decode(&scan) {
             apply_assembly_classification(&mut report, &scan, &table);
         }
-        return decode_result(ir, report, annotations, &unknowns, &source_image);
+        return decode_result(ir, report, annotations, unknowns, source_image);
     }
 
     let unbound_body_bindings =
@@ -1411,7 +1411,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 &unknowns,
             );
             let source_image = preserve_source_image(&scan, &mut ir);
-            return decode_result(ir, report, annotations, &unknowns, &source_image);
+            return decode_result(ir, report, annotations, unknowns, source_image);
         }
     }
 
@@ -1774,7 +1774,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         Ok(None) => {}
         Err(error) => report.losses.push(xref_parse_loss(error)),
     }
-    decode_result(ir, report, annotations, &unknowns, &source_image)
+    decode_result(ir, report, annotations, unknowns, source_image)
 }
 
 /// Record the `Properties.dat` docstruct declaration on the source metadata.
@@ -1866,15 +1866,15 @@ fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
-    unknowns: &[UnknownRecord],
-    source_image: &UnknownRecord,
+    unknowns: Vec<UnknownRecord>,
+    source_image: UnknownRecord,
 ) -> Result<DecodeResult, CodecError> {
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
     };
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
-    source_fidelity.retain_unknown_records("f3d", std::slice::from_ref(source_image));
+    source_fidelity.retain_unknown_records("f3d", [source_image]);
     ir.finalize();
     let hash = semantic_hash(&ir);
     if let Some(source) = &mut ir.source {

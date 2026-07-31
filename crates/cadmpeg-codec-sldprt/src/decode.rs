@@ -134,9 +134,9 @@ fn decode_result(
         .iter()
         .position(|record| record.id.0 == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
-    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", &unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
     if let Some(source_image) = source_image {
-        source_fidelity.retain_unknown_records("sldprt", std::slice::from_ref(&source_image));
+        source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
     set_semantic_hash(&mut ir);
     Ok(DecodeResult::with_source_fidelity(

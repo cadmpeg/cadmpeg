@@ -38,20 +38,20 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     for route in families::ROUTES {
         if (route.applicable)(scan.variant) {
             if let Some(out) = (route.decode)(&scan) {
-                return finish_decode(&scan, out.ir, out.report, out.annotations, &out.unknowns);
+                return finish_decode(&scan, out.ir, out.report, out.annotations, out.unknowns);
             }
         }
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    finish_decode(&scan, ir, report, annotations, &unknowns)
+    finish_decode(&scan, ir, report, annotations, unknowns)
 }
 
 fn finish_decode(
@@ -59,7 +59,7 @@ fn finish_decode(
     mut ir: CadIr,
     mut report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
-    unknowns: &[UnknownRecord],
+    unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
     let object_record_count = native
@@ -93,7 +93,7 @@ fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
-    unknowns: &[UnknownRecord],
+    unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
     let mut source_fidelity = SourceFidelity {
         annotations,
