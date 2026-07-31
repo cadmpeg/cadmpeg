@@ -1568,6 +1568,10 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
+        // A stream can retain a superseded copy of a record beside the copy its
+        // index names, and both parse. The record index is the entity, so the
+        // first copy is kept and the rest dropped.
+        let mut emitted = std::collections::HashSet::new();
         let mut at = 0usize;
         while at + 230 <= bytes.len() {
             let Some((class_tag, after_tag)) =
@@ -1590,7 +1594,9 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
             if let Some(text) =
                 decode_sketch_text_record(payload, &entry.name, class_tag, record_index, at)
             {
-                out.push(text);
+                if emitted.insert(record_index) {
+                    out.push(text);
+                }
                 at = record_end;
             } else {
                 at += 1;
