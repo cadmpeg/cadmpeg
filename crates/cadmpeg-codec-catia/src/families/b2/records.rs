@@ -7,17 +7,16 @@
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::wire::le::u16_at as u16_le;
-#[cfg(test)]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::mem::size_of;
 
-use crate::families::a5a8::records::A8Surface;
-#[cfg(test)]
+use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
+use crate::families::a5a8::records::FreeformSurface;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{allocation_ref, f64_le, finite_f64_lane, read_f64_array, u32_le_24};
-#[cfg(test)]
-use crate::wire::records::consolidated_records;
 use crate::wire::records::{
-    b_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
+    b_family_frames, consolidated_records, parse_consolidated_pcurve, ConsolidatedFrame,
+    ConsolidatedPcurve,
 };
 use crate::wire::tokens::compact_uint;
 
@@ -37,19 +36,31 @@ pub struct B2OffsetSupport {
 
 /// Parameter-space data stored in a `b2/b3/b4 03 18` record.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg(test)]
-pub enum B2ParameterPoint {
+pub struct B2ParameterPoint {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Exclusive end of the complete framed record.
+    pub end: usize,
+    /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
+    pub layout: u8,
+    /// First byte of the two-byte class-specific prefix.
+    pub prefix: u8,
+    /// Second byte of the two-byte class-specific prefix.
+    pub control: u8,
+    /// Layout-specific finite scalar lane.
+    pub payload: B2ParameterPointPayload,
+}
+
+/// Layout-specific scalar lane of a class-`0x18` parameter-space record.
+#[derive(Debug, Clone, PartialEq)]
+pub enum B2ParameterPointPayload {
     /// Two-coordinate UV point (`L=0x12`).
     Uv {
-        /// Record byte offset.
-        pos: usize,
         /// Surface-chart coordinates.
         uv: [f64; 2],
     },
     /// Host-chain station followed by UV (`L=0x1a`).
     StationUv {
-        /// Record byte offset.
-        pos: usize,
         /// Host-chain axial boundary station.
         station: f64,
         /// Surface-chart coordinates.
@@ -57,8 +68,6 @@ pub enum B2ParameterPoint {
     },
     /// Unsplit five-scalar layout (`L=0x2a`).
     FiveScalars {
-        /// Record byte offset.
-        pos: usize,
         /// Stored scalar payload.
         values: [f64; 5],
     },
@@ -66,7 +75,6 @@ pub enum B2ParameterPoint {
 
 /// Persistent-tag reference list stored in a `b2/b3/b4 03 37` record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2ReferenceList {
     /// Record byte offset.
     pub pos: usize,
@@ -74,10 +82,22 @@ pub struct B2ReferenceList {
     pub references: Vec<u32>,
 }
 
+/// Typed 62-byte tail of a fixed-nine class-`0x62` owner packet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct B2OwnerNumericTail {
+    /// Five-byte class-specific header.
+    pub header: [u8; 5],
+    /// Lower coordinate pair of a strictly increasing binary64 box.
+    pub lower: [f64; 2],
+    /// Upper coordinate pair of a strictly increasing binary64 box.
+    pub upper: [f64; 2],
+    /// Three strictly increasing binary32 bounds in serialization order.
+    pub bounds: [[f32; 2]; 3],
+}
+
 /// Nine-reference owner packet stored in a `b2/b3/b4 03 62` record with a
-/// 62-byte numeric tail.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
+/// structurally decoded numeric tail.
+#[derive(Debug, Clone, PartialEq)]
 pub struct B2OwnerPacket {
     /// Record byte offset.
     pub pos: usize,
@@ -87,13 +107,12 @@ pub struct B2OwnerPacket {
     pub reference_encoding: B2OwnerReferenceEncoding,
     /// Nine compact persistent identities following the `0x89` count.
     pub references: [u32; 9],
-    /// Fixed-width numeric tail retained byte-exactly.
-    pub numeric_tail: [u8; 62],
+    /// Fixed-width class-specific numeric tail.
+    pub numeric_tail: B2OwnerNumericTail,
 }
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2CountedOwner {
     /// Record byte offset.
     pub pos: usize,
@@ -107,7 +126,6 @@ pub struct B2CountedOwner {
 
 /// Reference dialect used by a nine-reference class-`0x62` owner packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(test)]
 pub enum B2OwnerReferenceEncoding {
     /// Strong identities use `0x0a <u16le>` and weak identities use compact integers.
     TaggedU16Strong,
@@ -118,7 +136,6 @@ pub enum B2OwnerReferenceEncoding {
 
 /// Count-prefixed class-`0x61` reference record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2Counted61 {
     /// Record byte offset.
     pub pos: usize,
@@ -132,7 +149,6 @@ pub struct B2Counted61 {
 
 /// Long-form class-`0x61` record with a monotone u16 member lane.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg(test)]
 pub struct B2Long61 {
     /// Record byte offset.
     pub pos: usize,
@@ -150,7 +166,6 @@ pub struct B2Long61 {
 
 /// Fixed-shape class-`0x5f` link record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2Link5f {
     /// Record byte offset.
     pub pos: usize,
@@ -162,8 +177,7 @@ pub struct B2Link5f {
 
 /// Adjacent class-`0x5f` link and class-`0x62` owner packet joined by their
 /// allocation-successor identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct B2LinkedOwner {
     /// Fixed link immediately preceding the owner packet.
     pub link: B2Link5f,
@@ -174,7 +188,6 @@ pub struct B2LinkedOwner {
 /// Adjacent class-`0x5f` link and count-framed class-`0x62` owner joined by
 /// the owner's allocation-successor identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(test)]
 pub struct B2LinkedCountedOwner {
     /// Fixed link immediately preceding the owner packet.
     pub link: B2Link5f,
@@ -184,12 +197,13 @@ pub struct B2LinkedCountedOwner {
 
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg(test)]
 pub struct B2ConeFace {
     /// Record byte offset.
     pub pos: usize,
-    /// Compact persistent-tag references.
-    pub references: Vec<u32>,
+    /// Exclusive end of the complete framed record.
+    pub end: usize,
+    /// Complete reference-and-control program preceding the scalars.
+    pub program: Vec<u8>,
     /// Stored angular chart scale.
     pub angular_scale: f64,
     /// Cone half-angle in radians.
@@ -320,6 +334,19 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
     b_family_frames(data, 0x5e)
         .into_iter()
         .filter_map(|frame| {
+            let token_start = frame.pos.checked_add(4)?;
+            let mut token_end = token_start;
+            let header_value = compact_uint(data, &mut token_end)?;
+            let canonical_token_width = match header_value {
+                0..=0x3f => 1,
+                0x40..=0xff => 2,
+                _ => 3,
+            };
+            if token_end != frame.payload
+                || frame.payload.checked_sub(token_start)? != canonical_token_width
+            {
+                return None;
+            }
             let mut at = frame.payload;
             let curve_ref = compact_uint(data, &mut at)?;
             let start_vertex_ref = allocation_ref(data, &mut at)?;
@@ -327,56 +354,81 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
             let start_parameter_ref = compact_uint(data, &mut at)?;
             let end_parameter_ref = compact_uint(data, &mut at)?;
             let tail = *data.get(at)?;
-            (at + 1 == frame.end).then_some(B2EdgeNode {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                curve_ref,
-                start_vertex_ref,
-                end_vertex_ref,
-                start_parameter_ref,
-                end_parameter_ref,
-                tail,
-            })
+            (at + 1 == frame.end && matches!(tail, 0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
+                .then_some(B2EdgeNode {
+                    pos: frame.pos,
+                    header_token: frame.header_token,
+                    curve_ref,
+                    start_vertex_ref,
+                    end_vertex_ref,
+                    start_parameter_ref,
+                    end_parameter_ref,
+                    tail,
+                })
         })
         .collect()
 }
 
 /// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
 #[must_use]
-#[cfg(test)]
 pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
-    b_family_frames(data, 0x3b)
-        .into_iter()
-        .filter_map(|frame| {
-            if frame.header_token != 5 || frame.end - frame.payload != 0x20 {
-                return None;
-            }
-            let scalar_at = frame.end - 16;
-            let angular_scale = f64_le(data, scalar_at)?;
-            let half_angle = f64_le(data, scalar_at + 8)?;
-            if !angular_scale.is_finite()
-                || !(0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
-            {
-                return None;
-            }
-            let mut at = frame.payload;
-            let mut references = Vec::new();
-            while at < scalar_at {
-                references.push(compact_uint(data, &mut at)?);
-            }
-            (at == scalar_at).then_some(B2ConeFace {
-                pos: frame.pos,
-                references,
+    let mut faces = Vec::new();
+    for pos in 0..data.len().saturating_sub(5) {
+        let Some(width) = data[pos]
+            .checked_sub(0xb1)
+            .filter(|width| (1..=3).contains(width))
+        else {
+            continue;
+        };
+        if !matches!(data.get(pos + 1), Some(0x03 | 0x13 | 0x83))
+            || data.get(pos + 2) != Some(&0x3b)
+        {
+            continue;
+        }
+        let payload = pos + 4 + usize::from(width);
+        let Some(end) = payload.checked_add(usize::from(data[pos + 3])) else {
+            continue;
+        };
+        if end > data.len() || end - payload < 0x20 {
+            continue;
+        }
+        let header_token = data[pos + 4..payload]
+            .iter()
+            .enumerate()
+            .fold(0u32, |value, (shift, byte)| {
+                value | (u32::from(*byte) << (8 * shift))
+            });
+        let scalar_at = end - 16;
+        let Some(program) = data.get(payload..scalar_at) else {
+            continue;
+        };
+        let Some(angular_scale) = f64_le(data, scalar_at) else {
+            continue;
+        };
+        let Some(half_angle) = f64_le(data, scalar_at + 8) else {
+            continue;
+        };
+        if header_token == 5
+            && program.first() == Some(&0x85)
+            && program.ends_with(&[0x03, 0x11])
+            && angular_scale.is_finite()
+            && 0.0 < half_angle
+            && half_angle < std::f64::consts::FRAC_PI_2
+        {
+            faces.push(B2ConeFace {
+                pos,
+                end,
+                program: program.to_vec(),
                 angular_scale,
                 half_angle,
-            })
-        })
-        .collect()
+            });
+        }
+    }
+    faces
 }
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
 #[must_use]
-#[cfg(test)]
 pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     b_family_frames(data, 0x37)
         .into_iter()
@@ -404,7 +456,6 @@ pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
 /// Decode class-`0x62` owner packets whose leading count fixes the persistent
 /// reference lane and leaves a nonempty class-specific tail.
 #[must_use]
-#[cfg(test)]
 pub fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
     b_family_frames(data, 0x62)
         .into_iter()
@@ -430,7 +481,6 @@ pub fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
 /// Decode width-coded class-`0x62` owner packets whose counted references and
 /// fixed numeric tail consume the complete frame.
 #[must_use]
-#[cfg(test)]
 pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
     b_family_frames(data, 0x62)
         .into_iter()
@@ -462,7 +512,7 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
                     _ => unreachable!(),
                 };
             }
-            let numeric_tail = data.get(at..frame.end)?.try_into().ok()?;
+            let numeric_tail = b2_owner_numeric_tail(data.get(at..frame.end)?)?;
             Some(B2OwnerPacket {
                 pos: frame.pos,
                 header_token: frame.header_token,
@@ -474,11 +524,46 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
         .collect()
 }
 
+fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
+    if data.len() != 62 {
+        return None;
+    }
+    let header: [u8; 5] = data.get(..5)?.try_into().ok()?;
+    if header[0] != 0x84 || !matches!(header[1], 0x41 | 0xc1) || header[4] != 0x0d {
+        return None;
+    }
+
+    let values = read_f64_array::<4>(data, 5)?;
+    let lower = [values[0], values[1]];
+    let upper = [values[2], values[3]];
+    if lower[0] >= upper[0] || lower[1] >= upper[1] {
+        return None;
+    }
+    if data.get(37) != Some(&0x01) {
+        return None;
+    }
+    let mut bounds = [[0.0; 2]; 3];
+    for (index, bound) in bounds.iter_mut().enumerate() {
+        for (side, value) in bound.iter_mut().enumerate() {
+            let start = 38 + (2 * index + side) * 4;
+            *value = f32::from_le_bytes(data.get(start..start + 4)?.try_into().ok()?);
+        }
+        if !bound[0].is_finite() || !bound[1].is_finite() || bound[0] >= bound[1] {
+            return None;
+        }
+    }
+    Some(B2OwnerNumericTail {
+        header,
+        lower,
+        upper,
+        bounds,
+    })
+}
+
 /// Decode the count-prefixed class-`0x61` payload family. Long class-`0x61`
 /// records without a leading count belong to a separate grammar and are not
 /// returned.
 #[must_use]
-#[cfg(test)]
 pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     b_family_frames(data, 0x61)
         .into_iter()
@@ -508,7 +593,6 @@ pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
 /// Decode the long class-`0x61` form. Its fixed 25-byte suffix determines the
 /// monotone member-list boundary without searching for delimiter bytes.
 #[must_use]
-#[cfg(test)]
 pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     b_family_frames(data, 0x61)
         .into_iter()
@@ -561,7 +645,6 @@ pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
 
 /// Decode `82 <width-coded target> 03 05` class-`0x5f` links.
 #[must_use]
-#[cfg(test)]
 pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
     b_family_frames(data, 0x5f)
         .into_iter()
@@ -585,7 +668,6 @@ pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
 /// Bind immediately adjacent `5f,62` records when the owner's ninth identity
 /// is the checked successor of the link target.
 #[must_use]
-#[cfg(test)]
 pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
     let links = b2_links_5f(data)
         .into_iter()
@@ -614,7 +696,6 @@ pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
 /// Bind immediately adjacent `5f,62` records when the count-framed owner's
 /// final identity is the checked successor of the link target.
 #[must_use]
-#[cfg(test)]
 pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
     let links = b2_links_5f(data)
         .into_iter()
@@ -644,42 +725,52 @@ pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
 
 /// Decode width-coded `b2/b3/b4 03 18` parameter-space records.
 #[must_use]
-#[cfg(test)]
 pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
     b_family_frames(data, 0x18)
         .into_iter()
         .filter_map(|frame| {
-            if frame.header_token != 5 || data.get(frame.payload) != Some(&0x05) {
+            if frame.header_token != 5 {
                 return None;
             }
+            let prefix = *data.get(frame.payload)?;
+            if !matches!(prefix, 0x05 | 0x09 | 0x0d | 0x11) {
+                return None;
+            }
+            let layout = u8::try_from(frame.end - frame.payload).ok()?;
+            let control = *data.get(frame.payload + 1)?;
             let at = frame.payload + 2;
-            match frame.end - frame.payload {
-                0x12 => Some(B2ParameterPoint::Uv {
-                    pos: frame.pos,
+            let payload = match layout {
+                0x12 => B2ParameterPointPayload::Uv {
                     uv: read_f64_array::<2>(data, at)?,
-                }),
+                },
                 0x1a => {
                     let values = read_f64_array::<3>(data, at)?;
-                    Some(B2ParameterPoint::StationUv {
-                        pos: frame.pos,
+                    B2ParameterPointPayload::StationUv {
                         station: values[0],
                         uv: [values[1], values[2]],
-                    })
+                    }
                 }
-                0x2a => Some(B2ParameterPoint::FiveScalars {
-                    pos: frame.pos,
+                0x2a => B2ParameterPointPayload::FiveScalars {
                     values: read_f64_array::<5>(data, at)?,
-                }),
-                _ => None,
-            }
-            .filter(|value| match value {
-                B2ParameterPoint::Uv { uv, .. } => uv.iter().all(|v| v.is_finite()),
-                B2ParameterPoint::StationUv { station, uv, .. } => {
+                },
+                _ => return None,
+            };
+            let finite = match &payload {
+                B2ParameterPointPayload::Uv { uv } => uv.iter().all(|v| v.is_finite()),
+                B2ParameterPointPayload::StationUv { station, uv } => {
                     station.is_finite() && uv.iter().all(|v| v.is_finite())
                 }
-                B2ParameterPoint::FiveScalars { values, .. } => {
+                B2ParameterPointPayload::FiveScalars { values } => {
                     values.iter().all(|v| v.is_finite())
                 }
+            };
+            finite.then_some(B2ParameterPoint {
+                pos: frame.pos,
+                end: frame.end,
+                layout,
+                prefix,
+                control,
+                payload,
             })
         })
         .collect()
@@ -736,8 +827,17 @@ pub struct B2Class25Descriptor {
     pub values: Vec<f64>,
 }
 
+fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
+    let span = range[1] - range[0];
+    if !span.is_finite() || span <= 0.0 {
+        return false;
+    }
+    let tolerance = 1e-6 * span;
+    range[0] - tolerance <= value && value <= range[1] + tolerance
+}
+
 pub(crate) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
-    if !(cone.slant_range[0] - 1e-6..=cone.slant_range[1] + 1e-6).contains(&uv[1]) {
+    if !parameter_in_closed_range(uv[1], cone.slant_range) {
         return None;
     }
     let phi = uv[0] / cone.angular_scale;
@@ -761,12 +861,12 @@ pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<P
         axis,
         ref_direction,
         radius,
-    } = cylinder.geometry.as_ref()?
+    } = &cylinder.geometry
     else {
         return None;
     };
-    if !(cylinder.u_range[0] - 1e-6..=cylinder.u_range[1] + 1e-6).contains(&uv[0])
-        || !(cylinder.v_range[0] - 1e-6..=cylinder.v_range[1] + 1e-6).contains(&uv[1])
+    if !parameter_in_closed_range(uv[0], cylinder.u_range)
+        || !parameter_in_closed_range(uv[1], cylinder.v_range)
     {
         return None;
     }
@@ -790,10 +890,12 @@ pub(crate) fn point_distance(a: Point3, b: Point3) -> f64 {
 }
 
 /// Arc-length circle support stored in a `b2 03 19` record.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct B2Circle {
     /// Record byte offset.
     pub pos: usize,
+    /// Payload-layout discriminator (`0x32..=0x34`).
+    pub layout: u8,
     /// Compact persistent record identifier.
     pub record_id: u32,
     /// Frame token following the record length.
@@ -806,6 +908,8 @@ pub struct B2Circle {
     pub range: [f64; 2],
     /// Whether the interval spans one complete circumference.
     pub full_circle: bool,
+    /// Length-valued angular chart shift.
+    pub chart_shift: f64,
 }
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
@@ -814,20 +918,23 @@ pub struct B2Cylinder {
     /// Record byte offset.
     pub pos: usize,
     /// Payload-layout discriminator (`0x52`, `0x5a`, or `0x62`).
-    #[cfg(test)]
     pub layout: u8,
-    /// Decoded carrier; absent for the unresolved phase-tailed `0x62` frame.
-    pub geometry: Option<SurfaceGeometry>,
+    /// Frame token following the origin.
+    pub frame_token: u8,
+    /// Cylinder-axis origin.
+    pub origin: [f64; 3],
+    /// Cylinder radius.
+    pub radius: f64,
+    /// Decoded carrier.
+    pub geometry: SurfaceGeometry,
     /// Arc-length circumferential range.
     pub u_range: [f64; 2],
     /// Axial range.
     pub v_range: [f64; 2],
-    /// Stored planar vector for a phase-tailed `0x62` frame.
-    #[cfg(test)]
+    /// Stored planar vector for a range-origin `0x62` frame.
     pub stored_vector: Option<[f64; 2]>,
-    /// Phase scalar for a phase-tailed `0x62` frame.
-    #[cfg(test)]
-    pub phase: Option<f64>,
+    /// Origin of the stored partial circumferential interval.
+    pub range_origin: Option<f64>,
 }
 
 /// Slant-coordinate cone chart stored in a `b2 03 29` record.
@@ -845,24 +952,118 @@ pub struct B2Cone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
+    /// Scalar immediately preceding the active angular interval.
+    pub pre_angular_range_scalar: f64,
+    /// Active azimuth interval.
+    pub angular_range: [f64; 2],
     /// Native slant-coordinate range.
     pub slant_range: [f64; 2],
     /// Divisor mapping the stored U coordinate to azimuth.
     pub angular_scale: f64,
+    /// Full-turn azimuth chart domain.
+    pub angular_domain: [f64; 2],
 }
 
 /// Axis-and-profile surface of revolution stored in a `b2 03 2d` record.
-#[derive(Debug, Clone)]
-#[cfg(test)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct B2Revolution {
-    /// Referenced profile-curve identifier.
-    pub profile_curve_id: u16,
+    /// Record byte offset.
+    pub pos: usize,
+    /// Reference-token dialect (`0x08` or `0x0a`).
+    pub reference_token: u8,
+    /// Stored profile allocation identity.
+    pub profile_allocation_id: u16,
     /// Axis-frame origin.
     pub origin: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
     /// Revolution-axis direction.
     pub axis: [f64; 3],
+    /// Stored angular parameter interval.
+    pub angular_range: [f64; 2],
     /// Stored profile parameter interval.
     pub profile_range: [f64; 2],
+    /// Positive angular chart scale.
+    pub angular_scale: f64,
+}
+
+/// One revolution record whose profile interval identifies exactly one
+/// consolidated circle record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2ResolvedRevolution {
+    /// Ordinal among all decoded revolution records.
+    pub revolution_index: usize,
+    /// Surface-of-revolution record.
+    pub revolution: B2Revolution,
+    /// Unique profile circle with the same stored parameter interval.
+    pub profile: B2Circle,
+}
+
+/// Metric line profile stored in a `b2/b3/b4 03 0e` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2LineProfile {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Stored line origin.
+    pub origin: [f64; 3],
+    /// Unit line direction.
+    pub direction: [f64; 3],
+    /// Increasing stored parameter interval.
+    pub range: [f64; 2],
+}
+
+/// Radius-scaled sphere chart stored in a `b2 03 2a` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2Sphere {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Sphere centre.
+    pub center: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
+    /// Sphere-axis unit direction.
+    pub axis: [f64; 3],
+    /// Sphere radius.
+    pub radius: f64,
+    /// Active azimuth interval.
+    pub azimuth_range: [f64; 2],
+    /// Active latitude interval.
+    pub latitude_range: [f64; 2],
+}
+
+/// Doubly periodic torus chart stored in a `b2 03 2b` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2Torus {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Torus centre.
+    pub center: [f64; 3],
+    /// First transverse unit direction.
+    pub direction_x: [f64; 3],
+    /// Second transverse unit direction.
+    pub direction_y: [f64; 3],
+    /// Torus-axis unit direction.
+    pub axis: [f64; 3],
+    /// Major radius.
+    pub major_radius: f64,
+    /// Minor radius.
+    pub minor_radius: f64,
+    /// Active major-angle interval.
+    pub major_angular_range: [f64; 2],
+    /// Full-turn major-angle chart domain.
+    pub major_angular_domain: [f64; 2],
+    /// Active minor-angle interval.
+    pub minor_angular_range: [f64; 2],
+    /// Full-turn minor-angle chart domain.
+    pub minor_angular_domain: [f64; 2],
+    /// Scale from major angle to stored U parameter.
+    pub major_scale: f64,
+    /// Scale from minor angle to stored V parameter.
+    pub minor_scale: f64,
 }
 
 /// Constant `b2 03 65` separator preceding a typed group opener.
@@ -878,9 +1079,6 @@ pub struct B2GroupSeparator {
 pub struct B2Group {
     /// Record byte offset.
     pub pos: usize,
-    /// Compact group identifier.
-    #[cfg(test)]
-    pub group_id: u32,
     /// Compact group-type code; type `3` opens a cylinder chain.
     pub group_type: u32,
 }
@@ -1027,46 +1225,51 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
     for frame in b_family_frames(data, 0x29) {
         let pos = frame.pos;
         let p = frame.payload;
-        if frame.end - p != 0xb8 || p + 153 > frame.end {
+        if frame.end - p != 0xb8 {
             continue;
         }
-        let Some(apex) = read_f64_array::<3>(data, p) else {
+        let Some(values) = read_f64_array::<23>(data, p) else {
             continue;
         };
-        let Some(t1) = read_f64_array::<3>(data, p + 24) else {
-            continue;
-        };
-        let Some(t2) = read_f64_array::<3>(data, p + 48) else {
-            continue;
-        };
-        let Some(axis) = read_f64_array::<3>(data, p + 72) else {
-            continue;
-        };
-        let Some(half_angle) = f64_le(data, p + 96) else {
-            continue;
-        };
-        let Some(angular_offset) = f64_le(data, p + 120) else {
-            continue;
-        };
-        let Some(slant_range) = read_f64_array::<2>(data, p + 128) else {
-            continue;
-        };
-        let Some(angular_scale) = f64_le(data, p + 144) else {
-            continue;
-        };
+        let apex: [f64; 3] = values[0..3].try_into().expect("three apex values");
+        let t1: [f64; 3] = values[3..6]
+            .try_into()
+            .expect("three first-direction values");
+        let t2: [f64; 3] = values[6..9]
+            .try_into()
+            .expect("three second-direction values");
+        let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+        let half_angle = values[12];
+        let pre_angular_range_scalar = values[13];
+        let angular_range = [values[14], values[15]];
+        let mut slant_range = [values[16], values[17]];
+        let angular_scale = values[18];
+        let angular_domain = [values[21], values[22]];
+        if slant_range[0].abs() <= 1e-12 {
+            slant_range[0] = 0.0;
+        }
         let unit = |v: [f64; 3]| ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) - 1.0).abs() < 1e-9;
-        if unit(t1)
+        let cross = [
+            t1[1] * t2[2] - t1[2] * t2[1],
+            t1[2] * t2[0] - t1[0] * t2[2],
+            t1[0] * t2[1] - t1[1] * t2[0],
+        ];
+        if values.iter().all(|value| value.is_finite())
+            && unit(t1)
             && unit(t2)
             && unit(axis)
-            && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
-            && (0.0..1e6).contains(&angular_scale)
-            && 0.0 < slant_range[0]
-            && slant_range[0] < slant_range[1]
-            && slant_range[1] < 1e6
-            && apex
+            && cross
                 .iter()
-                .chain(&[angular_offset])
-                .all(|value| value.is_finite())
+                .zip(axis)
+                .all(|(cross, axis)| (cross - axis).abs() <= 1e-9)
+            && 0.0 < half_angle
+            && half_angle < std::f64::consts::FRAC_PI_2
+            && periodic_angular_range_is_valid(angular_range, angular_domain)
+            && 0.0 < angular_scale
+            && values[19] == 1.0
+            && values[20] == 0.0
+            && 0.0 <= slant_range[0]
+            && slant_range[0] < slant_range[1]
         {
             out.push(B2Cone {
                 pos,
@@ -1075,8 +1278,11 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
                 t2,
                 axis,
                 half_angle,
+                pre_angular_range_scalar,
+                angular_range,
                 slant_range,
                 angular_scale,
+                angular_domain,
             });
         }
     }
@@ -1085,7 +1291,6 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
 
 /// Decode `b2 03 2d` axis-and-profile surfaces of revolution.
 #[must_use]
-#[cfg(test)]
 pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
     let mut out = Vec::new();
     for frame in b_family_frames(data, 0x2d) {
@@ -1100,7 +1305,7 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
         {
             continue;
         }
-        let Some(profile_curve_id) = u16_le(data, p + 1) else {
+        let Some(profile_allocation_id) = u16_le(data, p + 1) else {
             continue;
         };
         let Some(axis_frame) = read_f64_array::<12>(data, p + 3) else {
@@ -1115,12 +1320,39 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
         let Some(mean_angle_parameter) = f64_le(data, p + 166) else {
             continue;
         };
+        let direction_x: [f64; 3] = axis_frame[3..6]
+            .try_into()
+            .expect("three first-direction values");
+        let direction_y: [f64; 3] = axis_frame[6..9]
+            .try_into()
+            .expect("three second-direction values");
+        let axis: [f64; 3] = axis_frame[9..12].try_into().expect("three axis values");
+        let squared_length = |direction: [f64; 3]| {
+            direction
+                .iter()
+                .map(|component| component * component)
+                .sum::<f64>()
+        };
+        let cross = [
+            direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+            direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+            direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
+        ];
         if axis_frame
             .iter()
             .chain(&bounds)
             .chain(&[angular_scale, mean_angle_parameter])
             .any(|value| !value.is_finite())
+            || profile_allocation_id == 0
             || angular_scale <= 0.0
+            || bounds[2] >= bounds[3]
+            || [direction_x, direction_y, axis]
+                .into_iter()
+                .any(|direction| (squared_length(direction) - 1.0).abs() > 1e-12)
+            || cross
+                .iter()
+                .zip(axis)
+                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
             || bounds[0] / angular_scale != 0.5
             || (bounds[1] - bounds[0]) / angular_scale != std::f64::consts::TAU
             || mean_angle_parameter / angular_scale != std::f64::consts::PI + 0.5
@@ -1128,13 +1360,207 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
             continue;
         }
         out.push(B2Revolution {
-            profile_curve_id,
+            pos: frame.pos,
+            reference_token: data[p],
+            profile_allocation_id,
             origin: axis_frame[0..3].try_into().expect("three origin values"),
-            axis: axis_frame[9..12].try_into().expect("three axis values"),
+            direction_x,
+            direction_y,
+            axis,
+            angular_range: [bounds[0], bounds[1]],
             profile_range: [bounds[2], bounds[3]],
+            angular_scale,
         });
     }
     out
+}
+
+/// Bind revolution profiles by exact, unique stored parameter interval.
+#[must_use]
+pub fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
+    let circles = b2_circles(data);
+    b2_revolutions(data)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(revolution_index, revolution)| {
+            let mut profiles = circles.iter().filter(|circle| {
+                circle.range[0].to_bits() == revolution.profile_range[0].to_bits()
+                    && circle.range[1].to_bits() == revolution.profile_range[1].to_bits()
+            });
+            let profile = profiles.next()?.clone();
+            profiles.next().is_none().then_some(B2ResolvedRevolution {
+                revolution_index,
+                revolution,
+                profile,
+            })
+        })
+        .collect()
+}
+
+/// Decode exact B-family metric line profiles.
+#[must_use]
+pub fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
+    b_family_frames(data, 0x0e)
+        .into_iter()
+        .filter_map(|frame| {
+            if frame.end - frame.payload != 9 * 8 {
+                return None;
+            }
+            let values = read_f64_array::<9>(data, frame.payload)?;
+            let direction: [f64; 3] = values[3..6].try_into().expect("three direction values");
+            let squared_length = direction
+                .iter()
+                .map(|component| component * component)
+                .sum::<f64>();
+            ((squared_length - 1.0).abs() <= 1e-12
+                && values[6].to_bits() == 1.0_f64.to_bits()
+                && values[7] < values[8])
+                .then_some(B2LineProfile {
+                    pos: frame.pos,
+                    origin: values[0..3].try_into().expect("three origin values"),
+                    direction,
+                    range: [values[7], values[8]],
+                })
+        })
+        .collect()
+}
+
+/// Decode `b2 03 2b` doubly periodic torus charts.
+#[must_use]
+pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
+    b_family_frames(data, 0x2b)
+        .into_iter()
+        .filter_map(|frame| {
+            let p = frame.payload;
+            (frame.end.checked_sub(p) == Some(200)).then_some(())?;
+            let values = read_f64_array::<25>(data, p)?;
+            let center: [f64; 3] = values[0..3].try_into().expect("three centre values");
+            let direction_x: [f64; 3] = values[3..6]
+                .try_into()
+                .expect("three first-direction values");
+            let direction_y: [f64; 3] = values[6..9]
+                .try_into()
+                .expect("three second-direction values");
+            let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+            let major_radius = values[12];
+            let minor_radius = values[13];
+            let major_angular_range = [values[14], values[15]];
+            let major_angular_domain = [values[16], values[17]];
+            let minor_angular_range = [values[18], values[19]];
+            let minor_angular_domain = [values[20], values[21]];
+            let major_scale = values[22];
+            let minor_scale = values[23];
+            let dot = |first: [f64; 3], second: [f64; 3]| {
+                first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+            };
+            let unit = |value: [f64; 3]| (dot(value, value) - 1.0).abs() <= 1e-12;
+            let cross = [
+                direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+                direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+                direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
+            ];
+            (values.iter().all(|value| value.is_finite())
+                && unit(direction_x)
+                && unit(direction_y)
+                && unit(axis)
+                && dot(direction_x, direction_y).abs() <= 1e-12
+                && dot(direction_x, axis).abs() <= 1e-12
+                && dot(direction_y, axis).abs() <= 1e-12
+                && cross
+                    .iter()
+                    .zip(axis)
+                    .map(|(first, second)| (first - second).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+                    <= 1e-12
+                && major_radius > 0.0
+                && minor_radius > 0.0
+                && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
+                && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain)
+                && major_scale > 0.0
+                && minor_scale > 0.0
+                && values[24] == 0.0)
+                .then_some(B2Torus {
+                    pos: frame.pos,
+                    center,
+                    direction_x,
+                    direction_y,
+                    axis,
+                    major_radius,
+                    minor_radius,
+                    major_angular_range,
+                    major_angular_domain,
+                    minor_angular_range,
+                    minor_angular_domain,
+                    major_scale,
+                    minor_scale,
+                })
+        })
+        .collect()
+}
+
+/// Decode `b2 03 2a` radius-scaled sphere charts.
+#[must_use]
+pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
+    b_family_frames(data, 0x2a)
+        .into_iter()
+        .filter_map(|frame| {
+            let p = frame.payload;
+            (frame.end.checked_sub(p) == Some(152)).then_some(())?;
+            let values = read_f64_array::<19>(data, p)?;
+            let center: [f64; 3] = values[0..3].try_into().expect("three centre values");
+            let stored_x: [f64; 3] = values[3..6]
+                .try_into()
+                .expect("three first-direction values");
+            let stored_y: [f64; 3] = values[6..9]
+                .try_into()
+                .expect("three second-direction values");
+            let stored_axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+            let radius = values[12];
+            let azimuth_range = [values[13], values[14]];
+            let latitude_range = [values[15], values[16]];
+            let construction_radius = values[17];
+            let chart_origin = values[18];
+            let scaled_length_is_radius = |value: [f64; 3]| {
+                let length = value[0].hypot(value[1]).hypot(value[2]);
+                length.is_finite() && ((length / radius) - 1.0).abs() <= 1e-12
+            };
+            (values.iter().all(|value| value.is_finite())
+                && radius > 0.0
+                && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
+                && construction_radius.to_bits() == radius.to_bits()
+                && chart_origin.to_bits()
+                    == (radius
+                        * ((azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI))
+                        .to_bits()
+                && scaled_length_is_radius(stored_x)
+                && scaled_length_is_radius(stored_y)
+                && scaled_length_is_radius(stored_axis))
+            .then_some(())?;
+            let direction_x = stored_x.map(|value| value / radius);
+            let direction_y = stored_y.map(|value| value / radius);
+            let axis = stored_axis.map(|value| value / radius);
+            let cross = [
+                direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
+                direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
+                direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
+            ];
+            cross
+                .iter()
+                .zip(axis)
+                .all(|(cross, axis)| (cross - axis).abs() <= 1e-12)
+                .then_some(B2Sphere {
+                    pos: frame.pos,
+                    center,
+                    direction_x,
+                    direction_y,
+                    axis,
+                    radius,
+                    azimuth_range,
+                    latitude_range,
+                })
+        })
+        .collect()
 }
 
 /// Decode constant `b2 03 65` group separators.
@@ -1157,16 +1583,12 @@ pub fn b2_groups(data: &[u8]) -> Vec<B2Group> {
         .into_iter()
         .filter_map(|frame| {
             let mut at = frame.payload;
-            // Advances `at` past the compact group id; the value is retained
-            // only for test inspection.
-            let group_id = compact_uint(data, &mut at)?;
-            #[cfg(not(test))]
-            let _ = group_id;
+            if compact_uint(data, &mut at)? != 32 {
+                return None;
+            }
             let group_type = compact_uint(data, &mut at)?;
             (at == frame.end).then_some(B2Group {
                 pos: frame.pos,
-                #[cfg(test)]
-                group_id,
                 group_type,
             })
         })
@@ -1192,12 +1614,48 @@ pub fn b2_cone_geometry(cone: &B2Cone) -> SurfaceGeometry {
     }
 }
 
+/// Build the exact neutral carrier of a validated radius-scaled sphere chart.
+#[must_use]
+pub fn b2_sphere_geometry(sphere: &B2Sphere) -> SurfaceGeometry {
+    SurfaceGeometry::Sphere {
+        center: Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
+        axis: Vector3::new(sphere.axis[0], sphere.axis[1], sphere.axis[2]),
+        ref_direction: Vector3::new(
+            sphere.direction_x[0],
+            sphere.direction_x[1],
+            sphere.direction_x[2],
+        ),
+        radius: sphere.radius,
+    }
+}
+
+/// Build the exact neutral carrier of a validated doubly periodic torus chart.
+#[must_use]
+pub fn b2_torus_geometry(torus: &B2Torus) -> SurfaceGeometry {
+    SurfaceGeometry::Torus {
+        center: Point3::new(torus.center[0], torus.center[1], torus.center[2]),
+        axis: Vector3::new(torus.axis[0], torus.axis[1], torus.axis[2]),
+        ref_direction: Vector3::new(
+            torus.direction_x[0],
+            torus.direction_x[1],
+            torus.direction_x[2],
+        ),
+        major_radius: torus.major_radius,
+        minor_radius: torus.minor_radius,
+    }
+}
+
 /// Decode standalone `b2 03 28` analytic cylinder supports.
 #[must_use]
 pub fn b2_cylinders(data: &[u8]) -> Vec<B2Cylinder> {
+    let embedded_offsets = b2_embedded_cylinders(data)
+        .into_iter()
+        .map(|embedded| embedded.pos)
+        .collect::<HashSet<_>>();
     b_family_frames(data, 0x28)
         .into_iter()
         .filter_map(|frame| parse_b2_cylinder(data, frame))
+        .filter(|cylinder| !embedded_offsets.contains(&cylinder.pos))
         .collect()
 }
 
@@ -1219,9 +1677,15 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let u_range = read_f64_array::<2>(data, p + 57)?;
             let v_range = read_f64_array::<2>(data, p + 73)?;
             if one != 1.0
-                || !(0.0..1e6).contains(&radius)
+                || radius <= 0.0
+                || origin_values.iter().any(|value| !value.is_finite())
+                || vector.iter().any(|value| !value.is_finite())
+                || u_range.iter().any(|value| !value.is_finite())
+                || v_range.iter().any(|value| !value.is_finite())
                 || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
-                || ((u_range[1] - u_range[0]) - 2.0 * std::f64::consts::PI * radius).abs() > 1e-6
+                || u_range[0] >= u_range[1]
+                || v_range[0] >= v_range[1]
+                || !circle_range_is_full_turn(radius, u_range)
             {
                 return None;
             }
@@ -1233,20 +1697,20 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let ref_direction = Vector3::new(-axis.y, axis.x, 0.0);
             Some(B2Cylinder {
                 pos,
-                #[cfg(test)]
                 layout,
-                geometry: Some(SurfaceGeometry::Cylinder {
+                frame_token,
+                origin: origin_values,
+                radius,
+                geometry: SurfaceGeometry::Cylinder {
                     origin,
                     axis,
                     ref_direction,
                     radius,
-                }),
+                },
                 u_range,
                 v_range,
-                #[cfg(test)]
                 stored_vector: None,
-                #[cfg(test)]
-                phase: None,
+                range_origin: None,
             })
         }
         0x52 => {
@@ -1260,27 +1724,32 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let radius = f64_le(data, p + 41)?;
             let u_range = read_f64_array::<2>(data, p + 49)?;
             let v_range = read_f64_array::<2>(data, p + 65)?;
-            if !(0.0..1e6).contains(&radius)
-                || ((u_range[1] - u_range[0]) - 2.0 * std::f64::consts::PI * radius).abs() > 1e-6
+            if radius <= 0.0
+                || origin_values.iter().any(|value| !value.is_finite())
+                || u_range.iter().any(|value| !value.is_finite())
+                || v_range.iter().any(|value| !value.is_finite())
+                || u_range[0] >= u_range[1]
+                || v_range[0] >= v_range[1]
+                || !circle_range_is_full_turn(radius, u_range)
             {
                 return None;
             }
             Some(B2Cylinder {
                 pos,
-                #[cfg(test)]
                 layout,
-                geometry: Some(SurfaceGeometry::Cylinder {
+                frame_token,
+                origin: origin_values,
+                radius,
+                geometry: SurfaceGeometry::Cylinder {
                     origin,
                     axis: Vector3::new(1.0, 0.0, 0.0),
                     ref_direction: Vector3::new(0.0, 1.0, 0.0),
                     radius,
-                }),
+                },
                 u_range,
                 v_range,
-                #[cfg(test)]
                 stored_vector: None,
-                #[cfg(test)]
-                phase: None,
+                range_origin: None,
             })
         }
         0x62 if frame_token == 0x0e && data.get(p + 89) == Some(&0x03) => {
@@ -1289,36 +1758,47 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let radius = f64_le(data, p + 49)?;
             let u_range = read_f64_array::<2>(data, p + 57)?;
             let v_range = read_f64_array::<2>(data, p + 73)?;
-            let phase = f64_le(data, p + 90)?;
+            let range_origin = f64_le(data, p + 90)?;
+            let expected_range_origin = cylinder_range_origin(radius, u_range);
             if one != 1.0
-                || !(0.0..1e6).contains(&radius)
+                || radius <= 0.0
                 || origin_values.iter().any(|value| !value.is_finite())
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
                 || v_range.iter().any(|value| !value.is_finite())
                 || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
-                || !phase.is_finite()
+                || !range_origin.is_finite()
+                || range_origin.to_bits() != expected_range_origin.to_bits()
                 || u_range[0] >= u_range[1]
                 || v_range[0] >= v_range[1]
-                || u_range[1] - u_range[0] > 2.0 * std::f64::consts::PI * radius + 1e-6
+                || !circle_range_is_within_full_turn(radius, u_range)
             {
                 return None;
             }
             Some(B2Cylinder {
                 pos,
-                #[cfg(test)]
                 layout,
-                geometry: None,
+                frame_token,
+                origin: origin_values,
+                radius,
+                geometry: SurfaceGeometry::Cylinder {
+                    origin,
+                    axis: Vector3::new(0.0, 1.0, 0.0),
+                    ref_direction: Vector3::new(vector[0], 0.0, vector[1]),
+                    radius,
+                },
                 u_range,
                 v_range,
-                #[cfg(test)]
                 stored_vector: Some(vector),
-                #[cfg(test)]
-                phase: Some(phase),
+                range_origin: Some(range_origin),
             })
         }
         _ => None,
     }
+}
+
+pub(crate) fn cylinder_range_origin(radius: f64, u_range: [f64; 2]) -> f64 {
+    (u_range[0] + u_range[1]) * 0.5 - std::f64::consts::PI * radius
 }
 
 /// Decode `b2 03 19` arc-length circle supports.
@@ -1340,25 +1820,45 @@ pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
         let Some(values) = read_f64_array::<5>(data, at) else {
             continue;
         };
+        let values_end = at + 5 * size_of::<f64>();
+        if values_end + 9 != frame.end || data.get(values_end) != Some(&0x01) {
+            continue;
+        }
+        let Some(chart_shift) = f64_le(data, values_end + 1) else {
+            continue;
+        };
         let [c1, c2, radius, lo, hi] = values;
         if values.iter().all(|v| v.is_finite())
-            && (0.0..1e6).contains(&radius)
+            && 0.0 < radius
             && c1.abs() <= 1e6
             && c2.abs() <= 1e6
             && hi > lo
+            && chart_shift.is_finite()
         {
             out.push(B2Circle {
                 pos,
+                layout: (frame.end - frame.payload) as u8,
                 record_id,
                 frame_token,
                 center_pair: [c1, c2],
                 radius,
                 range: [lo, hi],
-                full_circle: ((hi - lo) - 2.0 * std::f64::consts::PI * radius).abs() < 1e-9,
+                full_circle: circle_range_is_full_turn(radius, [lo, hi]),
+                chart_shift,
             });
         }
     }
     out
+}
+
+pub(crate) fn circle_range_is_full_turn(radius: f64, range: [f64; 2]) -> bool {
+    let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
+    relative_span.is_finite() && (relative_span - 1.0).abs() < 1e-9
+}
+
+pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> bool {
+    let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
+    relative_span.is_finite() && relative_span <= 1.0 + 1e-9
 }
 
 /// Decode structurally repeated `b2 03 23` edge-range packets.
@@ -1448,9 +1948,9 @@ pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
 #[must_use]
 pub fn offset_support_carriers(
     offsets: &[B2OffsetSupport],
-    carriers: &[A8Surface],
+    carriers: &[FreeformSurface],
 ) -> Vec<Option<usize>> {
-    const PARAMETER_TOLERANCE: f64 = 1e-3;
+    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-3;
     offsets
         .iter()
         .map(|offset| {
@@ -1466,15 +1966,23 @@ pub fn offset_support_carriers(
                     let u_max = *surface.u_knots.last()?;
                     let v_min = *surface.v_knots.first()?;
                     let v_max = *surface.v_knots.last()?;
-                    let contains = u0 >= u_min - PARAMETER_TOLERANCE
-                        && u1 <= u_max + PARAMETER_TOLERANCE
-                        && v0 >= v_min - PARAMETER_TOLERANCE
-                        && v1 <= v_max + PARAMETER_TOLERANCE;
+                    let u_span = u_max - u_min;
+                    let v_span = v_max - v_min;
+                    if !u_span.is_finite() || u_span <= 0.0 || !v_span.is_finite() || v_span <= 0.0
+                    {
+                        return None;
+                    }
+                    let u_tolerance = RELATIVE_PARAMETER_TOLERANCE * u_span;
+                    let v_tolerance = RELATIVE_PARAMETER_TOLERANCE * v_span;
+                    let contains = u0 >= u_min - u_tolerance
+                        && u1 <= u_max + u_tolerance
+                        && v0 >= v_min - v_tolerance
+                        && v1 <= v_max + v_tolerance;
                     let has_v_limit = |limit: f64| {
                         surface
                             .v_knots
                             .iter()
-                            .any(|knot| (*knot - limit).abs() <= PARAMETER_TOLERANCE)
+                            .any(|knot| (*knot - limit).abs() <= v_tolerance)
                     };
                     (contains && has_v_limit(v0) && has_v_limit(v1)).then_some(index)
                 })

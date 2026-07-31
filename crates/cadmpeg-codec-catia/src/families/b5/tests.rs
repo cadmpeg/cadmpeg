@@ -6,7 +6,7 @@
 use crate::tests::{
     a8_surface_stream, append_b5_record, b5_analytic_line_pcurve_payload,
     b5_closed_triangle_stream, b5_isoparametric_line_pcurve_payload, b5_linear_pcurve_payload,
-    b5_transverse_isoparametric_line_pcurve_payload, le_f32, le_f64,
+    b5_plane_payload, b5_transverse_isoparametric_line_pcurve_payload, le_f32, le_f64,
 };
 
 #[test]
@@ -82,26 +82,14 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
 fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let mut bytes = a8_surface_stream();
     bytes[7..11].copy_from_slice(&0x1234u32.to_le_bytes());
-    let mut plane = vec![0; 73];
-    for (offset, value) in [
-        (1usize, 10.0f64),
-        (9, 0.0),
-        (17, 0.0),
-        (25, 1.0),
-        (33, 0.0),
-        (41, 0.0),
-        (49, 0.0),
-        (57, 1.0),
-        (65, 0.0),
-    ] {
-        plane[offset..offset + 8].copy_from_slice(&le_f64(value));
-    }
+    let plane = b5_plane_payload([10.0, 0.0, 0.0]);
     append_b5_record(&mut bytes, 0x27, 100, &plane);
     for (id, offset) in [(200u32, 0.0f64), (201, 1.0), (202, 2.0)] {
         let payload = b5_linear_pcurve_payload(100, [offset, 0.0], [offset + 1.0, 0.0]);
         append_b5_record(&mut bytes, 0x21, id, &payload);
     }
-    let mut profile = vec![0; 49];
+    let mut profile = vec![0; 73];
+    profile[0] = 0x80;
     for (offset, value) in [
         (1usize, 1.0f64),
         (9, 0.0),
@@ -112,12 +100,32 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     ] {
         profile[offset..offset + 8].copy_from_slice(&le_f64(value));
     }
+    profile[49..57].copy_from_slice(&le_f64(1.0));
+    profile[57..65].copy_from_slice(&le_f64(-1.0));
+    profile[65..73].copy_from_slice(&le_f64(2.0));
     append_b5_record(&mut bytes, 0x0e, 110, &profile);
-    let mut revolution = vec![0; 143];
+    let mut revolution = vec![0; 176];
+    revolution[0] = 0x81;
     revolution[1] = 0x38;
     revolution[2..5].copy_from_slice(&[110, 0, 0]);
-    revolution[77 + 16..77 + 24].copy_from_slice(&le_f64(1.0));
-    revolution[135..143].copy_from_slice(&le_f64(1.0));
+    revolution[29..37].copy_from_slice(&le_f64(1.0));
+    revolution[61..69].copy_from_slice(&le_f64(1.0));
+    revolution[93..101].copy_from_slice(&le_f64(1.0));
+    for (offset, value) in [
+        (101usize, 0.0f64),
+        (109, std::f64::consts::PI),
+        (117, -1.0),
+        (125, 2.0),
+        (135, 1.0),
+        (143, 1.0),
+        (151, 1.0),
+        (159, 0.0),
+        (168, std::f64::consts::PI),
+    ] {
+        revolution[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    revolution[133..135].copy_from_slice(&[0x05, 0x05]);
+    revolution[167] = 0x01;
     append_b5_record(&mut bytes, 0x2d, 120, &revolution);
     append_b5_record(
         &mut bytes,
@@ -136,10 +144,16 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     append_b5_record(&mut bytes, 0x5e, 0x01_0100, &[]);
     let loop_payload = [
         0x87, 0x18, 200, 0, 0x18, 44, 1, 0x18, 201, 0, 0x18, 45, 1, 0x18, 202, 0, 0x30, 1, 1, 0x18,
-        100, 0,
+        100, 0, 0x83, 0x05, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0x01, 0x00, 0xff, 0xff,
+        0x01, 0x00, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0x01,
     ];
     append_b5_record(&mut bytes, 0x62, 400, &loop_payload);
-    append_b5_record(&mut bytes, 0x5f, 500, &[0x18, 100, 0, 0x18, 144, 1]);
+    append_b5_record(
+        &mut bytes,
+        0x5f,
+        500,
+        &[0x82, 0x18, 100, 0, 0x18, 144, 1, 0x05],
+    );
     for point in [
         [10.0f32, 0.0, 0.0],
         [11.0, 0.0, 0.0],
@@ -155,6 +169,7 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let graph = crate::families::b5::graph::parse(&bytes).expect("B5 object topology");
     assert_eq!(graph.faces[0].surface, 100);
     assert_eq!(graph.faces[0].loops, vec![400]);
+    assert_eq!(graph.faces[0].terminal_control, Some(0x05));
     assert_eq!(graph.loops[&400].pcurves, vec![200, 201, 202]);
     assert_eq!(graph.loops[&400].edges, vec![300, 301, 0x01_0100]);
     assert_eq!(graph.pcurves[&200].degree, 1);

@@ -280,12 +280,15 @@ to an unrelated application object.
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
 scalars produce an object appearance and explicit body bindings. Packed colors decode as red,
 green, blue, and reserved low byte; the independent transparency percentage determines opacity.
-The effective body display fields mirror this object-level assignment. Per-face diffuse-color lists
-are a higher-precedence presentation layer and are not inferred from the object color. Their
-little-endian count and packed-color records bind only when the count equals the owning element
-map's ordered Face group. Each persistent face name supplies the neutral face occurrences receiving
-the override, and the resulting bindings explicitly record face-over-object precedence. Missing
-identity or a count mismatch leaves the side entry retained without guessing transient face labels.
+The effective body display fields mirror this object-level assignment. Per-face `DiffuseColor`,
+per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are higher-precedence presentation
+layers. They are not inferred from the corresponding object color. Each list contains a
+little-endian count followed by packed-color records. A count of one applies its color to every
+member of the corresponding Face, Edge, or Vertex element-map group. Otherwise, the count must
+equal the number of names in that ordered group. Each persistent element name supplies the neutral
+topology occurrences that receive the override. The resulting bindings explicitly record
+face-over-object, edge-array-over-line, or vertex-array-over-point precedence. Missing identity or
+a count mismatch leaves the side entry retained without guessing transient topology labels.
 
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,

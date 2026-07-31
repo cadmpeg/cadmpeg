@@ -236,7 +236,8 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         PcurveGeometry::Harmonic { .. }
         | PcurveGeometry::Hyperbolic { .. }
         | PcurveGeometry::PolarHarmonic { .. }
-        | PcurveGeometry::PolarNurbs { .. } => return None,
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => return None,
     })
 }
 

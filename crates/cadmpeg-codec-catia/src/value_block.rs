@@ -44,11 +44,32 @@ pub enum ValueField {
         /// Byte offset within the value payload.
         offset: usize,
     },
+    /// One untagged value-program opcode in `E6..E9`.
+    Opcode {
+        /// Stored opcode byte.
+        code: u8,
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
+    /// `0x37` value-packet separator.
+    Separator {
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
     /// `8E E8..EF 84` followed by one through eight inline bytes.
     Inline {
         /// Length code; the payload length is `code - E7`.
         code: u8,
         /// Exact inline bytes.
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[schemars(with = "String")]
+        bytes: Vec<u8>,
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
+    /// `E5 <length:u32le> <bytes[length]>` length-framed byte string.
+    ByteString {
+        /// Exact stored bytes.
         #[serde(with = "cadmpeg_ir::bytes")]
         #[schemars(with = "String")]
         bytes: Vec<u8>,
@@ -64,6 +85,11 @@ pub enum ValueField {
         /// Byte offset within the value payload.
         offset: usize,
     },
+    /// `0xFE` value-program terminator.
+    Terminator {
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
     /// One byte outside the assigned multi-byte token forms.
     Literal {
         /// Exact stored byte.
@@ -76,20 +102,29 @@ pub enum ValueField {
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
-    let candidates = bytes
-        .windows(2)
-        .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x0b])
-        .filter_map(|(pos, _)| parse_candidate(bytes, pos))
-        .collect::<Vec<_>>();
     let mut blocks = Vec::<ValueBlock>::new();
-    for block in candidates {
-        let block_end = block.pos + block.total_len;
-        if blocks
-            .iter()
-            .any(|outer| outer.pos < block.pos && outer.pos + outer.total_len >= block_end)
-        {
+    let mut enclosing_end = 0usize;
+    for pos in memchr::memchr_iter(0x7c, bytes) {
+        let Some(marker_tail) = pos.checked_add(1) else {
             continue;
+        };
+        if bytes.get(marker_tail) != Some(&0x0b) {
+            continue;
+        }
+        let declared_end = pos
+            .checked_add(2)
+            .and_then(|length_offset| u32_le(bytes, length_offset))
+            .and_then(|length| usize::try_from(length).ok())
+            .and_then(|length| pos.checked_add(length))
+            .and_then(|terminator| terminator.checked_add(1));
+        if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
+            continue;
+        }
+        let Some(block) = parse_candidate(bytes, pos) else {
+            continue;
+        };
+        if let Some(block_end) = block.pos.checked_add(block.total_len) {
+            enclosing_end = enclosing_end.max(block_end);
         }
         blocks.push(block);
     }
@@ -138,6 +173,18 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 offset,
             });
             at += 2;
+        } else if payload[at] == 0x37 {
+            fields.push(ValueField::Separator { offset });
+            at += 1;
+        } else if payload
+            .get(at)
+            .is_some_and(|code| (0xe6..=0xe9).contains(code))
+        {
+            fields.push(ValueField::Opcode {
+                code: payload[at],
+                offset,
+            });
+            at += 1;
         } else if payload.get(at) == Some(&0x8e)
             && payload
                 .get(at + 1)
@@ -151,6 +198,27 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 fields.push(ValueField::Inline {
                     code,
                     bytes: payload[at + 3..end].to_vec(),
+                    offset,
+                });
+                at = end;
+            } else {
+                fields.push(ValueField::Literal {
+                    value: payload[at],
+                    offset,
+                });
+                at += 1;
+            }
+        } else if payload.get(at) == Some(&0xe5) && at + 5 <= payload.len() {
+            let len = usize::try_from(u32::from_le_bytes(
+                payload[at + 1..at + 5]
+                    .try_into()
+                    .expect("checked byte-string length extent"),
+            ))
+            .ok();
+            let end = len.and_then(|len| at.checked_add(5)?.checked_add(len));
+            if let Some(end) = end.filter(|end| *end <= payload.len()) {
+                fields.push(ValueField::ByteString {
+                    bytes: payload[at + 5..end].to_vec(),
                     offset,
                 });
                 at = end;
@@ -192,6 +260,9 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 offset,
             });
             at += 2;
+        } else if payload[at] == 0xfe {
+            fields.push(ValueField::Terminator { offset });
+            at += 1;
         } else {
             fields.push(ValueField::Literal {
                 value: payload[at],
@@ -238,6 +309,36 @@ mod tests {
     }
 
     #[test]
+    fn length_framed_byte_strings_hide_marker_shaped_payload_bytes() {
+        let payload = [0xe5, 5, 0, 0, 0, 0x32, 0xe8, 0x37, 0xfe, 0x80, 0xfe];
+        assert_eq!(
+            tokenize(&payload),
+            vec![
+                ValueField::ByteString {
+                    bytes: vec![0x32, 0xe8, 0x37, 0xfe, 0x80],
+                    offset: 0,
+                },
+                ValueField::Terminator { offset: 10 },
+            ]
+        );
+    }
+
+    #[test]
+    fn truncated_length_framed_byte_string_is_not_assigned() {
+        let fields = tokenize(&[0xe5, 5, 0, 0, 0, 1]);
+        assert!(matches!(
+            fields.first(),
+            Some(ValueField::Literal {
+                value: 0xe5,
+                offset: 0
+            })
+        ));
+        assert!(fields
+            .iter()
+            .all(|field| !matches!(field, ValueField::ByteString { .. })));
+    }
+
+    #[test]
     fn truncated_multi_byte_forms_remain_literal() {
         assert_eq!(
             tokenize(&[0x8e, 0xef, 0x84, 1]),
@@ -259,6 +360,32 @@ mod tests {
                     value: 1,
                     offset: 3,
                 },
+            ]
+        );
+    }
+
+    #[test]
+    fn untagged_value_opcodes_and_terminators_remain_distinct() {
+        assert_eq!(
+            tokenize(&[0xe6, 0xe7, 0xe8, 0xe9, 0xfe]),
+            vec![
+                ValueField::Opcode {
+                    code: 0xe6,
+                    offset: 0,
+                },
+                ValueField::Opcode {
+                    code: 0xe7,
+                    offset: 1,
+                },
+                ValueField::Opcode {
+                    code: 0xe8,
+                    offset: 2,
+                },
+                ValueField::Opcode {
+                    code: 0xe9,
+                    offset: 3,
+                },
+                ValueField::Terminator { offset: 4 },
             ]
         );
     }

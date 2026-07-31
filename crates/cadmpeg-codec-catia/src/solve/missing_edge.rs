@@ -62,68 +62,66 @@ pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]
 /// result; they are not coordinate-row indices.
 #[must_use]
 pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let analysis = standard_mesh_analysis(bytes)?;
     let local_ports = standard_edge_port_identities(bytes)?;
-    let mut solutions = Vec::new();
-    for width in [1, 2, 3] {
-        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
+    mesh_edge_ports(&analysis, &local_ports)
+}
+
+fn mesh_edge_ports(
+    analysis: &StandardMeshAnalysis,
+    local_ports: &[[u32; 2]],
+) -> Option<Vec<[u32; 2]>> {
+    let edge_rows = &analysis.edge_rows;
+    let cycles = &analysis.cycles;
+    let occurrences = &analysis.occurrences;
+    if local_ports.len() != edge_rows.len() {
+        return None;
+    }
+    let mut union = UnionFind::new(edge_rows.len() * 2);
+    let mut node_by_identity = HashMap::new();
+    for (edge, ports) in local_ports.iter().enumerate() {
+        for (side, identity) in ports.iter().copied().enumerate() {
+            let node = edge * 2 + side;
+            if let Some(previous) = node_by_identity.insert(identity, node) {
+                union.union(previous, node);
+            }
+        }
+    }
+    let mut corners = HashMap::new();
+    for (edge, row) in edge_rows.iter().enumerate() {
+        let Some(_) = row.boundary_pattern() else {
             continue;
         };
-        let cycles = trims
-            .iter()
-            .map(|trim| boundary_cycles(&trim.triangles))
-            .collect::<Option<Vec<_>>>()?;
-        let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
-        let mut union = UnionFind::new(edge_rows.len() * 2);
-        let mut node_by_identity = HashMap::new();
-        for (edge, ports) in local_ports.iter().enumerate() {
-            for (side, identity) in ports.iter().copied().enumerate() {
-                let node = edge * 2 + side;
-                if let Some(previous) = node_by_identity.insert(identity, node) {
-                    union.union(previous, node);
-                }
+        for occurrence in &occurrences[edge] {
+            let cycle = &cycles[occurrence.face][occurrence.cycle];
+            let (before, segment_count) = row.boundary_span(occurrence.start, cycle.len())?;
+            let after = (before + segment_count) % cycle.len();
+            let before_node = *corners
+                .entry((occurrence.face, occurrence.cycle, before))
+                .or_insert_with(|| union.push());
+            let after_node = *corners
+                .entry((occurrence.face, occurrence.cycle, after))
+                .or_insert_with(|| union.push());
+            if occurrence.reversed {
+                union.union(edge * 2 + 1, before_node);
+                union.union(edge * 2, after_node);
+            } else {
+                union.union(edge * 2, before_node);
+                union.union(edge * 2 + 1, after_node);
             }
         }
-        let mut corners = HashMap::new();
-        for (edge, row) in edge_rows.iter().enumerate() {
-            let Some(_) = row.boundary_pattern() else {
-                continue;
-            };
-            for occurrence in &occurrences[edge] {
-                let cycle = &cycles[occurrence.face][occurrence.cycle];
-                let (before, segment_count) = row.boundary_span(occurrence.start, cycle.len())?;
-                let after = (before + segment_count) % cycle.len();
-                let before_node = *corners
-                    .entry((occurrence.face, occurrence.cycle, before))
-                    .or_insert_with(|| union.push());
-                let after_node = *corners
-                    .entry((occurrence.face, occurrence.cycle, after))
-                    .or_insert_with(|| union.push());
-                if occurrence.reversed {
-                    union.union(edge * 2 + 1, before_node);
-                    union.union(edge * 2, after_node);
-                } else {
-                    union.union(edge * 2, before_node);
-                    union.union(edge * 2 + 1, after_node);
-                }
-            }
-        }
-        let mut roots = HashMap::new();
-        let mut ports = Vec::with_capacity(edge_rows.len());
-        for edge in 0..edge_rows.len() {
-            let pair = [edge * 2, edge * 2 + 1].map(|node| {
-                let root = union.find(node);
-                let next = roots.len();
-                u32::try_from(*roots.entry(root).or_insert(next)).ok()
-            });
-            ports.push([pair[0]?, pair[1]?]);
-        }
-        solutions.push(ports);
     }
-    <[Vec<[u32; 2]>; 1]>::try_from(solutions)
-        .ok()
-        .map(|[ports]| ports)
+    let mut roots = HashMap::new();
+    let mut ports = Vec::with_capacity(edge_rows.len());
+    for edge in 0..edge_rows.len() {
+        let pair = [edge * 2, edge * 2 + 1].map(|node| {
+            let root = union.find(node);
+            let next = roots.len();
+            u32::try_from(*roots.entry(root).or_insert(next)).ok()
+        });
+        ports.push([pair[0]?, pair[1]?]);
+    }
+    Some(ports)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,14 +215,13 @@ fn mesh_edge_occurrences(
         .collect()
 }
 
-/// Recover every exact physical-edge occurrence on the trim mesh.
-///
-/// Standard `u16be` rows match their interior handles and include the two
-/// flanking boundary segments. FBB `u24be` rows match their complete handle
-/// sequence and cover one fewer segment than handles. A result exists only
-/// when exactly one trim-handle width parses the complete face chain.
-#[must_use]
-pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
+struct StandardMeshAnalysis {
+    edge_rows: Vec<EdgeRow>,
+    cycles: Vec<Vec<Vec<u32>>>,
+    occurrences: Vec<Vec<MeshEdgeOccurrence>>,
+}
+
+fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let mut solutions = Vec::new();
@@ -237,28 +234,47 @@ pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
             .map(|trim| boundary_cycles(&trim.triangles))
             .collect::<Option<Vec<_>>>()?;
         let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
-        let mut runs = Vec::new();
-        for (edge, edge_occurrences) in occurrences.iter().enumerate() {
-            for occurrence in edge_occurrences {
-                let cycle_len = cycles[occurrence.face][occurrence.cycle].len();
-                let (start, segment_count) =
-                    edge_rows[edge].boundary_span(occurrence.start, cycle_len)?;
-                runs.push(MeshEdgeRun {
-                    edge,
-                    face: occurrence.face,
-                    cycle: occurrence.cycle,
-                    start,
-                    segment_count,
-                    reversed: occurrence.reversed,
-                });
-            }
-        }
-        runs.sort_by_key(|run| (run.face, run.cycle, run.start, run.edge));
-        solutions.push(runs);
+        solutions.push((cycles, occurrences));
     }
-    <[Vec<MeshEdgeRun>; 1]>::try_from(solutions)
-        .ok()
-        .map(|[runs]| runs)
+    let [(cycles, occurrences)] = <[_; 1]>::try_from(solutions).ok()?;
+    Some(StandardMeshAnalysis {
+        edge_rows,
+        cycles,
+        occurrences,
+    })
+}
+
+/// Recover every exact physical-edge occurrence on the trim mesh.
+///
+/// Standard `u16be` rows match their interior handles and include the two
+/// flanking boundary segments. FBB `u24be` rows match their complete handle
+/// sequence and cover one fewer segment than handles. A result exists only
+/// when exactly one trim-handle width parses the complete face chain.
+#[must_use]
+pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
+    let analysis = standard_mesh_analysis(bytes)?;
+    mesh_edge_runs(&analysis)
+}
+
+fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Option<Vec<MeshEdgeRun>> {
+    let mut runs = Vec::new();
+    for (edge, edge_occurrences) in analysis.occurrences.iter().enumerate() {
+        for occurrence in edge_occurrences {
+            let cycle_len = analysis.cycles[occurrence.face][occurrence.cycle].len();
+            let (start, segment_count) =
+                analysis.edge_rows[edge].boundary_span(occurrence.start, cycle_len)?;
+            runs.push(MeshEdgeRun {
+                edge,
+                face: occurrence.face,
+                cycle: occurrence.cycle,
+                start,
+                segment_count,
+                reversed: occurrence.reversed,
+            });
+        }
+    }
+    runs.sort_by_key(|run| (run.face, run.cycle, run.start, run.edge));
+    Some(runs)
 }
 
 /// Complete repeated standard edge-face slots from exact trim-boundary
@@ -555,6 +571,40 @@ enum MeshFaceAssignmentDomain {
     DeferredValidation(MeshFaceCoverage),
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct StandardMeshBoundaryContext {
+    edge_rows: Vec<EdgeRow>,
+    coverage: Vec<MeshFaceCoverage>,
+    edge_ports: Vec<[u32; 2]>,
+    edge_runs: Vec<MeshEdgeRun>,
+    cycle_lengths: Vec<Vec<usize>>,
+}
+
+impl StandardMeshBoundaryContext {
+    pub(crate) fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
+        let analysis = standard_mesh_analysis(bytes)?;
+        if analysis.edge_rows.len() != edge_faces.len() {
+            return None;
+        }
+        let coverage = mesh_face_coverage(&analysis, edge_faces)?;
+        let local_ports = standard_edge_port_identities(bytes)?;
+        let edge_ports = mesh_edge_ports(&analysis, &local_ports)?;
+        let edge_runs = mesh_edge_runs(&analysis)?;
+        let cycle_lengths = analysis
+            .cycles
+            .iter()
+            .map(|cycles| cycles.iter().map(Vec::len).collect())
+            .collect();
+        Some(Self {
+            edge_rows: analysis.edge_rows,
+            coverage,
+            edge_ports,
+            edge_runs,
+            cycle_lengths,
+        })
+    }
+}
+
 /// One admissible placement of an unmatched physical edge within a recovered
 /// trim-boundary gap. Domains contain only placements participating in a
 /// complete end-to-end partition of every gap on the face.
@@ -629,95 +679,92 @@ pub struct MeshFaceBoundaryAssignment {
 /// to gaps. A result exists only for a unique trim-handle width and when every
 /// matched interior occurs on one of its two serialized incident faces.
 #[must_use]
+#[cfg(test)]
 pub fn standard_mesh_face_coverage(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Option<Vec<MeshFaceCoverage>> {
-    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let analysis = standard_mesh_analysis(bytes)?;
+    mesh_face_coverage(&analysis, edge_faces)
+}
+
+fn mesh_face_coverage(
+    analysis: &StandardMeshAnalysis,
+    edge_faces: &[[usize; 2]],
+) -> Option<Vec<MeshFaceCoverage>> {
+    let edge_rows = &analysis.edge_rows;
+    let cycles = &analysis.cycles;
+    let occurrences = &analysis.occurrences;
     if edge_rows.len() != edge_faces.len() {
         return None;
     }
-    let mut solutions = Vec::new();
-    for width in [1, 2, 3] {
-        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
-            continue;
-        };
-        let cycles = trims
+    if occurrences.iter().enumerate().any(|(edge, values)| {
+        values
             .iter()
-            .map(|trim| boundary_cycles(&trim.triangles))
-            .collect::<Option<Vec<_>>>()?;
-        let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
-        if occurrences.iter().enumerate().any(|(edge, values)| {
-            values
-                .iter()
-                .any(|occurrence| !edge_faces[edge].contains(&occurrence.face))
-        }) {
-            continue;
-        }
-        let mut coverage = Vec::with_capacity(face_count);
-        for (face, face_cycles) in cycles.iter().enumerate() {
-            let mut gaps = Vec::new();
-            for (cycle_index, cycle) in face_cycles.iter().enumerate() {
-                let mut covered = vec![false; cycle.len()];
-                for (edge, values) in occurrences.iter().enumerate() {
-                    for occurrence in values.iter().filter(|occurrence| {
-                        occurrence.face == face && occurrence.cycle == cycle_index
-                    }) {
-                        let (start, segment_count) =
-                            edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
-                        for offset in 0..segment_count {
-                            let slot = &mut covered[(start + offset) % cycle.len()];
-                            if *slot {
-                                return None;
-                            }
-                            *slot = true;
+            .any(|occurrence| !edge_faces[edge].contains(&occurrence.face))
+    }) {
+        return None;
+    }
+    let mut coverage = Vec::with_capacity(cycles.len());
+    for (face, face_cycles) in cycles.iter().enumerate() {
+        let mut gaps = Vec::new();
+        for (cycle_index, cycle) in face_cycles.iter().enumerate() {
+            let mut covered = vec![false; cycle.len()];
+            for (edge, values) in occurrences.iter().enumerate() {
+                for occurrence in values
+                    .iter()
+                    .filter(|occurrence| occurrence.face == face && occurrence.cycle == cycle_index)
+                {
+                    let (start, segment_count) =
+                        edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
+                    for offset in 0..segment_count {
+                        let slot = &mut covered[(start + offset) % cycle.len()];
+                        if *slot {
+                            return None;
                         }
-                    }
-                }
-                if covered.iter().all(|value| !*value) {
-                    gaps.push(MeshBoundaryGap {
-                        cycle: cycle_index,
-                        start: 0,
-                        length: cycle.len(),
-                    });
-                } else {
-                    for start in (0..covered.len()).filter(|&index| {
-                        !covered[index] && covered[(index + covered.len() - 1) % covered.len()]
-                    }) {
-                        let length = (0..covered.len())
-                            .take_while(|offset| !covered[(start + offset) % covered.len()])
-                            .count();
-                        gaps.push(MeshBoundaryGap {
-                            cycle: cycle_index,
-                            start,
-                            length,
-                        });
+                        *slot = true;
                     }
                 }
             }
-            let missing_edges = edge_rows
-                .iter()
-                .enumerate()
-                .filter_map(|(edge, _)| {
-                    (edge_faces[edge].contains(&face)
-                        && !occurrences[edge]
-                            .iter()
-                            .any(|occurrence| occurrence.face == face))
-                    .then_some(edge)
-                })
-                .collect();
-            coverage.push(MeshFaceCoverage {
-                face,
-                gaps,
-                missing_edges,
-            });
+            if covered.iter().all(|value| !*value) {
+                gaps.push(MeshBoundaryGap {
+                    cycle: cycle_index,
+                    start: 0,
+                    length: cycle.len(),
+                });
+            } else {
+                for start in (0..covered.len()).filter(|&index| {
+                    !covered[index] && covered[(index + covered.len() - 1) % covered.len()]
+                }) {
+                    let length = (0..covered.len())
+                        .take_while(|offset| !covered[(start + offset) % covered.len()])
+                        .count();
+                    gaps.push(MeshBoundaryGap {
+                        cycle: cycle_index,
+                        start,
+                        length,
+                    });
+                }
+            }
         }
-        solutions.push(coverage);
+        let missing_edges = edge_rows
+            .iter()
+            .enumerate()
+            .filter_map(|(edge, _)| {
+                (edge_faces[edge].contains(&face)
+                    && !occurrences[edge]
+                        .iter()
+                        .any(|occurrence| occurrence.face == face))
+                .then_some(edge)
+            })
+            .collect();
+        coverage.push(MeshFaceCoverage {
+            face,
+            gaps,
+            missing_edges,
+        });
     }
-    <[Vec<MeshFaceCoverage>; 1]>::try_from(solutions)
-        .ok()
-        .map(|[coverage]| coverage)
+    Some(coverage)
 }
 
 pub(crate) fn bounded_oriented_trail_orders(
@@ -873,13 +920,20 @@ pub(crate) fn bounded_endpoint_cycle_orders(
 }
 
 fn standard_mesh_missing_edge_assignment_domains(
-    bytes: &[u8],
-    edge_faces: &[[usize; 2]],
+    context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
     defer_validation: bool,
-) -> Option<Vec<MeshFaceAssignmentDomain>> {
+) -> Option<(Vec<MeshFaceAssignmentDomain>, Vec<MeshEdgeRun>)> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
+    // A contradictory face can visit factorially many partial orders without
+    // producing one complete assignment, so the assignment cap alone is not a
+    // work bound.
+    const MAX_SEARCH_STATES_PER_FACE: usize = 4_096;
+    // The same face search may be retried with progressively weaker endpoint
+    // constraints. Charge every retry and every candidate trim width to one
+    // decode-local budget.
+    const MAX_SEARCH_STATES: usize = 65_536;
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
         &'a HashMap<MeshCorner, u32>,
@@ -889,6 +943,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     type PointTransitions = HashMap<usize, Arc<HashSet<usize>>>;
     type DeadState = (usize, usize, u64, Option<u32>, Vec<usize>, bool);
 
+    #[allow(clippy::too_many_arguments)]
     fn enumerate_face(
         face: usize,
         gaps: &[MeshBoundaryGap],
@@ -897,6 +952,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         _rows: &[EdgeRow],
         constraints: PlacementConstraints<'_>,
         canonicalize_spans: bool,
+        remaining_states: &mut usize,
     ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
         struct Search<'a> {
             face: usize,
@@ -911,6 +967,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             canonical_spans: bool,
             canonical_gap_partitions: bool,
             dead_states: HashSet<DeadState>,
+            remaining_states: &'a mut usize,
+            states: usize,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
@@ -963,6 +1021,11 @@ fn standard_mesh_missing_edge_assignment_domains(
                 gap_placed_start: usize,
                 placed: &mut Vec<MeshEdgePlacementCandidate>,
             ) -> Option<()> {
+                *self.remaining_states = self.remaining_states.checked_sub(1)?;
+                self.states = self.states.checked_add(1)?;
+                if self.states > MAX_SEARCH_STATES_PER_FACE {
+                    return None;
+                }
                 if self.assignments > MAX_ASSIGNMENTS_PER_FACE {
                     return None;
                 }
@@ -1154,6 +1217,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             canonical_spans: canonicalize_spans,
             canonical_gap_partitions: canonicalize_spans,
             dead_states: HashSet::new(),
+            remaining_states,
+            states: 0,
             assignments: 0,
             complete: Vec::new(),
         };
@@ -1403,8 +1468,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         )
     }
 
-    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let edge_rows = &context.edge_rows;
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
         return None;
     }
@@ -1433,8 +1497,8 @@ fn standard_mesh_missing_edge_assignment_domains(
     let endpoint_constraints = edge_point_domains
         .as_deref()
         .zip(edge_point_transitions.as_deref());
-    let coverage = standard_mesh_face_coverage(bytes, edge_faces)?;
-    let edge_ports = standard_mesh_edge_ports(bytes)?;
+    let coverage = &context.coverage;
+    let edge_ports = &context.edge_ports;
     let singleton_edge_points = edge_candidates.map(|candidates| {
         candidates
             .iter()
@@ -1445,149 +1509,139 @@ fn standard_mesh_missing_edge_assignment_domains(
             })
             .collect::<Vec<_>>()
     });
-    let edge_runs = standard_mesh_edge_runs(bytes)?;
-    let mut solutions = Vec::new();
-    for width in [1, 2, 3] {
-        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
-            continue;
+    let edge_runs = &context.edge_runs;
+    let mut remaining_states = MAX_SEARCH_STATES;
+    let mut corner_ports = HashMap::<MeshCorner, u32>::new();
+    let mut corner_points = MeshCornerPoints::new();
+    for run in edge_runs {
+        let length = context.cycle_lengths[run.face][run.cycle];
+        let end = (run.start + run.segment_count) % length;
+        let ports = edge_ports[run.edge];
+        let oriented = if run.reversed {
+            [ports[1], ports[0]]
+        } else {
+            ports
         };
-        let cycles = trims
-            .iter()
-            .map(|trim| boundary_cycles(&trim.triangles))
-            .collect::<Option<Vec<_>>>()?;
-        let mut corner_ports = HashMap::<MeshCorner, u32>::new();
-        let mut corner_points = MeshCornerPoints::new();
-        for run in &edge_runs {
-            let length = cycles[run.face][run.cycle].len();
-            let end = (run.start + run.segment_count) % length;
-            let ports = edge_ports[run.edge];
-            let oriented = if run.reversed {
-                [ports[1], ports[0]]
-            } else {
-                ports
-            };
-            for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
-                match corner_ports.insert((run.face, run.cycle, corner), port) {
-                    Some(stored) if stored != port => return None,
-                    Some(_) | None => {}
-                }
+        for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
+            match corner_ports.insert((run.face, run.cycle, corner), port) {
+                Some(stored) if stored != port => return None,
+                Some(_) | None => {}
             }
-            if let Some(candidates) = edge_candidates {
-                let points = candidates[run.edge]
-                    .iter()
-                    .flatten()
-                    .copied()
-                    .collect::<HashSet<_>>();
-                if !points.is_empty() {
-                    for corner in [run.start, end] {
-                        corner_points
-                            .entry((run.face, run.cycle, corner))
-                            .and_modify(|stored| stored.retain(|point| points.contains(point)))
-                            .or_insert_with(|| points.clone());
-                    }
+        }
+        if let Some(candidates) = edge_candidates {
+            let points = candidates[run.edge]
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<HashSet<_>>();
+            if !points.is_empty() {
+                for corner in [run.start, end] {
+                    corner_points
+                        .entry((run.face, run.cycle, corner))
+                        .and_modify(|stored| stored.retain(|point| points.contains(point)))
+                        .or_insert_with(|| points.clone());
                 }
             }
         }
-        let assignment_results = coverage.iter().map(|face| {
-            let cycle_lengths = cycles[face.face].iter().map(Vec::len).collect::<Vec<_>>();
-            let unordered_full_cycle = edge_candidates.and_then(|candidates| {
-                let [gap] = face.gaps.as_slice() else {
-                    return None;
-                };
-                (cycles[face.face].len() == 1
-                    && gap.cycle == 0
-                    && gap.start == 0
-                    && gap.length == cycles[face.face][0].len()
-                    && gap.length == face.missing_edges.len()
-                    && face
-                        .missing_edges
-                        .iter()
-                        .all(|&edge| edge_rows[edge].handles.len() == 2)
-                    && defer_validation
-                    && face
-                        .missing_edges
-                        .iter()
-                        .any(|&edge| candidates[edge].len() > 1))
-                .then(|| face.missing_edges.clone())
-            });
-            if let Some(edges) = unordered_full_cycle {
-                return Some(MeshFaceAssignmentDomain::UnorderedFullCycle(edges));
-            }
-            let cycle_assignments = edge_candidates.and_then(|candidates| {
-                endpoint_cycle_assignments(
+    }
+    let assignment_results = coverage.iter().map(|face| {
+        let cycle_lengths = &context.cycle_lengths[face.face];
+        let unordered_full_cycle = edge_candidates.and_then(|candidates| {
+            let [gap] = face.gaps.as_slice() else {
+                return None;
+            };
+            (cycle_lengths.len() == 1
+                && gap.cycle == 0
+                && gap.start == 0
+                && gap.length == cycle_lengths[0]
+                && gap.length == face.missing_edges.len()
+                && face
+                    .missing_edges
+                    .iter()
+                    .all(|&edge| edge_rows[edge].handles.len() == 2)
+                && defer_validation
+                && face
+                    .missing_edges
+                    .iter()
+                    .any(|&edge| candidates[edge].len() > 1))
+            .then(|| face.missing_edges.clone())
+        });
+        if let Some(edges) = unordered_full_cycle {
+            return Some(MeshFaceAssignmentDomain::UnorderedFullCycle(edges));
+        }
+        let cycle_assignments = edge_candidates.and_then(|candidates| {
+            endpoint_cycle_assignments(
+                face.face,
+                &face.gaps,
+                cycle_lengths,
+                &face.missing_edges,
+                edge_rows,
+                candidates,
+            )
+        });
+        let assignments = cycle_assignments
+            .or_else(|| {
+                singleton_edge_points.as_ref().and_then(|edge_points| {
+                    endpoint_trail_assignments(
+                        face.face,
+                        &face.gaps,
+                        cycle_lengths,
+                        &face.missing_edges,
+                        edge_rows,
+                        edge_points,
+                        &corner_points,
+                    )
+                })
+            })
+            .or_else(|| {
+                enumerate_face(
                     face.face,
                     &face.gaps,
-                    &cycle_lengths,
+                    cycle_lengths,
                     &face.missing_edges,
-                    &edge_rows,
-                    candidates,
+                    edge_rows,
+                    (
+                        Some(edge_ports),
+                        &corner_ports,
+                        endpoint_constraints,
+                        &corner_points,
+                    ),
+                    canonicalize_spans,
+                    &mut remaining_states,
+                )
+            })
+            .or_else(|| {
+                enumerate_face(
+                    face.face,
+                    &face.gaps,
+                    cycle_lengths,
+                    &face.missing_edges,
+                    edge_rows,
+                    (None, &HashMap::new(), endpoint_constraints, &corner_points),
+                    canonicalize_spans,
+                    &mut remaining_states,
+                )
+            })
+            .or_else(|| {
+                enumerate_face(
+                    face.face,
+                    &face.gaps,
+                    cycle_lengths,
+                    &face.missing_edges,
+                    edge_rows,
+                    (None, &HashMap::new(), None, &MeshCornerPoints::new()),
+                    canonicalize_spans,
+                    &mut remaining_states,
                 )
             });
-            let assignments = cycle_assignments
-                .or_else(|| {
-                    singleton_edge_points.as_ref().and_then(|edge_points| {
-                        endpoint_trail_assignments(
-                            face.face,
-                            &face.gaps,
-                            &cycle_lengths,
-                            &face.missing_edges,
-                            &edge_rows,
-                            edge_points,
-                            &corner_points,
-                        )
-                    })
-                })
-                .or_else(|| {
-                    enumerate_face(
-                        face.face,
-                        &face.gaps,
-                        &cycle_lengths,
-                        &face.missing_edges,
-                        &edge_rows,
-                        (
-                            Some(&edge_ports),
-                            &corner_ports,
-                            endpoint_constraints,
-                            &corner_points,
-                        ),
-                        canonicalize_spans,
-                    )
-                })
-                .or_else(|| {
-                    enumerate_face(
-                        face.face,
-                        &face.gaps,
-                        &cycle_lengths,
-                        &face.missing_edges,
-                        &edge_rows,
-                        (None, &HashMap::new(), endpoint_constraints, &corner_points),
-                        canonicalize_spans,
-                    )
-                })
-                .or_else(|| {
-                    enumerate_face(
-                        face.face,
-                        &face.gaps,
-                        &cycle_lengths,
-                        &face.missing_edges,
-                        &edge_rows,
-                        (None, &HashMap::new(), None, &MeshCornerPoints::new()),
-                        canonicalize_spans,
-                    )
-                });
-            assignments
-                .map(MeshFaceAssignmentDomain::Ordered)
-                .or_else(|| {
-                    defer_validation
-                        .then(|| MeshFaceAssignmentDomain::DeferredValidation(face.clone()))
-                })
-        });
-        let domains = assignment_results.collect::<Option<Vec<_>>>()?;
-        solutions.push(domains);
-    }
-    <[Vec<MeshFaceAssignmentDomain>; 1]>::try_from(solutions)
-        .ok()
-        .map(|[domains]| domains)
+        assignments
+            .map(MeshFaceAssignmentDomain::Ordered)
+            .or_else(|| {
+                defer_validation.then(|| MeshFaceAssignmentDomain::DeferredValidation(face.clone()))
+            })
+    });
+    let domains = assignment_results.collect::<Option<Vec<_>>>()?;
+    Some((domains, edge_runs.clone()))
 }
 
 pub(crate) fn standard_mesh_missing_edge_assignments(
@@ -1596,13 +1650,14 @@ pub(crate) fn standard_mesh_missing_edge_assignments(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
 ) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
+    let context = StandardMeshBoundaryContext::parse(bytes, edge_faces)?;
     standard_mesh_missing_edge_assignment_domains(
-        bytes,
-        edge_faces,
+        &context,
         edge_candidates,
         canonicalize_spans,
         false,
     )?
+    .0
     .into_iter()
     .map(|domain| match domain {
         MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
@@ -1643,7 +1698,15 @@ pub(crate) fn standard_mesh_boundary_assignments(
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
-    standard_mesh_boundary_domains_impl(bytes, edge_faces, edge_candidates, false)?
+    let context = StandardMeshBoundaryContext::parse(bytes, edge_faces)?;
+    standard_mesh_boundary_assignments_from_context(&context, edge_candidates)
+}
+
+pub(crate) fn standard_mesh_boundary_assignments_from_context(
+    context: &StandardMeshBoundaryContext,
+    edge_candidates: Option<&[Vec<[usize; 2]>]>,
+) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
+    standard_mesh_boundary_domains_from_context(context, edge_candidates, false)?
         .into_iter()
         .map(|domain| match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => Some(assignments),
@@ -1653,35 +1716,18 @@ pub(crate) fn standard_mesh_boundary_assignments(
         .collect()
 }
 
-pub(crate) fn standard_mesh_boundary_domains_impl(
-    bytes: &[u8],
-    edge_faces: &[[usize; 2]],
+pub(crate) fn standard_mesh_boundary_domains_from_context(
+    context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     defer_validation: bool,
 ) -> Option<Vec<MeshFaceBoundaryDomain>> {
-    let domains = standard_mesh_missing_edge_assignment_domains(
-        bytes,
-        edge_faces,
+    let (domains, runs) = standard_mesh_missing_edge_assignment_domains(
+        context,
         edge_candidates,
         true,
         defer_validation,
     )?;
-    let runs = standard_mesh_edge_runs(bytes)?;
-    let (face_start, face_count, _) = largest_fbb_run(bytes)?;
-    let cycle_solutions = [1, 2, 3]
-        .into_iter()
-        .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
-        .map(|trims| {
-            trims
-                .iter()
-                .map(|trim| {
-                    boundary_cycles(&trim.triangles)
-                        .map(|cycles| cycles.into_iter().map(|cycle| cycle.len()).collect())
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [cycle_lengths] = <[Vec<Vec<usize>>; 1]>::try_from(cycle_solutions).ok()?;
+    let cycle_lengths = &context.cycle_lengths;
     domains
         .into_iter()
         .enumerate()
@@ -2405,13 +2451,14 @@ pub fn propagate_edge_port_points(
             }
         }
         for (ports, pair) in edge_ports.iter().zip(&mut resolved) {
-            if pair.is_none() {
-                if let (Some(&left), Some(&right)) =
-                    (port_points.get(&ports[0]), port_points.get(&ports[1]))
-                {
-                    if ports[0] == ports[1] || left != right {
-                        *pair = Some([left, right]);
+            if let (Some(&left), Some(&right)) =
+                (port_points.get(&ports[0]), port_points.get(&ports[1]))
+            {
+                if ports[0] == ports[1] || left != right {
+                    if pair.is_some_and(|pair| !same_unordered_pair(pair, [left, right])) {
+                        return None;
                     }
+                    *pair = Some([left, right]);
                 }
             }
         }

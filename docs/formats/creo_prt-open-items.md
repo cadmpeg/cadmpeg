@@ -1,110 +1,729 @@
 # Creo Parametric `.prt` (PSB): Open Items
 
-This document records unresolved PSB byte semantics outside [creo_prt.md](creo_prt.md).
+This document lists the parts of the Creo Parametric `.prt` format that we do not know. The specification `creo_prt.md` gives the parts that we know.
 
-## Geometry
+Each item has these parts:
 
-- Curve-relation custom unit symbols, including custom units requiring an
-  affine offset, have unspecified normalization semantics.
-- Curve-equation `local_sys f9 04 03` inherited-slot transitions other than
-  the defined rank-two body are unspecified.
-- Simultaneous curve-equation solution semantics beyond complete dimensionally
-  valid affine systems over previously valued numeric unknowns are unspecified,
-  including nonlinear systems.
-- `crv_pnt_arr f9 02 04` inherited-slot bodies outside the direct eight-slot
-  pcurve form have unspecified slot transitions.
-- DICT sign lattices outside the defined scalar lanes are unspecified.
-- `double_xar` slot bodies other than the defined literal and recursive
-  placeholder images are unspecified, including variable-length `e5` forms.
-- Per-instance cone half-angle bodies outside the terminal positive-DICT form
-  and `geom_type = 26` torus/sphere radius bodies outside the tagged radius
-  trailer and terminal prototype-minor-radius replay are unspecified.
-- Positional plane-envelope scalar prefixes outside the defined row lane are
-  unspecified.
-- Unsuffixed terminal scalar frames with six coordinate-like trailing values
-  have unspecified field roles. Equality between one trailing coordinate pair
-  does not by itself identify the plane normal or offset.
-- The joins from later positional spline rows to their prototype data and from
-  spline surfaces to surface-intersection curves are unspecified.
-- The prototype-adjacent `tab_cyl` instance rows use a construction distinct
-  from the repeated cubic replay; its point and parameter fields are unspecified.
-- Replay-bound `tab_cyl` frames whose axis spans do not uniquely match the two
-  directrix-coordinate ranges have an unspecified placement variant.
-- The remaining `fc` curve-body grammars are unspecified, including `fc 05` variants, `fc 08`, `fc 13` field roles, `fc 02` slot semantics, and `fc 04`, `fc 07`, `fc 09`, and `fc 0a`. The decoded `fc 13` body contains repeated full sample groups followed by a shortened held-coordinate-plus-two-field terminal form; whether that form is a final sample or a trailer is unspecified.
-- The equations relating `MdlRefInfo` conic types other than the defined
-  type-30 ellipse to `t0`, `t1`, `c1`, `c2`, and `local_sys` are unspecified,
-  including parabola and hyperbola carrier parameters.
-- Rotational-sweep angular termination selectors other than the defined
-  full-turn `angle_choice` form are unspecified, including one-sided,
-  symmetric, and two-sided travel.
-- Model-space analytic equations for remaining non-plane surface rows are
-  unspecified, including positional cylinder variants outside the defined
-  local-system, compact axis-aligned, referenced planar-envelope, and held-axis
-  axial/radial, and repeated-diameter bodies and positional cone variants
-  outside the defined support-apex suffix and planar-envelope bodies.
-- The three-byte station token between a positional cone's model-reference
-  token and half-angle has unspecified scalar semantics.
-- Remaining round and fillet byte semantics are unspecified, including
-  non-prismatic radii, flank geometry, and generated face bindings.
-- The negative DICT prefix lattice for scalar lanes that block geometry records is unspecified.
+- **Question** — what we must find.
+- **Known** — what the specification gives now.
+- **Need** — why we must find the answer.
+- **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
+- **Note** — a defect in the item or in the specification.
 
-## Topology and coordinates
+Each item has an identifier. Use the identifier in commit messages and in code comments.
 
-- The DEPDB fields binding feature recipes and sparse edge records into body topology are unspecified.
-- The byte-backed outer/inner loop discriminator for multi-loop faces is unspecified.
-- Fields binding vertex identifiers to XYZ coordinates and rowless face uses are unspecified.
-- Section-to-datum joins, relation equations other than signed type-zero linear
-  dimensions and the defined type-five and type-14 radii, type-one angular
-  relation direction selectors, type-35 operands that do not resolve through a
-  section entity, and the
-  `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
-- The geometric roles and selection order of multiple feature-definition `local_sys` and `transf` twelve-slot frames are unspecified.
-- The entity/locus roles of the three decoded four-slot `relat_ptr` operand vectors are unspecified.
-- The join from a `var_arr` value using the dimension-driven scalar sentinel to
-  the dimension relation that drives that solver variable is unspecified.
-  `uvar_id`, point key, relation identifier, relation dimension selector, and
-  external dimension identifier occupy distinct namespaces.
-- The numeric interpretations of the `var_arr` scalar forms `00 XX YY`,
-  `01 XX YY ZZ`, and `34 XX YY` are unspecified.
-- The semantics of the multi-valued `relat_ptr` `used` field are unspecified.
-  It is solver state, not a Boolean constraint-activation flag.
-- The neutral semantics of a unary type-one or type-two `skamp_ptr` incidence
-  whose sense-zero operand is a `segtab` point and lacks the matching
-  `verhor`/type-fourteen axis-line structure are unspecified.
-- The neutral semantics of a unary type-33 `skamp_ptr` incidence with flags 34
-  and a sense-10 bounded-curve operand are unspecified.
-- Geometry families beyond the incidence-proven point, endpoint-bearing curve,
-  line, arc, and circular roles, and the external-reference bindings of
-  solver-only `skamp_ptr` entity identifiers, are unspecified.
-- The owner and namespace joins that expose model, feature, component, and
-  scoped dimension items beyond decoded local `d<external_id>` identities to
-  curve-expression `exists()` queries are unspecified.
-- The DEPDB sweep-axis relation for parts without `ActDatums` is unspecified,
-  including the feature-definition datum defaults or standard-datum convention
-  that supplies the `protextrude` axis. The current regeneration snapshot is
-  unspecified when several section definitions select the same internal
-  sketch-plane entity.
-- Sketch-datum resolution without a unique generated-datum parent-table remainder is unspecified, including selection of a perpendicular orienting datum when the nested reference datum is parallel to the sketch normal.
-- In named `ActDatums` outline slots, the value semantics of `a5`, `9f`, `5c`,
-  and `45` are unspecified. Their values determine nonzero datum offsets and
-  extents.
-- The partition of shared surface references into face instances is unspecified.
-- The referents and traversal roles of `lo_restore` `direction` and
-  `direction2` compact integers are unspecified.
-- The semantic roles of the four required `lo_hist` fields, its optional final
-  field, and the join from feature-local loop identifiers to boundary-surface
-  curve networks are unspecified.
-- Bindings for rowless face-use references outside the round-feature rowless-cylinder table are unspecified.
-- The byte-backed relation that assigns shells to body identifiers when face-adjacency components and body-count fields disagree is unspecified.
-- Face-instance bindings for `element_colors`, `NeuPrtSld`, and display-table elements are unspecified.
-- The remaining RGB and component scalar lanes used by appearance records are unspecified.
-- The remaining stored-name meanings of `MdlStatus` `o`, `x`, `y`, and `z`
-  prefixes are unspecified. They do not select the current same-ID state.
+This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## Packed persistence data
+## 1. Scalar and array encoding
 
-- Geometry record semantics in packed `VisibGeom`, the `SolidPrimdata`
-  triangle-strip continuation and its persistent-segment bindings,
-  expanded `SolidPersistTable`, and `DEPDB_DATA` bodies are unspecified.
-- The `DispDataTable` compressed-stream variant is unspecified, including its initial dictionary state and geometry bindings.
-- Traversal and row semantics of the configuration driver table referenced by a non-null `FamilyInf.drv_tbl_ptr` are unspecified.
+### SE-01. Custom relation units
+
+**Question.** How does each custom unit symbol convert a curve-relation value to canonical units?
+
+**Known.** `creo_prt.md:3446` defines the built-in unit symbols, their dimensions, and their canonical conversions. Celsius and Fahrenheit use affine conversions.
+
+**Need.** We must know each custom conversion to evaluate a relation that uses the symbol.
+
+### SE-02. Custom affine units
+
+**Question.** Which custom unit definitions use an affine offset, and what offset does each definition use?
+
+**Known.** `creo_prt.md:3466` states that an affine unit cannot be part of a compound unit.
+
+**Need.** We must know the offset to normalize temperature-like custom values.
+
+### SE-03. Other curve-equation frame transitions
+
+**Question.** What slot transition does each other stateful `local_sys f9 04 03` token encode?
+
+**Known.** `creo_prt.md:3521` defines the twelve explicit frame slots. `creo_prt.md:3525` assigns the rank-two image to the shared plane-frame production.
+
+**Need.** We must know the other transitions to decode a complete curve-equation placement.
+
+### SE-04. Other pcurve array transitions
+
+**Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
+
+**Known.** `creo_prt.md:1284` defines the direct eight-slot pcurve body and its endpoint order.
+
+**Need.** We must know the other transitions to decode all pcurve endpoint arrays.
+
+### SE-05. Other positive DICT prefixes
+
+**Question.** What value does each positive DICT prefix outside a defined scalar lane encode?
+
+**Known.** `creo_prt.md:150` defines the DICT reconstruction rule and the lane-specific prefix tables. A lane-specific interpretation has priority.
+
+**Need.** We must know the remaining prefixes to decode scalar values without using a value from the wrong lane.
+
+### SE-06. Negative DICT prefixes
+
+**Question.** What value does each undefined negative DICT prefix encode in its scalar lane?
+
+**Known.** `creo_prt.md:150` defines the negative prefixes that have a complete reconstruction rule. An undefined token remains one bounded scalar slot.
+
+**Need.** We must know the remaining prefixes to decode geometry records that contain negative values.
+
+### SE-07. Other `double_xar` slots
+
+**Question.** What grammar does each `double_xar` slot use when it is not a defined literal, scalar, placeholder, or terminal slot?
+
+**Known.** `creo_prt.md:204` defines the counted array, literal-one slot, literal-zero slot, two recursive placeholder images, scalar slots, and terminal null slot.
+
+**Need.** We must know the other grammars to keep the counted slot boundary aligned.
+
+### SE-08. Variable-length `e5` slots
+
+**Question.** What bounds and semantics apply to a variable-length `e5` slot in `double_xar`?
+
+**Known.** `creo_prt.md:204` defines `e5 07 23 11 2e` as one exact recursive placeholder image.
+
+**Need.** We must know the bounds to distinguish one slot from following slots.
+
+### SE-09. Positional plane-envelope prefixes
+
+**Question.** What scalar value does each undefined prefix in a positional plane envelope encode?
+
+**Known.** `creo_prt.md:1059` through `creo_prt.md:1207` define the standard, compact, held-coordinate, and planar-envelope plane forms.
+
+**Need.** We must know the remaining prefixes to construct the plane envelope and domain.
+
+### SE-10. Six-scalar terminal frames
+
+**Question.** What role does each value in an unsuffixed terminal six-scalar frame have?
+
+**Known.** `creo_prt.md:3601` defines six-scalar `MdlRefInfo` line rows as `end1.xyz` followed by `end2.xyz`. Equality of one coordinate pair does not identify that grammar in another record family.
+
+**Need.** We must know the roles to distinguish endpoints, frame vectors, plane data, and trailers.
+
+### SE-11. Dimension-driven `00 XX YY` values
+
+**Question.** What numeric value does a `var_arr` scalar of the form `00 XX YY` encode?
+
+**Known.** `creo_prt.md:175` defines its three-byte boundary. `creo_prt.md:1396` defines the separate nine-byte dimension-driven sentinel.
+
+**Need.** We must know the value to solve the section variable.
+
+### SE-12. Dimension-driven `01 XX YY ZZ` values
+
+**Question.** What numeric value does a `var_arr` scalar of the form `01 XX YY ZZ` encode?
+
+**Known.** `creo_prt.md:175` defines its four-byte boundary.
+
+**Need.** We must know the value to solve the section variable.
+
+### SE-13. Dimension-driven `34 XX YY` values
+
+**Question.** What numeric value does a `var_arr` scalar of the form `34 XX YY` encode?
+
+**Known.** `creo_prt.md:175` defines its three-byte boundary.
+
+**Need.** We must know the value to solve the section variable.
+
+## 2. Curves and surfaces
+
+### GS-01. Cone half-angle overrides
+
+**Question.** What grammar and value rule apply to a per-instance cone half-angle that is not the terminal positive-DICT form?
+
+**Known.** `creo_prt.md:633` defines the terminal positive-DICT half-angle form and the support-frame construction.
+
+**Need.** We must know the override to construct the cone carrier.
+
+### GS-02. Torus and sphere radius overrides
+
+**Question.** What grammar and value rule apply to a `geom_type = 26` radius body that is not a tagged radius trailer or terminal prototype-minor-radius replay?
+
+**Known.** `creo_prt.md:813` through `creo_prt.md:1057` define the recognized torus and sphere radius forms and their carrier invariants.
+
+**Need.** We must know the override to construct the torus or sphere carrier.
+
+### GS-03. Later spline prototype joins
+
+**Question.** Which field joins a later positional spline row to its prototype?
+
+**Known.** `creo_prt.md:271` through `creo_prt.md:811` define named surface prototypes and the positional replay forms that have a proven join.
+
+**Need.** We must know the join to apply the correct spline degree, knots, control points, and weights.
+
+### GS-04. Spline intersection-curve joins
+
+**Question.** Which field joins a spline surface to each surface-intersection curve on that surface?
+
+**Known.** `creo_prt.md:1988` defines intersection-curve transfer when a surface pair and its endpoint witnesses select one candidate.
+
+**Need.** We must know the join to bind the trim curve to the spline surface.
+
+### GS-05. Prototype-adjacent `tab_cyl` points
+
+**Question.** What geometric role does each point in a prototype-adjacent `tab_cyl` instance row have?
+
+**Known.** `creo_prt.md:674` defines the prototype fields. `creo_prt.md:702` defines the separate repeated cubic replay.
+
+**Need.** We must know the point roles to construct the ruled surface.
+
+### GS-06. Prototype-adjacent `tab_cyl` parameters
+
+**Question.** What does each parameter in a prototype-adjacent `tab_cyl` instance row control?
+
+**Known.** `creo_prt.md:674` defines the bounded `params` field and its relationship to the prototype.
+
+**Need.** We must know the parameter roles to define the surface chart and domain.
+
+### GS-07. Ambiguous `tab_cyl` placement
+
+**Question.** How does a replay-bound `tab_cyl` select its placement when its axis span matches neither directrix-coordinate range uniquely?
+
+**Known.** `creo_prt.md:702` defines the repeated cubic replay and the unique axis-span placement cases.
+
+**Need.** We must know the selection rule to place the surface in model space.
+
+### GS-08. Other `fc 02` slots
+
+**Question.** What role does each slot in an `fc 02` body have outside the defined short pcurve form?
+
+**Known.** `creo_prt.md:1294` identifies `fc 02` as a short pcurve-style endpoint family.
+
+**Need.** We must know the roles to construct its curve and endpoints.
+
+### GS-09. Other `fc 05` variants
+
+**Question.** What grammar does an `fc 05` body use when it does not satisfy the defined cap-circle production?
+
+**Known.** `creo_prt.md:1305` through `creo_prt.md:1363` define complete point groups, scalar lanes, termination, cylinder binding, placement, and circle construction for cap-circle bodies.
+
+**Need.** We must know the other grammar to construct or reject the curve correctly.
+
+### GS-10. `fc 08` grammar
+
+**Question.** What is the complete body grammar for `fc 08`?
+
+**Known.** `creo_prt.md:1294` identifies `fc 08` as a world-coordinate control-polyline family. Recognized coordinate tokens and opaque spans partition its retained body.
+
+**Need.** We must know the grammar to construct the control polyline.
+
+### GS-11. `fc 13` full sample fields
+
+**Question.** What role does each field in a full `fc 13` sample group have?
+
+**Known.** `creo_prt.md:1303` identifies `fc 13` as a held-cap-ordinate control polyline.
+
+**Need.** We must know the roles to construct the control polyline.
+
+### GS-12. `fc 13` terminal form
+
+**Question.** Is the shortened held-coordinate-plus-two-field form in `fc 13` a final sample or a trailer?
+
+**Known.** The decoder retains the repeated full groups and the shortened terminal form as separate bounded data.
+
+**Need.** We must know the form to determine the final control-point count.
+
+### GS-13. Other `fc` subtypes
+
+**Question.** What body grammar does each `fc 04`, `fc 07`, `fc 09`, and `fc 0a` subtype use?
+
+**Known.** `creo_prt.md:1294` defines the common `fc <subtype>` opener and the recognized subtype families.
+
+**Need.** We must know each grammar to construct its curve family.
+
+### GS-14. Parabola carrier equation
+
+**Question.** How do a parabola's `type`, `t0`, `t1`, `c1`, `c2`, and `local_sys` fields define its carrier?
+
+**Known.** `creo_prt.md:3636` defines the named and positional conic fields, frame grammar, and field invariants. `creo_prt.md:3670` defines type 30 as an ellipse.
+
+**Need.** We must know the equation to construct a parabola in model space.
+
+### GS-15. Hyperbola carrier equation
+
+**Question.** How do a hyperbola's `type`, `t0`, `t1`, `c1`, `c2`, and `local_sys` fields define its carrier?
+
+**Known.** `creo_prt.md:3636` defines the named and positional conic fields, frame grammar, and field invariants. `creo_prt.md:3670` defines type 30 as an ellipse.
+
+**Need.** We must know the equation to construct a hyperbola in model space.
+
+### GS-16. Other conic types
+
+**Question.** What carrier does each `MdlRefInfo` conic type other than the defined ellipse, parabola, and hyperbola types represent?
+
+**Known.** `creo_prt.md:3636` defines the common conic record grammar and retains all type and coefficient fields.
+
+**Need.** We must know the type mapping to construct the correct carrier.
+
+### GS-17. Other positional cylinders
+
+**Question.** What model-space equation does each positional cylinder body outside the defined local-system, compact axis-aligned, referenced planar-envelope, held-axis axial/radial, and repeated-diameter forms encode?
+
+**Known.** `creo_prt.md:271` through `creo_prt.md:811` define the recognized cylinder row families and their placement invariants.
+
+**Need.** We must know the equation to construct the cylinder carrier.
+
+### GS-18. Other positional cones
+
+**Question.** What model-space equation does each positional cone body outside the support-apex suffix and planar-envelope forms encode?
+
+**Known.** `creo_prt.md:597` through `creo_prt.md:672` define the recognized cone support, apex, axis, radial ratio, and half-angle construction.
+
+**Need.** We must know the equation to construct the cone carrier.
+
+### GS-19. Positional cone station token
+
+**Question.** What scalar value does the three-byte station token between a positional cone's model-reference token and half-angle encode?
+
+**Known.** `creo_prt.md:633` states that the support frame and half-angle define the exact cone independently of this token.
+
+**Need.** We must know the value to preserve the native cone parameters.
+
+### GS-20. Other non-plane surface rows
+
+**Question.** What model-space equation does each non-plane surface row outside the defined analytic and spline families encode?
+
+**Known.** `creo_prt.md:256` defines the normalized surface-family mapping. `creo_prt.md:271` through `creo_prt.md:1207` define the surface prototypes and the recognized positional constructions.
+
+**Need.** We must know the equation to construct the remaining surface carriers.
+
+### GS-21. Non-prismatic round radii
+
+**Question.** Which fields define the varying radius of a non-prismatic round?
+
+**Known.** `creo_prt.md:2210` through `creo_prt.md:2273` define the recognized edge-treatment schemas, positional replay, and resolved constant-radius forms.
+
+**Need.** We must know the fields to construct the varying-radius blend.
+
+### GS-22. Round flank geometry
+
+**Question.** Which fields define the flank geometry of a round or fillet?
+
+**Known.** The feature recipe retains affected geometry, affected edges, contours, and generated entities as separate identifier arrays.
+
+**Need.** We must know the fields to construct the blend surface and its trims.
+
+### GS-23. Round generated-face bindings
+
+**Question.** Which relation binds each round or fillet result to its generated face instances?
+
+**Known.** `creo_prt.md:2210` through `creo_prt.md:2273` define the generated-surface arrays and the rowless-cylinder special case.
+
+**Need.** We must know the binding to add the generated faces to the body topology.
+
+## 3. Section solving and feature placement
+
+### SP-01. Nonlinear simultaneous equations
+
+**Question.** How must a nonlinear curve-equation `SOLVE` block be solved?
+
+**Known.** `creo_prt.md:3356` defines the block framing. The decoder solves complete, dimensionally valid affine systems over numeric unknowns and retains other blocks.
+
+**Need.** We must know the nonlinear solve rules to evaluate all derived curve parameters.
+
+### SP-02. Other simultaneous-solve states
+
+**Question.** How must a simultaneous-solve block evaluate when an unknown does not have a previous numeric value?
+
+**Known.** The defined affine solver uses the ordered equations, declared unknowns, dimensions, and previous numeric values.
+
+**Need.** We must know the initialization rule to evaluate the block deterministically.
+
+### SP-03. Section-to-datum joins
+
+**Question.** Which fields join a section definition to its sketch datum when the defined owner and generated-datum joins do not select one datum?
+
+**Known.** `creo_prt.md:2787` through `creo_prt.md:2843` define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
+
+**Need.** We must know the join to place the sketch in model space.
+
+### SP-04. Other relation equations
+
+**Question.** What equation does each relation type outside signed type 0, type 5, and type 14 encode?
+
+**Known.** `creo_prt.md:1365` through `creo_prt.md:2025` define the recognized linear, radius, incidence, and entity-geometry relations.
+
+**Need.** We must know each equation to solve the section geometry.
+
+### SP-05. Type-1 direction selectors
+
+**Question.** What direction does each selector in a type-1 angular relation specify?
+
+**Known.** The decoder retains the relation type, operands, direction selector, and value as separate fields.
+
+**Need.** We must know the direction to select the correct signed angle.
+
+### SP-06. Other type-35 operands
+
+**Question.** What does a type-35 operand identify when it does not resolve through a section entity?
+
+**Known.** Section-entity identifiers and relation identifiers occupy separate namespaces.
+
+**Need.** We must know the referent to evaluate the relation.
+
+### SP-07. Solver sentinel
+
+**Question.** What solver state does `ed ba 10 0c 8d ee 90 b4 0c` encode?
+
+**Known.** `creo_prt.md:1396` defines the nine-byte `ed <tail8>` production as one dimension-driven sentinel slot.
+
+**Need.** We must know the state to evaluate or reject the affected variable correctly.
+
+### SP-08. Multiple `local_sys` frames
+
+**Question.** What geometric role does each feature-definition `local_sys` frame have when one definition contains more than one frame?
+
+**Known.** `creo_prt.md:2506` defines the twelve-slot feature frame and its complete rank-two form.
+
+**Need.** We must know each role to select the feature placement.
+
+### SP-09. Multiple `transf` frames
+
+**Question.** What geometric role does each feature-definition `transf` frame have when one definition contains more than one frame?
+
+**Known.** `creo_prt.md:2506` defines the twelve-slot transform body. A unique feature-bound section transform selects its section definition.
+
+**Need.** We must know each role to select the section-to-model transform.
+
+### SP-10. Frame selection order
+
+**Question.** Which field selects one frame when a feature definition contains multiple complete `local_sys` or `transf` frames?
+
+**Known.** Frame order alone does not override the unique owner and feature-bound transform rules.
+
+**Need.** We must know the selector to avoid an arbitrary placement.
+
+### SP-11. `relat_ptr` operand-vector roles
+
+**Question.** What entity or locus does each of the three four-slot `relat_ptr` operand vectors identify?
+
+**Known.** The decoder preserves the three vectors independently and does not combine their namespaces.
+
+**Need.** We must know the roles to bind the correct relation operands.
+
+### SP-12. Dimension-driven variable join
+
+**Question.** Which fields join a dimension-driven `var_arr` value to the relation dimension that drives it?
+
+**Known.** `creo_prt.md:1886` identifies the dimension-driven `var_arr` state. `uvar_id`, point key, relation identifier, relation dimension selector, and external dimension identifier are distinct identities.
+
+**Need.** We must know the join to assign the dimension value to the solver variable.
+
+### SP-13. `relat_ptr.used` states
+
+**Question.** What solver state does each value of `relat_ptr.used` represent?
+
+**Known.** The field has more than two values and is not a Boolean constraint-activation flag.
+
+**Need.** We must know the states to decide how the solver uses the relation.
+
+### SP-14. Unary point incidence
+
+**Question.** What neutral constraint does a unary type-1 or type-2 `skamp_ptr` incidence represent when its sense-0 operand is a `segtab` point and it has no matching `verhor` or type-14 axis line?
+
+**Known.** `creo_prt.md:1365` through `creo_prt.md:2025` define the incidence forms that have a proven point, line, or axis structure.
+
+**Need.** We must know the constraint to transfer it without inventing an axis.
+
+### SP-15. Unary type-33 incidence
+
+**Question.** What neutral constraint does a unary type-33 `skamp_ptr` incidence with flags 34 and a sense-10 bounded-curve operand represent?
+
+**Known.** The decoder retains the type, flags, sense, and bounded-curve identity.
+
+**Need.** We must know the constraint to transfer its design intent.
+
+### SP-16. Other `skamp_ptr` geometry families
+
+**Question.** What geometry family does each `skamp_ptr` entity code outside the defined point, endpoint-bearing curve, line, arc, and circle roles identify?
+
+**Known.** The defined roles use incidence structure and section entities to prove their geometry family.
+
+**Need.** We must know the mapping to create the correct neutral constraint operands.
+
+### SP-17. Solver-only external references
+
+**Question.** Which record binds a solver-only `skamp_ptr` entity identifier to its external geometry?
+
+**Known.** A solver-only identifier does not bind through the local `segtab` geometry join.
+
+**Need.** We must know the binding to evaluate constraints on external geometry.
+
+### SP-18. `exists()` model-item joins
+
+**Question.** Which owner and namespace joins expose model, feature, component, and scoped dimension items to a curve-expression `exists()` query?
+
+**Known.** `creo_prt.md:3502` defines scoped identifiers and local `d<external_id>` binding. Other item classes retain their complete source identity.
+
+**Need.** We must know the joins to return the correct query result.
+
+### SP-19. Sweep axis without `ActDatums`
+
+**Question.** Which DEPDB relation supplies the `protextrude` or `protrevolve` axis when the part has no `ActDatums` section?
+
+**Known.** `creo_prt.md:3530` states that the operation references its axis through `gsec3d_ptr` placement fields, not through an inline vector.
+
+**Need.** We must know the relation to construct the sweep direction or revolution axis.
+
+### SP-20. Default sweep datums
+
+**Question.** Which feature-definition datum default or standard-datum convention supplies a sweep axis when no explicit datum joins to the section?
+
+**Known.** Datum names do not define geometric orientation. A referenced datum can orient an in-plane axis only when it is perpendicular to the sketch-plane normal.
+
+**Need.** We must know the convention to place the sweep without guessing from a name.
+
+### SP-21. Competing regeneration snapshots
+
+**Question.** Which field selects the current regeneration snapshot when several section definitions select the same internal sketch-plane entity?
+
+**Known.** `creo_prt.md:2160` states that the immediate feature-state chain does not select a snapshot when more than one definition uses that entity.
+
+**Need.** We must know the selector to bind the feature to one section definition.
+
+### SP-22. Ambiguous sketch-datum parent
+
+**Question.** How does a section select its sketch datum when the generated-datum parent-table remainder is not unique?
+
+**Known.** `creo_prt.md:2787` through `creo_prt.md:2843` define the unique remainder rule and the nested `plane_id` join.
+
+**Need.** We must know the selection rule to place the sketch.
+
+### SP-23. Parallel orienting datum
+
+**Question.** Which datum supplies the in-plane orientation when the nested reference datum is parallel to the sketch normal?
+
+**Known.** `creo_prt.md:2927` states that the nested datum orients an in-plane axis only when it is perpendicular to the sketch-plane normal.
+
+**Need.** We must know the alternate datum to complete the sketch frame.
+
+### SP-24. Named `ActDatums` outline tokens
+
+**Question.** What scalar value does each `a5`, `9f`, `5c`, and `45` token encode in a named `ActDatums` outline?
+
+**Known.** `creo_prt.md:2807` defines the two-corner outline and its held-coordinate plane rule.
+
+**Need.** We must know the values to construct nonzero datum offsets and extents.
+
+### SP-25. Other revolution termination selectors
+
+**Question.** How does each rotational-sweep selector other than the full-turn `angle_choice` form define its angular interval?
+
+**Known.** `creo_prt.md:2377` defines `ea 44 00 00` as a complete 360-degree revolution. Linear sweep extents include one-sided, symmetric, and two-sided spans.
+
+**Need.** We must know the selector semantics to trim a one-sided, symmetric, or two-sided revolution.
+
+## 4. Topology and appearance
+
+### TP-01. DEPDB recipe-to-body binding
+
+**Question.** Which DEPDB fields bind a feature recipe to the body topology that it changes?
+
+**Known.** `creo_prt.md:2858` states that sparse DEPDB curve rows do not encode final loops or trims. Feature identifiers bind materialized surface carriers to generating features.
+
+**Need.** We must know the binding to apply the feature to the correct body.
+
+### TP-02. Sparse-edge topology binding
+
+**Question.** Which DEPDB fields bind a sparse edge record to its final vertices, faces, and loops?
+
+**Known.** Sparse DEPDB curve rows are one-sided topology views and retain their identifiers and suffix fields.
+
+**Need.** We must know the binding to reconstruct the final B-rep.
+
+### TP-03. Multi-loop classification
+
+**Question.** Which byte-backed field identifies an outer loop or an inner loop on a multi-loop face?
+
+**Known.** Parameter-space containment can classify loops only when complete pcurves and a surface chart are available.
+
+**Need.** We must know the field to classify loops when containment is unavailable.
+
+### TP-04. Vertex-coordinate binding
+
+**Question.** Which fields bind a topology vertex identifier to its XYZ coordinates?
+
+**Known.** `creo_prt.md:3150` through `creo_prt.md:3173` define coordinate recovery from unique incident analytic carriers.
+
+**Need.** We must know the stored binding to place vertices that carrier intersection cannot resolve uniquely.
+
+### TP-05. General rowless face-use binding
+
+**Question.** Which fields bind a rowless face-use reference to its face, loop, edge, and orientation outside the round-feature rowless-cylinder table?
+
+**Known.** `creo_prt.md:2210` through `creo_prt.md:2273` define the round-feature rowless-cylinder special case.
+
+**Need.** We must know the general binding to construct those face uses.
+
+### TP-06. Shared-surface face partition
+
+**Question.** Which field partitions uses of one surface reference into separate face instances?
+
+**Known.** A surface carrier identity does not by itself identify one bounded face instance.
+
+**Need.** We must know the partition to prevent distinct faces from collapsing into one face.
+
+### TP-07. `lo_restore.direction`
+
+**Question.** What does the `lo_restore.direction` compact integer refer to, and how does it control loop traversal?
+
+**Known.** `creo_prt.md:2184` states that it belongs to a loop-restoration edge record and is not a sweep direction or extent.
+
+**Need.** We must know its referent and sense to restore the loop order.
+
+### TP-08. `lo_restore.direction2`
+
+**Question.** What does the `lo_restore.direction2` compact integer refer to, and how does it control loop traversal?
+
+**Known.** `creo_prt.md:2184` states that it belongs to a loop-restoration edge record and is not a sweep direction or extent.
+
+**Need.** We must know its referent and sense to restore the loop order.
+
+### TP-09. Required `lo_hist` fields
+
+**Question.** What semantic role does each of the four required `lo_hist` fields have?
+
+**Known.** `creo_prt.md:2750` defines the six-entry stored loop-history frame and preserves all field identities.
+
+**Need.** We must know the roles to reconstruct feature-local loop history.
+
+### TP-10. Optional `lo_hist` field
+
+**Question.** What semantic role does the optional final `lo_hist` field have?
+
+**Known.** The decoder preserves the optional field separately from the four required fields.
+
+**Need.** We must know the role to apply the complete loop-history record.
+
+### TP-11. Loop-to-boundary-surface join
+
+**Question.** Which field joins a feature-local loop identifier to its boundary-surface curve network?
+
+**Known.** Loop-history identifiers and surface and curve identifiers occupy separate namespaces.
+
+**Need.** We must know the join to bind the restored loop to geometric edges.
+
+### TP-12. Shell-to-body assignment
+
+**Question.** Which byte-backed relation assigns a shell to a body when face-adjacency components and body-count fields disagree?
+
+**Known.** Face adjacency gives connected shell components. A body-count field gives the expected body cardinality but not shell ownership.
+
+**Need.** We must know the relation to construct the correct body membership.
+
+### TP-13. `element_colors` face binding
+
+**Question.** Which fields bind an `element_colors` entry to an exact face instance?
+
+**Known.** Geometry identity and face-instance identity are separate because one surface can support more than one face.
+
+**Need.** We must know the binding to apply the color to the correct face.
+
+### TP-14. `NeuPrtSld` face binding
+
+**Question.** Which fields bind a `NeuPrtSld` appearance entry to an exact face instance?
+
+**Known.** `creo_prt.md:68` identifies `NeuPrtSld` as material, appearance, display, and tessellation data.
+
+**Need.** We must know the binding to apply the appearance to the correct face.
+
+### TP-15. Display-table face binding
+
+**Question.** Which fields bind a display-table element to an exact face instance?
+
+**Known.** Embedded display streams and model topology use separate record namespaces.
+
+**Need.** We must know the binding to transfer per-face display data.
+
+### TP-16. Other RGB lanes
+
+**Question.** What scalar value does each undefined token in an RGB appearance lane encode?
+
+**Known.** The decoder preserves complete recognized RGB values and retains undefined token bodies.
+
+**Need.** We must know the values to construct the stored color.
+
+### TP-17. Other appearance component lanes
+
+**Question.** What scalar value does each undefined token in a non-RGB appearance component lane encode?
+
+**Known.** Appearance records keep color and other material components in separate scalar lanes.
+
+**Need.** We must know the values to construct the complete material.
+
+### TP-18. `MdlStatus` prefix meanings
+
+**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent?
+
+**Known.** `creo_prt.md:2082` states that the prefix is not part of the operation-family name and does not select the current same-ID state. Byte order selects the current state.
+
+**Need.** We must know the prefix meanings to preserve the native state semantics.
+
+## 5. Packed persistence data
+
+### PP-01. Packed `VisibGeom` records
+
+**Question.** What geometry record grammar does packed `VisibGeom` use outside the defined PSB rows?
+
+**Known.** `creo_prt.md:216` defines material `VisibGeom` namespaces that contain PSB `srf_array` and `crv_array` rows.
+
+**Need.** We must know the packed grammar to construct its remaining geometry.
+
+### PP-02. `SolidPrimdata` strip continuation
+
+**Question.** How does `SolidPrimdata` continue one triangle strip across record boundaries?
+
+**Known.** `creo_prt.md:3575` defines primitive scalar arrays, cumulative strip sizes, vertex and normal tuples, and alternating triangle winding.
+
+**Need.** We must know the continuation rule to construct all strip triangles.
+
+### PP-03. `SolidPrimdata` persistent-segment binding
+
+**Question.** Which fields bind a `SolidPrimdata` triangle-strip segment to its persistent model entity?
+
+**Known.** The primitive stream defines tessellation coordinates and topology but does not assign a model face by position alone.
+
+**Need.** We must know the binding to attach tessellation to the correct entity.
+
+### PP-04. Expanded `SolidPersistTable`
+
+**Question.** What row grammar and reference semantics does expanded `SolidPersistTable` use?
+
+**Known.** The decoder retains the expanded table boundary and its exact row data.
+
+**Need.** We must know the semantics to resolve persistent geometry identities.
+
+### PP-05. Other `DEPDB_DATA` bodies
+
+**Question.** What grammar does each `DEPDB_DATA` body outside the defined surface rows, section definitions, and feature recipes use?
+
+**Known.** `creo_prt.md:2862` defines fixed-prefix surface rows in `DEPDB_DATA`. `creo_prt.md:2120` through `creo_prt.md:2208` define section and feature-definition boundaries.
+
+**Need.** We must know the other grammars to transfer their design data.
+
+### PP-06. Compressed `DispDataTable` dictionary
+
+**Question.** What initial dictionary and code-width state does the compressed `DispDataTable` variant use?
+
+**Known.** `creo_prt.md:2860` defines `1f 9d 10` Unix-compress streams. `creo_prt.md:3569` states that code 256 is a literal dictionary entry and not a clear code.
+
+**Need.** We must know the initial state to decompress the table deterministically.
+
+### PP-07. Compressed `DispDataTable` geometry binding
+
+**Question.** Which fields bind decompressed `DispDataTable` rows to model geometry?
+
+**Known.** The compressed stream contains display data in a namespace separate from material face instances.
+
+**Need.** We must know the binding to apply display data to the correct entities.
+
+### PP-08. Configuration driver-table traversal
+
+**Question.** How do references traverse the configuration driver table selected by a non-null `FamilyInf.drv_tbl_ptr`?
+
+**Known.** `creo_prt.md:3560` defines the null and referenced pointer forms and the configuration-root identity. A null pointer means that the part has no family-table configurations.
+
+**Need.** We must know the traversal to enumerate all configuration rows.
+
+### PP-09. Configuration driver-table rows
+
+**Question.** What does each row and field in the configuration driver table represent?
+
+**Known.** A non-null pointer preserves the canonical driver-table entity identifier.
+
+**Need.** We must know the row semantics to transfer configuration parameters and values.
