@@ -491,6 +491,13 @@ enum IncidenceCandidatePairs {
     Implicit(MeshImplicitEdgeCandidates),
 }
 
+enum IncidenceConstraintOptions {
+    Unsupported,
+    Deferred,
+    AtLeastLimit,
+    Exact(Vec<MeshEndpointPair>),
+}
+
 struct AppliedFaceConfiguration {
     assigned: Vec<(usize, [usize; 2])>,
     affected_faces: Vec<usize>,
@@ -1843,24 +1850,41 @@ impl IncidenceComponentSearch<'_, '_> {
         face: usize,
         point: usize,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
-    ) -> Vec<(usize, [usize; 2])> {
-        let mut options = self.face_edges[face]
+        limit: usize,
+    ) -> IncidenceConstraintOptions {
+        let mut any_viable = false;
+        let mut options = HashSet::new();
+        for edge in self.face_edges[face]
             .iter()
             .copied()
             .filter(|&edge| self.active[edge] && self.assignment[edge].is_none())
-            .flat_map(|edge| {
-                self.candidate_pairs(edge, Some(point), coordinate_domains)
-                    .map(move |pair| (edge, pair))
-            })
-            .filter(|(edge, pair)| {
-                self.candidate_fits_in(*edge, *pair, coordinate_domains)
-                    && coordinate_domains
-                        .is_none_or(|domains| domains.supports_edge_candidate(*edge, *pair))
-            })
-            .collect::<Vec<_>>();
+        {
+            for pair in self.candidate_pairs(edge, Some(point), coordinate_domains) {
+                if !self.candidate_fits_in(edge, pair, coordinate_domains)
+                    || coordinate_domains
+                        .is_some_and(|domains| !domains.supports_edge_candidate(edge, pair))
+                {
+                    continue;
+                }
+                any_viable = true;
+                if !self.branch_edge_ready(edge) {
+                    continue;
+                }
+                options.insert((edge, pair));
+                if options.len() == limit {
+                    return IncidenceConstraintOptions::AtLeastLimit;
+                }
+            }
+        }
+        if !any_viable {
+            return IncidenceConstraintOptions::Unsupported;
+        }
+        if options.is_empty() {
+            return IncidenceConstraintOptions::Deferred;
+        }
+        let mut options = options.into_iter().collect::<Vec<_>>();
         options.sort_unstable();
-        options.dedup();
-        options
+        IncidenceConstraintOptions::Exact(options)
     }
 
     fn narrowest_edge_branch(
@@ -1936,22 +1960,12 @@ impl IncidenceComponentSearch<'_, '_> {
             if self.degree(face, point) != 1 {
                 continue;
             }
-            let options = self.constraint_options(face, point, coordinate_domains);
-            if options.is_empty() {
-                return None;
-            }
-            let options = options
-                .into_iter()
-                .filter(|(edge, _)| self.branch_edge_ready(*edge))
-                .collect::<Vec<_>>();
-            if options.is_empty() {
-                continue;
-            }
-            if constrained
-                .as_ref()
-                .is_none_or(|stored| options.len() < stored.len())
-            {
-                constrained = Some(options);
+            let limit = constrained.as_ref().map_or(usize::MAX, Vec::len);
+            match self.constraint_options(face, point, coordinate_domains, limit) {
+                IncidenceConstraintOptions::Unsupported => return None,
+                IncidenceConstraintOptions::Deferred | IncidenceConstraintOptions::AtLeastLimit => {
+                }
+                IncidenceConstraintOptions::Exact(options) => constrained = Some(options),
             }
         }
         if constrained.is_some() {
