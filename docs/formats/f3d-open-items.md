@@ -180,7 +180,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `f3d.md` §8.1 "An `EdgeFlange` scope with" and `f3d.md` §8.1 "A `Hem` scope has" give the offset and the width of each field. The decoder keeps every one of them as an uninterpreted value.
 
-**Need.** These two features have no neutral operation without the value meanings. We cannot rebuild the feature in a neutral model.
+**Need.** These two features have no neutral operation without the value meanings. We cannot rebuild the feature in a neutral model. **Blocked on a specimen:** no sheet-metal scope of any family is available to read. Settling it needs a base face, one edge flange cycled through each hem form, one flange whose height is measured to a plane and one to a point, and one flange per width mode and per bend position.
 
 ### DR-10. `SpirePrimitive` and `CoilPrimitive` values
 
@@ -193,9 +193,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 - `CoilPrimitive` section-placement values other than `3`
 - the fixed u32 value at primary-header offset 26 in each record
 
-**Known.** `f3d.md` §8.1 "`SpirePrimitive` selects the Coil" gives the `SpirePrimitive` fields. `f3d.md` §8.1 "`CoilPrimitive` is the compact" gives the `CoilPrimitive` fields. Each field has one known value. The two records use different numbers for the same meaning, so a value from one record does not transfer to the other.
+**Known.** `f3d.md` §8.1 "`SpirePrimitive` selects the Coil" gives the `SpirePrimitive` fields. `f3d.md` §8.1 "`CoilPrimitive` is the compact" gives the `CoilPrimitive` fields. Each field has one known value. The two records use different numbers for the same meaning, so a value from one record does not transfer to the other. The ten-reference `CoilPrimitive` form's member layout is settled and its section placement precedes its section shape in the stream, which is the opposite of the order the compact form's offsets assume.
 
-**Need.** We must know the value sets to build these two features in a neutral model.
+**Need.** We must know the value sets to build these two features in a neutral model. **Blocked on specimens:** every discriminator carries one value in the records available. Settling it needs one coil per creation type, one per boolean operation, and a grid of section shape against section placement, one coil per file. The compact form is absent, so whether it is the same class as the ten-reference form is also open.
 
 ### DR-11. Eighth `CoilPrimitive` reference
 
@@ -203,7 +203,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `f3d.md` §8.1 "`CoilPrimitive` is the compact" gives all eight references of the 427-byte form. The eighth is a counted selection group with one persistently identified member. It is not a compact parameter: the scope owns exactly five parameters, and the five parameter references name all of them. A larger `CoilPrimitive` form has a 573-byte frame and ten ordered references with no known layout.
 
-**Need.** We must know the selected entity to keep the complete feature input set, and the ten-reference layout to read that form.
+**Need.** We must know the selected entity to keep the complete feature input set. The eighth ordered reference is the tool body in the compact form only; in the ten-reference form the tool body is the tenth and the eighth is a parameter.
 
 ### DR-12. `EntityGenesis` placement field at offset 45
 
@@ -259,13 +259,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Each unknown makes one Extrude selection fall back to native retention. The neutral model then has no selection.
 
-### DR-18. Shifted Extrude extent pairs
+### DR-18. Extrude extent arbitration
 
-**Question.** What does the `(3, 0)` pair mean? What do the shifted extent-discriminator pairs other than the defined set mean? Which field determines the extent form when the pair and the stored parameter set disagree?
+**Question.** Which field determines the extent form when an extent discriminator and the stored termination reference disagree?
 
-**Known.** `f3d.md` §8.1 "The shifted Extrude prologue" gives the pairs `(1, 1)`, `(1, 2)`, `(2, 0)`, `(3, 2)`, `(1, 0)`, and `(2, 1)`. A `(3, 0)` pair occurs with two object-terminated travel directions. The pair does not alone determine the extent form.
+**Known.** `f3d.md` §8.1 "The extent form is carried by" gives the two per-side discriminators, their enum, and the parameter and reference set each value implies. Every implication holds in both directions, so no record separates the discriminator from the reference: the two never disagree. Extent value `3` does not occur, so neither its termination-entity search nor the tool-body extension mode of value `4` is exercised.
 
-**Need.** We must know the remaining pairs and the form rule to build the extent in a neutral model.
+**Need.** A writer needs to know which field a reader follows before it can emit a record where the two differ, and whether value `3` may be written without a termination reference. A design authored with a to-object termination whose side is then switched to `to next` without clearing the object settles it.
 
 ### DR-19. Construction-group fields
 
@@ -305,7 +305,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `f3d.md` §8.1 "A `Draft` scope has" gives the field roles. The first scalar is the nonzero signed draft angle in radians. Another field selects the neutral plane.
 
-**Need.** The pull direction and the outward flag are redundant with the angle sign and the plane. We must know the relation to compute them. The neutral model leaves both empty now.
+**Need.** The pull direction and the outward flag are redundant with the angle sign and the plane. We must know the relation to compute them. The neutral model leaves both empty now. **Blocked on a specimen:** no `Draft` scope is available to read. Settling it needs a design holding a neutral-plane draft and a parting-line draft, plus a flip-flag and negative-angle pair authored to identical geometry.
 
 ### DR-24. Class-365 whole-body operand fields
 
