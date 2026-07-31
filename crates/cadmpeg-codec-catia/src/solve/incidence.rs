@@ -2510,6 +2510,19 @@ impl IncidenceComponentSearch<'_, '_> {
             };
             self.adjust(edge, pair, true);
             self.assignment[edge] = Some(pair);
+            let factor_checkpoint = match &mut self.face_configuration_domains {
+                Some(factors) => {
+                    match factors.refine_edges(&[(edge, pair)], self.boundary_propagation_budget) {
+                        Ok(checkpoint) => checkpoint,
+                        Err(()) => {
+                            self.assignment[edge] = None;
+                            self.adjust(edge, pair, false);
+                            continue;
+                        }
+                    }
+                }
+                None => None,
+            };
             let mut faces = self.edge_faces[edge].to_vec();
             faces.sort_unstable();
             faces.dedup();
@@ -2529,6 +2542,9 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             self.assignment[edge] = None;
             self.adjust(edge, pair, false);
+            if let Some(factors) = &mut self.face_configuration_domains {
+                factors.restore(factor_checkpoint);
+            }
             if self.exhausted || self.stopped {
                 return;
             }
