@@ -169,15 +169,24 @@ impl SourceFidelity {
     }
 
     /// Joins product references with retained source records.
+    ///
+    /// The retained records are indexed once and the product references are
+    /// consumed as they are deserialized, so the join stays linear in the
+    /// population rather than rescanning the sidecar per reference.
     pub fn native_unknown_records(
         &self,
         ir: &CadIr,
         format: &str,
     ) -> Result<Vec<UnknownRecord>, NativeConvertError> {
-        ir.native_unknowns(format)?
-            .into_iter()
+        let retained_by_id = self
+            .retained_records
+            .iter()
+            .map(|record| (record.id.as_str(), record))
+            .collect::<std::collections::HashMap<_, _>>();
+        ir.native_unknowns_iter(format)
             .map(|reference| {
-                let retained = self.retained_record(&reference.id.0).ok_or_else(|| {
+                let reference = reference?;
+                let retained = retained_by_id.get(reference.id.0.as_str()).ok_or_else(|| {
                     NativeConvertError::MissingRetainedSourceRecord(reference.id.0.clone())
                 })?;
                 Ok(UnknownRecord {
@@ -226,10 +235,28 @@ impl SourceFidelity {
     }
 
     /// Serializes the canonical sidecar as compact JSON.
+    ///
+    /// Canonical order is imposed on a borrowed view, so the retained byte
+    /// payloads are never copied to sort them.
     pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
-        let mut canonical = self.clone();
-        canonical.finalize();
-        serde_json::to_string(&canonical)
+        /// Mirrors [`SourceFidelity`]'s serialized shape over borrowed records.
+        #[derive(Serialize)]
+        struct CanonicalView<'a> {
+            version: &'a str,
+            annotations: &'a Annotations,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            retained_records: Vec<&'a RetainedSourceRecord>,
+        }
+
+        let mut retained_records = self.retained_records.iter().collect::<Vec<_>>();
+        retained_records.sort_by(|left, right| {
+            (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
+        });
+        serde_json::to_string(&CanonicalView {
+            version: &self.version,
+            annotations: &self.annotations,
+            retained_records,
+        })
     }
 
     /// Parses and validates a sidecar.
@@ -277,6 +304,15 @@ mod tests {
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         let parsed = SourceFidelity::from_json(&json).expect("parse sidecar");
         assert_eq!(parsed.retained_records[0].id, "a");
+
+        // The borrowed canonical view has to serialize byte for byte like the
+        // owned sidecar it borrows from.
+        let mut owned = sidecar.clone();
+        owned.finalize();
+        assert_eq!(
+            json,
+            serde_json::to_string(&owned).expect("serialize owned")
+        );
     }
 
     #[test]
