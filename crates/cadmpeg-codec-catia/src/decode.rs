@@ -549,6 +549,11 @@ fn finish_decode(
         .iter()
         .map(|cohort| cohort.members.len())
         .sum();
+    let schema_selected_reference_signature_cohort_count = native
+        .reference_signature_cohorts
+        .iter()
+        .filter(|cohort| cohort.schema_selection.is_some())
+        .count();
     let (reference_signature_instruction_count, reference_signature_token_count) = native
         .entity_records
         .iter()
@@ -2234,6 +2239,10 @@ fn finish_decode(
         (
             "decoded_reference_signature_cohort_member_count".to_string(),
             reference_signature_cohort_member_count,
+        ),
+        (
+            "decoded_schema_selected_reference_signature_cohort_count".to_string(),
+            schema_selected_reference_signature_cohort_count,
         ),
         (
             "decoded_reference_signature_instruction_count".to_string(),

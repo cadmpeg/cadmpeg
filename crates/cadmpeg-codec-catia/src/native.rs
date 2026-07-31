@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 267;
+pub const CATIA_NATIVE_VERSION: u32 = 268;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -141,6 +141,9 @@ pub(crate) const CATIA_NUMERIC_PAIR_VERSION: u32 = 265;
 /// Native schema version enforcing canonical reference-signature framing equations.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_FRAME_VERSION: u32 = 267;
+/// Native schema version retaining cohort-level descriptor schema incidences.
+#[cfg(test)]
+pub(crate) const CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION: u32 = 268;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1692,8 +1695,22 @@ pub struct CatiaReferenceSignatureCohort {
     pub second_reference: u32,
     /// Common same-graph incidence selected by the second identity.
     pub second_entity: CatiaEntityReference,
+    /// Unique schema selected by descriptor-bearing members after `_SpecList`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_selection: Option<CatiaReferenceSignatureSchemaSelection>,
     /// Descriptor-bearing entity records in source order.
     pub members: Vec<String>,
+}
+
+/// Cohort-level schema incidence selected after the `_SpecList` marker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaReferenceSignatureSchemaSelection {
+    /// Stored zero-based source-schema ordinal.
+    pub ordinal: u32,
+    /// Selected catalog entry.
+    pub entry: String,
+    /// UTF-8 source-schema name stored by the selected entry.
+    pub name: String,
 }
 
 /// One exact self-defining `Configuration` object production.
@@ -3560,9 +3577,48 @@ fn derive_reference_signature_cohorts(
             first_entity: signature.first_entity.clone(),
             second_reference: signature.production.second_reference,
             second_entity: signature.second_entity.clone(),
+            schema_selection: None,
             members: vec![entity.id.clone()],
         });
         cohort_by_pair.insert(key, index);
+    }
+    let entities_by_id = entity_records
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<HashMap<_, _>>();
+    for cohort in &mut cohorts {
+        let mut selected = None::<CatiaReferenceSignatureSchemaSelection>;
+        let mut valid = true;
+        for member in &cohort.members {
+            let Some(entity) = entities_by_id.get(member.as_str()) else {
+                valid = false;
+                break;
+            };
+            let selections = &entity.value_schema_selections;
+            if selections.first().map(|selection| selection.name.as_str()) != Some("_SpecList")
+                || selections.len() > 2
+            {
+                valid = false;
+                break;
+            }
+            let Some(selection) = selections.get(1) else {
+                continue;
+            };
+            let candidate = CatiaReferenceSignatureSchemaSelection {
+                ordinal: selection.ordinal,
+                entry: selection.entry.clone(),
+                name: selection.name.clone(),
+            };
+            if selected
+                .as_ref()
+                .is_some_and(|selected| selected != &candidate)
+            {
+                valid = false;
+                break;
+            }
+            selected = Some(candidate);
+        }
+        cohort.schema_selection = valid.then_some(selected).flatten();
     }
     cohorts
 }
@@ -9384,7 +9440,7 @@ impl CatiaNative {
         }
         let expected_reference_signature_cohorts =
             derive_reference_signature_cohorts(&entity_records);
-        if namespace.version < CATIA_REFERENCE_SIGNATURE_COHORT_VERSION {
+        if namespace.version < CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION {
             reference_signature_cohorts = expected_reference_signature_cohorts;
         } else if reference_signature_cohorts != expected_reference_signature_cohorts {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(

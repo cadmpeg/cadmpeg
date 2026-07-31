@@ -65,7 +65,9 @@ current scores require those matrices and representative fixtures.
   consecutive stored
   identity pair with each same-graph entity, class, terminal-null, or unresolved
   incidence state. Records sharing one pair form a source-ordered cohort whose
-  members retain exact entity-record identities.
+  members retain exact entity-record identities. A cohort retains the unique
+  catalog entry selected after `_SpecList` when every member uses the
+  `_SpecList` production and all present second selectors agree.
 - Equal-cardinality all-reference lists spanning every field of a design object
   retain their source-ordered columns and ordinal-aligned rows as one parallel
   reference table. Each column retains its source field, list-tag payload

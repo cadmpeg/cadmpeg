@@ -11035,6 +11035,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     assert_eq!(cohort.ordinal, 0);
     assert_eq!(cohort.first_reference, 3);
     assert_eq!(cohort.second_reference, 4);
+    assert!(cohort.schema_selection.is_none());
     assert_eq!(
         cohort.members,
         [
@@ -11129,6 +11130,18 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
+        .expect("store reference-signature schema incidence");
+    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION - 1;
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("derive reference-signature schema");
+    assert_eq!(
+        migrated.reference_signature_cohorts.as_slice(),
+        std::slice::from_ref(&expected_cohort)
+    );
+
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut stored)
         .expect("store reference-signature cohort");
     stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION - 1;
     stored.arenas.remove("reference_signature_cohorts");
@@ -11169,6 +11182,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     assert_eq!(
         decoded.report.coverage["decoded_reference_signature_cohort_member_count"],
         2
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_schema_selected_reference_signature_cohort_count"],
+        0
     );
     assert_eq!(
         decoded.report.coverage["decoded_reference_signature_instruction_count"],
