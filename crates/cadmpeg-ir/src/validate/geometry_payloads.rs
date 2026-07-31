@@ -210,12 +210,10 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
             parameter,
             radius,
             points,
-            tail,
             ..
         } => {
             parameter.is_finite()
                 && radius.is_finite()
-                && tail.as_ref().is_none_or(|values| finite(values))
                 && points.iter().all(|point| {
                     point.parameter.is_finite()
                         && point.radius.is_finite()

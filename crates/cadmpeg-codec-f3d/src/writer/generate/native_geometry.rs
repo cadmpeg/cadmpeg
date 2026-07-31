@@ -3184,7 +3184,6 @@ fn native_variable_blend_value(
             enum_count,
             enum_tagged,
             points,
-            tail,
         } => {
             native_f64(bytes, *parameter);
             native_f64(bytes, *radius / LEN_TO_MM);
@@ -3215,15 +3214,6 @@ fn native_variable_blend_value(
                     ],
                 );
                 native_vector(bytes, [point.normal.x, point.normal.y, point.normal.z]);
-            }
-            if *enum_tagged {
-                native_enum(bytes, i64::from(tail.is_some()));
-            } else {
-                native_i64(bytes, i64::from(tail.is_some()));
-            }
-            if let Some(tail) = tail {
-                native_f64(bytes, tail[0]);
-                native_f64(bytes, tail[1]);
             }
         }
     }

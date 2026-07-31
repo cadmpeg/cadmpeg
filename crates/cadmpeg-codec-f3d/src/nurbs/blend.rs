@@ -458,8 +458,9 @@ fn decode_variable_blend_value(
             let radius = take_f64(bytes, position)? * LEN_TO_MM;
             let (function, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
             *position = end;
-            // Revision-gated streams store the enum count and trailing flag
-            // as 0x15 enum tokens; pre-revision streams use 0x04 integers.
+            // The extension enum precedes the radius-point count and gates
+            // nothing. Revision-gated streams store it as a 0x15 enum token;
+            // pre-revision streams use a 0x04 integer.
             let enum_tagged = bytes.get(*position) == Some(&0x15);
             let count_tag = if enum_tagged { 0x15 } else { 0x04 };
             let enum_count = take_tagged_int(bytes, position, count_tag, int_width)?;
@@ -486,11 +487,8 @@ fn decode_variable_blend_value(
                     normal: Vector3::new(normal[0], normal[1], normal[2]),
                 });
             }
-            let tail = if take_tagged_int(bytes, position, count_tag, int_width)? != 0 {
-                Some([take_f64(bytes, position)?, take_f64(bytes, position)?])
-            } else {
-                None
-            };
+            // The payload ends at the last radius point. The enum that follows
+            // is the enclosing record's cross-section selector, not a tail flag.
             VariableBlendValuePayload::Interpolated {
                 parameter,
                 radius,
@@ -504,7 +502,6 @@ fn decode_variable_blend_value(
                 enum_count,
                 enum_tagged,
                 points,
-                tail,
             }
         }
         _ => return None,
@@ -632,7 +629,7 @@ mod variable_blend_value_tests {
         for value in [0.0, 0.0, 1.0, 1.0] {
             double(&mut bytes, value);
         }
-        // Enum-tagged count pair and trailing flag.
+        // Enum-tagged extension enum, then the radius-point count.
         integer(&mut bytes, 0x15, 2);
         integer(&mut bytes, 0x04, 1);
         double(&mut bytes, 0.5);
@@ -647,16 +644,19 @@ mod variable_blend_value_tests {
         for value in [0.0f64, 0.0, 1.0] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
+        // The value ends at the last radius point. A following enum belongs to
+        // the enclosing record's cross-section clause, so it must be left
+        // unconsumed.
+        let payload_end = bytes.len();
         integer(&mut bytes, 0x15, 0);
         let mut position = 0;
         let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
             .expect("generated enum-tagged interp value");
-        assert_eq!(position, bytes.len());
+        assert_eq!(position, payload_end);
         let VariableBlendValuePayload::Interpolated {
             enum_count,
             enum_tagged,
             points,
-            tail,
             ..
         } = decoded.payload
         else {
@@ -665,7 +665,6 @@ mod variable_blend_value_tests {
         assert_eq!(enum_count, 2);
         assert!(enum_tagged);
         assert_eq!(points.len(), 1);
-        assert!(tail.is_none());
     }
 
     #[test]
@@ -707,11 +706,13 @@ mod variable_blend_value_tests {
         for value in [0.0f64, 0.0, 1.0] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
+        // The enclosing record's cross-section enum, left unconsumed.
+        let payload_end = bytes.len();
         integer(&mut bytes, 0x15, 0);
         let mut position = 0;
         let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
             .expect("generated interp value with unset derivatives");
-        assert_eq!(position, bytes.len());
+        assert_eq!(position, payload_end);
         let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
             panic!("expected interpolated payload")
         };

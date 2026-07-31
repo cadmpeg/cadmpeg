@@ -1577,19 +1577,16 @@ pub enum VariableBlendValuePayload {
         radius: f64,
         /// Parametric support curve.
         function: PcurveGeometry,
-        /// Native interpolation enum count.
+        /// Native extension enum, stored ahead of the radius-point count. It
+        /// gates nothing; the payload ends at the last radius point.
         enum_count: i64,
-        /// Whether the enum count and tail flag are stored as `0x15` enum
-        /// tokens (revision-gated streams) rather than `0x04` integers.
+        /// Whether the extension enum is stored as a `0x15` enum token
+        /// (revision-gated streams) rather than a `0x04` integer.
         #[serde(default)]
         enum_tagged: bool,
         /// Counted radius-point array: each control carries a parameter,
         /// radius, two derivative scalars, a position, and a vector.
         points: Vec<VariableBlendInterpolationPoint>,
-        /// Optional two-scalar tail selected by a nonzero trailing flag;
-        /// `None` when the trailing flag is zero.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tail: Option<[f64; 2]>,
     },
 }
 

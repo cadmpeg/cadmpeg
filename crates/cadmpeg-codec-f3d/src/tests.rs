@@ -4852,6 +4852,31 @@ fn append_generated_variable_blend_value(
     }
 }
 
+/// An `interp` radius law: the law-domain parameter range, a `(u,radius)` BS2
+/// function, the extension enum, the point count, and one radius point. The
+/// payload ends at that point — nothing gates a trailing scalar pair.
+fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) {
+    push_u8_string(bytes, "interp");
+    push_tagged_i64(bytes, 0x15, 0);
+    bytes.push(0x0a);
+    t_dbl(bytes, 0.0);
+    t_dbl(bytes, 1.0);
+    bytes.extend_from_slice(&generated_pcurve_block());
+    push_tagged_i64(bytes, 0x15, 2);
+    push_tagged_i64(bytes, 0x04, 1);
+    for value in [0.5, 1.5, 0.25, 0.75] {
+        t_dbl(bytes, value);
+    }
+    bytes.push(0x13);
+    for value in [1.0f64, 2.0, 3.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0x14);
+    for value in [0.0f64, 0.0, 1.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
 fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
     synthetic_variable_blend_smbh_with_selector(name, false, None, [None, None])
 }
@@ -4870,6 +4895,25 @@ fn synthetic_variable_blend_smbh_with_selector(
     two_radii: bool,
     cross_section_selector: Option<i64>,
     v_range: [Option<f64>; 2],
+) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(name, two_radii, cross_section_selector, v_range, false)
+}
+
+/// The same stream with an `interp` first radius law, which places a radius
+/// point immediately before the cross-section enum.
+fn synthetic_variable_blend_smbh_with_interp_radius(
+    name: &str,
+    cross_section_selector: Option<i64>,
+) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(name, false, cross_section_selector, [None, None], true)
+}
+
+fn synthetic_variable_blend_smbh_inner(
+    name: &str,
+    two_radii: bool,
+    cross_section_selector: Option<i64>,
+    v_range: [Option<f64>; 2],
+    interp_first_value: bool,
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -4893,7 +4937,11 @@ fn synthetic_variable_blend_smbh_with_selector(
     t_dbl(&mut surface, 0.4);
     surface.push(0x15);
     surface.extend_from_slice(&i64::from(two_radii).to_le_bytes());
-    append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
+    if interp_first_value {
+        append_generated_variable_blend_interp_value(&mut surface);
+    } else {
+        append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
+    }
     if !two_radii {
         if let Some(selector) = cross_section_selector {
             surface.push(0x15);
@@ -16619,6 +16667,51 @@ fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
     assert_eq!(construction.v_range, [Some(-0.5), None]);
     assert_eq!(construction.shape_prefix, 11);
     assert_eq!(construction.shape_length, 6.0);
+}
+
+#[test]
+fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, VariableBlendCrossSection, VariableBlendValuePayload,
+    };
+
+    // An `interp` payload ends at its last radius point. The enum that follows
+    // is the record's cross-section selector; reading it as a trailing flag
+    // costs the cross-section while leaving the byte count intact, so the
+    // decoded cross-section is what pins the boundary.
+    for (selector, expected) in [
+        (Some(0), Some(VariableBlendCrossSection::Circular)),
+        (
+            Some(7),
+            Some(VariableBlendCrossSection::G2Round {
+                parameters: [2.0, 2.0],
+            }),
+        ),
+        (None, None),
+    ] {
+        let smbh =
+            synthetic_variable_blend_smbh_with_interp_radius("srf_srf_v_bl_spl_sur", selector);
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("interp variable-blend decode");
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &result.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected variable blend")
+        };
+        let VariableBlendValuePayload::Interpolated { points, .. } =
+            &construction.first_value.payload
+        else {
+            panic!("expected interpolated radius law")
+        };
+        assert_eq!(points.len(), 1);
+        assert_eq!(construction.cross_section, expected);
+
+        assert_revision_surface_round_trip(smbh, "variable_blend");
+    }
 }
 
 #[test]
