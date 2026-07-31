@@ -234,31 +234,6 @@ impl SourceFidelity {
         Ok(())
     }
 
-    /// Serializes the canonical sidecar as compact JSON.
-    ///
-    /// Canonical order is imposed on a borrowed view, so the retained byte
-    /// payloads are never copied to sort them.
-    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
-        /// Mirrors [`SourceFidelity`]'s serialized shape over borrowed records.
-        #[derive(Serialize)]
-        struct CanonicalView<'a> {
-            version: &'a str,
-            annotations: &'a Annotations,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
-            retained_records: Vec<&'a RetainedSourceRecord>,
-        }
-
-        let mut retained_records = self.retained_records.iter().collect::<Vec<_>>();
-        retained_records.sort_by(|left, right| {
-            (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
-        });
-        serde_json::to_string(&CanonicalView {
-            version: &self.version,
-            annotations: &self.annotations,
-            retained_records,
-        })
-    }
-
     /// Parses and validates a sidecar.
     pub fn from_json(text: &str) -> Result<Self, SourceFidelityParseError> {
         let sidecar: Self = serde_json::from_str(text).map_err(SourceFidelityParseError::Json)?;
@@ -296,23 +271,13 @@ mod tests {
     }
 
     #[test]
-    fn canonical_json_orders_retained_records() {
-        let sidecar = SourceFidelity {
+    fn finalize_orders_retained_records() {
+        let mut sidecar = SourceFidelity {
             retained_records: vec![record("b", &[2]), record("a", &[1])],
             ..SourceFidelity::default()
         };
-        let json = sidecar.to_canonical_json().expect("serialize sidecar");
-        let parsed = SourceFidelity::from_json(&json).expect("parse sidecar");
-        assert_eq!(parsed.retained_records[0].id, "a");
-
-        // The borrowed canonical view has to serialize byte for byte like the
-        // owned sidecar it borrows from.
-        let mut owned = sidecar.clone();
-        owned.finalize();
-        assert_eq!(
-            json,
-            serde_json::to_string(&owned).expect("serialize owned")
-        );
+        sidecar.finalize();
+        assert_eq!(sidecar.retained_records[0].id, "a");
     }
 
     #[test]
