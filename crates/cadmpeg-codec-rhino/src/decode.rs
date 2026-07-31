@@ -2399,6 +2399,7 @@ impl<'a> DecodeContext<'a> {
                     parameter_interval: None,
                     direction: extrusion.direction,
                     native_position: None,
+                    revision_form: None,
                 },
                 cache_fit_tolerance: None,
                 record_bounds: None,

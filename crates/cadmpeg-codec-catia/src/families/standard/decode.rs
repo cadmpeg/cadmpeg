@@ -127,6 +127,7 @@ pub(crate) fn emit_standard_extrusion_definition(
         parameter_interval: Some(extrusion.directrix_parameter_range),
         direction: extrusion.direction,
         native_position: None,
+        revision_form: None,
     };
     extrusion_definitions.insert(surface_object_id, definition.clone());
     definition

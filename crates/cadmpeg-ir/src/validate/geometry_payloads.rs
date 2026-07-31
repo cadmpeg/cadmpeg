@@ -2721,6 +2721,7 @@ fn revision_tail_form(
         | ProceduralSurfaceDefinition::Taper { revision_form, .. }
         | ProceduralSurfaceDefinition::Revolution { revision_form, .. }
         | ProceduralSurfaceDefinition::Sum { revision_form, .. }
+        | ProceduralSurfaceDefinition::Extrusion { revision_form, .. }
         | ProceduralSurfaceDefinition::Offset { revision_form, .. } => revision_form.as_ref(),
         ProceduralSurfaceDefinition::TSpline { construction } => {
             construction.revision_form.as_ref()

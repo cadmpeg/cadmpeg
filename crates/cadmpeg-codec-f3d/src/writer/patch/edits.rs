@@ -3188,12 +3188,14 @@ pub(crate) fn validate_procedural_surface_edits(
                     parameter_interval: before_parameter_interval,
                     direction: before_direction,
                     native_position: before_native_position,
+                    revision_form: None,
                 },
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix: after_directrix,
                     parameter_interval: after_parameter_interval,
                     direction: after_direction,
                     native_position: after_native_position,
+                    revision_form: None,
                 },
             ) if before_directrix == after_directrix => {
                 let interval = after_parameter_interval.ok_or_else(|| {

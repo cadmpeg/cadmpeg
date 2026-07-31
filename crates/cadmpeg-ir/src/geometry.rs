@@ -512,6 +512,10 @@ pub enum ProceduralSurfaceDefinition {
         /// Native model-space position following the sweep direction, when carried.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_position: Option<Point3>,
+        /// Revision-gated form fields; absent from the pre-revision layout.
+        /// The directrix parameter interval is `parameter_interval`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_form: Option<RevisionSurfaceForm>,
     },
     /// Unbounded linear sweep of a directrix.
     LinearSweep {

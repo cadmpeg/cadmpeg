@@ -52,11 +52,13 @@ pub(crate) fn decode_cyl_spl_sur_at(
     // and ends with the shared revision-gated surface tail, so its cache is
     // located by parsing that tail. The compact layout has no tail: its optional
     // final surface cache is the last surface block in the scope.
-    let (parameter_interval, direction, native_position, cache_fit_tolerance) =
+    let (parameter_interval, direction, native_position, cache_fit_tolerance, revision_form) =
         if span.get(position) == Some(&0x04) {
-            take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
             (take_native_ident(span, &mut position)? == "intcurve").then_some(())?;
-            take_bool(span, &mut position)?;
+            // Sense flag of the embedded directrix curve. It is the carrier's
+            // whole boolean run, so it travels in the revision form's `flags`.
+            let directrix_sense = take_bool(span, &mut position)?;
             let directrix_scope = subtype_span(span, position, int_width)?;
             position += directrix_scope.len();
             let start = take_optional_range_value(span, &mut position)?;
@@ -64,8 +66,31 @@ pub(crate) fn decode_cyl_spl_sur_at(
             let interval = [start?, end?];
             let direction = take_native_vec3(span, &mut position, 0x14)?;
             let native_position = take_native_vec3(span, &mut position, 0x13)?;
-            let tail = decode_revision_surface_tail(span, &mut position, int_width)?;
-            (interval, direction, native_position, tail.fit_tolerance)
+            let RevisionSurfaceTail {
+                enumeration: tail_enum,
+                fit_tolerance,
+                parameterization,
+                discontinuities,
+                tail_flag,
+            } = decode_revision_surface_tail(span, &mut position, int_width)?;
+            (
+                interval,
+                direction,
+                native_position,
+                fit_tolerance,
+                Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds: [None; 4],
+                    reference_endpoints: [None; 2],
+                    second_endpoints: [None; 2],
+                    flags: vec![directrix_sense],
+                    tail_enum,
+                    tail_parameterization: parameterization,
+                    discontinuities,
+                    tail_flag,
+                    trailing_flags: Vec::new(),
+                }),
+            )
         } else {
             let interval = [
                 take_f64(span, &mut position)?,
@@ -79,7 +104,13 @@ pub(crate) fn decode_cyl_spl_sur_at(
                 .next_back()
                 .filter(|cache| span.get(cache.end) == Some(&0x06))
                 .and_then(|cache| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM));
-            (interval, direction, native_position, cache_fit_tolerance)
+            (
+                interval,
+                direction,
+                native_position,
+                cache_fit_tolerance,
+                None,
+            )
         };
 
     Some(DecodedProceduralSurface {
@@ -96,6 +127,7 @@ pub(crate) fn decode_cyl_spl_sur_at(
                 native_position[1] * LEN_TO_MM,
                 native_position[2] * LEN_TO_MM,
             ),
+            revision_form,
         },
         cache_fit_tolerance,
     })

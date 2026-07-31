@@ -1833,6 +1833,7 @@ fn append_text_surface(
                     parameter_interval: None,
                     direction: *direction,
                     native_position: None,
+                    revision_form: None,
                 },
                 record_bounds: None,
                 cache_fit_tolerance: None,

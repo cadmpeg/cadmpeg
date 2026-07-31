@@ -7963,6 +7963,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         direction,
         parameter_interval,
         native_position,
+        revision_form: None,
     } = &actual.definition
     else {
         panic!("expected extrusion definition")
@@ -7997,6 +7998,77 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     );
 }
 
+/// The revision-gated `cyl_spl_sur` layout carries the shared surface tail, so
+/// the tail's enum, discontinuity arrays, and closing boolean reach the IR and
+/// come back byte-identical through source-less generation. The compact layout
+/// has no tail and keeps writing the compact record.
+#[test]
+fn generated_source_less_writes_revision_gated_extrusion_definition() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_versioned_cyl_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("revision-gated extrusion decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let expected = source_less.model.procedural_surfaces[0].clone();
+    let ProceduralSurfaceDefinition::Extrusion {
+        revision_form: Some(form),
+        ..
+    } = &expected.definition
+    else {
+        panic!("expected a revision-gated extrusion")
+    };
+    assert_eq!(form.revision, 23100);
+    assert_eq!(form.flags, [true]);
+    assert_eq!(form.tail_enum, 0);
+    assert_eq!(form.tail_parameterization, None);
+    assert_eq!(
+        form.discontinuities,
+        expected_revision_surface_tail_discontinuities()
+    );
+    assert!(!form.tail_flag);
+    assert_eq!(expected.cache_fit_tolerance, Some(0.02));
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("revision-gated extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("revision-gated extrusion round trip");
+    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    assert_eq!(actual.definition, expected.definition);
+    assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
+
+    // The directrix sense Boolean is stored, not assumed: the opposite value
+    // survives the same round trip.
+    let ProceduralSurfaceDefinition::Extrusion {
+        revision_form: Some(form),
+        ..
+    } = &mut source_less.model.procedural_surfaces[0].definition
+    else {
+        unreachable!("revision-gated extrusion")
+    };
+    form.flags = vec![false];
+    let expected = source_less.model.procedural_surfaces[0].clone();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("reversed-directrix extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("reversed-directrix extrusion round trip");
+    assert_eq!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        expected.definition
+    );
+}
+
 #[test]
 fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry};
@@ -8016,6 +8088,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         direction,
         parameter_interval,
         native_position,
+        revision_form: None,
     } = &procedural.definition
     else {
         panic!("expected extrusion definition")
@@ -17071,13 +17144,24 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     // the directrix scope is not this record's cache and its trailing scalar is
     // not this record's fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance, None);
-    assert!(matches!(
-        procedural.definition,
-        ProceduralSurfaceDefinition::Extrusion {
-            parameter_interval: Some([0.25, 0.75]),
-            ..
-        }
-    ));
+    let ProceduralSurfaceDefinition::Extrusion {
+        parameter_interval: Some([0.25, 0.75]),
+        revision_form: Some(form),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected a parameterized revision-gated extrusion")
+    };
+    assert_eq!(form.tail_enum, 2);
+    assert_eq!(
+        form.tail_parameterization,
+        Some(expected_revision_surface_tail_parameterization())
+    );
+    assert_eq!(
+        form.discontinuities,
+        expected_revision_surface_tail_discontinuities()
+    );
+    assert!(!form.tail_flag);
 }
 
 /// Tail form `2` stores no solved cache, so a blend record carrying it leaves
@@ -18291,6 +18375,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         directrix,
         parameter_interval,
         native_position,
+        revision_form: None,
     } = &procedural.definition
     else {
         panic!("expected extrusion")

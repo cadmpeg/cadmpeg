@@ -364,7 +364,7 @@ fn native_procedural_surface_definition(
                 native_revision_surface_tail(
                     bytes,
                     form,
-                    solved_cache,
+                    Some(solved_cache),
                     procedural.cache_fit_tolerance,
                 )?;
                 for bound in &form.support_bounds {
@@ -486,7 +486,7 @@ fn native_procedural_surface_definition(
                 native_revision_surface_tail(
                     bytes,
                     form,
-                    solved_cache,
+                    Some(solved_cache),
                     procedural.cache_fit_tolerance,
                 )?;
                 for interval in intervals {
@@ -632,7 +632,7 @@ fn native_procedural_surface_definition(
                 native_revision_surface_tail(
                     bytes,
                     form,
-                    solved_cache,
+                    Some(solved_cache),
                     procedural.cache_fit_tolerance,
                 )?;
                 // Orthogonal sense is the record's own trailing logical, written
@@ -861,7 +861,7 @@ fn native_procedural_surface_definition(
                 native_revision_surface_tail(
                     bytes,
                     form,
-                    solved_cache,
+                    Some(solved_cache),
                     procedural.cache_fit_tolerance,
                 )?;
                 bytes.push(0x10);
@@ -964,7 +964,7 @@ fn native_procedural_surface_definition(
                 native_revision_surface_tail(
                     bytes,
                     form,
-                    solved_cache,
+                    Some(solved_cache),
                     procedural.cache_fit_tolerance,
                 )?;
                 bytes.push(0x10);
@@ -1068,7 +1068,7 @@ fn native_procedural_surface_definition(
                 native_revision_surface_tail(
                     bytes,
                     form,
-                    solved_cache,
+                    Some(solved_cache),
                     procedural.cache_fit_tolerance,
                 )?;
                 bytes.push(0x10);
@@ -1121,6 +1121,7 @@ fn native_procedural_surface_definition(
             parameter_interval,
             direction,
             native_position,
+            revision_form,
         } => encode_native_extrusion(
             bytes,
             target,
@@ -1133,6 +1134,7 @@ fn native_procedural_surface_definition(
             native_position.ok_or_else(|| {
                 CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
             })?,
+            revision_form.as_ref(),
             Some(solved_cache),
         )?,
         ProceduralSurfaceDefinition::Blend {
@@ -1913,6 +1915,7 @@ fn native_cacheless_procedural_surface_definition(
         parameter_interval,
         direction,
         native_position,
+        revision_form,
     } = &procedural.definition
     {
         encode_native_extrusion(
@@ -1927,6 +1930,7 @@ fn native_cacheless_procedural_surface_definition(
             native_position.ok_or_else(|| {
                 CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
             })?,
+            revision_form.as_ref(),
             None,
         )?;
         return Ok(true);
@@ -3016,6 +3020,7 @@ fn encode_native_extrusion(
     parameter_interval: [f64; 2],
     direction: Vector3,
     native_position: cadmpeg_ir::math::Point3,
+    revision_form: Option<&cadmpeg_ir::geometry::RevisionSurfaceForm>,
     solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
     let directrix = target
@@ -3047,27 +3052,52 @@ fn encode_native_extrusion(
             "source-less extrusion fields must be finite".into(),
         ));
     }
+    let direction = [
+        direction.x / LEN_TO_MM,
+        direction.y / LEN_TO_MM,
+        direction.z / LEN_TO_MM,
+    ];
+    let native_position = [
+        native_position.x / LEN_TO_MM,
+        native_position.y / LEN_TO_MM,
+        native_position.z / LEN_TO_MM,
+    ];
+    if let Some(form) = revision_form {
+        // Revision-gated layout: revision integer, the directrix as a nested
+        // `intcurve` scope behind its sense flag, the directrix parameter
+        // interval in the optional bool-gated encoding, the sweep direction and
+        // model-space position, then the shared surface tail.
+        if form.revision <= 0 || form.flags.len() != 1 {
+            return Err(CodecError::Malformed(
+                "revision-gated cyl_spl_sur requires a positive revision and one directrix sense flag"
+                    .into(),
+            ));
+        }
+        native_surface_base(bytes, "spline")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "cyl_spl_sur")?;
+        native_i64(bytes, form.revision);
+        native_ident(bytes, "intcurve")?;
+        bytes.push(native_bool(form.flags[0]));
+        bytes.push(0x0f);
+        native_ident(bytes, "exact_int_cur")?;
+        native_nurbs_curve(bytes, &directrix_cache)?;
+        bytes.push(0x10);
+        native_optional_f64(bytes, Some(parameter_interval[0]));
+        native_optional_f64(bytes, Some(parameter_interval[1]));
+        native_vector(bytes, direction);
+        native_point(bytes, native_position);
+        native_revision_surface_tail(bytes, form, solved_cache, procedural.cache_fit_tolerance)?;
+        bytes.push(0x10);
+        return Ok(());
+    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "cyl_spl_sur")?;
     native_f64(bytes, parameter_interval[0]);
     native_f64(bytes, parameter_interval[1]);
-    native_vector(
-        bytes,
-        [
-            direction.x / LEN_TO_MM,
-            direction.y / LEN_TO_MM,
-            direction.z / LEN_TO_MM,
-        ],
-    );
-    native_point(
-        bytes,
-        [
-            native_position.x / LEN_TO_MM,
-            native_position.y / LEN_TO_MM,
-            native_position.z / LEN_TO_MM,
-        ],
-    );
+    native_vector(bytes, direction);
+    native_point(bytes, native_position);
     native_nurbs_curve(bytes, &directrix_cache)?;
     if let Some(solved_cache) = solved_cache {
         native_nurbs_surface(bytes, solved_cache)?;
@@ -3766,7 +3796,7 @@ fn encode_native_variable_blend(
         bytes,
         construction.cache_selector,
         construction.tail_parameterization.as_ref(),
-        solved_cache,
+        Some(solved_cache),
         cache_fit_tolerance,
     )?;
     native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
@@ -4032,7 +4062,7 @@ fn encode_complete_native_rolling_ball(
         bytes,
         construction.cache_selector,
         construction.tail_parameterization.as_ref(),
-        solved_cache,
+        Some(solved_cache),
         cache_fit_tolerance,
     )?;
     native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
@@ -5499,7 +5529,7 @@ fn native_embedded_surface_with_bounds(
 fn native_revision_surface_tail(
     bytes: &mut Vec<u8>,
     form: &cadmpeg_ir::geometry::RevisionSurfaceForm,
-    solved_cache: &cadmpeg_ir::geometry::NurbsSurface,
+    solved_cache: Option<&cadmpeg_ir::geometry::NurbsSurface>,
     cache_fit_tolerance: Option<f64>,
 ) -> Result<(), CodecError> {
     native_revision_tail_head(
@@ -5521,17 +5551,23 @@ fn native_revision_surface_tail(
 /// enum and the payload it selects. Form `0` writes the solved cache and its
 /// fit tolerance; form `2` writes the U parameter interval and the V parameter
 /// interval followed by the U closure, V closure, U singularity, and V
-/// singularity enums. No other value has a defined payload.
+/// singularity enums. No other value has a defined payload. Form `2` stores no
+/// cache, so it needs no solved carrier.
 fn native_revision_tail_head(
     bytes: &mut Vec<u8>,
     enumeration: i64,
     parameterization: Option<&cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
-    solved_cache: &cadmpeg_ir::geometry::NurbsSurface,
+    solved_cache: Option<&cadmpeg_ir::geometry::NurbsSurface>,
     cache_fit_tolerance: Option<f64>,
 ) -> Result<(), CodecError> {
     native_enum(bytes, enumeration);
     match (enumeration, parameterization) {
         (0, None) => {
+            let solved_cache = solved_cache.ok_or_else(|| {
+                CodecError::Malformed(
+                    "revision-gated surface tail form `0` requires a solved cache".into(),
+                )
+            })?;
             native_nurbs_surface(bytes, solved_cache)?;
             native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / LEN_TO_MM);
         }
@@ -5995,24 +6031,6 @@ fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), CodecErr
 mod revision_surface_tail_tests {
     use super::*;
 
-    /// A stand-in for the solved cache slot. Neither form under test reaches
-    /// it: form `2` writes no cache, and a mismatched pair is refused before
-    /// the cache is read.
-    fn unused_cache() -> NurbsSurface {
-        NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: Vec::new(),
-            v_knots: Vec::new(),
-            u_count: 0,
-            v_count: 0,
-            control_points: Vec::new(),
-            weights: None,
-            u_periodic: false,
-            v_periodic: false,
-        }
-    }
-
     /// The writer's form-`2` tail head and discontinuity block are what the
     /// decoder reads back: the U parameter interval, the V parameter interval,
     /// the U closure, V closure, U singularity, and V singularity enums, six
@@ -6036,14 +6054,8 @@ mod revision_surface_tail_tests {
             vec![0.625, 0.75],
         ];
         let mut bytes = Vec::new();
-        native_revision_tail_head(
-            &mut bytes,
-            2,
-            Some(&parameterization),
-            &unused_cache(),
-            None,
-        )
-        .expect("parameterized tail head");
+        native_revision_tail_head(&mut bytes, 2, Some(&parameterization), None, None)
+            .expect("parameterized tail head");
         native_revision_tail_discontinuities(&mut bytes, &discontinuities)
             .expect("tail discontinuities");
         bytes.push(native_bool(false));
@@ -6069,11 +6081,19 @@ mod revision_surface_tail_tests {
             &mut bytes,
             0,
             Some(&cadmpeg_ir::geometry::RevisionSurfaceParameterization::default()),
-            &unused_cache(),
+            None,
             Some(0.5),
         )
         .is_err());
         let mut bytes = Vec::new();
-        assert!(native_revision_tail_head(&mut bytes, 2, None, &unused_cache(), None).is_err());
+        assert!(native_revision_tail_head(&mut bytes, 2, None, None, None).is_err());
+    }
+
+    /// Form `0` stores a solved cache. Without a carrier to store there the
+    /// writer refuses rather than emitting a tail whose enum claims one.
+    #[test]
+    fn solved_tail_form_without_a_cache_is_refused() {
+        let mut bytes = Vec::new();
+        assert!(native_revision_tail_head(&mut bytes, 0, None, None, Some(0.5)).is_err());
     }
 }

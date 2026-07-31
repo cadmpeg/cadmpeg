@@ -161,6 +161,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         direction: Vector3,
         /// Native model-space position following the direction.
         native_position: Point3,
+        /// Revision-gated form fields.
+        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
     },
     /// Rolling-ball blend with embedded support and spine caches.
     Blend {

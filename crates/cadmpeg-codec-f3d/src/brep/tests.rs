@@ -57,6 +57,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
             parameter_interval: [0.0, 4.0],
             direction,
             native_position: Point3::new(0.0, 0.0, 0.0),
+            revision_form: None,
         };
     let Some(SurfaceGeometry::Cylinder {
         origin,
@@ -152,6 +153,7 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
                 parameter_interval: [0.0, 4.0],
                 direction: Vector3::new(0.0, 0.0, 3.0),
                 native_position: Point3::new(0.0, 0.0, 0.0),
+                revision_form: None,
             }
         ),
         Some(SurfaceGeometry::Cylinder { .. })

@@ -302,6 +302,7 @@ fn emit_carrier_surface(
                 parameter_interval,
                 direction,
                 native_position,
+                revision_form,
             } => {
                 let directrix_id = CurveId(format!("f3d:brep:procedural_surface#{i}:directrix"));
                 out.curves.push(Curve {
@@ -314,6 +315,7 @@ fn emit_carrier_surface(
                     parameter_interval: Some(parameter_interval),
                     direction,
                     native_position: Some(native_position),
+                    revision_form,
                 }
             }
             DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
