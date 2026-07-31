@@ -1189,7 +1189,11 @@ impl FormulaExpressionParser<'_, '_> {
 
     fn same_value_type(left: &EvaluatedFormulaValue, right: &EvaluatedFormulaValue) -> Option<()> {
         match (left, right) {
-            (EvaluatedFormulaValue::Scalar(_), EvaluatedFormulaValue::Scalar(_)) => Some(()),
+            (EvaluatedFormulaValue::Scalar(left), EvaluatedFormulaValue::Scalar(right))
+                if left.dimension == right.dimension =>
+            {
+                Some(())
+            }
             (EvaluatedFormulaValue::Boolean(_), EvaluatedFormulaValue::Boolean(_))
             | (EvaluatedFormulaValue::String(_), EvaluatedFormulaValue::String(_)) => Some(()),
             _ => None,
@@ -2353,9 +2357,15 @@ mod parser_tests {
                 "{expression}"
             );
         }
+        for expression in ["true ? 1mm ; 1rad", "false ? 1mm ; 1rad", "true ? 1 ; 1mm"] {
+            assert!(
+                evaluate_formula_expression(expression, &bindings).is_none(),
+                "{expression}"
+            );
+        }
         for (expression, expected_dimension) in [
-            ("true ? 1mm ; 1rad", FormulaDimension::LENGTH),
-            ("false ? 1mm ; 1rad", FormulaDimension::ANGLE),
+            ("true ? 1mm ; 2mm", FormulaDimension::LENGTH),
+            ("false ? 1rad ; 2rad", FormulaDimension::ANGLE),
         ] {
             assert!(
                 evaluate_formula_expression(expression, &bindings)

@@ -15894,6 +15894,25 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
 }
 
 #[test]
+fn decode_rejects_a_conditional_with_different_branch_dimensions() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                3,
+                false,
+                &[],
+                "LENGTH",
+                Some(5.0),
+                "true ? 5mm ; 1rad",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensionally invalid conditional formula");
+
+    assert!(decoded.ir.model.parameters.is_empty());
+}
+
+#[test]
 fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
     let decoded = CatiaCodec
         .decode(
