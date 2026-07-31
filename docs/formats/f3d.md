@@ -120,7 +120,7 @@ A document that places other documents records each placement as an **XRef** key
 
 **Design-segment XRef records.** The Design BulkStream registers the record class name `DcXRefPCIFeatureMetaType`. Its dynamic three-digit ASCII class tag and record index form the indexed-record header. A standalone occurrence record carries, in order: a `u32`-count UTF-16LE record GUID; marker-tagged integer fields; a `0x01`-tagged eight-byte value, which is the presence flag and target entity ID of a cross-document reference; a `u32`-count ASCII GUID, which is that target record's type GUID and appears in the target segment's MetaStream type table; a `0x01`-tagged `u32` zero; and a `u32`-count UTF-16LE occurrence-role string equal to the reference's `neutronRole`. A grouped component-insert carrier can contain several occurrences and repeat the same occurrence-role string in metadata, placement, and construction-reference fields. Several placements may therefore carry the same role and place the same target document more than once. Each occurrence-role string is also present in the ACT-segment GUID pool.
 
-**Placement.** An occurrence placement is one record of its own class. Its payload is a target path, an optional matrix, and three reference runs:
+**Placement.** An occurrence placement is one record of its own class: `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`, whose type-table entry carries the add-in name `Component`. Its payload is a target path, an optional matrix, and three reference runs:
 
 ```
 u8   1
