@@ -942,14 +942,21 @@ pub(crate) fn parse_legacy_sketch_container_members(
 /// the fixed layout or in the `EntityGenesis` layout.
 pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
-    let mut entity_modules = HashMap::new();
+    // A design entity id is unique inside its own segment and not across the
+    // archive, so the module map is per stream: one archive's Design segments
+    // reuse ids for entities of different modules, and a flat map would let
+    // whichever segment is read first name the module for all of them.
+    let mut entity_modules = HashMap::<String, HashMap<u64, String>>::new();
     let types = decode_types(scan)?;
     let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
     for design_type in types {
-        for &entity_id in &design_type.entity_ids {
-            entity_modules
-                .entry(entity_id)
-                .or_insert_with(|| design_type.module.clone());
+        if let Some(stream) = native_stream(&design_type.id) {
+            let stream_modules = entity_modules.entry(stream.to_owned()).or_default();
+            for &entity_id in &design_type.entity_ids {
+                stream_modules
+                    .entry(entity_id)
+                    .or_insert_with(|| design_type.module.clone());
+            }
         }
         if design_type.module == DESIGN_MODULE_SKETCH {
             let Some(stream) = native_stream(&design_type.id) else {
@@ -979,6 +986,12 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
+        // Modules come from the type table of this stream's own `MetaStream`.
+        let stream_modules = entry
+            .name
+            .strip_suffix("BulkStream.dat")
+            .map(|prefix| ids::native_scope(&format!("{prefix}MetaStream.dat")))
+            .and_then(|meta_scope| entity_modules.get(&meta_scope));
         let indexed_offsets = indexed_record_offsets(bytes).collect::<Vec<_>>();
         for &start in &indexed_offsets {
             let Some(class_tag) = bytes.get(start + 4..start + 7) else {
@@ -991,7 +1004,9 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             else {
                 continue;
             };
-            let module = entity_modules.get(&entity_suffix).cloned();
+            let module = stream_modules
+                .and_then(|modules| modules.get(&entity_suffix))
+                .cloned();
             let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
             let (
                 record_reference,
