@@ -13768,7 +13768,8 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .payload,
         CatiaEntitySuffixPayload::SchemaSelected {
             selector: 4,
-            value: crate::native::CatiaEntitySuffixSelectedValue::Atom { value: 1 }
+            value: crate::native::CatiaEntitySuffixSelectedValue::Atom { value: 1 },
+            ..
         }
     ));
     assert_eq!(
@@ -13777,18 +13778,53 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .as_ref()
             .expect("resolved suffix selector"),
         &crate::native::CatiaEntitySuffixSchemaSelection {
+            offset: 3,
             ordinal: 4,
             entry: schema_selected_atom.catalogs[0].entries[4].id.clone(),
             name: "Thickness".to_string(),
             value: crate::native::CatiaEntitySuffixSchemaValue::Atom { value: 1 },
         }
     );
+    let mut stale_schema_selected_atom = schema_selected_atom.clone();
+    if let CatiaEntitySuffixPayload::SchemaSelected {
+        selector_offset, ..
+    } = &mut stale_schema_selected_atom.entity_records[0]
+        .suffix_value
+        .as_mut()
+        .expect("complete schema-selected atom suffix")
+        .payload
+    {
+        *selector_offset = 0;
+    } else {
+        panic!("schema-selected atom payload");
+    }
+    stale_schema_selected_atom.entity_records[0]
+        .suffix_schema_selection
+        .as_mut()
+        .expect("resolved suffix selector")
+        .offset = 0;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    stale_schema_selected_atom
+        .store(&mut namespace)
+        .expect("store stale suffix schema offsets");
+    namespace.version = crate::native::CATIA_SUFFIX_SCHEMA_OFFSET_VERSION - 1;
+    let migrated =
+        crate::native::CatiaNative::load(&namespace).expect("migrate suffix schema offsets");
+    assert_eq!(
+        migrated.entity_records[0].suffix_value,
+        schema_selected_atom.entity_records[0].suffix_value
+    );
+    assert_eq!(
+        migrated.entity_records[0].suffix_schema_selection,
+        schema_selected_atom.entity_records[0].suffix_schema_selection
+    );
+
     let mut malformed_schema_selected_atom = schema_selected_atom.clone();
     malformed_schema_selected_atom.entity_records[0]
         .suffix_schema_selection
         .as_mut()
         .expect("resolved suffix selector")
-        .name = "Width".to_string();
+        .offset += 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_schema_selected_atom
         .store(&mut namespace)
@@ -13897,6 +13933,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         CatiaEntitySuffixPayload::SchemaSelected {
             selector: 4,
             value: crate::native::CatiaEntitySuffixSelectedValue::ControlE8,
+            ..
         }
     ));
     assert!(matches!(
@@ -13952,6 +13989,21 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             0x84, 0x93, 0x82, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0x81, 0x49,
         ]));
     assert!(matches!(
+        selected_schema.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete nested suffix selector")
+            .payload,
+        CatiaEntitySuffixPayload::SchemaSelected {
+            selector_offset: 3,
+            value: crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector {
+                offset: 8,
+                ordinal: 5,
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
         &selected_schema.entity_records[0]
             .suffix_schema_selection
             .as_ref()
@@ -13962,6 +14014,25 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             ref name,
             ..
         } if name.as_deref() == Some("#1_ /2")
+    ));
+    let mut malformed_nested_offset = selected_schema;
+    let crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector { offset, .. } =
+        &mut malformed_nested_offset.entity_records[0]
+            .suffix_schema_selection
+            .as_mut()
+            .expect("resolved nested suffix selector")
+            .value
+    else {
+        panic!("nested suffix schema selector");
+    };
+    *offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_nested_offset
+        .store(&mut namespace)
+        .expect("store malformed nested suffix offset");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut nonfinite_selected_scalar = vec![0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6];
@@ -14276,6 +14347,7 @@ fn native_namespace_binds_two_definition_value_chains() {
             .as_ref()
             .map(|value| &value.value),
         Some(&CatiaEntitySuffixSchemaValue::SchemaSelector {
+            offset: 8,
             ordinal: 5,
             entry: Some(nested_native.catalogs[0].entries[5].id.clone()),
             name: Some("Real".to_string()),

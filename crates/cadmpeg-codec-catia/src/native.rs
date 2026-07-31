@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 252;
+pub const CATIA_NATIVE_VERSION: u32 = 253;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -105,6 +105,9 @@ pub(crate) const CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION: u32 = 251;
 /// Native schema version retaining typed entity-schema selector incidences.
 #[cfg(test)]
 pub(crate) const CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION: u32 = 252;
+/// Native schema version retaining suffix schema-selector offsets.
+#[cfg(test)]
+pub(crate) const CATIA_SUFFIX_SCHEMA_OFFSET_VERSION: u32 = 253;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1182,6 +1185,9 @@ pub enum CatiaEntitySuffixPayload {
     },
     /// One source-schema selector followed by one typed value.
     SchemaSelected {
+        /// Byte offset of the selector marker within the record suffix.
+        #[serde(default)]
+        selector_offset: u64,
         /// Stored zero-based source-schema ordinal.
         selector: u32,
         /// Typed value following the selector.
@@ -1214,6 +1220,9 @@ pub enum CatiaEntitySuffixSelectedValue {
     Separator37,
     /// One further source-schema selector.
     SchemaSelector {
+        /// Byte offset of the selector marker within the record suffix.
+        #[serde(default)]
+        offset: u64,
         /// Stored zero-based source-schema ordinal.
         ordinal: u32,
     },
@@ -1297,6 +1306,9 @@ pub enum CatiaEntitySuffixFraming {
 /// One suffix selector resolved through its graph's source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaEntitySuffixSchemaSelection {
+    /// Byte offset of the selector marker within the record suffix.
+    #[serde(default)]
+    pub offset: u64,
     /// Stored zero-based source-schema ordinal.
     pub ordinal: u32,
     /// Selected catalog entry.
@@ -1326,6 +1338,9 @@ pub enum CatiaEntitySuffixSchemaValue {
     Separator37,
     /// One nested source-schema selector.
     SchemaSelector {
+        /// Byte offset of the selector marker within the record suffix.
+        #[serde(default)]
+        offset: u64,
         /// Stored zero-based source-schema ordinal.
         ordinal: u32,
         /// Selected catalog entry when the ordinal is in range.
@@ -2514,7 +2529,11 @@ fn entity_suffix_schema_selection(
     suffix_value: Option<&CatiaEntitySuffixValue>,
     catalog: Option<&CatiaCatalog>,
 ) -> Option<CatiaEntitySuffixSchemaSelection> {
-    let CatiaEntitySuffixPayload::SchemaSelected { selector, value } = &suffix_value?.payload
+    let CatiaEntitySuffixPayload::SchemaSelected {
+        selector_offset,
+        selector,
+        value,
+    } = &suffix_value?.payload
     else {
         return None;
     };
@@ -2532,11 +2551,12 @@ fn entity_suffix_schema_selection(
         }
         CatiaEntitySuffixSelectedValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
         CatiaEntitySuffixSelectedValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
-        CatiaEntitySuffixSelectedValue::SchemaSelector { ordinal } => {
+        CatiaEntitySuffixSelectedValue::SchemaSelector { offset, ordinal } => {
             let selected = usize::try_from(*ordinal)
                 .ok()
                 .and_then(|ordinal| catalog?.entries.get(ordinal));
             CatiaEntitySuffixSchemaValue::SchemaSelector {
+                offset: *offset,
                 ordinal: *ordinal,
                 entry: selected.map(|entry| entry.id.clone()),
                 name: selected.map(|entry| entry.value.clone()),
@@ -2544,6 +2564,7 @@ fn entity_suffix_schema_selection(
         }
     };
     Some(CatiaEntitySuffixSchemaSelection {
+        offset: *selector_offset,
         ordinal: *selector,
         entry: entry.id.clone(),
         name: entry.value.clone(),
@@ -3019,6 +3040,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             ),
             0x32 => (
                 CatiaEntitySuffixSelectedValue::SchemaSelector {
+                    offset: u64::try_from(value_offset).ok()?,
                     ordinal: u32::from_le_bytes(
                         suffix
                             .get(value_offset + 1..value_offset + 5)?
@@ -3037,7 +3059,11 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             _ => return None,
         };
         (
-            CatiaEntitySuffixPayload::SchemaSelected { selector, value },
+            CatiaEntitySuffixPayload::SchemaSelected {
+                selector_offset: u64::try_from(at).ok()?,
+                selector,
+                value,
+            },
             trailer_offset,
         )
     } else {
@@ -8991,6 +9017,35 @@ impl CatiaNative {
                     entity.suffix_value.as_ref(),
                     entity.suffix_schema_selection.as_ref(),
                 );
+            }
+        }
+        if namespace.version < CATIA_SUFFIX_SCHEMA_OFFSET_VERSION {
+            for graph in &graphs {
+                let catalog = graph.catalog.as_deref().and_then(|catalog_id| {
+                    catalogs.iter().find(|catalog| catalog.id == catalog_id)
+                });
+                for entity in entity_records
+                    .iter_mut()
+                    .filter(|entity| entity.object_graph == graph.id)
+                {
+                    entity.suffix_value = entity_suffix_value(&entity.record_suffix);
+                    entity.suffix_schema_selection =
+                        entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog);
+                    entity.definition_value = definition_value(
+                        entity.lead,
+                        &entity.definition_schema_selections,
+                        &entity.value_fields,
+                        entity.suffix_value.as_ref(),
+                        entity.suffix_schema_selection.as_ref(),
+                    );
+                    entity.definition_chain_value = definition_chain_value(
+                        entity.lead,
+                        &entity.definition_schema_selections,
+                        &entity.value_fields,
+                        entity.suffix_value.as_ref(),
+                        entity.suffix_schema_selection.as_ref(),
+                    );
+                }
             }
         }
         let graph_ids = graphs

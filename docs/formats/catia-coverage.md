@@ -71,6 +71,8 @@ current scores require those matrices and representative fixtures.
 - Complete non-value entity suffixes retain escaped words and states,
   standalone `81 49` tokens, fixed `FE F6` payloads, and paged-atom state
   values as disjoint typed productions.
+- Schema-selected entity suffixes retain the record-suffix-relative marker
+  offsets of their outer selector and nested value selector when present.
 - Complete two-definition value chains retain the repeated schema selector,
   second role definition, catalog-resolved selected value, and structural
   ownership. Every typed definition or value role retains its selector offset,
