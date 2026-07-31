@@ -706,11 +706,16 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<DesignType>, CodecError>
     Ok(out)
 }
 
-/// Record versions of the types registered by the design `MetaStream` beside
-/// `bulk_entry_name`, keyed by the design entity ids those types own. A record
-/// carries no version of its own: its class tag selects a type-table entry, and
-/// that entry's version fixes the member sequence the record was written under.
-pub fn type_versions_for_stream(types: &[DesignType], bulk_entry_name: &str) -> HashMap<u64, u32> {
+/// Type GUID and record version of the types registered by the design
+/// `MetaStream` beside `bulk_entry_name`, keyed by the design entity ids those
+/// types own. A record carries neither of its own: its class tag selects a
+/// type-table entry, that entry's version fixes the member sequence the record
+/// was written under, and that entry's GUID is the type's only identity that
+/// holds across segments, since a class tag is `256` plus a segment-local index.
+pub fn stream_types_by_entity<'a>(
+    types: &'a [DesignType],
+    bulk_entry_name: &str,
+) -> HashMap<u64, (&'a str, u32)> {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
         return HashMap::new();
     };
@@ -719,10 +724,12 @@ pub fn type_versions_for_stream(types: &[DesignType], bulk_entry_name: &str) -> 
         .iter()
         .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
         .flat_map(|design_type| {
-            design_type
-                .entity_ids
-                .iter()
-                .map(|entity_id| (*entity_id, design_type.version))
+            design_type.entity_ids.iter().map(|entity_id| {
+                (
+                    *entity_id,
+                    (design_type.type_guid.as_str(), design_type.version),
+                )
+            })
         })
         .collect()
 }
@@ -2717,6 +2724,13 @@ pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Optio
         .map(|at| position + at)
 }
 
+/// Header offsets of every indexed record whose class tag is three characters.
+///
+/// A class tag is `256` plus an index into the segment's own type table, so a
+/// tag reaches four characters only in a segment registering more than 744
+/// types. No segment registers that many, and `indexed_record_index` reads the
+/// record index at a fixed `at + 7` on the same assumption; both would have to
+/// change together to widen it.
 pub(crate) fn indexed_record_offsets(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
     memchr::memmem::find_iter(bytes, &[3, 0, 0, 0])
         .filter(|at| indexed_record_header_at(bytes, *at))
