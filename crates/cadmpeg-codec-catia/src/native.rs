@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 264;
+pub const CATIA_NATIVE_VERSION: u32 = 265;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -138,6 +138,9 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_PAIR_VERSION: u32 = 263;
 /// Native schema version retaining reference-signature cohorts.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_COHORT_VERSION: u32 = 264;
+/// Native schema version retaining exact nullable numeric-pair productions.
+#[cfg(test)]
+pub(crate) const CATIA_NUMERIC_PAIR_VERSION: u32 = 265;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1843,9 +1846,9 @@ pub struct CatiaEntityRecord {
     /// Exact packets in the value program, in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub value_packets: Vec<entity_table::EntityValuePacket>,
-    /// Complete numeric tuple when the entire `7C07` payload has that production.
+    /// Complete nullable numeric pair when the entire `7C07` payload has that production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub numeric_tuple: Option<entity_table::NumericTuple>,
+    pub numeric_pair: Option<entity_table::NumericPair>,
     /// Complete reference signature when the entire `7C07` payload has that production.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_signature: Option<CatiaReferenceSignature>,
@@ -2576,7 +2579,7 @@ fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         && record.value_fields == value_block::tokenize(&record.value_payload)
         && record.value_packets
             == entity_table::value_packets(&record.value_payload, &record.value_fields)
-        && record.numeric_tuple == entity_table::parse_numeric_tuple(&record.value_payload)
+        && record.numeric_pair == entity_table::parse_numeric_pair(&record.value_payload)
         && record
             .reference_signature
             .as_ref()
@@ -9182,6 +9185,11 @@ impl CatiaNative {
             }
         }
         let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
+        if namespace.version < CATIA_NUMERIC_PAIR_VERSION {
+            for entity in &mut entity_records {
+                entity.numeric_pair = entity_table::parse_numeric_pair(&entity.value_payload);
+            }
+        }
         let mut configuration_row_chains: Vec<CatiaConfigurationRowChain> =
             namespace.arena_as("configuration_row_chains")?;
         let mut reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort> =
@@ -10765,7 +10773,7 @@ fn native_object_graph(
                 configuration_row_link: None,
                 formula_relation: None,
                 value_packets,
-                numeric_tuple: entity.numeric_tuple,
+                numeric_pair: entity.numeric_pair,
                 reference_signature: entity.reference_signature.map(|production| {
                     CatiaReferenceSignature {
                         production,

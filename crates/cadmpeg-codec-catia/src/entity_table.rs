@@ -16,24 +16,35 @@ pub struct DefinitionSchemaSelector {
     pub offset: usize,
 }
 
-/// One fully consumed numeric-tuple production in a nested `7C07` payload.
+/// One fully consumed nullable numeric-pair production in a nested `7C07` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct NumericTuple {
+pub struct NumericPair {
     /// Two one-byte compact atoms preceding the nested value frame.
     pub prefix_atoms: [u32; 2],
-    /// Compact nested-frame type atom following `0xE8`.
-    pub type_atom: u32,
-    /// First one-byte compact atom after the `0x37` delimiter.
-    pub layout_atom: u32,
-    /// Second one-byte compact atom after the `0x37` delimiter.
-    pub value_atom: u32,
-    /// Tagged numeric values and control markers in serialized order.
-    pub items: Vec<NumericTupleItem>,
+    /// Two source-ordered nullable scalar slots.
+    pub slots: [NumericPairSlot; 2],
 }
 
-/// One item in a complete [`NumericTuple`].
+/// One slot in a complete [`NumericPair`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum NumericTupleItem {
+pub enum NumericPairSlot {
+    /// `0xE6` followed by the exact IEEE-754 binary64 bits.
+    Binary64 {
+        /// Stored little-endian binary64 bits.
+        bits: u64,
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+    /// Zero-payload `0xE8` control marker.
+    ControlE8 {
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+}
+
+/// One item in an embedded numeric value packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum NumericPacketItem {
     /// `0xE6` followed by the exact IEEE-754 binary64 bits.
     Binary64 {
         /// Stored little-endian binary64 bits.
@@ -196,7 +207,7 @@ pub enum EntityValuePacket {
         /// Second one-byte atom after the `0x37` delimiter.
         value_atom: u32,
         /// Tagged binary64 values and control markers in serialized order.
-        items: Vec<NumericTupleItem>,
+        items: Vec<NumericPacketItem>,
         /// Number of consecutive `0xFE` bytes closing the packet.
         terminator_count: usize,
     },
@@ -231,8 +242,8 @@ impl EntityValuePacket {
                 ..
             } => {
                 let item_end = match items.last()? {
-                    NumericTupleItem::Binary64 { offset, .. } => offset.checked_add(9)?,
-                    NumericTupleItem::Control { offset, .. } => offset.checked_add(1)?,
+                    NumericPacketItem::Binary64 { offset, .. } => offset.checked_add(9)?,
+                    NumericPacketItem::Control { offset, .. } => offset.checked_add(1)?,
                 };
                 Some(*offset..item_end.checked_add(*terminator_count)?)
             }
@@ -364,12 +375,12 @@ fn parse_numeric_value_packet(
             0xe6 => {
                 let end = at.checked_add(9)?;
                 let bits = u64::from_le_bytes(payload.get(at + 1..end)?.try_into().ok()?);
-                items.push(NumericTupleItem::Binary64 { bits, offset: at });
+                items.push(NumericPacketItem::Binary64 { bits, offset: at });
                 binary64_count += 1;
                 at = end;
             }
             code @ 0xe7..=0xe9 => {
-                items.push(NumericTupleItem::Control { code, offset: at });
+                items.push(NumericPacketItem::Control { code, offset: at });
                 at += 1;
             }
             0xfe => break,
@@ -421,8 +432,8 @@ pub struct EntityRecord {
     pub value_len: u32,
     /// Exact nested `7C07` payload.
     pub value_payload: Vec<u8>,
-    /// Complete numeric-tuple view when the entire value payload has that production.
-    pub numeric_tuple: Option<NumericTuple>,
+    /// Complete numeric-pair view when the entire value payload has that production.
+    pub numeric_pair: Option<NumericPair>,
     /// Complete reference-signature view when the entire value payload has that production.
     pub reference_signature: Option<ReferenceSignature>,
     /// Exact bytes after the nested `7C07` frame.
@@ -653,7 +664,7 @@ fn materialize_record(
         definition_suffix: data.get(identity_end..candidate.definition_end)?.to_vec(),
         value_len: candidate.value_len,
         value_payload: value_payload.to_vec(),
-        numeric_tuple: parse_numeric_tuple(value_payload),
+        numeric_pair: parse_numeric_pair(value_payload),
         reference_signature: parse_reference_signature(value_payload),
         record_suffix: data.get(candidate.value_end..record_end)?.to_vec(),
     })
@@ -677,7 +688,7 @@ pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<Definition
     selectors
 }
 
-pub(crate) fn parse_numeric_tuple(payload: &[u8]) -> Option<NumericTuple> {
+pub(crate) fn parse_numeric_pair(payload: &[u8]) -> Option<NumericPair> {
     let (prefix0, mut at) = one_byte_atom(payload, 0)?;
     let (prefix1, next) = one_byte_atom(payload, at)?;
     at = next;
@@ -686,6 +697,9 @@ pub(crate) fn parse_numeric_tuple(payload: &[u8]) -> Option<NumericTuple> {
     }
     at += 1;
     let (type_atom, next) = compact_atom(payload, at)?;
+    if type_atom != 4872 {
+        return None;
+    }
     at = next;
     if payload.get(at) != Some(&0x37) {
         return None;
@@ -693,33 +707,33 @@ pub(crate) fn parse_numeric_tuple(payload: &[u8]) -> Option<NumericTuple> {
     at += 1;
     let (layout_atom, next) = one_byte_atom(payload, at)?;
     let (value_atom, next) = one_byte_atom(payload, next)?;
+    if layout_atom != 3 || value_atom != 1 {
+        return None;
+    }
     at = next;
 
-    let mut items = Vec::new();
+    let mut slots = Vec::with_capacity(2);
     let mut binary64_count = 0;
-    while payload.get(at..at.checked_add(2)?) != Some(&[0xfe, 0xfe]) {
+    for _ in 0..2 {
         let offset = at;
         match *payload.get(at)? {
             0xe6 => {
                 let end = at.checked_add(9)?;
                 let bits = u64::from_le_bytes(payload.get(at + 1..end)?.try_into().ok()?);
-                items.push(NumericTupleItem::Binary64 { bits, offset });
+                slots.push(NumericPairSlot::Binary64 { bits, offset });
                 binary64_count += 1;
                 at = end;
             }
-            code @ 0xe7..=0xe9 => {
-                items.push(NumericTupleItem::Control { code, offset });
+            0xe8 => {
+                slots.push(NumericPairSlot::ControlE8 { offset });
                 at += 1;
             }
             _ => return None,
         }
     }
-    (binary64_count != 0 && at + 2 == payload.len()).then_some(NumericTuple {
+    (binary64_count != 0 && payload.get(at..) == Some(&[0xfe, 0xfe])).then_some(NumericPair {
         prefix_atoms: [prefix0, prefix1],
-        type_atom,
-        layout_atom,
-        value_atom,
-        items,
+        slots: slots.try_into().ok()?,
     })
 }
 
@@ -819,9 +833,9 @@ fn u32_le(data: &[u8], at: usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_definition_schema_selectors, parse_numeric_tuple, parse_reference_signature,
-        parse_runs, value_packets, DefinitionSchemaSelector, EntityValuePacket, NumericTuple,
-        NumericTupleItem, ReferenceSignature, ReferenceSignatureSyntax,
+        parse_definition_schema_selectors, parse_numeric_pair, parse_reference_signature,
+        parse_runs, value_packets, DefinitionSchemaSelector, EntityValuePacket, NumericPacketItem,
+        NumericPair, NumericPairSlot, ReferenceSignature, ReferenceSignatureSyntax,
     };
     use crate::value_block;
 
@@ -922,25 +936,19 @@ mod tests {
     }
 
     #[test]
-    fn numeric_tuple_requires_one_complete_nested_production() {
+    fn numeric_pair_requires_one_complete_nested_production() {
         let payload = [
             0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe8, 0xe6, 0, 0, 0, 0, 0, 0, 0x12,
             0x40, 0xfe, 0xfe,
         ];
 
         assert_eq!(
-            parse_numeric_tuple(&payload),
-            Some(NumericTuple {
+            parse_numeric_pair(&payload),
+            Some(NumericPair {
                 prefix_atoms: [17, 4],
-                type_atom: 4872,
-                layout_atom: 3,
-                value_atom: 1,
-                items: vec![
-                    NumericTupleItem::Control {
-                        code: 0xe8,
-                        offset: 8,
-                    },
-                    NumericTupleItem::Binary64 {
+                slots: [
+                    NumericPairSlot::ControlE8 { offset: 8 },
+                    NumericPairSlot::Binary64 {
                         bits: 4.5_f64.to_bits(),
                         offset: 9,
                     },
@@ -950,14 +958,36 @@ mod tests {
     }
 
     #[test]
-    fn marker_bytes_in_opaque_regions_do_not_create_numeric_tuples() {
+    fn numeric_pair_requires_exact_frame_and_two_nullable_slots() {
+        let valid = [
+            0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe8, 0xe6, 0, 0, 0, 0, 0, 0, 0x12,
+            0x40, 0xfe, 0xfe,
+        ];
+        for (offset, replacement) in [(4, 0x06), (6, 0x82), (7, 0x82), (8, 0xe7)] {
+            let mut malformed = valid;
+            malformed[offset] = replacement;
+            assert_eq!(parse_numeric_pair(&malformed), None);
+        }
+        assert_eq!(parse_numeric_pair(&valid[..19]), None);
+
+        let mut extra_slot = valid.to_vec();
+        extra_slot.splice(18..18, [0xe8]);
+        assert_eq!(parse_numeric_pair(&extra_slot), None);
+
+        let mut all_control = valid.to_vec();
+        all_control.splice(9..18, [0xe8]);
+        assert_eq!(parse_numeric_pair(&all_control), None);
+    }
+
+    #[test]
+    fn marker_bytes_in_opaque_regions_do_not_create_numeric_pairs() {
         let opaque = [
             0x73, 0x83, 0xe8, 0xe0, 0x0a, 0x37, 0xd1, 0x51, 0x81, 0x4e, 0x29, 0x42, 0x27, 0x59,
             0xf4, 0xcb, 0x1b, 0x4f, 0xbe, 0x76, 0xaf, 0x2c, 0x10, 0xdf, 0x90, 0xe6, 0, 0, 0, 0, 0,
             0, 0, 0, 0xfe, 0xfe,
         ];
 
-        assert_eq!(parse_numeric_tuple(&opaque), None);
+        assert_eq!(parse_numeric_pair(&opaque), None);
     }
 
     #[test]
@@ -1141,19 +1171,19 @@ mod tests {
                 layout_atom: 3,
                 value_atom: 4,
                 items: vec![
-                    NumericTupleItem::Control {
+                    NumericPacketItem::Control {
                         code: 0xe7,
                         offset: 9,
                     },
-                    NumericTupleItem::Binary64 {
+                    NumericPacketItem::Binary64 {
                         bits: (-32.0_f64).to_bits(),
                         offset: 10,
                     },
-                    NumericTupleItem::Control {
+                    NumericPacketItem::Control {
                         code: 0xe9,
                         offset: 19,
                     },
-                    NumericTupleItem::Binary64 {
+                    NumericPacketItem::Binary64 {
                         bits: 180.902_997_326_510_7_f64.to_bits(),
                         offset: 20,
                     },
@@ -1183,31 +1213,31 @@ mod tests {
                 layout_atom: 8,
                 value_atom: 1,
                 items: vec![
-                    NumericTupleItem::Control {
+                    NumericPacketItem::Control {
                         code: 0xe8,
                         offset: 9,
                     },
-                    NumericTupleItem::Control {
+                    NumericPacketItem::Control {
                         code: 0xe8,
                         offset: 10,
                     },
-                    NumericTupleItem::Control {
+                    NumericPacketItem::Control {
                         code: 0xe8,
                         offset: 11,
                     },
-                    NumericTupleItem::Binary64 {
+                    NumericPacketItem::Binary64 {
                         bits: 12.7_f64.to_bits(),
                         offset: 12,
                     },
-                    NumericTupleItem::Control {
+                    NumericPacketItem::Control {
                         code: 0xe8,
                         offset: 21,
                     },
-                    NumericTupleItem::Binary64 {
+                    NumericPacketItem::Binary64 {
                         bits: std::f64::consts::PI.to_bits(),
                         offset: 22,
                     },
-                    NumericTupleItem::Control {
+                    NumericPacketItem::Control {
                         code: 0xe7,
                         offset: 31,
                     },
@@ -1232,13 +1262,13 @@ mod tests {
     }
 
     #[test]
-    fn complete_numeric_tuple_is_not_duplicated_as_an_embedded_packet() {
-        let mut payload = vec![0x81, 0x82, 0xe8, 0xd1, 0x03, 0x37, 0x83, 0x84, 0xe6];
+    fn complete_numeric_pair_is_not_duplicated_as_an_embedded_packet() {
+        let mut payload = vec![0x81, 0x82, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6];
         payload.extend_from_slice(&42.0_f64.to_bits().to_le_bytes());
-        payload.extend_from_slice(&[0xfe, 0xfe]);
+        payload.extend_from_slice(&[0xe8, 0xfe, 0xfe]);
         let fields = value_block::tokenize(&payload);
 
-        assert!(parse_numeric_tuple(&payload).is_some());
+        assert!(parse_numeric_pair(&payload).is_some());
         assert!(value_packets(&payload, &fields).is_empty());
     }
 }

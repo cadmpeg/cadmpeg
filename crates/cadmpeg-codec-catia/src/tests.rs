@@ -3080,10 +3080,10 @@ fn standard_catpart_with_crossing_entity_value_packet() -> Vec<u8> {
     file
 }
 
-fn standard_catpart_with_numeric_entity_value_tuple() -> Vec<u8> {
+fn standard_catpart_with_numeric_entity_value_pair() -> Vec<u8> {
     let value = [
-        0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6, 0, 0, 0, 0, 0, 0, 0x12, 0x40, 0xfe,
-        0xfe,
+        0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6, 0, 0, 0, 0, 0, 0, 0x12, 0x40, 0xe8,
+        0xfe, 0xfe,
     ];
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
     let mut stream = entity_table_record_with_value(1, &value);
@@ -10910,10 +10910,10 @@ fn native_namespace_resolves_and_validates_repeated_reference_schema_selections(
 }
 
 #[test]
-fn native_namespace_retains_and_validates_complete_entity_numeric_tuples() {
+fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
     let value = [
-        0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6, 0, 0, 0, 0, 0, 0, 0x12, 0x40, 0xfe,
-        0xfe,
+        0x91, 0x84, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6, 0, 0, 0, 0, 0, 0, 0x12, 0x40, 0xe8,
+        0xfe, 0xfe,
     ];
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
     let mut bytes = entity_table_record_with_value(1, &value);
@@ -10921,28 +10921,42 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_tuples() {
     bytes.extend(object_graph_from_records(&records));
 
     let native = crate::native::CatiaNative::decode(&bytes);
-    let tuple = native.entity_records[0]
-        .numeric_tuple
+    let pair = native.entity_records[0]
+        .numeric_pair
         .as_ref()
-        .expect("complete numeric tuple");
-    assert!(tuple.items.iter().any(|item| {
-        matches!(
-            item,
-            crate::entity_table::NumericTupleItem::Binary64 { bits, .. }
-                if *bits == 4.5_f64.to_bits()
-        )
-    }));
+        .expect("complete numeric pair");
+    assert_eq!(
+        pair.slots,
+        [
+            crate::entity_table::NumericPairSlot::Binary64 {
+                bits: 4.5_f64.to_bits(),
+                offset: 8,
+            },
+            crate::entity_table::NumericPairSlot::ControlE8 { offset: 17 },
+        ]
+    );
+
+    let mut legacy = native.clone();
+    legacy.entity_records[0].numeric_pair = None;
+    let mut legacy_namespace = cadmpeg_ir::NativeNamespace::default();
+    legacy
+        .store(&mut legacy_namespace)
+        .expect("store legacy numeric-pair view");
+    legacy_namespace.version = crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION;
+    let migrated =
+        crate::native::CatiaNative::load(&legacy_namespace).expect("migrate numeric-pair view");
+    assert!(migrated.entity_records[0].numeric_pair.is_some());
 
     let mut malformed = native;
     malformed.entity_records[0]
-        .numeric_tuple
+        .numeric_pair
         .as_mut()
-        .expect("complete numeric tuple")
-        .value_atom += 1;
+        .expect("complete numeric pair")
+        .slots[0] = crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 };
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
-        .expect("store malformed numeric-tuple view");
+        .expect("store malformed numeric-pair view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
@@ -10950,16 +10964,16 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_tuples() {
 }
 
 #[test]
-fn decode_reports_complete_numeric_entity_value_tuples_separately_from_packets() {
+fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() {
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_numeric_entity_value_tuple()),
+            &mut Cursor::new(standard_catpart_with_numeric_entity_value_pair()),
             &DecodeOptions::default(),
         )
-        .expect("decode complete numeric entity-value tuple");
+        .expect("decode complete numeric entity-value pair");
 
     assert_eq!(
-        decoded.report.coverage["decoded_numeric_entity_value_tuple_count"],
+        decoded.report.coverage["decoded_numeric_entity_value_pair_count"],
         1
     );
     assert_eq!(
@@ -10968,7 +10982,7 @@ fn decode_reports_complete_numeric_entity_value_tuples_separately_from_packets()
     );
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.message
-            .contains("1 complete numeric entity-value tuple(s)")
+            .contains("1 complete numeric entity-value pair(s)")
             && loss
                 .message
                 .contains("0 embedded numeric entity-value packet(s)")

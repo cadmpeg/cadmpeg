@@ -140,6 +140,11 @@ current scores require those matrices and representative fixtures.
   parameter retains its canonical
   `LENGTH`, `ANGLE`, `Real`, or `Integer` value type independently of whether
   an evaluated value exists.
+- Complete native numeric-pair payloads retain their two prefix atoms and two
+  source-ordered nullable binary64 slots with exact bits and payload-relative
+  offsets. The fixed type, layout, and value atoms and exact two-slot framing
+  gate this view. A field class does not assign coordinate or parameter
+  semantics to the pair.
   Placeholder-state, Boolean-prefixed parser-version, unprefixed
   parser-version, and opened Boolean parser-version relation-expression
   framings retain their source expressions and typed signatures. Coverage
