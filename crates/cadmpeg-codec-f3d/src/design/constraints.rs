@@ -405,7 +405,7 @@ pub(crate) fn exact_text_relation(
             glyph_transforms,
         } if relation.constraint_kinds == [SketchConstraintKind::TextPath]
             && relation.members.len() == 2
-            && relation.member_roles.len() == 2
+            && relation.member_relation_ordinals.len() == 2
             && relation.members[1] == *text_reference
             && relation.auxiliary_references == [*text_reference]
             && relation.return_members == [relation.members[0]] =>

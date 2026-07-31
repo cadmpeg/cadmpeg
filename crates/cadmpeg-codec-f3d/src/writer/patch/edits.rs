@@ -2456,14 +2456,14 @@ pub(crate) fn validate_sketch_relation_edits(
             &mut values,
         )?;
         if relation.state != before.state {
-            // The stored mask width follows the source form: a `0x01`-marked
-            // u32 or an unmarked u64.
-            let marked = usize::try_from(relation.state_offset)
-                .ok()
-                .and_then(|offset| offset.checked_sub(1))
-                .and_then(|offset| relation.raw_bytes.get(offset))
-                == Some(&1);
-            let encoded = if marked {
+            // The stored mask width follows the record's class version: a u64
+            // with the paired member run, a u32 without it.
+            let paired_run =
+                crate::design::decode::sketch::relation_has_paired_member_run(&relation.raw_bytes)
+                    .unwrap_or(true);
+            let encoded = if paired_run {
+                relation.state.to_le_bytes().to_vec()
+            } else {
                 u32::try_from(relation.state)
                     .map_err(|_| {
                         CodecError::NotImplemented(format!(
@@ -2473,8 +2473,6 @@ pub(crate) fn validate_sketch_relation_edits(
                     })?
                     .to_le_bytes()
                     .to_vec()
-            } else {
-                relation.state.to_le_bytes().to_vec()
             };
             values.push((
                 relation.byte_offset + u64::from(relation.state_offset),

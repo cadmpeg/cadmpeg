@@ -3350,7 +3350,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         state: 0,
         constraint_kinds: vec![SketchConstraintKind::Coincident],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![217, 175],
@@ -9078,7 +9078,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         state: 0x40,
         constraint_kinds: vec![SketchConstraintKind::Horizontal],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![member],
@@ -9360,7 +9360,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         state: 0x8000_0000,
         constraint_kinds: vec![SketchConstraintKind::SplineGroup],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![103, 104],
@@ -9748,7 +9748,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         state: 0x20_0000_0000,
         constraint_kinds: vec![SketchConstraintKind::Offset],
         unknown_constraint_bits: 0,
-        member_roles: vec![3, 5, 1, 1],
+        member_relation_ordinals: vec![3, 5, 1, 1],
         entity_genesis: None,
         pattern: None,
         return_members: vec![1, 3, 2, 4],
@@ -10147,7 +10147,7 @@ fn rectangular_pattern_derives_spacing_from_internal_span_scalars() {
         state: 0x2000_0000,
         constraint_kinds: vec![SketchConstraintKind::RectangularPattern],
         unknown_constraint_bits: 0,
-        member_roles: vec![1, 0, 0],
+        member_relation_ordinals: vec![1, 0, 0],
         entity_genesis: None,
         pattern: Some(crate::records::SketchPatternDefinition::Rectangular {
             directions: [
@@ -10243,7 +10243,7 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
         state: 0x1000_0000,
         constraint_kinds: vec![SketchConstraintKind::CircularPattern],
         unknown_constraint_bits: 0,
-        member_roles: vec![1, 1, 0, 0],
+        member_relation_ordinals: vec![1, 1, 0, 0],
         entity_genesis: None,
         pattern: Some(crate::records::SketchPatternDefinition::Circular {
             angle_parameter: 20,
@@ -10353,7 +10353,7 @@ fn circular_pattern_resolves_independently_of_member_role_values() {
         state: 0x1000_0000,
         constraint_kinds: vec![SketchConstraintKind::CircularPattern],
         unknown_constraint_bits: 0,
-        member_roles: vec![0, 0, 0, 0],
+        member_relation_ordinals: vec![0, 0, 0, 0],
         entity_genesis: None,
         pattern: Some(crate::records::SketchPatternDefinition::Circular {
             angle_parameter: 20,
@@ -12170,7 +12170,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         state: 0,
         constraint_kinds: vec![SketchConstraintKind::Coincident],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![20],
@@ -15096,23 +15096,29 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
 
 #[test]
 fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
+    // The eleven-byte reference form puts each pair at fifteen bytes: the
+    // reference at `marker`, its relation ordinal four bytes later.
     let mut record = vec![0u8; 127];
     record[0..4].copy_from_slice(&3u32.to_le_bytes());
     record[4..7].copy_from_slice(b"286");
     record[7..11].copy_from_slice(&1239u32.to_le_bytes());
     record[19] = 1;
     record[20..24].copy_from_slice(&3u32.to_le_bytes());
-    for (marker, reference) in [(24, 1224u32), (39, 1228), (54, 1236), (69, 0), (74, 1041)] {
+    for (marker, reference) in [(24, 1224u32), (39, 1228), (54, 1236)] {
         record[marker] = 1;
-        record[marker + 1..marker + 5].copy_from_slice(&reference.to_le_bytes());
+        record[marker + 1..marker + 9].copy_from_slice(&u64::from(reference).to_le_bytes());
     }
     record[35..39].copy_from_slice(&3u32.to_le_bytes());
     record[50..54].copy_from_slice(&1u32.to_le_bytes());
-    record[85..93].copy_from_slice(&4u64.to_le_bytes());
-    record[93..97].copy_from_slice(&3u32.to_le_bytes());
-    for (marker, reference) in [(97, 1224u32), (108, 1228), (119, 1236)] {
+    // Offset 69 is the base level's property-block presence byte; the
+    // `ParentNode` reference follows it.
+    record[70] = 1;
+    record[71..79].copy_from_slice(&1041u64.to_le_bytes());
+    record[81..89].copy_from_slice(&4u64.to_le_bytes());
+    record[89..93].copy_from_slice(&3u32.to_le_bytes());
+    for (marker, reference) in [(93, 1224u32), (104, 1228), (115, 1236)] {
         record[marker] = 1;
-        record[marker + 1..marker + 5].copy_from_slice(&reference.to_le_bytes());
+        record[marker + 1..marker + 9].copy_from_slice(&u64::from(reference).to_le_bytes());
     }
     let mut bytes = record.clone();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -15122,14 +15128,14 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
     let parsed = parse_sketch_relation(&record, &HashSet::from([1041])).unwrap();
     assert_eq!(parsed.members, [1224, 1228, 1236]);
-    assert_eq!(parsed.member_roles, [3, 1, 0]);
-    assert_eq!(parsed.auxiliary_references, [0]);
+    assert_eq!(parsed.member_relation_ordinals, [3, 1, 0]);
+    assert_eq!(parsed.auxiliary_references, [] as [u32; 0]);
     assert_eq!(parsed.owner_reference, 1041);
     assert_eq!(parsed.state, 4);
-    assert_eq!(parsed.state_offset, 85);
+    assert_eq!(parsed.state_offset, 81);
     assert_eq!(parsed.entity_genesis, None);
     assert_eq!(parsed.return_members, [1224, 1228, 1236]);
-    assert_eq!(parsed.parsed_end, 124);
+    assert_eq!(parsed.parsed_end, 127);
 }
 
 #[test]
@@ -15216,7 +15222,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_member_roles() {
     );
     let parsed = parse_sketch_relation(&record, &HashSet::from([1425])).unwrap();
     assert_eq!(parsed.members, [2394, 2403, 2404]);
-    assert_eq!(parsed.member_roles, [0, 0, 0]);
+    assert_eq!(parsed.member_relation_ordinals, [0, 0, 0]);
     assert_eq!(parsed.entity_genesis, Some(2));
     assert_eq!(parsed.auxiliary_references, [2394]);
     assert_eq!(parsed.owner_reference, 1425);
@@ -15270,7 +15276,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
     );
     let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
     assert_eq!(parsed.members, [237, 304]);
-    assert_eq!(parsed.member_roles, [1, 0]);
+    assert_eq!(parsed.member_relation_ordinals, [1, 0]);
     assert_eq!(parsed.entity_genesis, Some(2));
     assert_eq!(parsed.auxiliary_references, [304]);
     assert_eq!(parsed.owner_reference, 201);
@@ -15413,7 +15419,7 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
         state: 0x200_0000_0000,
         constraint_kinds: vec![SketchConstraintKind::TextPath],
         unknown_constraint_bits: 0,
-        member_roles: vec![1, 0],
+        member_relation_ordinals: vec![1, 0],
         entity_genesis: Some(2),
         pattern: Some(crate::records::SketchPatternDefinition::TextPath {
             text_reference: 2,
@@ -15459,7 +15465,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         &[291, 327, 330, 280],
     );
     let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
-    assert_eq!(parsed.member_roles, [1, 1, 0, 0]);
+    assert_eq!(parsed.member_relation_ordinals, [1, 1, 0, 0]);
     assert_eq!(parsed.auxiliary_references, [336, 333]);
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
@@ -15503,7 +15509,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         &[353, 352, 442, 445],
     );
     let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
-    assert_eq!(parsed.member_roles, [3, 1, 0, 0]);
+    assert_eq!(parsed.member_relation_ordinals, [3, 1, 0, 0]);
     assert_eq!(parsed.auxiliary_references, [0, 464, 470, 467, 473]);
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =

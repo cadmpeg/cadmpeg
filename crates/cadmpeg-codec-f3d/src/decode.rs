@@ -3454,7 +3454,7 @@ mod tests {
             state: 0,
             constraint_kinds: Vec::new(),
             unknown_constraint_bits: 0,
-            member_roles: Vec::new(),
+            member_relation_ordinals: Vec::new(),
             entity_genesis: None,
             pattern: None,
             return_members: Vec::new(),

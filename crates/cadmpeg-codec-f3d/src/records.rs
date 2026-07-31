@@ -3129,11 +3129,12 @@ pub struct SketchRelation {
     pub constraint_kinds: Vec<SketchConstraintKind>,
     /// Bits in `state` outside the defined constraint mask.
     pub unknown_constraint_bits: u64,
-    /// Member role codes parallel to `members`. The role is relation-specific
-    /// metadata and does not by itself classify a member as an input or a
-    /// generated entity; membership is determined by relation structure.
+    /// Relation ordinals parallel to `members`. The integer beside a member
+    /// counts the relations already recorded on that member, so the ordinals
+    /// carried on one member are pairwise distinct across its relations. It is
+    /// not a role: it says nothing about the member's part in this relation.
     #[serde(default)]
-    pub member_roles: Vec<u32>,
+    pub member_relation_ordinals: Vec<u32>,
     /// `EntityGenesis` origin bitfield stored by the relation record, when present.
     #[serde(default)]
     pub entity_genesis: Option<u64>,

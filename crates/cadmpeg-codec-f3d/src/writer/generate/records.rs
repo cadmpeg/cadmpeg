@@ -190,8 +190,20 @@ pub(crate) fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, C
         out.extend_from_slice(&root.instance_root_record.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
         native_lp_utf16(&mut out, &root.entity_id)?;
+        // The key is `<segment id>_<entity id>` of the entity this link
+        // tracks, and the reference beside it names that same entity.
+        let tracked = root
+            .entity_id
+            .rsplit_once('_')
+            .and_then(|(_, entity)| entity.parse::<u32>().ok())
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D ACT root component entity key is not `<segment id>_<entity id>`: {}",
+                    root.entity_id
+                ))
+            })?;
         out.push(1);
-        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(&tracked.to_le_bytes());
         out.extend_from_slice(&[0; 5]);
         out.push(1);
         out.extend_from_slice(&root.registry_flag.to_le_bytes());
@@ -768,118 +780,69 @@ fn encode_sketch_relation(
             relation.id
         )));
     }
-    let reference_count = relation
-        .members
-        .len()
-        .checked_add(relation.auxiliary_references.len())
-        .and_then(|count| count.checked_add(1))
-        .and_then(|count| count.checked_add(relation.return_members.len()))
-        .ok_or_else(|| CodecError::Malformed("sketch relation reference count overflow".into()))?;
-    // A u64 mask needs the `EntityGenesis` block that signals the u64 dialect.
-    let entity_genesis = if u32::try_from(relation.state).is_err() {
-        Some(relation.entity_genesis.unwrap_or(0))
-    } else {
-        relation.entity_genesis
-    };
-    // Marker + u32 1, the two length-prefixed key strings, and the u64 value.
-    let genesis_len = entity_genesis.map_or(0usize, |_| 5 + 17 + 27 + 8);
-    // 24-byte prefix, the 5-byte marked-u32 or 14-byte padded-u64 mask, and
-    // the 4-byte return count, plus five bytes per reference.
-    let state_len = if u32::try_from(relation.state).is_ok() {
-        5usize
-    } else {
-        14
-    };
-    let required_len = 28usize
-        .checked_add(state_len)
-        .and_then(|len| len.checked_add(genesis_len))
-        .and_then(|len| len.checked_add(reference_count.checked_mul(5)?))
-        .ok_or_else(|| CodecError::Malformed("sketch relation byte length overflow".into()))?;
-    let mut record = vec![0u8; required_len.max(101)];
+    // An authored relation may omit the ordinals; a decoded one always pairs
+    // them with its members.
+    if !relation.member_relation_ordinals.is_empty()
+        && relation.member_relation_ordinals.len() != relation.members.len()
+    {
+        return Err(CodecError::Malformed(format!(
+            "F3D sketch relation {} has a relation-ordinal run that does not pair with its members",
+            relation.id
+        )));
+    }
+    let mut record = vec![0u8; 19];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
-    record[19] = 1;
+    record.push(1);
     let member_count = u32::try_from(relation.members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
-    record[20..24].copy_from_slice(&member_count.to_le_bytes());
-    let mut cursor = 24usize;
-    for reference in &relation.members {
-        write_marked_u32(&mut record, &mut cursor, *reference)?;
+    record.extend_from_slice(&member_count.to_le_bytes());
+    for (ordinal, member) in relation.members.iter().enumerate() {
+        write_reference(&mut record, *member);
+        let relation_ordinal = relation
+            .member_relation_ordinals
+            .get(ordinal)
+            .copied()
+            .unwrap_or(0);
+        record.extend_from_slice(&relation_ordinal.to_le_bytes());
     }
-    if let Some(genesis) = entity_genesis {
-        let end = cursor.checked_add(genesis_len).ok_or_else(|| {
-            CodecError::Malformed("sketch relation record offset overflow".into())
-        })?;
-        let block = record.get_mut(cursor..end).ok_or_else(|| {
-            CodecError::Malformed("sketch relation exceeds its planned record length".into())
-        })?;
-        block[0] = 1;
-        block[1..5].copy_from_slice(&1u32.to_le_bytes());
-        block[5..9].copy_from_slice(&13u32.to_le_bytes());
-        block[9..22].copy_from_slice(b"EntityGenesis");
-        block[22..26].copy_from_slice(&23u32.to_le_bytes());
-        block[26..49].copy_from_slice(b"IntrinsicMetaTypeuint64");
-        block[49..57].copy_from_slice(&genesis.to_le_bytes());
-        cursor = end;
+    // The base level's property-block presence byte, then the block when the
+    // relation carries an `EntityGenesis` origin.
+    match relation.entity_genesis {
+        Some(genesis) => {
+            record.push(1);
+            record.extend_from_slice(&1u32.to_le_bytes());
+            native_lp_ascii(&mut record, "EntityGenesis")?;
+            native_lp_ascii(&mut record, "IntrinsicMetaTypeuint64")?;
+            record.extend_from_slice(&genesis.to_le_bytes());
+        }
+        None => record.push(0),
     }
     for reference in relation
         .auxiliary_references
         .iter()
         .chain(std::iter::once(&relation.owner_reference))
     {
-        write_marked_u32(&mut record, &mut cursor, *reference)?;
+        write_reference(&mut record, *reference);
     }
-    if let Ok(state) = u32::try_from(relation.state) {
-        write_marked_u32(&mut record, &mut cursor, state)?;
-    } else {
-        // Six zero bytes (already present) then the unmarked u64 mask.
-        cursor = cursor.checked_add(6).ok_or_else(|| {
-            CodecError::Malformed("sketch relation record offset overflow".into())
-        })?;
-        let end = cursor.checked_add(8).ok_or_else(|| {
-            CodecError::Malformed("sketch relation record offset overflow".into())
-        })?;
-        record
-            .get_mut(cursor..end)
-            .ok_or_else(|| {
-                CodecError::Malformed("sketch relation exceeds its planned record length".into())
-            })?
-            .copy_from_slice(&relation.state.to_le_bytes());
-        cursor = end;
-    }
+    record.extend_from_slice(&relation.state.to_le_bytes());
     let return_count = u32::try_from(relation.return_members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
-    write_u32(&mut record, &mut cursor, return_count)?;
+    record.extend_from_slice(&return_count.to_le_bytes());
     for reference in &relation.return_members {
-        write_marked_u32(&mut record, &mut cursor, *reference)?;
+        write_reference(&mut record, *reference);
     }
+    record.push(0);
+    record.resize(record.len().max(101), 0);
     out.extend_from_slice(&record);
     Ok(())
 }
 
-fn write_marked_u32(out: &mut [u8], cursor: &mut usize, value: u32) -> Result<(), CodecError> {
-    let end = cursor
-        .checked_add(5)
-        .ok_or_else(|| CodecError::Malformed("sketch relation record offset overflow".into()))?;
-    let target = out.get_mut(*cursor..end).ok_or_else(|| {
-        CodecError::Malformed("sketch relation exceeds its planned record length".into())
-    })?;
-    target[0] = 1;
-    target[1..5].copy_from_slice(&value.to_le_bytes());
-    *cursor = end;
-    Ok(())
-}
-
-fn write_u32(out: &mut [u8], cursor: &mut usize, value: u32) -> Result<(), CodecError> {
-    let end = cursor
-        .checked_add(4)
-        .ok_or_else(|| CodecError::Malformed("sketch relation record offset overflow".into()))?;
-    out.get_mut(*cursor..end)
-        .ok_or_else(|| {
-            CodecError::NotImplemented("sketch relation does not fit canonical record".into())
-        })?
-        .copy_from_slice(&value.to_le_bytes());
-    *cursor = end;
-    Ok(())
+/// Write one same-segment reference ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata) "**References.**"): the
+/// presence byte, the u64 target entity id, and the two zero flag bytes.
+fn write_reference(out: &mut Vec<u8>, target: u32) {
+    out.push(1);
+    out.extend_from_slice(&u64::from(target).to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
 }
 
 fn construction_recipe_name(kind: ConstructionRecipeKind) -> &'static [u8] {

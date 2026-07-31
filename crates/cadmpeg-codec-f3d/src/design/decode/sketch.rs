@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse sketch placements, `MetaStream` types, headers, relations, and geometry.
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -1225,7 +1225,7 @@ pub fn decode_sketch_relations(
                 state: parsed.state,
                 constraint_kinds,
                 unknown_constraint_bits,
-                member_roles: parsed.member_roles,
+                member_relation_ordinals: parsed.member_relation_ordinals,
                 entity_genesis: parsed.entity_genesis,
                 pattern,
                 return_members: parsed.return_members,
@@ -2432,7 +2432,7 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
 pub(crate) struct ParsedSketchRelation {
     pub(crate) members: Vec<u32>,
     pub(crate) member_offsets: Vec<usize>,
-    pub(crate) member_roles: Vec<u32>,
+    pub(crate) member_relation_ordinals: Vec<u32>,
     pub(crate) auxiliary_references: Vec<u32>,
     pub(crate) auxiliary_reference_offsets: Vec<usize>,
     pub(crate) owner_reference: u32,
@@ -2446,57 +2446,104 @@ pub(crate) struct ParsedSketchRelation {
     pub(crate) parsed_end: usize,
 }
 
-/// Largest plausible member-role code; larger values indicate a misparse.
-const MAX_MEMBER_ROLE: u32 = 10_000;
+/// Largest plausible reference-run cardinality; larger counts are a misparse.
+const MAX_RELATION_RUN: usize = 4096;
 
+/// Whether a sketch-relation record carries the paired member run. That leading
+/// byte also selects the constraint-mask width: a u64 with the run, a u32 at
+/// class version 0, which has neither.
+pub(crate) fn relation_has_paired_member_run(record: &[u8]) -> Option<bool> {
+    let (_, start) = lp_ascii_filtered(record, 15, 0..=256, u8::is_ascii_graphic)?;
+    match record.get(start)? {
+        1 => Some(true),
+        0 => Some(false),
+        _ => None,
+    }
+}
+
+/// Take one reference member at `cursor`, returning its 32-bit target and the
+/// byte offset of the target within the reference. Relation members address
+/// records in the relation's own segment, so a reference whose target does not
+/// fit a `u32` is a misparse.
+fn take_relation_reference(payload: &[u8], cursor: &mut usize) -> Option<(u32, usize)> {
+    let at = *cursor;
+    let reference = take_reference(payload, cursor)?;
+    Some((u32::try_from(reference.target?).ok()?, at + 1))
+}
+
+/// Parse one sketch-relation record body ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+///
+/// The payload is `u8 1`, a u32 count and that many `(reference, u32 relation
+/// ordinal)` pairs, the property-block presence byte and its block, the
+/// `ParentNode` reference naming the owning sketch, a u64 constraint mask, a
+/// u32 count and that many bare references, and one zero byte. At class version
+/// 0 the leading byte is zero, the pair list is absent, and the mask is a u32.
+/// Both reference runs hold the same members; only the second is in semantic
+/// order. Pattern and text classes carry extra class members between the
+/// property block and `ParentNode`, which are retained as the auxiliary run.
 pub(crate) fn parse_sketch_relation(
     payload: &[u8],
     owners: &std::collections::HashSet<u32>,
 ) -> Option<ParsedSketchRelation> {
-    if payload.get(19) != Some(&1) {
-        return None;
-    }
-    let member_count = usize::try_from(u32_at(payload, 20)?).ok()?;
-    if member_count > 64 {
-        return None;
-    }
-    let mut cursor = 24;
-    let mut members = Vec::with_capacity(member_count);
-    let mut member_offsets = Vec::with_capacity(member_count);
-    let mut member_roles = Vec::with_capacity(member_count);
-    for _ in 0..member_count {
-        let (value, end) = marked_u32(payload, cursor)?;
-        members.push(value);
-        member_offsets.push(cursor + 1);
-        // A member entry is the reference, six zero bytes, and a u32 role. A
-        // reference marker directly at the entry end is a role-less entry.
-        cursor = next_reference_marker(payload, end)?;
-        let role = if cursor >= end + 10 && payload.get(end..end + 6) == Some(&[0u8; 6]) {
-            u32_at(payload, end + 6).filter(|role| *role <= MAX_MEMBER_ROLE)
-        } else {
-            None
-        };
-        member_roles.push(role.unwrap_or(0));
-    }
-    // An optional `EntityGenesis` metadata block follows the member run: a
-    // `0x01`-marked u32 1, the two length-prefixed key strings, and the u64
-    // origin bitfield.
-    let mut entity_genesis = None;
-    if payload.get(cursor) == Some(&1)
-        && u32_at(payload, cursor + 1) == Some(1)
-        && lp_ascii_filtered(payload, cursor + 5, 0..=2000, u8::is_ascii_graphic)
-            .is_some_and(|(key, _)| key == "EntityGenesis")
-    {
-        let (_, after_key) =
-            lp_ascii_filtered(payload, cursor + 5, 0..=2000, u8::is_ascii_graphic)?;
-        let (meta_type, after_type) =
-            lp_ascii_filtered(payload, after_key, 0..=2000, u8::is_ascii_graphic)?;
-        if meta_type == "IntrinsicMetaTypeuint64" {
-            entity_genesis = Some(u64::from_le_bytes(
-                payload.get(after_type..after_type + 8)?.try_into().ok()?,
-            ));
-            cursor = next_reference_marker(payload, after_type + 8)?;
+    // The record header is the LP-ASCII class tag, the u64 entity id, and the
+    // LP-ASCII record name; the member payload follows it.
+    let (_, start) = lp_ascii_filtered(payload, 15, 0..=256, u8::is_ascii_graphic)?;
+    let paired_run = match payload.get(start)? {
+        1 => true,
+        0 => false,
+        _ => return None,
+    };
+    let mut cursor = start + 1;
+    let mut members = Vec::new();
+    let mut member_offsets = Vec::new();
+    let mut member_relation_ordinals = Vec::new();
+    if paired_run {
+        let member_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+        if member_count > MAX_RELATION_RUN {
+            return None;
         }
+        cursor += 4;
+        members.reserve(member_count);
+        member_offsets.reserve(member_count);
+        member_relation_ordinals.reserve(member_count);
+        for _ in 0..member_count {
+            let (member, offset) = take_relation_reference(payload, &mut cursor)?;
+            members.push(member);
+            member_offsets.push(offset);
+            member_relation_ordinals.push(u32_at(payload, cursor)?);
+            cursor += 4;
+        }
+    }
+    // The base class level opens with its property-block presence byte. The
+    // block is `u32 count` and that many `(key, type name, value)` triples;
+    // `EntityGenesis` is one such key.
+    let mut entity_genesis = None;
+    match payload.get(cursor)? {
+        0 => cursor += 1,
+        1 => {
+            cursor += 1;
+            let property_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+            if property_count > MAX_RELATION_RUN {
+                return None;
+            }
+            cursor += 4;
+            for _ in 0..property_count {
+                let (key, after_key) =
+                    lp_ascii_filtered(payload, cursor, 0..=256, u8::is_ascii_graphic)?;
+                let (type_name, after_type) =
+                    lp_ascii_filtered(payload, after_key, 0..=256, u8::is_ascii_graphic)?;
+                if type_name != "IntrinsicMetaTypeuint64" {
+                    return None;
+                }
+                let value =
+                    u64::from_le_bytes(payload.get(after_type..after_type + 8)?.try_into().ok()?);
+                if key == "EntityGenesis" {
+                    entity_genesis = Some(value);
+                }
+                cursor = after_type + 8;
+            }
+        }
+        _ => return None,
     }
     let mut auxiliary_references = Vec::new();
     let mut auxiliary_reference_offsets = Vec::new();
@@ -2519,59 +2566,56 @@ pub(crate) fn parse_sketch_relation(
             }
         }
     }
-    let (owner_reference, owner_reference_offset, end) = loop {
-        let (reference, end) = marked_u32(payload, cursor)?;
+    // Pattern and text classes place their own members between the property
+    // block and `ParentNode`. Their widths are class-specific, so the run is
+    // walked reference to reference; `ParentNode` is the first reference that
+    // names an owning sketch.
+    let (owner_reference, owner_reference_offset, state_offset) = loop {
+        cursor = next_reference_marker(payload, cursor)?;
+        let mut probe = cursor;
+        let (reference, offset) = take_relation_reference(payload, &mut probe)?;
         if owners.contains(&reference) {
-            break (reference, cursor + 1, end);
+            break (reference, offset, probe);
         }
         auxiliary_references.push(reference);
-        auxiliary_reference_offsets.push(cursor + 1);
-        cursor = next_reference_marker(payload, end)?;
+        auxiliary_reference_offsets.push(offset);
+        cursor = probe;
     };
-    // In records carrying an `EntityGenesis` block the constraint mask is a
-    // u64 six zero bytes after the owner reference. Records without that
-    // block store a `0x01`-marked or direct u32 mask after the owner padding.
-    let (state, state_offset, end) = if payload.get(end) == Some(&1) {
-        let (state, after) = marked_u32(payload, end)?;
-        (u64::from(state), end + 1, after)
-    } else if entity_genesis.is_some() {
-        if payload.get(end..end + 6) != Some(&[0u8; 6]) {
-            return None;
-        }
-        let state = u64::from_le_bytes(payload.get(end + 6..end + 14)?.try_into().ok()?);
-        (state, end + 6, end + 14)
+    // The constraint mask follows `ParentNode` directly. It is a u64 in the
+    // paired-run form and a u32 at class version 0.
+    let (state, mut cursor) = if paired_run {
+        (
+            u64::from_le_bytes(
+                payload
+                    .get(state_offset..state_offset + 8)?
+                    .try_into()
+                    .ok()?,
+            ),
+            state_offset + 8,
+        )
     } else {
-        let at = next_nonzero(payload, end)?;
-        if payload.get(at) == Some(&1) {
-            let (state, after) = marked_u32(payload, at)?;
-            (u64::from(state), at + 1, after)
-        } else {
-            (u64::from(u32_at(payload, at)?), at, at + 4)
-        }
+        (u64::from(u32_at(payload, state_offset)?), state_offset + 4)
     };
-    cursor = next_nonzero(payload, end)?;
     let return_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
-    if return_count > 64 {
+    if return_count > MAX_RELATION_RUN {
         return None;
     }
     cursor += 4;
     let mut return_members = Vec::with_capacity(return_count);
     let mut return_member_offsets = Vec::with_capacity(return_count);
-    for ordinal in 0..return_count {
-        cursor = next_reference_marker(payload, cursor)?;
-        let (value, end) = marked_u32(payload, cursor)?;
-        return_members.push(value);
-        return_member_offsets.push(cursor + 1);
-        cursor = end;
-        if ordinal + 1 < return_count {
-            cursor = next_reference_marker(payload, cursor)?;
-        }
+    for _ in 0..return_count {
+        let (member, offset) = take_relation_reference(payload, &mut cursor)?;
+        return_members.push(member);
+        return_member_offsets.push(offset);
     }
-    let parsed_end = cursor;
+    if payload.get(cursor) != Some(&0) {
+        return None;
+    }
+    let parsed_end = cursor + 1;
     Some(ParsedSketchRelation {
         members,
         member_offsets,
-        member_roles,
+        member_relation_ordinals,
         auxiliary_references,
         auxiliary_reference_offsets,
         owner_reference,
@@ -2685,13 +2729,6 @@ fn next_reference_marker(bytes: &[u8], mut position: usize) -> Option<usize> {
         position += 1;
     }
     None
-}
-
-fn next_nonzero(bytes: &[u8], mut position: usize) -> Option<usize> {
-    while bytes.get(position) == Some(&0) {
-        position += 1;
-    }
-    (position + 4 <= bytes.len()).then_some(position)
 }
 
 struct SketchReferenceList {

@@ -9154,7 +9154,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             SketchConstraintKind::Parallel,
         ],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![600, 100],
@@ -10281,7 +10281,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
     act_root.registry_flag = 0;
-    act_root.entity_id = "0_4".into();
+    act_root.entity_id = "1_3".into();
     act_root.display_name = "(Renamed)".into();
     let act_entity = &mut native.act_entities[0];
     assert!(act_entity.table_entity_id_offset.is_some());
@@ -10389,7 +10389,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(act_root.instance_root_record, 71);
     assert_eq!(act_root.components_root_record, 72);
     assert_eq!(act_root.registry_flag, 0);
-    assert_eq!(act_root.entity_id, "0_4");
+    assert_eq!(act_root.entity_id, "1_3");
     assert_eq!(act_root.display_name, "(Renamed)");
     let act_entity = &f3d_native(&round_trip.ir).act_entities[0];
     assert_eq!(act_entity.entity_id, "0_986");
@@ -11010,39 +11010,32 @@ fn generated_design_bulkstream() -> Vec<u8> {
     for (class_tag, record_index, members) in
         [("350", 33u32, [100u32, 200u32]), ("351", 44, [300, 400])]
     {
-        let mut relation = vec![0u8; 101];
+        // A relation is `u8 1`, the counted `(reference, relation ordinal)`
+        // pairs, the property-block presence byte, `ParentNode`, the u64
+        // mask, the counted return run, and one zero byte. Record 44 carries
+        // one auxiliary reference before `ParentNode`, which shifts its tail.
+        let auxiliary = usize::from(record_index == 44) * 11;
+        let mut relation = vec![0u8; 101 + auxiliary];
         relation[0..4].copy_from_slice(&3u32.to_le_bytes());
         relation[4..7].copy_from_slice(class_tag.as_bytes());
         relation[7..11].copy_from_slice(&record_index.to_le_bytes());
         relation[19] = 1;
         relation[20..24].copy_from_slice(&2u32.to_le_bytes());
-        relation[24] = 1;
-        relation[25..29].copy_from_slice(&members[0].to_le_bytes());
-        relation[39] = 1;
-        relation[40..44].copy_from_slice(&members[1].to_le_bytes());
-        relation[55] = 1;
-        relation[56..60].copy_from_slice(&277u32.to_le_bytes());
-        relation[66] = 1;
-        let state = if record_index == 33 { 0x10u32 } else { 0x04 };
-        relation[67..71].copy_from_slice(&state.to_le_bytes());
-        relation[74..78].copy_from_slice(&2u32.to_le_bytes());
-        relation[78] = 1;
-        relation[79..83].copy_from_slice(&members[1].to_le_bytes());
-        relation[89] = 1;
-        relation[90..94].copy_from_slice(&members[0].to_le_bytes());
-        if record_index == 44 {
-            relation[55..101].fill(0);
-            relation[55] = 1;
-            relation[60] = 1;
-            relation[61..65].copy_from_slice(&277u32.to_le_bytes());
-            relation[71] = 1;
-            relation[72..76].copy_from_slice(&0x04u32.to_le_bytes());
-            relation[79..83].copy_from_slice(&2u32.to_le_bytes());
-            relation[83] = 1;
-            relation[84..88].copy_from_slice(&members[1].to_le_bytes());
-            relation[94] = 1;
-            relation[95..99].copy_from_slice(&members[0].to_le_bytes());
+        fn reference(relation: &mut [u8], at: usize, target: u32) {
+            relation[at] = 1;
+            relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
         }
+        reference(&mut relation, 24, members[0]);
+        reference(&mut relation, 39, members[1]);
+        if record_index == 44 {
+            reference(&mut relation, 55, 0);
+        }
+        reference(&mut relation, 55 + auxiliary, 277);
+        let state = if record_index == 33 { 0x10u64 } else { 0x04 };
+        relation[66 + auxiliary..74 + auxiliary].copy_from_slice(&state.to_le_bytes());
+        relation[74 + auxiliary..78 + auxiliary].copy_from_slice(&2u32.to_le_bytes());
+        reference(&mut relation, 78 + auxiliary, members[1]);
+        reference(&mut relation, 89 + auxiliary, members[0]);
         out.extend_from_slice(&relation);
     }
     for (record_index, persistent_id, coordinates) in [
