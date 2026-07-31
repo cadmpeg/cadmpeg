@@ -4918,6 +4918,87 @@ fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide>
     }
 }
 
+/// Bind each decoded face to the body owning it.
+fn face_owner_bodies(
+    faces: &[Face],
+    shells: &[cadmpeg_ir::topology::Shell],
+    regions: &[cadmpeg_ir::topology::Region],
+) -> HashMap<String, cadmpeg_ir::ids::BodyId> {
+    let region_bodies = regions
+        .iter()
+        .map(|region| (region.id.0.as_str(), &region.body))
+        .collect::<HashMap<_, _>>();
+    let shell_bodies = shells
+        .iter()
+        .filter_map(|shell| {
+            region_bodies
+                .get(shell.region.0.as_str())
+                .map(|body| (shell.id.0.as_str(), (*body).clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    faces
+        .iter()
+        .filter_map(|face| {
+            shell_bodies
+                .get(face.shell.0.as_str())
+                .map(|body| (face.id.0.clone(), body.clone()))
+        })
+        .collect()
+}
+
+/// Derive feature output bodies from the producing-feature identity the
+/// Parasolid attribute lane binds to each surviving face.
+///
+/// `face_producers` pairs an emitted face identity with the native source id of
+/// the history feature that produced it. A feature outputs every body owning at
+/// least one face it produced. Features whose produced faces did not survive
+/// regeneration keep an empty output list.
+pub fn derive_feature_outputs(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
+    face_producers: &[(String, u32)],
+    faces: &[Face],
+    shells: &[cadmpeg_ir::topology::Shell],
+    regions: &[cadmpeg_ir::topology::Region],
+) {
+    if face_producers.is_empty() {
+        return;
+    }
+    let owners = face_owner_bodies(faces, shells, regions);
+    let mut produced: HashMap<u32, Vec<cadmpeg_ir::ids::BodyId>> = HashMap::new();
+    for (face, source_id) in face_producers {
+        let Some(body) = owners.get(face) else {
+            continue;
+        };
+        let bodies = produced.entry(*source_id).or_default();
+        if !bodies.contains(body) {
+            bodies.push(body.clone());
+        }
+    }
+    for feature in features {
+        if !feature.outputs.is_empty() {
+            continue;
+        }
+        let Some(source_id) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| {
+                histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .find(|record| record.id == native_ref)
+            })
+            .and_then(|record| record.source_id.as_deref())
+            .and_then(|source_id| source_id.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if let Some(bodies) = produced.get(&source_id) {
+            feature.outputs.clone_from(bodies);
+        }
+    }
+}
+
 /// Resolve native topology selections against decoded B-rep identities.
 pub fn bind_topology_selections(
     features: &mut [cadmpeg_ir::features::Feature],
