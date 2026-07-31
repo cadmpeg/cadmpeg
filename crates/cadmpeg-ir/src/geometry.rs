@@ -1798,8 +1798,9 @@ pub struct RevisionCompoundLoftConstruction {
 pub struct VertexBlendBoundary {
     /// Native boundary type enum.
     pub boundary_type: i64,
-    /// Native model-space magic location.
-    pub magic: Point3,
+    /// Native magic direction. A unit direction or the zero vector, never a
+    /// length, so it carries no unit scale.
+    pub magic: Vector3,
     /// Native U-smoothing enum.
     pub u_smoothing: i64,
     /// Native V-smoothing enum.

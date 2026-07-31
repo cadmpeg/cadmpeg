@@ -1040,11 +1040,9 @@ fn decode_vertex_blend_boundary(
     };
     Some(EmbeddedVertexBlendBoundary {
         boundary_type,
-        magic: Point3::new(
-            magic[0] * LEN_TO_MM,
-            magic[1] * LEN_TO_MM,
-            magic[2] * LEN_TO_MM,
-        ),
+        // The magic item is a unit direction or the zero vector, not a
+        // length-bearing location, so it takes no unit conversion.
+        magic: Vector3::new(magic[0], magic[1], magic[2]),
         u_smoothing,
         v_smoothing,
         fullness,
@@ -1169,11 +1167,9 @@ fn decode_revision_vertex_blend_boundary(
     };
     Some(EmbeddedVertexBlendBoundary {
         boundary_type,
-        magic: Point3::new(
-            magic[0] * LEN_TO_MM,
-            magic[1] * LEN_TO_MM,
-            magic[2] * LEN_TO_MM,
-        ),
+        // The magic item is a unit direction or the zero vector, not a
+        // length-bearing location, so it takes no unit conversion.
+        magic: Vector3::new(magic[0], magic[1], magic[2]),
         u_smoothing,
         v_smoothing,
         fullness,

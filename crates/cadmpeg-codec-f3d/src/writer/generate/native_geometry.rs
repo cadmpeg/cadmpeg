@@ -3252,23 +3252,17 @@ fn native_vertex_blend_boundary(
         native_string(bytes, kind)?;
     }
     native_vertex_blend_bool(bytes, boundary.boundary_type)?;
+    // The magic item is a unit direction or the zero vector, not a
+    // length-bearing location, so it takes no unit conversion.
     if revision {
         native_vector(
             bytes,
-            [
-                boundary.magic.x / LEN_TO_MM,
-                boundary.magic.y / LEN_TO_MM,
-                boundary.magic.z / LEN_TO_MM,
-            ],
+            [boundary.magic.x, boundary.magic.y, boundary.magic.z],
         );
     } else {
         native_point(
             bytes,
-            [
-                boundary.magic.x / LEN_TO_MM,
-                boundary.magic.y / LEN_TO_MM,
-                boundary.magic.z / LEN_TO_MM,
-            ],
+            [boundary.magic.x, boundary.magic.y, boundary.magic.z],
         );
     }
     native_vertex_blend_bool(bytes, boundary.u_smoothing)?;

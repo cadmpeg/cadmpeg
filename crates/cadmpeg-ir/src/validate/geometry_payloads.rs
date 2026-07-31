@@ -1525,7 +1525,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
             };
             let boundaries_valid = construction.boundaries.iter().all(|boundary| {
-                point_finite(&boundary.magic)
+                vector_finite(&boundary.magic)
                     && boundary.fullness.is_finite()
                     && match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle {

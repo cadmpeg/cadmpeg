@@ -296,7 +296,7 @@ pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
 
 pub(crate) struct EmbeddedVertexBlendBoundary {
     pub(crate) boundary_type: i64,
-    pub(crate) magic: Point3,
+    pub(crate) magic: Vector3,
     pub(crate) u_smoothing: i64,
     pub(crate) v_smoothing: i64,
     pub(crate) fullness: f64,
