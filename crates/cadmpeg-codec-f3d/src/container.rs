@@ -49,6 +49,14 @@ pub mod role {
     pub const IMAGE: &str = "image";
     /// Secondary tessellated mesh data (`.paramesh`), not the exact source.
     pub const PARAMESH: &str = "paramesh";
+    /// The `OGS.BlobFolder` display scene graph and its buffer arenas. The
+    /// `world` member's drawable nodes carry the design entity ID they draw,
+    /// `stream_mesh_NNN` and `Fusion_mesh_NNN` are the vertex and index
+    /// buffer arenas that graph addresses by byte offset, its geometry is a
+    /// tessellation of the B-rep streams, and its appearance bindings repeat
+    /// the ACT and protein assets, so no carrier depends on it. See DR-28 for
+    /// the one value class whose design source is unknown.
+    pub const OGS_CACHE: &str = "ogs-cache";
     /// An empty/placeholder design-configuration entry.
     pub const DESIGN_CONFIG: &str = "design-config";
     /// The empty top-level document-properties slot.
@@ -124,6 +132,8 @@ pub fn classify(name: &str) -> &'static str {
         role::PREVIEW
     } else if name.contains("Images.BlobParts") {
         role::IMAGE
+    } else if name.contains("OGS.BlobFolder/") {
+        role::OGS_CACHE
     } else {
         role::OTHER
     }

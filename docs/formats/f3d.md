@@ -10,20 +10,21 @@
 
 ### 1.1 Payload families
 
-| Path pattern                                                                     | Role                                                                                                            |
-| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `<folder>/Breps.BlobParts/*.smb`, `*.smbh`                                       | ASM/ACIS exact B-rep streams                                                                                    |
-| `<folder>/ProteinAssets.BlobParts/*.protein`                                     | nested ZIP archives with appearance/material assets                                                             |
-| `<folder>/Design1/BulkStream.dat` (or `FusionDesignSegmentType1/BulkStream.dat`) | design recipes, material assignments, body map                                                                  |
-| `<folder>/*/MetaStream.dat`                                                      | per-segment object tables (GUID → entity-type registry)                                                         |
-| `<folder>/FusionACTSegmentType1/BulkStream.dat`                                  | Active Component Tree entity/appearance tables                                                                  |
-| `<folder>/FusionBrowserSegmentType1/BulkStream.dat`                              | Fusion UI browser tree                                                                                          |
-| `<folder>/Previews/*`, `<folder>/Images.BlobParts/*`                             | thumbnails / appearance images; never geometry                                                                  |
-| `ParaMeshGeometry.BlobParts/*.paramesh`                                          | secondary mesh; not the exact source                                                                            |
-| `<folder>/TSplines.BlobParts/*.tsm`                                              | T-spline control-cage source of Form bodies; the exact face geometry is the B-rep stream's `t_spl_sur` carriers |
-| `Manifest.dat` (top-level and per-asset)                                         | document, asset, and segment registry (see §1.3)                                                                |
-| `RedirectionsStream.dat` (top-level)                                             | external-reference table (see §1.4)                                                                             |
-| `ComponentReferenceData.json` (top-level)                                        | component-reference slot (see §1.4)                                                                             |
+| Path pattern                                                                     | Role                                                                                                                                                                  |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<folder>/Breps.BlobParts/*.smb`, `*.smbh`                                       | ASM/ACIS exact B-rep streams                                                                                                                                          |
+| `<folder>/ProteinAssets.BlobParts/*.protein`                                     | nested ZIP archives with appearance/material assets                                                                                                                   |
+| `<folder>/Design1/BulkStream.dat` (or `FusionDesignSegmentType1/BulkStream.dat`) | design recipes, material assignments, body map                                                                                                                        |
+| `<folder>/*/MetaStream.dat`                                                      | per-segment object tables (GUID → entity-type registry)                                                                                                               |
+| `<folder>/FusionACTSegmentType1/BulkStream.dat`                                  | Active Component Tree entity/appearance tables                                                                                                                        |
+| `<folder>/FusionBrowserSegmentType1/BulkStream.dat`                              | Fusion UI browser tree                                                                                                                                                |
+| `<folder>/Previews/*`, `<folder>/Images.BlobParts/*`                             | thumbnails / appearance images; never geometry                                                                                                                        |
+| `ParaMeshGeometry.BlobParts/*.paramesh`                                          | secondary mesh; not the exact source                                                                                                                                  |
+| `<folder>/OGS.BlobFolder/OGS/<scene>/*`                                          | display scene graph (`world`) and its vertex and index buffer arenas (`stream_mesh_NNN`, `Fusion_mesh_NNN`); each drawable node carries the design entity ID it draws |
+| `<folder>/TSplines.BlobParts/*.tsm`                                              | T-spline control-cage source of Form bodies; the exact face geometry is the B-rep stream's `t_spl_sur` carriers                                                       |
+| `Manifest.dat` (top-level and per-asset)                                         | document, asset, and segment registry (see §1.3)                                                                                                                      |
+| `RedirectionsStream.dat` (top-level)                                             | external-reference table (see §1.4)                                                                                                                                   |
+| `ComponentReferenceData.json` (top-level)                                        | component-reference slot (see §1.4)                                                                                                                                   |
 
 `<folder>` is an asset-folder path component.
 
@@ -720,7 +721,7 @@ The type table is followed by `u32 count` and that many u64 named-entity IDs, th
 
 Record-index offsets increase strictly, and the index covers every record in the sibling `BulkStream`. The named-entity ID list is exactly the set of entity IDs whose bulk record carries a nonempty name. Every secondary-index entity ID is also a record-index entity ID, and its offset lies strictly inside that entity's record, locating a nested record header carried within that record's own payload.
 
-The segment ID is unique within its asset folder, not within the archive, so a cross-segment reference resolves against the segments of its own asset. It is not a fixed enum and it is not positional: a Design segment is not always `0`. The two u32 after the add-in name are a segment *type* code — `1` Design, `5` ACT, `6` Browser — and are the same in every archive; they are not the segment ID.
+The segment ID is unique within its asset folder, not within the archive, so a cross-segment reference resolves against the segments of its own asset. It is not a fixed enum and it is not positional: a Design segment is not always `0`. The two u32 after the add-in name are a segment _type_ code — `1` Design, `5` ACT, `6` Browser — and are the same in every archive; they are not the segment ID.
 
 **References.** Every reference member of every record in every Fusion segment uses one encoding:
 

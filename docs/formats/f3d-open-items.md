@@ -324,6 +324,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A pattern relation must be written back from a neutral model, and these members must carry the values the source would have written. The map keys and values are small integers in the range of record indices, so they may be a per-instance record grouping that a writer must rebuild rather than copy.
 
+### DR-28. `VisibilityAttribute` values on display-scene sketch-curve nodes
+
+**Question.** What design state does the `VisibilityAttribute` value of a display-scene sketch-curve node give?
+
+**Known.** `f3d.md` §1.1 gives the `OGS.BlobFolder` family's role. The scene graph attaches attributes to each drawable node. An attribute is the length-prefixed attribute name, a five-byte prologue, and the attribute payload. The `VisibilityAttribute` payload is one byte with the value `0` or `1`. The attribute occurs on sketch-domain nodes and on work-geometry nodes; body, face, and edge nodes do not carry it. The value is `0` on every sketch-constraint, sketch-dimension, sketch-point, sketch, work-plane, work-axis, component, and group node. On a sketch-curve node the value is `0` or `1`. The value does not follow the curve type, the effect colour, the line style, or the owning sketch: one sketch holds curves with both values.
+
+**Need.** The scene graph names the design entity of each node, so a sketch-curve node joins to a design curve record. If the value gives a curve property, that property has no other carrier and the scene graph is not a pure display cache. If the value gives a render-state decision, a decoder can drop the whole family. **Blocked on a specimen:** a document that hides one body or one sketch separates the two answers, and no such document is available to read.
+
+**Note.** The attribute name does not give the meaning. Both direct readings of the value are inconsistent with the values on the other node kinds.
+
 ## 3. External references
 
 ### XR-01. `neutronData` with a different GUID
