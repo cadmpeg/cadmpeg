@@ -1542,6 +1542,7 @@ impl IncidenceComponentSearch<'_, '_> {
         &self,
         faces: &[usize],
         selected: Option<(usize, [usize; 2])>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
     ) -> bool {
         let selected_degree = |face: usize, point: usize| {
             selected.map_or(0, |(edge, pair)| {
@@ -1593,8 +1594,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 if let Some((supporting_edge, supporting_pair)) = witness {
                     let candidate_still_available = self.choices[supporting_edge]
                         .contains(&supporting_pair)
-                        || self
-                            .coordinate_domains
+                        || coordinate_domains
                             .filter(|_| self.choices[supporting_edge].is_empty())
                             .is_some_and(|domains| {
                                 domains.supports_edge_candidate(supporting_edge, supporting_pair)
@@ -1633,22 +1633,37 @@ impl IncidenceComponentSearch<'_, '_> {
                     {
                         continue;
                     }
-                    let mut fits = |supporting_pair: [usize; 2]| {
+                    let fits = |supporting_pair: [usize; 2]| {
                         supporting_pair_fits(supporting_edge, supporting_pair)
                     };
-                    if let Some(domains) = self
-                        .coordinate_domains
-                        .filter(|_| self.choices[supporting_edge].is_empty())
+                    if let Some(domains) =
+                        coordinate_domains.filter(|_| self.choices[supporting_edge].is_empty())
                     {
+                        let mut witness = None;
                         if domains
                             .any_implicit_edge_candidate_with_point(
                                 supporting_edge,
                                 point,
                                 Some(self.budget),
-                                &mut fits,
+                                |pair| {
+                                    if fits(pair) {
+                                        witness = Some(pair);
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                },
                             )
                             .unwrap_or(false)
                         {
+                            self.degree_support_witnesses.borrow_mut().insert(
+                                (face, point),
+                                (
+                                    supporting_edge,
+                                    witness
+                                        .expect("successful implicit search retains its witness"),
+                                ),
+                            );
                             return true;
                         }
                         continue;
@@ -1674,23 +1689,34 @@ impl IncidenceComponentSearch<'_, '_> {
         })
     }
 
-    fn degree_support_preserved(&self, edge: usize, pair: [usize; 2]) -> bool {
+    fn degree_support_preserved(
+        &self,
+        edge: usize,
+        pair: [usize; 2],
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) -> bool {
         let mut faces = self.edge_faces[edge].to_vec();
         faces.sort_unstable();
         faces.dedup();
-        let preserved = self.degree_frontiers_supported(&faces, Some((edge, pair)));
+        let preserved =
+            self.degree_frontiers_supported(&faces, Some((edge, pair)), coordinate_domains);
         #[cfg(test)]
         if !self.budget.exhausted.get() {
             assert_eq!(
                 preserved,
-                self.degree_support_preserved_by_constraint_scan(edge, pair)
+                self.degree_support_preserved_by_constraint_scan(edge, pair, coordinate_domains)
             );
         }
         preserved
     }
 
     #[cfg(test)]
-    fn degree_support_preserved_by_constraint_scan(&self, edge: usize, pair: [usize; 2]) -> bool {
+    fn degree_support_preserved_by_constraint_scan(
+        &self,
+        edge: usize,
+        pair: [usize; 2],
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) -> bool {
         let selected_faces = self.edge_faces[edge];
         let selected_degree = |face: usize, point: usize| {
             let incident = selected_faces[0] == face || selected_faces[1] == face;
@@ -1738,7 +1764,7 @@ impl IncidenceComponentSearch<'_, '_> {
                                     .candidate_pairs(
                                         supporting_edge,
                                         Some(point),
-                                        self.coordinate_domains,
+                                        coordinate_domains,
                                     )
                                     .any(|supporting_pair| {
                                         supporting_pair.contains(&point)
@@ -1752,8 +1778,20 @@ impl IncidenceComponentSearch<'_, '_> {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
-        if !self.degree_candidate_fits(edge, pair) || !self.degree_support_preserved(edge, pair) {
+        self.candidate_fits_in(edge, pair, self.coordinate_domains)
+    }
+
+    fn candidate_fits_in(
+        &self,
+        edge: usize,
+        pair: [usize; 2],
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) -> bool {
+        if !self.degree_candidate_fits(edge, pair)
+            || !self.degree_support_preserved(edge, pair, coordinate_domains)
+        {
             return false;
         }
         let Some(mesh_assignments) = self.mesh_assignments else {
@@ -1815,7 +1853,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     .map(move |pair| (edge, pair))
             })
             .filter(|(edge, pair)| {
-                self.candidate_fits(*edge, *pair)
+                self.candidate_fits_in(*edge, *pair, coordinate_domains)
                     && coordinate_domains
                         .is_none_or(|domains| domains.supports_edge_candidate(*edge, *pair))
             })
@@ -1825,63 +1863,74 @@ impl IncidenceComponentSearch<'_, '_> {
         options
     }
 
+    fn narrowest_edge_branch(
+        &self,
+        edges: impl IntoIterator<Item = usize>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    ) -> IncidenceBranch {
+        let viable = |edge, pair| {
+            self.candidate_fits_in(edge, pair, coordinate_domains)
+                && coordinate_domains
+                    .is_none_or(|domains| domains.supports_edge_candidate(edge, pair))
+        };
+        let mut best = None::<(usize, usize, Option<Vec<(usize, [usize; 2])>>)>;
+        let mut edges = edges.into_iter().collect::<Vec<_>>();
+        edges.sort_by_key(|edge| {
+            coordinate_domains
+                .filter(|_| self.choices[*edge].is_empty())
+                .and_then(|domains| domains.implicit_edge_candidates(*edge, None))
+                .map_or(self.choices[*edge].len(), |candidates| {
+                    candidates.width_upper_bound()
+                })
+        });
+        'edges: for edge in edges {
+            if let Some(candidates) = coordinate_domains
+                .filter(|_| self.choices[edge].is_empty())
+                .and_then(|domains| domains.implicit_edge_candidates(edge, None))
+            {
+                let width = candidates.width_upper_bound();
+                if best.as_ref().is_none_or(|(_, best, _)| width < *best) {
+                    best = Some((edge, width, None));
+                    if width == 0 {
+                        break;
+                    }
+                }
+                continue;
+            }
+            let limit = best.as_ref().map_or(usize::MAX, |(_, width, _)| *width);
+            let mut options = Vec::new();
+            for pair in self.choices[edge].iter().copied() {
+                if viable(edge, pair) {
+                    options.push((edge, pair));
+                    if options.len() == limit {
+                        continue 'edges;
+                    }
+                }
+                if self.budget.exhausted.get() {
+                    break 'edges;
+                }
+            }
+            best = Some((edge, options.len(), Some(options)));
+            if best.as_ref().is_some_and(|(_, width, _)| *width == 0) {
+                break;
+            }
+        }
+        match best {
+            Some((_, _, Some(options))) => IncidenceBranch::Options(options.into_iter()),
+            Some((edge, _, None)) => coordinate_domains
+                .and_then(|domains| domains.implicit_edge_candidates(edge, None))
+                .map_or_else(
+                    || IncidenceBranch::Options(Vec::new().into_iter()),
+                    |candidates| IncidenceBranch::Implicit { edge, candidates },
+                ),
+            None => IncidenceBranch::Options(Vec::new().into_iter()),
+        }
+    }
+
     fn branch(
         &self,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
     ) -> Option<IncidenceBranch> {
-        let viable = |edge, pair| {
-            self.candidate_fits(edge, pair)
-                && coordinate_domains
-                    .is_none_or(|domains| domains.supports_edge_candidate(edge, pair))
-        };
-        for &edge in self.edges {
-            if self.assignment[edge].is_some()
-                || !self.branch_edge_ready(edge)
-                || self.choices[edge].is_empty()
-            {
-                continue;
-            }
-            let mut viable = self
-                .candidate_pairs(edge, None, coordinate_domains)
-                .filter(|pair| viable(edge, *pair));
-            let pair = viable.next()?;
-            if viable.next().is_none() {
-                return Some(IncidenceBranch::Options(vec![(edge, pair)].into_iter()));
-            }
-        }
-        let branch_width = |edge: usize| {
-            coordinate_domains
-                .filter(|_| self.choices[edge].is_empty())
-                .and_then(|domains| domains.implicit_edge_candidates(edge, None))
-                .map_or_else(
-                    || {
-                        self.choices[edge]
-                            .iter()
-                            .filter(|pair| viable(edge, **pair))
-                            .count()
-                    },
-                    |candidates| candidates.width_upper_bound(),
-                )
-        };
-        let edge_branch = |edge: usize| {
-            coordinate_domains
-                .filter(|_| self.choices[edge].is_empty())
-                .and_then(|domains| domains.implicit_edge_candidates(edge, None))
-                .map_or_else(
-                    || {
-                        IncidenceBranch::Options(
-                            self.choices[edge]
-                                .iter()
-                                .copied()
-                                .filter(|pair| viable(edge, *pair))
-                                .map(|pair| (edge, pair))
-                                .collect::<Vec<_>>()
-                                .into_iter(),
-                        )
-                    },
-                    |candidates| IncidenceBranch::Implicit { edge, candidates },
-                )
-        };
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
         for &(face, point) in &self.constraints {
             if self.degree(face, point) != 1 {
@@ -1911,7 +1960,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 .map(IncidenceBranch::Options);
         }
         if let Some(constraint) = self.partial_solution_filter {
-            let edge = self
+            let edges = self
                 .edges
                 .iter()
                 .copied()
@@ -1920,21 +1969,18 @@ impl IncidenceComponentSearch<'_, '_> {
                         && self.assignment[edge].is_none()
                         && self.branch_edge_ready(edge)
                 })
-                .min_by_key(|&edge| branch_width(edge));
-            if let Some(edge) = edge {
-                return Some(edge_branch(edge));
+                .collect::<Vec<_>>();
+            if !edges.is_empty() {
+                return Some(self.narrowest_edge_branch(edges, coordinate_domains));
             }
         }
-        let edge = self
+        let edges = self
             .edges
             .iter()
             .copied()
             .filter(|&edge| self.assignment[edge].is_none() && self.branch_edge_ready(edge))
-            .min_by_key(|&edge| branch_width(edge));
-        Some(edge.map_or_else(
-            || IncidenceBranch::Options(Vec::new().into_iter()),
-            edge_branch,
-        ))
+            .collect::<Vec<_>>();
+        Some(self.narrowest_edge_branch(edges, coordinate_domains))
     }
 
     #[cfg(test)]
@@ -2275,7 +2321,8 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         affected_faces.sort_unstable();
         affected_faces.dedup();
-        if !self.degree_frontiers_supported(&affected_faces, None) {
+        if !self.degree_frontiers_supported(&affected_faces, None, next_coordinate_domains.as_ref())
+        {
             if self.budget.exhausted.get() {
                 self.exhausted = true;
             }
@@ -2449,7 +2496,12 @@ impl IncidenceComponentSearch<'_, '_> {
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
         component_faces: &[usize],
     ) {
-        let Some(mut options) = self.branch(coordinate_domains) else {
+        let branch = self.branch(coordinate_domains);
+        if self.budget.exhausted.get() {
+            self.exhausted = true;
+            return;
+        }
+        let Some(mut options) = branch else {
             return;
         };
         let Some(first_option) = options.next() else {
@@ -2493,7 +2545,7 @@ impl IncidenceComponentSearch<'_, '_> {
             if self.assignment[edge].is_some() {
                 continue;
             }
-            if !self.candidate_fits(edge, pair) {
+            if !self.candidate_fits_in(edge, pair, coordinate_domains) {
                 if self.budget.exhausted.get() {
                     self.exhausted = true;
                     return;

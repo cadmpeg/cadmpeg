@@ -707,6 +707,54 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
 }
 
 #[test]
+fn incidence_component_caches_implicit_frontier_support() {
+    let choices = vec![vec![[0, 1]], Vec::new()];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [0, 1]])
+            .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(2, &choices, None)
+        .expect("implicit coordinate domains");
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: Some(&coordinate_domains),
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert!(search.candidate_fits(0, [0, 1]));
+    assert_eq!(
+        *search.degree_support_witnesses.borrow(),
+        HashMap::from([((0, 0), (1, [0, 1])), ((0, 1), (1, [0, 1]))])
+    );
+}
+
+#[test]
 fn incidence_degree_support_scan_exhausts_its_component_budget() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [0, 0]];
