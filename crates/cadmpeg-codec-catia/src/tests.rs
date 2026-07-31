@@ -15582,7 +15582,7 @@ fn decode_transfers_cubic_interpolation_formula() {
 }
 
 #[test]
-fn decode_rejects_dimensioned_cubic_interpolation_arguments() {
+fn decode_rejects_a_dimensioned_cubic_interpolation_fraction() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
@@ -15602,6 +15602,54 @@ fn decode_rejects_dimensioned_cubic_interpolation_arguments() {
         .expect("decode dimensionally invalid cubic interpolation");
 
     assert_eq!(decoded.ir.model.parameters.len(), 3);
+}
+
+#[test]
+fn decode_transfers_dimensioned_linear_interpolation_formula() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                6,
+                false,
+                &[
+                    ("#1_", "LENGTH", "Start", "#1_ /2", 2.0),
+                    ("#2_", "LENGTH", "End", "#2_ /3", 10.0),
+                    ("#3_", "Real", "Fraction", "#3_ /4", 0.25),
+                ],
+                "LENGTH",
+                Some(4.0),
+                "LinearInterpolation(#1_ /2,#2_ /3,#3_ /4)",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode dimensioned linear interpolation formula");
+
+    let [start, end, fraction, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("dimensioned linear interpolation parameters")
+    };
+    assert_eq!(
+        start.value,
+        Some(cadmpeg_ir::ParameterValue::Length(
+            cadmpeg_ir::features::Length(2.0)
+        ))
+    );
+    assert_eq!(
+        end.value,
+        Some(cadmpeg_ir::ParameterValue::Length(
+            cadmpeg_ir::features::Length(10.0)
+        ))
+    );
+    assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::ParameterValue::Length(
+            cadmpeg_ir::features::Length(4.0)
+        ))
+    );
+    assert_eq!(
+        output.dependencies,
+        vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
+    );
 }
 
 #[test]
@@ -15632,7 +15680,7 @@ fn decode_converts_metric_length_literals_to_millimetres() {
 }
 
 #[test]
-fn decode_rejects_dimensioned_linear_interpolation_arguments() {
+fn decode_rejects_mixed_dimension_linear_interpolation_endpoints() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_typed_formula_inputs(

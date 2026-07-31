@@ -1742,10 +1742,7 @@ impl FormulaExpressionParser<'_, '_> {
             let [start, end, fraction] = arguments.as_slice() else {
                 return None;
             };
-            if [start, end, fraction]
-                .into_iter()
-                .any(|argument| argument.dimension != FormulaDimension::SCALAR)
-            {
+            if start.dimension != end.dimension || fraction.dimension != FormulaDimension::SCALAR {
                 return None;
             }
             let fraction = if function == "CubicInterpolation" {
@@ -1753,9 +1750,13 @@ impl FormulaExpressionParser<'_, '_> {
             } else {
                 fraction.value
             };
-            return self
-                .scalar_result(start.value + (end.value - start.value) * fraction)
-                .map(EvaluatedFormulaValue::Scalar);
+            let value = start.value + (end.value - start.value) * fraction;
+            return (value.is_finite() || !self.evaluate).then_some(EvaluatedFormulaValue::Scalar(
+                EvaluatedFormulaScalar {
+                    value: if value.is_finite() { value } else { 0.0 },
+                    dimension: start.dimension,
+                },
+            ));
         }
 
         let (first, second) = match arguments.as_slice() {
@@ -2158,6 +2159,48 @@ mod parser_tests {
             "round(12.3mm,\"mm\",1.5)",
             "round(12.3mm,\"mm\",1mm)",
             "round(12.3mm,\"mm\")",
+        ] {
+            assert!(
+                evaluate_formula_expression(expression, &bindings).is_none(),
+                "{expression}"
+            );
+        }
+    }
+
+    #[test]
+    fn formula_interpolation_preserves_the_endpoint_dimension() {
+        let bindings = BTreeMap::new();
+        for (expression, expected, dimension) in [
+            (
+                "LinearInterpolation(10mm,30mm,0.25)",
+                15.0,
+                FormulaDimension::LENGTH,
+            ),
+            (
+                "CubicInterpolation(10deg,30deg,0.5)",
+                20.0_f64.to_radians(),
+                FormulaDimension::ANGLE,
+            ),
+            (
+                "LinearInterpolation(10,30,1.25)",
+                35.0,
+                FormulaDimension::SCALAR,
+            ),
+        ] {
+            let value = evaluate_formula_expression(expression, &bindings)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .expect("typed interpolation");
+            assert!(value.dimension == dimension, "{expression}");
+            assert!(
+                (value.value - expected).abs() <= f64::EPSILON * expected.abs().max(1.0),
+                "{expression}: {} != {expected}",
+                value.value
+            );
+        }
+        for expression in [
+            "LinearInterpolation(10mm,30deg,0.25)",
+            "LinearInterpolation(10mm,30mm,0.25mm)",
+            "CubicInterpolation(10deg,30,0.5)",
         ] {
             assert!(
                 evaluate_formula_expression(expression, &bindings).is_none(),

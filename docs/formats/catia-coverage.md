@@ -162,8 +162,9 @@ current scores require those matrices and representative fixtures.
   scalar literal when its typed evaluation agrees exactly and supplies the
   expression of an unset parameter when its result type agrees.
   Arithmetic evaluation retains length and angle exponents through intermediate
-  products, quotients, extrema, trigonometric calls, absolute values, and
-  square roots. Typed comparisons, Boolean literals, negation, lazy
+  products, quotients, extrema, linear and cubic interpolation, trigonometric
+  calls, absolute values, and square roots. Typed comparisons, Boolean literals,
+  negation, lazy
   conjunctions and disjunctions, and equal-typed lazy ternaries transfer
   predicate and conditional formulas. String literals, concatenation,
   occurrence removal, equality, replacement, case conversion, signed-integer
