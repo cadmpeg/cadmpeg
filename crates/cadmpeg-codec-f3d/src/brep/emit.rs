@@ -3409,8 +3409,9 @@ pub(crate) fn emit_edges(
             });
             // The tedge tail carries the model-space tolerance, then the
             // per-entity serializer revision stamp, then a trailing LONG
-            // present when the stream save format is at least 22500. All
-            // forms are retained verbatim.
+            // present when the stream's full format version (save format
+            // x 100 + header revision) is at least 2250003. All forms are
+            // retained verbatim.
             let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12)) {
                 ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision)))
                     if tolerance.is_finite() && *tolerance >= 0.0 =>
