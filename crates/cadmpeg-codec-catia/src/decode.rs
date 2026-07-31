@@ -539,29 +539,25 @@ fn finish_decode(
         .iter()
         .map(|cohort| cohort.members.len())
         .sum();
-    let (reference_signature_syntax_node_count, reference_signature_token_count) = native
+    let (reference_signature_instruction_count, reference_signature_token_count) = native
         .entity_records
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
-        .fold((0_usize, 0_usize), |(nodes, tokens), signature| {
-            let mut nodes = nodes;
-            let mut tokens = tokens;
-            let mut pending = vec![signature.production.signature_syntax.as_slice()];
-            while let Some(siblings) = pending.pop() {
-                nodes += siblings.len();
-                for node in siblings {
-                    if let crate::entity_table::ReferenceSignatureSyntax::Group {
-                        children, ..
-                    } = node
-                    {
-                        tokens += 2;
-                        pending.push(children);
-                    } else {
-                        tokens += 1;
-                    }
-                }
-            }
-            (nodes, tokens)
+        .fold((0_usize, 0_usize), |(instructions, tokens), signature| {
+            let program = &signature.production.signature_program;
+            let qualifier_count = program
+                .iter()
+                .filter(|instruction| {
+                    matches!(
+                        instruction,
+                        crate::entity_table::ReferenceSignatureInstruction::Qualifier { .. }
+                    )
+                })
+                .count();
+            (
+                instructions + program.len(),
+                tokens + program.len() + qualifier_count,
+            )
         });
     let (
         resolved_reference_signature_entity_count,
@@ -2222,8 +2218,8 @@ fn finish_decode(
             reference_signature_cohort_member_count,
         ),
         (
-            "decoded_reference_signature_syntax_node_count".to_string(),
-            reference_signature_syntax_node_count,
+            "decoded_reference_signature_instruction_count".to_string(),
+            reference_signature_instruction_count,
         ),
         (
             "decoded_reference_signature_token_count".to_string(),

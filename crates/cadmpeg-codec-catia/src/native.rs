@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 265;
+pub const CATIA_NATIVE_VERSION: u32 = 266;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -129,9 +129,6 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION: u32 = 259;
 /// Native schema version resolving reference-signature entity incidences.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION: u32 = 260;
-/// Native schema version retaining reference-signature descriptor syntax trees.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_SYNTAX_VERSION: u32 = 262;
 /// Native schema version requiring consecutive reference-signature identities.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_PAIR_VERSION: u32 = 263;
@@ -141,6 +138,9 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_COHORT_VERSION: u32 = 264;
 /// Native schema version retaining exact nullable numeric-pair productions.
 #[cfg(test)]
 pub(crate) const CATIA_NUMERIC_PAIR_VERSION: u32 = 265;
+/// Native schema version retaining validated reference-signature instruction programs.
+#[cfg(test)]
+pub(crate) const CATIA_REFERENCE_SIGNATURE_PROGRAM_VERSION: u32 = 266;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -9354,7 +9354,7 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version < CATIA_REFERENCE_SIGNATURE_SYNTAX_VERSION {
+        if namespace.version < CATIA_REFERENCE_SIGNATURE_PROGRAM_VERSION {
             for entity in &mut entity_records {
                 let Some(signature) = &mut entity.reference_signature else {
                     continue;

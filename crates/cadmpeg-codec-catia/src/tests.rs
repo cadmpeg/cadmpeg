@@ -10992,8 +10992,8 @@ fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() 
 #[test]
 fn native_namespace_retains_and_validates_complete_entity_reference_signatures() {
     let value = [
-        0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b')', 0xfe, 0x32,
-        4, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+        0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'2', b'(', b'E', b')', 0xfe,
+        0x32, 4, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
     ];
     let records = [
         object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe]),
@@ -11026,8 +11026,8 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     assert_eq!(signature.second_entity.entity_id, 4);
     assert!(signature.second_entity.entity.is_none());
     assert!(signature.second_entity.is_null);
-    assert_eq!(signature.production.second_reference_offset, 16);
-    assert_eq!(signature.production.signature, "(E)");
+    assert_eq!(signature.production.second_reference_offset, 17);
+    assert_eq!(signature.production.signature, "2(E)");
     assert_eq!(signature.production.signature_offset, 12);
     let [cohort] = native.reference_signature_cohorts.as_slice() else {
         panic!("one reference-signature cohort");
@@ -11094,8 +11094,8 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
-        .expect("store reference-signature syntax");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_SYNTAX_VERSION - 1;
+        .expect("store reference-signature program");
+    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_PROGRAM_VERSION - 1;
     stored
         .arenas
         .get_mut("entity_records")
@@ -11105,9 +11105,9 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("stored reference signature")
         .as_object_mut()
         .expect("stored reference-signature object")
-        .remove("signature_syntax");
+        .remove("signature_program");
     let migrated =
-        crate::native::CatiaNative::load(&stored).expect("parse reference-signature syntax");
+        crate::native::CatiaNative::load(&stored).expect("parse reference-signature program");
     assert_eq!(
         migrated.entity_records[0].reference_signature,
         Some(expected.clone())
@@ -11162,12 +11162,12 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_syntax_node_count"],
-        4
+        decoded.report.coverage["decoded_reference_signature_instruction_count"],
+        8
     );
     assert_eq!(
         decoded.report.coverage["decoded_reference_signature_token_count"],
-        6
+        8
     );
     assert_eq!(
         decoded.report.coverage["decoded_resolved_reference_signature_entity_count"],
@@ -11220,12 +11220,12 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .as_mut()
         .expect("complete reference signature")
         .production
-        .signature_syntax
+        .signature_program
         .clear();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
-        .expect("store malformed reference-signature syntax");
+        .expect("store malformed reference-signature program");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))

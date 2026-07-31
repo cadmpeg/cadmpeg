@@ -57,9 +57,10 @@ current scores require those matrices and representative fixtures.
   occupying an assigned owner slot remains distinct from both a reference owner
   and a head without an owner role. Payload references distinguish resolved
   fields, the graph's terminal null identity, and other unresolved identities.
-  Complete reference-signature packets retain the exact signature, its nested
-  parenthesized syntax tree, source-ordered identifier, decimal, and punctuation
-  nodes with payload-relative offsets, and the exact consecutive stored
+  Complete reference-signature packets retain the exact signature and its
+  validated source-ordered symbol, decimal, call, comma, hexadecimal qualifier,
+  and difference instruction program with payload-relative offsets, and the
+  exact consecutive stored
   identity pair with each same-graph entity, class, terminal-null, or unresolved
   incidence state. Records sharing one pair form a source-ordered cohort whose
   members retain exact entity-record identities.

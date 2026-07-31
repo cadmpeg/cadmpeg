@@ -61,38 +61,62 @@ pub enum NumericPacketItem {
     },
 }
 
-/// One syntax node in a reference-signature descriptor program.
+/// Symbol in a reference-signature descriptor program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReferenceSignatureSymbol {
+    /// Symbol `E`.
+    E,
+    /// Symbol `S`.
+    S,
+    /// Symbol `T`.
+    T,
+}
+
+/// One instruction in a complete reference-signature descriptor program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum ReferenceSignatureSyntax {
-    /// One maximal ASCII alphabetic run.
-    Identifier {
-        /// Exact identifier text.
-        text: String,
+pub enum ReferenceSignatureInstruction {
+    /// One descriptor symbol: `E`, `S`, or `T`.
+    Symbol {
+        /// Decoded descriptor symbol.
+        symbol: ReferenceSignatureSymbol,
         /// Byte offset within the `7C07` payload.
         offset: usize,
     },
-    /// One maximal ASCII decimal run.
+    /// One maximal decimal run.
     Decimal {
         /// Exact decimal digits.
         digits: String,
         /// Byte offset within the `7C07` payload.
         offset: usize,
     },
-    /// One punctuation byte.
-    Punctuation {
-        /// Exact punctuation byte.
-        byte: u8,
+    /// Opening parenthesis of a postfix call.
+    OpenCall {
         /// Byte offset within the `7C07` payload.
         offset: usize,
     },
-    /// One balanced parenthesized group.
-    Group {
-        /// Byte offset of the opening parenthesis within the `7C07` payload.
-        open_offset: usize,
-        /// Source-ordered nodes inside the group.
-        children: Vec<ReferenceSignatureSyntax>,
-        /// Byte offset of the closing parenthesis within the `7C07` payload.
-        close_offset: usize,
+    /// Comma separating call arguments.
+    Comma {
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+    /// Closing parenthesis of a postfix call.
+    CloseCall {
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
+    },
+    /// Postfix hexadecimal selector `#<digit>`.
+    Qualifier {
+        /// Decoded selector nibble.
+        selector: u8,
+        /// Byte offset of `#` within the `7C07` payload.
+        hash_offset: usize,
+        /// Byte offset of the selector digit within the `7C07` payload.
+        selector_offset: usize,
+    },
+    /// Infix difference operator.
+    Difference {
+        /// Byte offset within the `7C07` payload.
+        offset: usize,
     },
 }
 
@@ -109,9 +133,9 @@ pub struct ReferenceSignature {
     pub layout_atom: u32,
     /// Printable signature bytes between `0x81` and the first terminator.
     pub signature: String,
-    /// Source-ordered syntax tree spanning the complete signature.
+    /// Source-ordered instruction program spanning the complete signature.
     #[serde(default)]
-    pub signature_syntax: Vec<ReferenceSignatureSyntax>,
+    pub signature_program: Vec<ReferenceSignatureInstruction>,
     /// Byte offset of the first signature byte within the `7C07` payload.
     #[serde(default)]
     pub signature_offset: usize,
@@ -126,68 +150,97 @@ pub struct ReferenceSignature {
     pub closing_type_atom: u32,
 }
 
-fn reference_signature_syntax(
+fn reference_signature_program(
     signature: &str,
     signature_offset: usize,
-) -> Option<Vec<ReferenceSignatureSyntax>> {
+) -> Option<Vec<ReferenceSignatureInstruction>> {
     let bytes = signature.as_bytes();
-    let mut root = Vec::new();
-    let mut groups: Vec<(usize, Vec<ReferenceSignatureSyntax>)> = Vec::new();
+    let mut program = Vec::new();
+    let mut call_depth = 0_usize;
+    let mut expects_operand = true;
     let mut at = 0;
     while at < bytes.len() {
         let start = at;
-        if bytes[start] == b'(' {
-            groups.push((signature_offset + start, Vec::new()));
-            at += 1;
-            continue;
-        }
-        if bytes[start] == b')' {
-            let (open_offset, children) = groups.pop()?;
-            let node = ReferenceSignatureSyntax::Group {
-                open_offset,
-                children,
-                close_offset: signature_offset + start,
-            };
-            if let Some((_, children)) = groups.last_mut() {
-                children.push(node);
-            } else {
-                root.push(node);
-            }
-            at += 1;
-            continue;
-        }
-        let node = if bytes[at].is_ascii_alphabetic() {
-            at += 1;
-            while bytes.get(at).is_some_and(u8::is_ascii_alphabetic) {
+        match bytes[start] {
+            byte @ (b'E' | b'S' | b'T') => {
+                if !expects_operand {
+                    return None;
+                }
+                let symbol = match byte {
+                    b'E' => ReferenceSignatureSymbol::E,
+                    b'S' => ReferenceSignatureSymbol::S,
+                    b'T' => ReferenceSignatureSymbol::T,
+                    _ => unreachable!("matched descriptor symbol"),
+                };
+                program.push(ReferenceSignatureInstruction::Symbol {
+                    symbol,
+                    offset: signature_offset + start,
+                });
+                expects_operand = false;
                 at += 1;
             }
-            ReferenceSignatureSyntax::Identifier {
-                text: signature[start..at].to_owned(),
-                offset: signature_offset + start,
+            byte if byte.is_ascii_digit() => {
+                if !expects_operand {
+                    return None;
+                }
+                at += 1;
+                while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+                    at += 1;
+                }
+                program.push(ReferenceSignatureInstruction::Decimal {
+                    digits: signature[start..at].to_owned(),
+                    offset: signature_offset + start,
+                });
+                expects_operand = false;
             }
-        } else if bytes[at].is_ascii_digit() {
-            at += 1;
-            while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+            b'(' if !expects_operand => {
+                program.push(ReferenceSignatureInstruction::OpenCall {
+                    offset: signature_offset + start,
+                });
+                call_depth = call_depth.checked_add(1)?;
+                expects_operand = true;
                 at += 1;
             }
-            ReferenceSignatureSyntax::Decimal {
-                digits: signature[start..at].to_owned(),
-                offset: signature_offset + start,
+            b',' if call_depth != 0 && !expects_operand => {
+                program.push(ReferenceSignatureInstruction::Comma {
+                    offset: signature_offset + start,
+                });
+                expects_operand = true;
+                at += 1;
             }
-        } else {
-            at += 1;
-            ReferenceSignatureSyntax::Punctuation {
-                byte: bytes[start],
-                offset: signature_offset + start,
+            b')' if call_depth != 0 && !expects_operand => {
+                program.push(ReferenceSignatureInstruction::CloseCall {
+                    offset: signature_offset + start,
+                });
+                call_depth -= 1;
+                expects_operand = false;
+                at += 1;
             }
-        };
-        if let Some((_, children)) = groups.last_mut() {
-            children.push(node);
-        } else {
-            root.push(node);
+            b'#' if !expects_operand => {
+                let selector_offset = start.checked_add(1)?;
+                let selector = match *bytes.get(selector_offset)? {
+                    byte @ b'0'..=b'9' => byte - b'0',
+                    byte @ b'A'..=b'F' => byte - b'A' + 10,
+                    _ => return None,
+                };
+                program.push(ReferenceSignatureInstruction::Qualifier {
+                    selector,
+                    hash_offset: signature_offset + start,
+                    selector_offset: signature_offset + selector_offset,
+                });
+                at += 2;
+            }
+            b'-' if !expects_operand => {
+                program.push(ReferenceSignatureInstruction::Difference {
+                    offset: signature_offset + start,
+                });
+                expects_operand = true;
+                at += 1;
+            }
+            _ => return None,
         }
     }
-    groups.is_empty().then_some(root)
+    (!expects_operand && call_depth == 0).then_some(program)
 }
 
 /// One exact packet in a tokenized `7C07` value program.
@@ -769,7 +822,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     let signature = std::str::from_utf8(signature_bytes).ok()?.to_owned();
-    let signature_syntax = reference_signature_syntax(&signature, signature_offset)?;
+    let signature_program = reference_signature_program(&signature, signature_offset)?;
     at = signature_end + 1;
     let second_reference_offset = at;
     if payload.get(at) != Some(&0x32) {
@@ -795,7 +848,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         type_atom,
         layout_atom,
         signature,
-        signature_syntax,
+        signature_program,
         signature_offset,
         second_reference,
         second_reference_offset,
@@ -835,7 +888,8 @@ mod tests {
     use super::{
         parse_definition_schema_selectors, parse_numeric_pair, parse_reference_signature,
         parse_runs, value_packets, DefinitionSchemaSelector, EntityValuePacket, NumericPacketItem,
-        NumericPair, NumericPairSlot, ReferenceSignature, ReferenceSignatureSyntax,
+        NumericPair, NumericPairSlot, ReferenceSignature, ReferenceSignatureInstruction,
+        ReferenceSignatureSymbol,
     };
     use crate::value_block;
 
@@ -993,9 +1047,9 @@ mod tests {
     #[test]
     fn reference_signature_requires_one_complete_nested_production() {
         let payload = [
-            0x32, 0xcf, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'(', b'E', b',', b'0',
-            b'(', b'E', b',', b'4', b')', b')', 0xfe, 0x32, 0xd0, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17,
-            0x08, 0x37, 0xfe, 0xfe, 0xfe,
+            0x32, 0xcf, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'2', b'(', b'E', b',',
+            b'0', b'(', b'E', b',', b'4', b')', b')', 0xfe, 0x32, 0xd0, 0, 0, 0, 0x83, 0xe9, 0xe0,
+            0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
         ];
 
         assert_eq!(
@@ -1005,53 +1059,45 @@ mod tests {
                 prefix_atom: 2,
                 type_atom: 3851,
                 layout_atom: 12,
-                signature: "(E,0(E,4))".to_owned(),
-                signature_syntax: vec![ReferenceSignatureSyntax::Group {
-                    open_offset: 12,
-                    children: vec![
-                        ReferenceSignatureSyntax::Identifier {
-                            text: "E".to_owned(),
-                            offset: 13,
-                        },
-                        ReferenceSignatureSyntax::Punctuation {
-                            byte: b',',
-                            offset: 14,
-                        },
-                        ReferenceSignatureSyntax::Decimal {
-                            digits: "0".to_owned(),
-                            offset: 15,
-                        },
-                        ReferenceSignatureSyntax::Group {
-                            open_offset: 16,
-                            children: vec![
-                                ReferenceSignatureSyntax::Identifier {
-                                    text: "E".to_owned(),
-                                    offset: 17,
-                                },
-                                ReferenceSignatureSyntax::Punctuation {
-                                    byte: b',',
-                                    offset: 18,
-                                },
-                                ReferenceSignatureSyntax::Decimal {
-                                    digits: "4".to_owned(),
-                                    offset: 19,
-                                },
-                            ],
-                            close_offset: 20,
-                        },
-                    ],
-                    close_offset: 21,
-                }],
+                signature: "2(E,0(E,4))".to_owned(),
+                signature_program: vec![
+                    ReferenceSignatureInstruction::Decimal {
+                        digits: "2".to_owned(),
+                        offset: 12,
+                    },
+                    ReferenceSignatureInstruction::OpenCall { offset: 13 },
+                    ReferenceSignatureInstruction::Symbol {
+                        symbol: ReferenceSignatureSymbol::E,
+                        offset: 14,
+                    },
+                    ReferenceSignatureInstruction::Comma { offset: 15 },
+                    ReferenceSignatureInstruction::Decimal {
+                        digits: "0".to_owned(),
+                        offset: 16,
+                    },
+                    ReferenceSignatureInstruction::OpenCall { offset: 17 },
+                    ReferenceSignatureInstruction::Symbol {
+                        symbol: ReferenceSignatureSymbol::E,
+                        offset: 18,
+                    },
+                    ReferenceSignatureInstruction::Comma { offset: 19 },
+                    ReferenceSignatureInstruction::Decimal {
+                        digits: "4".to_owned(),
+                        offset: 20,
+                    },
+                    ReferenceSignatureInstruction::CloseCall { offset: 21 },
+                    ReferenceSignatureInstruction::CloseCall { offset: 22 },
+                ],
                 signature_offset: 12,
                 second_reference: 208,
-                second_reference_offset: 23,
+                second_reference_offset: 24,
                 closing_atom: 3,
                 closing_type_atom: 3864,
             })
         );
 
         let mut nonconsecutive = payload;
-        nonconsecutive[24] += 1;
+        nonconsecutive[25] += 1;
         assert_eq!(parse_reference_signature(&nonconsecutive), None);
     }
 
@@ -1073,6 +1119,30 @@ mod tests {
         ];
 
         assert_eq!(parse_reference_signature(&payload), None);
+    }
+
+    #[test]
+    fn reference_signature_program_types_calls_qualifiers_and_differences() {
+        let program = super::reference_signature_program("2(E#A(E,3)-0(T))", 12)
+            .expect("complete descriptor program");
+        assert!(program.iter().any(|instruction| matches!(
+            instruction,
+            ReferenceSignatureInstruction::Qualifier {
+                selector: 10,
+                hash_offset: 15,
+                selector_offset: 16,
+            }
+        )));
+        assert!(program.iter().any(|instruction| matches!(
+            instruction,
+            ReferenceSignatureInstruction::Difference { offset: 22 }
+        )));
+
+        for malformed in [
+            "", "(E)", "2()", "2(E,)", "2(#3)", "2(E#G)", "2(E-)", "2(E))", "2 E",
+        ] {
+            assert_eq!(super::reference_signature_program(malformed, 0), None);
+        }
     }
 
     #[test]
