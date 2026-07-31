@@ -834,6 +834,62 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
 }
 
 #[test]
+fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
+    let choices = vec![vec![[0, 0]], Vec::new()];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[10, 10], [11, 12]])
+            .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(2, &choices, None)
+        .expect("implicit coordinate domains");
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: Some(&coordinate_domains),
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert!(!search.candidate_fits(0, [0, 0]));
+    assert!(!propagation_budget.exhausted.get());
+}
+
+#[test]
 fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() {
     let choices = vec![vec![[0, 2]], vec![[2, 4]]];
     let edge_faces = [[0, 1], [0, 1]];
@@ -856,6 +912,45 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
         constraints: vec![(0, 0), (1, 0)],
         assignment: vec![None, None],
         degrees: sparse_degrees(&[&[1, 0], &[1, 0]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(search.branch_options(None), Some(vec![(0, [0, 2])]));
+    assert!(!budget.exhausted.get());
+}
+
+#[test]
+fn incidence_branch_stops_ranking_at_a_singleton_domain() {
+    let choices = vec![vec![[0, 2]], vec![[2, 4]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1], Vec::new()];
+    let budget = MeshConstraintBudget::new(4);
+    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (1, 9)],
+        assignment: vec![None, None],
+        degrees: sparse_degrees(&[&[1, 0], &[1, 9]]),
         solutions: Vec::new(),
         solution_filter: None,
         solution_visitor: None,

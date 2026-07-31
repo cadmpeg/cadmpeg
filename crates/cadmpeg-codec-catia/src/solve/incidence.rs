@@ -7,12 +7,12 @@ use crate::families::standard::topology::{
     StandardTopology,
 };
 use crate::solve::mesh_quotient::{
-    initial_mesh_quotient, mesh_assignment_endpoint_cycles_viable_where,
-    mesh_face_endpoint_configurations, CoordinateRootClosure, MeshConstraintBudget,
-    MeshCoordinateRootDomains, MeshEndpointPair, MeshEndpointSolutionFilter,
-    MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates, MeshPartialEndpointConstraint,
-    MeshQuotient, MeshQuotientGaugeState, MAX_FACE_ENDPOINT_CONFIGURATION_WORK,
-    MAX_MESH_CONSTRAINT_OPERATIONS,
+    initial_mesh_quotient, mesh_assignment_endpoint_cycles_viable_by,
+    mesh_assignment_endpoint_cycles_viable_where, mesh_face_endpoint_configurations,
+    CoordinateRootClosure, MeshConstraintBudget, MeshCoordinateRootDomains, MeshEndpointCandidates,
+    MeshEndpointPair, MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations,
+    MeshImplicitEdgeCandidates, MeshPartialEndpointConstraint, MeshQuotient,
+    MeshQuotientGaugeState, MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -1812,22 +1812,41 @@ impl IncidenceComponentSearch<'_, '_> {
                 .get(face)
                 .is_some_and(|domain| match domain {
                     MeshFaceBoundaryDomain::Ordered(assignments) => {
-                        if self.face_edges[face].iter().any(|candidate_edge| {
-                            self.choices[*candidate_edge].is_empty()
-                                && self.assignment[*candidate_edge].is_none()
-                        }) {
-                            return true;
-                        }
                         assignments.iter().any(|assignment| {
-                            mesh_assignment_endpoint_cycles_viable_where(
+                            mesh_assignment_endpoint_cycles_viable_by(
                                 assignment,
-                                self.choices,
                                 Some(self.boundary_propagation_budget),
+                                |candidate_edge| {
+                                    let selected = if candidate_edge == edge {
+                                        Some(pair)
+                                    } else {
+                                        self.assignment.get(candidate_edge).copied().flatten()
+                                    };
+                                    if let Some(selected) = selected {
+                                        return Some(MeshEndpointCandidates::Selected(selected));
+                                    }
+                                    self.choices
+                                        .get(candidate_edge)
+                                        .filter(|candidates| !candidates.is_empty())
+                                        .map(|candidates| {
+                                            MeshEndpointCandidates::Explicit(candidates.as_slice())
+                                        })
+                                        .or_else(|| {
+                                            coordinate_domains
+                                                .and_then(|domains| {
+                                                    domains.implicit_edge_candidates(
+                                                        candidate_edge,
+                                                        None,
+                                                    )
+                                                })
+                                                .map(MeshEndpointCandidates::Implicit)
+                                        })
+                                },
                                 |candidate_edge, candidate_pair| {
                                     let selected = if candidate_edge == edge {
                                         Some(pair)
                                     } else {
-                                        self.assignment[candidate_edge]
+                                        self.assignment.get(candidate_edge).copied().flatten()
                                     };
                                     selected.is_none_or(|selected| {
                                         same_unordered_pair(selected, candidate_pair)
@@ -1967,11 +1986,19 @@ impl IncidenceComponentSearch<'_, '_> {
                 continue;
             }
             let limit = constrained.as_ref().map_or(usize::MAX, Vec::len);
-            match self.constraint_options(face, point, coordinate_domains, limit, &mut viability) {
+            let options =
+                self.constraint_options(face, point, coordinate_domains, limit, &mut viability);
+            match options {
                 IncidenceConstraintOptions::Unsupported => return None,
                 IncidenceConstraintOptions::Deferred | IncidenceConstraintOptions::AtLeastLimit => {
                 }
-                IncidenceConstraintOptions::Exact(options) => constrained = Some(options),
+                IncidenceConstraintOptions::Exact(options) => {
+                    let singleton = options.len() == 1;
+                    constrained = Some(options);
+                    if singleton {
+                        break;
+                    }
+                }
             }
         }
         if constrained.is_some() {

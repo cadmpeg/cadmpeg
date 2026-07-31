@@ -358,6 +358,12 @@ impl Iterator for MeshImplicitEdgeCandidates {
     }
 }
 
+pub(crate) enum MeshEndpointCandidates<'a> {
+    Explicit(&'a [[usize; 2]]),
+    Implicit(MeshImplicitEdgeCandidates),
+    Selected([usize; 2]),
+}
+
 impl MeshCoordinateRootDomains {
     pub(crate) fn edge_candidates(&self) -> &[Vec<[usize; 2]>] {
         &self.edge_candidates
@@ -5000,32 +5006,64 @@ pub(crate) fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBou
     }
 }
 
-pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
+pub(crate) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     assignment: &MeshFaceBoundaryAssignment,
-    edge_candidates: &[Vec<[usize; 2]>],
     budget: Option<&MeshConstraintBudget>,
+    candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<bool> {
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
+
+    enum PreparedEndpointCandidates<'a> {
+        Borrowed(&'a [[usize; 2]]),
+        Owned(Vec<[usize; 2]>),
+        Selected([[usize; 2]; 1]),
+    }
+
+    impl PreparedEndpointCandidates<'_> {
+        fn as_slice(&self) -> &[[usize; 2]] {
+            match self {
+                Self::Borrowed(values) => values,
+                Self::Owned(values) => values,
+                Self::Selected(values) => values,
+            }
+        }
+    }
 
     for boundary in &assignment.boundaries {
         if boundary.is_empty() {
             return Some(false);
         }
-        if boundary
-            .iter()
-            .any(|use_| edge_candidates.get(use_.edge).is_none_or(Vec::is_empty))
-        {
-            return None;
+        let mut prepared = HashMap::<usize, PreparedEndpointCandidates<'_>>::new();
+        for use_ in boundary {
+            if prepared.contains_key(&use_.edge) {
+                continue;
+            }
+            let values = match candidates(use_.edge)? {
+                MeshEndpointCandidates::Explicit(values) => {
+                    PreparedEndpointCandidates::Borrowed(values)
+                }
+                MeshEndpointCandidates::Implicit(values) => PreparedEndpointCandidates::Owned(
+                    values
+                        .take(MAX_LOCAL_ENDPOINT_STATES + 1)
+                        .collect::<Vec<_>>(),
+                ),
+                MeshEndpointCandidates::Selected(value) => {
+                    PreparedEndpointCandidates::Selected([value])
+                }
+            };
+            if values.as_slice().is_empty() || values.as_slice().len() > MAX_LOCAL_ENDPOINT_STATES {
+                return None;
+            }
+            prepared.insert(use_.edge, values);
         }
-        let candidates = |edge: usize| {
-            edge_candidates[edge]
-                .iter()
-                .copied()
-                .filter(move |pair| allowed(edge, *pair))
-        };
         let mut states = HashSet::new();
-        for [left, right] in candidates(boundary[0].edge) {
+        for [left, right] in prepared[&boundary[0].edge]
+            .as_slice()
+            .iter()
+            .copied()
+            .filter(|pair| allowed(boundary[0].edge, *pair))
+        {
             if budget.is_some_and(|budget| !budget.charge()) {
                 return None;
             }
@@ -5038,7 +5076,12 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
         for use_ in &boundary[1..] {
             let mut next = HashSet::new();
             for &(start, current) in &states {
-                for [left, right] in candidates(use_.edge) {
+                for [left, right] in prepared[&use_.edge]
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .filter(|pair| allowed(use_.edge, *pair))
+                {
                     if budget.is_some_and(|budget| !budget.charge()) {
                         return None;
                     }
@@ -5063,6 +5106,25 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
         }
     }
     Some(true)
+}
+
+pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
+    assignment: &MeshFaceBoundaryAssignment,
+    edge_candidates: &[Vec<[usize; 2]>],
+    budget: Option<&MeshConstraintBudget>,
+    allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
+) -> Option<bool> {
+    mesh_assignment_endpoint_cycles_viable_by(
+        assignment,
+        budget,
+        |edge| {
+            edge_candidates
+                .get(edge)
+                .filter(|candidates| !candidates.is_empty())
+                .map(|candidates| MeshEndpointCandidates::Explicit(candidates.as_slice()))
+        },
+        allowed,
+    )
 }
 
 fn mesh_assignment_endpoint_cycles_viable_with(
