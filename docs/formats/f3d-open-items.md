@@ -50,13 +50,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We keep these records without a change. We cannot read the run, and we cannot make a record that has one.
 
-### GC-08. Shared revision-gated surface tail enum
+### GC-08. Shared revision-gated surface tail enum values other than `0` and `2`
 
-**Question.** What does the enum at the start of the shared revision-gated surface tail select? What are its nonzero values? What layout does each nonzero value select?
+**Question.** What layouts do the shared revision-gated surface tail enum values other than `0` and `2` select?
 
-**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the value zero. Zero selects the full solved-cache tail. A nonzero value has no known layout and no known occurrence. The decoder keeps a record with a nonzero value as opaque bytes.
+**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the layouts of `0` and `2`. Zero selects the solved cache and its fit tolerance; two replaces both with the two bool-gated parameter intervals and four closure and singularity enums. The decoder keeps a record with any other value as opaque bytes.
 
-**Need.** We must know the nonzero layouts to read those records and to build a neutral model from them.
+**Need.** We cannot read a record with a value other than `0` or `2`.
 
 ### GC-13. `cl_loft_spl_sur` tail kind values
 
@@ -70,7 +70,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What controls the presence of the trailing BS3 curve in the kind-zero `cl_loft_spl_sur` payload?
 
-**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload with an optional trailing BS3 curve. `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the bool-gated encoding for the optional parameter values in the same payload. The trailing curve is present exactly when the two optional parameter values are present in their bool-gated encoding; the present pair can be the descending no-range sentinel, so the rule couples to the encoding and not to the numeric values. The decoder finds the trailing curve with a look-ahead for the subtype-close byte and keeps that look-ahead until the rule is confirmed more widely.
+**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload with an optional trailing BS3 curve. `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the bool-gated encoding for the optional parameter values in the same payload. The trailing curve is present exactly when the two optional parameter values are present in their bool-gated encoding; the present pair can be the descending no-range sentinel, so the rule couples to the encoding and not to the numeric values. The decoder finds the trailing curve with a look-ahead for the subtype-close byte and keeps that look-ahead until the rule is confirmed more widely. Every observed kind-zero payload ends in two absent-value booleans followed directly by the subtype close, which is byte-identical to two plain flags and no trailing-curve slot at all, so the corpus separates neither the two readings of those booleans nor the look-ahead from the stated rule.
 
 **Need.** The look-ahead rule is not in the specification. We must state the true presence rule to write this payload correctly.
 
@@ -84,48 +84,39 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-17. Variable-blend approximation-current integer values
 
-**Question.** What are the values of the approximation-current integer other than `1`, and what does each select?
+**Question.** What does the approximation-current integer mean, and which value must a writer emit?
 
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the position and the type of the integer, and gives the signed handedness marker that follows the fit tolerances.
+**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the position and the type of the integer, and gives the signed handedness marker that follows the fit tolerances. The integer takes only `0` and `1`. It selects no layout: the two fit tolerances, the handedness marker, and the cache-selector enum follow it unchanged under both values, and no later field reads it. It does not control whether a solved cache is stored — the cache-selector enum does, and the two dissociate in both directions.
 
-**Need.** We keep the integer without a change, and we must know which value to write from a neutral model.
+**Need.** We must know which value to write from a neutral model.
 
 ### GC-18. Blend-value selector values
 
-**Question.** We must find four answers:
+**Question.** We must find three answers:
 
 - the two-radii chamfer-selector values other than `0` and `3`
 - the single-radius selector values other than `0`, `1`, and `7`
 - the difference between single-radius selector `1` and single-radius selector `7`
-- the meaning of the optional two-scalar `interp` tail
 
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layout for chamfer selectors `0` and `3`. It gives the layout for single-radius selectors `0`, `1`, and `7`. A trailing flag selects the `interp` tail.
+**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layout for chamfer selectors `0` and `3`. It gives the layout for single-radius selectors `0`, `1`, and `7`. Selector `0` carries a rational cache whose cross-section is an exact circular arc; selector `7` carries a non-rational cache whose cross-section is not a circular arc, so the two scalars do not enter the two selectors the same way.
 
 **Need.** The decoder rejects every other selector value. We cannot read those records. Selector `1` and selector `7` select the same two scalars, so we cannot write the correct one from a neutral model.
 
-### GC-19. First two `tvertex` tolerance evaluations
+### GC-19. First `tvertex` tolerance evaluation
 
-**Question.** What do the first two tolerance evaluations of a `tvertex` record hold? What controls the set state of each one?
+**Question.** What does the first tolerance evaluation of a `tvertex` record hold, and what controls its set state?
 
-**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots. A set last slot is the vertex tolerance. A `-1` slot shows an unset evaluation. Any slot can be unset, including all three. When slots two and three are both set, they do not decrease in slot order. A set leading slot is not equal to an incident tolerant-edge tolerance, and not equal to the largest or the smallest incident tolerant-edge tolerance. Every set slot is a model-space length that scales with the record's coordinates. No slot is derived: a set slot survives an ASM read-and-write cycle unchanged apart from that length conversion, so the leading slots are stored inputs rather than recomputed evaluations. A leading slot can be set or unset independently of the last slot.
+**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots, the second slot's construction from the incident edge-endpoint gaps and tolerant-edge tolerances, the third slot's raise over the incident edges that are not tolerant, and the set-state relation between the second and third slots. The first slot is unset in every record a current writer emits, so its content and its set condition are undetermined. The predicate that selects which incident edges contribute the third slot's `1e-6` raise is narrower than "every edge that is not tolerant": some records carry a third slot equal to the second where that rule predicts a raise.
 
-**Need.** We keep the two leading slots without a change. To write them from a neutral model, we must know which length each one measures and when a writer must set it.
+**Need.** To write the first slot from a neutral model we must know which length it measures and when a writer must set it. To write the third slot exactly we must know the contribution predicate.
 
 ### GC-21. Revision-gated `loft_spl_sur` type-zero member and ASM-integer gate
 
-**Question.** What do the two nullable BS2 pcurve slots of a type-zero profile member hold? What form does a type-zero member take in a save-format-23200 stream? At which save format version does the ASM integer start?
+**Question.** What do the two nullable spline slots of a type-zero profile member hold, and are they BS2 pcurves or BS3 curves? What form does a type-zero member take in a save-format-23200 stream? At which save format version does the ASM integer start?
 
-**Known.** `f3d.md` §7.3 `loft_spl_sur` gives the two member forms and the save-format gate of the ASM integer. A type-zero member stores two nullable BS2 pcurve slots in place of the support surface and the first flag. The decoder keeps both slots. Type-zero members occur in save format 22300 through 22600 streams. No type-zero member occurs in a save-format-23200 stream. No stream with a save format version between 22600 and 23200 holds a revision-gated loft. The decoder reads the ASM integer in each stream with a save format version above 22600.
+**Known.** `f3d.md` §7.3 `loft_spl_sur` gives the two member forms and the save-format gate of the ASM integer. A type-zero member stores two nullable spline slots in place of the support surface and the first flag. The decoder keeps both slots and reads them as BS2 pcurves. Every observed type-zero slot is the null-spline sentinel, and that sentinel is the same token for a BS2 and a BS3 slot, so the slot type is undetermined: only a type-zero member with a non-null slot separates them, by the count of scalars per control point. No type-zero member occurs in a save-format-23200 stream. No stream with a save format version between 22600 and 23200 holds a revision-gated loft. The decoder reads the ASM integer in each stream with a save format version above 22600.
 
 **Need.** We keep the two slots without a change. To write them from a neutral model, we must know what they hold. To write a type-zero member into a save-format-23200 stream, we must know if that stream keeps the ASM integer. To write a stream with a save format version between 22600 and 23200, we must know if that stream keeps the ASM integer.
-
-### GC-22. Tags `0x33` and `0x34`
-
-**Question.** What payload does tag `0x33` carry? What payload does tag `0x34` carry?
-
-**Known.** `f3d.md` §4.1 gives the tag table. It has no entry for `0x33` or `0x34`. A stream that contains one of these tags cannot be framed past it.
-
-**Need.** We cannot read any record in a stream after the first occurrence of an unknown tag.
 
 ### GC-23. Cache-first intcurve leading enum values other than `0` and `2`
 
