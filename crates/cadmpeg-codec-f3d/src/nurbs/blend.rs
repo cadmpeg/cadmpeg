@@ -2,8 +2,9 @@
 //! Blend spline-surface decoders (cylindrical, rolling-ball, variable, vertex, and rb blends).
 
 use crate::nurbs::core::{
-    decode_curve_block, decode_curve_cache_at, decode_curve_cache_resolving_refs,
-    decode_surface_block, decode_surface_cache_resolving_refs,
+    decode_curve_block, decode_curve_cache_at, decode_owned_curve_cache_at,
+    decode_owned_curve_cache_resolving_refs, decode_owned_surface_cache_at,
+    decode_owned_surface_cache_resolving_refs, decode_surface_block,
 };
 use crate::nurbs::pcurve::decode_pcurve_block_with_end;
 use crate::nurbs::proc_curve::{
@@ -18,9 +19,9 @@ use crate::nurbs::proc_surface::{
     RevisionSurfaceTail,
 };
 use crate::nurbs::reader::{
-    marker_at, marker_positions, take_bool, take_f64, take_native_ident, take_native_string,
-    take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector, INT_WIDTHS,
-    LEN_TO_MM,
+    marker_at, marker_positions, owned_marker_positions, take_bool, take_f64, take_native_ident,
+    take_native_string, take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector,
+    INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
     find_owned_subtype_marker, first_construction_subtype, next_token, subtype_span, SubtypeTables,
@@ -98,7 +99,7 @@ pub(crate) fn decode_cyl_spl_sur_at(
             ];
             let direction = take_native_vec3(span, &mut position, 0x14)?;
             let native_position = take_native_vec3(span, &mut position, 0x13)?;
-            let cache_fit_tolerance = marker_positions(span)
+            let cache_fit_tolerance = owned_marker_positions(span, int_width)
                 .into_iter()
                 .filter_map(|at| decode_surface_block(span, at, int_width))
                 .next_back()
@@ -218,16 +219,11 @@ pub(crate) fn decode_rolling_ball_surface(
         }
         take_bool(bytes, position)?;
         let scope = subtype_span(bytes, *position, int_width)?;
-        let inline = marker_positions(scope)
-            .into_iter()
-            .filter_map(|at| decode_surface_block(scope, at, int_width))
-            .next_back()
-            .map(|decoded| decoded.surface);
         let surface = reference_context
             .and_then(|(active_bytes, tables)| {
-                decode_surface_cache_resolving_refs(scope, active_bytes, tables)
+                decode_owned_surface_cache_resolving_refs(scope, active_bytes, tables)
             })
-            .or(inline)?;
+            .or_else(|| decode_owned_surface_cache_at(scope, int_width))?;
         *position += scope.len();
         let ranges = decode_surface_ranges(bytes, position)?;
         return Some((SurfaceGeometry::Nurbs(surface), ranges));
@@ -279,16 +275,11 @@ pub(crate) fn decode_rolling_ball_curve(
     if kind == "intcurve" {
         take_bool(bytes, position)?;
         let scope = subtype_span(bytes, *position, int_width)?;
-        let inline = marker_positions(scope)
-            .into_iter()
-            .filter_map(|at| decode_curve_block(scope, at, int_width))
-            .next_back()
-            .map(|decoded| decoded.curve);
         let curve = reference_context
             .and_then(|(active_bytes, tables)| {
-                decode_curve_cache_resolving_refs(scope, active_bytes, tables)
+                decode_owned_curve_cache_resolving_refs(scope, active_bytes, tables)
             })
-            .or(inline)?;
+            .or_else(|| decode_owned_curve_cache_at(scope, int_width))?;
         *position += scope.len();
         let parameter_range = [
             take_optional_range_value(bytes, position)?,

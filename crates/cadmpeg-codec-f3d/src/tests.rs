@@ -19162,6 +19162,25 @@ fn subtype_reference_resolves_surface_cache() {
 }
 
 #[test]
+fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
+    use crate::nurbs::core::{decode_curve_cache, decode_owned_curve_cache_at};
+
+    // A `par_int_cur` whose cache slot is `nullbs` and whose support is an
+    // intcurve construction carrying a curve block of its own.
+    let mut scope = vec![0x0f];
+    t_ident(&mut scope, "par_int_cur");
+    scope.push(0x0f);
+    t_ident(&mut scope, "exact_int_cur");
+    scope.extend_from_slice(&generated_curve_block());
+    scope.push(0x10);
+    t_ident(&mut scope, "nullbs");
+    scope.push(0x10);
+
+    assert!(decode_curve_cache(&scope).is_some());
+    assert!(decode_owned_curve_cache_at(&scope, 8).is_none());
+}
+
+#[test]
 fn a_nested_construction_does_not_claim_its_enclosing_record() {
     use crate::nurbs::proc_surface::{
         decode_procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
