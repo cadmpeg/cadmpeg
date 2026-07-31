@@ -1,44 +1,401 @@
 # SolidWorks `.sldprt`: Open Items
 
-## Body classification
+This document lists the parts of the SolidWorks `.sldprt` format that we do not know. The specification `sldprt.md` gives the parts that we know.
 
-- The class-root vector following `index_map_offset` is unresolved. Body, shell, and face-use heads bind through the disc-keyed layouts and the cluster-key chain form; sites whose list heads satisfy neither shape remain unresolved.
-- Deltas-stream face entities outside a multi-chain site's partition intervals have no resolved body assignment.
-- The structural discriminator separating partition faces superseded by a deltas change set from partition faces the change set retains is unresolved; roster membership, roster-entry record presence, and the owning loop's or owner entity's record presence do not determine supersession. Until the discriminator is resolved, deltas bridges do not extend a partition's face membership.
+Each item has these parts:
 
-## Geometry carriers
+- **Question** — what we must find.
+- **Known** — what the specification gives now.
+- **Need** — why we must find the answer.
+- **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
+- **Note** — a defect in the item or in the specification.
 
-- The derived UV convention for non-isoparametric trims on B-spline faces is unresolved.
-- A `00 26` intersection composite whose chart, terminator, and support-UV witnesses are absent or mutually inconsistent in the retained streams has no resolved curve; where those witnesses are stored is unresolved. Untyped edge curve attributes owned by surface records rather than curve carriers are unresolved.
-- The carriers for offset, non-constant-radius blend, surface-intersection, and spline-on-surface surface geometry are unresolved.
+Each item has an identifier. Use the identifier in commit messages and in code comments.
 
-## Container metadata
+This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-- The cache-cell prefix, fill, and high half of `type_id` have unresolved index-state semantics.
-- The variable-length fill after the final tail-directory entry has unresolved index-state semantics.
-- The fixed slot-count and boundary grammar for inline entity families outside canonical faces is not defined for all Parasolid schemas.
-- The precedence relation between partition and deltas records with the same site, attribute, and sequence is unresolved.
+## 1. Body classification
 
-## Auxiliary lanes
+### BC-01. Other class-root layouts
 
-- The mapping from B-rep face attributes to DisplayLists triangle ranges is unresolved.
+**Question.** What grammar binds a class-root vector after `index_map_offset` when the vector does not satisfy a defined body, shell, face-use, or cluster-key layout?
 
-## Design intent
+**Known.** `sldprt.md:783` through `sldprt.md:861` define the disc-keyed ownership layouts and the class-number-independent cluster-key layout. Each complete layout assigns canonical faces to a stored body.
 
-- The native identities of optional classless feature-manager nodes are unresolved. Their source IDs are allocation positions and shift when earlier nodes are absent; source ID alone does not distinguish the lights-and-cameras container, scene lights, design binder, comments, body folders, materials, equations, notes, sensors, favorites, history, selection sets, markups, and exploded views.
-- The native storage carrying the equation manager's angular-unit mode is unresolved. Trigonometric expressions with explicit angular units evaluate; bare numeric trigonometric operands remain unevaluated because their degree-or-radian interpretation is document state.
-- The native document-property namespace used by equations is unresolved. Configuration attributes retain configuration-local properties, but no resolved carrier binds default file properties or establishes per-configuration property lookup for `property@configuration@part` operands.
-- `ResolvedFeatures` offset-edge marker relations and the top, bottom, left, and right arc-cardinal marker relations have no neutral invariant yet. Point-point, line-line, point-line, horizontal and vertical distances, angular relations, circular radius and diameter dimensions, unary horizontal, vertical, fixed, fixed-sweep arc-angle, and fixed-sweep ellipse-angle relations, binary parallel, perpendicular, tangent, equal, collinear, concentric, and coradial relations, and coincident, merge-points, horizontal-points, vertical-points, midpoint, analytic at-intersection, and point-locus symmetric relations project when their operands resolve uniquely and satisfy the solved geometry. Operand-to-profile-locus ownership remains unresolved when the marker graph identifies handles without uniquely identifying their geometric loci.
-- Neutral invariants and operand roles for codes `29..32`, `36..41`, and `43..85` remain incomplete. All native identities and the numeric taxonomy through `85` are defined. Codes above `85` are unresolved native extensions.
-- Marker-to-profile correspondence is unresolved when the feature's coordinate sets admit no unique signed-axis transform or a reference marker's linked loci do not identify one profile entity.
-- The construction-state discriminator for dimensioned circular geometry absent from a selected profile stream is unresolved.
-- Model-space placement of marker-only profile objects remains unresolved when no object-local, immediately contextual, or unique lane-wide compact reference-plane record exists.
-- Keywords operation families outside the typed neutral feature set are unresolved.
-- The u32 endpoint selector of the up-to-vertex `3` edge-endpoint point-reference form has no neutral semantics; the edge-endpoint reference projects with the endpoint retained natively. Codes above `9` have no neutral projection. Second-direction end-spec codes other than `0` and `1`, second-direction end specs whose first-direction code is not `0`, `1`, or `9`, and end-spec-shaped records whose +18 word carries a reference child rather than a termination code are unresolved. Reconciliation between generated feature-local faces selected by `moSingleFaceRef_w` paths and faces that survive in the final B-rep is unresolved.
-- The discriminator separating the joining minority of `moICE_c` form-`11` objects from the subtracting majority is unresolved. Inline operation bytes other than `moExtrusion_c` `00` and `moICE_c` `02` and sparse objects outside the known form codes remain unresolved.
-- Reconciliation between generated feature-local bodies selected by compact `moCombineBodies_c` target and tool paths and bodies that survive in the final B-rep is unresolved.
-- Reconciliation between compact `moDeleteBody_c` regeneration-input-local body identities and bodies that survive in the final B-rep is unresolved.
-- Reconciliation between generated feature-local edges selected by entry-form `moCompEdge_c` paths and edges that survive in the final B-rep is unresolved. Compact-ID edge vectors remain unresolved.
-- Reconciliation between generated feature-local faces selected by `moCompSurfaceBody_c` paths and faces that survive in the final B-rep is unresolved.
-- General-curve-reference forms without a component-profile source record or an immediately preceding uniquely resolved profile feature remain unmapped to sketch or B-rep geometry. Composite sweep-profile forms not carried by a unique enclosed planar profile stream or an immediately following uniquely resolved profile feature and compact Boolean operation codes other than join code `15` are unresolved.
-- The discriminator between the eight- and nine-scalar compact line-reference forms is unresolved when both final-triple interpretations are unit vectors.
+**Need.** We must know the other layouts to assign their faces to bodies.
+
+### BC-02. Deltas faces outside partition intervals
+
+**Question.** Which body owns a deltas-stream face that is outside all partition intervals of a multi-chain site?
+
+**Known.** `sldprt.md:857` defines interval ownership for the class-number-independent layout. A sole chain owns all canonical faces in its site.
+
+**Need.** We must know the owner to construct the final body membership of a multi-chain site.
+
+### BC-03. Superseded partition faces
+
+**Question.** Which field or relation identifies the partition face that a deltas face supersedes?
+
+**Known.** `sldprt.md:753` states that change-roster membership does not identify persistence. `sldprt.md:755` states that a full deltas bridge is part of the final state and can supersede a partition face.
+
+**Need.** We must identify the superseded face to prevent duplicate faces in the final body.
+
+## 2. Geometry carriers
+
+### GC-01. Non-isoparametric B-spline trim UV
+
+**Question.** How do we derive the UV curve for a non-isoparametric trim on a B-spline face?
+
+**Known.** `sldprt.md:900` through `sldprt.md:920` define exact pcurves for the supported analytic, isoparametric, polar-NURBS, and ruled-surface cases. The Parasolid stream does not store a two-dimensional UV control array.
+
+**Need.** We must know the convention to construct the trim in the surface parameter space.
+
+### GC-02. Missing intersection witnesses
+
+**Question.** Where are the chart, terminator, and support-UV witnesses for an intersection composite when its referenced witnesses are absent or inconsistent?
+
+**Known.** `sldprt.md:926` through `sldprt.md:945` define both intersection carriers and the three witness record families. The two support surfaces define the exact intersection only when the carrier selects a usable branch.
+
+**Need.** We must find the witnesses to construct the bounded intersection curve.
+
+### GC-03. Surface-owned edge curve attributes
+
+**Question.** What grammar and role do untyped edge curve attributes have when a surface record owns them instead of a curve carrier?
+
+**Known.** `sldprt.md:892` defines `00 86` as a B-spline or list curve carrier. `sldprt.md:926` defines the intersection curve carriers. An edge selects its support curve through `00 10.refs[3]`.
+
+**Need.** We must know the grammar to construct the edge curve.
+
+### GC-04. Offset-surface carriers
+
+**Question.** Which record carries offset-surface geometry, and what is its payload grammar?
+
+**Known.** `sldprt.md:865` through `sldprt.md:960` define compact analytic, B-spline, intersection, and constant-radius rolling-ball surface carriers.
+
+**Need.** We must know the carrier to construct an exact offset surface.
+
+### GC-05. Variable-radius blend carriers
+
+**Question.** Which record carries non-constant-radius blend geometry, and what is its payload grammar?
+
+**Known.** `sldprt.md:947` defines the `00 38` constant-radius rolling-ball surface. Its two offsets have one common nonzero magnitude.
+
+**Need.** We must know the other carrier to construct a variable-radius blend surface.
+
+### GC-06. Surface-intersection surface carriers
+
+**Question.** Which record carries surface-intersection surface geometry, and what is its payload grammar?
+
+**Known.** `sldprt.md:926` defines curve carriers for the intersection of two surfaces. It does not define a surface carrier for this geometry family.
+
+**Need.** We must know the carrier to construct the exact surface.
+
+### GC-07. Spline-on-surface carriers
+
+**Question.** Which record carries spline-on-surface surface geometry, and what is its payload grammar?
+
+**Known.** `sldprt.md:892` defines B-spline surface and curve carriers. It does not define the relation that makes a spline a curve on a support surface.
+
+**Need.** We must know the carrier and relation to construct the exact surface geometry.
+
+## 3. Container metadata
+
+### CM-01. Cache-cell prefix
+
+**Question.** What index-state information does the cache-cell prefix encode?
+
+**Known.** `sldprt.md:57` through `sldprt.md:70` define the cache-cell grid, cell size, and section-index interpretation.
+
+**Need.** We must know the prefix semantics to validate and write a cache cell.
+
+### CM-02. Cache-cell fill
+
+**Question.** What index-state information does the cache-cell fill encode?
+
+**Known.** `sldprt.md:57` through `sldprt.md:70` define how nonzero cache-cell section indices address blocks.
+
+**Need.** We must know the fill semantics to validate and write the grid.
+
+### CM-03. Cache-cell `type_id` high half
+
+**Question.** What does the high half of a cache-cell `type_id` encode?
+
+**Known.** `sldprt.md:57` through `sldprt.md:70` define the cell `type_id` field and its relation to the addressed block.
+
+**Need.** We must know the high-half semantics to validate and write the type identifier.
+
+### CM-04. Tail-directory fill
+
+**Question.** What index-state information does the variable-length fill after the final tail-directory entry encode?
+
+**Known.** `sldprt.md:72` through `sldprt.md:92` define tail-directory entry framing and section lookup.
+
+**Need.** We must know the fill semantics to validate and write the tail directory.
+
+### CM-05. Other inline entity families
+
+**Question.** What fixed slot count does each inline entity family outside the canonical face families use in each Parasolid schema?
+
+**Known.** `sldprt.md:757` defines the common entity header. `sldprt.md:981` defines inline record boundaries when the schema-specific slot count is known.
+
+**Need.** We must know each slot count to find record boundaries without treating payload bytes as delimiters.
+
+### CM-06. Partition and deltas precedence
+
+**Question.** Which record takes precedence when partition and deltas streams contain records with the same site, attribute, and sequence?
+
+**Known.** `sldprt.md:682` defines the shared site namespace. `sldprt.md:749` through `sldprt.md:755` define deltas change sets and final-state faces, but do not define equal-key precedence.
+
+**Need.** We must know the precedence to select one final record.
+
+## 4. Auxiliary lanes
+
+### AL-01. DisplayLists face ranges
+
+**Question.** How does a B-rep face attribute select its triangle range in a DisplayLists block?
+
+**Known.** `sldprt.md:962` defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md:757` defines B-rep face identities.
+
+**Need.** We must know the mapping to attach each tessellated triangle to its face.
+
+## 5. Design intent
+
+### DI-01. Other optional feature-manager node identities
+
+**Question.** What native field identifies the role of each optional classless feature-manager node that does not satisfy a defined layout-scoped identity?
+
+**Known.** `sldprt.md:641` through `sldprt.md:649` identify the annotations container, principal planes, model origin, lights-and-cameras container, ambient and directional lights, sheet-metal node, and exploded-views container. The identities depend on a complete native-class roster. Other source identifiers are allocation positions and are not role codes.
+
+**Need.** We must distinguish the remaining binders, comments, body folders, materials, equations, notes, sensors, favorites, history, selection sets, and markups.
+
+### DI-02. Equation angular-unit mode
+
+**Question.** Which native field stores the equation manager's angular-unit mode?
+
+**Known.** `sldprt.md:581` through `sldprt.md:589` define expression identifiers and unit-bearing literals. An explicit angular unit determines the interpretation of a trigonometric operand.
+
+**Need.** We must know the document mode to evaluate a bare numeric trigonometric operand.
+
+### DI-03. Default document properties
+
+**Question.** Which native carrier stores the default document-property namespace used by equations?
+
+**Known.** `sldprt.md:557` through `sldprt.md:579` define configuration records, configuration-local properties, and equation evaluation. They do not bind a default document-property carrier.
+
+**Need.** We must find the carrier to resolve an equation that references a default file property.
+
+### DI-04. Configuration property lookup
+
+**Question.** How does a `property@configuration@part` operand select its property namespace?
+
+**Known.** `sldprt.md:557` through `sldprt.md:579` define independently evaluated configuration snapshots and configuration-local properties.
+
+**Need.** We must know the lookup rule to evaluate a configuration-qualified property operand.
+
+### DI-05. Offset-edge relation invariant
+
+**Question.** What neutral geometric invariant does an offset-edge marker relation impose?
+
+**Known.** `sldprt.md:591` through `sldprt.md:621` define operand resolution and the neutral invariants of the supported dimensional and geometric relations.
+
+**Need.** We must know the invariant to project the native relation as a neutral sketch constraint.
+
+### DI-06. Arc-cardinal relation invariants
+
+**Question.** What neutral geometric invariant does each top, bottom, left, and right arc-cardinal marker relation impose?
+
+**Known.** `sldprt.md:591` through `sldprt.md:621` define operand resolution and the neutral invariants of the supported relation families.
+
+**Need.** We must know the invariants to project these native relations as neutral sketch constraints.
+
+### DI-07. Ambiguous relation-locus ownership
+
+**Question.** Which profile locus does a relation operand select when its marker graph identifies a handle but does not identify one geometric locus?
+
+**Known.** `sldprt.md:595` through `sldprt.md:613` define handle chains, coordinate transforms, canonical shared-coordinate loci, and relation operand selection. Ambiguous chains and transform-dependent markers remain unresolved.
+
+**Need.** We must select one locus to construct the neutral constraint.
+
+### DI-08. Relation codes `29..32`, `36..41`, and `43..85`
+
+**Question.** What neutral invariant and operand roles does each relation code in `29..32`, `36..41`, and `43..85` have?
+
+**Known.** The native numeric taxonomy defines identities through code `85`. `sldprt.md:591` through `sldprt.md:621` define the neutral semantics of the supported codes.
+
+**Need.** We must know each invariant and operand family to project the remaining codes.
+
+### DI-09. Relation codes above `85`
+
+**Question.** What native relation does each code above `85` identify?
+
+**Known.** The defined native numeric taxonomy ends at code `85`.
+
+**Need.** We must know the identities before we can define their operands and neutral invariants.
+
+### DI-10. Ambiguous marker transforms
+
+**Question.** Which marker-to-profile transform applies when coordinate sets permit more than one signed-axis transform and the transforms select different loci?
+
+**Known.** `sldprt.md:601` through `sldprt.md:605` define transform selection, placement fallback, and the case in which all valid transforms give the same locus set.
+
+**Need.** We must select one transform to bind each remaining marker to profile geometry.
+
+### DI-11. Ambiguous linked reference markers
+
+**Question.** Which profile entity does a reference marker select when its linked loci do not identify one entity?
+
+**Known.** `sldprt.md:595` and `sldprt.md:601` define unique linked-handle and shared-entity resolution.
+
+**Need.** We must select one entity to bind the reference operand.
+
+### DI-12. Omitted dimensioned circles
+
+**Question.** Which native field marks dimensioned circular geometry as construction geometry when it is absent from the selected profile stream?
+
+**Known.** `sldprt.md:155` through `sldprt.md:161` define ordinary and construction full-circle layouts. `sldprt.md:299` states when an auxiliary curve record defines construction geometry.
+
+**Need.** We must know the discriminator to prevent omitted construction circles from becoming profile geometry.
+
+### DI-13. Marker-only profile placement
+
+**Question.** How is a marker-only profile placed in model space when it has no local, contextual, or unique lane-wide compact reference-plane record?
+
+**Known.** `sldprt.md:603` defines model-space recovery from a planar sketch placement. `sldprt.md:651` through `sldprt.md:659` define the supported reference-plane frames.
+
+**Need.** We must know the placement to transfer the profile from planar coordinates to model coordinates.
+
+### DI-14. Other Keywords operation families
+
+**Question.** What neutral operation does each Keywords operation family outside the typed neutral feature set represent?
+
+**Known.** `sldprt.md:301` through `sldprt.md:579` define the native records and operands of the supported history operations.
+
+**Need.** We must know the operation semantics to transfer the remaining design history.
+
+### DI-15. Up-to-vertex endpoint selector
+
+**Question.** Which endpoint does the u32 selector in an up-to-vertex code-`3` edge-endpoint reference select?
+
+**Known.** The point-reference form retains the edge and endpoint selector. `sldprt.md:591` states how ordinary point-reference object indices resolve.
+
+**Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
+
+### DI-16. Point-reference codes above `9`
+
+**Question.** What point-reference form does each code above `9` identify?
+
+**Known.** Point-reference codes through `9` have defined native forms and neutral projections.
+
+**Need.** We must know the forms to project their selected geometry.
+
+### DI-17. Other second-direction termination codes
+
+**Question.** What termination does each second-direction end-spec code other than `0` and `1` represent?
+
+**Known.** `sldprt.md:323` defines second-direction code `0` as absent and code `1` as through-all.
+
+**Need.** We must know the other codes to construct the second extrusion extent.
+
+### DI-18. Other first- and second-direction combinations
+
+**Question.** What semantics apply when a nonzero second-direction code occurs with a first-direction code other than `0`, `1`, or `9`?
+
+**Known.** `sldprt.md:323` defines the supported one-direction and two-direction combinations.
+
+**Need.** We must know the combination semantics to construct both extrusion extents.
+
+### DI-19. Reference-bearing end-spec shapes
+
+**Question.** What record uses the end-spec shape when the word at `+18` is a reference child instead of a termination code?
+
+**Known.** `sldprt.md:323` defines the end-spec anchor and the termination words at `+18` and `+22` for valid end-spec children.
+
+**Need.** We must distinguish the other record family from an extrusion end specification.
+
+### DI-20. Feature-local face reconciliation
+
+**Question.** How does a face selected by an `moSingleFaceRef_w` feature-local path map to a face in the final B-rep?
+
+**Known.** `sldprt.md:327` through `sldprt.md:331` define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md:757` defines final B-rep face identities.
+
+**Need.** We must know the mapping to bind face-terminated operation inputs to final topology.
+
+### DI-21. Other inline extrusion operation bytes
+
+**Question.** What Boolean operation does each inline operation byte other than `moExtrusion_c` byte `00` and `moICE_c` byte `02` represent?
+
+**Known.** `sldprt.md:321` defines those two operation bytes and states that `moICE_c` byte `00` does not carry an operation.
+
+**Need.** We must know the other byte values to construct the extrusion Boolean operation.
+
+### DI-22. Other extrusion form codes
+
+**Question.** What operation and record shape does each sparse extrusion object outside the defined form codes use?
+
+**Known.** `sldprt.md:319` through `sldprt.md:321` define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. They define join or subtract semantics for the known form codes, including form `11` as subtract.
+
+**Need.** We must know the other form codes to parse the object and construct its Boolean operation.
+
+### DI-23. Combine-body reconciliation
+
+**Question.** How does a body selected by a compact `moCombineBodies_c` target or tool path map to a body in the final B-rep?
+
+**Known.** The compact paths identify generated feature-local bodies. `sldprt.md:765` through `sldprt.md:861` define final B-rep body identities and ownership.
+
+**Need.** We must know the mapping to bind the Boolean target and tool bodies.
+
+### DI-24. Delete-body reconciliation
+
+**Question.** How does an `moDeleteBody_c` regeneration-input-local body identity map to a body in the final B-rep?
+
+**Known.** The compact record retains the regeneration-input-local identity. `sldprt.md:765` through `sldprt.md:861` define final B-rep body identities and ownership.
+
+**Need.** We must know the mapping to delete the selected final body.
+
+### DI-25. Component-edge path reconciliation
+
+**Question.** How does an edge selected by an entry-form `moCompEdge_c` path map to an edge in the final B-rep?
+
+**Known.** The entry path identifies a generated feature-local edge. `sldprt.md:699` through `sldprt.md:729` define final B-rep edge identity and direction.
+
+**Need.** We must know the mapping to bind the selected operation edge.
+
+### DI-26. Compact edge-identity vectors
+
+**Question.** What grammar and identity namespace does a compact edge vector use?
+
+**Known.** Entry-form `moCompEdge_c` paths have a defined component-path grammar. Compact vectors remain separate native records.
+
+**Need.** We must know the grammar and namespace to bind their selected edges.
+
+### DI-27. Component-surface-body reconciliation
+
+**Question.** How does a face selected by an `moCompSurfaceBody_c` path map to a face in the final B-rep?
+
+**Known.** The path identifies a generated feature-local face. `sldprt.md:757` defines final B-rep face identities.
+
+**Need.** We must know the mapping to bind the selected surface-body faces.
+
+### DI-28. Unbound general-curve references
+
+**Question.** How does a general-curve-reference form select geometry when it has no component-profile source record and no immediately preceding unique profile feature?
+
+**Known.** `sldprt.md:343` defines ownership for a unique enclosed sweep profile. The supported general-curve-reference forms bind through a component-profile source or an adjacent profile feature.
+
+**Need.** We must know the other binding rule to select sketch or B-rep geometry.
+
+### DI-29. Unbound composite sweep profiles
+
+**Question.** How does a composite sweep-profile form select its profile when it has no unique enclosed planar profile stream and no immediately following unique profile feature?
+
+**Known.** `sldprt.md:343` defines the enclosed planar profile rule. The supported composite form can also bind to an adjacent profile feature.
+
+**Need.** We must know the other binding rule to construct the sweep profile.
+
+### DI-30. Other compact sweep Boolean codes
+
+**Question.** What Boolean operation does each compact sweep code other than join code `15` represent?
+
+**Known.** Compact sweep code `15` joins the sweep result.
+
+**Need.** We must know the other codes to construct the sweep result operation.
