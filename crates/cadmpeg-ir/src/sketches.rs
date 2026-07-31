@@ -245,8 +245,10 @@ pub enum SketchGeometry {
         font_family: String,
         /// Nominal character height.
         height: Length,
-        /// Horizontal scale relative to the nominal font width.
-        width_factor: f64,
+        /// Horizontal scale relative to the nominal font width, absent when the
+        /// source stores none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        width_factor: Option<f64>,
     },
     /// Source-native geometry not yet reduced to a neutral family.
     Native {

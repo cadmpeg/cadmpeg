@@ -527,7 +527,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 if text.is_empty()
                     || font_family.is_empty()
                     || nonpositive(height.0)
-                    || nonpositive(*width_factor)
+                    || width_factor.is_some_and(nonpositive)
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }

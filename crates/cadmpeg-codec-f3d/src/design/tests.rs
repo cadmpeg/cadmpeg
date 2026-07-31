@@ -15430,7 +15430,7 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     // The height is the field after the font family, in centimetres; the width
     // factor is the field before it.
     assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor, 0.8);
+    assert_eq!(text.width_factor, Some(0.8));
     assert_eq!(text.first_reference, Some(307));
     assert_eq!(text.second_reference, Some(310));
 }
@@ -15449,7 +15449,7 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
     assert_eq!(text.first_reference, None);
     assert_eq!(text.second_reference, None);
     assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor, 0.8);
+    assert_eq!(text.width_factor, Some(0.8));
 }
 
 #[test]
@@ -15480,6 +15480,133 @@ fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
     let mut bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], true);
     bytes.push(0);
     assert!(decode_sketch_text(&bytes).is_none());
+}
+
+/// Build one sketch-text record in the `txt_tag` identity form: `properties`
+/// are the property-block keys in stream order, `frame` is the leading block's
+/// reference run, `run` is the counted reference run after the text, and
+/// `anchor` is the text anchor point in centimetres.
+fn txt_tag_sketch_text_record(
+    properties: &[(&str, u64)],
+    frame: &[u32],
+    run: &[u32],
+    anchor: (f64, f64),
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
+        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    };
+    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
+        let encoded = value.encode_utf16().collect::<Vec<_>>();
+        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+    };
+    let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
+        push_reference(bytes, reference);
+        bytes.extend_from_slice(&[0; 6]);
+    };
+    push_ascii(&mut bytes, "329");
+    bytes.extend_from_slice(&304u64.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    // The leading block: a reference and a u32 per entry.
+    bytes.push(1);
+    bytes.extend_from_slice(&(frame.len() as u32).to_le_bytes());
+    for reference in frame {
+        push_padded_reference(&mut bytes, *reference);
+        bytes.extend_from_slice(&[0; 4]);
+    }
+    bytes.push(1);
+    bytes.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    for (key, value) in properties {
+        push_ascii(&mut bytes, key);
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    // Twenty-nine bytes to the font-family count: the `0` byte, twelve bytes
+    // that store no width factor, and the four f32 RGBA colour components.
+    bytes.push(0);
+    bytes.extend_from_slice(&[0; 12]);
+    for component in [0.0f32, 0.0, 0.0, 1.0] {
+        bytes.extend_from_slice(&component.to_le_bytes());
+    }
+    push_utf16(&mut bytes, "Arial");
+    bytes.extend_from_slice(&0.5f64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&anchor.0.to_le_bytes());
+    bytes.extend_from_slice(&anchor.1.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+    push_utf16(&mut bytes, "sketch text");
+    bytes.extend_from_slice(&(run.len() as u32).to_le_bytes());
+    for reference in run {
+        push_padded_reference(&mut bytes, *reference);
+    }
+    bytes.extend_from_slice(&[0; 15]);
+    bytes.extend_from_slice(&[0; 30]);
+    push_padded_reference(&mut bytes, 201);
+    bytes
+}
+
+#[test]
+fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
+    let text = decode_sketch_text(&txt_tag_sketch_text_record(
+        &[("EntityGenesis", 4), ("txt_tag", 115)],
+        &[261, 262, 263, 264],
+        &[261, 262, 263, 264, 261, 262, 263, 264],
+        (0.25, -1.5),
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.record_index, 304);
+    assert_eq!(text.owner_reference, 201);
+    assert_eq!(text.entity_genesis, Some(4));
+    assert_eq!(text.persistent_id, 115);
+    assert_eq!(text.base_id, None);
+    assert_eq!(text.text, "sketch text");
+    assert_eq!(text.font_family, "Arial");
+    assert_eq!(text.height, 5.0);
+    // The form stores no width factor, and the anchor is the field pair the
+    // other form omits.
+    assert_eq!(text.width_factor, None);
+    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(2.5, -15.0)));
+    assert_eq!(text.first_reference, None);
+    assert_eq!(text.second_reference, None);
+}
+
+#[test]
+fn txt_tag_sketch_text_record_decodes_an_empty_reference_run() {
+    let text = decode_sketch_text(&txt_tag_sketch_text_record(
+        &[("txt_tag", 115), ("txt_tag_base", 305)],
+        &[],
+        &[],
+        (0.0, 0.0),
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.base_id, Some(305));
+    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(0.0, 0.0)));
+}
+
+#[test]
+fn txt_tag_sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
+    let mut bytes = txt_tag_sketch_text_record(&[("txt_tag", 115)], &[261], &[261], (0.0, 0.0));
+    bytes.push(0);
+    assert!(decode_sketch_text(&bytes).is_none());
+}
+
+#[test]
+fn sketch_text_record_refuses_a_property_block_without_an_identity_key() {
+    assert!(decode_sketch_text(&txt_tag_sketch_text_record(
+        &[("txt_tag_base", 305)],
+        &[261],
+        &[261],
+        (0.0, 0.0),
+    ))
+    .is_none());
+    assert!(decode_sketch_text(&sketch_text_record(
+        &[("txt_tag_base", 305)],
+        [None, None],
+        true
+    ))
+    .is_none());
 }
 
 #[test]
@@ -15514,7 +15641,7 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
             text: "A".into(),
             font_family: "Arial".into(),
             height: Length(10.0),
-            width_factor: 0.8,
+            width_factor: Some(0.8),
         },
     };
     let mut glyph = [[0.0; 4]; 4];

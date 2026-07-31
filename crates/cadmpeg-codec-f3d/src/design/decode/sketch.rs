@@ -1622,6 +1622,31 @@ const TEXT_REFERENCE_SLOTS: [TextReferenceSlot; 2] =
 /// Bytes between the placement transform and the owning-sketch reference.
 const SKETCH_TEXT_TRAILING_RUN: usize = 30;
 
+/// Bytes from the property block to the u32 font-family count in the `txt_tag`
+/// form: the `0` byte that opens the run, twelve bytes, and the four f32 RGBA
+/// colour components.
+const TXT_TAG_HEAD_RUN: usize = 29;
+
+/// Bytes between the text-anchor coordinates and the u32 text count in the
+/// `txt_tag` form.
+const TXT_TAG_ANCHOR_RUN: usize = 11;
+
+/// Bytes between the `txt_tag` form's counted reference run and the thirty-byte
+/// run that closes every sketch-text record.
+const TXT_TAG_MEMBER_RUN: usize = 15;
+
+/// Which identity key a sketch-text record carries. The key selects the layout
+/// the record uses from the property block onward.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SketchTextIdentity {
+    /// `textex_tag`: a `1` byte, the width factor, and a zero byte between the
+    /// font family and the height.
+    TextexTag,
+    /// `txt_tag`: a `0` byte, no width factor, the height directly after the
+    /// font family, and the text anchor point.
+    TxtTag,
+}
+
 /// Read one parameter-reference slot in the given form, advancing `cursor` by
 /// what that form occupies. An omitted member reads as a null reference.
 fn read_text_reference(
@@ -1642,14 +1667,17 @@ fn reference_index(reference: &Reference) -> Option<u32> {
         .and_then(|target| u32::try_from(target).ok())
 }
 
-/// Class-level fields of a sketch-text record, ending at the text height.
+/// Class-level fields of a sketch-text record, ending at the text height or,
+/// in the `txt_tag` form, at the anchor point that follows it.
 struct SketchTextHead {
+    identity: SketchTextIdentity,
     entity_genesis: Option<u64>,
     persistent_id: u64,
     base_id: Option<u64>,
     font_family: String,
     height: f64,
-    width_factor: f64,
+    width_factor: Option<f64>,
+    anchor: Option<Point2>,
     cursor: usize,
 }
 
@@ -1659,6 +1687,30 @@ struct SketchTextTail {
     second_reference: Option<u32>,
     text: String,
     owner_reference: u32,
+}
+
+/// Read the class-defined leading block: the presence byte, and when it is
+/// `01`, a u32 count and that many `(reference, u32)` pairs. The `txt_tag` form
+/// writes such a block; the `textex_tag` form writes the `00` byte alone.
+fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<()> {
+    match payload.get(*cursor)? {
+        0 => *cursor += 1,
+        1 => {
+            *cursor += 1;
+            let count = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            if count > MAX_RELATION_RUN {
+                return None;
+            }
+            *cursor = cursor.checked_add(4)?;
+            for _ in 0..count {
+                take_reference(payload, cursor)?;
+                u32_at(payload, *cursor)?;
+                *cursor = cursor.checked_add(4)?;
+            }
+        }
+        _ => return None,
+    }
+    Some(())
 }
 
 /// Read the record prefix, property block, and the metrics up to the height.
@@ -1672,12 +1724,10 @@ fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
         0..=256,
         u8::is_ascii_graphic,
     )?;
-    // The class writes no leading block, so the property-block presence byte
-    // follows the leading-block presence byte directly. The block carries the
-    // text identities under keys that vary by record, so each is addressed by
-    // name: only `textex_tag` occurs in every record.
-    (payload.get(cursor)? == &0).then_some(())?;
-    cursor += 1;
+    read_sketch_text_leading_block(payload, &mut cursor)?;
+    // The block carries the text identities under keys that vary by record, so
+    // each is addressed by name. The identity key is `textex_tag` or `txt_tag`,
+    // and which of the two the record carries selects the layout that follows.
     let properties = read_property_block(payload, &mut cursor)?;
     let property = |key: &str| {
         properties
@@ -1685,30 +1735,63 @@ fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
             .find(|(name, _)| name == key)
             .map(|(_, value)| *value)
     };
-    (payload.get(cursor)? == &1).then_some(())?;
-    cursor += 1;
-    let width_factor = f64_at(payload, cursor)?;
-    // Four f32 RGBA colour components.
-    cursor = cursor.checked_add(24)?;
+    let (identity, persistent_id) = match (property("textex_tag"), property("txt_tag")) {
+        (Some(value), _) => (SketchTextIdentity::TextexTag, value),
+        (None, Some(value)) => (SketchTextIdentity::TxtTag, value),
+        (None, None) => return None,
+    };
+    let width_factor = match identity {
+        SketchTextIdentity::TextexTag => {
+            (payload.get(cursor)? == &1).then_some(())?;
+            cursor += 1;
+            let width_factor = f64_at(payload, cursor)?;
+            // The width factor and four f32 RGBA colour components.
+            cursor = cursor.checked_add(24)?;
+            (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
+            Some(width_factor)
+        }
+        SketchTextIdentity::TxtTag => {
+            (payload.get(cursor)? == &0).then_some(())?;
+            // The run holds the four f32 RGBA colour components in its last
+            // sixteen bytes; the twelve between them and the byte above store
+            // no width factor.
+            cursor = cursor.checked_add(TXT_TAG_HEAD_RUN)?;
+            None
+        }
+    };
     let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
     if font_count == 0 || font_count > 1_024 {
         return None;
     }
     let (font_family, after_font) = utf16le_at(payload, cursor + 4, font_count)?;
     cursor = after_font;
-    (payload.get(cursor)? == &0).then_some(())?;
-    cursor += 1;
+    if identity == SketchTextIdentity::TextexTag {
+        (payload.get(cursor)? == &0).then_some(())?;
+        cursor += 1;
+    }
     let height = f64_at(payload, cursor)? * 10.0;
     cursor = cursor.checked_add(8)?;
-    (height.is_finite() && height > 0.0 && width_factor.is_finite() && width_factor >= 0.0)
-        .then_some(())?;
+    (height.is_finite() && height > 0.0).then_some(())?;
+    let anchor = match identity {
+        SketchTextIdentity::TextexTag => None,
+        SketchTextIdentity::TxtTag => {
+            cursor = cursor.checked_add(2)?;
+            let x = f64_at(payload, cursor)? * 10.0;
+            let y = f64_at(payload, cursor.checked_add(8)?)? * 10.0;
+            cursor = cursor.checked_add(16)?;
+            (x.is_finite() && y.is_finite()).then_some(())?;
+            Some(Point2::new(x, y))
+        }
+    };
     Some(SketchTextHead {
+        identity,
         entity_genesis: property("EntityGenesis"),
-        persistent_id: property("textex_tag")?,
+        persistent_id,
         base_id: property("txt_tag_base"),
         font_family,
         height,
         width_factor,
+        anchor,
         cursor,
     })
 }
@@ -1754,6 +1837,38 @@ fn decode_sketch_text_tail(
     })
 }
 
+/// Read the `txt_tag` form's members from the anchor point to the end of the
+/// record. The form writes no parameter-reference slot: an eleven-byte run
+/// carries the alignment fields, and the text string is followed by a counted
+/// reference run, fifteen bytes, and the trailing run and owning-sketch
+/// reference that close both forms.
+fn decode_txt_tag_sketch_text_tail(payload: &[u8], mut cursor: usize) -> Option<SketchTextTail> {
+    cursor = cursor.checked_add(TXT_TAG_ANCHOR_RUN)?;
+    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if text_count == 0 || text_count > 1_048_576 {
+        return None;
+    }
+    let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
+    cursor = after_text;
+    let references = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if references > MAX_RELATION_RUN {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    for _ in 0..references {
+        take_reference(payload, &mut cursor)?;
+    }
+    cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
+    let owner = take_reference(payload, &mut cursor)?;
+    (cursor == payload.len()).then_some(())?;
+    Some(SketchTextTail {
+        first_reference: None,
+        second_reference: None,
+        text,
+        owner_reference: reference_index(&owner)?,
+    })
+}
+
 pub(crate) fn decode_sketch_text_record(
     payload: &[u8],
     stream: &str,
@@ -1762,21 +1877,27 @@ pub(crate) fn decode_sketch_text_record(
     byte_offset: usize,
 ) -> Option<SketchText> {
     let head = decode_sketch_text_head(payload)?;
-    let mut closed = None;
-    for first_slot in TEXT_REFERENCE_SLOTS {
-        for second_slot in TEXT_REFERENCE_SLOTS {
-            let Some(tail) = decode_sketch_text_tail(payload, head.cursor, first_slot, second_slot)
-            else {
-                continue;
-            };
-            // Two slot forms both ending on the owning-sketch reference leave
-            // the parameter references undetermined.
-            if closed.replace(tail).is_some() {
-                return None;
+    let tail = match head.identity {
+        SketchTextIdentity::TextexTag => {
+            let mut closed = None;
+            for first_slot in TEXT_REFERENCE_SLOTS {
+                for second_slot in TEXT_REFERENCE_SLOTS {
+                    let Some(tail) =
+                        decode_sketch_text_tail(payload, head.cursor, first_slot, second_slot)
+                    else {
+                        continue;
+                    };
+                    // Two slot forms both ending on the owning-sketch reference
+                    // leave the parameter references undetermined.
+                    if closed.replace(tail).is_some() {
+                        return None;
+                    }
+                }
             }
+            closed?
         }
-    }
-    let tail = closed?;
+        SketchTextIdentity::TxtTag => decode_txt_tag_sketch_text_tail(payload, head.cursor)?,
+    };
     Some(SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),
         record_index,
@@ -1790,6 +1911,7 @@ pub(crate) fn decode_sketch_text_record(
         font_family: head.font_family,
         height: head.height,
         width_factor: head.width_factor,
+        anchor: head.anchor,
         first_reference: tail.first_reference,
         second_reference: tail.second_reference,
         raw_bytes: payload.to_vec(),
