@@ -371,6 +371,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the meanings to map a texture to the correct channel in a neutral model.
 
+### MA-08. Omitted texture map-channel member
+
+**Question.** Which member does a `TextureMap2dSchema` closure omit from its value block?
+
+**Known.** `f3d.md` §8.2 "An `InstanceProperties` record opens with" states that such a block is one four-byte slot shorter than its closure, and that only omitting `texture_MapChannel_ID_Advanced` or `texture_MapChannel` leaves every surviving member at its schema default. The two are byte-degenerate: both are four-byte integers at adjacent positions, and the surviving pair reads `1` and `0` under either choice, which are the two members' declared defaults in either assignment.
+
+**Need.** A writer must emit the same member set the reader expects, and the two choices shift every following member by four bytes. A texture asset authored with a map channel other than `1`, or with a non-default advanced channel id, separates them.
+
 ### MA-05. Canvas visibility, mirroring, and crop
 
 **Question.** Which Canvas fields hold the visibility state, the mirroring state, and the crop state?
