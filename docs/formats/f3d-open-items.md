@@ -302,13 +302,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do these sketch-text fields hold?
 
-- the f64 and the two f32 values between the nominal height and the font family
-- the two internal record references
-- the class-specific tail fields
+- the two bytes between the height and the anchor coordinates, and the eleven bytes between those coordinates and the text string, of a `txt_tag` record
+- the flag bytes after the two alignment enums
+- the thirty bytes of the class tail
+- the field that holds the text rotation
 
-**Known.** `f3d.md` §8.1 "A sketch-text record has" gives the layout and names four fields. They are the nominal text height in centimetres, the width factor, the font family name, and the text string. The other fields have an offset and no meaning.
+**Known.** `f3d.md` §8.1 "A sketch-text record carries" gives the identity keys, the class GUID, and the members up to the height. `f3d.md` §8.1 "A record whose identity key is" gives the anchor-point coordinates of the `txt_tag` form. `f3d.md` §8.1 "Two optional parameter-reference members" and `f3d.md` §8.1 "The class tail opens with" give the remaining members. The byte runs named above have a width and no meaning, and no known field holds a rotation.
 
-**Need.** We must know the meanings to write sketch text from a neutral model.
+**Need.** We must know the meanings to write sketch text from a neutral model. **Blocked on a specimen:** a document whose sketch texts carry two or more different heights and a nonzero rotation locates the rotation field and separates the unnamed byte runs from constants, and no such document is available to read.
 
 ### DR-27. Sketch-relation class-member meanings
 
@@ -333,6 +334,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** The scene graph names the design entity of each node, so a sketch-curve node joins to a design curve record. If the value gives a curve property, that property has no other carrier and the scene graph is not a pure display cache. If the value gives a render-state decision, a decoder can drop the whole family. **Blocked on a specimen:** a document that hides one body or one sketch separates the two answers, and no such document is available to read.
 
 **Note.** The attribute name does not give the meaning. Both direct readings of the value are inconsistent with the values on the other node kinds.
+
+### DR-29. `EntityGenesis` values `0x4` and `0x8`
+
+**Question.** What do the `EntityGenesis` values `0x4` and `0x8` mean?
+
+**Known.** `f3d.md` §8.1 "A sketch-curve record contains" gives the origin bitfield and assigns bits `0x2`, `0x80`, and `0x100`. The values in the records available are `0x0`, `0x2`, `0x4`, and `0x8`. A document's sketch curves can carry `0x8` while some of their centre points carry `0x0`, and a sketch-text record carries `0x4` while its frame curves carry `0x0`, so neither value follows the record class or the owning sketch.
+
+**Need.** A writer must emit the value the source would have written. Without the bit meanings, a neutral model cannot choose between `0x0`, `0x4`, and `0x8`.
 
 ## 3. External references
 
