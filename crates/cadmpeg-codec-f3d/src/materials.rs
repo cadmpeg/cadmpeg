@@ -683,7 +683,8 @@ fn distance_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Op
     };
     match *unit {
         0x2016 => Some(*value * 25.4),
-        0x200e => Some(*value * 10.0),
+        0x200e => Some(*value),
+        0x200d => Some(*value * 10.0),
         _ => None,
     }
 }
@@ -1533,11 +1534,45 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    fn distance_record(unit: u32, value: f64) -> crate::protein::DecodedRecord {
+        crate::protein::DecodedRecord {
+            schema: "TestSchema".into(),
+            guid: String::new(),
+            base: String::new(),
+            properties: std::collections::BTreeMap::from([(
+                "test_Depth".to_owned(),
+                crate::protein::DecodedProperty {
+                    value: crate::protein::PropertyValue::Distance { unit, value },
+                    connections: Vec::new(),
+                },
+            )]),
+        }
+    }
+
     #[test]
     fn decoded_color_requires_finite_normalized_channels() {
         assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
         for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
             assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
         }
+    }
+
+    /// The three length tags of the Distance quantity class each convert to
+    /// the IR's millimetres. `0x200e` is millimetre, not centimetre.
+    #[test]
+    fn distance_tags_convert_to_millimetres() {
+        for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)]
+        {
+            let record = distance_record(unit, value);
+            assert_eq!(super::distance_property(&record, "Depth"), Some(expected));
+        }
+    }
+
+    /// A Distance whose tag names a quantity other than length has no
+    /// millimetre reading and must not be silently taken as one.
+    #[test]
+    fn a_non_length_distance_tag_yields_no_value() {
+        let record = distance_record(0x2100_8, 1.0);
+        assert_eq!(super::distance_property(&record, "Depth"), None);
     }
 }
