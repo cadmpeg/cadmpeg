@@ -60,6 +60,19 @@ predicates = "3"
 tempfile = "3"
 encoding_rs = "0.8"
 
+[profile.dev]
+# Debug info is ~87% of a linked test binary here (303MB of 347MB for the NX
+# lib test), and the linker holds it all. Leaving DWARF in the object files
+# keeps every byte of it available to debuggers while taking it off the link
+# path. `test` inherits this, so dependency rlibs shrink too, which is where
+# most of the weight is.
+split-debuginfo = "unpacked"
+
+[profile.test]
+# Test failures need `file:line` in the backtrace; they do not need variable
+# and type DWARF. This drops the rest.
+debug = "line-tables-only"
+
 [profile.release]
 lto = "thin"
 # Codecs parse untrusted files; a trapped overflow beats a wrapped offset

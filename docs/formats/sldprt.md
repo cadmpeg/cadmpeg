@@ -728,15 +728,15 @@ For an edge with exactly two coedge uses, equal coedge markers require opposite 
 
 Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]` triple) or as `[disc][attr]` adjacency tables; the magic occurs at the family-specific position within the record window.
 
-| Tag                    | Deltas form | Magic    | Anchor                                 |
-| ---------------------- | ----------- | -------- | -------------------------------------- |
+| Tag                    | Deltas form | Magic    | Anchor                                                        |
+| ---------------------- | ----------- | -------- | ------------------------------------------------------------- |
 | `00 0e`                | tripled     | body +9  | owner triple before magic; five ref triples then marker after |
-| `00 0f`                | tripled     | none     | four ref triples at body +6            |
-| `00 10`                | prefixed    | body +9  | ref slot 2 = curve carrier             |
-| `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use |
-| `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr  |
-| `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run          |
-| `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker       |
+| `00 0f`                | tripled     | none     | four ref triples at body +6                                   |
+| `00 10`                | prefixed    | body +9  | ref slot 2 = curve carrier                                    |
+| `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use                        |
+| `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr                         |
+| `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run                                 |
+| `00 1e/1f/20/32/33/35` | prefixed    | none     | f64 block after `2b`/`2d` marker                              |
 
 Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
 
@@ -765,6 +765,12 @@ Face records use these families:
 | disc20/flo=1 | `00 51`, `disc == 0x0020`, `flo == 1`, six-u16 prefix |
 
 The bridge owner field `00 0e.ref0` joins the topology bridge to an entity-family face attribute.
+
+A stream declares its attribute families inline. A `00 4f` name record carries a big-endian u32 byte length, a u16 node id, and that many printable ASCII bytes. The `00 50` definition record of a family begins at the byte following its name record; four bytes in, it carries the u16 node id that instances of the family name. Attribute definitions are stream-local, so an instance binds only to a definition declared in the same stream.
+
+A `00 51` attribute instance whose u16 at body +6 is zero carries the u16 definition node id at body +10 and, at body +12, the attribute id of the entity it hangs on. Node references follow from body +14 until the next record tag. A `00 52` integer list carries a big-endian u32 count, a u16 node id, and that many big-endian u32 values.
+
+`ATOM_ID_2001` is the persistent face-identity family. Its instances hang on face bridge records and reference one integer list of five through seven values whose value 3 is zero. Value 1 is the native object id of the history feature that produced the face and value 4 is that producer's feature-local face identity. That pair is the persistent identity a `moSingleFaceRef_w` path or a generated-surface component path selects: the selected face is the surviving face whose `ATOM_ID_2001` carries the path's terminal owner and feature-local face id. A feature whose produced faces survive is a producer of every body owning one of them.
 
 ---
 

@@ -47,6 +47,8 @@ pub struct Facts {
     /// Cluster-key chain bodies ([spec §6]); consulted when `bodies` binds no face.
     pub cluster_bodies: Vec<BodyRecord>,
     pub face_colors: Vec<FaceColor>,
+    /// Per-face producing-feature identities carried by Parasolid attributes.
+    pub face_atoms: Vec<super::attrib::FaceAtom>,
 }
 
 #[derive(Debug, Clone)]
@@ -220,6 +222,7 @@ pub fn scan(body: &[u8]) -> Facts {
         bodies: bodies(&entities),
         cluster_bodies: cluster_chain_bodies(&entities),
         face_colors: face_colors.into_values().collect(),
+        face_atoms: super::attrib::scan(body),
     }
 }
 
