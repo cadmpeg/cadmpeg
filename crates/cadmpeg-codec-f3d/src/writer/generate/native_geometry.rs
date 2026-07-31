@@ -3226,7 +3226,7 @@ fn native_vertex_blend_bool(bytes: &mut Vec<u8>, value: i64) -> Result<(), Codec
         1 => bytes.push(native_bool(true)),
         _ => {
             return Err(CodecError::Malformed(
-                "vertex-blend boolean enum must be 0 or 1".into(),
+                "a vertex-blend boundary flag is a logical and must be 0 or 1".into(),
             ));
         }
     }
