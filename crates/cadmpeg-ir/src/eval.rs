@@ -549,6 +549,96 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
 }
 
+/// The parametric direction a surface isoline holds fixed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IsolineDirection {
+    /// `u` is fixed; the curve runs along `v` in the surface's `v` parameter.
+    ConstantU,
+    /// `v` is fixed; the curve runs along `u` in the surface's `u` parameter.
+    ConstantV,
+}
+
+/// The isoline of `surface` at `at` in `direction`, as an exact NURBS curve.
+///
+/// A tensor-product surface restricted to a constant parameter in one direction
+/// is a NURBS curve of the free direction's degree over the free direction's
+/// knot vector, whose poles are the fixed direction's pole rows blended by the
+/// basis at `at`. The result is exact, not a fit; its parameter is the
+/// surface's own parameter in the free direction.
+pub fn nurbs_surface_isoline(
+    surface: &NurbsSurface,
+    direction: IsolineDirection,
+    at: f64,
+) -> Option<NurbsCurve> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    if surface.control_points.len() != u_count.checked_mul(v_count)? {
+        return None;
+    }
+    let constant_u = direction == IsolineDirection::ConstantU;
+    let (knots, degree, count, periodic) = if constant_u {
+        (&surface.u_knots, u_degree, u_count, surface.u_periodic)
+    } else {
+        (&surface.v_knots, v_degree, v_count, surface.v_periodic)
+    };
+    let at = periodic_parameter(knots, degree, count, periodic, at)?;
+    let span = bspline_span(knots, degree, count, at)?;
+    let basis = bspline_basis(knots, degree, span, at);
+
+    let free_count = if constant_u { v_count } else { u_count };
+    let mut control_points = Vec::with_capacity(free_count);
+    let mut weights = surface
+        .weights
+        .as_ref()
+        .map(|_| Vec::with_capacity(free_count));
+    for free in 0..free_count {
+        let mut x = 0.0;
+        let mut y = 0.0;
+        let mut z = 0.0;
+        let mut weight_sum = 0.0;
+        for (offset, value) in basis.iter().enumerate() {
+            let fixed = span - degree + offset;
+            let index = if constant_u {
+                fixed * v_count + free
+            } else {
+                free * v_count + fixed
+            };
+            let weight = surface
+                .weights
+                .as_ref()
+                .and_then(|weights| weights.get(index).copied())
+                .unwrap_or(1.0);
+            let factor = value * weight;
+            let pole = surface.control_points.get(index)?;
+            x += factor * pole.x;
+            y += factor * pole.y;
+            z += factor * pole.z;
+            weight_sum += factor;
+        }
+        if weight_sum == 0.0 {
+            return None;
+        }
+        control_points.push(Point3::new(x / weight_sum, y / weight_sum, z / weight_sum));
+        if let Some(weights) = weights.as_mut() {
+            weights.push(weight_sum);
+        }
+    }
+    let (free_knots, free_degree, free_periodic) = if constant_u {
+        (&surface.v_knots, surface.v_degree, surface.v_periodic)
+    } else {
+        (&surface.u_knots, surface.u_degree, surface.u_periodic)
+    };
+    Some(NurbsCurve {
+        degree: free_degree,
+        knots: free_knots.clone(),
+        control_points,
+        weights,
+        periodic: free_periodic,
+    })
+}
+
 /// Point and first partial derivatives of a NURBS surface in its stored
 /// parameterization.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1099,9 +1189,66 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 
 #[cfg(test)]
 mod tests {
-    use super::{nurbs_surface_partials, pcurve_uv};
+    use super::{
+        nurbs_curve_point, nurbs_surface_isoline, nurbs_surface_partials, nurbs_surface_point,
+        pcurve_uv, IsolineDirection,
+    };
     use crate::geometry::{NurbsSurface, PcurveGeometry};
     use crate::math::{Point2, Point3, Vector3};
+
+    #[test]
+    fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
+        // Rational, quadratic in u and linear in v, so the blend across the
+        // fixed direction has to carry weights to stay exact.
+        let surface = NurbsSurface {
+            u_degree: 2,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![-2.0, -2.0, 3.0, 3.0],
+            u_count: 3,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 4.0),
+                Point3::new(1.0, 2.0, 0.5),
+                Point3::new(1.0, 2.0, 4.5),
+                Point3::new(3.0, -1.0, 1.0),
+                Point3::new(3.0, -1.0, 5.0),
+            ],
+            weights: Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
+            u_periodic: false,
+            v_periodic: false,
+        };
+
+        for (direction, at, samples) in [
+            (IsolineDirection::ConstantU, 0.4, [-2.0, 0.75, 3.0]),
+            (IsolineDirection::ConstantV, 1.25, [0.0, 0.6, 1.0]),
+        ] {
+            let curve = nurbs_surface_isoline(&surface, direction, at).expect("isoline");
+            for sample in samples {
+                let (u, v) = match direction {
+                    IsolineDirection::ConstantU => (at, sample),
+                    IsolineDirection::ConstantV => (sample, at),
+                };
+                let expected = nurbs_surface_point(&surface, u, v).expect("surface point");
+                let actual = nurbs_curve_point(
+                    curve.degree,
+                    &curve.knots,
+                    &curve.control_points,
+                    curve.weights.as_deref(),
+                    sample,
+                )
+                .expect("curve point");
+                for (left, right) in [
+                    (actual.x, expected.x),
+                    (actual.y, expected.y),
+                    (actual.z, expected.z),
+                ] {
+                    assert!((left - right).abs() <= 1.0e-12, "{left} vs {right}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn bilinear_surface_partials_follow_stored_parameterization() {

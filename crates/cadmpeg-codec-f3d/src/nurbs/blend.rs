@@ -10,6 +10,7 @@ use crate::nurbs::pcurve::decode_pcurve_block_with_end;
 use crate::nurbs::proc_curve::{
     decode_embedded_base_curve_resolving_refs, decode_embedded_surface,
     decode_embedded_surface_with_ranges, decode_optional_embedded_surface_with_bounds,
+    decode_par_int_cur_isoline,
 };
 use crate::nurbs::proc_surface::{
     decode_nullable_embedded_pcurve, decode_revision_surface_tail, DecodedProceduralSurface,
@@ -149,16 +150,8 @@ pub(crate) fn decode_rolling_ball_side(
         "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
         _ => return None,
     };
-    let saved = *position;
     let (surface, surface_ranges) =
-        if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
-            (None, [[None, None], [None, None]])
-        } else {
-            *position = saved;
-            let (surface, ranges) =
-                decode_rolling_ball_surface(bytes, position, int_width, reference_context)?;
-            (Some(surface), ranges)
-        };
+        decode_optional_rolling_ball_surface(bytes, position, int_width, reference_context)?;
     let saved = *position;
     let (curve, curve_range) =
         if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
@@ -200,6 +193,27 @@ pub(crate) fn decode_rolling_ball_side(
         extension,
         tertiary_pcurve,
     })
+}
+
+/// A decoded support-surface slot: the surface, absent when the slot holds
+/// `null_surface`, and its `[[u0, u1], [v0, v1]]` parameter bounds.
+pub(crate) type OptionalSupportSurface = (Option<SurfaceGeometry>, [[Option<f64>; 2]; 2]);
+
+/// A support-surface slot: the `null_surface` ident, or an embedded surface and
+/// its parameter bounds.
+pub(crate) fn decode_optional_rolling_ball_surface(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    reference_context: Option<(&[u8], &SubtypeTables)>,
+) -> Option<OptionalSupportSurface> {
+    let saved = *position;
+    if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
+        return Some((None, [[None, None], [None, None]]));
+    }
+    *position = saved;
+    decode_rolling_ball_surface(bytes, position, int_width, reference_context)
+        .map(|(surface, ranges)| (Some(surface), ranges))
 }
 
 pub(crate) fn decode_rolling_ball_surface(
@@ -279,7 +293,8 @@ pub(crate) fn decode_rolling_ball_curve(
             .and_then(|(active_bytes, tables)| {
                 decode_owned_curve_cache_resolving_refs(scope, active_bytes, tables)
             })
-            .or_else(|| decode_owned_curve_cache_at(scope, int_width))?;
+            .or_else(|| decode_owned_curve_cache_at(scope, int_width))
+            .or_else(|| decode_par_int_cur_isoline(scope, int_width, reference_context))?;
         *position += scope.len();
         let parameter_range = [
             take_optional_range_value(bytes, position)?,
