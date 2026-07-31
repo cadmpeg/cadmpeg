@@ -60,6 +60,59 @@ pub(crate) fn find_subtype_marker<'n>(
     })
 }
 
+/// Byte offsets and names of the subtype definitions `bytes` itself owns: the
+/// `0x0f` openings at the outermost nesting level, in stream order, `ref`
+/// included. A definition inside a nested scope belongs to that scope's
+/// construction, not to `bytes`.
+pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: usize) -> Vec<(usize, &[u8])> {
+    let mut owned = Vec::new();
+    let mut depth = 0usize;
+    let mut pos = 0usize;
+    while pos < bytes.len() {
+        match bytes[pos] {
+            0x0f => {
+                if depth == 0 && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
+                    let len = usize::from(bytes[pos + 2]);
+                    if let Some(name) = bytes.get(pos + 3..pos + 3 + len) {
+                        owned.push((pos, name));
+                    }
+                }
+                depth += 1;
+            }
+            0x10 => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        match next_token(bytes, pos, int_width) {
+            Some(next) => pos = next,
+            None => break,
+        }
+    }
+    owned
+}
+
+/// Byte offset of the first subtype definition `bytes` owns whose name matches
+/// one of `names`, together with the matched name. Names are tried in order;
+/// the first name with a hit wins.
+///
+/// A construction claims a record only through the definition the record owns.
+/// Records nest complete constructions as supports — a rolling-ball blend
+/// embeds a variable blend, a variable blend embeds an extrusion — so a decoder
+/// that accepted any matching marker anywhere in the record would claim records
+/// belonging to the construction that encloses it.
+pub(crate) fn find_owned_subtype_marker<'n>(
+    bytes: &[u8],
+    names: &[&'n [u8]],
+    int_width: usize,
+) -> Option<(usize, &'n [u8])> {
+    let owned = owned_subtype_defs(bytes, int_width);
+    names.iter().copied().find_map(|name| {
+        owned
+            .iter()
+            .find(|(_, owned_name)| *owned_name == name)
+            .map(|(start, _)| (*start, name))
+    })
+}
+
 pub(crate) fn find_intcurve_subtype(bytes: &[u8], modern: &[u8]) -> Option<(usize, usize)> {
     let legacy: &[u8] = match modern {
         b"blend_int_cur" => b"bldcur",

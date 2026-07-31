@@ -19162,6 +19162,49 @@ fn subtype_reference_resolves_surface_cache() {
 }
 
 #[test]
+fn a_nested_construction_does_not_claim_its_enclosing_record() {
+    use crate::nurbs::proc_surface::{
+        decode_procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
+    };
+    use crate::nurbs::subtypes::SubtypeTables;
+
+    let bytes = synthetic_cyl_spl_sur_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let record = &records[9];
+    let owned = bytes[record.offset..record.offset + record.len].to_vec();
+    let decoded = decode_procedural_surface_resolving_refs(
+        &owned,
+        &owned,
+        &SubtypeTables::from_stream(&owned),
+    )
+    .expect("the record owns its extrusion");
+    assert!(matches!(
+        decoded.definition,
+        DecodedProceduralSurfaceDefinition::Extrusion { .. }
+    ));
+
+    // The same extrusion nested inside a variable-blend scope is that blend's
+    // support surface, not the record's own surface.
+    let marker = b"\x0f\x0d\x0bcyl_spl_sur";
+    let at = owned
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap();
+    let mut nested = owned.clone();
+    nested.splice(at..at, *b"\x0f\x0d\x14srf_srf_v_bl_spl_sur");
+    let terminator = nested.len() - 1;
+    nested.insert(terminator, 0x10);
+    assert!(decode_procedural_surface_resolving_refs(
+        &nested,
+        &nested,
+        &SubtypeTables::from_stream(&nested)
+    )
+    .is_none());
+}
+
+#[test]
 fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
     for ref_width in [4usize, 8] {
         // The last four payload bytes spell a definition opening. Only a walker

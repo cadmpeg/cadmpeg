@@ -17,7 +17,8 @@ use crate::nurbs::reader::{
     take_tagged_int, INT_WIDTHS, LEN_TO_MM, NUBS_MARKER,
 };
 use crate::nurbs::subtypes::{
-    find_subtype_marker, first_construction_subtype, subtype_refs, subtype_span, SubtypeTables,
+    find_owned_subtype_marker, first_construction_subtype, owned_subtype_defs, subtype_refs,
+    subtype_span, SubtypeTables,
 };
 use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::geometry::{
@@ -439,8 +440,8 @@ fn decode_g2_blend_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"g2_blend_spl_sur", b"g2blnsur"];
-    let (start, name_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
@@ -1512,8 +1513,8 @@ fn decode_loft_spl_sur(
 ) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
     let names: [&[u8]; 2] = [b"loft_spl_sur", b"loftsur"];
-    let (start, name_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04)
@@ -1796,7 +1797,7 @@ fn decode_compound_loft_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let name: &[u8] = b"cl_loft_spl_sur";
-    let (start, _) = find_subtype_marker(record_bytes, &[name])?;
+    let (start, _) = find_owned_subtype_marker(record_bytes, &[name], int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     if span.get(position) == Some(&0x04) {
@@ -1914,7 +1915,7 @@ fn decode_scaled_compound_loft_spl_sur(
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"scaled_cloft_spl_sur", b"sclclftsur"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
@@ -2226,7 +2227,7 @@ fn decode_law_formula_resolving(
 
 fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"skin_spl_sur", b"skinsur"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     let surface_boolean = take_tagged_int(span, &mut position, 0x15, int_width)?;
@@ -2322,7 +2323,7 @@ pub(crate) fn decode_law_spl_sur(
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"law_spl_sur", b"lawsur"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     let parameter_ranges = if span.get(position) == Some(&0x06) {
@@ -2442,7 +2443,7 @@ pub(crate) fn decode_sub_spl_sur(
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"sub_spl_sur", b"subsur"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     let parameter_ranges = [
@@ -2467,7 +2468,7 @@ pub(crate) fn decode_sub_spl_sur(
 
 fn decode_net_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"net_spl_sur", b"netsur"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     let sections = Box::new([
@@ -2521,8 +2522,8 @@ fn decode_sweep_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 3] = [b"sweep_spl_sur", b"sweep_sur", b"sweepsur"];
-    let (start, name_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
@@ -3053,7 +3054,8 @@ fn decode_taper_spl_sur(
 }
 
 fn decode_comp_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let (start, _) = find_subtype_marker(record_bytes, &[b"comp_spl_sur".as_slice()])?;
+    let (start, _) =
+        find_owned_subtype_marker(record_bytes, &[b"comp_spl_sur".as_slice()], int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let cache = marker_positions(span)
         .into_iter()
@@ -3173,7 +3175,7 @@ fn decode_off_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"off_spl_sur", b"offsur"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let name_len = name.len();
     let modern = name == b"off_spl_sur";
     let span = subtype_span(record_bytes, start, int_width)?;
@@ -3275,8 +3277,8 @@ fn decode_rot_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"rot_spl_sur", b"rotsur"];
-    let (start, name_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
@@ -3392,8 +3394,8 @@ fn decode_sum_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"sum_spl_sur", b"sumsur"];
-    let (start, name_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
@@ -3493,7 +3495,7 @@ fn decode_sum_spl_sur(
 
 fn decode_ruled_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"rule_sur", b"rulesur"];
-    let (start, _) = find_subtype_marker(record_bytes, &names)?;
+    let (start, _) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut curves = marker_positions(span)
         .into_iter()
@@ -3517,7 +3519,7 @@ fn decode_ruled_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
 
 fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"exact_spl_sur", b"exactsur"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     if span.get(position) == Some(&0x04) {
@@ -3608,7 +3610,7 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
     use cadmpeg_ir::geometry::{TSplineSubtransform, TSplineSurfaceConstruction};
 
     let name: &[u8] = b"t_spl_sur";
-    let (start, _) = find_subtype_marker(record_bytes, &[name])?;
+    let (start, _) = find_owned_subtype_marker(record_bytes, &[name], int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     let (
@@ -3813,8 +3815,8 @@ fn decode_deformable_vector_frame(
 fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::DeformableSurfaceData;
     let names: [&[u8]; 2] = [b"defm_spl_sur", b"defmsur"];
-    let (start, name_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     let support = decode_embedded_surface(span, &mut position, int_width)?;
@@ -3978,7 +3980,7 @@ pub(crate) fn decode_helix_spl_sur(
     };
 
     let names: [&[u8]; 2] = [b"helix_spl_circ", b"helix_spl_line"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let name_len = name.len();
     let circular = name == b"helix_spl_circ";
     let span = subtype_span(record_bytes, start, int_width)?;
@@ -4201,6 +4203,16 @@ fn decode_procedural_resolving_refs(
             }
         }
         return Some(decoded);
+    }
+    // References are followed only when the record carries no construction of
+    // its own. A record that owns one but failed to decode it is a refusal:
+    // its references are that construction's supports, and decoding one of them
+    // would report a support as the record's own surface.
+    if owned_subtype_defs(bytes, int_width)
+        .iter()
+        .any(|(_, name)| *name != b"ref")
+    {
+        return None;
     }
     let table = tables.for_width(int_width);
     for index in subtype_refs(bytes, int_width) {

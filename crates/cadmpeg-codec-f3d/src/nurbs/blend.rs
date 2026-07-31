@@ -23,7 +23,7 @@ use crate::nurbs::reader::{
     LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
-    find_subtype_marker, first_construction_subtype, next_token, subtype_span, SubtypeTables,
+    find_owned_subtype_marker, first_construction_subtype, next_token, subtype_span, SubtypeTables,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, SurfaceGeometry,
@@ -43,7 +43,7 @@ pub(crate) fn decode_cyl_spl_sur_at(
     int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let directrix = decode_curve_cache_at(span, int_width)?;
 
@@ -759,14 +759,6 @@ pub(crate) fn decode_var_blend_spl_sur(
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
-    let find_marker = |name: &[u8]| {
-        record_bytes.windows(name.len() + 3).position(|window| {
-            window[0] == 0x0f
-                && matches!(window[1], 0x0d | 0x0e)
-                && usize::from(window[2]) == name.len()
-                && &window[3..] == name
-        })
-    };
     let names: [&[u8]; 10] = [
         b"var_blend_spl_sur",
         b"varblendsplsur",
@@ -779,7 +771,7 @@ pub(crate) fn decode_var_blend_spl_sur(
         b"sfcv_free_bl_spl_sur",
         b"sfcvfreeblndsur",
     ];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let subtype = match name {
         b"var_blend_spl_sur" | b"varblendsplsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
@@ -798,24 +790,6 @@ pub(crate) fn decode_var_blend_spl_sur(
         }
         _ => return None,
     };
-    // A rolling-ball record can embed a complete variable-blend subtype as a
-    // side support surface; a rolling-ball marker before the variable-blend
-    // marker means this record belongs to the rolling-ball decoder.
-    let rb_names: [&[u8]; 6] = [
-        b"rb_blend_spl_sur",
-        b"rbblnsur",
-        b"pipe_spl_sur",
-        b"pipesur",
-        b"sss_blend_spl_sur",
-        b"sssblndsur",
-    ];
-    if rb_names
-        .into_iter()
-        .filter_map(find_marker)
-        .any(|rb_start| rb_start < start)
-    {
-        return None;
-    }
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
@@ -1210,8 +1184,8 @@ pub(crate) fn decode_vertex_blend_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"VBL_SURF", b"vertexblendsur"];
-    let (start, name_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     // The revision-gated layout stores the revision integer before the
@@ -1271,7 +1245,7 @@ pub(crate) fn decode_full_rb_blend_spl_sur(
         b"sss_blend_spl_sur",
         b"sssblndsur",
     ];
-    let (start, name) = find_subtype_marker(record_bytes, &names)?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let name_len = name.len();
     let has_third = name == b"sss_blend_spl_sur" || name == b"sssblndsur";
     let span = subtype_span(record_bytes, start, int_width)?;
@@ -1385,8 +1359,8 @@ pub(crate) fn decode_rb_blend_spl_sur_fallback(
         b"pipe_spl_sur",
         b"pipesur",
     ];
-    let (start, header_len) =
-        find_subtype_marker(record_bytes, &names).map(|(start, name)| (start, name.len() + 3))?;
+    let (start, header_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len() + 3))?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let cache = marker_positions(span)
         .into_iter()
