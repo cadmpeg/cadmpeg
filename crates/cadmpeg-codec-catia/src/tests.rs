@@ -2512,11 +2512,17 @@ fn standard_catpart_with_configuration_row_chain() -> Vec<u8> {
     stream.extend(entity_table_record(6));
     stream.extend(entity_table_record(7));
     stream.extend(entity_table_record(8));
+    stream.extend(entity_table_record(9));
+    stream.extend(entity_table_record(10));
+    stream.extend(entity_table_record(11));
     stream.push(0xde);
     stream.extend(object_graph_from_records(&[
-        object_graph_record(&[0x12, 0x89, 0x85], &row_payload(6)),
         object_graph_record(&[0x12, 0x89, 0x85], &row_payload(7)),
-        object_graph_record(&[0x12, 0x89, 0x85], &row_payload(8)),
+        object_graph_record(&[0x12, 0x89, 0x86], &[0xfe]),
+        object_graph_record(&[0x12, 0x89, 0x85], &row_payload(9)),
+        object_graph_record(&[0x12, 0x89, 0x86], &[0xfe]),
+        object_graph_record(&[0x12, 0x89, 0x85], &row_payload(11)),
+        object_graph_record(&[0x12, 0x89, 0x86], &[0xfe]),
         object_graph_record(&[0x12, 0x89, 0x86], &[0xfe]),
     ]));
     stream.extend(catalog_stream(&[
@@ -12100,14 +12106,51 @@ fn configuration_row_chain_retains_complete_source_order() {
             .iter()
             .map(|reference| reference.entity_id)
             .collect::<Vec<_>>(),
-        [5, 6, 7]
+        [5, 7, 9]
     );
     assert!(chain
         .rows
         .iter()
         .all(|reference| reference.class_name.as_deref() == Some("configrow")));
-    assert_eq!(chain.terminal.entity_id, 8);
+    assert_eq!(
+        chain
+            .intervening_entities
+            .as_ref()
+            .expect("source-ordered row intervals")
+            .iter()
+            .map(|entities| {
+                entities
+                    .iter()
+                    .map(|entity| entity.entity_id)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(),
+        [vec![6], vec![8], vec![10]]
+    );
+    assert!(chain
+        .intervening_entities
+        .as_ref()
+        .expect("source-ordered row intervals")
+        .iter()
+        .flatten()
+        .all(|reference| reference.class_name.as_deref() == Some("body")));
+    assert_eq!(chain.terminal.entity_id, 11);
     assert_eq!(chain.terminal.class_name.as_deref(), Some("body"));
+
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_configuration_row_chain()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode configuration row intervals");
+    assert_eq!(
+        decoded.report.coverage["decoded_configuration_row_intervening_entity_count"],
+        3
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_configuration_row_intervening_configuration_count"],
+        0
+    );
 }
 
 #[test]
@@ -12165,6 +12208,14 @@ fn configuration_productions_preserve_unresolved_identities() {
         cyclic.report.coverage["unresolved_configuration_row_order_count"],
         1
     );
+
+    let descending = crate::native::CatiaNative::decode(
+        &standard_catpart_with_configuration_incidences(8, 15, 5),
+    );
+    assert_eq!(descending.configuration_row_chains.len(), 1);
+    assert!(descending.configuration_row_chains[0]
+        .intervening_entities
+        .is_none());
 }
 
 #[test]
@@ -12257,6 +12308,27 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         native.configuration_row_chains
     );
 
+    let interval_native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_configuration_row_chain());
+    let mut older = cadmpeg_ir::NativeNamespace::default();
+    interval_native
+        .store(&mut older)
+        .expect("store pre-interval configuration namespace");
+    older.version = crate::native::CATIA_CONFIGURATION_ROW_INTERVAL_VERSION - 1;
+    for chain in older
+        .arenas
+        .get_mut("configuration_row_chains")
+        .expect("stored configuration-row chains")
+    {
+        chain.fields.remove("intervening_entities");
+    }
+    let migrated = crate::native::CatiaNative::load(&older)
+        .expect("migrate configuration-row successor intervals");
+    assert_eq!(
+        migrated.configuration_row_chains,
+        interval_native.configuration_row_chains
+    );
+
     let mut older = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut older)
@@ -12303,6 +12375,21 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     malformed_chain
         .store(&mut current)
         .expect("store malformed configuration chain");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&current),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut malformed_intervals = interval_native;
+    malformed_intervals.configuration_row_chains[0]
+        .intervening_entities
+        .as_mut()
+        .expect("source-ordered row intervals")[0][0]
+        .entity_id = 8;
+    let mut current = cadmpeg_ir::NativeNamespace::default();
+    malformed_intervals
+        .store(&mut current)
+        .expect("store malformed configuration-row intervals");
     assert!(matches!(
         crate::native::CatiaNative::load(&current),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))

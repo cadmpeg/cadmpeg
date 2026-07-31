@@ -191,10 +191,13 @@ current scores require those matrices and representative fixtures.
   unresolved entity references, classified and unclassified referenced
   entities, row classes, and row successors. Complete root-to-terminal chains
   retain their class identity, ordered row entity identities, terminal identity,
-  and every available selected entity class. Coverage partitions resolved,
-  terminal-null, and unresolved terminals and partitions their ordered links
-  from links whose order remains unresolved. These records do not count as
-  transferred neutral configurations.
+  and every available selected entity class. Source-ordered chains retain every
+  same-graph entity in each open row-to-successor identity interval. Coverage
+  partitions resolved, terminal-null, and unresolved terminals, partitions
+  their ordered links from links whose order remains unresolved, and counts
+  source-ordered chains, intervening entities, and complete `Configuration`
+  records among those entities. These records do not count as transferred
+  neutral configurations.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node. Schema fields named `PRTSketch` or `Sketch` do not establish

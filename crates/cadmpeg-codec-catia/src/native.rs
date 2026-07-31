@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 243;
+pub const CATIA_NATIVE_VERSION: u32 = 244;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -78,6 +78,9 @@ pub(crate) const CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION: u32 = 242;
 /// Native schema version retaining complete ordered relation-program inputs.
 #[cfg(test)]
 pub(crate) const CATIA_RELATION_PROGRAM_INPUT_VERSION: u32 = 243;
+/// Native schema version retaining entities between configuration-row successors.
+#[cfg(test)]
+pub(crate) const CATIA_CONFIGURATION_ROW_INTERVAL_VERSION: u32 = 244;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1527,6 +1530,11 @@ pub struct CatiaConfigurationRowChain {
     pub class_reference: CatiaEntityReference,
     /// Row entities in successor order from the selected root.
     pub rows: Vec<CatiaEntityReference>,
+    /// Same-graph entities strictly between each row and its successor, aligned with `rows`.
+    ///
+    /// Absent when successor identities do not increase in source order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intervening_entities: Option<Vec<Vec<CatiaEntityReference>>>,
     /// First successor identity that does not select another row link.
     pub terminal: CatiaEntityReference,
 }
@@ -3295,6 +3303,44 @@ fn derive_configuration_row_chains(
             if visited.len() != links.len() || row_ids.contains(&(graph, current)) {
                 return None;
             }
+            let intervals = row_ids_in_order
+                .iter()
+                .copied()
+                .zip(
+                    row_ids_in_order
+                        .iter()
+                        .copied()
+                        .skip(1)
+                        .chain(std::iter::once(current)),
+                )
+                .collect::<Vec<_>>();
+            let intervening_entities = intervals
+                .iter()
+                .all(|(row, successor)| row < successor)
+                .then(|| {
+                    intervals
+                        .into_iter()
+                        .map(|(row, successor)| {
+                            records
+                                .iter()
+                                .filter(|entity| {
+                                    entity.object_graph == graph
+                                        && entity.entity_id > row
+                                        && entity.entity_id < successor
+                                })
+                                .map(|entity| {
+                                    entity_reference(
+                                        graph,
+                                        entity.entity_id,
+                                        entities,
+                                        entity_classes,
+                                        terminal_nulls,
+                                    )
+                                })
+                                .collect()
+                        })
+                        .collect()
+                });
             Some(CatiaConfigurationRowChain {
                 id: format!("{graph}:configuration-row-chain#{root}"),
                 object_graph: graph.to_string(),
@@ -3311,6 +3357,7 @@ fn derive_configuration_row_chains(
                         entity_reference(graph, entity_id, entities, entity_classes, terminal_nulls)
                     })
                     .collect(),
+                intervening_entities,
                 terminal: entity_reference(
                     graph,
                     current,
@@ -8907,6 +8954,7 @@ impl CatiaNative {
             &terminal_nulls_by_graph,
         );
         if namespace.version < CATIA_CONFIGURATION_ROW_CHAIN_VERSION
+            || namespace.version < CATIA_CONFIGURATION_ROW_INTERVAL_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
         {
             configuration_row_chains = expected_configuration_row_chains;
