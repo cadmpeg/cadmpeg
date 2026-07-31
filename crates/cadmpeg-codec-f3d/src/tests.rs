@@ -2058,10 +2058,20 @@ fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     bytes
 }
 
-/// Splice one cache-first intcurve record built by `tail` into the synthetic
-/// geometry stream and point edge 10 at it.
+/// The cache form `0` head of the shared cache-first intcurve context: the
+/// enum, the solved curve cache, and its fit tolerance.
+fn push_solved_cache_first_head(curve: &mut Vec<u8>) {
+    curve.push(0x15);
+    curve.extend_from_slice(&0i64.to_le_bytes());
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(curve, 0.0004);
+}
+
+/// Splice one cache-first intcurve record built by `head` and `tail` into the
+/// synthetic geometry stream and point edge 10 at it.
 fn synthetic_geometry_with_cache_first_curve_smbh(
     subtype: &str,
+    head: fn(&mut Vec<u8>),
     tail: impl FnOnce(&mut Vec<u8>),
 ) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
@@ -2086,10 +2096,7 @@ fn synthetic_geometry_with_cache_first_curve_smbh(
     curve.push(0x0f);
     t_ident(&mut curve, subtype);
     t_long(&mut curve, 23100);
-    curve.push(0x15);
-    curve.extend_from_slice(&0i64.to_le_bytes());
-    curve.extend_from_slice(&generated_curve_block());
-    t_dbl(&mut curve, 0.0004);
+    head(&mut curve);
     t_ident(&mut curve, "null_surface");
     t_ident(&mut curve, "null_surface");
     t_ident(&mut curve, "nullbs");
@@ -2116,10 +2123,14 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_cache_first_curve_smbh("spring_int_cur", |curve| {
-                    curve.push(0x15);
-                    curve.extend_from_slice(&4i64.to_le_bytes());
-                }),
+                &synthetic_geometry_with_cache_first_curve_smbh(
+                    "spring_int_cur",
+                    push_solved_cache_first_head,
+                    |curve| {
+                        curve.push(0x15);
+                        curve.extend_from_slice(&4i64.to_le_bytes());
+                    },
+                ),
             )),
             &DecodeOptions::default(),
         )
@@ -2168,10 +2179,14 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_cache_first_curve_smbh("par_int_cur", |curve| {
-                    curve.push(0x0a);
-                    curve.push(0x0b);
-                }),
+                &synthetic_geometry_with_cache_first_curve_smbh(
+                    "par_int_cur",
+                    push_solved_cache_first_head,
+                    |curve| {
+                        curve.push(0x0a);
+                        curve.push(0x0b);
+                    },
+                ),
             )),
             &DecodeOptions::default(),
         )
@@ -2216,22 +2231,26 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_cache_first_curve_smbh("off_surf_int_cur", |curve| {
-                    for value in [-1.0, 2.0, -3.0, 4.0] {
+                &synthetic_geometry_with_cache_first_curve_smbh(
+                    "off_surf_int_cur",
+                    push_solved_cache_first_head,
+                    |curve| {
+                        for value in [-1.0, 2.0, -3.0, 4.0] {
+                            curve.push(0x0a);
+                            t_dbl(curve, value);
+                        }
+                        curve.extend_from_slice(&generated_curve_block());
+                        curve.push(0x0b);
+                        curve.push(0x0b);
                         curve.push(0x0a);
-                        t_dbl(curve, value);
-                    }
-                    curve.extend_from_slice(&generated_curve_block());
-                    curve.push(0x0b);
-                    curve.push(0x0b);
-                    curve.push(0x0a);
-                    t_dbl(curve, -0.5);
-                    curve.push(0x0a);
-                    t_dbl(curve, 1.5);
-                    t_dbl(curve, -0.25);
-                    t_dbl(curve, 0.75);
-                    t_dbl(curve, 1.25);
-                }),
+                        t_dbl(curve, -0.5);
+                        curve.push(0x0a);
+                        t_dbl(curve, 1.5);
+                        t_dbl(curve, -0.25);
+                        t_dbl(curve, 0.75);
+                        t_dbl(curve, 1.25);
+                    },
+                ),
             )),
             &DecodeOptions::default(),
         )
@@ -2623,8 +2642,15 @@ fn generated_revision_sweep_surface_round_trips() {
 /// profile member. `type_code` selects the member payload: a nonzero type
 /// stores the support surface, one nullable pcurve, and the first flag; a zero
 /// type stores two nullable pcurve slots and no first flag. `asm_extension`
-/// carries the ASM integer only when the stream save format stores it.
-fn push_revision_loft_body(surface: &mut Vec<u8>, type_code: i64, asm_extension: Option<i64>) {
+/// carries the ASM integer only when the stream save format stores it, and
+/// `tail` writes the shared revision-gated surface tail in the cache form
+/// under test.
+fn push_revision_loft_body(
+    surface: &mut Vec<u8>,
+    type_code: i64,
+    asm_extension: Option<i64>,
+    tail: fn(&mut Vec<u8>),
+) {
     t_long(surface, 1);
     t_dbl(surface, 0.0);
     t_long(surface, 1);
@@ -2660,7 +2686,7 @@ fn push_revision_loft_body(surface: &mut Vec<u8>, type_code: i64, asm_extension:
     surface.extend_from_slice(&[0x0b; 4]);
     t_long(surface, 0);
     t_long(surface, 0);
-    push_revision_surface_tail(surface);
+    tail(surface);
 }
 
 /// Rewrite a `BinaryFile8` stream's save-format version word.
@@ -2736,9 +2762,61 @@ fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
 #[test]
 fn generated_revision_loft_surface_round_trips() {
     let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
-        push_revision_loft_body(surface, 1, Some(-1));
+        push_revision_loft_body(surface, 1, Some(-1), push_revision_surface_tail);
     });
     assert_revision_surface_round_trip(smbh, "loft");
+}
+
+/// The parameterization the shared form-`2` tail builder writes.
+fn assert_parameterized_tail(
+    tail_enum: i64,
+    parameterization: Option<&cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+) {
+    assert_eq!(tail_enum, 2);
+    let parameterization = parameterization.expect("tail parameterization");
+    assert_eq!(parameterization.u_interval, [Some(0.25), None]);
+    assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);
+    assert_eq!(
+        (parameterization.u_closure, parameterization.v_closure),
+        (1, 0)
+    );
+    assert_eq!(
+        (
+            parameterization.u_singularity,
+            parameterization.v_singularity
+        ),
+        (2, 3)
+    );
+}
+
+#[test]
+fn generated_parameterized_revision_loft_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        push_revision_loft_body(
+            surface,
+            1,
+            Some(-1),
+            push_parameterized_revision_surface_tail,
+        );
+    });
+    assert_revision_surface_round_trip(smbh.clone(), "loft");
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized revision loft decode");
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    // Cache form 2 stores no fit tolerance.
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft { revision_form, .. } =
+        &procedural.definition
+    else {
+        panic!("expected a loft construction")
+    };
+    let form = revision_form.as_ref().expect("revision form");
+    assert_parameterized_tail(form.tail_enum, form.tail_parameterization.as_ref());
 }
 
 #[test]
@@ -2747,7 +2825,7 @@ fn revision_loft_member_omits_the_asm_integer_in_an_early_save_format_stream() {
     // ASM integer between them.
     let smbh = with_save_format(
         synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
-            push_revision_loft_body(surface, 1, None);
+            push_revision_loft_body(surface, 1, None, push_revision_surface_tail);
         }),
         22600,
     );
@@ -2770,7 +2848,7 @@ fn revision_loft_member_omits_the_asm_integer_in_an_early_save_format_stream() {
 #[test]
 fn revision_loft_type_zero_member_stores_two_pcurve_slots() {
     let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
-        push_revision_loft_body(surface, 0, Some(-1));
+        push_revision_loft_body(surface, 0, Some(-1), push_revision_surface_tail);
     });
     let decoded = F3dCodec
         .decode(
@@ -17972,6 +18050,52 @@ fn generated_revision_g2_blend_round_trips() {
 }
 
 #[test]
+fn generated_parameterized_revision_g2_blend_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("g2_blend_spl_sur", |surface| {
+        t_dbl(surface, 1.0);
+        t_dbl(surface, 1.0);
+        append_generated_variable_blend_side(surface, "left", 1.0);
+        append_generated_variable_blend_side(surface, "right", 4.0);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.5);
+        surface.push(0x0a);
+        t_dbl(surface, 2.5);
+        t_dbl(surface, 0.125);
+        t_dbl(surface, 0.125);
+        push_tagged_i64(surface, 0x15, -1);
+        surface.extend_from_slice(&[0x0b; 4]);
+        t_long(surface, 1);
+        t_dbl(surface, 0.001);
+        t_dbl(surface, 0.0001);
+        t_long(surface, 1);
+        push_parameterized_revision_surface_tail(surface);
+        for value in [0, 0, 0] {
+            t_long(surface, value);
+        }
+    });
+    assert_revision_surface_round_trip(smbh.clone(), "revision_g2_blend");
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized revision g2 blend decode");
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionG2Blend { construction } =
+        &procedural.definition
+    else {
+        panic!("expected a revision g2 blend construction")
+    };
+    assert_parameterized_tail(
+        construction.tail_enum,
+        construction.tail_parameterization.as_ref(),
+    );
+}
+
+#[test]
 fn generated_revision_vertex_blend_round_trips() {
     let smbh = synthetic_revision_surface_smbh("VBL_SURF", |surface| {
         t_long(surface, 2);
@@ -18190,6 +18314,47 @@ fn generated_revision_compound_loft_round_trips() {
         surface.push(0x0b);
     });
     assert_revision_surface_round_trip(smbh, "revision_compound_loft");
+}
+
+#[test]
+fn generated_parameterized_revision_compound_loft_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("cl_loft_spl_sur", |surface| {
+        push_parameterized_revision_surface_tail(surface);
+        push_revision_cl_scale(surface, true);
+        t_long(surface, 2);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 0.0);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 1.0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        surface.push(0x0b);
+        surface.push(0x0b);
+    });
+    assert_revision_surface_round_trip(smbh.clone(), "revision_compound_loft");
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized revision compound loft decode");
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
+        &procedural.definition
+    else {
+        panic!("expected a revision compound loft construction")
+    };
+    assert_parameterized_tail(
+        construction.tail_enum,
+        construction.tail_parameterization.as_ref(),
+    );
 }
 
 #[test]
@@ -19159,6 +19324,69 @@ fn subtype_reference_resolves_surface_cache() {
     )
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count, decoded.v_count), (2, 2));
+}
+
+/// A form-2 `par_int_cur` whose uv pcurve runs from `first` to `second`.
+fn generated_form_two_par_int_cur(first: [f64; 2], second: [f64; 2]) -> Vec<u8> {
+    let mut scope = vec![0x0f];
+    t_ident(&mut scope, "par_int_cur");
+    push_tagged_i64(&mut scope, 0x04, 1);
+    push_tagged_i64(&mut scope, 0x15, 2);
+    for bound in [0.0, 1.0] {
+        scope.push(0x0a);
+        push_tagged_f64(&mut scope, bound);
+    }
+    push_tagged_i64(&mut scope, 0x15, 0);
+    t_ident(&mut scope, "spline");
+    scope.push(0x0b);
+    scope.push(0x0f);
+    t_ident(&mut scope, "exact_spl_sur");
+    scope.extend_from_slice(&generated_surface_block());
+    scope.push(0x10);
+    scope.extend_from_slice(&[0x0b; 4]);
+    t_ident(&mut scope, "null_surface");
+    scope.extend_from_slice(b"\x0d\x04nubs");
+    push_tagged_i64(&mut scope, 0x04, 1);
+    push_tagged_i64(&mut scope, 0x15, 0);
+    push_tagged_i64(&mut scope, 0x04, 2);
+    for (knot, multiplicity) in [(0.0, 1i64), (1.0, 1)] {
+        push_tagged_f64(&mut scope, knot);
+        push_tagged_i64(&mut scope, 0x04, multiplicity);
+    }
+    for [u, v] in [first, second] {
+        push_tagged_f64(&mut scope, u);
+        push_tagged_f64(&mut scope, v);
+    }
+    t_ident(&mut scope, "nullbs");
+    push_tagged_i64(&mut scope, 0x04, 0);
+    scope.push(0x10);
+    scope
+}
+
+#[test]
+fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
+    use crate::nurbs::proc_curve::decode_par_int_cur_isoline;
+    use cadmpeg_ir::math::Point3;
+
+    // The support is the unit bilinear patch scaled to millimetres, so the
+    // isoline at u = 1 is the patch's far edge.
+    let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
+    let curve = decode_par_int_cur_isoline(&scope, 8, None).expect("form-2 isoline");
+    assert_eq!(curve.degree, 1);
+    assert_eq!(curve.knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        curve.control_points,
+        [Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)]
+    );
+
+    // A pcurve that crosses the support holds neither parameter fixed, so no
+    // NURBS curve reproduces it and the form is refused.
+    let diagonal = generated_form_two_par_int_cur([0.0, 0.0], [1.0, 1.0]);
+    assert!(decode_par_int_cur_isoline(&diagonal, 8, None).is_none());
+
+    // A pcurve running only part of the support's domain would need a trim.
+    let partial = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 0.5]);
+    assert!(decode_par_int_cur_isoline(&partial, 8, None).is_none());
 }
 
 #[test]

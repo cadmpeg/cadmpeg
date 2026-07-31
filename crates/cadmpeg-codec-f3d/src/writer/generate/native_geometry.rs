@@ -717,7 +717,7 @@ fn native_procedural_surface_definition(
             singularities,
             *mode,
             bridge,
-            solved_cache,
+            Some(solved_cache),
         )?,
         ProceduralSurfaceDefinition::CompoundLoft { construction } => {
             encode_native_compound_loft(bytes, target, procedural, construction, solved_cache)?;
@@ -768,11 +768,17 @@ fn native_procedural_surface_definition(
                 target,
                 procedural,
                 construction,
-                solved_cache,
+                Some(solved_cache),
             )?;
         }
         ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
-            encode_native_revision_g2_blend(bytes, target, procedural, construction, solved_cache)?;
+            encode_native_revision_g2_blend(
+                bytes,
+                target,
+                procedural,
+                construction,
+                Some(solved_cache),
+            )?;
         }
         ProceduralSurfaceDefinition::VariableBlend { construction } => {
             encode_native_variable_blend(
@@ -2124,6 +2130,47 @@ fn native_cacheless_procedural_surface_definition(
             return Ok(true);
         }
     }
+    if let ProceduralSurfaceDefinition::Loft {
+        sections,
+        revision_form: Some(form),
+        parameters,
+        closures,
+        singularities,
+        mode,
+        bridge,
+    } = &procedural.definition
+    {
+        if form.tail_enum == 2 {
+            encode_native_loft(
+                bytes,
+                target,
+                procedural,
+                sections,
+                Some(form),
+                parameters,
+                closures,
+                singularities,
+                *mode,
+                bridge,
+                None,
+            )?;
+            return Ok(true);
+        }
+    }
+    if let ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
+        &procedural.definition
+    {
+        if construction.tail_enum == 2 {
+            encode_native_revision_compound_loft(bytes, target, procedural, construction, None)?;
+            return Ok(true);
+        }
+    }
+    if let ProceduralSurfaceDefinition::RevisionG2Blend { construction } = &procedural.definition {
+        if construction.tail_enum == 2 {
+            encode_native_revision_g2_blend(bytes, target, procedural, construction, None)?;
+            return Ok(true);
+        }
+    }
     Ok(false)
 }
 
@@ -2944,7 +2991,7 @@ fn encode_native_loft(
     singularities: &[i64; 2],
     mode: i64,
     bridge: &[cadmpeg_ir::geometry::LoftBridgeToken],
-    solved_cache: &NurbsSurface,
+    solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
     if let Some(form) = revision_form {
         let cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals } =
@@ -2977,20 +3024,15 @@ fn encode_native_loft(
         for value in form.ints {
             native_i64(bytes, value);
         }
-        native_enum(bytes, form.tail_enum);
-        native_nurbs_surface(bytes, solved_cache)?;
-        native_solved_cache_fit_tolerance(bytes, "loft surface", procedural.cache_fit_tolerance)?;
-        for discontinuities in &form.discontinuities {
-            native_i64(
-                bytes,
-                i64::try_from(discontinuities.len()).map_err(|_| {
-                    CodecError::NotImplemented("discontinuity count exceeds i64".into())
-                })?,
-            );
-            for value in discontinuities {
-                native_f64(bytes, *value);
-            }
-        }
+        native_revision_tail_head(
+            bytes,
+            "loft surface",
+            form.tail_enum,
+            form.tail_parameterization.as_ref(),
+            solved_cache,
+            procedural.cache_fit_tolerance,
+        )?;
+        native_revision_tail_discontinuities(bytes, &form.discontinuities)?;
         bytes.push(native_bool(form.tail_flag));
         bytes.push(0x10);
         return Ok(());
@@ -3028,6 +3070,8 @@ fn encode_native_loft(
             cadmpeg_ir::geometry::LoftBridgeToken::Enum(value) => native_enum(bytes, *value),
         }
     }
+    let solved_cache = solved_cache
+        .ok_or_else(|| CodecError::Malformed("legacy loft requires a solved NURBS cache".into()))?;
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
         native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
@@ -3546,7 +3590,7 @@ fn encode_native_revision_compound_loft(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::RevisionCompoundLoftConstruction,
-    solved_cache: &NurbsSurface,
+    solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
     if construction.revision <= 0 {
         return Err(CodecError::Malformed(
@@ -3562,24 +3606,15 @@ fn encode_native_revision_compound_loft(
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
     native_i64(bytes, construction.revision);
-    native_enum(bytes, construction.tail_enum);
-    native_nurbs_surface(bytes, solved_cache)?;
-    native_solved_cache_fit_tolerance(
+    native_revision_tail_head(
         bytes,
         "compound-loft surface",
+        construction.tail_enum,
+        construction.tail_parameterization.as_ref(),
+        solved_cache,
         procedural.cache_fit_tolerance,
     )?;
-    for discontinuities in &construction.discontinuities {
-        native_i64(
-            bytes,
-            i64::try_from(discontinuities.len()).map_err(|_| {
-                CodecError::NotImplemented("discontinuity count exceeds i64".into())
-            })?,
-        );
-        for value in discontinuities {
-            native_f64(bytes, *value);
-        }
-    }
+    native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
     bytes.push(native_bool(construction.tail_flag));
     native_revision_cl_scale(
         bytes,
@@ -3648,7 +3683,7 @@ fn encode_native_revision_g2_blend(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     construction: &cadmpeg_ir::geometry::RevisionG2BlendConstruction,
-    solved_cache: &NurbsSurface,
+    solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
     if construction.revision <= 0 {
         return Err(CodecError::Malformed(
@@ -3687,20 +3722,15 @@ fn encode_native_revision_g2_blend(
     native_f64(bytes, construction.shape_parameter);
     native_f64(bytes, construction.shape_length / LEN_TO_MM);
     native_i64(bytes, construction.shape_tail);
-    native_enum(bytes, construction.tail_enum);
-    native_nurbs_surface(bytes, solved_cache)?;
-    native_solved_cache_fit_tolerance(bytes, "G2 blend", procedural.cache_fit_tolerance)?;
-    for discontinuities in &construction.discontinuities {
-        native_i64(
-            bytes,
-            i64::try_from(discontinuities.len()).map_err(|_| {
-                CodecError::NotImplemented("discontinuity count exceeds i64".into())
-            })?,
-        );
-        for value in discontinuities {
-            native_f64(bytes, *value);
-        }
-    }
+    native_revision_tail_head(
+        bytes,
+        "G2 blend",
+        construction.tail_enum,
+        construction.tail_parameterization.as_ref(),
+        solved_cache,
+        procedural.cache_fit_tolerance,
+    )?;
+    native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
     bytes.push(native_bool(construction.tail_flag));
     for extension in construction.tail_extensions {
         native_i64(bytes, extension);
@@ -4786,11 +4816,13 @@ pub(crate) fn native_procedural_curve(
                 context,
                 &cadmpeg_ir::geometry::CacheFirstCurveForm {
                     revision: tail.revision,
+                    cache_enum: tail.cache_enum,
+                    parameterization: tail.parameterization.clone(),
                     support_bounds: tail.support_bounds,
                     solved_range: tail.solved_range,
                     extension: tail.extension,
                 },
-                solved_cache,
+                Some(solved_cache),
                 procedural.cache_fit_tolerance,
             )?;
             bytes.push(native_bool(tail.flag));
@@ -4872,7 +4904,7 @@ pub(crate) fn native_procedural_curve(
                 target,
                 context,
                 form,
-                solved_cache,
+                Some(solved_cache),
                 procedural.cache_fit_tolerance,
             )?;
             for range in [base_u_range, base_v_range] {
@@ -4936,7 +4968,7 @@ pub(crate) fn native_procedural_curve(
                 target,
                 context,
                 form,
-                solved_cache,
+                Some(solved_cache),
                 procedural.cache_fit_tolerance,
             )?;
             native_enum(bytes, *direction);
@@ -5656,15 +5688,17 @@ fn native_revision_tail_discontinuities(
     Ok(())
 }
 
-/// Emit the shared cache-first intcurve context: revision, enum zero, solved
-/// cache and fit tolerance, bounded supports, nullable pcurves, optional
+/// Emit the shared cache-first intcurve context: revision, the cache-form enum
+/// and the payload it selects, bounded supports, nullable pcurves, optional
 /// solved-interval endpoints, discontinuity arrays, and the extension integer.
+/// Form `0` writes the solved cache and its fit tolerance; form `2` writes the
+/// curve interval and the closed-form enum in their place.
 fn native_cache_first_curve_context(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
     form: &cadmpeg_ir::geometry::CacheFirstCurveForm,
-    solved_cache: &cadmpeg_ir::geometry::NurbsCurve,
+    solved_cache: Option<&cadmpeg_ir::geometry::NurbsCurve>,
     cache_fit_tolerance: Option<f64>,
 ) -> Result<(), CodecError> {
     if form.revision <= 0 {
@@ -5673,9 +5707,29 @@ fn native_cache_first_curve_context(
         ));
     }
     native_i64(bytes, form.revision);
-    native_enum(bytes, 0);
-    native_nurbs_curve(bytes, solved_cache)?;
-    native_solved_cache_fit_tolerance(bytes, "cache-first intcurve", cache_fit_tolerance)?;
+    native_enum(bytes, form.cache_enum);
+    match (form.cache_enum, &form.parameterization) {
+        (0, None) => {
+            let solved_cache = solved_cache.ok_or_else(|| {
+                CodecError::Malformed(
+                    "cache-first intcurve context form `0` requires a solved cache".into(),
+                )
+            })?;
+            native_nurbs_curve(bytes, solved_cache)?;
+            native_solved_cache_fit_tolerance(bytes, "cache-first intcurve", cache_fit_tolerance)?;
+        }
+        (2, Some(parameterization)) => {
+            for bound in parameterization.interval {
+                native_optional_f64(bytes, bound);
+            }
+            native_enum(bytes, parameterization.closed_form);
+        }
+        _ => {
+            return Err(CodecError::Malformed(
+                "cache-first intcurve context enum does not match its stored cache form".into(),
+            ));
+        }
+    }
     for (side, bounds) in context.sides.iter().zip(&form.support_bounds) {
         if let Some(surface_id) = &side.surface {
             let surface = target

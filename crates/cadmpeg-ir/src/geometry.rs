@@ -1267,8 +1267,14 @@ pub struct LoftRevisionForm {
     /// Two integers preceding the shared tail.
     #[serde(default)]
     pub ints: [i64; 2],
-    /// Enum opening the shared revision-gated surface tail.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
@@ -1793,8 +1799,14 @@ pub struct RevisionG2BlendConstruction {
     pub shape_length: f64,
     /// Native integer immediately before the shared tail.
     pub shape_tail: i64,
-    /// Enum opening the shared revision-gated surface tail.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
@@ -1811,8 +1823,14 @@ pub struct RevisionG2BlendConstruction {
 pub struct RevisionCompoundLoftConstruction {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
-    /// Enum opening the shared revision-gated surface tail.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
@@ -2633,6 +2651,15 @@ pub struct IntcurveSupportContext {
 pub struct CacheFirstCurveForm {
     /// Positive serializer-revision integer selecting the cache-first layout.
     pub revision: i64,
+    /// Enum opening the shared context, selecting the approximation-cache form.
+    /// `0` stores a solved curve cache and its fit tolerance; `2` stores
+    /// `parameterization` instead.
+    #[serde(default)]
+    pub cache_enum: i64,
+    /// Parameterization stored by cache form `2` in place of a solved cache.
+    /// Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameterization: Option<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
     #[serde(default)]
     pub support_bounds: [[Option<f64>; 4]; 2],
@@ -2642,6 +2669,20 @@ pub struct CacheFirstCurveForm {
     pub solved_range: [Option<f64>; 2],
     /// Native integer ASM extension following the discontinuity arrays.
     pub extension: i64,
+}
+
+/// Parameterization carried by cache form `2` of the shared cache-first
+/// intcurve context. This form stores no solved curve cache and no fit
+/// tolerance; it stores the curve interval followed by the closed-form enum, in
+/// the order the fields appear below.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct CacheFirstCurveParameterization {
+    /// Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is
+    /// a false bound-presence flag.
+    #[serde(default)]
+    pub interval: [Option<f64>; 2],
+    /// Closed-form enum following the interval.
+    pub closed_form: i64,
 }
 
 /// Tail fields carried by the cache-first surface-curve layout.
@@ -2663,6 +2704,15 @@ pub struct SurfaceCurveTail {
     /// Positive serializer-revision integer opening the cache-first layout.
     #[serde(default)]
     pub revision: i64,
+    /// Enum opening the shared context, selecting the approximation-cache form.
+    /// `0` stores a solved curve cache and its fit tolerance; `2` stores
+    /// `parameterization` instead.
+    #[serde(default)]
+    pub cache_enum: i64,
+    /// Parameterization stored by cache form `2` in place of a solved cache.
+    /// Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameterization: Option<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
     #[serde(default)]
     pub support_bounds: [[Option<f64>; 4]; 2],

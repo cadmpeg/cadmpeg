@@ -212,7 +212,10 @@ pub struct EmbeddedRevisionG2Blend {
     pub(crate) shape_parameter: f64,
     pub(crate) shape_length: f64,
     pub(crate) shape_tail: i64,
+    /// Enum opening the shared revision-gated surface tail.
     pub(crate) tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved cache.
+    pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
     pub(crate) discontinuities: [Vec<f64>; 6],
     pub(crate) tail_flag: bool,
     pub(crate) tail_extensions: [i64; 3],
@@ -490,8 +493,13 @@ fn decode_g2_blend_spl_sur(
         let shape_parameter = take_f64(span, &mut position)?;
         let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
         let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
-        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-            decode_revision_surface_tail(span, &mut position, int_width)?.into_solved()?;
+        let RevisionSurfaceTail {
+            enumeration: tail_enum,
+            fit_tolerance,
+            parameterization,
+            discontinuities,
+            tail_flag,
+        } = decode_revision_surface_tail(span, &mut position, int_width)?;
         let tail_extensions = [
             take_tagged_int(span, &mut position, 0x04, int_width)?,
             take_tagged_int(span, &mut position, 0x04, int_width)?,
@@ -514,12 +522,13 @@ fn decode_g2_blend_spl_sur(
                     shape_length,
                     shape_tail,
                     tail_enum,
+                    tail_parameterization: parameterization,
                     discontinuities,
                     tail_flag,
                     tail_extensions,
                 },
             )),
-            cache_fit_tolerance: Some(fit_tolerance),
+            cache_fit_tolerance: fit_tolerance,
         });
     }
     let first = decode_g2_side(span, &mut position, int_width)?;
@@ -637,7 +646,10 @@ pub(crate) struct EmbeddedLoftPath {
 /// Embedded revision-gated compound loft before stable IR ids are assigned.
 pub struct EmbeddedRevisionCompoundLoft {
     pub(crate) revision: i64,
+    /// Enum opening the shared revision-gated surface tail.
     pub(crate) tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved cache.
+    pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
     pub(crate) discontinuities: [Vec<f64>; 6],
     pub(crate) tail_flag: bool,
     pub(crate) base_profile: Vec<EmbeddedLoftProfileMember>,
@@ -1481,8 +1493,13 @@ fn decode_revision_loft(
         take_tagged_int(span, &mut position, 0x04, int_width)?,
         take_tagged_int(span, &mut position, 0x04, int_width)?,
     ];
-    let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-        decode_revision_surface_tail(span, &mut position, int_width)?.into_solved()?;
+    let RevisionSurfaceTail {
+        enumeration: tail_enum,
+        fit_tolerance,
+        parameterization,
+        discontinuities,
+        tail_flag,
+    } = decode_revision_surface_tail(span, &mut position, int_width)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
@@ -1491,6 +1508,7 @@ fn decode_revision_loft(
                 flags,
                 ints,
                 tail_enum,
+                tail_parameterization: parameterization,
                 discontinuities,
                 tail_flag,
             }),
@@ -1502,7 +1520,7 @@ fn decode_revision_loft(
             mode: 0,
             bridge: Vec::new(),
         }),
-        cache_fit_tolerance: Some(fit_tolerance),
+        cache_fit_tolerance: fit_tolerance,
     })
 }
 
@@ -1697,8 +1715,13 @@ fn decode_revision_compound_loft(
     let mut position = name.len() + 3;
     let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
     (revision > 0).then_some(())?;
-    let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
-        decode_revision_surface_tail(span, &mut position, int_width)?.into_solved()?;
+    let RevisionSurfaceTail {
+        enumeration: tail_enum,
+        fit_tolerance,
+        parameterization,
+        discontinuities,
+        tail_flag,
+    } = decode_revision_surface_tail(span, &mut position, int_width)?;
     let asm_extension_present = revision_loft_carries_asm_extension(active_bytes);
     let (base_profile, base_path) = decode_revision_cl_scale(
         span,
@@ -1772,6 +1795,7 @@ fn decode_revision_compound_loft(
             EmbeddedRevisionCompoundLoft {
                 revision,
                 tail_enum,
+                tail_parameterization: parameterization,
                 discontinuities,
                 tail_flag,
                 base_profile,
@@ -1787,7 +1811,7 @@ fn decode_revision_compound_loft(
                 trailing_curve,
             },
         )),
-        cache_fit_tolerance: Some(fit_tolerance),
+        cache_fit_tolerance: fit_tolerance,
     })
 }
 
@@ -3091,20 +3115,6 @@ pub(crate) struct RevisionSurfaceTail {
     pub(crate) discontinuities: [Vec<f64>; 6],
     /// Boolean terminating the tail.
     pub(crate) tail_flag: bool,
-}
-
-impl RevisionSurfaceTail {
-    /// Destructure a solved-cache tail, for carriers whose IR retains no slot
-    /// for the form-`2` parameterization. Fails on any other form so the
-    /// containing record is retained verbatim rather than decoded lossily.
-    pub(crate) fn into_solved(self) -> Option<(i64, f64, [Vec<f64>; 6], bool)> {
-        Some((
-            self.enumeration,
-            self.fit_tolerance?,
-            self.discontinuities,
-            self.tail_flag,
-        ))
-    }
 }
 
 /// Parse the shared revision-gated surface tail. It opens with an enum

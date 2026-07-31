@@ -2151,6 +2151,7 @@ fn emit_revision_compound_loft_surface(
         construction: Box::new(cadmpeg_ir::geometry::RevisionCompoundLoftConstruction {
             revision: construction.revision,
             tail_enum: construction.tail_enum,
+            tail_parameterization: construction.tail_parameterization,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             base_profile,
@@ -2232,6 +2233,7 @@ fn emit_revision_g2_blend_surface(
             shape_length: construction.shape_length,
             shape_tail: construction.shape_tail,
             tail_enum: construction.tail_enum,
+            tail_parameterization: construction.tail_parameterization,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             tail_extensions: construction.tail_extensions,

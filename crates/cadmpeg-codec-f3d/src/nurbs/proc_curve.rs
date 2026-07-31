@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Procedural curve embedded types, decoders, resolving-ref walkers, and writer-facing patch layouts.
 
-use crate::nurbs::blend::{decode_rolling_ball_side, decode_surface_ranges};
+use crate::nurbs::blend::{
+    decode_optional_rolling_ball_surface, decode_rolling_ball_side, decode_surface_ranges,
+};
 use crate::nurbs::core::{
     decode_curve_block, decode_curve_cache_resolving_refs, decode_surface_block,
     decode_surface_cache_resolving_refs,
@@ -16,8 +18,8 @@ use crate::nurbs::reader::{
     take_optional_range_value, take_range_value, take_tagged_int, Nullable, INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
-    find_intcurve_subtype, find_subtype_marker, first_construction_subtype, subtype_refs,
-    subtype_span, SubtypeTables,
+    find_intcurve_subtype, find_owned_subtype_marker, find_subtype_marker,
+    first_construction_subtype, subtype_refs, subtype_span, SubtypeTables,
 };
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
@@ -1287,6 +1289,108 @@ fn decode_embedded_surface_curve(
     })
 }
 
+/// Decode a form-2 `par_int_cur` scope into the curve it denotes.
+///
+/// Form 2 replaces the solved cache and its fit tolerance with a bool-gated
+/// curve interval and a closed-form enum; the members from the supports onward
+/// are the shared cache-first context. The construction is therefore the
+/// occupied support surface restricted to the parameter curve in the matching
+/// slot.
+///
+/// Only a pcurve that holds one surface parameter constant across the support's
+/// whole domain in the other is decoded: that restriction is exactly a NURBS
+/// curve of the support's degree over the support's knot vector. Any other
+/// pcurve denotes a curve a NURBS cache can only approximate, so it is refused.
+pub(crate) fn decode_par_int_cur_isoline(
+    scope: &[u8],
+    int_width: usize,
+    reference_context: Option<(&[u8], &SubtypeTables)>,
+) -> Option<NurbsCurve> {
+    let names: [&[u8]; 2] = [b"par_int_cur", b"parcur"];
+    let (start, name) = find_owned_subtype_marker(scope, &names, int_width)?;
+    let mut position = start + name.len() + 3;
+    (take_tagged_int(scope, &mut position, 0x04, int_width)? > 0).then_some(())?;
+    (take_tagged_int(scope, &mut position, 0x15, int_width)? == 2).then_some(())?;
+    take_range_value(scope, &mut position)?;
+    take_range_value(scope, &mut position)?;
+    take_tagged_int(scope, &mut position, 0x15, int_width)?;
+    let supports = [
+        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?.0,
+        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?.0,
+    ];
+    let pcurves = [
+        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?,
+        decode_nullable_embedded_pcurve(scope, &mut position, int_width)?,
+    ];
+    // The support-slot selector puts the parametric support and its parameter
+    // curve in the same slot and nulls the other; a support without its pcurve,
+    // or two occupied slots, is not this construction.
+    let occupied: Vec<usize> = (0..2)
+        .filter(|slot| supports[*slot].is_some() || pcurves[*slot].is_some())
+        .collect();
+    let [slot] = occupied.as_slice() else {
+        return None;
+    };
+    let (Some(SurfaceGeometry::Nurbs(support)), Some(pcurve)) = (&supports[*slot], &pcurves[*slot])
+    else {
+        return None;
+    };
+    surface_isoline_along(support, pcurve)
+}
+
+/// The support isoline a uv pcurve selects, or `None` when the pcurve is not an
+/// isoline of the support's full domain.
+fn surface_isoline_along(
+    support: &cadmpeg_ir::geometry::NurbsSurface,
+    pcurve: &NurbsPcurve,
+) -> Option<NurbsCurve> {
+    use cadmpeg_ir::eval::IsolineDirection;
+    (pcurve.degree == 1 && pcurve.control_points.len() == 2 && pcurve.weights.is_none())
+        .then_some(())?;
+    let start = *pcurve.control_points.first()?;
+    let end = *pcurve.control_points.last()?;
+    let domain = [*pcurve.knots.first()?, *pcurve.knots.last()?];
+    let u_domain = [*support.u_knots.first()?, *support.u_knots.last()?];
+    let v_domain = [*support.v_knots.first()?, *support.v_knots.last()?];
+    let (direction, at, free_domain, travel) = if agree(start.u, end.u, width(u_domain)) {
+        (
+            IsolineDirection::ConstantU,
+            start.u,
+            v_domain,
+            [start.v, end.v],
+        )
+    } else if agree(start.v, end.v, width(v_domain)) {
+        (
+            IsolineDirection::ConstantV,
+            start.v,
+            u_domain,
+            [start.u, end.u],
+        )
+    } else {
+        return None;
+    };
+    // The pcurve's free coordinate must be the support parameter itself, and
+    // must run the support's whole domain: anything shorter is a trim, which the
+    // support's own knot vector cannot express.
+    let scale = width(free_domain);
+    (agree(travel[0], domain[0], scale)
+        && agree(travel[1], domain[1], scale)
+        && agree(free_domain[0], domain[0], scale)
+        && agree(free_domain[1], domain[1], scale))
+    .then_some(())?;
+    cadmpeg_ir::eval::nurbs_surface_isoline(support, direction, at)
+}
+
+/// Span of a parameter domain.
+fn width(domain: [f64; 2]) -> f64 {
+    (domain[1] - domain[0]).abs()
+}
+
+/// Two parameters name the same value at `scale`'s representable precision.
+fn agree(left: f64, right: f64, scale: f64) -> bool {
+    (left - right).abs() <= 1e-12 * scale
+}
+
 /// Shared cache-first intcurve context: revision, enum zero, solved cache and
 /// fit tolerance, two bounded supports, two nullable pcurves, two optional
 /// solved-interval endpoints, three discontinuity arrays, and one extension.
@@ -1308,9 +1412,27 @@ fn decode_cache_first_curve_context(
 ) -> Option<CacheFirstCurveContext> {
     let revision = take_tagged_int(bytes, position, 0x04, int_width)?;
     (revision > 0).then_some(())?;
-    (take_tagged_int(bytes, position, 0x15, int_width)? == 0).then_some(())?;
-    *position = decode_curve_block(bytes, *position, int_width)?.end;
-    take_f64(bytes, position)?;
+    // The leading enum selects the approximation-cache form. `0` stores the
+    // solved curve cache and its fit tolerance; `2` stores neither and instead
+    // stores a bool-gated curve interval and a closed-form enum. No other value
+    // has a defined grammar, so it fails and the containing record is retained
+    // verbatim.
+    let cache_enum = take_tagged_int(bytes, position, 0x15, int_width)?;
+    let parameterization = match cache_enum {
+        0 => {
+            *position = decode_curve_block(bytes, *position, int_width)?.end;
+            take_f64(bytes, position)?;
+            None
+        }
+        2 => Some(cadmpeg_ir::geometry::CacheFirstCurveParameterization {
+            interval: [
+                take_optional_range_value(bytes, position)?,
+                take_optional_range_value(bytes, position)?,
+            ],
+            closed_form: take_tagged_int(bytes, position, 0x15, int_width)?,
+        }),
+        _ => return None,
+    };
     let (first_surface, first_bounds) = decode_optional_embedded_surface_with_bounds(
         bytes,
         position,
@@ -1347,6 +1469,8 @@ fn decode_cache_first_curve_context(
     Some(CacheFirstCurveContext {
         form: cadmpeg_ir::geometry::CacheFirstCurveForm {
             revision,
+            cache_enum,
+            parameterization,
             support_bounds: [first_bounds, second_bounds],
             solved_range,
             extension,
@@ -1435,6 +1559,8 @@ fn decode_cache_first_surface_curve(
             flag,
             second_flag,
             revision: context.form.revision,
+            cache_enum: context.form.cache_enum,
+            parameterization: context.form.parameterization,
             support_bounds: context.form.support_bounds,
             solved_range: context.form.solved_range,
         }),
@@ -2427,4 +2553,119 @@ fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
         *curve.knots.get(degree)?,
         *curve.knots.get(curve.control_points.len())?,
     ])
+}
+
+#[cfg(test)]
+mod cache_form_tests {
+    use super::*;
+
+    /// A tagged integer field.
+    fn push_int(bytes: &mut Vec<u8>, tag: u8, value: i64, int_width: usize) {
+        bytes.push(tag);
+        match int_width {
+            8 => bytes.extend_from_slice(&value.to_le_bytes()),
+            _ => bytes.extend_from_slice(&(value as i32).to_le_bytes()),
+        }
+    }
+
+    /// A native identifier.
+    fn push_ident(bytes: &mut Vec<u8>, value: &str) {
+        bytes.push(0x0d);
+        bytes.push(u8::try_from(value.len()).expect("short identifier"));
+        bytes.extend_from_slice(value.as_bytes());
+    }
+
+    /// The shared cache-first intcurve context after its leading enum: two null
+    /// supports, two null pcurves, two absent solved-interval endpoints, three
+    /// empty discontinuity arrays, and the ASM extension integer.
+    fn push_cache_first_remainder(bytes: &mut Vec<u8>, int_width: usize) {
+        push_ident(bytes, "null_surface");
+        push_ident(bytes, "null_surface");
+        push_ident(bytes, "nullbs");
+        push_ident(bytes, "nullbs");
+        bytes.extend_from_slice(&[0x0b, 0x0b]);
+        for _ in 0..3 {
+            push_int(bytes, 0x04, 0, int_width);
+        }
+        push_int(bytes, 0x04, 7, int_width);
+    }
+
+    /// A degree-one solved curve whose parameter domain is `[0, 1]`.
+    fn solved_curve() -> NurbsCurve {
+        NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        }
+    }
+
+    /// Cache form `2` stores no `bs3_curve` and no fit tolerance: the leading
+    /// enum is followed by the bool-gated curve interval and the closed-form
+    /// enum, and the rest of the context continues unchanged.
+    #[test]
+    fn parameterized_cache_form_reads_the_interval_and_closed_form_enum() {
+        for int_width in [4usize, 8] {
+            let mut bytes = Vec::new();
+            push_int(&mut bytes, 0x04, 23_100, int_width);
+            push_int(&mut bytes, 0x15, 2, int_width);
+            bytes.push(0x0a);
+            bytes.push(0x06);
+            bytes.extend_from_slice(&0.125f64.to_le_bytes());
+            bytes.push(0x0b);
+            push_int(&mut bytes, 0x15, 1, int_width);
+            push_cache_first_remainder(&mut bytes, int_width);
+
+            let solved = solved_curve();
+            let tables = SubtypeTables::from_stream(&bytes);
+            let mut position = 0usize;
+            let context = decode_cache_first_curve_context(
+                &bytes,
+                &mut position,
+                int_width,
+                &solved,
+                &bytes,
+                &tables,
+            )
+            .unwrap_or_else(|| panic!("parameterized cache-first context at width {int_width}"));
+            // Every field of the context is read: the walk ends on the last
+            // byte of the ASM extension integer.
+            assert_eq!(position, bytes.len());
+            assert_eq!(context.form.revision, 23_100);
+            assert_eq!(context.form.cache_enum, 2);
+            let parameterization = context.form.parameterization.expect("parameterization");
+            assert_eq!(parameterization.interval, [Some(0.125), None]);
+            assert_eq!(parameterization.closed_form, 1);
+            assert_eq!(context.form.extension, 7);
+            assert_eq!(context.form.solved_range, [None, None]);
+            // Absent solved-interval endpoints inherit the solved domain.
+            assert_eq!(context.parameter_range, [0.0, 1.0]);
+        }
+    }
+
+    /// A cache form with no defined grammar fails, so the containing record is
+    /// retained verbatim rather than misparsed.
+    #[test]
+    fn undefined_cache_form_is_rejected_for_verbatim_retention() {
+        for int_width in [4usize, 8] {
+            let mut bytes = Vec::new();
+            push_int(&mut bytes, 0x04, 23_100, int_width);
+            push_int(&mut bytes, 0x15, 1, int_width);
+            push_cache_first_remainder(&mut bytes, int_width);
+
+            let solved = solved_curve();
+            let tables = SubtypeTables::from_stream(&bytes);
+            let mut position = 0usize;
+            assert!(decode_cache_first_curve_context(
+                &bytes,
+                &mut position,
+                int_width,
+                &solved,
+                &bytes,
+                &tables,
+            )
+            .is_none());
+        }
+    }
 }
