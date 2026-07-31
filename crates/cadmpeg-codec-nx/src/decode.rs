@@ -21,9 +21,10 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
-    CurveProjectionDirection, CurveProjectionDirectionState, EdgeSelection, ExtrudeExtent,
-    FaceSelection, FeatureDefinition, HoleKind, Length, ParameterId, PathRef, PatternKind,
-    ProfileRef, RadiusSpec, RibConstruction, RibDraft, SketchSpace, Termination, TrimRegion,
+    CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference, EdgeSelection,
+    ExtrudeExtent, FaceSelection, FeatureDefinition, HoleKind, Length, ParameterId, PathRef,
+    PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, SketchSpace, Termination,
+    TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -6681,13 +6682,16 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 reference,
                 distance,
             } if !distance.0.is_finite()
-                || reference.as_ref().is_none_or(|reference| {
-                    ir.model
-                        .features
-                        .iter()
-                        .find(|candidate| candidate.id == *reference)
-                        .is_none_or(|source| source.ordinal >= feature.ordinal)
-                        || !feature.dependencies.contains(reference)
+                || reference.as_ref().is_none_or(|reference| match reference {
+                    DatumPlaneReference::Feature(reference) => {
+                        ir.model
+                            .features
+                            .iter()
+                            .find(|candidate| candidate.id == *reference)
+                            .is_none_or(|source| source.ordinal >= feature.ordinal)
+                            || !feature.dependencies.contains(reference)
+                    }
+                    DatumPlaneReference::Face { face, .. } => face_selection_is_incomplete(face),
                 }) =>
             {
                 "datum plane"

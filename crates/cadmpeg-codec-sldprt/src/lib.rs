@@ -157,6 +157,8 @@ impl Codec for SldprtCodec {
     fn detect(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_sldprt(prefix) {
             Confidence::High
+        } else if container::looks_like_compound_file(prefix) {
+            Confidence::Low
         } else {
             Confidence::No
         }

@@ -296,7 +296,9 @@ See the [coverage contract](formats/catia-coverage.md), [format specification](f
   native endpoints select exactly one of the two candidates.
   Analytic carrier pairs with one derived curve component transfer without
   solved endpoints; present endpoints must agree with that component. Multiple
-  components require endpoints that select exactly one candidate.
+  components require endpoints that select exactly one candidate. Every
+  uniquely identified visible row without a solved carrier retains its native
+  identity and containing geometry record as an explicit unknown carrier.
   Positive-ratio elliptical cones transfer tangent apex generators and
   endpoint-selected two-generator apex sections.
   Coaxial positive-ratio cones with proportional transverse quadratic forms
@@ -352,6 +354,9 @@ See the [coverage contract](formats/catia-coverage.md), [format specification](f
   without a complete position lane or persistent geometry binding remain
   native records.
 - **Design intent: Partial.** Ordered stored feature-operation states and their current-state projection, the configuration driver-table root pointer, dependencies, the implicit `AllFeatur` entity/reference graph and mixed generated-entity tables, order-validated visible-to-nonvisible surface replay associations, placed and unplaced section sketches and their ordered planar-sketch history nodes, source-offset-scoped repeated sketch snapshots, typed and opaque `segtab` entities including type-10 circles, ordered saved lines, arcs, circles, and splines, typed horizontal, vertical, coincidence, point-on-object, tangency, perpendicular, parallel, equal, axial and central symmetry, same-coordinate, and radius/diameter constraints, snapshot-owned dimensions including geometry-free dimension tables and radius/diameter display semantics, curve-equation programs with scalar operators and standard mathematical functions, and cylindrical native-axis helix semantics transfer as typed or native design records. A resolved base linear section sweep carries its resolved sketch profile, direction, blind, symmetric, or two-sided extent, new-body operation, solid construction state, and evaluated output body. A resolved circular section sweep carries its resolved sketch profile, direction, blind extent, Boolean effect, solid construction state, and evaluated output body. A uniquely placed DEPDB rotational section carries its profile, axis, Boolean effect, solid construction state, native definition reference, full-turn angular extent when its angle choice is present, and evaluated output body. Repeated identical full-turn sequences remain separate native regeneration-state records.
+  A class-923 datum without an owned plane row uses its uniquely owned
+  definition's unique complete local-system frame when its stored x and z axes
+  define a valid datum chart; incomplete sibling frames do not compete.
   Solver-only section entity identifiers transfer as shared native construction
   entities, preserving complete incidence references without assigning an
   unsupported geometry family.
@@ -363,6 +368,9 @@ See the [coverage contract](formats/catia-coverage.md), [format specification](f
   The final stored state for each feature supplies its active recipe, Boolean
   effect, schema parent, and source tag while every preceding state remains an
   ordered native regeneration record.
+  A nonzero geometry-row generator identity with no operation, feature row, or
+  datum definition transfers as stored geometry rather than an invented native
+  operation.
 - **Product structure: Partial.** A unique native model-name header defines one
   part product and one root identity occurrence. The product owns every
   transferred body. Assembly component definitions, child occurrences,

@@ -397,6 +397,53 @@ pub(crate) fn principal_plane(feature: &Feature) -> Option<PrincipalPlane> {
     }
 }
 
+/// Classify a built-in principal plane from a complete reserved-identity triplet.
+pub(crate) fn principal_plane_with_siblings(
+    feature: &Feature,
+    siblings: &[Feature],
+) -> Option<PrincipalPlane> {
+    let is_builtin_plane = |candidate: &Feature| {
+        native_object_class(candidate.input_class.as_deref().unwrap_or_default()).kind
+            == NativeClassKind::ReferencePlane
+            && candidate.parameters.is_empty()
+            && candidate.properties.is_empty()
+    };
+    let complete_triplet = |start: u32| {
+        (start..start + 3).all(|source| {
+            siblings.iter().any(|candidate| {
+                candidate
+                    .source_id
+                    .as_deref()
+                    .and_then(|value| value.parse::<u32>().ok())
+                    == Some(source)
+                    && is_builtin_plane(candidate)
+            })
+        })
+    };
+    let start = if complete_triplet(2) {
+        2
+    } else if complete_triplet(3) {
+        3
+    } else {
+        return principal_plane(feature);
+    };
+    if !is_builtin_plane(feature) {
+        return None;
+    }
+    match feature
+        .source_id
+        .as_deref()?
+        .parse::<u32>()
+        .ok()?
+        .checked_sub(start)?
+    {
+        0 => Some(PrincipalPlane::Front),
+        1 => Some(PrincipalPlane::Top),
+        2 => Some(PrincipalPlane::Right),
+        _ => None,
+    }
+}
+
 fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {
     native_object_class(class?).feature
 }

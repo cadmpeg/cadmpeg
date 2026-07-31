@@ -87,73 +87,78 @@ pub enum TokenKind {
 pub fn tokens(data: &[u8]) -> Vec<Token> {
     let mut result = Vec::new();
     let mut offset = 0;
-    while offset < data.len() {
-        let head = data[offset];
-        let (length, kind) = match head {
-            token::NAMED_RECORD => match data
-                .get(offset + 2..)
-                .and_then(|rest| rest.iter().position(|&b| b == 0))
-            {
-                Some(name_len) => (name_len + 3, TokenKind::NamedRecord),
-                None => (data.len() - offset, TokenKind::Truncated(head)),
-            },
-            token::ENTITY_REF => match reference_id(data, offset + 1) {
-                Ok((_, end)) => (end - offset, TokenKind::EntityReference),
-                Err(_) => (data.len() - offset, TokenKind::Truncated(head)),
-            },
-            token::ARRAY_OPEN => {
-                let (_, end) = compact_int(data, offset + 1);
-                if end == offset + 1 {
-                    (1, TokenKind::Truncated(head))
-                } else {
-                    (end - offset, TokenKind::ArrayOpen)
-                }
-            }
-            token::SCALAR_BODY => {
-                let (_, dimensions_end) = compact_int(data, offset + 1);
-                let (_, count_end) = compact_int(data, dimensions_end);
-                if dimensions_end == offset + 1 || count_end == dimensions_end {
-                    (data.len() - offset, TokenKind::Truncated(head))
-                } else {
-                    (count_end - offset, TokenKind::ScalarBody)
-                }
-            }
-            token::ARRAY_CLOSE => (1, TokenKind::ArrayClose),
-            0xe2 => (1, TokenKind::CompoundOpen),
-            token::COMPOUND_CLOSE => (1, TokenKind::CompoundClose),
-            0x29 | 0x2a | 0x2e | 0x2f | 0x42 | 0x43 | 0x47 | 0x48 => {
-                if offset + 3 <= data.len() {
-                    (3, TokenKind::ShortFloat)
-                } else {
-                    (data.len() - offset, TokenKind::Truncated(head))
-                }
-            }
-            0x5e => {
-                if offset + 7 <= data.len() {
-                    (7, TokenKind::SevenByteFloat)
-                } else {
-                    (data.len() - offset, TokenKind::Truncated(head))
-                }
-            }
-            0x46 | 0x2d if offset + 8 <= data.len() => (8, TokenKind::WorldCoordinate),
-            0x46 | 0x2d => (data.len() - offset, TokenKind::Truncated(head)),
-            0..=0xbf => {
-                let (_, end) = compact_int(data, offset);
-                (end - offset, TokenKind::CompactInt)
-            }
-            0xe1 | 0xe4 | 0xe5 | 0xe6 | 0xe8 | 0xf1 | 0xf2 | 0xf3 | 0xf5 | 0xf6 => {
-                (1, TokenKind::OtherStructural(head))
-            }
-            _ => (1, TokenKind::Unknown(head)),
-        };
-        result.push(Token {
-            offset,
-            length,
-            kind,
-        });
-        offset += length;
+    while let Some(token) = token_at(data, offset) {
+        offset += token.length;
+        result.push(token);
     }
     result
+}
+
+/// Decode one byte-self-delimiting PSB token at `offset`.
+pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
+    let &head = data.get(offset)?;
+    let (length, kind) = match head {
+        token::NAMED_RECORD => match data
+            .get(offset + 2..)
+            .and_then(|rest| rest.iter().position(|&b| b == 0))
+        {
+            Some(name_len) => (name_len + 3, TokenKind::NamedRecord),
+            None => (data.len() - offset, TokenKind::Truncated(head)),
+        },
+        token::ENTITY_REF => match reference_id(data, offset + 1) {
+            Ok((_, end)) => (end - offset, TokenKind::EntityReference),
+            Err(_) => (data.len() - offset, TokenKind::Truncated(head)),
+        },
+        token::ARRAY_OPEN => {
+            let (_, end) = compact_int(data, offset + 1);
+            if end == offset + 1 {
+                (1, TokenKind::Truncated(head))
+            } else {
+                (end - offset, TokenKind::ArrayOpen)
+            }
+        }
+        token::SCALAR_BODY => {
+            let (_, dimensions_end) = compact_int(data, offset + 1);
+            let (_, count_end) = compact_int(data, dimensions_end);
+            if dimensions_end == offset + 1 || count_end == dimensions_end {
+                (data.len() - offset, TokenKind::Truncated(head))
+            } else {
+                (count_end - offset, TokenKind::ScalarBody)
+            }
+        }
+        token::ARRAY_CLOSE => (1, TokenKind::ArrayClose),
+        0xe2 => (1, TokenKind::CompoundOpen),
+        token::COMPOUND_CLOSE => (1, TokenKind::CompoundClose),
+        0x29 | 0x2a | 0x2e | 0x2f | 0x42 | 0x43 | 0x47 | 0x48 => {
+            if offset + 3 <= data.len() {
+                (3, TokenKind::ShortFloat)
+            } else {
+                (data.len() - offset, TokenKind::Truncated(head))
+            }
+        }
+        0x5e => {
+            if offset + 7 <= data.len() {
+                (7, TokenKind::SevenByteFloat)
+            } else {
+                (data.len() - offset, TokenKind::Truncated(head))
+            }
+        }
+        0x46 | 0x2d if offset + 8 <= data.len() => (8, TokenKind::WorldCoordinate),
+        0x46 | 0x2d => (data.len() - offset, TokenKind::Truncated(head)),
+        0..=0xbf => {
+            let (_, end) = compact_int(data, offset);
+            (end - offset, TokenKind::CompactInt)
+        }
+        0xe1 | 0xe4 | 0xe5 | 0xe6 | 0xe8 | 0xf1 | 0xf2 | 0xf3 | 0xf5 | 0xf6 => {
+            (1, TokenKind::OtherStructural(head))
+        }
+        _ => (1, TokenKind::Unknown(head)),
+    };
+    Some(Token {
+        offset,
+        length,
+        kind,
+    })
 }
 
 /// Decode a generic PSB compact integer at `offset` ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#21-compact-integers)).
@@ -345,6 +350,19 @@ mod tests {
     #[test]
     fn compact_int_empty_is_noop() {
         assert_eq!(compact_int(&[], 0), (0, 0));
+    }
+
+    #[test]
+    fn token_at_retains_absolute_offset_and_extent() {
+        assert_eq!(
+            token_at(&[0, token::ENTITY_REF, 42, token::COMPOUND_CLOSE], 1),
+            Some(Token {
+                offset: 1,
+                length: 2,
+                kind: TokenKind::EntityReference,
+            })
+        );
+        assert!(token_at(&[0], 1).is_none());
     }
 
     #[test]

@@ -192,6 +192,8 @@ pub fn project_sketch_constraints(
         .unwrap_or_else(|| Definition::Native {
             native_kind: relation_kind_name(relation),
             native_state: Some(relation.state),
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
             entities: native_entities(),
             parameter: None,
             operands: relation
