@@ -2509,6 +2509,41 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     assert!(parse_parameter_owner(&malformed).is_none());
 }
 
+/// A parameter-owner frame length outside the five layouts carries no known
+/// field positions, so it declines. The evaluated-value offset therefore never
+/// reaches a length the layout match did not accept, and the three lengths that
+/// take its default all hold the value at 40.
+#[test]
+fn a_parameter_owner_frame_of_an_unlisted_length_declines() {
+    for build in [
+        parameter_owner_frame as fn() -> Vec<u8>,
+        compact_parameter_owner_frame,
+        counted_parameter_owner_frame,
+        compact_counted_parameter_owner_frame,
+        tagged_scalar_parameter_owner_frame,
+    ] {
+        let frame = build();
+        assert!(parse_parameter_owner(&frame).is_some());
+        let mut longer = frame.clone();
+        longer.push(0);
+        assert!(parse_parameter_owner(&longer).is_none());
+        assert!(parse_parameter_owner(&frame[..frame.len() - 1]).is_none());
+    }
+
+    assert_eq!(
+        parse_parameter_owner(&parameter_owner_frame())
+            .expect("owner frame")
+            .evaluated_value_offset,
+        40
+    );
+    assert_eq!(
+        parse_parameter_owner(&compact_parameter_owner_frame())
+            .expect("compact owner frame")
+            .evaluated_value_offset,
+        40
+    );
+}
+
 #[test]
 fn compact_parameter_owner_omits_the_variant_slot() {
     let parsed =

@@ -433,6 +433,11 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         scope_record_index,
         local_ordinal: u32_at(frame, 35)?,
         evaluated_value,
+        // The frame length already selected the field layout above, and any
+        // length outside that set returned there. The remaining lengths 99,
+        // 103, and 104 all read the evaluated value at 40; only the counted
+        // form at 101 and the tagged form at 107 shift it. A new layout arm
+        // above must add its own offset here rather than inherit 40.
         evaluated_value_offset: match frame.len() {
             101 => 41,
             107 => 44,
