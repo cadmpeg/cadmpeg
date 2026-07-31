@@ -337,13 +337,8 @@ impl<'a> DecodeContext<'a> {
 
     fn lightweight_candidate(&mut self) -> CadIr {
         let mut candidate = self.ir.clone();
-        let unknowns = self
-            .unknowns
-            .iter()
-            .map(NativeUnknownRecord::from)
-            .collect::<Vec<_>>();
         candidate
-            .set_native_unknowns("rhino", &unknowns)
+            .set_native_unknowns_from("rhino", self.unknowns.iter().map(NativeUnknownRecord::from))
             .expect("Rhino unknown records serialize");
         candidate
     }
