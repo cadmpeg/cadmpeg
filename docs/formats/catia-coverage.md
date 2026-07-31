@@ -110,10 +110,11 @@ current scores require those matrices and representative fixtures.
   owner, evaluation state, expression, and dependency identities resolve
   exactly. Typed unset inputs transfer independently while preventing formula
   evaluation. Each formula relation retains typed expression and output
-  incidences with their stored identities, same-graph entities, and entity
-  classes; the output also retains terminal-null state. Coverage distinguishes
-  resolved, terminal-null, unresolved, classified, and unclassified outputs
-  and classified or unclassified expression incidences. Every formula symbol
+  incidences with their payload-relative byte offsets, stored identities,
+  same-graph entities, and entity classes; the output also retains terminal-null
+  state. Coverage distinguishes resolved, terminal-null, unresolved, classified,
+  and unclassified outputs and classified or unclassified expression
+  incidences. Every formula symbol
   occurrence retains its UTF-8 byte offset, exact text, and all same-graph
   parameter binding candidate identities, entities, and classes; coverage
   partitions classified and unclassified candidates. Exactly one candidate

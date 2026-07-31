@@ -40,6 +40,7 @@ pub(crate) fn transfer_parameters(
                 .formula_relation
                 .as_ref()?
                 .output_entity
+                .reference
                 .entity
                 .as_deref()
         })
@@ -122,6 +123,7 @@ pub(crate) fn transfer_parameters(
         };
         let Some(expression_entity) = formula
             .expression_entity
+            .reference
             .entity
             .as_deref()
             .and_then(|expression| entities.get(expression))
@@ -140,14 +142,11 @@ pub(crate) fn transfer_parameters(
         let mut expression_bindings = BTreeMap::new();
         let mut all_inputs_complete = true;
         for dependency in &formula.parameter_dependencies {
-            let Some(input) = signature.inputs.iter().find(|input| {
-                dependency
-                    .symbol
-                    .strip_prefix(&input.parameter)
-                    .is_some_and(|suffix| {
-                        suffix.is_empty() || suffix.starts_with(char::is_whitespace)
-                    })
-            }) else {
+            let Some(input) = signature
+                .inputs
+                .iter()
+                .find(|input| crate::native::dependency_matches_input(dependency, input))
+            else {
                 all_inputs_complete = false;
                 continue;
             };
@@ -207,6 +206,7 @@ pub(crate) fn transfer_parameters(
             .collect::<Vec<_>>();
         if let Some(output) = formula
             .output_entity
+            .reference
             .entity
             .as_deref()
             .filter(|_| evaluated_expression.is_some())

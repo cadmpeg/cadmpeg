@@ -14519,13 +14519,15 @@ fn native_namespace_types_and_validates_formula_relations() {
         .formula_relation
         .as_ref()
         .expect("complete formula relation");
-    assert_eq!(formula.expression_entity.entity_id, 2);
+    assert_eq!(formula.expression_entity.payload_offset, 4);
+    assert_eq!(formula.output_entity.payload_offset, 6);
+    assert_eq!(formula.expression_entity.reference.entity_id, 2);
     assert_eq!(
-        formula.expression_entity.entity.as_deref(),
+        formula.expression_entity.reference.entity.as_deref(),
         Some(native.entity_records[1].id.as_str())
     );
     assert_eq!(
-        formula.expression_entity.class_name,
+        formula.expression_entity.reference.class_name,
         native
             .object_graphs
             .iter()
@@ -14533,8 +14535,8 @@ fn native_namespace_types_and_validates_formula_relations() {
             .find(|record| record.entity_id == Some(2))
             .and_then(|record| record.class_name.clone())
     );
-    assert_eq!(formula.output_entity.entity_id, 99);
-    assert_eq!(formula.output_entity.entity, None);
+    assert_eq!(formula.output_entity.reference.entity_id, 99);
+    assert_eq!(formula.output_entity.reference.entity, None);
     let parameter_entity = &native.entity_records[2];
     assert_eq!(
         formula.parameter_dependencies,
@@ -14572,14 +14574,16 @@ fn native_namespace_types_and_validates_formula_relations() {
     let expression = formula_fields
         .remove("expression_entity")
         .expect("stored expression entity");
-    let expression = expression
+    let expression = expression.as_object().expect("stored expression incidence")["reference"]
         .as_object()
         .expect("stored expression-entity object");
     formula_fields.insert("expression".to_string(), expression["entity"].clone());
     let output = formula_fields
         .remove("output_entity")
         .expect("stored output entity");
-    let output = output.as_object().expect("stored output-entity object");
+    let output = output.as_object().expect("stored output incidence")["reference"]
+        .as_object()
+        .expect("stored output-entity object");
     formula_fields.insert(
         "parameter_entity_id".to_string(),
         output["entity_id"].clone(),
@@ -14618,7 +14622,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .expect("stored expression entity");
     formula_fields.insert(
         "expression".to_string(),
-        expression
+        expression.as_object().expect("stored expression incidence")["reference"]
             .as_object()
             .expect("stored expression-entity object")["entity"]
             .clone(),
@@ -14626,6 +14630,34 @@ fn native_namespace_types_and_validates_formula_relations() {
     version_236_namespace.version = crate::native::CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION - 1;
     let migrated = crate::native::CatiaNative::load(&version_236_namespace)
         .expect("migrate formula expression reference");
+    assert_eq!(
+        migrated.entity_records[0].formula_relation,
+        Some(expected_formula.clone())
+    );
+
+    let mut version_249_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_249_namespace)
+        .expect("store current formula reference offsets");
+    let formula_fields = version_249_namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("formula_relation")
+        .expect("stored formula relation")
+        .as_object_mut()
+        .expect("stored formula-relation object");
+    for field in ["expression_entity", "output_entity"] {
+        let reference = formula_fields[field]
+            .as_object()
+            .expect("stored formula incidence")["reference"]
+            .clone();
+        formula_fields.insert(field.to_string(), reference);
+    }
+    version_249_namespace.version = crate::native::CATIA_FORMULA_REFERENCE_OFFSET_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&version_249_namespace)
+        .expect("migrate formula reference offsets");
     assert_eq!(
         migrated.entity_records[0].formula_relation,
         Some(expected_formula.clone())
@@ -14724,11 +14756,29 @@ fn native_namespace_types_and_validates_formula_relations() {
         .as_mut()
         .expect("complete formula relation")
         .output_entity
+        .reference
         .entity_id = 98;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed formula relation");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut malformed_offset =
+        crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
+    malformed_offset.entity_records[0]
+        .formula_relation
+        .as_mut()
+        .expect("complete formula relation")
+        .expression_entity
+        .payload_offset = u64::MAX;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_offset
+        .store(&mut namespace)
+        .expect("store malformed formula incidence offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
@@ -14931,9 +14981,9 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .formula_relation
         .as_ref()
         .expect("complete formula relation");
-    assert_eq!(formula.output_entity.entity_id, 5);
-    assert!(formula.output_entity.is_null);
-    assert_eq!(formula.output_entity.entity, None);
+    assert_eq!(formula.output_entity.reference.entity_id, 5);
+    assert!(formula.output_entity.reference.is_null);
+    assert_eq!(formula.output_entity.reference.entity, None);
     let formula_record = native.object_graphs[0]
         .records
         .iter()
@@ -14965,6 +15015,7 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .as_mut()
         .expect("complete formula relation")
         .output_entity
+        .reference
         .is_null = false;
     version_210_namespace
         .set_arena("entity_records", &version_210_entities)
@@ -14979,6 +15030,7 @@ fn terminal_entity_identity_is_a_null_formula_output() {
             .as_ref()
             .expect("migrated formula relation")
             .output_entity
+            .reference
             .is_null
     );
 
@@ -15048,7 +15100,8 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .formula_relation
         .as_ref()
         .expect("complete formula relation")
-        .output_entity;
+        .output_entity
+        .reference;
     assert_eq!(output_entity.entity_id, 4);
     assert!(output_entity.entity.is_some());
     assert_eq!(
@@ -15101,6 +15154,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .as_ref()
         .expect("complete formula relation")
         .expression_entity
+        .reference
         .class_name
         .is_some();
     assert_eq!(

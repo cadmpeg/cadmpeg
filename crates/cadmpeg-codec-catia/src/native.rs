@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 249;
+pub const CATIA_NATIVE_VERSION: u32 = 250;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -96,6 +96,9 @@ pub(crate) const CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION: u32 = 248;
 /// Native schema version requiring canonical relation-signature parameter symbols.
 #[cfg(test)]
 pub(crate) const CATIA_RELATION_SIGNATURE_PARAMETER_VERSION: u32 = 249;
+/// Native schema version retaining formula reference occurrence offsets.
+#[cfg(test)]
+pub(crate) const CATIA_FORMULA_REFERENCE_OFFSET_VERSION: u32 = 250;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1414,11 +1417,11 @@ pub struct CatiaDefinitionChainValue {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaFormulaRelation {
     /// Complete relation-expression incidence selected by the second payload reference.
-    #[serde(default)]
-    pub expression_entity: CatiaEntityReference,
+    #[serde(default, deserialize_with = "deserialize_payload_entity_reference")]
+    pub expression_entity: CatiaPayloadEntityReference,
     /// Output parameter incidence selected by the third payload reference.
-    #[serde(default)]
-    pub output_entity: CatiaEntityReference,
+    #[serde(default, deserialize_with = "deserialize_payload_entity_reference")]
+    pub output_entity: CatiaPayloadEntityReference,
     /// Named parameter records selected by expression-local symbols, in occurrence order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parameter_dependencies: Vec<CatiaRelationParameterDependency>,
@@ -1498,7 +1501,7 @@ pub struct CatiaRelationProgramInstance {
         skip_serializing_if = "Vec::is_empty",
         deserialize_with = "deserialize_relation_reference_incidences"
     )]
-    pub reference_incidences: Vec<CatiaRelationProgramReferenceIncidence>,
+    pub reference_incidences: Vec<CatiaPayloadEntityReference>,
     /// Selected entity when it carries a complete relation-expression program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_expression: Option<String>,
@@ -1516,9 +1519,9 @@ pub struct CatiaRelationProgramInstance {
     pub lead54_trailing_entity: Option<CatiaEntityReference>,
 }
 
-/// One exact reference occurrence in a compound relation-program payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct CatiaRelationProgramReferenceIncidence {
+/// One exact entity-reference occurrence in an object payload.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaPayloadEntityReference {
     /// Byte offset of the reference field within the object payload.
     pub payload_offset: u64,
     /// Stored entity identity and its same-graph resolution.
@@ -1527,33 +1530,45 @@ pub struct CatiaRelationProgramReferenceIncidence {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum StoredCatiaRelationProgramReferenceIncidence {
-    Current(CatiaRelationProgramReferenceIncidence),
+enum StoredCatiaPayloadEntityReference {
+    Current(CatiaPayloadEntityReference),
     Legacy(CatiaEntityReference),
 }
 
 fn deserialize_relation_reference_incidences<'de, D>(
     deserializer: D,
-) -> Result<Vec<CatiaRelationProgramReferenceIncidence>, D::Error>
+) -> Result<Vec<CatiaPayloadEntityReference>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    Vec::<StoredCatiaRelationProgramReferenceIncidence>::deserialize(deserializer).map(
-        |incidences| {
-            incidences
-                .into_iter()
-                .map(|incidence| match incidence {
-                    StoredCatiaRelationProgramReferenceIncidence::Current(incidence) => incidence,
-                    StoredCatiaRelationProgramReferenceIncidence::Legacy(reference) => {
-                        CatiaRelationProgramReferenceIncidence {
-                            payload_offset: 0,
-                            reference,
-                        }
-                    }
-                })
-                .collect()
+    Vec::<StoredCatiaPayloadEntityReference>::deserialize(deserializer).map(|incidences| {
+        incidences
+            .into_iter()
+            .map(stored_payload_entity_reference)
+            .collect()
+    })
+}
+
+fn deserialize_payload_entity_reference<'de, D>(
+    deserializer: D,
+) -> Result<CatiaPayloadEntityReference, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    StoredCatiaPayloadEntityReference::deserialize(deserializer)
+        .map(stored_payload_entity_reference)
+}
+
+fn stored_payload_entity_reference(
+    incidence: StoredCatiaPayloadEntityReference,
+) -> CatiaPayloadEntityReference {
+    match incidence {
+        StoredCatiaPayloadEntityReference::Current(incidence) => incidence,
+        StoredCatiaPayloadEntityReference::Legacy(reference) => CatiaPayloadEntityReference {
+            payload_offset: 0,
+            reference,
         },
-    )
+    }
 }
 
 /// One stored entity identity and its optional same-graph resolution.
@@ -3221,7 +3236,7 @@ fn relation_program_instance(
             _ => None,
         })
         .map(|(value, offset)| {
-            Some(CatiaRelationProgramReferenceIncidence {
+            Some(CatiaPayloadEntityReference {
                 payload_offset: u64::try_from(offset).ok()?,
                 reference: entity_reference(
                     &object.parent,
@@ -3578,10 +3593,10 @@ fn formula_relation(
     }
     let [PayloadField::Atom { value: 249, .. }, PayloadField::Atom { value: 4, .. }, PayloadField::Reference { value: owner, .. }, PayloadField::Reference {
         value: expression_entity_id,
-        ..
+        offset: expression_offset,
     }, PayloadField::Reference {
         value: parameter_entity_id,
-        ..
+        offset: parameter_offset,
     }, PayloadField::Atom { value: 129, .. }, PayloadField::Terminator] =
         object.payload.fields.as_slice()
     else {
@@ -3606,22 +3621,28 @@ fn formula_relation(
     let parameter_dependencies =
         relation_parameter_dependencies(source, &object.parent, parameter_bindings);
     Some(CatiaFormulaRelation {
-        expression_entity: entity_reference(
-            &object.parent,
-            *expression_entity_id,
-            entity_references.entities,
-            entity_references.classes,
-            entity_references.terminal_nulls,
-        ),
-        output_entity: CatiaEntityReference {
-            is_null: parameter_reference.is_null,
-            ..entity_reference(
+        expression_entity: CatiaPayloadEntityReference {
+            payload_offset: u64::try_from(*expression_offset).ok()?,
+            reference: entity_reference(
                 &object.parent,
-                *parameter_entity_id,
+                *expression_entity_id,
                 entity_references.entities,
                 entity_references.classes,
                 entity_references.terminal_nulls,
-            )
+            ),
+        },
+        output_entity: CatiaPayloadEntityReference {
+            payload_offset: u64::try_from(*parameter_offset).ok()?,
+            reference: CatiaEntityReference {
+                is_null: parameter_reference.is_null,
+                ..entity_reference(
+                    &object.parent,
+                    *parameter_entity_id,
+                    entity_references.entities,
+                    entity_references.classes,
+                    entity_references.terminal_nulls,
+                )
+            },
         },
         parameter_dependencies,
     })
@@ -3766,7 +3787,7 @@ fn relation_parameter_dependencies(
         .collect()
 }
 
-fn dependency_matches_input(
+pub(crate) fn dependency_matches_input(
     dependency: &CatiaRelationParameterDependency,
     input: &CatiaRelationTypeInput,
 ) -> bool {
@@ -8981,6 +9002,7 @@ impl CatiaNative {
             || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
             || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
             || namespace.version < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
+            || namespace.version < CATIA_FORMULA_REFERENCE_OFFSET_VERSION
         {
             let records_by_id = records
                 .iter()
