@@ -19,6 +19,7 @@ mod attach;
 pub(crate) mod catalogue;
 mod display_jt;
 mod features;
+pub(crate) mod history;
 mod model;
 mod om;
 mod parasolid;
@@ -33,7 +34,7 @@ pub(crate) mod vector;
 // through `super::`. Only the symbols the decode tier (`decode.rs`, `lib.rs`)
 // consumes from outside the subtree are re-exported here.
 pub(crate) use model::NativeModel;
-pub(crate) use om::expression_parameter_names;
+pub(crate) use om::{evaluate_parameterized_expression, expression_parameter_names};
 pub(crate) use segments::segment_body_lineage_statuses;
 pub(crate) use substrate::{paired_delta_streams, topology_streams, ParsedStreams};
 

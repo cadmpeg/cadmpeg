@@ -314,11 +314,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-20. Feature-local face reconciliation
 
-**Question.** How does a face selected by an `moSingleFaceRef_w` feature-local path map to a face in the final B-rep?
+**Question.** What is the disposition of a feature-local face identity when no surviving face carries that identity?
 
-**Known.** `sldprt.md:327` through `sldprt.md:331` define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md:757` defines final B-rep face identities.
+**Known.** `sldprt.md:327` through `sldprt.md:331` define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md:777` defines how the terminal owner and feature-local face identity select the surviving face through `ATOM_ID_2001`.
 
-**Need.** We must know the mapping to bind face-terminated operation inputs to final topology.
+**Need.** We must distinguish a face consumed by a later operation from a face whose owner or identity attribute was not decoded.
 
 ### DI-21. Other inline extrusion operation bytes
 
@@ -330,17 +330,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-22. Other extrusion form codes
 
-**Question.** What operation and record shape does each sparse extrusion object outside the defined form codes use?
+**Question.** What distinguishes a joining `moICE_c` form-`11` object from a subtracting form-`11` object, and what operation and record shape does each sparse extrusion object outside the defined form codes use?
 
-**Known.** `sldprt.md:319` through `sldprt.md:321` define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. They define join or subtract semantics for the known form codes, including form `11` as subtract.
+**Known.** `sldprt.md:319` through `sldprt.md:321` define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Most form-`11` objects subtract, but a minority join.
 
-**Need.** We must know the other form codes to parse the object and construct its Boolean operation.
+**Need.** We must know the discriminator and the other form codes to parse the object and construct its Boolean operation.
 
 ### DI-23. Combine-body reconciliation
 
 **Question.** How does a body selected by a compact `moCombineBodies_c` target or tool path map to a body in the final B-rep?
 
-**Known.** The compact paths identify generated feature-local bodies. `sldprt.md:765` through `sldprt.md:861` define final B-rep body identities and ownership.
+**Known.** The compact paths identify generated feature-local bodies. `sldprt.md:765` through `sldprt.md:861` define final B-rep body identities and ownership. `ATOM_ID_2001` carries face identities and does not bind a feature-local body identity.
 
 **Need.** We must know the mapping to bind the Boolean target and tool bodies.
 
@@ -356,7 +356,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does an edge selected by an entry-form `moCompEdge_c` path map to an edge in the final B-rep?
 
-**Known.** The entry path identifies a generated feature-local edge. `sldprt.md:699` through `sldprt.md:729` define final B-rep edge identity and direction.
+**Known.** The entry path identifies a generated feature-local edge. `sldprt.md:699` through `sldprt.md:729` define final B-rep edge identity and direction. `ATOM_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
 
 **Need.** We must know the mapping to bind the selected operation edge.
 
@@ -399,3 +399,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** Compact sweep code `15` joins the sweep result.
 
 **Need.** We must know the other codes to construct the sweep result operation.
+
+### DI-31. Last-body-modifying feature identity
+
+**Question.** What identifier space does the `LAST_BODY_MODIFYING_FEATURE_ID` body attribute use?
+
+**Known.** Its values are not native feature object identifiers.
+
+**Need.** We must know the identifier space to bind a body to its last history feature.
+
+### DI-32. Compact line-reference width
+
+**Question.** What distinguishes the eight-scalar compact line-reference form from the nine-scalar form when both final-triple interpretations are unit vectors?
+
+**Known.** Both forms contain scalar triples that can satisfy the unit-vector invariant.
+
+**Need.** We must know the discriminator to parse the reference without choosing a width from geometric plausibility.

@@ -2,11 +2,13 @@
 //! Focused validation checks for topology.
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
+use std::collections::BTreeSet;
+
 use super::*;
 use crate::features::{
-    ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceMotion, FeatureSourceContent, FlexMode,
-    HoleKind, Length, PatternKind, PatternSeed, PatternStageCombination, PrimitiveSolid,
-    RadiusSpec,
+    BodySelection, ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceMotion, FaceSelection,
+    FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind, PatternSeed,
+    PatternStageCombination, PrimitiveSolid, RadiusSpec,
 };
 use crate::math::Point3;
 
@@ -1312,6 +1314,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
+                for surface in supports {
+                    if !ids.surfaces.contains(&surface.0) {
+                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    }
+                }
+            }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
                 for side in context.sides.iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
@@ -1506,6 +1515,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ),
                 entity: Some(parameter.id.0.clone()),
             });
+        }
+        if parameter
+            .value
+            .as_ref()
+            .is_some_and(|value| !parameter_value_is_valid(value))
+        {
+            geometry_error(findings, &parameter.id.0, "parameter value is invalid");
         }
         let mut dependencies = HashSet::new();
         for dependency in &parameter.dependencies {
@@ -1893,8 +1909,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
 
 fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
     use crate::features::{
-        BodySelection, EdgeSelection, ExtrudeExtent, FaceSelection, FeatureDefinition, PathRef,
-        ProfileRef, RevolveExtent, ScaleCenter, Termination,
+        EdgeSelection, ExtrudeExtent, FeatureDefinition, PathRef, ProfileRef, ScaleCenter,
+        Termination,
     };
 
     let mut configuration_ordinals = HashSet::new();
@@ -1906,12 +1922,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|parameter| parameter.id.0.as_str())
         .collect::<HashSet<_>>();
+    let parameter_values = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id.0.as_str(), parameter.value.as_ref()))
+        .collect::<HashMap<_, _>>();
     let feature_ids = ir
         .model
         .features
         .iter()
         .map(|feature| feature.id.0.as_str())
         .collect::<HashSet<_>>();
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
+        .collect::<HashMap<_, _>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
@@ -1959,6 +1987,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 );
             }
         }
+        let mut suppressed_features = HashSet::new();
         for feature in &configuration.suppressed_features {
             if !feature_ids.contains(feature.0.as_str()) {
                 ref_error(
@@ -1968,7 +1997,211 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.0,
                 );
             }
+            if !suppressed_features.insert(feature) {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: format!("configuration repeats suppressed feature `{}`", feature.0),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
         }
+        if configuration.active {
+            for feature in &ir.model.features {
+                if feature.suppressed.is_some_and(|suppressed| {
+                    suppressed_features.contains(&feature.id) != suppressed
+                }) {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message:
+                            "active configuration suppression disagrees with current feature state"
+                                .into(),
+                        entity: Some(configuration.id.0.clone()),
+                    });
+                }
+            }
+        }
+        for (parameter, value) in &configuration.parameter_values {
+            match parameter_values.get(parameter.0.as_str()) {
+                None => ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration parameter value",
+                    &parameter.0,
+                ),
+                Some(baseline)
+                    if !parameter_value_is_valid(value)
+                        || baseline.is_some_and(|baseline| {
+                            std::mem::discriminant(baseline) != std::mem::discriminant(value)
+                        }) =>
+                {
+                    geometry_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration parameter value is invalid",
+                    );
+                }
+                Some(_) => {}
+            }
+        }
+        for (feature, state) in &configuration.feature_states {
+            if suppressed_features.contains(feature) != state.suppressed {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message:
+                        "configuration feature suppression disagrees with suppressed feature list"
+                            .into(),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+            let feature_ordinal = features.get(feature.0.as_str()).copied();
+            if feature_ordinal.is_none() {
+                ref_error(
+                    findings,
+                    &configuration.id.0,
+                    "configuration feature state",
+                    &feature.0,
+                );
+            }
+            let mut dependencies = HashSet::new();
+            for dependency in &state.dependencies {
+                match features.get(dependency.0.as_str()) {
+                    None => ref_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration feature dependency",
+                        &dependency.0,
+                    ),
+                    Some(dependency_ordinal)
+                        if feature_ordinal.is_some_and(|feature_ordinal| {
+                            *dependency_ordinal >= feature_ordinal
+                        }) =>
+                    {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "configuration feature dependency `{}` does not precede `{}`",
+                                dependency.0, feature.0
+                            ),
+                            entity: Some(configuration.id.0.clone()),
+                        });
+                    }
+                    Some(_) => {}
+                }
+                if !dependencies.insert(dependency) {
+                    findings.push(Finding {
+                        check: Check::Counts,
+                        severity: Severity::Error,
+                        message: format!(
+                            "configuration feature state repeats dependency `{}`",
+                            dependency.0
+                        ),
+                        entity: Some(configuration.id.0.clone()),
+                    });
+                }
+            }
+            for reference in regeneration_references(&state.definition) {
+                match features.get(reference.0.as_str()) {
+                    None => ref_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration definition feature",
+                        &reference.0,
+                    ),
+                    Some(reference_ordinal)
+                        if feature_ordinal.is_some_and(|feature_ordinal| {
+                            *reference_ordinal >= feature_ordinal
+                        }) =>
+                    {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "configuration definition feature `{}` does not precede `{}`",
+                                reference.0, feature.0
+                            ),
+                            entity: Some(configuration.id.0.clone()),
+                        });
+                    }
+                    Some(_) if !state.dependencies.contains(reference) => {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
+                                feature.0, reference.0
+                            ),
+                            entity: Some(configuration.id.0.clone()),
+                        });
+                    }
+                    Some(_) => {}
+                }
+            }
+            for termination in definition_terminations(&state.definition) {
+                if !termination_magnitude_is_valid(termination) {
+                    geometry_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration feature extent magnitude is invalid",
+                    );
+                }
+                if matches!(
+                    termination,
+                    Termination::ToVertex {
+                        vertex: crate::features::VertexSelection::Generated { vertex, native },
+                    } if native.trim().is_empty() || vertex.local_id.trim().is_empty()
+                ) {
+                    geometry_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration generated termination vertex is invalid",
+                    );
+                }
+            }
+            if let FeatureDefinition::DatumOffsetPlane { distance, .. } = &state.definition {
+                if !distance.0.is_finite() {
+                    geometry_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration datum-plane offset is invalid",
+                    );
+                }
+            }
+            if state.suppressed && !state.outputs.is_empty() {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: "suppressed configuration feature state has output bodies".into(),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+            let mut outputs = HashSet::new();
+            for output in &state.outputs {
+                if !ids.bodies.contains(&output.0) {
+                    ref_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration feature output",
+                        &output.0,
+                    );
+                }
+                if !outputs.insert(output) {
+                    findings.push(Finding {
+                        check: Check::Counts,
+                        severity: Severity::Error,
+                        message: format!(
+                            "configuration feature state repeats output body `{}`",
+                            output.0
+                        ),
+                        entity: Some(configuration.id.0.clone()),
+                    });
+                }
+            }
+        }
+        check_configuration_state_closure(configuration, findings);
     }
     if active_configurations > 1 {
         findings.push(Finding {
@@ -1978,12 +2211,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             entity: None,
         });
     }
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
-        .collect::<HashMap<_, _>>();
     let feature_records = ir
         .model
         .features
@@ -2210,9 +2437,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
 
-        let mut profiles = Vec::new();
         let mut paths = Vec::new();
-        let mut extents = Vec::new();
         let mut edge_selections = Vec::new();
         let mut face_selections = Vec::new();
         let mut body_selections = Vec::new();
@@ -2236,13 +2461,19 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved => {}
-            FeatureDefinition::Block { dimensions, .. } => {
+            FeatureDefinition::Block {
+                dimensions,
+                placement,
+            } => {
                 if dimensions.is_some_and(|values| {
                     values
                         .into_iter()
                         .any(|value| !positive_feature_length(value))
                 }) {
                     feature_geometry_error(findings, feature, "block dimensions are invalid");
+                }
+                if placement.is_some_and(|placement| !placement.is_proper_rigid()) {
+                    feature_geometry_error(findings, feature, "block placement is invalid");
                 }
             }
             FeatureDefinition::ExtractBody { source } => body_selections.push(source),
@@ -2253,6 +2484,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(first_faces);
                 face_selections.push(second_faces);
+                if face_selections_overlap(first_faces, second_faces) {
+                    feature_geometry_error(findings, feature, "face blend supports overlap");
+                }
                 if !radius_spec_is_valid(radius) {
                     feature_geometry_error(findings, feature, "face blend radius is invalid");
                 }
@@ -2262,6 +2496,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 gap_tolerance,
             } => {
                 body_selections.push(bodies);
+                let body_count = match bodies {
+                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                        Some(bodies.len())
+                    }
+                    BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Generated { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Local { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Unresolved | BodySelection::Native(_) => None,
+                };
+                if body_count.is_some_and(|count| count < 2) {
+                    feature_geometry_error(findings, feature, "sew requires at least two bodies");
+                }
                 if gap_tolerance.is_some_and(|value| !positive_feature_length(value)) {
                     feature_geometry_error(findings, feature, "sew tolerance is invalid");
                 }
@@ -2415,7 +2661,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Extrude {
-                profile,
                 direction,
                 start,
                 extent,
@@ -2423,16 +2668,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 face_maker,
                 ..
             } => {
-                profiles.push(profile);
                 let sides = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
                         vec![side]
                     }
                     ExtrudeExtent::TwoSided { first, second } => vec![first, second],
                 };
-                for side in &sides {
-                    extents.push(&side.termination);
-                }
                 if let crate::features::ExtrudeDirection::Explicit(vector) = direction {
                     if !valid_feature_direction(*vector) {
                         feature_geometry_error(findings, feature, "extrusion direction is invalid");
@@ -2460,6 +2701,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "extrusion construction is invalid");
                 }
                 match start {
+                    ExtrudeStart::Unresolved => {}
                     ExtrudeStart::ProfilePlane => {}
                     ExtrudeStart::OffsetProfilePlane { offset } => {
                         if !offset.0.is_finite() {
@@ -2482,10 +2724,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
-            FeatureDefinition::SheetMetalBaseFlange {
-                profile, thickness, ..
-            } => {
-                profiles.push(profile);
+            FeatureDefinition::SheetMetalBaseFlange { thickness, .. } => {
                 if !positive_feature_length(*thickness) {
                     feature_geometry_error(
                         findings,
@@ -2495,17 +2734,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                profiles.extend(&construction.profile);
-                match &construction.extent {
-                    Some(
-                        RevolveExtent::OneSided { termination }
-                        | RevolveExtent::Symmetric { termination },
-                    ) => extents.push(termination),
-                    Some(RevolveExtent::TwoSided { first, second }) => {
-                        extents.extend([first, second]);
-                    }
-                    None => {}
-                }
                 paths.extend(&construction.axis_reference);
                 if construction.axis.as_ref().is_some_and(|axis| {
                     !axis.origin.x.is_finite()
@@ -2517,16 +2745,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Sweep {
-                profile,
-                sections,
                 path,
                 orientation,
                 twist,
                 scale,
                 ..
             } => {
-                profiles.extend(profile);
-                profiles.extend(sections);
                 paths.extend(path);
                 if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
                 {
@@ -2548,7 +2772,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 for section in sections {
                     match section {
-                        crate::features::LoftSection::Profile(profile) => profiles.push(profile),
+                        crate::features::LoftSection::Profile(_) => {}
                         crate::features::LoftSection::Point(
                             crate::features::LoftPointSection::Native(native),
                         ) if native.is_empty() => {
@@ -2597,14 +2821,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Rib { construction, .. } => {
-                profiles.extend(&construction.profile);
                 if construction
                     .direction
                     .is_some_and(|value| !valid_feature_direction(value))
                     || construction
                         .thickness
                         .is_some_and(|value| !positive_feature_length(value))
-                    || matches!(construction.draft, crate::features::RibDraft::Angle(value) if !value.0.is_finite())
+                    || matches!(
+                        construction.draft,
+                        crate::features::RibDraft::Angle(value)
+                            if !valid_draft_angle(value)
+                    )
                 {
                     feature_geometry_error(findings, feature, "rib geometry is invalid");
                 }
@@ -2689,6 +2916,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::SectionShape { first, second, .. } => {
                 body_selections.push(first);
                 body_selections.push(second);
+                if body_selections_overlap(first, second) {
+                    feature_geometry_error(findings, feature, "section operands overlap");
+                }
             }
             FeatureDefinition::MirrorShape {
                 source,
@@ -2786,7 +3016,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 face_selections.push(faces);
                 face_selections.push(neutral_plane);
                 if pull_direction.is_some_and(|value| !valid_feature_direction(value))
-                    || angle.is_some_and(|value| !value.0.is_finite())
+                    || angle.is_some_and(|value| !valid_draft_angle(value))
                 {
                     feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
@@ -2816,6 +3046,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(targets);
                 face_selections.push(replacements);
+                if face_selections_overlap(targets, replacements) {
+                    feature_geometry_error(findings, feature, "replacement face operands overlap");
+                }
             }
             FeatureDefinition::MoveFace { faces, motion } => {
                 face_selections.push(faces);
@@ -2932,6 +3165,21 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Combine { target, tools, .. } => {
                 body_selections.push(target);
                 body_selections.push(tools);
+                if body_selections_overlap(target, tools) {
+                    feature_geometry_error(findings, feature, "body combine operands overlap");
+                }
+                let target_count = match target {
+                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                        Some(bodies.len())
+                    }
+                    BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Generated { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Local { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Unresolved | BodySelection::Native(_) => None,
+                };
+                if target_count.is_some_and(|count| count != 1) {
+                    feature_geometry_error(findings, feature, "body combine target is invalid");
+                }
             }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 body_selections.push(targets);
@@ -2940,17 +3188,19 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::TrimBodies { targets, tools, .. } => {
                 body_selections.push(targets);
                 body_selections.push(tools);
+                if body_selections_overlap(targets, tools) {
+                    feature_geometry_error(findings, feature, "body trim operands overlap");
+                }
             }
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 body_selections.push(bodies);
             }
             FeatureDefinition::Hole {
-                profile,
                 profile_filter,
                 face,
                 kind,
+                exit_kind,
                 diameter,
-                extent,
                 direction,
                 position,
                 bottom,
@@ -2959,10 +3209,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 placements,
                 ..
             } => {
-                profiles.extend(profile);
                 face_selections.extend(face);
-                extents.extend(extent);
-                let kind_valid = match kind {
+                let treatment_diameter_valid = |value: Length| {
+                    positive_feature_length(value) && diameter.is_some_and(|bore| value.0 > bore.0)
+                };
+                let kind_valid = |kind: &HoleKind| match kind {
                     HoleKind::Unresolved {
                         counterbore_diameter,
                         counterbore_depth,
@@ -2981,7 +3232,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                     HoleKind::Simple => true,
                     HoleKind::Chamfer { diameter, angle } => {
-                        positive_feature_length(*diameter)
+                        treatment_diameter_valid(*diameter)
                             && angle.0.is_finite()
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
@@ -2992,21 +3243,21 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             && drill_point_angle.0 < std::f64::consts::PI
                     }
                     HoleKind::Counterbore { diameter, depth } => {
-                        positive_feature_length(*diameter) && positive_feature_length(*depth)
+                        treatment_diameter_valid(*diameter) && positive_feature_length(*depth)
                     }
                     HoleKind::CounterboreDrilled {
                         diameter,
                         depth,
                         drill_point_angle,
                     } => {
-                        positive_feature_length(*diameter)
+                        treatment_diameter_valid(*diameter)
                             && positive_feature_length(*depth)
                             && drill_point_angle.0.is_finite()
                             && drill_point_angle.0 > 0.0
                             && drill_point_angle.0 < std::f64::consts::PI
                     }
                     HoleKind::Countersink { diameter, angle } => {
-                        positive_feature_length(*diameter)
+                        treatment_diameter_valid(*diameter)
                             && angle.0.is_finite()
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
@@ -3031,7 +3282,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         depth,
                         angle,
                     } => {
-                        positive_feature_length(*diameter)
+                        treatment_diameter_valid(*diameter)
                             && entry_diameter.is_none_or(|entry| {
                                 positive_feature_length(entry) && entry.0 > diameter.0
                             })
@@ -3085,7 +3336,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         }
                 });
                 if diameter.is_some_and(|value| !positive_feature_length(value))
-                    || !kind_valid
+                    || !kind_valid(kind)
+                    || exit_kind.as_ref().is_some_and(|kind| !kind_valid(kind))
                     || !position_valid
                     || !placements_valid
                     || !filter_valid
@@ -3109,6 +3361,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                     severity: Severity::Error,
                                     message: format!(
                                         "seed feature `{}` does not precede its pattern",
+                                        seed.0
+                                    ),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            }
+                            Some(_) if !feature.dependencies.contains(seed) => {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: format!(
+                                        "pattern omits seed feature `{}` from its dependencies",
                                         seed.0
                                     ),
                                     entity: Some(feature.id.0.clone()),
@@ -3354,7 +3617,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::HelicalSweep { construction, .. } => {
-                profiles.push(&construction.profile);
                 let valid = [
                     construction.axis_origin.x,
                     construction.axis_origin.y,
@@ -3445,12 +3707,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Wrap {
-                profile,
-                face,
-                mode,
-                depth,
+                face, mode, depth, ..
             } => {
-                profiles.push(profile);
                 face_selections.push(face);
                 let valid = match mode {
                     crate::features::WrapMode::Emboss | crate::features::WrapMode::Deboss => {
@@ -3619,11 +3877,33 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
+            FeatureDefinition::DatumPlane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                let scale = normal.norm() * u_axis.norm();
+                if !finite_feature_point(*origin)
+                    || !valid_feature_direction(*normal)
+                    || !valid_feature_direction(*u_axis)
+                    || !scale.is_finite()
+                    || normal.dot(*u_axis).abs() > 1.0e-9 * scale
+                {
+                    feature_geometry_error(findings, feature, "datum-plane frame is invalid");
+                }
+            }
+            FeatureDefinition::DatumAxis { origin, direction } => {
+                if !finite_feature_point(*origin) || !valid_feature_direction(*direction) {
+                    feature_geometry_error(findings, feature, "datum-axis frame is invalid");
+                }
+            }
+            FeatureDefinition::DatumPoint { position } => {
+                if !finite_feature_point(*position) {
+                    feature_geometry_error(findings, feature, "datum-point position is invalid");
+                }
+            }
             FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlaneUnresolved
-            | FeatureDefinition::DatumPlane { .. }
-            | FeatureDefinition::DatumAxis { .. }
-            | FeatureDefinition::DatumPoint { .. }
             | FeatureDefinition::SketchBlockDefinition { .. }
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}
@@ -3651,17 +3931,21 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                 "sketch block target is not a block definition",
                             );
                         }
+                        Some(_) if !feature.dependencies.contains(block) => {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "sketch block instance omits block feature `{}` from its dependencies",
+                                    block.0
+                                ),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
                         Some(_) => {}
                     }
                 }
-                if placement.is_some_and(|placement| {
-                    !placement
-                        .rows
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite())
-                        || placement.rows[3] != [0.0, 0.0, 0.0, 1.0]
-                }) {
+                if placement.is_some_and(|placement| !placement.is_affine()) {
                     feature_geometry_error(findings, feature, "sketch block placement is invalid");
                 }
             }
@@ -3715,9 +3999,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                         &reference.0,
                                     );
                                 }
-                                Some(reference)
+                                Some(record)
                                     if !matches!(
-                                        reference.definition,
+                                        record.definition,
                                         FeatureDefinition::DatumPrincipalPlane { .. }
                                             | FeatureDefinition::DatumPlane { .. }
                                             | FeatureDefinition::DatumPlaneUnresolved
@@ -3729,6 +4013,28 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                         feature,
                                         "datum-plane feature reference does not name a plane",
                                     );
+                                }
+                                Some(record) if record.ordinal >= feature.ordinal => {
+                                    findings.push(Finding {
+                                        check: Check::ReferentialIntegrity,
+                                        severity: Severity::Error,
+                                        message: format!(
+                                            "reference plane `{}` does not precede its offset plane",
+                                            reference.0
+                                        ),
+                                        entity: Some(feature.id.0.clone()),
+                                    });
+                                }
+                                Some(_) if !feature.dependencies.contains(reference) => {
+                                    findings.push(Finding {
+                                        check: Check::ReferentialIntegrity,
+                                        severity: Severity::Error,
+                                        message: format!(
+                                            "offset plane omits reference feature `{}` from its dependencies",
+                                            reference.0
+                                        ),
+                                        entity: Some(feature.id.0.clone()),
+                                    });
                                 }
                                 Some(_) => {}
                             }
@@ -3763,7 +4069,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
         }
-        for profile in profiles {
+        for profile in definition_profiles(definition) {
             match profile {
                 ProfileRef::Faces(faces) => check_ids(
                     findings,
@@ -3882,25 +4188,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 | PathRef::SpatialSketchSelection { .. } => {}
             }
         }
-        for termination in extents {
-            let valid_magnitude = match termination {
-                Termination::Blind { length } => length.0.is_finite() && length.0 != 0.0,
-                Termination::Angle { angle } => angle.0.is_finite() && angle.0 > 0.0,
-                Termination::OffsetFromFace { offset, .. } => {
-                    offset.0.is_finite() && offset.0 > 0.0
-                }
-                Termination::ToFace { offset, .. } => {
-                    offset.is_none_or(|offset| offset.0.is_finite())
-                }
-                Termination::Unresolved
-                | Termination::ThroughAll
-                | Termination::ThroughNext
-                | Termination::ToFirst
-                | Termination::ToLast
-                | Termination::ToVertex { .. }
-                | Termination::ToShape { .. } => true,
-            };
-            if !valid_magnitude {
+        for termination in definition_terminations(definition) {
+            if !termination_magnitude_is_valid(termination) {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
                     severity: Severity::Error,
@@ -3932,6 +4221,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     faces.iter().map(|id| id.0.as_str()),
                     &ids.faces,
                 );
+            }
+            if let Termination::ToVertex {
+                vertex: crate::features::VertexSelection::Generated { vertex, native },
+            } = termination
+            {
+                if native.trim().is_empty()
+                    || vertex.local_id.trim().is_empty()
+                    || features
+                        .get(vertex.feature.0.as_str())
+                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                    || !feature.dependencies.contains(&vertex.feature)
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "generated termination vertex is invalid",
+                    );
+                }
             }
         }
         for selection in edge_selections {
@@ -4272,6 +4579,10 @@ fn positive_feature_length(value: Length) -> bool {
     value.0.is_finite() && value.0 > 0.0
 }
 
+fn valid_draft_angle(value: crate::features::Angle) -> bool {
+    value.0.is_finite() && value.0.abs() < std::f64::consts::FRAC_PI_2
+}
+
 fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {
     match radius {
         RadiusSpec::Unresolved { .. } => true,
@@ -4301,12 +4612,310 @@ fn valid_feature_direction(value: Vector3) -> bool {
     value.norm().is_finite() && value.norm() > 0.0
 }
 
+fn parameter_value_is_valid(value: &crate::features::ParameterValue) -> bool {
+    match value {
+        crate::features::ParameterValue::Length(value) => value.0.is_finite(),
+        crate::features::ParameterValue::Angle(value) => value.0.is_finite(),
+        crate::features::ParameterValue::Real(value) => value.is_finite(),
+        crate::features::ParameterValue::Integer(_)
+        | crate::features::ParameterValue::Boolean(_)
+        | crate::features::ParameterValue::String(_) => true,
+    }
+}
+
+fn regeneration_references(
+    definition: &crate::features::FeatureDefinition,
+) -> impl Iterator<Item = &crate::features::FeatureId> {
+    let mut references = BTreeSet::new();
+    match definition {
+        // A datum offset plane regenerates from its reference only when that
+        // reference names a feature; a face-supported plane carries its frame
+        // inline and is checked through the face selection instead.
+        crate::features::FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            ..
+        } => {
+            references.insert(reference);
+        }
+        crate::features::FeatureDefinition::DerivedGeometry { source: reference }
+        | crate::features::FeatureDefinition::SketchBlockInstance {
+            block: Some(reference),
+            ..
+        } => {
+            references.insert(reference);
+        }
+        crate::features::FeatureDefinition::Pattern { seeds, .. } => {
+            references.extend(seeds.iter().filter_map(|seed| match seed {
+                crate::features::PatternSeed::Feature(feature) => Some(feature),
+                crate::features::PatternSeed::Faces(_)
+                | crate::features::PatternSeed::Bodies(_) => None,
+            }));
+        }
+        _ => {}
+    }
+    references.extend(definition_terminations(definition).filter_map(
+        |termination| match termination {
+            crate::features::Termination::ToVertex {
+                vertex: crate::features::VertexSelection::Generated { vertex, .. },
+            } => Some(&vertex.feature),
+            _ => None,
+        },
+    ));
+    for profile in definition_profiles(definition) {
+        match profile {
+            crate::features::ProfileRef::Feature(feature) => {
+                references.insert(feature);
+            }
+            crate::features::ProfileRef::Generated { curves, .. } => {
+                references.extend(curves.iter().map(|curve| &curve.feature));
+            }
+            _ => {}
+        }
+    }
+    references.into_iter()
+}
+
+fn definition_profiles(
+    definition: &crate::features::FeatureDefinition,
+) -> impl Iterator<Item = &crate::features::ProfileRef> {
+    let mut profiles = Vec::new();
+    match definition {
+        crate::features::FeatureDefinition::Extrude { profile, .. }
+        | crate::features::FeatureDefinition::SheetMetalBaseFlange { profile, .. }
+        | crate::features::FeatureDefinition::Wrap { profile, .. } => profiles.push(profile),
+        crate::features::FeatureDefinition::Revolve { construction, .. } => {
+            profiles.extend(&construction.profile);
+        }
+        crate::features::FeatureDefinition::Rib { construction, .. } => {
+            profiles.extend(&construction.profile);
+        }
+        crate::features::FeatureDefinition::Sweep {
+            profile, sections, ..
+        } => {
+            profiles.extend(profile);
+            profiles.extend(sections);
+        }
+        crate::features::FeatureDefinition::HelicalSweep { construction, .. } => {
+            profiles.push(&construction.profile);
+        }
+        crate::features::FeatureDefinition::Loft { sections, .. } => {
+            profiles.extend(sections.iter().filter_map(|section| match section {
+                crate::features::LoftSection::Profile(profile) => Some(profile),
+                crate::features::LoftSection::Point(_) => None,
+            }));
+        }
+        crate::features::FeatureDefinition::Hole {
+            profile: Some(profile),
+            ..
+        } => profiles.push(profile),
+        _ => {}
+    }
+    profiles.into_iter()
+}
+
+fn definition_terminations(
+    definition: &crate::features::FeatureDefinition,
+) -> impl Iterator<Item = &crate::features::Termination> {
+    let mut terminations = Vec::new();
+    match definition {
+        crate::features::FeatureDefinition::Extrude { extent, .. } => match extent {
+            crate::features::ExtrudeExtent::OneSided { side }
+            | crate::features::ExtrudeExtent::Symmetric { side } => {
+                terminations.push(&side.termination);
+            }
+            crate::features::ExtrudeExtent::TwoSided { first, second } => {
+                terminations.extend([&first.termination, &second.termination]);
+            }
+        },
+        crate::features::FeatureDefinition::Revolve { construction, .. } => {
+            match &construction.extent {
+                Some(
+                    crate::features::RevolveExtent::OneSided { termination }
+                    | crate::features::RevolveExtent::Symmetric { termination },
+                ) => terminations.push(termination),
+                Some(crate::features::RevolveExtent::TwoSided { first, second }) => {
+                    terminations.extend([first, second]);
+                }
+                None => {}
+            }
+        }
+        crate::features::FeatureDefinition::Hole {
+            extent: Some(extent),
+            ..
+        } => terminations.push(extent),
+        _ => {}
+    }
+    terminations.into_iter()
+}
+
+fn termination_magnitude_is_valid(termination: &crate::features::Termination) -> bool {
+    match termination {
+        crate::features::Termination::Blind { length } => length.0.is_finite() && length.0 != 0.0,
+        crate::features::Termination::Angle { angle } => angle.0.is_finite() && angle.0 > 0.0,
+        crate::features::Termination::OffsetFromFace { offset, .. } => {
+            offset.0.is_finite() && offset.0 > 0.0
+        }
+        crate::features::Termination::ToFace { offset, .. } => {
+            offset.is_none_or(|offset| offset.0.is_finite())
+        }
+        crate::features::Termination::Unresolved
+        | crate::features::Termination::ThroughAll
+        | crate::features::Termination::ThroughNext
+        | crate::features::Termination::ToFirst
+        | crate::features::Termination::ToLast
+        | crate::features::Termination::ToVertex { .. }
+        | crate::features::Termination::ToShape { .. } => true,
+    }
+}
+
+/// Check that a configuration's stated design state is self-contained: every
+/// dependency an unsuppressed feature state names must itself have an
+/// unsuppressed state in the same configuration.
+///
+/// This deliberately says nothing about which feature produced which body. No
+/// format guarantees total body-to-feature attribution -- SLDPRT resolves
+/// configuration bodies from per-configuration Parasolid partitions and carries
+/// no producer identity the decoder can reconcile to a final body at all, and
+/// the formats that do attribute cover only part of their features -- so an
+/// unclaimed body means the producer went unrecorded, not that the body is
+/// unproduced. Codecs report that gap as a design loss, which is the layer that
+/// can weigh it against what the specific format is known to encode. Whether a
+/// configuration's dependency graph is closed is independent of attribution, so
+/// the walk seeds from every unsuppressed state rather than from the states
+/// that happen to claim a body.
+///
+/// A dependency with no state in the configuration is not an omission.
+/// `feature_states` may be sparse -- a configuration that overrides only some
+/// features carries states only for those, and a dependency with no state
+/// inherits its model-level one. Nor is the converse case worth a finding: the
+/// dependency itself is already required to name a model feature, so a map that
+/// did enumerate every feature would necessarily carry a state for it and the
+/// check could never fire. Only an explicitly suppressed dependency is
+/// incoherent, and that is incoherent however sparse the map is.
+fn check_configuration_state_closure(
+    configuration: &crate::features::DesignConfiguration,
+    findings: &mut Vec<Finding>,
+) {
+    if configuration.feature_states.is_empty() {
+        return;
+    }
+    let mut closure = configuration
+        .feature_states
+        .iter()
+        .filter(|(_, state)| !state.suppressed)
+        .map(|(feature, _)| feature.clone())
+        .collect::<HashSet<_>>();
+    let mut pending = closure.iter().cloned().collect::<Vec<_>>();
+    while let Some(feature) = pending.pop() {
+        let state = &configuration.feature_states[&feature];
+        for dependency in &state.dependencies {
+            match configuration.feature_states.get(dependency) {
+                None => {}
+                Some(dependency_state) if dependency_state.suppressed => {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "configuration state closure uses suppressed dependency state `{}`",
+                            dependency.0
+                        ),
+                        entity: Some(configuration.id.0.clone()),
+                    });
+                }
+                Some(_) if closure.insert(dependency.clone()) => pending.push(dependency.clone()),
+                Some(_) => {}
+            }
+        }
+    }
+}
+
+fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> bool {
+    fn direct(selection: &FaceSelection) -> Option<&[crate::ids::FaceId]> {
+        match selection {
+            FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
+                Some(faces.as_slice())
+            }
+            _ => None,
+        }
+    }
+    fn historical(
+        selection: &FaceSelection,
+    ) -> Option<(
+        &crate::ids::FeatureInputTopologyId,
+        &[crate::ids::HistoricalFaceId],
+    )> {
+        match selection {
+            FaceSelection::Historical { state, faces, .. }
+            | FaceSelection::HistoricalPartial { state, faces, .. } => {
+                Some((state, faces.as_slice()))
+            }
+            _ => None,
+        }
+    }
+    if let Some((first, second)) = direct(first).zip(direct(second)) {
+        return first.iter().any(|face| second.contains(face));
+    }
+    if let Some(((first_state, first), (second_state, second))) =
+        historical(first).zip(historical(second))
+    {
+        return first_state == second_state && first.iter().any(|face| second.contains(face));
+    }
+    match (first, second) {
+        (
+            FaceSelection::Generated { faces: first, .. },
+            FaceSelection::Generated { faces: second, .. },
+        ) => first.iter().any(|face| second.contains(face)),
+        _ => false,
+    }
+}
+
+fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
+    fn direct(selection: &BodySelection) -> Option<&[crate::ids::BodyId]> {
+        match selection {
+            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                Some(bodies.as_slice())
+            }
+            _ => None,
+        }
+    }
+    if let Some((first, second)) = direct(first).zip(direct(second)) {
+        return first.iter().any(|body| second.contains(body));
+    }
+    match (first, second) {
+        (
+            BodySelection::Historical {
+                state: first_state,
+                bodies: first,
+                ..
+            },
+            BodySelection::Historical {
+                state: second_state,
+                bodies: second,
+                ..
+            },
+        ) => first_state == second_state && first.iter().any(|body| second.contains(body)),
+        (
+            BodySelection::Generated { bodies: first, .. },
+            BodySelection::Generated { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
+        (
+            BodySelection::Local { bodies: first, .. },
+            BodySelection::Local { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
+        _ => false,
+    }
+}
+
 fn feature_geometry_error(findings: &mut Vec<Finding>, feature: &Feature, message: &str) {
+    geometry_error(findings, &feature.id.0, message);
+}
+
+fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
     findings.push(Finding {
         check: Check::GeometricConsistency,
         severity: Severity::Error,
         message: message.into(),
-        entity: Some(feature.id.0.clone()),
+        entity: Some(entity.into()),
     });
 }
 

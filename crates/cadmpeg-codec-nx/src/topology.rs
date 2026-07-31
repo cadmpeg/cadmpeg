@@ -59,6 +59,15 @@ pub struct EdgeFields {
     pub curve: u32,
 }
 
+/// Exact topology witnesses carried by the unique edge using one curve.
+#[derive(Debug, Clone, Copy)]
+pub struct CurveEdgeWitness {
+    /// Ordered model-space edge endpoints in millimetres.
+    pub endpoints: [Point3; 2],
+    /// Serialized edge tolerance in Parasolid metres.
+    pub tolerance: f64,
+}
+
 /// Sequentially decoded SHELL references.
 #[derive(Debug, Clone, Copy)]
 pub struct ShellFields {
@@ -285,13 +294,15 @@ impl Node {
     /// Decode this graph-owned fixed analytic surface carrier.
     pub fn surface_geometry(&self) -> Option<cadmpeg_ir::geometry::SurfaceGeometry> {
         matches!(self.kind, 50..=54).then_some(())?;
-        crate::geometry::decode_surface_record(&self.bytes, self.kind, self.shift)
+        let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
+        crate::geometry::decode_surface_record(&self.bytes, self.kind, payload_shift)
     }
 
     /// Decode this graph-owned fixed analytic curve carrier.
     pub fn curve_geometry(&self) -> Option<cadmpeg_ir::geometry::CurveGeometry> {
         matches!(self.kind, 30..=32).then_some(())?;
-        crate::geometry::decode_curve_record(&self.bytes, self.kind, self.shift)
+        let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
+        crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
 }
 
@@ -427,68 +438,68 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
         .enumerate()
         .filter_map(|(pos, byte)| (*byte == 0x5a).then_some(pos))
     {
-        let Some((xmt, xmt_extra)) = read_xmt(stream, pos + 1) else {
+        let Some((curve, _)) = intersection_data_curve_at(stream, pos) else {
             continue;
         };
-        if xmt <= 1 || !seen.insert(xmt) {
+        if !seen.insert(curve.xmt) {
             continue;
         }
-        let mut at = pos + 1 + 2 + xmt_extra + 4;
-        let mut header_refs = [0u32; 5];
-        let mut valid = true;
-        for reference in &mut header_refs {
-            let Some((value, extra)) = read_xmt(stream, at) else {
-                valid = false;
-                break;
-            };
-            *reference = value;
-            at += 2 + extra;
-        }
-        if !valid || header_refs[0] != 1 {
-            continue;
-        }
-        if header_refs[4] != 1
-            && !stream[..pos]
-                .windows(b"intersection_data".len())
-                .rev()
-                .take(64)
-                .any(|window| window == b"intersection_data")
-        {
-            continue;
-        }
-        let sense = match stream.get(at) {
-            Some(b'+') => true,
-            Some(b'-') => false,
-            _ => continue,
-        };
-        at += 1;
-        let mut references = [0u32; 6];
-        for reference in &mut references {
-            let Some((value, extra)) = read_xmt(stream, at) else {
-                valid = false;
-                break;
-            };
-            *reference = value;
-            at += 2 + extra;
-        }
-        let complete_witness = references[2..=4].iter().all(|reference| *reference > 1);
-        let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
-        if valid
-            && references.iter().all(|reference| *reference != 0)
-            && (complete_witness || null_witness)
-            && (references[0] > 1 || references[1] > 1)
-        {
-            out.push(CompositeCurve {
-                xmt,
-                header_references: header_refs,
-                sense,
-                references,
-                delta_twin: true,
-                pos,
-            });
-        }
+        out.push(curve);
     }
     out
+}
+
+pub(crate) fn intersection_data_curve_at(
+    stream: &[u8],
+    pos: usize,
+) -> Option<(CompositeCurve, usize)> {
+    (stream.get(pos) == Some(&0x5a)).then_some(())?;
+    let (xmt, xmt_extra) = read_xmt(stream, pos.checked_add(1)?)?;
+    (xmt > 1).then_some(())?;
+    let mut at = pos.checked_add(7 + xmt_extra)?;
+    let mut header_references = [0u32; 5];
+    for reference in &mut header_references {
+        let (value, extra) = read_xmt(stream, at)?;
+        *reference = value;
+        at += 2 + extra;
+    }
+    (header_references[0] == 1).then_some(())?;
+    (header_references[4] == 1
+        || stream[..pos]
+            .windows(b"intersection_data".len())
+            .rev()
+            .take(64)
+            .any(|window| window == b"intersection_data"))
+    .then_some(())?;
+    let sense = match stream.get(at) {
+        Some(b'+') => true,
+        Some(b'-') => false,
+        _ => return None,
+    };
+    at += 1;
+    let mut references = [0u32; 6];
+    for reference in &mut references {
+        let (value, extra) = read_xmt(stream, at)?;
+        *reference = value;
+        at += 2 + extra;
+    }
+    let complete_witness = references[2..=4].iter().all(|reference| *reference > 1);
+    let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
+    (references.iter().all(|reference| *reference != 0)
+        && (complete_witness || null_witness)
+        && (references[0] > 1 || references[1] > 1))
+        .then_some(())?;
+    Some((
+        CompositeCurve {
+            xmt,
+            header_references,
+            sense,
+            references,
+            delta_twin: true,
+            pos,
+        },
+        at,
+    ))
 }
 
 /// Decode validated type-56 rolling-ball blend surfaces.
@@ -763,8 +774,8 @@ impl Graph {
         references
     }
 
-    /// Resolve the two model-space endpoints of the unique edge carrying a curve.
-    pub fn unique_curve_edge_endpoints(&self, curve_xmt: u32) -> Option<[Point3; 2]> {
+    /// Resolve the exact witnesses of the unique edge carrying a curve.
+    pub fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
         let edges = self
             .of_kind(16)
             .filter_map(Node::edge_fields)
@@ -779,7 +790,10 @@ impl Graph {
             let point_xmt = self.get(18, vertex_xmt)?.vertex_fields()?.point;
             self.get(29, point_xmt)?.point_position()
         };
-        Some([position(first_fin.vertex)?, position(second_fin.vertex)?])
+        Some(CurveEdgeWitness {
+            endpoints: [position(first_fin.vertex)?, position(second_fin.vertex)?],
+            tolerance: edge.tolerance,
+        })
     }
 
     /// Carrier identities required by the surviving fixed topology image.

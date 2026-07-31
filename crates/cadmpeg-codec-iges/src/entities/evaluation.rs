@@ -86,6 +86,14 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
                 + major_radius * x_axis.v * parameter.cos()
                 + minor_radius * y_axis.v * parameter.sin(),
         )),
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        } => Some(Point2::new(
+            center.u + cosine.u * parameter.cos() + sine.u * parameter.sin(),
+            center.v + cosine.v * parameter.cos() + sine.v * parameter.sin(),
+        )),
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -112,6 +120,14 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             center.v
                 + major_radius * x_axis.v * parameter.cosh()
                 + minor_radius * y_axis.v * parameter.sinh(),
+        )),
+        PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => Some(Point2::new(
+            center.u + cosine.u * parameter.cosh() + sine.u * parameter.sinh(),
+            center.v + cosine.v * parameter.cosh() + sine.v * parameter.sinh(),
         )),
         PcurveGeometry::Nurbs {
             degree,

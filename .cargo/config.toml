@@ -1,2 +1,11 @@
 [alias]
 test-fast = "test --workspace --lib --bins --tests"
+
+[build]
+# Linking is never incremental, and this workspace's test binaries run from
+# 300MB to 1.3GB, so a full-workspace build ends in a burst of very large
+# concurrent links. At the host's default job count that burst is enough to
+# push the user slice past systemd-oomd's pressure threshold, which kills the
+# whole terminal scope rather than the offending process. Cargo has no separate
+# knob for link parallelism, so the compile fan-out is capped instead.
+jobs = 6
