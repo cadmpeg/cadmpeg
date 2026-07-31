@@ -45,7 +45,7 @@ pub(crate) fn transfer_design_features(
         let feature_id = FeatureId(format!("{}:feature", object.id));
         ir.model.features.push(Feature {
             id: feature_id.clone(),
-            ordinal: ir.model.features.len() as u64,
+            ordinal: object.first_field_byte_offset,
             name: None,
             suppressed: None,
             parent: None,

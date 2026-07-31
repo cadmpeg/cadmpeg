@@ -9306,6 +9306,10 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         );
         assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class));
         assert_eq!(
+            ir.model.features[0].ordinal,
+            native.design_objects[0].first_field_byte_offset
+        );
+        assert_eq!(
             transfer.principal_plane_records,
             native.design_objects[0].fields.iter().cloned().collect()
         );

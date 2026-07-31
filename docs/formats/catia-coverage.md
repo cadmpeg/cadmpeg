@@ -222,7 +222,8 @@ current scores require those matrices and representative fixtures.
   neutral configurations.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
-  history node. Schema fields named `PRTSketch` or `Sketch` do not establish
+  history node with the design object's first-field byte offset as its source
+  history ordinal. Schema fields named `PRTSketch` or `Sketch` do not establish
   sketch instances.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
