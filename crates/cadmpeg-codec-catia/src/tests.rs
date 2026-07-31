@@ -12830,12 +12830,14 @@ fn native_namespace_types_and_validates_named_parameter_values() {
             prefix_atom_widths: [1, 1, 1],
             prefix_code: 0x6a,
             payload: CatiaEntitySuffixPayload::Evaluation {
+                opcode_offset: 4,
                 evaluation: CatiaEntityEvaluation::Scalar { bits: scalar },
                 encoding: CatiaEntityEvaluationEncoding::Direct,
             },
             trailer: CatiaEntitySuffixTrailer::Token8152,
         })
     );
+    assert_eq!(parameter.evaluation_opcode_offset, 4);
 
     let unset = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
         0x85, 0x96, 0x82, 0x6a, 0xe7, 0x81, 0x52,
@@ -12848,6 +12850,49 @@ fn native_namespace_types_and_validates_named_parameter_values() {
             .evaluation,
         CatiaEntityEvaluation::Unset
     );
+
+    let mut stale_offsets = native.clone();
+    let CatiaEntitySuffixPayload::Evaluation { opcode_offset, .. } = &mut stale_offsets
+        .entity_records[0]
+        .suffix_value
+        .as_mut()
+        .expect("complete named parameter suffix")
+        .payload
+    else {
+        panic!("named parameter evaluation");
+    };
+    *opcode_offset = 0;
+    stale_offsets.entity_records[0]
+        .parameter_value
+        .as_mut()
+        .expect("complete named parameter value")
+        .evaluation_opcode_offset = 0;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    stale_offsets
+        .store(&mut namespace)
+        .expect("store stale named parameter offsets");
+    namespace.version = crate::native::CATIA_SUFFIX_EVALUATION_OFFSET_VERSION - 1;
+    let migrated =
+        crate::native::CatiaNative::load(&namespace).expect("migrate named parameter offsets");
+    assert_eq!(
+        migrated.entity_records[0].parameter_value,
+        native.entity_records[0].parameter_value
+    );
+
+    let mut malformed_offset = native.clone();
+    malformed_offset.entity_records[0]
+        .parameter_value
+        .as_mut()
+        .expect("complete named parameter value")
+        .evaluation_opcode_offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_offset
+        .store(&mut namespace)
+        .expect("store malformed named parameter offset");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 
     let mut malformed = native;
     malformed.entity_records[0]
@@ -12888,6 +12933,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         range.evaluation,
         CatiaEntityEvaluation::Scalar { bits: scalar }
     );
+    assert_eq!(range.evaluation_opcode_offset, 4);
 
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
@@ -13458,12 +13504,55 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             prefix_atom_widths: [1, 1, 1],
             prefix_code: 0xad,
             payload: CatiaEntitySuffixPayload::Evaluation {
+                opcode_offset: 4,
                 evaluation: CatiaEntityEvaluation::Scalar { bits },
                 encoding: CatiaEntityEvaluationEncoding::Direct,
             },
             trailer: CatiaEntitySuffixTrailer::Token8149,
         })
     );
+    let mut stale_evaluation_offset = native.clone();
+    let CatiaEntitySuffixPayload::Evaluation { opcode_offset, .. } = &mut stale_evaluation_offset
+        .entity_records[0]
+        .suffix_value
+        .as_mut()
+        .expect("complete scalar suffix")
+        .payload
+    else {
+        panic!("scalar suffix evaluation");
+    };
+    *opcode_offset = 0;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    stale_evaluation_offset
+        .store(&mut namespace)
+        .expect("store stale evaluation offset");
+    namespace.version = crate::native::CATIA_SUFFIX_EVALUATION_OFFSET_VERSION - 1;
+    let migrated =
+        crate::native::CatiaNative::load(&namespace).expect("migrate suffix evaluation offset");
+    assert_eq!(
+        migrated.entity_records[0].suffix_value,
+        native.entity_records[0].suffix_value
+    );
+
+    let mut malformed_evaluation_offset = native.clone();
+    let CatiaEntitySuffixPayload::Evaluation { opcode_offset, .. } =
+        &mut malformed_evaluation_offset.entity_records[0]
+            .suffix_value
+            .as_mut()
+            .expect("complete scalar suffix")
+            .payload
+    else {
+        panic!("scalar suffix evaluation");
+    };
+    *opcode_offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_evaluation_offset
+        .store(&mut namespace)
+        .expect("store malformed evaluation offset");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 
     let wide_scalar_bits = 0.001_f64.to_bits();
     let mut wide_scalar_suffix = vec![0xd1, 0x53, 0x96, 0x82, 0xa6, 0xe6];
@@ -13498,6 +13587,17 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .prefix_atom_widths,
         [2, 1, 1]
     );
+    assert!(matches!(
+        wide_scalar.entity_records[0]
+            .suffix_value
+            .as_ref()
+            .expect("complete wide-prefix scalar")
+            .payload,
+        CatiaEntitySuffixPayload::Evaluation {
+            opcode_offset: 5,
+            ..
+        }
+    ));
     let mut malformed_wide_scalar = wide_scalar;
     malformed_wide_scalar.entity_records[0]
         .suffix_value
@@ -13876,10 +13976,30 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             ordinal: 4,
             name,
             value: crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
-                evaluation: CatiaEntityEvaluation::Scalar { bits }
+                opcode_offset: 8,
+                evaluation: CatiaEntityEvaluation::Scalar { bits },
             },
             ..
         } if name == "Thickness" && *bits == selected_scalar_bits
+    ));
+    let mut malformed_selected_evaluation_offset = selected_scalar;
+    let crate::native::CatiaEntitySuffixSchemaValue::Evaluation { opcode_offset, .. } =
+        &mut malformed_selected_evaluation_offset.entity_records[0]
+            .suffix_schema_selection
+            .as_mut()
+            .expect("resolved schema-selected scalar")
+            .value
+    else {
+        panic!("schema-selected scalar evaluation");
+    };
+    *opcode_offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_selected_evaluation_offset
+        .store(&mut namespace)
+        .expect("store malformed selected evaluation offset");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let selected_unset =
@@ -13893,7 +14013,8 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .expect("resolved schema-selected unset"),
         crate::native::CatiaEntitySuffixSchemaSelection {
             value: crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
-                evaluation: CatiaEntityEvaluation::Unset
+                evaluation: CatiaEntityEvaluation::Unset,
+                ..
             },
             ..
         }
@@ -14094,6 +14215,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     assert_eq!(
         nested_value.payload,
         CatiaEntitySuffixPayload::Evaluation {
+            opcode_offset: 8,
             evaluation: CatiaEntityEvaluation::Scalar { bits: nested_bits },
             encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
         }
@@ -14139,6 +14261,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete suffix value")
         .payload = CatiaEntitySuffixPayload::Evaluation {
+        opcode_offset: 4,
         evaluation: CatiaEntityEvaluation::Scalar { bits },
         encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
     };
@@ -14235,6 +14358,7 @@ fn native_namespace_binds_two_definition_value_chains() {
                 value: "Real".to_string(),
             },
             value: CatiaEntitySuffixSchemaValue::Evaluation {
+                opcode_offset: 8,
                 evaluation: CatiaEntityEvaluation::Scalar { bits },
             },
         })
@@ -14517,6 +14641,7 @@ fn native_namespace_binds_and_validates_definition_values() {
                 value: "Thickness".to_string(),
             },
             payload: CatiaEntitySuffixPayload::Evaluation {
+                opcode_offset: 5,
                 evaluation: CatiaEntityEvaluation::Scalar { bits },
                 encoding: CatiaEntityEvaluationEncoding::Direct,
             },
@@ -14565,6 +14690,7 @@ fn native_namespace_binds_and_validates_definition_values() {
         .as_mut()
         .expect("definition-bound value");
     definition_value.payload = CatiaEntitySuffixPayload::Evaluation {
+        opcode_offset: 5,
         evaluation: CatiaEntityEvaluation::Unset,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     };

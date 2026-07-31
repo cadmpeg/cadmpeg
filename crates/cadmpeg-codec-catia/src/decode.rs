@@ -735,6 +735,7 @@ fn finish_decode(
                 match &value.value {
                     Selected::Evaluation {
                         evaluation: CatiaEntityEvaluation::Scalar { .. },
+                        ..
                     } => (
                         total + 1,
                         evaluations + 1,
@@ -747,6 +748,7 @@ fn finish_decode(
                     ),
                     Selected::Evaluation {
                         evaluation: CatiaEntityEvaluation::Unset,
+                        ..
                     } => (
                         total + 1,
                         evaluations + 1,

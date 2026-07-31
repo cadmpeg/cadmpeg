@@ -73,6 +73,9 @@ current scores require those matrices and representative fixtures.
   values as disjoint typed productions.
 - Schema-selected entity suffixes retain the record-suffix-relative marker
   offsets of their outer selector and nested value selector when present.
+- Direct, schema-selected, and zero-padded entity-suffix evaluations retain
+  their record-suffix-relative effective opcode offsets. Named parameter values
+  and constraint ranges retain the same incidence.
 - Complete two-definition value chains retain the repeated schema selector,
   second role definition, catalog-resolved selected value, and structural
   ownership. Every typed definition or value role retains its selector offset,

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 253;
+pub const CATIA_NATIVE_VERSION: u32 = 254;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -108,6 +108,9 @@ pub(crate) const CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION: u32 = 252;
 /// Native schema version retaining suffix schema-selector offsets.
 #[cfg(test)]
 pub(crate) const CATIA_SUFFIX_SCHEMA_OFFSET_VERSION: u32 = 253;
+/// Native schema version retaining suffix evaluation-opcode offsets.
+#[cfg(test)]
+pub(crate) const CATIA_SUFFIX_EVALUATION_OFFSET_VERSION: u32 = 254;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1173,6 +1176,9 @@ pub enum CatiaEntityEvaluationEncoding {
 pub enum CatiaEntitySuffixPayload {
     /// An unset or finite scalar evaluation with exact framing.
     Evaluation {
+        /// Byte offset of the effective evaluation opcode within the record suffix.
+        #[serde(default)]
+        opcode_offset: u64,
         /// Stored scalar or unset evaluation.
         evaluation: CatiaEntityEvaluation,
         /// Exact evaluation framing variant.
@@ -1211,6 +1217,9 @@ pub enum CatiaEntitySuffixSelectedValue {
     },
     /// One direct unset or finite scalar evaluation.
     Evaluation {
+        /// Byte offset of the evaluation opcode within the record suffix.
+        #[serde(default)]
+        opcode_offset: u64,
         /// Decoded evaluation.
         evaluation: CatiaEntityEvaluation,
     },
@@ -1329,6 +1338,9 @@ pub enum CatiaEntitySuffixSchemaValue {
     },
     /// One direct unset or finite scalar evaluation.
     Evaluation {
+        /// Byte offset of the evaluation opcode within the record suffix.
+        #[serde(default)]
+        opcode_offset: u64,
         /// Decoded evaluation.
         evaluation: CatiaEntityEvaluation,
     },
@@ -1361,6 +1373,9 @@ pub struct CatiaParameterValue {
     pub binding: CatiaEntitySchemaValue,
     /// Stored evaluation state.
     pub evaluation: CatiaEntityEvaluation,
+    /// Byte offset of the evaluation opcode within the record suffix.
+    #[serde(default)]
+    pub evaluation_opcode_offset: u64,
 }
 
 /// Exact framing of one complete constraint-range value.
@@ -1385,6 +1400,9 @@ pub struct CatiaConstraintRange {
     pub framing: CatiaConstraintRangeFraming,
     /// Stored evaluation state.
     pub evaluation: CatiaEntityEvaluation,
+    /// Byte offset of the evaluation opcode within the record suffix.
+    #[serde(default)]
+    pub evaluation_opcode_offset: u64,
     /// Exact same-graph payload-reference occurrences selecting this range.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incoming_references: Vec<CatiaConstraintRangeIncomingReference>,
@@ -2544,11 +2562,13 @@ fn entity_suffix_schema_selection(
         CatiaEntitySuffixSelectedValue::Atom { value } => {
             CatiaEntitySuffixSchemaValue::Atom { value: *value }
         }
-        CatiaEntitySuffixSelectedValue::Evaluation { evaluation } => {
-            CatiaEntitySuffixSchemaValue::Evaluation {
-                evaluation: evaluation.clone(),
-            }
-        }
+        CatiaEntitySuffixSelectedValue::Evaluation {
+            opcode_offset,
+            evaluation,
+        } => CatiaEntitySuffixSchemaValue::Evaluation {
+            opcode_offset: *opcode_offset,
+            evaluation: evaluation.clone(),
+        },
         CatiaEntitySuffixSelectedValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
         CatiaEntitySuffixSelectedValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
         CatiaEntitySuffixSelectedValue::SchemaSelector { offset, ordinal } => {
@@ -2755,6 +2775,7 @@ fn parameter_value(
         && suffix_value.trailer == CatiaEntitySuffixTrailer::Token8152)
         .then_some(())?;
     let CatiaEntitySuffixPayload::Evaluation {
+        opcode_offset,
         evaluation,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     } = &suffix_value.payload
@@ -2771,6 +2792,7 @@ fn parameter_value(
         name: schema_value(name),
         binding: schema_value(binding),
         evaluation: evaluation.clone(),
+        evaluation_opcode_offset: *opcode_offset,
     })
 }
 
@@ -2802,6 +2824,7 @@ fn constraint_range(
         _ => return None,
     };
     let CatiaEntitySuffixPayload::Evaluation {
+        opcode_offset,
         evaluation,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     } = &suffix_value.payload
@@ -2823,6 +2846,7 @@ fn constraint_range(
         },
         framing,
         evaluation: evaluation.clone(),
+        evaluation_opcode_offset: *opcode_offset,
         incoming_references: Vec::new(),
         incoming_storage_references: Vec::new(),
     })
@@ -2998,6 +3022,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         f64::from_bits(bits).is_finite().then_some(())?;
         (
             CatiaEntitySuffixPayload::Evaluation {
+                opcode_offset: u64::try_from(payload_offset + 4).ok()?,
                 evaluation: CatiaEntityEvaluation::Scalar { bits },
                 encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
             },
@@ -3022,6 +3047,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                 f64::from_bits(bits).is_finite().then_some(())?;
                 (
                     CatiaEntitySuffixSelectedValue::Evaluation {
+                        opcode_offset: u64::try_from(value_offset).ok()?,
                         evaluation: CatiaEntityEvaluation::Scalar { bits },
                     },
                     value_offset + 9,
@@ -3029,6 +3055,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             }
             0xe7 => (
                 CatiaEntitySuffixSelectedValue::Evaluation {
+                    opcode_offset: u64::try_from(value_offset).ok()?,
                     evaluation: CatiaEntityEvaluation::Unset,
                 },
                 value_offset + 1,
@@ -3070,6 +3097,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         match *suffix.get(payload_offset)? {
             0xe7 => (
                 CatiaEntitySuffixPayload::Evaluation {
+                    opcode_offset: u64::try_from(payload_offset).ok()?,
                     evaluation: CatiaEntityEvaluation::Unset,
                     encoding: CatiaEntityEvaluationEncoding::Direct,
                 },
@@ -3088,6 +3116,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                 f64::from_bits(bits).is_finite().then_some(())?;
                 (
                     CatiaEntitySuffixPayload::Evaluation {
+                        opcode_offset: u64::try_from(payload_offset).ok()?,
                         evaluation: CatiaEntityEvaluation::Scalar { bits },
                         encoding: CatiaEntityEvaluationEncoding::Direct,
                     },
@@ -9019,7 +9048,7 @@ impl CatiaNative {
                 );
             }
         }
-        if namespace.version < CATIA_SUFFIX_SCHEMA_OFFSET_VERSION {
+        if namespace.version < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION {
             for graph in &graphs {
                 let catalog = graph.catalog.as_deref().and_then(|catalog_id| {
                     catalogs.iter().find(|catalog| catalog.id == catalog_id)
@@ -9031,6 +9060,19 @@ impl CatiaNative {
                     entity.suffix_value = entity_suffix_value(&entity.record_suffix);
                     entity.suffix_schema_selection =
                         entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog);
+                    entity.parameter_value = parameter_value(
+                        entity.lead,
+                        &entity.value_schema_selections,
+                        entity.suffix_value.as_ref(),
+                    );
+                    entity.constraint_range = resolved_constraint_range(
+                        entity.lead,
+                        &entity.value_schema_selections,
+                        entity.suffix_value.as_ref(),
+                        &records,
+                        &entity.object_graph,
+                        entity.entity_id,
+                    );
                     entity.definition_value = definition_value(
                         entity.lead,
                         &entity.definition_schema_selections,
