@@ -136,13 +136,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 2. Container, header, and design records
 
-### DR-03. Second `0x01`-marker u32 of an ACT root-component link
+### DR-03. ACT table trailing GUID run
 
-**Question.** What does the second `0x01`-marker u32 of an ACT root-component link record control?
+**Question.** What does the run of LP-UTF16 GUIDs after an ACT table's counted entry list hold? What gives its length?
 
-**Known.** `f3d.md` §8.1 "The ACT root-component link" gives the byte sequence. It holds `0x01`, `u32 3`, five zero bytes, `0x01`, and `u32 registry_flag`. The value of `registry_flag` is `0` or `1`.
+**Known.** `f3d.md` §8.1 "**The ACT segment.**" gives the two-byte prologue, the counted `(reference, entity key)` entries, and the join from each entry to its change group. The run after the last entry is a sequence of 36-character GUID strings and has no count of its own.
 
-**Need.** We must know the meaning to write the correct value in a new record.
+**Need.** We must know the run to write an ACT table. A reader that stops after the counted entries keeps every change-version join, so the item blocks writing only.
 
 ### DR-05. Recipe records of a non-locus parameter companion
 
@@ -151,22 +151,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `f3d.md` §8.1 "Within a dimensional companion," gives the containment order and the retention order. `f3d.md` §8.1 "An edge recipe's words" gives the edge-recipe-subsequence join. `f3d.md` §8.1 "A recipe-backed linear dimension" gives the measurement rule for a recipe-backed linear dimension that has no locus.
 
 **Need.** We must know the operation to build a neutral dimension from more than one recipe record.
-
-### DR-06. Sketch-relation member-role values
-
-**Question.** What do the member-role values of a sketch relation mean?
-
-**Known.** `f3d.md` §8.1 "A sketch relation is" gives two special cases. A `0x20000000000` relation uses the path role and the text role. A `0x2000000000` relation uses role `1` for result curves. The same line states that the role is relation-specific and does not classify an input member or a generated member by itself. A spatial-sketch `Coincident` relation between a point and a surface carries the surface-member role values `0` to `3`. No one of these four values changes the point-on-surface relation.
-
-**Need.** We must know the general value set to classify members in every other relation.
-
-### DR-08. Member roles of a spline-group relation
-
-**Question.** What do the explicit per-member role integers of a `0x80000000` spline-group relation mean?
-
-**Known.** `f3d.md` §8.1 "A sketch relation is" gives the member positions by structure. In a model-space spline group, member `i` joins control points `i` and `i+1`. This rule uses the member position and not the role integer.
-
-**Need.** We must know the role meaning to write the correct integer for each member.
 
 ### DR-09. Sheet-metal `EdgeFlange` and `Hem` discriminators
 
@@ -205,29 +189,29 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the selected entity to keep the complete feature input set. The eighth ordered reference is the tool body in the compact form only; in the ten-reference form the tool body is the tenth and the eighth is a parameter.
 
-### DR-12. `EntityGenesis` placement field at offset 45
+### DR-12. Placement `refType` values
 
-**Question.** What does the f64-shaped field that ends at primary-record offset 45 hold? This field is in the `EntityGenesis`-form placement record class.
+**Question.** What construction does each `refType` value of the placement class select?
 
-**Known.** `f3d.md` §8.1 "A `Sketch` scope joined" gives this record from offset 55. It gives `0x01` at offset 55, nine zero bytes, and a form byte at offset 65. It gives no field before offset 55.
+**Known.** `f3d.md` §8.1 "A `Sketch` scope joined" gives the member order, the version gates, and the identity-marked matrix. `refType` is a u32 whose value does not change the member sequence, and the reference members it selects between — `rOrigin`, `rXAxis`, `rZAxis`, `rEdgeReferences`, `rPlaneReferences`, and `values` — are present at every value.
 
-**Need.** We must know the field to write a complete placement record.
+**Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored.
 
-### DR-13. `WorkPoint` without an explicit coordinate
+### DR-13. `WorkPoint` `refType` values
 
-**Question.** Which construction-record join gives the position of a reference-derived `WorkPoint` that has no explicit class-282 coordinate?
+**Question.** What construction does each `refType` value of the point-data class select?
 
-**Known.** `f3d.md` §8.1 "A direct `WorkPoint` scope" gives the three forms that store a coordinate. They are the 197-byte, 208-byte, and 207-byte forms. The decoder accepts only those three forms. For any other form it makes a native feature with no position.
+**Known.** `f3d.md` §8.1 "A direct `WorkPoint` scope" gives the member order, the version gates, and the input count each `refType` implies. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point.
 
-**Need.** The neutral model needs a position for every work point.
+**Need.** A writer must emit the `refType` that matches the inputs it writes, and a neutral model that edits an input must know which rule re-solves the point.
 
-### DR-14. `SurfacePatch` patch-setting records
+### DR-14. `SurfacePatch` boundary-settings values
 
-**Question.** What do the fields of the two patch-setting records hold? These records are at ordered reference positions two and three of the 354-byte `SurfacePatch` scope.
+**Question.** What do the values of `PatchContinuity` and `PatchFlip` mean?
 
-**Known.** `f3d.md` §8.1 "A `SurfacePatch` scope in the fixed" says that the remaining references carry patch settings. It gives no field meanings.
+**Known.** `f3d.md` §8.1 "A surface-patch boundary-settings record's" gives the member order and the types. `PatchContinuity` and `PatchFlip` are u32 and `PatchScale` is an f64.
 
-**Need.** We must know the settings to rebuild the patch in a neutral model.
+**Need.** We must know the value sets to rebuild the patch in a neutral model. **Blocked on specimens:** `PatchContinuity` carries one value and `PatchFlip` two in the records available. Settling it needs one patch per continuity setting on a single boundary component, and one pair of patches that differ only in the boundary side.
 
 ### DR-15. Recipe fields for ambiguous edge operands
 
@@ -361,13 +345,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A writer must emit this GUID to build a cross-document reference, and we cannot derive it from either end of the link.
 
-### XR-04. Occurrence-placement tail fields
+### XR-04. Occurrence-placement reference runs
 
-**Question.** Which record does the marked record reference that opens the role-adjacent occurrence-placement tail select? What does the per-entry u32 hold?
+**Question.** What do the counted reference run after the matrix, the modern tagged u32 run, and the two closing references of an occurrence placement name?
 
-**Known.** `f3d.md` §1.4 "**Placement.**" gives the layout. The tail starts after the occurrence-role string with `u8 0` and one marked record reference. Then it has zero or more entries. Each entry holds `u8 1`, a u64 record reference, two zero bytes, and a u32. A record with one or more entries has no known occurrence.
+**Known.** `f3d.md` §1.4 "**Placement.**" gives the layout, the instance discriminator, and the identity-marked matrix. The counted run reaches both local and cross-document targets. The two closing references name the same pair of entities for every placement of one document, so neither depends on the placement.
 
-**Need.** We must know the meanings to write a complete occurrence placement.
+**Need.** We must know the targets to write a complete occurrence placement. A reader takes the target path, the discriminators, and the transform without them.
 
 ## 4. Material assets
 
