@@ -294,6 +294,20 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the meanings to write sketch text from a neutral model.
 
+### DR-27. Sketch-relation class-member meanings
+
+**Question.** What do these members of a sketch-relation subclass hold?
+
+- the three `u8` flags of the tangency class and the three of the rectangular-pattern class
+- the u32-counted reference run of the rectangular-pattern class
+- the u64 key and the u64 values of the pattern-table map, and the u32 of the pattern-table run
+- the first of the two text-frame references
+- the zero `u8` that closes the circular-pattern class
+
+**Known.** `f3d.md` §8.1 "A sketch-relation class writes" gives the member sequence of each class, and each sequence closes the record on its exact end. The fields above have a width and no meaning. The decoder consumes them and transfers nothing from them.
+
+**Need.** A pattern relation must be written back from a neutral model, and these members must carry the values the source would have written. The map keys and values are small integers in the range of record indices, so they may be a per-instance record grouping that a writer must rebuild rather than copy.
+
 ## 3. External references
 
 ### XR-01. `neutronData` with a different GUID

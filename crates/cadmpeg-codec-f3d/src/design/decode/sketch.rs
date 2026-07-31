@@ -1207,11 +1207,16 @@ pub fn decode_sketch_relations(
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
+    // A record carries no class identity of its own: its class tag selects an
+    // entry in its segment's own type table, and only that entry's GUID names
+    // the class across segments.
+    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
+        let stream_types = stream_types_by_entity(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
         let owners = entities
             .iter()
@@ -1232,7 +1237,14 @@ pub fn decode_sketch_relations(
             let Some(payload) = bytes.get(at..record_end) else {
                 continue;
             };
-            let Some(parsed) = parse_sketch_relation(payload, &owners) else {
+            let class = stream_types
+                .get(&u64::from(record.record_index))
+                .and_then(|(type_guid, version)| SketchRelationClass::of(type_guid, *version));
+            let parsed = match class {
+                Some(class) => parse_classed_sketch_relation(payload, class),
+                None => parse_sketch_relation(payload, &owners),
+            };
+            let Some(parsed) = parsed else {
                 continue;
             };
             if payload
@@ -1285,15 +1297,15 @@ pub fn decode_sketch_relations(
     Ok(out)
 }
 
-/// Decode the class-specific auxiliary payload of a pattern or text-frame
-/// relation from its fixed positions inside `payload`. Circular patterns store
+/// Decode the pattern definition a relation's class members carry, reading them
+/// beside the auxiliary references the parse recorded. Circular patterns store
 /// the angle- and count-parameter references, the evaluated f64 total angle six
 /// zero bytes after the count-parameter reference, and the evaluated u32
 /// instance count directly after it. Rectangular patterns store, per direction,
 /// the evaluated u32 count, the count-parameter reference, a three-component
 /// f64 unit direction six zero bytes after that reference, the evaluated f64
-/// adjacent-instance spacing, and the distance-parameter reference. Text-frame relations
-/// repeat the sketch-text member as the single auxiliary reference.
+/// seed-to-final-instance span, and the distance-parameter reference. Text-frame
+/// relations repeat the sketch-text member as an auxiliary reference.
 pub(crate) fn decode_pattern_definition(
     payload: &[u8],
     parsed: &ParsedSketchRelation,
@@ -1320,19 +1332,31 @@ pub(crate) fn decode_pattern_definition(
             evaluated_count,
         });
     }
-    if parsed.state == 0x2000_0000 && matches!(parsed.auxiliary_references.len(), 4 | 5) {
+    if parsed.state == 0x2000_0000 {
+        // Each direction clause writes its evaluated count directly before its
+        // count-parameter reference, so the count is five bytes before that
+        // reference's target. The clauses follow the class members that precede
+        // them, which is one leading reference or none; where the class was not
+        // named that is read off the length of the auxiliary run.
+        let clause_ordinal = parsed
+            .rectangular_clause_ordinal
+            .unwrap_or(usize::from(parsed.auxiliary_references.len() == 5));
+        if parsed.auxiliary_references.len() < clause_ordinal + 4 {
+            return None;
+        }
         let mut directions = Vec::with_capacity(2);
-        let clauses = if parsed.auxiliary_references.len() == 5 {
-            [
-                (reference_end(0)? + 10, 1, 2),
-                (reference_end(2)? + 6, 3, 4),
-            ]
-        } else {
-            [
-                (parsed.auxiliary_reference_offsets[0].checked_sub(5)?, 0, 1),
-                (parsed.auxiliary_reference_offsets[2].checked_sub(5)?, 2, 3),
-            ]
-        };
+        let clauses = [
+            (
+                parsed.auxiliary_reference_offsets[clause_ordinal].checked_sub(5)?,
+                clause_ordinal,
+                clause_ordinal + 1,
+            ),
+            (
+                parsed.auxiliary_reference_offsets[clause_ordinal + 2].checked_sub(5)?,
+                clause_ordinal + 2,
+                clause_ordinal + 3,
+            ),
+        ];
         for (count_at, count_ordinal, distance_ordinal) in clauses {
             let evaluated_count = u32_at(payload, count_at)?;
             if !(1..=100_000).contains(&evaluated_count) {
@@ -2484,9 +2508,95 @@ pub(crate) struct ParsedSketchRelation {
     pub(crate) state_offset: usize,
     pub(crate) entity_genesis: Option<u64>,
     pub(crate) text_glyph_transforms: Option<Vec<[[f64; 4]; 4]>>,
+    /// Position within `auxiliary_references` of the first direction clause's
+    /// count-parameter reference on a rectangular pattern whose four clause
+    /// references are all present. `None` where the class was not named or a
+    /// clause reference is absent, which leaves the ordinals to be guessed from
+    /// the length of the auxiliary run.
+    pub(crate) rectangular_clause_ordinal: Option<usize>,
     pub(crate) return_members: Vec<u32>,
     pub(crate) return_member_offsets: Vec<usize>,
     pub(crate) parsed_end: usize,
+}
+
+/// Type GUID of the shared sketch-relation class, which adds no member of its
+/// own between the property block and `ParentNode`.
+const RELATION_TYPE_GUID: &str = "60403D47-0C49-49B0-BDE8-1679608164A2";
+/// Type GUID of the offset class, whose relations carry mask `0x2000000000`.
+const OFFSET_RELATION_TYPE_GUID: &str = "D3BD153B-EB8A-405E-9D29-69EE0C3D227C";
+/// Type GUID of the spline-group class, whose relations carry mask `0x80000000`.
+const SPLINE_RELATION_TYPE_GUID: &str = "73762C3B-82DC-4632-93B0-B8FE1CC5282F";
+/// Type GUID of the tangency class, whose relations carry mask `0x100`.
+const TANGENT_RELATION_TYPE_GUID: &str = "24DB790E-3DCD-4336-AFA3-6F119EF2239B";
+/// Type GUID of the circular-pattern class, mask `0x10000000`.
+const CIRCULAR_PATTERN_RELATION_TYPE_GUID: &str = "8269E861-0BB7-47E0-9911-5AE3EC475058";
+/// Type GUID of the rectangular-pattern class, mask `0x20000000`.
+const RECTANGULAR_PATTERN_RELATION_TYPE_GUID: &str = "40800FB9-C2BE-494E-A047-7D76E82B9F6C";
+/// Type GUID of the text-frame class, mask `0x10000000000`.
+const TEXT_FRAME_RELATION_TYPE_GUID: &str = "8B369926-123F-4F9D-878E-6D4C076128D3";
+/// Type GUID of the text-path class, mask `0x20000000000`.
+const TEXT_PATH_RELATION_TYPE_GUID: &str = "9D30FCDC-EA07-4141-93E2-918B1A59E962";
+
+/// A sketch-relation record class, named by the type GUID its segment's type
+/// table carries for the record's entity. The class fixes the members written
+/// between the property block and the base class's `ParentNode`. A class tag
+/// cannot name it: a tag is `256` plus an index into the segment's own type
+/// table, so one tag names different relation classes in different segments.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SketchRelationClass {
+    /// A class whose most-derived level adds no member: the shared relation
+    /// class, the offset class, and the spline-group class.
+    Plain,
+    /// Three `u8` flags, each `0` or `1`.
+    Tangent,
+    /// The angle-parameter reference, the count-parameter reference, the
+    /// evaluated f64 total angle in radians, the evaluated u32 instance count,
+    /// the pattern tables, and one `u8`.
+    CircularPattern,
+    /// Three `u8` flags, a u32-counted run of references, the pattern tables,
+    /// and two direction clauses.
+    RectangularPattern,
+    /// Two references.
+    TextFrame,
+    /// The text-entity reference, a u32 character count, and that many glyph
+    /// blocks. `leading_flag` is the `u8` the class writes before the
+    /// reference, which it does from class version 1.
+    TextPath {
+        /// Whether the class version writes the leading `u8`.
+        leading_flag: bool,
+    },
+}
+
+impl SketchRelationClass {
+    /// The relation class `type_guid` names at class version `version`, or
+    /// `None` where the GUID is not a sketch-relation class.
+    pub(crate) fn of(type_guid: &str, version: u32) -> Option<Self> {
+        let matches = |known: &str| type_guid.eq_ignore_ascii_case(known);
+        if matches(RELATION_TYPE_GUID)
+            || matches(OFFSET_RELATION_TYPE_GUID)
+            || matches(SPLINE_RELATION_TYPE_GUID)
+        {
+            return Some(Self::Plain);
+        }
+        if matches(TANGENT_RELATION_TYPE_GUID) {
+            return Some(Self::Tangent);
+        }
+        if matches(CIRCULAR_PATTERN_RELATION_TYPE_GUID) {
+            return Some(Self::CircularPattern);
+        }
+        if matches(RECTANGULAR_PATTERN_RELATION_TYPE_GUID) {
+            return Some(Self::RectangularPattern);
+        }
+        if matches(TEXT_FRAME_RELATION_TYPE_GUID) {
+            return Some(Self::TextFrame);
+        }
+        if matches(TEXT_PATH_RELATION_TYPE_GUID) {
+            return Some(Self::TextPath {
+                leading_flag: version >= 1,
+            });
+        }
+        None
+    }
 }
 
 /// Largest plausible counted run inside a sketch relation; a larger count is a
@@ -2515,6 +2625,150 @@ fn take_relation_reference(payload: &[u8], cursor: &mut usize) -> Option<(u32, u
     Some((u32::try_from(reference.target?).ok()?, at + 1))
 }
 
+/// Take one reference member that the class may leave absent, recording it in
+/// the auxiliary run when it is present. An absent reference is one zero byte
+/// and names nothing, so it contributes no entry.
+fn take_auxiliary_relation_reference(
+    payload: &[u8],
+    cursor: &mut usize,
+    auxiliary_references: &mut Vec<u32>,
+    auxiliary_reference_offsets: &mut Vec<usize>,
+) -> Option<bool> {
+    let at = *cursor;
+    let reference = take_reference(payload, cursor)?;
+    let Some(target) = reference.target else {
+        return Some(false);
+    };
+    auxiliary_references.push(u32::try_from(target).ok()?);
+    auxiliary_reference_offsets.push(at + 1);
+    Some(true)
+}
+
+/// Skip the two tables both pattern classes write after their own leading
+/// members: a u32-counted map whose entry is a u64 key, a u32 count, and that
+/// many u64 values; then a u32-counted run of u32.
+fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
+    let entries = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+    if entries > MAX_RELATION_RUN {
+        return None;
+    }
+    *cursor += 4;
+    for _ in 0..entries {
+        let values = usize::try_from(u32_at(payload, *cursor + 8)?).ok()?;
+        if values > MAX_RELATION_RUN {
+            return None;
+        }
+        *cursor += 12 + values * 8;
+    }
+    let ordinals = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+    if ordinals > MAX_RELATION_RUN {
+        return None;
+    }
+    *cursor += 4 + ordinals * 4;
+    (*cursor <= payload.len()).then_some(())
+}
+
+/// What a sketch-relation subclass leaves behind after its own members.
+struct RelationClassMembers {
+    rectangular_clause_ordinal: Option<usize>,
+    text_glyph_transforms: Option<Vec<[[f64; 4]; 4]>>,
+}
+
+/// Consume the members `class` writes between the property block and the base
+/// class's `ParentNode`, advancing `cursor` past them and recording every
+/// present reference among them in the auxiliary run
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+fn parse_relation_class_members(
+    payload: &[u8],
+    cursor: &mut usize,
+    class: SketchRelationClass,
+    auxiliary_references: &mut Vec<u32>,
+    auxiliary_reference_offsets: &mut Vec<usize>,
+) -> Option<RelationClassMembers> {
+    let mut members = RelationClassMembers {
+        rectangular_clause_ordinal: None,
+        text_glyph_transforms: None,
+    };
+    macro_rules! take {
+        () => {
+            take_auxiliary_relation_reference(
+                payload,
+                cursor,
+                auxiliary_references,
+                auxiliary_reference_offsets,
+            )
+        };
+    }
+    match class {
+        SketchRelationClass::Plain => {}
+        SketchRelationClass::Tangent => {
+            for _ in 0..3 {
+                // A flag outside `{0, 1}` is a misparse, not a third state.
+                if !matches!(payload.get(*cursor)?, 0 | 1) {
+                    return None;
+                }
+                *cursor += 1;
+            }
+        }
+        SketchRelationClass::TextFrame => {
+            take!()?;
+            take!()?;
+        }
+        SketchRelationClass::CircularPattern => {
+            take!()?;
+            take!()?;
+            // The evaluated total angle and the evaluated instance count.
+            *cursor += 12;
+            skip_pattern_tables(payload, cursor)?;
+            if payload.get(*cursor)? != &0 {
+                return None;
+            }
+            *cursor += 1;
+        }
+        SketchRelationClass::RectangularPattern => {
+            // The three flags are not checked the way the tangency class's are:
+            // the counted runs and the unit directions that follow them already
+            // reject a misframed record, and the flags do not.
+            *cursor += 3;
+            let seeds = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            if seeds > MAX_RELATION_RUN {
+                return None;
+            }
+            *cursor += 4;
+            for _ in 0..seeds {
+                take!()?;
+            }
+            skip_pattern_tables(payload, cursor)?;
+            let clause_ordinal = auxiliary_reference_offsets.len();
+            let mut complete = true;
+            for _ in 0..2 {
+                // The evaluated instance count precedes the count-parameter
+                // reference; the unit direction and the seed-to-final-instance
+                // span follow it, and the distance parameter closes the clause.
+                *cursor += 4;
+                complete &= take!()?;
+                *cursor += 32;
+                complete &= take!()?;
+            }
+            members.rectangular_clause_ordinal = complete.then_some(clause_ordinal);
+        }
+        SketchRelationClass::TextPath { leading_flag } => {
+            if leading_flag {
+                if payload.get(*cursor)? != &1 {
+                    return None;
+                }
+                *cursor += 1;
+            }
+            let (text_reference, transforms, end) = parse_text_glyph_run(payload, *cursor)?;
+            auxiliary_references.push(text_reference);
+            auxiliary_reference_offsets.push(*cursor + 1);
+            members.text_glyph_transforms = Some(transforms);
+            *cursor = end;
+        }
+    }
+    Some(members)
+}
+
 /// Parse one sketch-relation record body ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
 ///
 /// The payload is `u8 1`, a u32 count and that many `(reference, u32 relation
@@ -2525,10 +2779,46 @@ fn take_relation_reference(payload: &[u8], cursor: &mut usize) -> Option<(u32, u
 /// Both reference runs hold the same members; only the second is in semantic
 /// order. Pattern and text classes carry extra class members between the
 /// property block and `ParentNode`, which are retained as the auxiliary run.
+///
+/// The class of the record is not known here, so the class members are walked
+/// reference to reference and `ParentNode` is taken to be the first reference
+/// naming an owning sketch. That walk desynchronizes on a class member whose
+/// bytes fit a reference, so it is the fallback for a record whose segment's
+/// type table does not register its entity; a record whose class is named is
+/// parsed by [`parse_classed_sketch_relation`].
 pub(crate) fn parse_sketch_relation(
     payload: &[u8],
     owners: &std::collections::HashSet<u32>,
 ) -> Option<ParsedSketchRelation> {
+    parse_relation(payload, RelationFraming::Walked(owners))
+}
+
+/// Parse one sketch-relation record body whose class is known
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+///
+/// The grammar is the one [`parse_sketch_relation`] documents, with `class`
+/// fixing the members between the property block and `ParentNode` exactly, so
+/// no scan is involved, `ParentNode` is read where the class puts it, and the
+/// owning sketches need not be known to find it.
+pub(crate) fn parse_classed_sketch_relation(
+    payload: &[u8],
+    class: SketchRelationClass,
+) -> Option<ParsedSketchRelation> {
+    parse_relation(payload, RelationFraming::Classed(class))
+}
+
+/// How the members between the property block and `ParentNode` are framed.
+#[derive(Clone, Copy)]
+enum RelationFraming<'a> {
+    /// The record's class is not known, so the run is walked reference to
+    /// reference and `ParentNode` is the first reference naming one of these
+    /// owning sketches.
+    Walked(&'a std::collections::HashSet<u32>),
+    /// The record's class is known and fixes the run exactly.
+    Classed(SketchRelationClass),
+}
+
+fn parse_relation(payload: &[u8], framing: RelationFraming) -> Option<ParsedSketchRelation> {
     // The record header is the LP-ASCII class tag, the u64 entity id, and the
     // LP-ASCII record name; the member payload follows it.
     let (_, start) = lp_ascii_filtered(payload, 15, 0..=256, u8::is_ascii_graphic)?;
@@ -2591,39 +2881,61 @@ pub(crate) fn parse_sketch_relation(
     }
     let mut auxiliary_references = Vec::new();
     let mut auxiliary_reference_offsets = Vec::new();
-    // A text-path relation follows the `EntityGenesis` block with a `0x01`
-    // flag, the marked text-entity reference and its zero padding, a u32
-    // character count, and per-character blocks of `u32 16` and sixteen f64
-    // values. Parse the run structurally so the f64 payload's bytes are not
-    // misread as auxiliary references; the owning sketch reference follows
-    // the last block directly.
     let mut text_glyph_transforms = None;
-    if payload.get(cursor) == Some(&1) && payload.get(cursor + 1) == Some(&1) {
-        if let Some((text_reference, transforms, after)) = parse_text_glyph_run(payload, cursor + 1)
-        {
-            if marked_u32(payload, after).is_some_and(|(reference, _)| owners.contains(&reference))
-            {
-                auxiliary_references.push(text_reference);
-                auxiliary_reference_offsets.push(cursor + 2);
-                text_glyph_transforms = Some(transforms);
-                cursor = after;
+    let mut rectangular_clause_ordinal = None;
+    let (owner_reference, owner_reference_offset, state_offset) = match framing {
+        RelationFraming::Classed(class) => {
+            // The class fixes its own members, so `ParentNode` is read where the
+            // class puts it rather than searched for.
+            let class_members = parse_relation_class_members(
+                payload,
+                &mut cursor,
+                class,
+                &mut auxiliary_references,
+                &mut auxiliary_reference_offsets,
+            )?;
+            rectangular_clause_ordinal = class_members.rectangular_clause_ordinal;
+            text_glyph_transforms = class_members.text_glyph_transforms;
+            let (reference, offset) = take_relation_reference(payload, &mut cursor)?;
+            (reference, offset, cursor)
+        }
+        RelationFraming::Walked(owners) => {
+            // A text-path relation follows the `EntityGenesis` block with a `0x01`
+            // flag, the marked text-entity reference and its zero padding, a u32
+            // character count, and per-character blocks of `u32 16` and sixteen f64
+            // values. Parse the run structurally so the f64 payload's bytes are not
+            // misread as auxiliary references; the owning sketch reference follows
+            // the last block directly.
+            if payload.get(cursor) == Some(&1) && payload.get(cursor + 1) == Some(&1) {
+                if let Some((text_reference, transforms, after)) =
+                    parse_text_glyph_run(payload, cursor + 1)
+                {
+                    if marked_u32(payload, after)
+                        .is_some_and(|(reference, _)| owners.contains(&reference))
+                    {
+                        auxiliary_references.push(text_reference);
+                        auxiliary_reference_offsets.push(cursor + 2);
+                        text_glyph_transforms = Some(transforms);
+                        cursor = after;
+                    }
+                }
+            }
+            // Pattern and text classes place their own members between the property
+            // block and `ParentNode`. Without the class their widths are unknown, so
+            // the run is walked reference to reference and `ParentNode` is taken to
+            // be the first reference that names an owning sketch.
+            loop {
+                cursor = next_reference_marker(payload, cursor)?;
+                let mut probe = cursor;
+                let (reference, offset) = take_relation_reference(payload, &mut probe)?;
+                if owners.contains(&reference) {
+                    break (reference, offset, probe);
+                }
+                auxiliary_references.push(reference);
+                auxiliary_reference_offsets.push(offset);
+                cursor = probe;
             }
         }
-    }
-    // Pattern and text classes place their own members between the property
-    // block and `ParentNode`. Their widths are class-specific, so the run is
-    // walked reference to reference; `ParentNode` is the first reference that
-    // names an owning sketch.
-    let (owner_reference, owner_reference_offset, state_offset) = loop {
-        cursor = next_reference_marker(payload, cursor)?;
-        let mut probe = cursor;
-        let (reference, offset) = take_relation_reference(payload, &mut probe)?;
-        if owners.contains(&reference) {
-            break (reference, offset, probe);
-        }
-        auxiliary_references.push(reference);
-        auxiliary_reference_offsets.push(offset);
-        cursor = probe;
     };
     // The constraint mask follows `ParentNode` directly. It is a u64 in the
     // paired-run form and a u32 at class version 0.
@@ -2668,6 +2980,7 @@ pub(crate) fn parse_sketch_relation(
         state_offset,
         entity_genesis,
         text_glyph_transforms,
+        rectangular_clause_ordinal,
         return_members,
         return_member_offsets,
         parsed_end,
@@ -2827,4 +3140,399 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         reference_offsets,
         end: cursor,
     })
+}
+
+#[cfg(test)]
+mod relation_class_tests {
+    use super::{
+        decode_pattern_definition, parse_classed_sketch_relation, parse_sketch_relation,
+        SketchRelationClass,
+    };
+    use crate::records::{SketchPatternDefinition, SketchPatternDirection};
+    use std::collections::HashSet;
+
+    /// One present reference: the presence byte, the u64 target, and the
+    /// `cross_document` and same-segment flags.
+    fn push_reference(out: &mut Vec<u8>, target: u32) {
+        out.push(1);
+        out.extend_from_slice(&u64::from(target).to_le_bytes());
+        out.extend_from_slice(&[0u8; 2]);
+    }
+
+    /// One absent reference.
+    fn push_absent_reference(out: &mut Vec<u8>) {
+        out.push(0);
+    }
+
+    /// A relation record: the header, the paired member run, an empty property
+    /// block, `class_members`, `ParentNode`, the u64 mask, the return run, and
+    /// the trailing zero byte. The record ends where the parse must end.
+    fn relation_record(
+        members: &[(u32, u32)],
+        class_members: &[u8],
+        owner: u32,
+        mask: u64,
+        returns: &[u32],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(b"298");
+        out.extend_from_slice(&7u32.to_le_bytes());
+        out.extend_from_slice(&[0u8; 8]);
+        out.push(1);
+        out.extend_from_slice(
+            &u32::try_from(members.len())
+                .expect("member count fits a u32")
+                .to_le_bytes(),
+        );
+        for (reference, ordinal) in members {
+            push_reference(&mut out, *reference);
+            out.extend_from_slice(&ordinal.to_le_bytes());
+        }
+        out.push(0);
+        out.extend_from_slice(class_members);
+        push_reference(&mut out, owner);
+        out.extend_from_slice(&mask.to_le_bytes());
+        out.extend_from_slice(
+            &u32::try_from(returns.len())
+                .expect("return count fits a u32")
+                .to_le_bytes(),
+        );
+        for reference in returns {
+            push_reference(&mut out, *reference);
+        }
+        out.push(0);
+        out
+    }
+
+    /// The two pattern tables, both empty.
+    fn empty_pattern_tables() -> [u8; 8] {
+        [0u8; 8]
+    }
+
+    /// One rectangular direction clause.
+    fn push_direction_clause(
+        out: &mut Vec<u8>,
+        count: u32,
+        count_parameter: u32,
+        direction: [f64; 3],
+        distance: f64,
+        distance_parameter: u32,
+    ) {
+        out.extend_from_slice(&count.to_le_bytes());
+        push_reference(out, count_parameter);
+        for axis in direction {
+            out.extend_from_slice(&axis.to_le_bytes());
+        }
+        out.extend_from_slice(&distance.to_le_bytes());
+        push_reference(out, distance_parameter);
+    }
+
+    /// A glyph run: the text reference, the character count, and one block of
+    /// `u32 16` and a row-major 4x4 transform.
+    fn push_glyph_run(out: &mut Vec<u8>, text: u32, translation: f64) {
+        push_reference(out, text);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&16u32.to_le_bytes());
+        for row in 0..4 {
+            for column in 0..4 {
+                let value = if row == 0 && column == 3 {
+                    translation
+                } else {
+                    f64::from(u8::from(row == column))
+                };
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
+
+    #[test]
+    fn relation_classes_are_named_by_type_guid() {
+        assert_eq!(
+            SketchRelationClass::of("60403D47-0C49-49B0-BDE8-1679608164A2", 3),
+            Some(SketchRelationClass::Plain)
+        );
+        assert_eq!(
+            SketchRelationClass::of("d3bd153b-eb8a-405e-9d29-69ee0c3d227c", 0),
+            Some(SketchRelationClass::Plain)
+        );
+        assert_eq!(
+            SketchRelationClass::of("73762C3B-82DC-4632-93B0-B8FE1CC5282F", 0),
+            Some(SketchRelationClass::Plain)
+        );
+        assert_eq!(
+            SketchRelationClass::of("24DB790E-3DCD-4336-AFA3-6F119EF2239B", 0),
+            Some(SketchRelationClass::Tangent)
+        );
+        assert_eq!(
+            SketchRelationClass::of("8269E861-0BB7-47E0-9911-5AE3EC475058", 3),
+            Some(SketchRelationClass::CircularPattern)
+        );
+        assert_eq!(
+            SketchRelationClass::of("40800FB9-C2BE-494E-A047-7D76E82B9F6C", 5),
+            Some(SketchRelationClass::RectangularPattern)
+        );
+        assert_eq!(
+            SketchRelationClass::of("8B369926-123F-4F9D-878E-6D4C076128D3", 0),
+            Some(SketchRelationClass::TextFrame)
+        );
+        assert_eq!(
+            SketchRelationClass::of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 0),
+            Some(SketchRelationClass::TextPath {
+                leading_flag: false
+            })
+        );
+        assert_eq!(
+            SketchRelationClass::of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 1),
+            Some(SketchRelationClass::TextPath { leading_flag: true })
+        );
+        assert_eq!(
+            SketchRelationClass::of("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 0),
+            None
+        );
+    }
+
+    #[test]
+    fn plain_relation_reads_parent_node_without_class_members() {
+        let record = relation_record(&[(300, 1), (301, 0)], &[], 201, 0x1, &[300, 301]);
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.state, 0x1);
+        assert_eq!(parsed.members, [300, 301]);
+        assert_eq!(parsed.return_members, [300, 301]);
+        assert!(parsed.auxiliary_references.is_empty());
+        assert_eq!(parsed.parsed_end, record.len());
+    }
+
+    #[test]
+    fn tangent_relation_reads_its_three_flags() {
+        // The middle flag is `1`, which the reference-marker walk reads as the
+        // presence byte of a reference and steps into the flags.
+        let record = relation_record(&[(300, 1), (301, 0)], &[0, 1, 0], 201, 0x100, &[300, 301]);
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Tangent)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.state, 0x100);
+        assert!(parsed.auxiliary_references.is_empty());
+        assert_eq!(parsed.parsed_end, record.len());
+        assert!(parse_classed_sketch_relation(
+            &relation_record(&[(300, 1)], &[0, 2, 0], 201, 0x100, &[300]),
+            SketchRelationClass::Tangent
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn circular_pattern_relation_reads_its_parameters_and_tables() {
+        let mut class_members = Vec::new();
+        push_reference(&mut class_members, 336);
+        push_reference(&mut class_members, 333);
+        class_members.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
+        class_members.extend_from_slice(&3u32.to_le_bytes());
+        class_members.extend_from_slice(&empty_pattern_tables());
+        class_members.push(0);
+        let record = relation_record(
+            &[(300, 1), (301, 0)],
+            &class_members,
+            201,
+            0x1000_0000,
+            &[300, 301],
+        );
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.auxiliary_references, [336, 333]);
+        assert_eq!(parsed.parsed_end, record.len());
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(SketchPatternDefinition::Circular {
+                angle_parameter: 336,
+                count_parameter: 333,
+                evaluated_angle: std::f64::consts::TAU,
+                evaluated_count: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
+        let mut class_members = Vec::new();
+        push_absent_reference(&mut class_members);
+        push_absent_reference(&mut class_members);
+        class_members.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
+        class_members.extend_from_slice(&6u32.to_le_bytes());
+        // One map entry keyed `1` holding two values, then a two-entry u32 run.
+        class_members.extend_from_slice(&1u32.to_le_bytes());
+        class_members.extend_from_slice(&1u64.to_le_bytes());
+        class_members.extend_from_slice(&2u32.to_le_bytes());
+        class_members.extend_from_slice(&122u64.to_le_bytes());
+        class_members.extend_from_slice(&118u64.to_le_bytes());
+        class_members.extend_from_slice(&2u32.to_le_bytes());
+        class_members.extend_from_slice(&1u32.to_le_bytes());
+        class_members.extend_from_slice(&2u32.to_le_bytes());
+        class_members.push(0);
+        let record = relation_record(&[(300, 1)], &class_members, 201, 0x1000_0000, &[300]);
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert!(parsed.auxiliary_references.is_empty());
+        assert_eq!(parsed.parsed_end, record.len());
+        assert_eq!(decode_pattern_definition(&record, &parsed), None);
+    }
+
+    #[test]
+    fn rectangular_pattern_relation_reads_a_seed_reference_before_its_clauses() {
+        let mut class_members = vec![1, 0, 0];
+        class_members.extend_from_slice(&1u32.to_le_bytes());
+        push_reference(&mut class_members, 900);
+        class_members.extend_from_slice(&empty_pattern_tables());
+        push_direction_clause(&mut class_members, 3, 464, [1.0, 0.0, 0.0], 3.0, 470);
+        push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.5, 473);
+        let record = relation_record(
+            &[(300, 1), (301, 0)],
+            &class_members,
+            201,
+            0x2000_0000,
+            &[300, 301],
+        );
+        let owners = HashSet::from([201]);
+        let parsed =
+            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+                .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.auxiliary_references, [900, 464, 470, 467, 473]);
+        assert_eq!(parsed.rectangular_clause_ordinal, Some(1));
+        assert_eq!(parsed.parsed_end, record.len());
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(SketchPatternDefinition::Rectangular {
+                directions: [
+                    SketchPatternDirection {
+                        evaluated_count: 3,
+                        count_parameter: 464,
+                        direction: [1.0, 0.0, 0.0],
+                        evaluated_distance: 3.0,
+                        distance_parameter: 470,
+                    },
+                    SketchPatternDirection {
+                        evaluated_count: 1,
+                        count_parameter: 467,
+                        direction: [0.0, 1.0, 0.0],
+                        evaluated_distance: 0.5,
+                        distance_parameter: 473,
+                    },
+                ],
+            })
+        );
+        // The three leading flags and the seed count read as a reference whose
+        // u64 target overflows a record index, so the walk cannot reach the
+        // record at all.
+        assert!(parse_sketch_relation(&record, &owners).is_none());
+    }
+
+    #[test]
+    fn rectangular_pattern_relation_reads_clauses_without_a_seed_reference() {
+        let mut class_members = vec![0, 0, 0];
+        class_members.extend_from_slice(&0u32.to_le_bytes());
+        class_members.extend_from_slice(&empty_pattern_tables());
+        push_direction_clause(&mut class_members, 4, 464, [1.0, 0.0, 0.0], 2.0, 470);
+        push_direction_clause(&mut class_members, 2, 467, [0.0, 1.0, 0.0], 1.5, 473);
+        let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
+        let parsed =
+            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+                .expect("the classed parse reads the record");
+        assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
+        assert_eq!(parsed.rectangular_clause_ordinal, Some(0));
+        assert_eq!(parsed.parsed_end, record.len());
+        let Some(SketchPatternDefinition::Rectangular { directions }) =
+            decode_pattern_definition(&record, &parsed)
+        else {
+            panic!("expected a rectangular pattern definition");
+        };
+        assert_eq!(directions[0].evaluated_count, 4);
+        assert_eq!(directions[1].evaluated_count, 2);
+    }
+
+    #[test]
+    fn text_frame_relation_reads_its_two_references() {
+        let mut class_members = Vec::new();
+        push_absent_reference(&mut class_members);
+        push_reference(&mut class_members, 2394);
+        let record = relation_record(
+            &[(2394, 0), (2403, 0)],
+            &class_members,
+            201,
+            0x100_0000_0000,
+            &[2403],
+        );
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.auxiliary_references, [2394]);
+        assert_eq!(parsed.parsed_end, record.len());
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(SketchPatternDefinition::TextFrame {
+                text_reference: 2394
+            })
+        );
+
+        let mut both = Vec::new();
+        push_reference(&mut both, 2404);
+        push_reference(&mut both, 2394);
+        let record = relation_record(
+            &[(2394, 0), (2403, 0)],
+            &both,
+            201,
+            0x100_0000_0000,
+            &[2403],
+        );
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.auxiliary_references, [2404, 2394]);
+        assert_eq!(parsed.parsed_end, record.len());
+    }
+
+    #[test]
+    fn text_path_relation_reads_its_glyph_run_at_both_versions() {
+        for leading_flag in [false, true] {
+            let mut class_members = Vec::new();
+            if leading_flag {
+                class_members.push(1);
+            }
+            push_glyph_run(&mut class_members, 2, 5.0);
+            let record = relation_record(
+                &[(1, 1), (2, 0)],
+                &class_members,
+                201,
+                0x200_0000_0000,
+                &[1],
+            );
+            let parsed = parse_classed_sketch_relation(
+                &record,
+                SketchRelationClass::TextPath { leading_flag },
+            )
+            .expect("the classed parse reads the record");
+            assert_eq!(parsed.auxiliary_references, [2]);
+            assert_eq!(parsed.parsed_end, record.len());
+            let Some(SketchPatternDefinition::TextPath {
+                text_reference,
+                glyph_transforms,
+            }) = decode_pattern_definition(&record, &parsed)
+            else {
+                panic!("expected a text-path pattern definition");
+            };
+            assert_eq!(text_reference, 2);
+            assert_eq!(glyph_transforms[0][0][3], 5.0);
+            // The version-0 layout has no leading byte, so reading one steps
+            // into the text reference and the run no longer closes.
+            assert!(parse_classed_sketch_relation(
+                &record,
+                SketchRelationClass::TextPath {
+                    leading_flag: !leading_flag
+                }
+            )
+            .is_none_or(|other| other.parsed_end != record.len()));
+        }
+    }
 }
