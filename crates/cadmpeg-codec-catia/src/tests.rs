@@ -14723,6 +14723,79 @@ fn formula_parameter_dependency_retains_an_unmatched_symbol() {
 }
 
 #[test]
+fn formula_parameter_dependencies_exclude_string_literal_contents() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "Integer", "Count", "#1_ /2", 35.0)],
+        "String",
+        None,
+        "\"literal #1_ /2\"+ToString(#1_ /2)",
+    ));
+    let dependencies = &native.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation")
+        .parameter_dependencies;
+
+    assert_eq!(dependencies.len(), 1);
+    assert_eq!(dependencies[0].symbol, "#1_ /2");
+    assert_eq!(dependencies[0].source_offset, 26);
+    assert_eq!(dependencies[0].candidates.len(), 1);
+
+    let expected_formula = native.entity_records[0]
+        .formula_relation
+        .clone()
+        .expect("complete formula relation");
+    let mut old_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut old_namespace)
+        .expect("store relation dependencies");
+    let dependencies = old_namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("formula_relation")
+        .expect("stored formula relation")
+        .as_object_mut()
+        .expect("stored formula relation")
+        .get_mut("parameter_dependencies")
+        .expect("stored parameter dependencies")
+        .as_array_mut()
+        .expect("stored parameter dependencies");
+    let mut literal_dependency = dependencies[0].clone();
+    literal_dependency
+        .as_object_mut()
+        .expect("stored parameter dependency")
+        .insert("source_offset".to_string(), 9_u64.into());
+    dependencies.insert(0, literal_dependency);
+    old_namespace.version = crate::native::CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&old_namespace)
+        .expect("migrate string-literal relation dependencies");
+    assert_eq!(
+        migrated.entity_records[0].formula_relation,
+        Some(expected_formula)
+    );
+
+    let unterminated =
+        crate::native::CatiaNative::decode(&standard_catpart_with_typed_formula_inputs(
+            4,
+            false,
+            &[("#1_", "Integer", "Count", "#1_ /2", 35.0)],
+            "String",
+            None,
+            "\"unterminated #1_ /2",
+        ));
+    assert!(unterminated.entity_records[0]
+        .formula_relation
+        .as_ref()
+        .expect("complete formula relation")
+        .parameter_dependencies
+        .is_empty());
+}
+
+#[test]
 fn formula_relation_resolves_bare_expression_symbols() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_typed_formula_inputs(
         4,

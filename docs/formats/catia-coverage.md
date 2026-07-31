@@ -117,7 +117,8 @@ current scores require those matrices and representative fixtures.
   occurrence retains its UTF-8 byte offset, exact text, and all same-graph
   parameter binding candidate identities, entities, and classes; coverage
   partitions classified and unclassified candidates. Exactly one candidate
-  resolves the dependency.
+  resolves the dependency. Symbol-shaped string-literal content does not create
+  a dependency.
   Every transferred numeric
   parameter retains its canonical
   `LENGTH`, `ANGLE`, `Real`, or `Integer` value type independently of whether

@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 247;
+pub const CATIA_NATIVE_VERSION: u32 = 248;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -90,6 +90,9 @@ pub(crate) const CATIA_RELATION_DEPENDENCY_OFFSET_VERSION: u32 = 246;
 /// Native schema version retaining relation-program reference occurrence offsets.
 #[cfg(test)]
 pub(crate) const CATIA_RELATION_REFERENCE_OFFSET_VERSION: u32 = 247;
+/// Native schema version excluding string-literal contents from relation dependencies.
+#[cfg(test)]
+pub(crate) const CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION: u32 = 248;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -3815,6 +3818,14 @@ fn relation_symbols(source: &str) -> Vec<(u64, String)> {
     let mut symbols = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
+        if bytes[at] == b'"' {
+            at += 1;
+            while bytes.get(at).is_some_and(|byte| *byte != b'"') {
+                at += 1;
+            }
+            at += usize::from(at < bytes.len());
+            continue;
+        }
         if bytes[at] != b'#' {
             at += 1;
             continue;
@@ -8941,6 +8952,7 @@ impl CatiaNative {
             || namespace.version < CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION
             || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
             || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
+            || namespace.version < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -8975,6 +8987,7 @@ impl CatiaNative {
             || namespace.version < CATIA_RELATION_PROGRAM_INPUT_VERSION
             || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
             || namespace.version < CATIA_RELATION_REFERENCE_OFFSET_VERSION
+            || namespace.version < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
         {
             let records_by_id = records
                 .iter()
