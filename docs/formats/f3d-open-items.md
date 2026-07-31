@@ -22,7 +22,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What fields does a `VBL_OFFSURF` payload have? What fields does a `skin_spl_sur2` payload have?
 
-**Known.** `VBL_OFFSURF` has the second spelling `offsetvbsur`. Most of these records include a final solved cache. The cache gives the exact face shape.
+**Known.** `VBL_OFFSURF` has the second spelling `offsetvbsur`. Most of these records include a final solved cache. The cache gives the exact face shape. An offset surface whose support is a `VBL_SURF` stays an `off_spl_sur` with the vertex-blend surface in the support slot: it is accepted on read in that form and is retained in it, and no rewrite into `VBL_OFFSURF` occurs. A `skin_spl_sur`, `skin_spl_sur2`, or `skinsur` payload written from the field order in `f3d.md` §7.3 is refused on read, in a cache-first and in a context-first arrangement. The layouts are speculative, so a refusal separates neither a wrong field order from a wrong field count nor either of those from an unaccepted record name.
 
 **Need.** Some records do not include a cache. For those records, the field layout is the only source of the face shape. We must know the layout to read them and to write them. The decoder keeps these records as opaque bytes now.
 
@@ -30,31 +30,31 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the second boolean of the revision-gated `off_spl_sur` sense pair control?
 
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the first boolean and the offset construction. The second boolean does not select the offset side and does not move the offset surface. It is set only in records whose first boolean is also set, and those records have a support surface whose stored parameterization is reflected relative to the model.
+**Known.** `f3d.md` §7.3 `off_spl_sur` gives the first boolean and the offset construction. The second boolean does not select the offset side and does not move the offset surface. It is set only in records whose first boolean is also set, and those records have a support surface whose stored parameterization is reflected relative to the model. All four states are accepted on read with either sign of the stored distance, and each is retained. A state change alone does not make the reader solve the cache again, so a record whose tail stores a cache gives no surface that separates the states.
 
-**Need.** We must know which value to write when we make this record from a neutral model. `false` is the value for a surface built directly from a support surface and a distance, so the item blocks only the reflected case.
+**Need.** We must know which value to write when we make this record from a neutral model. `false` is the value for a surface built directly from a support surface and a distance, so the item blocks only the reflected case. A carrier whose tail stores no cache is needed to read the states off the solved surface.
 
 ### GC-06. `off_spl_sur` ASM extension prefix
 
-**Question.** What do the two booleans of the `off_spl_sur` ASM extension prefix control?
+**Question.** What does the first boolean of the `off_spl_sur` ASM extension prefix control? Is the state false/true legal?
 
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the position of the prefix. The prefix comes after the sense pair and before the shared revision-gated surface tail. The prefix takes the state false/false. No other state has a known occurrence.
+**Known.** `f3d.md` §7.3 `off_spl_sur` gives the position of the prefix and gives which prefix states have an extension run. The prefix comes after the sense pair and before the shared revision-gated surface tail. The state false/false is the only state with a known occurrence. The state true/false is accepted on read and adds no field and changes no other field, so the first boolean gates nothing in the record's layout. The state false/true with no run is refused on read. Two readings fit that refusal: the state is illegal in itself, or the second boolean alone requires the run. A record in the state false/true with a run separates them.
 
-**Need.** We must know which value to write for each boolean when we make this record.
+**Need.** We must know which value to write for the first boolean when we make this record, and whether a writer may set the second boolean alone.
 
 ### GC-07. `off_spl_sur` extension run
 
-**Question.** What are the field roles of the extra run in an `off_spl_sur` record? Which extension-prefix flag controls the presence of this run?
+**Question.** What are the field roles of the extension run in an `off_spl_sur` record?
 
-**Known.** A record with two `true` extension-prefix flags has an extra run before the shared tail. The run holds one boolean, six integers, one boolean, an embedded cache-first intcurve with optional endpoints, more booleans, a small tolerance scalar, and four `-1` integers. The first fields of the run agree with the start of a surface-to-surface intersection payload. That start is a presence logical, a six-integer header, an intersection curve, two pcurve logicals, and a tolerance. The four `-1` integers at the end are more than the three endpoint-term slots of that layout.
+**Known.** `f3d.md` §7.3 `off_spl_sur` gives the run's field sequence and the prefix states that require it. A run written to that sequence is accepted on read and is retained field for field, so the sequence is the true layout. The first fields agree with the start of a surface-to-surface intersection payload. That start is a presence logical, a six-integer header, an intersection curve, two pcurve logicals, and a tolerance. The four `-1` integers at the end are more than the three endpoint-term slots of that layout. The six integers, the two logicals after the curve, and the four `-1` integers have no established meaning, and a run whose fields all hold their neutral values is accepted, so acceptance does not constrain them.
 
-**Need.** We keep these records without a change. We cannot read the run, and we cannot make a record that has one.
+**Need.** We can now make a record that has a run, but only by copying a run we read. To make one from a neutral model we must know what the six integers, the two logicals, and the four `-1` integers hold.
 
 ### GC-08. Shared revision-gated surface tail enum values other than `0` and `2`
 
 **Question.** What layouts do the shared revision-gated surface tail enum values other than `0` and `2` select?
 
-**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the layouts of `0` and `2`. Zero selects the solved cache and its fit tolerance; two replaces both with the two bool-gated parameter intervals and four closure and singularity enums. The decoder keeps a record with any other value as opaque bytes.
+**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the layouts of `0` and `2`. Zero selects the solved cache and its fit tolerance; two replaces both with the two bool-gated parameter intervals and four closure and singularity enums. The decoder keeps a record with any other value as opaque bytes. A tail written with the spelling `historical`, `optimal`, `none`, or `summary` and with the payload the same-named `law_spl_sur` mode selects is refused on read in all four cases. A refusal separates a spelling the tail does not have from a payload the value selects differently, so it does not narrow the accepted spelling set.
 
 **Need.** We cannot read a record with a value other than `0` or `2`.
 
@@ -62,33 +62,25 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What are the nonzero values of the revision-gated `cl_loft_spl_sur` tail-kind integer? What layout does each nonzero value select?
 
-**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload. The revision-gated form takes tail kind `0`; no nonzero kind has a known occurrence in that form. The decoder rejects every nonzero kind.
+**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload. The revision-gated form takes tail kind `0`; no nonzero kind has a known occurrence in that form. The decoder rejects every nonzero kind. A revision-gated payload written with tail kind `6` or `7` and with the kind-6 or kind-7 payload of the form that is not revision-gated is refused on read. A refusal separates a kind the revision-gated form does not have from a payload the revision-gated form encodes differently, so it does not bound the kind set.
 
 **Need.** We cannot read a record with a nonzero kind.
 
 ### GC-14. `cl_loft_spl_sur` optional trailing BS3 curve
 
-**Question.** What controls the presence of the trailing BS3 curve in the kind-zero `cl_loft_spl_sur` payload?
+**Question.** Can a present parameter pair end the kind-zero `cl_loft_spl_sur` payload with no trailing BS3 curve after it?
 
-**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload with an optional trailing BS3 curve. `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the bool-gated encoding for the optional parameter values in the same payload. The trailing curve is present exactly when the two optional parameter values are present in their bool-gated encoding; the present pair can be the descending no-range sentinel, so the rule couples to the encoding and not to the numeric values. The decoder finds the trailing curve with a look-ahead for the subtype-close byte and keeps that look-ahead until the rule is confirmed more widely. Every observed kind-zero payload ends in two absent-value booleans followed directly by the subtype close, which is byte-identical to two plain flags and no trailing-curve slot at all, so the corpus separates neither the two readings of those booleans nor the look-ahead from the stated rule.
+**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the presence rule and the bool-gated encoding of the two parameter values. An absent pair followed by a curve is refused on read, and an absent pair followed by the subtype close is accepted, so the reader takes no look-ahead over an absent pair and the booleans are the presence gate rather than two plain flags. A present pair is accepted with a curve after it in the ascending and in the descending parameter order alike, and both orders are retained, so the stored numbers do not select the slot. A present pair with no curve after it has no known occurrence. The decoder finds the trailing curve with a look-ahead for the subtype-close byte.
 
-**Need.** The look-ahead rule is not in the specification. We must state the true presence rule to write this payload correctly.
+**Need.** The look-ahead is now needed only for a present pair. We must know whether a present pair can end the payload before we can drop the look-ahead.
 
 ### GC-16. Token tags of a revision-gated `VBL_SURF` `deg` boundary
 
 **Question.** Which token tags does a revision-gated `VBL_SURF` `deg` boundary use for its location and for its two normals?
 
-**Known.** `f3d.md` §7.3 `VBL_SURF` gives the revision-form tag changes for the type names, the magic location, the support bounds, the curve endpoints, and circle form `3`. It does not give the tags of a `deg` boundary. The decoder writes `0x13` and two `0x14` tokens.
+**Known.** `f3d.md` §7.3 `VBL_SURF` gives the revision-form tag changes for the type names, the magic location, the support bounds, the curve endpoints, and circle form `3`. It does not give the tags of a `deg` boundary. The decoder writes `0x13` and two `0x14` tokens. In a record whose boundaries are accepted, a `plane` support stores its location in one `0x13` and each of its two directions in one `0x14`, and the leading triple of a boundary is one `0x14`, so the decoder's choice agrees with the tags the same record uses for a location and for a direction. A record whose boundary count is raised by one with a `deg` boundary appended is refused on read, with equal and with distinct normals alike. The appended boundary does not agree geometrically with the other boundaries and the record stores no cache to fall back on, so the refusal does not bear on the tags.
 
-**Need.** A wrong tag makes a file that Fusion cannot read.
-
-### GC-17. Variable-blend approximation-current integer values
-
-**Question.** What does the approximation-current integer mean, and which value must a writer emit?
-
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the position and the type of the integer, and gives the signed handedness marker that follows the fit tolerances. The integer takes only `0` and `1`. It selects no layout: the two fit tolerances, the handedness marker, and the cache-selector enum follow it unchanged under both values, and no later field reads it. It does not control whether a solved cache is stored — the cache-selector enum does, and the two dissociate in both directions.
-
-**Need.** We must know which value to write from a neutral model.
+**Need.** A wrong tag makes a file that the reader refuses.
 
 ### GC-18. Blend-value selector values
 
@@ -98,17 +90,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 - the single-radius selector values other than `0`, `1`, and `7`
 - the difference between single-radius selector `1` and single-radius selector `7`
 
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layout for chamfer selectors `0` and `3`. It gives the layout for single-radius selectors `0`, `1`, and `7`. Selector `0` carries a rational cache whose cross-section is an exact circular arc; selector `7` carries a non-rational cache whose cross-section is not a circular arc, so the two scalars do not enter the two selectors the same way.
+**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layout for chamfer selectors `0` and `3`. It gives the layout for single-radius selectors `0`, `1`, and `7`. Selector `0` carries a rational cache whose cross-section is an exact circular arc; selector `7` carries a non-rational cache whose cross-section is not a circular arc, so the two scalars do not enter the two selectors the same way. Selector `7` with its two shape scalars is accepted on read after a two-radii radius-law sequence and is retained with both scalars, so the selector set is not partitioned by radius cardinality. That record's cache is marked current, so the retained cache is the one the record carried and it does not show what the selector makes of a two-radii law.
 
-**Need.** The decoder rejects every other selector value. We cannot read those records. Selector `1` and selector `7` select the same two scalars, so we cannot write the correct one from a neutral model.
+**Need.** The decoder rejects every other selector value. We cannot read those records. Selector `1` and selector `7` select the same two scalars, so we cannot write the correct one from a neutral model. Separating them needs a carrier whose cache the reader builds again, so that the two selectors give two surfaces.
 
 ### GC-19. First `tvertex` tolerance evaluation
 
 **Question.** What does the first tolerance evaluation of a `tvertex` record hold, and what controls its set state?
 
-**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots, the second slot's construction from the incident edge-endpoint gaps and tolerant-edge tolerances, the third slot's raise over the incident edges that are not tolerant, and the set-state relation between the second and third slots. The first slot is unset in every record a current writer emits, so its content and its set condition are undetermined. The predicate that selects which incident edges contribute the third slot's `1e-6` raise is narrower than "every edge that is not tolerant": some records carry a third slot equal to the second where that rule predicts a raise.
+**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots, the second slot's construction from the incident edge-endpoint gaps and tolerant-edge tolerances, the third slot's raise over the incident edges that are not tolerant, and the set-state relation between the second and third slots. The first slot is unset in every record a current writer emits, so its content and its set condition are undetermined. A set first slot is accepted on read, is retained to the last digit, converts with the stream's length unit exactly as the other two slots do, and takes no part in the second and third slots' evaluation. A record whose first slot is unset keeps it unset even when the second and third slots are evaluated again, so no writer produces a value for the slot and the slot has no known producer to read the meaning off. The predicate that selects which incident edges contribute the third slot's `1e-6` raise is narrower than "every edge that is not tolerant": some records carry a third slot equal to the second where that rule predicts a raise.
 
-**Need.** To write the first slot from a neutral model we must know which length it measures and when a writer must set it. To write the third slot exactly we must know the contribution predicate.
+**Need.** To write the first slot from a neutral model we must know which length it measures and when a writer must set it. Setting the slot by hand does not answer this, because the value is kept as given; only a construction that makes a writer set the slot itself can answer it. To write the third slot exactly we must know the contribution predicate.
 
 ### GC-21. Revision-gated `loft_spl_sur` type-zero member and ASM-integer gate
 
@@ -122,7 +114,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What layouts do the cache-first intcurve leading enum values other than `0` and `2` select?
 
-**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder retains a record with a nonzero value verbatim, including value `2`, whose layout is now defined but not yet decoded.
+**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder retains a record with a nonzero value verbatim, including value `2`, whose layout is now defined but not yet decoded. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is refused on read in all three cases. A refusal separates a spelling the enum does not have from a payload the value selects differently, so it does not narrow the accepted spelling set.
 
 **Need.** We cannot read a record with a value other than `0`.
 
@@ -130,7 +122,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What are the precedence and associativity of the infix operator `O` in stored law formula text?
 
-**Known.** `f3d.md` §7.3 "**Law formulas**" gives `O` as composition with the right operand innermost, and gives the `MTRAIL` curve as a rail direction requiring no further construction input. A writer parenthesizes both `O` operands, so stored text never exercises the operator's binding against a neighbouring operator and never chains two occurrences.
+**Known.** `f3d.md` §7.3 "**Law formulas**" gives `O` as composition with the right operand innermost, and gives the `MTRAIL` curve as a rail direction requiring no further construction input. A writer parenthesizes both `O` operands, so stored text never exercises the operator's binding against a neighbouring operator and never chains two occurrences. A `law_int_cur` written from the field order in `f3d.md` §7.3 over a solved curve cache is refused on read, and the refusal covers the smallest form, whose law is `null_law` and which carries no operator at all. The field order and the arity encoding are both speculative, so the refusal bears on neither the operator token spellings nor the binding, and it does not show that the record is unreachable by a different field order.
 
 **Need.** We must know the binding to parse law text that a different writer produced without full parenthesization. Text this codec emits is unaffected, because it parenthesizes both operands.
 
