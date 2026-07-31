@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 256;
+pub const CATIA_NATIVE_VERSION: u32 = 257;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -117,6 +117,9 @@ pub(crate) const CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION: u32 = 255;
 /// Native schema version retaining parallel-reference cell offsets.
 #[cfg(test)]
 pub(crate) const CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION: u32 = 256;
+/// Native schema version retaining parallel-reference column incidences.
+#[cfg(test)]
+pub(crate) const CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION: u32 = 257;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -2045,14 +2048,55 @@ pub struct CatiaDesignReferenceRow {
     pub matching_design_object: Option<String>,
 }
 
+/// One source field and list framing forming a parallel-reference table column.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDesignReferenceColumn {
+    /// Source field record containing the reference list.
+    pub field: String,
+    /// Exact source field class when its schema ordinal resolves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_class: Option<CatiaDesignClass>,
+    /// Byte offset of the list tag within the source field's payload.
+    #[serde(default)]
+    pub list_payload_offset: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StoredCatiaDesignReferenceColumn {
+    Current(CatiaDesignReferenceColumn),
+    LegacyField(String),
+}
+
+fn deserialize_design_reference_columns<'de, D>(
+    deserializer: D,
+) -> Result<Vec<CatiaDesignReferenceColumn>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<StoredCatiaDesignReferenceColumn>::deserialize(deserializer).map(|columns| {
+        columns
+            .into_iter()
+            .map(|column| match column {
+                StoredCatiaDesignReferenceColumn::Current(column) => column,
+                StoredCatiaDesignReferenceColumn::LegacyField(field) => {
+                    CatiaDesignReferenceColumn {
+                        field,
+                        field_class: None,
+                        list_payload_offset: 0,
+                    }
+                }
+            })
+            .collect()
+    })
+}
+
 /// Equal-cardinality reference lists aligned by list-item ordinal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDesignParallelReferenceTable {
-    /// Source field records forming the table's columns.
-    pub columns: Vec<String>,
-    /// Exact source field classes aligned with `columns`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub column_classes: Vec<Option<CatiaDesignClass>>,
+    /// Source field and list incidences forming the table's columns.
+    #[serde(deserialize_with = "deserialize_design_reference_columns")]
+    pub columns: Vec<CatiaDesignReferenceColumn>,
     /// Row-aligned reference cells.
     pub rows: Vec<CatiaDesignReferenceRow>,
 }
@@ -2258,7 +2302,7 @@ fn design_parallel_reference_table(
             let [PayloadField::List {
                 declared_count,
                 items,
-                ..
+                offset: list_offset,
             }, middle @ .., PayloadField::Terminator] = record.payload.fields.as_slice()
             else {
                 return None;
@@ -2278,14 +2322,21 @@ fn design_parallel_reference_table(
                     ListItem::Atom { .. } => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
-            Some((record.id.clone(), design_class(record), references))
+            Some((
+                CatiaDesignReferenceColumn {
+                    field: record.id.clone(),
+                    field_class: design_class(record),
+                    list_payload_offset: u64::try_from(*list_offset).ok()?,
+                },
+                references,
+            ))
         })
         .collect::<Option<Vec<_>>>()?;
-    let row_count = columns.first()?.2.len();
+    let row_count = columns.first()?.1.len();
     let terminal_null_entity_id = terminal_null_entity_id(record_indices);
     if columns
         .iter()
-        .any(|(_, _, references)| references.len() != row_count)
+        .any(|(_, references)| references.len() != row_count)
     {
         return None;
     }
@@ -2293,7 +2344,7 @@ fn design_parallel_reference_table(
         .map(|row| {
             let cells = columns
                 .iter()
-                .map(|(_, _, references)| {
+                .map(|(_, references)| {
                     let (target_entity_id, payload_offset) = references[row];
                     let target = record_indices
                         .get(&target_entity_id)
@@ -2317,16 +2368,12 @@ fn design_parallel_reference_table(
                         .iter()
                         .filter_map(|cell| cell.field.as_deref())
                         .collect::<HashSet<_>>();
-                    columns
-                        .iter()
-                        .zip(&cells)
-                        .all(|((_, source_class, _), cell)| {
-                            source_class.is_some()
-                                && cell.field.is_some()
-                                && cell.field_class.as_ref() == source_class.as_ref()
-                                && cell.design_object.as_ref() == Some(member)
-                        })
-                        && distinct_fields.len() == cells.len()
+                    columns.iter().zip(&cells).all(|((column, _), cell)| {
+                        column.field_class.is_some()
+                            && cell.field.is_some()
+                            && cell.field_class.as_ref() == column.field_class.as_ref()
+                            && cell.design_object.as_ref() == Some(member)
+                    }) && distinct_fields.len() == cells.len()
                 });
             CatiaDesignReferenceRow {
                 cells,
@@ -2335,8 +2382,7 @@ fn design_parallel_reference_table(
         })
         .collect();
     Some(CatiaDesignParallelReferenceTable {
-        column_classes: columns.iter().map(|(_, class, _)| class.clone()).collect(),
-        columns: columns.into_iter().map(|(field, _, _)| field).collect(),
+        columns: columns.into_iter().map(|(column, _)| column).collect(),
         rows,
     })
 }
@@ -9615,7 +9661,7 @@ impl CatiaNative {
                     }
                 }
             }
-            if namespace.version < CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION {
+            if namespace.version < CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION {
                 let derived_by_id = design_objects
                     .iter()
                     .map(|object| (object.id.as_str(), object))

@@ -9441,9 +9441,22 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .parallel_reference_table
         .as_ref()
         .expect("parallel reference table");
-    assert_eq!(table.columns, native.design_objects[0].fields);
-    assert_eq!(table.column_classes.len(), table.columns.len());
-    assert!(table.column_classes.iter().all(Option::is_some));
+    assert_eq!(
+        table
+            .columns
+            .iter()
+            .map(|column| &column.field)
+            .collect::<Vec<_>>(),
+        native.design_objects[0].fields.iter().collect::<Vec<_>>()
+    );
+    assert!(table
+        .columns
+        .iter()
+        .all(|column| column.field_class.is_some()));
+    assert!(table
+        .columns
+        .iter()
+        .all(|column| column.list_payload_offset == 0));
     assert_eq!(table.rows.len(), 2);
     assert_eq!(
         table
@@ -9515,6 +9528,54 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let mut malformed_list_offset = native.clone();
+    malformed_list_offset.design_objects[0]
+        .parallel_reference_table
+        .as_mut()
+        .expect("parallel reference table")
+        .columns[0]
+        .list_payload_offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_list_offset
+        .store(&mut namespace)
+        .expect("store malformed parallel-reference list offset");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut version_256_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_256_namespace)
+        .expect("store pre-column-incidence parallel reference table");
+    let columns = version_256_namespace
+        .arenas
+        .get_mut("design_objects")
+        .expect("stored design objects")[0]
+        .fields
+        .get_mut("parallel_reference_table")
+        .expect("stored parallel reference table")
+        .as_object_mut()
+        .expect("stored parallel reference table")
+        .get_mut("columns")
+        .expect("stored parallel reference columns")
+        .as_array_mut()
+        .expect("stored parallel reference columns");
+    for column in columns {
+        *column = column
+            .as_object()
+            .expect("stored parallel reference column")["field"]
+            .clone();
+    }
+    version_256_namespace.version =
+        crate::native::CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&version_256_namespace)
+        .expect("migrate parallel-reference column incidences");
+    assert_eq!(
+        migrated.design_objects[0].parallel_reference_table,
+        Some(expected.clone())
+    );
 
     let mut version_255_namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -9596,12 +9657,14 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     let mut version_202_objects: Vec<crate::native::CatiaDesignObject> = version_202_namespace
         .arena_as("design_objects")
         .expect("load version 202 design objects");
-    version_202_objects[0]
+    for column in &mut version_202_objects[0]
         .parallel_reference_table
         .as_mut()
         .expect("parallel reference table")
-        .column_classes
-        .clear();
+        .columns
+    {
+        column.field_class = None;
+    }
     version_202_namespace
         .set_arena("design_objects", &version_202_objects)
         .expect("store version 202 design objects");

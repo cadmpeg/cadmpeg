@@ -59,10 +59,10 @@ current scores require those matrices and representative fixtures.
   fields, the graph's terminal null identity, and other unresolved identities.
 - Equal-cardinality all-reference lists spanning every field of a design object
   retain their source-ordered columns and ordinal-aligned rows as one parallel
-  reference table. Columns retain their aligned source field classes and
-  the row position retains the aligned list-item ordinal, and every cell
-  retains its payload-relative byte offset. Resolved cells retain the exact
-  target field class; resolved, terminal-null,
+  reference table. Each column retains its source field, list-tag payload
+  offset, and source field class as one incidence. The row position retains the
+  aligned list-item ordinal, and every cell retains its payload-relative byte
+  offset. Resolved cells retain the exact target field class; resolved, terminal-null,
   and unresolved target identities remain distinct. Coverage partitions
   classified and unclassified columns, resolved, terminal-null, and unresolved
   target cells, classified and unclassified target cells, and matched and

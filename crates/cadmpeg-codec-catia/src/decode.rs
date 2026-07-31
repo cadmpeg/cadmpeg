@@ -240,8 +240,8 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.column_classes)
-        .filter(|class| class.is_some())
+        .flat_map(|table| &table.columns)
+        .filter(|column| column.field_class.is_some())
         .count();
     let design_parallel_reference_unclassified_column_count =
         design_parallel_reference_column_count - design_parallel_reference_classified_column_count;
