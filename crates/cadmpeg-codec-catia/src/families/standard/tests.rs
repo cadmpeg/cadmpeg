@@ -5830,6 +5830,36 @@ fn mesh_assignment_endpoint_cycles_reject_crossed_edge_order() {
 }
 
 #[test]
+fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
+    let dense = (0..10)
+        .flat_map(|left| ((left + 1)..10).map(move |right| [left, right]))
+        .collect::<Vec<_>>();
+    let candidates = vec![dense.clone(), dense.clone(), dense];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let budget = MeshConstraintBudget::new(1_800);
+
+    assert_eq!(
+        crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable_where(
+            &assignment,
+            &candidates,
+            Some(&budget),
+            |_, _| true,
+        ),
+        Some(true),
+    );
+    assert!(!budget.exhausted.get());
+}
+
+#[test]
 fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..4)

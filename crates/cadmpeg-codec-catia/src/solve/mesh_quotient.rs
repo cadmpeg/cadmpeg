@@ -5014,61 +5014,62 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
 ) -> Option<bool> {
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
 
-    enum PreparedEndpointCandidates<'a> {
-        Borrowed(&'a [[usize; 2]]),
-        Owned(Vec<[usize; 2]>),
-        Selected([[usize; 2]; 1]),
-    }
-
-    impl PreparedEndpointCandidates<'_> {
-        fn as_slice(&self) -> &[[usize; 2]] {
-            match self {
-                Self::Borrowed(values) => values,
-                Self::Owned(values) => values,
-                Self::Selected(values) => values,
+    fn endpoint_adjacency(
+        candidates: impl IntoIterator<Item = [usize; 2]>,
+        allowed: impl Fn([usize; 2]) -> bool,
+    ) -> Option<HashMap<usize, Vec<usize>>> {
+        let mut adjacency = HashMap::<usize, Vec<usize>>::new();
+        let mut count = 0usize;
+        for pair @ [left, right] in candidates {
+            count = count.checked_add(1)?;
+            if count > MAX_LOCAL_ENDPOINT_STATES {
+                return None;
+            }
+            if !allowed(pair) {
+                continue;
+            }
+            adjacency.entry(left).or_default().push(right);
+            if right != left {
+                adjacency.entry(right).or_default().push(left);
             }
         }
+        for neighbors in adjacency.values_mut() {
+            neighbors.sort_unstable();
+            neighbors.dedup();
+        }
+        (!adjacency.is_empty()).then_some(adjacency)
     }
 
     for boundary in &assignment.boundaries {
         if boundary.is_empty() {
             return Some(false);
         }
-        let mut prepared = HashMap::<usize, PreparedEndpointCandidates<'_>>::new();
+        let mut prepared = HashMap::<usize, HashMap<usize, Vec<usize>>>::new();
         for use_ in boundary {
             if prepared.contains_key(&use_.edge) {
                 continue;
             }
-            let values = match candidates(use_.edge)? {
+            let adjacency = match candidates(use_.edge)? {
                 MeshEndpointCandidates::Explicit(values) => {
-                    PreparedEndpointCandidates::Borrowed(values)
+                    endpoint_adjacency(values.iter().copied(), |pair| allowed(use_.edge, pair))
                 }
-                MeshEndpointCandidates::Implicit(values) => PreparedEndpointCandidates::Owned(
-                    values
-                        .take(MAX_LOCAL_ENDPOINT_STATES + 1)
-                        .collect::<Vec<_>>(),
-                ),
+                MeshEndpointCandidates::Implicit(values) => {
+                    endpoint_adjacency(values, |pair| allowed(use_.edge, pair))
+                }
                 MeshEndpointCandidates::Selected(value) => {
-                    PreparedEndpointCandidates::Selected([value])
+                    endpoint_adjacency([value], |pair| allowed(use_.edge, pair))
                 }
             };
-            if values.as_slice().is_empty() || values.as_slice().len() > MAX_LOCAL_ENDPOINT_STATES {
-                return None;
-            }
-            prepared.insert(use_.edge, values);
+            prepared.insert(use_.edge, adjacency?);
         }
         let mut states = HashSet::new();
-        for [left, right] in prepared[&boundary[0].edge]
-            .as_slice()
-            .iter()
-            .copied()
-            .filter(|pair| allowed(boundary[0].edge, *pair))
-        {
-            if budget.is_some_and(|budget| !budget.charge()) {
-                return None;
+        for (&left, neighbors) in &prepared[&boundary[0].edge] {
+            for &right in neighbors {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return None;
+                }
+                states.insert((left, right));
             }
-            states.insert((left, right));
-            states.insert((right, left));
             if states.len() > MAX_LOCAL_ENDPOINT_STATES {
                 return None;
             }
@@ -5076,21 +5077,11 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
         for use_ in &boundary[1..] {
             let mut next = HashSet::new();
             for &(start, current) in &states {
-                for [left, right] in prepared[&use_.edge]
-                    .as_slice()
-                    .iter()
-                    .copied()
-                    .filter(|pair| allowed(use_.edge, *pair))
-                {
+                for &next_point in prepared[&use_.edge].get(&current).into_iter().flatten() {
                     if budget.is_some_and(|budget| !budget.charge()) {
                         return None;
                     }
-                    if left == current {
-                        next.insert((start, right));
-                    }
-                    if right == current {
-                        next.insert((start, left));
-                    }
+                    next.insert((start, next_point));
                     if next.len() > MAX_LOCAL_ENDPOINT_STATES {
                         return None;
                     }
