@@ -182,7 +182,7 @@ impl<'a> Ctx<'a> {
         let sketch_owners = native
             .design_entity_headers
             .iter()
-            .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
+            .filter(|header| header.in_sketch_module())
             .filter_map(|header| {
                 Some((
                     design_stream(&header.id),
@@ -193,7 +193,7 @@ impl<'a> Ctx<'a> {
         let sketch_owner_ids = native
             .design_entity_headers
             .iter()
-            .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
+            .filter(|header| header.in_sketch_module())
             .filter_map(|header| {
                 Some((
                     (
@@ -355,8 +355,8 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .iter()
         .filter(|object| {
             matches!(
-                object.kind,
-                records::DesignObjectKind::Body | records::DesignObjectKind::Geometry
+                object.module.as_str(),
+                records::DESIGN_MODULE_BODY | records::DESIGN_MODULE_GEOMETRY
             )
         })
         .flat_map(|object| {
@@ -372,8 +372,8 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .iter()
         .filter(|object| {
             matches!(
-                object.kind,
-                records::DesignObjectKind::Fusion | records::DesignObjectKind::Component
+                object.module.as_str(),
+                records::DESIGN_MODULE_FUSION | records::DESIGN_MODULE_COMPONENT
             )
         })
         .flat_map(|object| {
@@ -581,7 +581,7 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let valid = entity_headers_by_suffix
             .get(&(native_stream, bounds.entity_suffix))
             .is_some_and(|entity| {
-                entity.object_kind == Some(records::DesignObjectKind::Body)
+                entity.module.as_deref() == Some(records::DESIGN_MODULE_BODY)
                     && entity.byte_offset == bounds.entity_byte_offset
             })
             && expected_indices == Some(bounds.record_indices)
@@ -656,8 +656,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && header.class_tag == profile.class_tag
                 })
                 && entity.is_some_and(|entity| {
-                    entity.object_kind == Some(records::DesignObjectKind::Sketch)
-                        && entity.entity_id == profile.entity_id
+                    entity.in_sketch_module() && entity.entity_id == profile.entity_id
                 })
                 && valid_design_guid(&profile.asset_id)
                 && profile.asset_id_offset > profile.byte_offset
@@ -3968,7 +3967,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
         return_members.sort_unstable();
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(frame.owner_reference)))
-            .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
+            .is_some_and(|entity| entity.in_sketch_module());
         let valid = frame.class_tag.len() == 3
             && frame.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && frame.paired_class_tag.len() == 3
@@ -4076,7 +4075,7 @@ fn validate_dimension_locus_groups<'a>(
             design::decode::sketch::decode_constraint_kinds(u64::from(group.state));
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(group.owner_reference)))
-            .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
+            .is_some_and(|entity| entity.in_sketch_module());
         let frame_does_not_overlap = native.design_dimension_locus_groups.iter().all(|other| {
             design_stream(&other.id) != native_stream
                 || other.companion_record_index != group.companion_record_index
@@ -4573,7 +4572,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for entity in native
         .design_entity_headers
         .iter()
-        .filter(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch))
+        .filter(|entity| entity.in_sketch_module())
     {
         let native_stream = design_stream(&entity.id);
         let Ok(owner) = u32::try_from(entity.entity_suffix) else {

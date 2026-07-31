@@ -8,7 +8,7 @@ use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
 use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
-    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DesignObjectKind,
+    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
@@ -95,7 +95,7 @@ pub fn decode_body_bounds(
     let mut out = Vec::new();
     for entity in entities
         .iter()
-        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Body))
+        .filter(|entity| entity.module.as_deref() == Some(DESIGN_MODULE_BODY))
     {
         let Some(stream) = native_stream(&entity.id) else {
             continue;
@@ -241,21 +241,6 @@ pub(crate) fn body_bound_candidates(
             && (0..3).any(|axis| values[axis] > values[axis + 3]))
         .then_some((offset, values))
     })
-}
-
-pub(crate) fn object_kind(name: &str) -> DesignObjectKind {
-    match name {
-        "Fusion" => DesignObjectKind::Fusion,
-        "Body" => DesignObjectKind::Body,
-        "Component" => DesignObjectKind::Component,
-        "Geometry" => DesignObjectKind::Geometry,
-        "MSketch" => DesignObjectKind::Sketch,
-        "Dimension" => DesignObjectKind::Dimension,
-        "Scene" => DesignObjectKind::Scene,
-        "EntityTracking" => DesignObjectKind::EntityTracking,
-        "CommonData" => DesignObjectKind::CommonData,
-        _ => DesignObjectKind::Other(name.to_owned()),
-    }
 }
 
 pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) {

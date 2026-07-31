@@ -10,9 +10,9 @@ use crate::records::{
     ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeOperand,
-    DesignEntityHeader, DesignObjectKind, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
+    DesignEntityHeader, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, PersistentSubentityTag,
+    SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::u32_at;
@@ -929,10 +929,7 @@ pub fn decode_dimension_annotation_frames(
             .collect::<HashSet<_>>();
         let sketch_entities = entities
             .iter()
-            .filter(|entity| {
-                native_stream(&entity.id) == Some(stream)
-                    && entity.object_kind == Some(DesignObjectKind::Sketch)
-            })
+            .filter(|entity| native_stream(&entity.id) == Some(stream) && entity.in_sketch_module())
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<HashSet<_>>();
         let governed_owners = owners
@@ -1269,10 +1266,7 @@ pub fn decode_dimension_locus_groups(
             .collect::<HashSet<_>>();
         let sketch_entities = entities
             .iter()
-            .filter(|entity| {
-                native_stream(&entity.id) == Some(scope)
-                    && entity.object_kind == Some(DesignObjectKind::Sketch)
-            })
+            .filter(|entity| native_stream(&entity.id) == Some(scope) && entity.in_sketch_module())
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;

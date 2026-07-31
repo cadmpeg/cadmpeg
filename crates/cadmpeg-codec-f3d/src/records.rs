@@ -2885,31 +2885,16 @@ pub struct DesignMaterialAssignment {
     pub visual_preset_offset: Option<u64>,
 }
 
-/// Design `MetaStream` object class.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DesignObjectKind {
-    /// Root Fusion document object.
-    Fusion,
-    /// A design body object.
-    Body,
-    /// A design component object.
-    Component,
-    /// A geometry-bearing object (points, curves, surfaces).
-    Geometry,
-    /// A sketch container object.
-    Sketch,
-    /// A parametric dimension/constraint object.
-    Dimension,
-    /// A scene/view object.
-    Scene,
-    /// An entity-tracking bookkeeping object.
-    EntityTracking,
-    /// A shared common-data object referenced by other object kinds.
-    CommonData,
-    /// A forward-compatible object class retained by its exact ASCII name.
-    Other(String),
-}
+/// Add-in module that registers the Design sketch types.
+pub const DESIGN_MODULE_SKETCH: &str = "MSketch";
+/// Add-in module that registers the Design body types.
+pub const DESIGN_MODULE_BODY: &str = "Body";
+/// Add-in module that registers the Design geometry types.
+pub const DESIGN_MODULE_GEOMETRY: &str = "Geometry";
+/// Add-in module that registers the Design component types.
+pub const DESIGN_MODULE_COMPONENT: &str = "Component";
+/// Add-in module that registers the root Fusion document types.
+pub const DESIGN_MODULE_FUSION: &str = "Fusion";
 
 /// JSON configuration payload stored in a Fusion design-configuration entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -2934,39 +2919,40 @@ pub enum DesignConfigurationKind {
     Rule,
 }
 
-/// One GUID-owned object-table record from the Design `MetaStream`.
+/// One type-table entry from the Design `MetaStream` segment header. The entry
+/// registers a record type and lists the design entities whose `BulkStream`
+/// records carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignObject {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Byte offset of this object record in its Design `MetaStream`.
+    /// Byte offset of this type-table entry in its Design `MetaStream`.
     pub byte_offset: u64,
-    /// ASCII type name of this `MetaStream` object record.
-    pub kind: DesignObjectKind,
-    /// Design-entity ids owned by this object, in source `MetaStream` order; a count
-    /// rather than a fixed-arity id list, so length varies per record.
+    /// GUID naming this entry's record type. Class tags are segment-local, so
+    /// this GUID is the only discriminator that is stable across files.
+    pub type_guid: String,
+    /// Byte offset of the type-GUID bytes in the Design `MetaStream`.
+    pub type_guid_offset: u64,
+    /// GUID of this type's base type; `None` for a root type, whose stored base
+    /// GUID is the empty string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_type_guid: Option<String>,
+    /// Byte offset of the base-type-GUID bytes, when the entry names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_type_guid_offset: Option<u64>,
+    /// Record version of this type.
+    pub version: u32,
+    /// Byte offset of `version` in the Design `MetaStream`.
+    pub version_offset: u64,
+    /// Add-in module that registers this type, e.g. `Fusion`, `MSketch`, or
+    /// `Body`. Every type a module registers repeats the module name, so it
+    /// classifies a type but does not identify one. Some types record no module.
+    pub module: String,
+    /// Design-entity ids whose records carry this type, in source `MetaStream`
+    /// order; a count rather than a fixed-arity list, so length varies per entry.
     pub entity_ids: Vec<u64>,
     /// Byte offsets parallel to `entity_ids`.
     pub entity_id_offsets: Vec<u64>,
-    /// This object's own GUID.
-    pub self_guid: String,
-    /// Byte offset of the self-GUID bytes in the Design `MetaStream`.
-    pub self_guid_offset: u64,
-    /// Number of zero delimiter bytes between the self GUID and the optional
-    /// parent GUID.
-    #[serde(default)]
-    pub zero_run_length: u32,
-    /// GUID of the owning object, when the source record carried a secondary GUID
-    /// after the zero-run delimiter; `None` for root-level objects.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_guid: Option<String>,
-    /// Byte offset of the parent-GUID bytes, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_guid_offset: Option<u64>,
-    /// Trailing record-revision counter from the `MetaStream` record.
-    pub revision: u32,
-    /// Byte offset of `revision` in the Design `MetaStream`.
-    pub revision_offset: u64,
 }
 
 /// Self-validating entity-bound header in the Design `BulkStream`.
@@ -2984,10 +2970,10 @@ pub struct DesignEntityHeader {
     pub class_tag: String,
     /// Whether the flag-selected four-byte optional slot is present.
     pub optional_slot_present: bool,
-    /// `MetaStream` object kind this header cross-references, when `optional_slot_present`
-    /// resolved to a known `DesignObjectKind`.
+    /// Add-in module of the `MetaStream` type whose entity-id list contains this
+    /// header's entity, when the `MetaStream` registers that entity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_kind: Option<DesignObjectKind>,
+    pub module: Option<String>,
     /// Index of an associated `BulkStream` record, when the header carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_reference: Option<u32>,
@@ -3010,6 +2996,13 @@ pub struct DesignEntityHeader {
     /// Byte offsets parallel to `member_indices`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub member_offsets: Vec<u64>,
+}
+
+impl DesignEntityHeader {
+    /// Whether the `MetaStream` registers this entity under the sketch module.
+    pub fn in_sketch_module(&self) -> bool {
+        self.module.as_deref() == Some(DESIGN_MODULE_SKETCH)
+    }
 }
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.

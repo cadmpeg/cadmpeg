@@ -4,8 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::records::{
-    ConstructionRecipeKind, DesignObjectKind, PersistentReferenceKind, SketchCurveGeometry,
-    SketchText,
+    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchText,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -386,7 +385,7 @@ pub(crate) fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>
             out.extend_from_slice(&[0; 4]);
         }
         native_lp_utf16(&mut out, &header.entity_id)?;
-        if header.object_kind == Some(DesignObjectKind::Sketch) {
+        if header.in_sketch_module() {
             let count = u32::try_from(header.reference_indices.len()).map_err(|_| {
                 CodecError::Malformed("Design sketch header exceeds u32::MAX references".into())
             })?;
@@ -919,56 +918,62 @@ pub(crate) fn encode_design_metastream(
         return Ok(None);
     }
 
+    // A generated segment carries no source records, so it writes the modern
+    // header shape, the type table the IR holds, and empty named-entity and
+    // record indexes. The stream closes on its own end, as every segment does.
     let mut out = Vec::new();
+    native_lp_ascii(&mut out, "Design")?;
+    out.extend_from_slice(&0u32.to_le_bytes());
+    native_lp_utf16(&mut out, GENERATED_ASSET_GUID)?;
+    out.extend_from_slice(&1234u32.to_le_bytes());
+    out.extend_from_slice(&[0; 12]);
+    native_lp_ascii(&mut out, "FusionDesignSegmentType")?;
+    native_lp_ascii(&mut out, "Fusion")?;
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let type_count = u32::try_from(native.design_objects.len()).map_err(|_| {
+        CodecError::Malformed("Design MetaStream registers more than u32::MAX types".into())
+    })?;
+    out.extend_from_slice(&type_count.to_le_bytes());
+    let mut next_entity_id = 1u64;
     for object in &native.design_objects {
-        let kind_name = design_object_kind_name(&object.kind);
-        if kind_name.is_empty() || crate::bytes::is_guid_relaxed(kind_name) {
+        validate_guid(&object.type_guid, "Design type GUID")?;
+        native_lp_ascii(&mut out, &object.type_guid)?;
+        match &object.base_type_guid {
+            Some(base) => {
+                validate_guid(base, "Design base type GUID")?;
+                native_lp_ascii(&mut out, base)?;
+            }
+            None => out.extend_from_slice(&0u32.to_le_bytes()),
+        }
+        out.extend_from_slice(&object.version.to_le_bytes());
+        if crate::bytes::is_guid_relaxed(&object.module) {
             return Err(CodecError::Malformed(format!(
-                "Design object class is empty or GUID-shaped: {kind_name}"
+                "Design type module name is GUID-shaped: {}",
+                object.module
             )));
         }
-        native_lp_ascii(&mut out, kind_name)?;
+        native_lp_ascii(&mut out, &object.module)?;
         let count = u32::try_from(object.entity_ids.len()).map_err(|_| {
-            CodecError::Malformed("Design object owns more than u32::MAX entities".into())
+            CodecError::Malformed("Design type owns more than u32::MAX entities".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
         for entity_id in &object.entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
+            next_entity_id = next_entity_id.max(entity_id.saturating_add(1));
         }
-        validate_guid(&object.self_guid, "Design object self GUID")?;
-        native_lp_ascii(&mut out, &object.self_guid)?;
-        let zero_run_length = usize::try_from(object.zero_run_length).map_err(|_| {
-            CodecError::Malformed("Design object zero-run length exceeds address space".into())
-        })?;
-        out.resize(
-            out.len().checked_add(zero_run_length).ok_or_else(|| {
-                CodecError::Malformed("Design MetaStream zero run exceeds address space".into())
-            })?,
-            0,
-        );
-        if let Some(parent_guid) = &object.parent_guid {
-            validate_guid(parent_guid, "Design object parent GUID")?;
-            native_lp_ascii(&mut out, parent_guid)?;
-        }
-        out.extend_from_slice(&object.revision.to_le_bytes());
     }
+    // Named-entity list, record index, and secondary index.
+    out.extend_from_slice(&[0; 12]);
+    out.extend_from_slice(&next_entity_id.to_le_bytes());
+    // Trailing flag and empty property block.
+    out.extend_from_slice(&[0; 8]);
     Ok(Some(out))
 }
 
-fn design_object_kind_name(kind: &DesignObjectKind) -> &str {
-    match kind {
-        DesignObjectKind::Fusion => "Fusion",
-        DesignObjectKind::Body => "Body",
-        DesignObjectKind::Component => "Component",
-        DesignObjectKind::Geometry => "Geometry",
-        DesignObjectKind::Sketch => "MSketch",
-        DesignObjectKind::Dimension => "Dimension",
-        DesignObjectKind::Scene => "Scene",
-        DesignObjectKind::EntityTracking => "EntityTracking",
-        DesignObjectKind::CommonData => "CommonData",
-        DesignObjectKind::Other(name) => name,
-    }
-}
+/// Asset GUID written into a generated Design `MetaStream`, which has no source
+/// asset to name.
+const GENERATED_ASSET_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
 fn native_lp_ascii(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     if !value.bytes().all(|byte| byte.is_ascii_graphic()) {

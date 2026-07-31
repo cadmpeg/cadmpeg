@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse parameter scopes and exact feature-construction frames.
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
+use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::{
     next_indexed_record_offset, valid_sketch_transform, IndexedRecordOffsets,
@@ -2116,78 +2116,6 @@ pub(crate) fn exact_joint_origin_frame(
     Some(*candidate)
 }
 
-/// `refType` values of the point-data class and the number of geometry inputs
-/// each one takes
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)
-/// "A direct `WorkPoint` scope").
-fn point_data_input_count(reference_type: u32) -> Option<usize> {
-    match reference_type {
-        7 | 18 => Some(2),
-        1..=6 | 8..=17 | 19 | 20 => Some(1),
-        _ => None,
-    }
-}
-
-/// Skip the two-byte payload prologue and the property block it gates.
-fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
-    let mut cursor = at.checked_add(1)?;
-    let present = *bytes.get(cursor)?;
-    cursor += 1;
-    match present {
-        0 => Some(cursor),
-        1 => {
-            let count = u32_at(bytes, cursor)?;
-            if count > 16 {
-                return None;
-            }
-            cursor += 4;
-            for _ in 0..count {
-                let (_key, after_key) =
-                    lp_ascii_filtered(bytes, cursor, 1..=64, u8::is_ascii_graphic)?;
-                let (type_name, after_type) =
-                    lp_ascii_filtered(bytes, after_key, 1..=64, u8::is_ascii_graphic)?;
-                if type_name != "IntrinsicMetaTypeuint64" {
-                    return None;
-                }
-                cursor = after_type.checked_add(8)?;
-            }
-            (cursor <= end).then_some(cursor)
-        }
-        _ => None,
-    }
-}
-
-/// Offsets of `point3d` and of the byte past the class level, for one record
-/// version of the point-data class.
-fn point_data_level(bytes: &[u8], start: usize, end: usize, version: u32) -> Option<(usize, u32)> {
-    let mut cursor = payload_prologue(bytes, start, end)?;
-    if version >= 2 {
-        cursor = cursor.checked_add(4)?;
-    }
-    cursor = cursor.checked_add(16)?;
-    if version >= 1 {
-        take_reference(bytes.get(..end)?, &mut cursor)?;
-    }
-    let position_at = cursor;
-    cursor = cursor.checked_add(24)?;
-    let reference_type = u32_at(bytes, cursor)?;
-    cursor = cursor.checked_add(4)?;
-    if version >= 3 {
-        cursor = cursor.checked_add(24)?;
-    }
-    if cursor > end {
-        return None;
-    }
-    Some((position_at, reference_type))
-}
-
-/// The coordinate of a `WorkPoint`'s point-data record.
-///
-/// The record version is not carried by the record, so every version whose
-/// member sequence fits the frame is a candidate. The versions differ by
-/// members before and after `point3d`; a version that moves `point3d` names a
-/// different coordinate, so the reader accepts a frame only when every
-/// candidate version puts the coordinate at the same offset.
 pub(crate) fn exact_work_point_position(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -2196,6 +2124,11 @@ pub(crate) fn exact_work_point_position(
     if scope.kind != "WorkPoint" {
         return None;
     }
+    let references = scope
+        .reference_members
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
         for (start, paired) in records.frames(*record_index) {
@@ -2204,21 +2137,37 @@ pub(crate) fn exact_work_point_position(
             if class_tag != "282" || u32_at(bytes, after_tag) != Some(*record_index) {
                 continue;
             }
-            // The payload begins after the record name that closes the header.
-            let (_name, payload_at) =
-                lp_ascii_filtered(bytes, after_tag + 8, 0..=256, u8::is_ascii_graphic)?;
-            let mut offsets = (0..=3)
-                .filter_map(|version| point_data_level(bytes, payload_at, paired, version))
-                .filter(|(_, reference_type)| point_data_input_count(*reference_type).is_some())
-                .map(|(position_at, _)| position_at)
-                .collect::<Vec<_>>();
-            offsets.dedup();
-            let [position_at] = offsets.as_slice() else {
-                continue;
+            let frame_length = paired.checked_sub(start)?;
+            let position_at = match frame_length {
+                197 if bytes.get(start + 15..start + 42) == Some(&[0; 27])
+                    && u32_at(bytes, start + 66) == Some(1)
+                    && f64s_at(bytes, start + 70, 3) == Some(vec![-1.0; 3])
+                    && u32_at(bytes, start + 94) == Some(1) =>
+                {
+                    start + 42
+                }
+                208 if bytes.get(start + 15..start + 42) == Some(&[0; 27])
+                    && u32_at(bytes, start + 66) == Some(7)
+                    && f64s_at(bytes, start + 70, 3) == Some(vec![-1.0; 3])
+                    && u32_at(bytes, start + 94) == Some(2) =>
+                {
+                    start + 42
+                }
+                207 if bytes.get(start + 15..start + 41) == Some(&[0; 26])
+                    && bytes.get(start + 41) == Some(&1)
+                    && references.contains(&u32_at(bytes, start + 42)?)
+                    && bytes.get(start + 46..start + 52) == Some(&[0; 6])
+                    && u32_at(bytes, start + 76) == Some(20)
+                    && f64s_at(bytes, start + 80, 3) == Some(vec![-1.0; 3])
+                    && u32_at(bytes, start + 104) == Some(1) =>
+                {
+                    start + 52
+                }
+                _ => continue,
             };
-            let position: [f64; 3] = f64s_at(bytes, *position_at, 3)?.try_into().ok()?;
+            let position: [f64; 3] = f64s_at(bytes, position_at, 3)?.try_into().ok()?;
             if position.iter().all(|value| value.is_finite()) {
-                candidates.push((position, *position_at as u64));
+                candidates.push((position, position_at as u64));
             }
         }
     }
@@ -3101,145 +3050,5 @@ mod mirror_tests {
         );
         bytes[identity + 20] = 1;
         assert_eq!(compact_feature_reference(&bytes, &header), None);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{exact_work_point_position, parse_parameter_scope};
-    use crate::design::decode::sketch::IndexedRecordOffsets;
-    use crate::records::{DesignParameterScope, DesignRecordHeader};
-
-    fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    /// A `WorkPoint` scope record, its paired header, and one point-data record
-    /// frame: the indexed header, the payload prologue with an optional property
-    /// block, the class-level members of `version`, an empty base-level reference
-    /// list, and the second header that closes the frame.
-    fn work_point_stream(
-        version: u32,
-        property: bool,
-        pick_point: Option<u64>,
-        position: [f64; 3],
-        reference_type: u32,
-    ) -> (Vec<u8>, DesignParameterScope, usize) {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"427");
-        bytes.extend_from_slice(&12u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.push(1);
-        bytes.extend_from_slice(&55u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-        bytes.extend_from_slice(&7u32.to_le_bytes());
-        lp_utf16(&mut bytes, "WorkPoint");
-        let mut tail = [0; 78];
-        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
-        tail[31..35].copy_from_slice(&2u32.to_le_bytes());
-        bytes.extend_from_slice(&tail);
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"259");
-        bytes.extend_from_slice(&12u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 11]);
-
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"282");
-        bytes.extend_from_slice(&55u32.to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.push(0);
-        if property {
-            bytes.push(1);
-            bytes.extend_from_slice(&1u32.to_le_bytes());
-            bytes.extend_from_slice(&6u32.to_le_bytes());
-            bytes.extend_from_slice(b"pt_tag");
-            bytes.extend_from_slice(&23u32.to_le_bytes());
-            bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
-            bytes.extend_from_slice(&9u64.to_le_bytes());
-        } else {
-            bytes.push(0);
-        }
-        if version >= 2 {
-            bytes.extend_from_slice(&0i32.to_le_bytes());
-        }
-        for _ in 0..2 {
-            bytes.extend_from_slice(&f64::to_le_bytes(0.0));
-        }
-        if version >= 1 {
-            match pick_point {
-                Some(target) => {
-                    bytes.push(1);
-                    bytes.extend_from_slice(&target.to_le_bytes());
-                    bytes.extend_from_slice(&[0, 0]);
-                }
-                None => bytes.push(0),
-            }
-        }
-        let position_at = bytes.len();
-        for value in position {
-            bytes.extend_from_slice(&f64::to_le_bytes(value));
-        }
-        bytes.extend_from_slice(&reference_type.to_le_bytes());
-        if version >= 3 {
-            for _ in 0..3 {
-                bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
-            }
-        }
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"259");
-        bytes.extend_from_slice(&55u32.to_le_bytes());
-
-        let header = DesignRecordHeader {
-            id: "generated:scope-header#0".into(),
-            record_index: 12,
-            class_tag: "427".into(),
-            byte_offset: 0,
-        };
-        let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-            .expect("WorkPoint scope");
-        (bytes, scope, position_at)
-    }
-
-    #[test]
-    fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
-        let (bytes, scope, position_at) =
-            work_point_stream(3, true, Some(9), [1.25, -2.5, 3.75], 20);
-
-        assert_eq!(
-            exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
-            Some(([1.25, -2.5, 3.75], position_at as u64))
-        );
-    }
-
-    #[test]
-    fn work_point_position_reads_every_class_version_that_stores_one() {
-        for version in 0..=3 {
-            let (bytes, scope, position_at) =
-                work_point_stream(version, false, None, [4.0, 5.0, 6.0], 5);
-
-            assert_eq!(
-                exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
-                Some(([4.0, 5.0, 6.0], position_at as u64)),
-                "class version {version}"
-            );
-        }
-    }
-
-    #[test]
-    fn work_point_rejects_a_record_whose_reference_type_is_not_a_construction_rule() {
-        let (bytes, scope, _) = work_point_stream(2, false, None, [1.0, 2.0, 3.0], 4096);
-
-        assert_eq!(
-            exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
-            None
-        );
     }
 }

@@ -3,14 +3,13 @@
 
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
-use crate::design::decode::body::object_kind;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignEntityHeader, DesignObject, DesignObjectKind, DesignParameterScope, DesignRecordHeader,
+    DesignEntityHeader, DesignObject, DesignParameterScope, DesignRecordHeader,
     DesignSketchPlacement, LostEdgeReference, PersistentReference, PersistentReferenceKind,
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand, SketchSurface, SketchText,
+    SketchRelationOperand, SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
@@ -160,10 +159,7 @@ pub fn decode_sketch_placements(
             ))
         })
         .collect::<std::collections::HashSet<_>>();
-    for entity in entities
-        .iter()
-        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
-    {
+    for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
         let Some(stream) = native_stream(&entity.id) else {
             continue;
         };
@@ -183,7 +179,7 @@ pub fn decode_sketch_placements(
         let next_entity_offset = entities
             .iter()
             .filter(|candidate| {
-                candidate.object_kind == Some(DesignObjectKind::Sketch)
+                candidate.in_sketch_module()
                     && native_stream(&candidate.id) == Some(stream)
                     && candidate.byte_offset > entity.byte_offset
             })
@@ -585,49 +581,74 @@ pub fn decode_lost_edge_references(
     Ok(out)
 }
 
-/// Decode every GUID-owned design object record from each design
-/// `MetaStream` entry in `scan` ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): an ASCII type name, the design
-/// entity IDs it owns, its self GUID, an optional parent GUID, and a
-/// revision. Unrecognized type names remain exact native object kinds.
-pub fn decode_objects(scan: &ContainerScan) -> Result<Vec<DesignObject>, CodecError> {
+/// Skip a `u32`-counted run of fixed-width elements at `at`, returning the
+/// offset past it.
+fn skip_counted_run(bytes: &[u8], at: usize, stride: usize) -> Option<usize> {
+    let count = usize::try_from(u32_at(bytes, at)?).ok()?;
+    let end = count
+        .checked_mul(stride)
+        .and_then(|size| at.checked_add(4)?.checked_add(size))?;
+    (end <= bytes.len()).then_some(end)
+}
+
+/// Parse one Design `MetaStream` segment ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) into its type table.
+///
+/// The stream is a segment header, a type table, a named-entity list, two
+/// record indexes, and an optional trailing property block, in that order. Each
+/// type-table entry is an LP-ASCII type GUID, an LP-ASCII base type GUID that is
+/// empty for a root type, a u32 type version, an LP-ASCII add-in name, and a
+/// u32-counted run of u64 design-entity ids. The whole stream must close on its
+/// own end, which pins the header shape; a stream that does not is rejected
+/// whole rather than parsed in part. Returned objects carry no `id`.
+pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignObject>> {
+    // Header: short segment type name, segment id, asset GUID, serializer
+    // magic and its magic-gated integer group, full segment type name, add-in
+    // name, and the segment type code.
+    let (_, at) = lp_ascii_filtered(bytes, 0, 1..=256, u8::is_ascii_graphic)?;
+    let at = at.checked_add(4)?;
+    let (_, at) = lp_utf16_bounded(bytes, at, 0..=256)?;
+    let magic = u32_at(bytes, at)?;
+    let at = at.checked_add(if magic == 1234 { 16 } else { 8 })?;
+    let (_, at) = lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)?;
+    let (_, at) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
+    let mut at = at.checked_add(8)?;
+    let count = u32_at(bytes, at)?;
+    at = at.checked_add(4)?;
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let mut offset = 0usize;
-        while offset + 8 <= bytes.len() {
-            let Some((name, after_name)) =
-                lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)
-            else {
-                offset += 1;
-                continue;
-            };
-            if name.is_empty()
-                || is_guid_relaxed(&name)
-                || !name.bytes().all(|byte| byte.is_ascii_graphic())
-            {
-                offset += 1;
-                continue;
-            }
-            let kind = object_kind(&name);
-            let Some(count_raw) = bytes.get(after_name..after_name + 4) else {
-                break;
-            };
-            let count = usize::try_from(u32::from_le_bytes(count_raw.try_into().expect(
-                "invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4",
-            )))
-            .unwrap_or(usize::MAX);
-            let ids_end = after_name
-                .checked_add(4)
-                .and_then(|at| count.checked_mul(8).and_then(|size| at.checked_add(size)));
-            let Some(ids_end) = ids_end.filter(|end| count <= 200 && *end <= bytes.len()) else {
-                offset += 1;
-                continue;
-            };
-            let entity_ids = bytes[after_name + 4..ids_end]
+    for _ in 0..count {
+        let entry_at = at;
+        let type_guid_offset = at.checked_add(4)?;
+        let (type_guid, next) = lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)
+            .filter(|(guid, _)| is_guid_relaxed(guid))?;
+        at = next;
+        let base_type_guid_offset = at.checked_add(4)?;
+        let (base_type_guid, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)
+            .filter(|(guid, _)| guid.is_empty() || is_guid_relaxed(guid))?;
+        at = next;
+        let version_offset = at;
+        let version = u32_at(bytes, at)?;
+        at = at.checked_add(4)?;
+        let (module, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
+        at = next;
+        let id_count = usize::try_from(u32_at(bytes, at)?).ok()?;
+        let ids_at = at.checked_add(4)?;
+        let ids_end = id_count
+            .checked_mul(8)
+            .and_then(|size| ids_at.checked_add(size))?;
+        let raw_ids = bytes.get(ids_at..ids_end)?;
+        at = ids_end;
+        out.push(DesignObject {
+            id: String::new(),
+            byte_offset: entry_at as u64,
+            type_guid,
+            type_guid_offset: type_guid_offset as u64,
+            base_type_guid_offset: (!base_type_guid.is_empty())
+                .then_some(base_type_guid_offset as u64),
+            base_type_guid: (!base_type_guid.is_empty()).then_some(base_type_guid),
+            version,
+            version_offset: version_offset as u64,
+            module,
+            entity_ids: raw_ids
                 .chunks_exact(8)
                 .map(|raw| {
                     u64::from_le_bytes(
@@ -635,55 +656,52 @@ pub fn decode_objects(scan: &ContainerScan) -> Result<Vec<DesignObject>, CodecEr
                             .expect("invariant: chunks_exact(8) yields 8-byte slices"),
                     )
                 })
-                .collect::<Vec<_>>();
-            let entity_id_offsets = (0..entity_ids.len())
-                .map(|index| (after_name + 4 + index * 8) as u64)
-                .collect();
-            let Some((self_guid, after_self)) =
-                lp_ascii_filtered(bytes, ids_end, 0..=2000, u8::is_ascii_graphic)
-                    .filter(|(guid, _)| is_guid_relaxed(guid))
-            else {
-                offset += 1;
-                continue;
-            };
-            let mut tail = after_self;
-            while bytes.get(tail) == Some(&0) {
-                tail += 1;
-            }
-            let zero_run_length = u32::try_from(tail - after_self).unwrap_or(u32::MAX);
-            let (parent_guid, parent_guid_offset, revision_offset) =
-                lp_ascii_filtered(bytes, tail, 0..=2000, u8::is_ascii_graphic)
-                    .filter(|(guid, _)| is_guid_relaxed(guid))
-                    .map_or((None, None, tail), |(guid, end)| {
-                        (Some(guid), Some((tail + 4) as u64), end)
-                    });
-            let Some(revision_raw) = bytes.get(revision_offset..revision_offset + 4) else {
-                offset += 1;
-                continue;
-            };
-            let revision = u32::from_le_bytes(revision_raw.try_into().expect(
-                "invariant: revision_raw is a 4-byte slice from bytes.get(range) of length 4",
-            ));
-            if revision > 10_000 {
-                offset += 1;
-                continue;
-            }
-            out.push(DesignObject {
-                id: ids::native_design_object_id(&entry.name, offset),
-                byte_offset: offset as u64,
-                kind,
-                entity_ids,
-                entity_id_offsets,
-                self_guid,
-                self_guid_offset: (ids_end + 4) as u64,
-                zero_run_length,
-                parent_guid,
-                parent_guid_offset,
-                revision,
-                revision_offset: revision_offset as u64,
-            });
-            offset = revision_offset + 4;
+                .collect(),
+            entity_id_offsets: (0..id_count)
+                .map(|index| (ids_at + index * 8) as u64)
+                .collect(),
+        });
+    }
+    // The named-entity list, the record index, and the secondary index. A
+    // legacy segment may end at any of the trailing next-entity counter, the
+    // flag, or the property block.
+    at = skip_counted_run(bytes, at, 8)?;
+    at = skip_counted_run(bytes, at, 16)?;
+    at = skip_counted_run(bytes, at, 16)?;
+    if bytes.len() - at >= 8 {
+        at += 8;
+    }
+    if bytes.len() - at >= 4 {
+        at += 4;
+    }
+    if bytes.len() - at >= 4 {
+        let properties = u32_at(bytes, at)?;
+        at = at.checked_add(4)?;
+        for _ in 0..properties {
+            let (_, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
+            at = next.checked_add(4)?;
         }
+    }
+    (at == bytes.len()).then_some(out)
+}
+
+/// Decode the type table of every design `MetaStream` entry in `scan`
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)). A stream that does not close on its own end contributes
+/// nothing.
+pub fn decode_objects(scan: &ContainerScan) -> Result<Vec<DesignObject>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
+    {
+        let Some(objects) = parse_design_type_table(scan.entry_bytes(&entry.name)?) else {
+            continue;
+        };
+        out.extend(objects.into_iter().map(|mut object| {
+            object.id = ids::native_design_object_id(&entry.name, object.byte_offset);
+            object
+        }));
     }
     Ok(out)
 }
@@ -876,7 +894,7 @@ pub(crate) fn parse_legacy_sketch_container_members(
         entity_id: format!("Sketch_{entity_suffix}"),
         class_tag: String::new(),
         optional_slot_present: false,
-        object_kind: Some(DesignObjectKind::Sketch),
+        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
         declared_reference_count: None,
@@ -896,16 +914,16 @@ pub(crate) fn parse_legacy_sketch_container_members(
 /// the fixed layout or in the `EntityGenesis` layout.
 pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
-    let mut object_kinds = HashMap::new();
+    let mut entity_modules = HashMap::new();
     let objects = decode_objects(scan)?;
     let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
     for object in objects {
         for &entity_id in &object.entity_ids {
-            object_kinds
+            entity_modules
                 .entry(entity_id)
-                .or_insert_with(|| object.kind.clone());
+                .or_insert_with(|| object.module.clone());
         }
-        if object.kind == DesignObjectKind::Sketch {
+        if object.module == DESIGN_MODULE_SKETCH {
             let Some(stream) = native_stream(&object.id) else {
                 continue;
             };
@@ -945,7 +963,8 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             else {
                 continue;
             };
-            let object_kind = object_kinds.get(&entity_suffix).cloned();
+            let module = entity_modules.get(&entity_suffix).cloned();
+            let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
             let (
                 record_reference,
                 record_reference_offset,
@@ -953,7 +972,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 reference_indices,
                 reference_offsets,
                 record_end,
-            ) = if object_kind == Some(DesignObjectKind::Sketch) {
+            ) = if in_sketch_module {
                 decode_reference_list(bytes, end).map_or_else(
                     || (None, None, None, Vec::new(), Vec::new(), end),
                     |list| {
@@ -973,12 +992,11 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             } else {
                 (None, None, None, Vec::new(), Vec::new(), end)
             };
-            let (member_indices, member_offsets) =
-                if genesis_form && object_kind == Some(DesignObjectKind::Sketch) {
-                    parse_sketch_member_run(bytes, record_end, entity_suffix)
-                } else {
-                    (Vec::new(), Vec::new())
-                };
+            let (member_indices, member_offsets) = if genesis_form && in_sketch_module {
+                parse_sketch_member_run(bytes, record_end, entity_suffix)
+            } else {
+                (Vec::new(), Vec::new())
+            };
             out.push(DesignEntityHeader {
                 id: ids::native_design_entity_header_id(&entry.name, start),
                 byte_offset: start as u64,
@@ -986,7 +1004,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 entity_id,
                 class_tag: String::from_utf8_lossy(class_tag).into_owned(),
                 optional_slot_present,
-                object_kind,
+                module,
                 record_reference,
                 record_reference_offset,
                 declared_reference_count,
@@ -1047,7 +1065,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 entity_id: format!("Sketch_{entity_suffix}"),
                 class_tag,
                 optional_slot_present: false,
-                object_kind: Some(DesignObjectKind::Sketch),
+                module: Some(DESIGN_MODULE_SKETCH.to_owned()),
                 record_reference: None,
                 record_reference_offset: None,
                 declared_reference_count: None,
@@ -1155,8 +1173,7 @@ pub fn decode_sketch_relations(
         let owners = entities
             .iter()
             .filter(|entity| {
-                native_stream(&entity.id) == Some(scope.as_str())
-                    && entity.object_kind == Some(DesignObjectKind::Sketch)
+                native_stream(&entity.id) == Some(scope.as_str()) && entity.in_sketch_module()
             })
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<std::collections::HashSet<_>>();
@@ -1851,7 +1868,7 @@ pub(crate) fn bind_sketch_graph(
 ) -> Result<(), CodecError> {
     let sketch_owners = entities
         .iter()
-        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
+        .filter(|entity| entity.in_sketch_module())
         .filter_map(|entity| {
             Some((
                 (
@@ -1943,10 +1960,7 @@ pub(crate) fn bind_sketch_graph(
     // `EntityGenesis`-form sketch container's paired record names every owned
     // record in its counted member run; backfill those owners after the
     // relation-derived pass, holding both sources to one owner per record.
-    for entity in entities
-        .iter()
-        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
-    {
+    for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
         let (Some(scope), Ok(suffix)) = (
             native_stream(&entity.id),
             u32::try_from(entity.entity_suffix),

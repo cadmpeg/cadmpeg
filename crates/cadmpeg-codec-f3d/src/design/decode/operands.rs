@@ -19,11 +19,10 @@ use crate::records::{
     DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
     DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
     DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignObjectKind, DesignParameter, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
-    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
-    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
-    SketchRelationOperand,
+    DesignFilletRadiusLaw, DesignParameter, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchProfileOperand, DesignTopologyRecipeEntry,
+    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference,
+    PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
@@ -2086,7 +2085,7 @@ pub(crate) fn parse_sketch_profile(
         .iter()
         .filter(|entity| {
             native_stream(&entity.id) == Some(stream)
-                && entity.object_kind == Some(DesignObjectKind::Sketch)
+                && entity.in_sketch_module()
                 && entity.entity_suffix == entity_suffix
         })
         .collect::<Vec<_>>();

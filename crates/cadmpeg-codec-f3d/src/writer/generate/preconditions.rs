@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
-use crate::records::{DesignObjectKind, PersistentDesignLink, PersistentSubentityTag};
+use crate::records::{PersistentDesignLink, PersistentSubentityTag};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -196,13 +196,13 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     let sketch_owners = native
         .design_entity_headers
         .iter()
-        .filter(|header| header.object_kind == Some(DesignObjectKind::Sketch))
+        .filter(|header| header.in_sketch_module())
         .map(|header| header.entity_suffix)
         .collect::<BTreeSet<_>>();
     let root_indices = native
         .design_entity_headers
         .iter()
-        .filter(|header| header.object_kind == Some(DesignObjectKind::Sketch))
+        .filter(|header| header.in_sketch_module())
         .flat_map(|header| header.reference_indices.iter().copied())
         .collect::<BTreeSet<_>>();
     let mut typed_indices = BTreeMap::<u32, &str>::new();
@@ -335,46 +335,51 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         }
     }
     let mut objects_by_guid = BTreeMap::new();
-    let mut entity_kinds = BTreeMap::new();
+    let mut entity_modules = BTreeMap::new();
     for object in &native.design_objects {
         if objects_by_guid
-            .insert(object.self_guid.as_str(), object)
+            .insert(object.type_guid.as_str(), object)
             .is_some()
         {
             return Err(CodecError::Malformed(format!(
-                "duplicate F3D Design object GUID: {}",
-                object.self_guid
+                "duplicate F3D Design type GUID: {}",
+                object.type_guid
             )));
         }
         for entity_id in &object.entity_ids {
-            if entity_kinds
-                .insert(*entity_id, object.kind.clone())
-                .is_some_and(|before| before != object.kind)
+            if entity_modules
+                .insert(*entity_id, object.module.clone())
+                .is_some_and(|before| before != object.module)
             {
                 return Err(CodecError::Malformed(format!(
-                    "F3D Design entity {entity_id} is owned by conflicting object kinds"
+                    "F3D Design entity {entity_id} is registered by conflicting modules"
                 )));
             }
         }
     }
+    // A base type need not be registered by the same segment, so an unresolved
+    // base GUID is legal; a resolved chain must still terminate.
     for object in &native.design_objects {
-        if object.parent_guid.as_deref().is_some_and(|parent| {
-            parent == object.self_guid || !objects_by_guid.contains_key(parent)
-        }) {
+        if object.base_type_guid.as_deref() == Some(object.type_guid.as_str()) {
             return Err(CodecError::Malformed(format!(
-                "F3D Design object {} has a missing or self parent",
+                "F3D Design type {} is its own base type",
                 object.id
             )));
         }
         let mut ancestors = BTreeSet::new();
         let mut cursor = object;
-        while let Some(parent) = cursor.parent_guid.as_deref() {
-            if !ancestors.insert(parent) {
+        while let Some(base) = cursor
+            .base_type_guid
+            .as_deref()
+            .and_then(|base| objects_by_guid.get(base))
+        {
+            if !ancestors.insert(base.type_guid.as_str()) {
                 return Err(CodecError::Malformed(format!(
-                    "F3D Design object hierarchy contains a cycle at {parent}"
+                    "F3D Design type hierarchy contains a cycle at {}",
+                    base.type_guid
                 )));
             }
-            cursor = objects_by_guid[parent];
+            cursor = base;
         }
     }
     for header in &native.design_entity_headers {
@@ -389,14 +394,14 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
                 header.id, header.entity_suffix
             )));
         }
-        let owned_kind = entity_kinds.get(&header.entity_suffix).cloned();
-        if header.object_kind != owned_kind {
+        let owned_module = entity_modules.get(&header.entity_suffix).cloned();
+        if header.module != owned_module {
             return Err(CodecError::Malformed(format!(
-                "F3D Design header {} object kind conflicts with MetaStream ownership",
+                "F3D Design header {} module conflicts with MetaStream ownership",
                 header.id
             )));
         }
-        if header.object_kind == Some(DesignObjectKind::Sketch) {
+        if header.in_sketch_module() {
             // `record_reference` is absent on the sentinel (no-base-record)
             // reference-list form; the declared count must always match.
             if header.declared_reference_count != u32::try_from(header.reference_indices.len()).ok()

@@ -1342,9 +1342,9 @@ pub(crate) fn validate_design_object_edits(
         let after = target_by_id[id];
         let mut normalized = after.clone();
         normalized.entity_ids.clone_from(&before.entity_ids);
-        normalized.self_guid.clone_from(&before.self_guid);
-        normalized.parent_guid.clone_from(&before.parent_guid);
-        normalized.revision = before.revision;
+        normalized.type_guid.clone_from(&before.type_guid);
+        normalized.base_type_guid.clone_from(&before.base_type_guid);
+        normalized.version = before.version;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D design-object edit changes fields outside its fixed object payload: {id}"
@@ -1365,27 +1365,27 @@ pub(crate) fn validate_design_object_edits(
             .filter(|((value, before), _)| value != before)
             .map(|((&value, _), &offset)| (offset, value.to_le_bytes().to_vec()))
             .collect::<Vec<_>>();
-        if after.revision != before.revision {
-            integers.push((after.revision_offset, after.revision.to_le_bytes().to_vec()));
+        if after.version != before.version {
+            integers.push((after.version_offset, after.version.to_le_bytes().to_vec()));
         }
         let mut strings = Vec::new();
-        if after.self_guid != before.self_guid {
-            validate_fixed_design_string(id, &before.self_guid, &after.self_guid)?;
-            strings.push((after.self_guid_offset, after.self_guid.as_bytes().to_vec()));
+        if after.type_guid != before.type_guid {
+            validate_fixed_design_string(id, &before.type_guid, &after.type_guid)?;
+            strings.push((after.type_guid_offset, after.type_guid.as_bytes().to_vec()));
         }
-        if after.parent_guid != before.parent_guid {
-            let before_parent = before.parent_guid.as_deref().ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot add F3D object parent GUID: {id}"))
+        if after.base_type_guid != before.base_type_guid {
+            let before_base = before.base_type_guid.as_deref().ok_or_else(|| {
+                CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
             })?;
-            let after_parent = after.parent_guid.as_deref().ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot remove F3D object parent GUID: {id}"))
+            let after_base = after.base_type_guid.as_deref().ok_or_else(|| {
+                CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
             })?;
-            validate_fixed_design_string(id, before_parent, after_parent)?;
+            validate_fixed_design_string(id, before_base, after_base)?;
             strings.push((
-                after.parent_guid_offset.ok_or_else(|| {
-                    CodecError::Malformed(format!("F3D object {id} has no parent-GUID offset"))
+                after.base_type_guid_offset.ok_or_else(|| {
+                    CodecError::Malformed(format!("F3D object {id} has no base-type-GUID offset"))
                 })?,
-                after_parent.as_bytes().to_vec(),
+                after_base.as_bytes().to_vec(),
             ));
         }
         if integers.is_empty() && strings.is_empty() {
