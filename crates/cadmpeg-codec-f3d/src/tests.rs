@@ -21626,6 +21626,84 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
 }
 
 #[test]
+fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use cadmpeg_ir::units::Units;
+
+    // One appearance attribute GUID reaches every face carrying it, so the
+    // assignment pair repeats across those faces. The face id has to enter the
+    // binding id, or the arena holds colliding ids and fails both the global
+    // identity check and the strict arena-order check.
+    let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let visual_guid = "11111111-2222-3333-4444-555555555555";
+    let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
+    for face in ["face:1", "face:2", "face:3"] {
+        ir.model.attributes.push(SourceAttribute {
+            id: format!("attr:{face}").into(),
+            target: AttributeTarget::Face(face.into()),
+            name: "NEUTRON_Material_attrib_def".into(),
+            values: vec![
+                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
+                AttributeValue::String(face_guid.into()),
+            ],
+        });
+    }
+    ir.model.appearances.push(Appearance {
+        id: "appearance:1".into(),
+        name: None,
+        asset_guid: None,
+        visual_guid: Some(visual_guid.into()),
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+
+    crate::decode::resolve_face_appearance_bindings(
+        &mut ir,
+        &[crate::materials::FaceAppearanceAssignment {
+            face_guid: face_guid.into(),
+            visual_guid: visual_guid.into(),
+        }],
+    );
+
+    assert_eq!(ir.model.appearance_bindings.len(), 3);
+    let ids = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| binding.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(ids.len(), 3);
+    let targets = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| binding.target.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets,
+        vec![
+            AppearanceTarget::Face("face:1".into()),
+            AppearanceTarget::Face("face:2".into()),
+            AppearanceTarget::Face("face:3".into()),
+        ]
+    );
+
+    // The decode path sorts by id after resolving; that sort is only a total
+    // order over the arena when the ids are distinct.
+    ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
+    assert!(ir
+        .model
+        .appearance_bindings
+        .windows(2)
+        .all(|pair| pair[0].id < pair[1].id));
+}
+
+#[test]
 fn decode_transfers_generated_protein_appearance() {
     let f3d = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let mut cur = Cursor::new(f3d);

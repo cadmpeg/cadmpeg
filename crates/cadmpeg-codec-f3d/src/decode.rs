@@ -3081,7 +3081,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 /// Join per-face appearance assignments to BREP faces through the face GUID
 /// carried by each face's `NEUTRON_Material_attrib_def` attribute
 /// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
-fn resolve_face_appearance_bindings(
+pub(crate) fn resolve_face_appearance_bindings(
     ir: &mut CadIr,
     face_assignments: &[materials::FaceAppearanceAssignment],
 ) {
@@ -3138,9 +3138,12 @@ fn resolve_face_appearance_bindings(
                 continue;
             }
             ir.model.appearance_bindings.push(AppearanceBinding {
+                // The face id completes the key: one appearance attribute GUID
+                // reaches every face carrying it, so the assignment pair alone
+                // repeats across those faces.
                 id: format!(
-                    "f3d:appearance:face#{}:{}",
-                    assignment.face_guid, assignment.visual_guid
+                    "f3d:appearance:face#{}:{}:{}",
+                    assignment.face_guid, assignment.visual_guid, face
                 ),
                 target,
                 appearance: appearance.id.clone(),
