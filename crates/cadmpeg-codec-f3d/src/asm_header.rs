@@ -9,13 +9,14 @@
 //! `BinaryFile8` layout: `0..15` magic `ASM BinaryFile8`, `15..19`
 //! little-endian u32 ACIS save-format version, `19..31` zero, `31..39`
 //! little-endian u64 entity count, `39..47` little-endian u64 flags. Bit 0 marks a history
-//! partition. The three `0x07`-tagged UTF-8 strings (`product_family`,
+//! partition and bits 1 to 7 hold the save format's revision number. The three
+//! `0x07`-tagged UTF-8 strings (`product_family`,
 //! `product_version_string`, `save_date`) begin at byte 47.
 //!
 //! `BinaryFile4` layout: `0..15` magic `ASM BinaryFile4`, then four
 //! little-endian u32 words: `15..19` ACIS save-format version, `19..23`
-//! record count, `23..27` entity count, `27..31` flags. Bit 0 marks a history partition. The
-//! string region begins at byte 31.
+//! record count, `23..27` entity count, `27..31` flags, with the same bit
+//! assignment as `BinaryFile8`. The string region begins at byte 31.
 //!
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
@@ -40,7 +41,8 @@ pub struct AsmHeader {
     pub entity_count: Option<u64>,
     /// Flags word: little-endian u32 at offset 27 (`BinaryFile4`) or
     /// little-endian u64 at offset 39 (`BinaryFile8`). Bit 0 denotes a history
-    /// partition. Every other bit is retained as an uninterpreted format flag.
+    /// partition and bits 1 to 7 hold the save format's revision number. Bits 8
+    /// and above are zero and are retained as uninterpreted format flags.
     pub flags: Option<u64>,
     /// `product_family`, e.g. `Autodesk Neutron`.
     pub product_family: Option<String>,
@@ -62,6 +64,12 @@ const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
 /// Flag bit selecting the optional construction-history partition.
 pub const HISTORY_PARTITION_FLAG: u64 = 1;
 
+/// Flag bits 1 to 7, which hold the save format's revision number.
+pub const FORMAT_REVISION_FLAGS: u64 = 0xfe;
+
+/// Bit position of the low bit of [`FORMAT_REVISION_FLAGS`].
+const FORMAT_REVISION_SHIFT: u32 = 1;
+
 impl AsmHeader {
     /// Major component of the encoded ACIS save-format version.
     pub fn save_format_major(&self) -> Option<u32> {
@@ -79,10 +87,18 @@ impl AsmHeader {
             .is_some_and(|flags| flags & HISTORY_PARTITION_FLAG != 0)
     }
 
-    /// Header flags other than the history-partition bit. They are preserved
-    /// exactly and deliberately have no guessed semantic projection.
+    /// The save format's revision number, from flag bits 1 to 7.
+    pub fn format_revision(&self) -> Option<u32> {
+        self.flags
+            .map(|flags| ((flags & FORMAT_REVISION_FLAGS) >> FORMAT_REVISION_SHIFT) as u32)
+    }
+
+    /// Header flags outside the history-partition bit and the revision bits.
+    /// Bits 8 and above are zero. They are preserved exactly and deliberately
+    /// have no guessed semantic projection.
     pub fn unassigned_flags(&self) -> Option<u64> {
-        self.flags.map(|flags| flags & !HISTORY_PARTITION_FLAG)
+        self.flags
+            .map(|flags| flags & !(HISTORY_PARTITION_FLAG | FORMAT_REVISION_FLAGS))
     }
 }
 
