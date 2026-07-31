@@ -12681,7 +12681,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .coverage
         .contains_key("unresolved_constraint_range_owner_count"));
 
-    let referenced_file = |reference_count: usize| {
+    let referenced_file = |reference_count: usize, storage_reference: bool| {
         let value = [0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0xfe];
         let mut range_entity = entity_table_record_with_definition_and_value(1, &[0x01], &value);
         range_entity[6] = 2;
@@ -12696,10 +12696,15 @@ fn native_namespace_types_dimension_constraint_ranges() {
         ));
         let mut reference_payload = [0x81, 0x81].repeat(reference_count);
         reference_payload.push(0xfe);
+        let reference_head = if storage_reference {
+            vec![0x04, 0x01, 0x82, 0x84, 0x81]
+        } else {
+            vec![0x04, 0x01, 0x82, 0x84]
+        };
         stream.push(0xde);
         stream.extend(object_graph_from_records(&[
             object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
-            object_graph_record(&[0x04, 0x01, 0x82, 0x84], &reference_payload),
+            object_graph_record(&reference_head, &reference_payload),
         ]));
         stream.extend(catalog_stream(&[
             "CATCatalogManager",
@@ -12715,7 +12720,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         file[8..12].copy_from_slice(&be32(file_len));
         file
     };
-    let unique_file = referenced_file(1);
+    let unique_file = referenced_file(1, false);
     let unique_native = crate::native::CatiaNative::decode(&unique_file);
     let incoming = &unique_native.entity_records[0]
         .constraint_range
@@ -12778,7 +12783,74 @@ fn native_namespace_types_dimension_constraint_ranges() {
         0
     );
 
-    let multiple_file = referenced_file(2);
+    let storage_file = referenced_file(0, true);
+    let storage_native = crate::native::CatiaNative::decode(&storage_file);
+    let incoming_storage = &storage_native.entity_records[0]
+        .constraint_range
+        .as_ref()
+        .expect("complete storage-referenced constraint range")
+        .incoming_storage_references;
+    assert_eq!(incoming_storage.len(), 1);
+    assert_eq!(
+        incoming_storage[0].object_record,
+        storage_native.object_graphs[0].records[1].id
+    );
+    let storage_source_entity = incoming_storage[0]
+        .source_entity
+        .as_ref()
+        .expect("storage source has a paired entity");
+    assert_eq!(storage_source_entity.entity_id, 2);
+    assert_eq!(
+        storage_source_entity.entity.as_deref(),
+        Some(storage_native.entity_records[1].id.as_str())
+    );
+    assert_eq!(
+        storage_source_entity.class_name,
+        storage_native.object_graphs[0].records[1].class_name
+    );
+
+    let storage_referenced = CatiaCodec
+        .decode(&mut Cursor::new(storage_file), &DecodeOptions::default())
+        .expect("decode storage-referenced constraint range");
+    assert_eq!(
+        storage_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        1
+    );
+    assert_eq!(
+        storage_referenced.report.coverage
+            ["decoded_constraint_range_incoming_payload_reference_count"],
+        0
+    );
+    assert_eq!(
+        storage_referenced.report.coverage
+            ["decoded_constraint_range_incoming_storage_reference_count"],
+        1
+    );
+    assert_eq!(
+        storage_referenced.report.coverage["unreferenced_constraint_range_count"],
+        0
+    );
+    assert_eq!(
+        storage_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        1
+    );
+
+    let combined = CatiaCodec
+        .decode(
+            &mut Cursor::new(referenced_file(1, true)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode constraint range with both incidence forms");
+    assert_eq!(
+        combined.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        2
+    );
+    assert_eq!(
+        combined.report.coverage["multiply_referenced_constraint_range_count"],
+        1
+    );
+
+    let multiple_file = referenced_file(2, false);
     let multiple_native = crate::native::CatiaNative::decode(&multiple_file);
     let incoming = &multiple_native.entity_records[0]
         .constraint_range
@@ -12867,6 +12939,22 @@ fn native_namespace_types_dimension_constraint_ranges() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
+    let mut malformed = storage_native.clone();
+    malformed.entity_records[0]
+        .constraint_range
+        .as_mut()
+        .expect("complete storage-referenced constraint range")
+        .incoming_storage_references[0]
+        .object_record = unique_native.object_graphs[0].records[0].id.clone();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed constraint-range storage incidence");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
     let mut stored = cadmpeg_ir::NativeNamespace::default();
     unique_native
         .store(&mut stored)
@@ -12930,6 +13018,36 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .expect("source constraint range")
             .incoming_references[0]
             .source_entity
+    );
+
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    storage_native
+        .store(&mut stored)
+        .expect("store older constraint-range storage namespace");
+    stored.version = crate::native::CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION - 1;
+    stored
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields
+        .get_mut("constraint_range")
+        .expect("stored constraint range")
+        .as_object_mut()
+        .expect("stored constraint-range object")
+        .remove("incoming_storage_references");
+    let migrated = crate::native::CatiaNative::load(&stored)
+        .expect("migrate constraint-range storage incidence");
+    assert_eq!(
+        migrated.entity_records[0]
+            .constraint_range
+            .as_ref()
+            .expect("migrated constraint range")
+            .incoming_storage_references,
+        storage_native.entity_records[0]
+            .constraint_range
+            .as_ref()
+            .expect("source constraint range")
+            .incoming_storage_references
     );
 }
 

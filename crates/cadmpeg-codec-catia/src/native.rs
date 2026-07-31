@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 244;
+pub const CATIA_NATIVE_VERSION: u32 = 245;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -81,6 +81,9 @@ pub(crate) const CATIA_RELATION_PROGRAM_INPUT_VERSION: u32 = 243;
 /// Native schema version retaining entities between configuration-row successors.
 #[cfg(test)]
 pub(crate) const CATIA_CONFIGURATION_ROW_INTERVAL_VERSION: u32 = 244;
+/// Native schema version retaining constraint-range storage incidences.
+#[cfg(test)]
+pub(crate) const CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION: u32 = 245;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1343,6 +1346,9 @@ pub struct CatiaConstraintRange {
     /// Exact same-graph payload-reference occurrences selecting this range.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incoming_references: Vec<CatiaConstraintRangeIncomingReference>,
+    /// Exact same-graph object-head storage selectors selecting this range.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incoming_storage_references: Vec<CatiaConstraintRangeIncomingStorageReference>,
 }
 
 /// One exact payload-reference occurrence selecting a constraint range.
@@ -1357,6 +1363,16 @@ pub struct CatiaConstraintRangeIncomingReference {
     pub payload_offset: u64,
     /// Structural container of the reference occurrence.
     pub source: CatiaObjectRecordReferenceSource,
+}
+
+/// One exact object-head storage selector selecting a constraint range.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConstraintRangeIncomingStorageReference {
+    /// Object record carrying the storage selector.
+    pub object_record: String,
+    /// Entity paired with the source object record when that record has an identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_entity: Option<CatiaEntityReference>,
 }
 
 /// One definition-selected entity whose complete value occupies its suffix.
@@ -2675,22 +2691,26 @@ fn constraint_range(
         framing,
         evaluation: evaluation.clone(),
         incoming_references: Vec::new(),
+        incoming_storage_references: Vec::new(),
     })
 }
 
-fn constraint_range_incoming_references(
+fn constraint_range_incidences(
     records: &[CatiaObjectRecord],
     graph_id: &str,
     entity_id: u32,
-) -> Vec<CatiaConstraintRangeIncomingReference> {
-    records
-        .iter()
-        .filter(|record| record.parent == graph_id)
-        .flat_map(|record| {
+) -> (
+    Vec<CatiaConstraintRangeIncomingReference>,
+    Vec<CatiaConstraintRangeIncomingStorageReference>,
+) {
+    let mut incoming_references = Vec::new();
+    let mut incoming_storage_references = Vec::new();
+    for record in records.iter().filter(|record| record.parent == graph_id) {
+        incoming_references.extend(
             record
                 .references
                 .iter()
-                .filter(move |reference| reference.entity_id == entity_id)
+                .filter(|reference| reference.entity_id == entity_id)
                 .map(|reference| CatiaConstraintRangeIncomingReference {
                     object_record: record.id.clone(),
                     source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
@@ -2701,9 +2721,21 @@ fn constraint_range_incoming_references(
                     }),
                     payload_offset: reference.payload_offset,
                     source: reference.source.clone(),
-                })
-        })
-        .collect()
+                }),
+        );
+        if record.storage_ref == Some(entity_id) {
+            incoming_storage_references.push(CatiaConstraintRangeIncomingStorageReference {
+                object_record: record.id.clone(),
+                source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
+                    entity_id,
+                    is_null: false,
+                    entity: record.entity_record.clone(),
+                    class_name: record.class_name.clone(),
+                }),
+            });
+        }
+    }
+    (incoming_references, incoming_storage_references)
 }
 
 fn resolved_constraint_range(
@@ -2715,7 +2747,8 @@ fn resolved_constraint_range(
     entity_id: u32,
 ) -> Option<CatiaConstraintRange> {
     let mut range = constraint_range(lead, values, suffix_value)?;
-    range.incoming_references = constraint_range_incoming_references(records, graph_id, entity_id);
+    (range.incoming_references, range.incoming_storage_references) =
+        constraint_range_incidences(records, graph_id, entity_id);
     Some(range)
 }
 
@@ -8901,14 +8934,16 @@ impl CatiaNative {
         }
         if namespace.version < CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION
             || namespace.version < CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION
+            || namespace.version < CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION
         {
             for entity in &mut entity_records {
                 if let Some(range) = &mut entity.constraint_range {
-                    range.incoming_references = constraint_range_incoming_references(
-                        &records,
-                        &entity.object_graph,
-                        entity.entity_id,
-                    );
+                    (range.incoming_references, range.incoming_storage_references) =
+                        constraint_range_incidences(
+                            &records,
+                            &entity.object_graph,
+                            entity.entity_id,
+                        );
                 }
             }
         }

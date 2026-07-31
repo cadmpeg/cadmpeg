@@ -638,6 +638,8 @@ fn finish_decode(
         );
     let (
         constraint_range_incoming_reference_count,
+        constraint_range_incoming_payload_reference_count,
+        constraint_range_incoming_storage_reference_count,
         unreferenced_constraint_range_count,
         uniquely_referenced_constraint_range_count,
         multiply_referenced_constraint_range_count,
@@ -645,21 +647,54 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.constraint_range.as_ref())
-        .map(|range| range.incoming_references.len())
+        .map(|range| {
+            (
+                range.incoming_references.len(),
+                range.incoming_storage_references.len(),
+            )
+        })
         .fold(
-            (0_usize, 0_usize, 0_usize, 0_usize),
-            |(references, zero, one, multiple), count| match count {
-                0 => (references, zero + 1, one, multiple),
-                1 => (references + 1, zero, one + 1, multiple),
-                _ => (references + count, zero, one, multiple + 1),
+            (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
+            |(references, payload, storage, zero, one, multiple),
+             (payload_count, storage_count)| {
+                let count = payload_count + storage_count;
+                match count {
+                    0 => (references, payload, storage, zero + 1, one, multiple),
+                    1 => (
+                        references + 1,
+                        payload + payload_count,
+                        storage + storage_count,
+                        zero,
+                        one + 1,
+                        multiple,
+                    ),
+                    _ => (
+                        references + count,
+                        payload + payload_count,
+                        storage + storage_count,
+                        zero,
+                        one,
+                        multiple + 1,
+                    ),
+                }
             },
         );
     let classified_constraint_range_source_entity_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.constraint_range.as_ref())
-        .flat_map(|range| &range.incoming_references)
-        .filter_map(|reference| reference.source_entity.as_ref())
+        .flat_map(|range| {
+            range
+                .incoming_references
+                .iter()
+                .filter_map(|reference| reference.source_entity.as_ref())
+                .chain(
+                    range
+                        .incoming_storage_references
+                        .iter()
+                        .filter_map(|reference| reference.source_entity.as_ref()),
+                )
+        })
         .filter(|entity| entity.class_name.is_some())
         .count();
     let definition_value_count = native
@@ -2416,6 +2451,14 @@ fn finish_decode(
         (
             "decoded_constraint_range_incoming_reference_count".to_string(),
             constraint_range_incoming_reference_count,
+        ),
+        (
+            "decoded_constraint_range_incoming_payload_reference_count".to_string(),
+            constraint_range_incoming_payload_reference_count,
+        ),
+        (
+            "decoded_constraint_range_incoming_storage_reference_count".to_string(),
+            constraint_range_incoming_storage_reference_count,
         ),
         (
             "decoded_classified_constraint_range_source_entity_count".to_string(),
