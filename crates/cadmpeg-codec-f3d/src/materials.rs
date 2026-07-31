@@ -1404,6 +1404,15 @@ fn decode_fixed_logical_records(bytes: &[u8]) -> Vec<Appearance> {
         .collect()
 }
 
+/// Decode one record of a fixed source-less layout.
+///
+/// The schema set here is exactly the set [`encode_protein`] emits, and the
+/// offsets are that encoder's own layout rather than a property order stated by
+/// the format. A record carrying any other schema declines: its member offsets
+/// follow from the schema packaged beside it, which the schema-driven path
+/// reads. That covers the `interior_model` subtypes with no fixed layout here,
+/// `PrismLayeredSchema` and `PrismWoodSchema`, whose colour offset must not be
+/// assumed from the opaque, metal, or transparent layouts.
 fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     let mut position = RECORD_MARKER.len();
     let schema = take_lp_utf8(record, &mut position)?;
@@ -1565,6 +1574,47 @@ mod tests {
         {
             let record = distance_record(unit, value);
             assert_eq!(super::distance_property(&record, "Depth"), Some(expected));
+        }
+    }
+
+    /// The schema-driven path takes the appearance colour from the connectable
+    /// albedo member and does not select on the schema name, so every
+    /// `interior_model` subtype gets a colour. The fixed layouts cover only the
+    /// subtypes the source-less encoder writes.
+    #[test]
+    fn every_prism_subtype_decodes_its_albedo_colour() {
+        for schema in [
+            "PrismOpaqueSchema",
+            "PrismMetalSchema",
+            "PrismLayeredSchema",
+            "PrismTransparentSchema",
+            "PrismWoodSchema",
+        ] {
+            let decoded = super::appearances_from_schema_records(&[albedo_record(schema)]);
+            let [appearance] = decoded.as_slice() else {
+                panic!("{schema} record decodes to one appearance");
+            };
+            assert_eq!(appearance.schema.as_deref(), Some(schema));
+            assert_eq!(
+                appearance.base_color.map(|color| color.g),
+                Some(0.25),
+                "{schema} keeps its albedo colour"
+            );
+        }
+    }
+
+    fn albedo_record(schema: &str) -> crate::protein::DecodedRecord {
+        crate::protein::DecodedRecord {
+            schema: schema.to_owned(),
+            guid: "11111111-2222-3333-4444-555555555555".to_owned(),
+            base: "Prism-001".to_owned(),
+            properties: std::collections::BTreeMap::from([(
+                "surface_albedo".to_owned(),
+                crate::protein::DecodedProperty {
+                    value: crate::protein::PropertyValue::Color([0.5, 0.25, 0.125, 1.0]),
+                    connections: Vec::new(),
+                },
+            )]),
         }
     }
 
