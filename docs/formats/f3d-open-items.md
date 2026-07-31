@@ -34,14 +34,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know which value to write when we make this record from a neutral model. `false` is the value for a surface built directly from a support surface and a distance, so the item blocks only the reflected case. A carrier whose tail stores no cache is needed to read the states off the solved surface.
 
-### GC-06. `off_spl_sur` ASM extension prefix
-
-**Question.** What does the first boolean of the `off_spl_sur` ASM extension prefix control? Is the state false/true legal?
-
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the position of the prefix and gives which prefix states have an extension run. The prefix comes after the sense pair and before the shared revision-gated surface tail. The state false/false is the only state with a known occurrence. The state true/false is accepted on read and adds no field and changes no other field, so the first boolean gates nothing in the record's layout. The state false/true with no run is refused on read. Two readings fit that refusal: the state is illegal in itself, or the second boolean alone requires the run. A record in the state false/true with a run separates them.
-
-**Need.** We must know which value to write for the first boolean when we make this record, and whether a writer may set the second boolean alone.
-
 ### GC-07. `off_spl_sur` extension run
 
 **Question.** What are the field roles of the extension run in an `off_spl_sur` record?
@@ -66,14 +58,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We cannot read a record with a nonzero kind.
 
-### GC-14. `cl_loft_spl_sur` optional trailing BS3 curve
-
-**Question.** Can a present parameter pair end the kind-zero `cl_loft_spl_sur` payload with no trailing BS3 curve after it?
-
-**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the presence rule and the bool-gated encoding of the two parameter values. An absent pair followed by a curve is refused on read, and an absent pair followed by the subtype close is accepted, so the reader takes no look-ahead over an absent pair and the booleans are the presence gate rather than two plain flags. A present pair is accepted with a curve after it in the ascending and in the descending parameter order alike, and both orders are retained, so the stored numbers do not select the slot. A present pair with no curve after it has no known occurrence. The decoder finds the trailing curve with a look-ahead for the subtype-close byte.
-
-**Need.** The look-ahead is now needed only for a present pair. We must know whether a present pair can end the payload before we can drop the look-ahead.
-
 ### GC-16. Token tags of a revision-gated `VBL_SURF` `deg` boundary
 
 **Question.** Which token tags does a revision-gated `VBL_SURF` `deg` boundary use for its location and for its two normals?
@@ -84,15 +68,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-18. Blend-value selector values
 
-**Question.** We must find three answers:
+**Question.** We must find two answers:
 
-- the two-radii chamfer-selector values other than `0` and `3`
-- the single-radius selector values other than `0`, `1`, and `7`
-- the difference between single-radius selector `1` and single-radius selector `7`
+- the selector values other than `0`, `1`, `3`, and `7`
+- the cross-section a selector gives over a two-radii radius law
 
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layout for chamfer selectors `0` and `3`. It gives the layout for single-radius selectors `0`, `1`, and `7`. Selector `0` carries a rational cache whose cross-section is an exact circular arc; selector `7` carries a non-rational cache whose cross-section is not a circular arc, so the two scalars do not enter the two selectors the same way. Selector `7` with its two shape scalars is accepted on read after a two-radii radius-law sequence and is retained with both scalars, so the selector set is not partitioned by radius cardinality. That record's cache is marked current, so the retained cache is the one the record carried and it does not show what the selector makes of a two-radii law.
+**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layout of selectors `0`, `1`, `3`, and `7`, the side ordering of the two shape scalars of `1` and `7`, and the separation of the cross-section laws of `0`, `1`, and `7`. Selector `7` with its two shape scalars is accepted on read after a two-radii radius-law sequence and is retained with both scalars, so the selector set is not partitioned by radius cardinality. That record's cache is marked current, so the retained cache is the one the record carried and it does not show what the selector makes of a two-radii law. A record whose cache is not marked current gives the cross-section the selector builds, so a carrier with a two-radii law and a cache that is not current separates the second question.
 
-**Need.** The decoder rejects every other selector value. We cannot read those records. Selector `1` and selector `7` select the same two scalars, so we cannot write the correct one from a neutral model. Separating them needs a carrier whose cache the reader builds again, so that the two selectors give two surfaces.
+**Need.** The decoder rejects every other selector value. We cannot read those records. A two-radii law and a single-radius law may give the same selector two different cross-sections, and we would write the wrong surface from a neutral model that carries two radii.
 
 ### GC-19. First `tvertex` tolerance evaluation
 
