@@ -12647,6 +12647,67 @@ fn relation_expression_signature_rejects_duplicate_inputs() {
 }
 
 #[test]
+fn relation_expression_signature_requires_canonical_parameter_symbols() {
+    for parameter in ["value", "#_", "#1", "#1_ /2", "#１_"] {
+        let signature = format!("({parameter} : #In LENGTH) : Real");
+        let native = crate::native::CatiaNative::decode(
+            &standard_catpart_with_relation_expression_signature("param", parameter, &signature),
+        );
+
+        assert!(
+            native.entity_records[0]
+                .relation_expression
+                .as_ref()
+                .expect("relation expression")
+                .signature
+                .is_none(),
+            "{parameter}"
+        );
+    }
+}
+
+#[test]
+fn native_migrates_and_validates_relation_signature_parameter_symbols() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression_signature(
+            "param",
+            "#1_ ",
+            "(#1_ : #In LENGTH) : Real",
+        ));
+    let expected = native.entity_records[0]
+        .relation_expression
+        .clone()
+        .expect("relation expression");
+    let mut malformed = native;
+    malformed.entity_records[0]
+        .relation_expression
+        .as_mut()
+        .expect("relation expression")
+        .signature
+        .as_mut()
+        .expect("typed signature")
+        .inputs[0]
+        .parameter = "value".to_string();
+
+    let mut current_namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut current_namespace)
+        .expect("store malformed relation signature");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&current_namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    current_namespace.version = crate::native::CATIA_RELATION_SIGNATURE_PARAMETER_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&current_namespace)
+        .expect("migrate relation signature parameters");
+    assert_eq!(
+        migrated.entity_records[0].relation_expression,
+        Some(expected)
+    );
+}
+
+#[test]
 fn relation_expression_requires_every_exact_role() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression("parameter"));

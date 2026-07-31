@@ -118,7 +118,8 @@ current scores require those matrices and representative fixtures.
   parameter binding candidate identities, entities, and classes; coverage
   partitions classified and unclassified candidates. Exactly one candidate
   resolves the dependency. Symbol-shaped string-literal content does not create
-  a dependency.
+  a dependency. Typed signature inputs require canonical `#<digits>_` parameter
+  symbols.
   Every transferred numeric
   parameter retains its canonical
   `LENGTH`, `ANGLE`, `Real`, or `Integer` value type independently of whether

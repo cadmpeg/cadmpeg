@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 248;
+pub const CATIA_NATIVE_VERSION: u32 = 249;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -93,6 +93,9 @@ pub(crate) const CATIA_RELATION_REFERENCE_OFFSET_VERSION: u32 = 247;
 /// Native schema version excluding string-literal contents from relation dependencies.
 #[cfg(test)]
 pub(crate) const CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION: u32 = 248;
+/// Native schema version requiring canonical relation-signature parameter symbols.
+#[cfg(test)]
+pub(crate) const CATIA_RELATION_SIGNATURE_PARAMETER_VERSION: u32 = 249;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -2639,9 +2642,11 @@ fn relation_type_signature(
                 let (parameter, input_type) = clause.split_once(':')?;
                 let parameter = parameter.trim();
                 let input_type = input_type.trim().strip_prefix("#In")?.trim();
-                (!parameter.is_empty() && !input_type.is_empty()).then(|| CatiaRelationTypeInput {
-                    parameter: parameter.to_string(),
-                    input_type: input_type.to_string(),
+                (relation_parameter_symbol(parameter) && !input_type.is_empty()).then(|| {
+                    CatiaRelationTypeInput {
+                        parameter: parameter.to_string(),
+                        input_type: input_type.to_string(),
+                    }
                 })
             })
             .collect::<Option<Vec<_>>>()?
@@ -2664,6 +2669,15 @@ fn relation_type_signature(
         inputs,
         result_type: result_type.to_string(),
     })
+}
+
+fn relation_parameter_symbol(parameter: &str) -> bool {
+    parameter
+        .strip_prefix('#')
+        .and_then(|parameter| parameter.strip_suffix('_'))
+        .is_some_and(|digits| {
+            !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn parameter_value(
@@ -3759,7 +3773,13 @@ fn dependency_matches_input(
     dependency
         .symbol
         .strip_prefix(&input.parameter)
-        .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with(char::is_whitespace))
+        .is_some_and(|suffix| {
+            suffix.is_empty()
+                || suffix
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_whitespace)
+        })
 }
 
 pub(crate) fn resolved_relation_program_inputs(
@@ -8877,6 +8897,14 @@ impl CatiaNative {
         if namespace.version < CATIA_SUFFIX_FRAMING_VERSION {
             for entity in &mut entity_records {
                 entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
+            }
+        }
+        if namespace.version < CATIA_RELATION_SIGNATURE_PARAMETER_VERSION {
+            for entity in &mut entity_records {
+                entity.relation_expression = relation_expression(
+                    &entity.definition_schema_selections,
+                    &entity.value_schema_selections,
+                );
             }
         }
         let graph_ids = graphs
