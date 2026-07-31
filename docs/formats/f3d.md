@@ -668,9 +668,17 @@ One plane support, one circular-cylinder support, and a four-quarter rational-ci
 
 ### 8.1 Design metadata
 
-`MetaStream.dat` is a sequence of object records. Each record contains an ASCII type name, a u32 ID count, that many little-endian u64 design-entity IDs, a self GUID, a zero-run delimiter, a secondary GUID, and a trailing u32 record revision. The ID count is a count rather than a flag; a record can carry more than two IDs.
+`MetaStream.dat` is a segment header, a type table, two record indexes, and an optional property block. It is not a sequence of independent object records.
 
-The type name is a nonempty printable ASCII string and is not itself a GUID. It is an open discriminator: known names select typed Design object classes; every other name retains its exact bytes together with the same entity-ID, GUID-chain, delimiter, and revision fields.
+The header is the LP-ASCII segment type name, a u32, an LP-UTF16 asset GUID, a u32 serializer magic, three further u32 when that magic is `1234` and one otherwise, a second LP-ASCII segment type name, an LP-ASCII add-in name, and two u32. The two type names need not be equal: the first is the segment's short name and the second its full type name.
+
+The type table is `u32 count` and that many entries. An entry is an LP-ASCII type GUID, an LP-ASCII base type GUID, a u32 type version, an LP-ASCII add-in name, a u32 id count, and that many little-endian u64 design-entity IDs. The base type GUID is empty for a root type. The ID count is a count rather than a flag; an entry carries any number of IDs, including none. The add-in name names the owning module — `Fusion`, `MSketch`, `Geometry`, `Body`, `Component`, `EntityTracking`, `CommonData`, `Scene`, `ACT` — and is shared by every type that module registers, so it classifies a type's module and does not identify the type.
+
+The type table is followed by `u32 count` and that many u64 named-entity IDs, then the record index as `u32 count` and that many `(u64 entity ID, u64 BulkStream offset)` pairs, then a secondary index in the same form, then a u64 next-entity-ID counter. A modern segment appends a u32 and a property block of `u32 count` and that many `(LP-ASCII key, u32 value)` pairs; a legacy segment ends after the counter. These fields close the stream exactly.
+
+Record-index offsets increase strictly, and the index covers every record in the sibling `BulkStream`. The named-entity ID list is exactly the set of entity IDs whose bulk record carries a nonempty name. Every secondary-index entity ID is also a record-index entity ID, and its offset lies strictly inside that entity's record, locating a nested record header carried within that record's own payload.
+
+A `BulkStream` record begins with an LP-ASCII decimal class tag, the u64 entity ID, and an LP-ASCII record name, then the member payload. The entity ID repeats the record-index key. The class tag is segment-local: its value is `256` plus the index of the type in that segment's type table, so one number names different types in different segments and the type GUID is the only stable discriminator. The type selected by a record's class tag is the type whose ID list contains that record's entity ID.
 
 The design `BulkStream` caches each body's axis-aligned bounding box in the three indexed records whose identities are the body entity suffix plus one, two, and three. Each record contains a `u8 1` marker followed by the same six contiguous f64 values in centimetres, ordered `(xmax, ymax, zmax, xmin, ymin, zmin)`. Every maximum is greater than or equal to its corresponding minimum, and a body has positive extent on at least one axis. The three marker-and-sextuple frames are byte-identical despite the records' different dynamic class tags and prefix lengths. Model-space bounds convert each coordinate to millimetres. The body entity suffix joins the cache to every BREP body-map pair carrying that suffix in the same Design stream.
 
@@ -1034,13 +1042,13 @@ A `PhysMatSchema` value block contains a count followed by 36-character GUID ref
 BREP-qualified body selector (asm_body_key or all-null-stream body ordinal)
   ↔ design BulkStream BREP body map (body_selector → entity_suffix)
   ↔ material-assignment record entity-id suffix ("0_985" → 985)
-  ↔ metastream Body object_id
+  ↔ MetaStream entity ID listed by a type whose add-in name is `Body`
   ↔ ACT fusion_entity_id
 ```
 
 The material-bearing bodies are the ACT PhysicalMaterial-channel entities minus the document/component roots.
 
-The `id_count` field after a MetaStream type name is a count, not a flag with fixed `id1`/`id2` slots. BulkStream design body IDs use the numeric design-entity namespace and do not index the ACIS RecordTable.
+The ID count in a MetaStream type-table entry is a count, not a flag with fixed `id1`/`id2` slots. BulkStream design body IDs use the numeric design-entity namespace and do not index the ACIS RecordTable.
 
 Material records store a visual preset (`Prism-###`), visual GUID, protein phrase, physical-material token and category, and shader parameters. A Protein asset GUID identifies one asset instance within one document. Preset phrases of the forms `PrismMaterial-N`, `Prism-N`, and aspect-suffixed names identify library entries across documents; equal phrases denote equal library payloads. Library display names are not serialized; they resolve through the external material library keyed by the preset phrase.
 
