@@ -2728,7 +2728,7 @@ fn revision_tail_form(
         }
         ProceduralSurfaceDefinition::VariableBlend { construction } => {
             return Some((
-                construction.cache_selector,
+                construction.tail_enum,
                 construction.tail_parameterization.as_ref(),
             ))
         }
@@ -2737,7 +2737,7 @@ fn revision_tail_form(
             ..
         } => {
             return Some((
-                construction.cache_selector,
+                construction.tail_enum,
                 construction.tail_parameterization.as_ref(),
             ))
         }

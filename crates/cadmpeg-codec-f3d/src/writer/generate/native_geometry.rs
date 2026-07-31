@@ -2113,13 +2113,13 @@ fn native_cacheless_procedural_surface_definition(
         ..
     } = &procedural.definition
     {
-        if construction.cache_selector == 2 {
+        if construction.tail_enum == 2 {
             encode_complete_native_rolling_ball(bytes, target, procedural, construction, None)?;
             return Ok(true);
         }
     }
     if let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition {
-        if construction.cache_selector == 2 {
+        if construction.tail_enum == 2 {
             encode_native_variable_blend(bytes, target, procedural, construction, None)?;
             return Ok(true);
         }
@@ -3819,7 +3819,7 @@ fn encode_native_variable_blend(
     native_revision_tail_head(
         bytes,
         "variable blend",
-        construction.cache_selector,
+        construction.tail_enum,
         construction.tail_parameterization.as_ref(),
         solved_cache,
         cache_fit_tolerance,
@@ -4081,7 +4081,7 @@ fn encode_complete_native_rolling_ball(
     native_revision_tail_head(
         bytes,
         "rolling-ball blend",
-        construction.cache_selector,
+        construction.tail_enum,
         construction.tail_parameterization.as_ref(),
         solved_cache,
         cache_fit_tolerance,

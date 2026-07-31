@@ -636,9 +636,9 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
         DecodedProceduralSurfaceDefinition::Blend {
             native: Some(construction),
             ..
-        } => construction.cache_selector == 2,
+        } => construction.tail_enum == 2,
         DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
-            construction.cache_selector == 2
+            construction.tail_enum == 2
         }
         _ => false,
     }

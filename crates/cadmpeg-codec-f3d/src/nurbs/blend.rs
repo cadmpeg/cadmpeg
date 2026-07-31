@@ -898,7 +898,7 @@ pub(crate) fn decode_var_blend_spl_sur(
     let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
     let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let RevisionSurfaceTail {
-        enumeration: cache_selector,
+        enumeration: tail_enum,
         fit_tolerance: cache_fit_tolerance,
         parameterization: tail_parameterization,
         discontinuities,
@@ -962,7 +962,7 @@ pub(crate) fn decode_var_blend_spl_sur(
                 shape_parameter,
                 shape_length,
                 shape_tail,
-                cache_selector,
+                tail_enum,
                 tail_parameterization,
                 discontinuities,
                 tail_flag,
@@ -1312,7 +1312,7 @@ pub(crate) fn decode_full_rb_blend_spl_sur(
     ];
     let tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let RevisionSurfaceTail {
-        enumeration: cache_selector,
+        enumeration: tail_enum,
         fit_tolerance: cache_fit_tolerance,
         parameterization: tail_parameterization,
         discontinuities,
@@ -1363,7 +1363,7 @@ pub(crate) fn decode_full_rb_blend_spl_sur(
                 shape_prefix,
                 parameters,
                 tail,
-                cache_selector,
+                tail_enum,
                 tail_parameterization,
                 discontinuities,
                 tail_flag,

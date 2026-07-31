@@ -252,11 +252,11 @@ pub struct EmbeddedVariableBlend {
     pub(crate) shape_parameter: f64,
     /// Achieved fit tolerance, at or below `shape_parameter`.
     pub(crate) shape_length: f64,
-    /// Signed integer immediately before the cache selector, taking the
+    /// Signed integer immediately before the shared tail's enum, taking the
     /// values `-1` and `1`.
     pub(crate) shape_tail: i64,
     /// Enum opening the shared revision-gated surface tail.
-    pub(crate) cache_selector: i64,
+    pub(crate) tail_enum: i64,
     /// Parameterization stored by tail-enum form `2` in place of a solved cache.
     pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
     pub(crate) discontinuities: [Vec<f64>; 6],
@@ -335,7 +335,7 @@ pub struct EmbeddedRollingBall {
     pub(crate) parameters: [f64; 2],
     pub(crate) tail: i64,
     /// Enum opening the shared revision-gated surface tail.
-    pub(crate) cache_selector: i64,
+    pub(crate) tail_enum: i64,
     /// Parameterization stored by tail-enum form `2` in place of a solved cache.
     pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
     pub(crate) discontinuities: [Vec<f64>; 6],

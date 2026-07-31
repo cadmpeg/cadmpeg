@@ -1470,7 +1470,8 @@ pub struct RollingBallConstruction {
     /// Enum opening the shared revision-gated surface tail, selecting the
     /// approximation-cache form. `0` stores a solved NURBS surface and its fit
     /// tolerance; `2` stores `tail_parameterization` instead.
-    pub cache_selector: i64,
+    #[serde(alias = "cache_selector")]
+    pub tail_enum: i64,
     /// Parameterization stored by tail-enum form `2` in place of a solved
     /// cache. Absent for form `0`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1722,12 +1723,13 @@ pub struct VariableBlendConstruction {
     /// Achieved fit tolerance for the surface cache, at or below
     /// `shape_parameter`, in document units.
     pub shape_length: f64,
-    /// Non-negative integer immediately before the cache selector.
+    /// Non-negative integer immediately before the shared tail's enum.
     pub shape_tail: i64,
     /// Enum opening the shared revision-gated surface tail, selecting the
     /// approximation-cache form. `0` stores a solved NURBS surface and its fit
     /// tolerance; `2` stores `tail_parameterization` instead.
-    pub cache_selector: i64,
+    #[serde(alias = "cache_selector")]
+    pub tail_enum: i64,
     /// Parameterization stored by tail-enum form `2` in place of a solved
     /// cache. Absent for form `0`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

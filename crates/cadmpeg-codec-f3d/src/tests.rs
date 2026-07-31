@@ -16996,7 +16996,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         assert_eq!(native.shape_prefix, 1);
         assert_eq!(native.parameters, [0.1, 0.2]);
         assert_eq!(native.tail, 17);
-        assert_eq!(native.cache_selector, 0);
+        assert_eq!(native.tail_enum, 0);
         assert_eq!(native.tail_parameterization, None);
         assert_eq!(
             native.discontinuities,
@@ -17133,7 +17133,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition else {
         panic!("expected variable-blend construction")
     };
-    assert_eq!(construction.cache_selector, 2);
+    assert_eq!(construction.tail_enum, 2);
     assert_eq!(
         construction.tail_parameterization,
         Some(expected_revision_surface_tail_parameterization())
@@ -17160,7 +17160,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
         else {
             panic!("expected complete rolling-ball graph")
         };
-        assert_eq!(native.cache_selector, 2);
+        assert_eq!(native.tail_enum, 2);
         assert_eq!(
             native.tail_parameterization,
             Some(expected_revision_surface_tail_parameterization())
@@ -17255,9 +17255,9 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
             ProceduralSurfaceDefinition::Blend {
                 native: Some(native),
                 ..
-            } => (native.cache_selector, native.tail_parameterization.clone()),
+            } => (native.tail_enum, native.tail_parameterization.clone()),
             ProceduralSurfaceDefinition::VariableBlend { construction } => (
-                construction.cache_selector,
+                construction.tail_enum,
                 construction.tail_parameterization.clone(),
             ),
             other => panic!("expected a parameterized blend construction: {other:?}"),
@@ -17457,7 +17457,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.v_range, [None, None]);
         assert_eq!(construction.shape_prefix, 11);
         assert_eq!(construction.shape_length, 6.0);
-        assert_eq!(construction.cache_selector, 0);
+        assert_eq!(construction.tail_enum, 0);
         assert_eq!(
             construction.discontinuities,
             [
@@ -17734,6 +17734,29 @@ fn generated_revision_exact_surface_round_trips() {
         push_tagged_i64(surface, 0x15, 0);
     });
     assert_revision_surface_round_trip(smbh, "exact");
+}
+
+/// The blend constructions' tail enum was serialized as `cache_selector`. A
+/// document written under that name deserializes into the same construction.
+#[test]
+fn blend_tail_enum_deserializes_under_its_former_name() {
+    for smbh in [
+        synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
+        synthetic_variable_blend_smbh("var_blend_spl_sur"),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("blend decode");
+        let json = serde_json::to_string(&decoded.ir).expect("IR JSON");
+        assert_eq!(json.matches("\"tail_enum\"").count(), 1);
+        let renamed = json.replace("\"tail_enum\"", "\"cache_selector\"");
+        let restored: cadmpeg_ir::document::CadIr =
+            serde_json::from_str(&renamed).expect("IR under the former field name");
+        assert_eq!(restored, decoded.ir);
+    }
 }
 
 /// Tail form `0` stores a solved cache and its fit tolerance together, so a
