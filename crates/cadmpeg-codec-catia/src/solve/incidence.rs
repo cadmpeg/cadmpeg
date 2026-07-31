@@ -495,6 +495,7 @@ struct AppliedFaceConfiguration {
     assigned: Vec<(usize, [usize; 2])>,
     affected_faces: Vec<usize>,
     coordinate_domains: Option<MeshCoordinateRootDomains>,
+    factor_checkpoint: Option<Vec<Vec<u64>>>,
 }
 
 struct FaceConfigurationDomain {
@@ -519,7 +520,9 @@ pub(crate) struct PreparedFaceFactors {
     domains: Vec<Option<MeshFaceEndpointConfigurations>>,
     factor_faces: Vec<usize>,
     factor_by_face: Vec<Option<usize>>,
+    factors_by_edge: Vec<Vec<usize>>,
     graph: Option<FaceFactorGraph>,
+    active: Option<Vec<Vec<u64>>>,
 }
 
 fn full_configuration_mask(len: usize) -> Vec<u64> {
@@ -686,27 +689,88 @@ impl PreparedFaceFactors {
         &self.domains
     }
 
+    fn refine_edges(
+        &mut self,
+        assigned: &[(usize, [usize; 2])],
+        budget: &MeshConstraintBudget,
+    ) -> Result<Option<Vec<Vec<u64>>>, ()> {
+        let (Some(graph), Some(active)) = (&self.graph, &mut self.active) else {
+            return Ok(None);
+        };
+        let checkpoint = active.clone();
+        let mut affected = Vec::new();
+        for &(edge, pair) in assigned {
+            let Some(factors) = self.factors_by_edge.get(edge) else {
+                continue;
+            };
+            for &factor in factors {
+                let face = self.factor_faces[factor];
+                let Some(configurations) = self.domains.get(face).and_then(Option::as_ref) else {
+                    *active = checkpoint;
+                    return Err(());
+                };
+                affected.push(factor);
+                for (configuration, pairs) in configurations.iter().enumerate() {
+                    if !configuration_mask_contains(&active[factor], configuration)
+                        || pairs.iter().all(|(candidate_edge, candidate_pair)| {
+                            *candidate_edge != edge || same_unordered_pair(*candidate_pair, pair)
+                        })
+                    {
+                        continue;
+                    }
+                    active[factor][configuration / u64::BITS as usize] &=
+                        !(1 << (configuration % u64::BITS as usize));
+                }
+                if active[factor].iter().all(|word| *word == 0) {
+                    *active = checkpoint;
+                    return Err(());
+                }
+            }
+        }
+        affected.sort_unstable();
+        affected.dedup();
+        let initial = affected
+            .iter()
+            .flat_map(|factor| graph.incoming[*factor].iter().copied())
+            .collect::<Vec<_>>();
+        match graph.propagate(active, initial, budget) {
+            Some(true) | None => Ok(Some(checkpoint)),
+            Some(false) => {
+                *active = checkpoint;
+                Err(())
+            }
+        }
+    }
+
+    fn restore(&mut self, checkpoint: Option<Vec<Vec<u64>>>) {
+        if let Some(checkpoint) = checkpoint {
+            self.active = Some(checkpoint);
+        }
+    }
+
     fn assignment_state(
         &self,
         assignment: &[Option<[usize; 2]>],
         budget: &MeshConstraintBudget,
     ) -> Result<Option<Vec<Vec<u64>>>, ()> {
-        let Some(graph) = &self.graph else {
+        let (Some(graph), Some(retained)) = (&self.graph, &self.active) else {
             return Ok(None);
         };
-        let mut active = graph.full_state();
+        let mut active = retained.clone();
         for (factor, &face) in self.factor_faces.iter().enumerate() {
             let Some(configurations) = self.domains.get(face).and_then(Option::as_ref) else {
                 return Err(());
             };
             for (configuration, pairs) in configurations.iter().enumerate() {
-                if pairs.iter().all(|(edge, pair)| {
-                    assignment
-                        .get(*edge)
-                        .copied()
-                        .flatten()
-                        .is_none_or(|selected| same_unordered_pair(selected, *pair))
-                }) {
+                if !configuration_mask_contains(&active[factor], configuration)
+                    || pairs.iter().all(|(edge, pair)| {
+                        assignment
+                            .get(*edge)
+                            .copied()
+                            .flatten()
+                            .is_none_or(|selected| same_unordered_pair(selected, *pair))
+                    })
+                {
                     continue;
                 }
                 active[factor][configuration / u64::BITS as usize] &=
@@ -1040,9 +1104,23 @@ pub(crate) fn prepare_face_configuration_domains(
     }
     let graph_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let graph = FaceFactorGraph::compile(&configurations, &graph_budget);
+    let active = graph.as_ref().map(FaceFactorGraph::full_state);
     let mut factor_by_face = vec![None; domains.len()];
+    let mut factors_by_edge = vec![Vec::new(); choices.len()];
     for (factor, &face) in retained_faces.iter().enumerate() {
         factor_by_face[face] = Some(factor);
+        let mut edges = configurations[factor]
+            .iter()
+            .flatten()
+            .map(|(edge, _)| *edge)
+            .collect::<Vec<_>>();
+        edges.sort_unstable();
+        edges.dedup();
+        for edge in edges {
+            if let Some(factors) = factors_by_edge.get_mut(edge) {
+                factors.push(factor);
+            }
+        }
     }
     for (face, configurations) in retained_faces.iter().copied().zip(configurations) {
         if let Some(domain) = &mut domains[face] {
@@ -1053,7 +1131,9 @@ pub(crate) fn prepare_face_configuration_domains(
         domains,
         factor_faces: retained_faces,
         factor_by_face,
+        factors_by_edge,
         graph,
+        active,
     })
 }
 
@@ -2147,6 +2227,9 @@ impl IncidenceComponentSearch<'_, '_> {
                     );
                 }
                 self.rollback_face_configuration(applied.assigned);
+                if let Some(factors) = &mut self.face_configuration_domains {
+                    factors.restore(applied.factor_checkpoint);
+                }
             }
             if self.exhausted || self.stopped {
                 return;
@@ -2199,10 +2282,23 @@ impl IncidenceComponentSearch<'_, '_> {
             self.rollback_face_configuration(assigned);
             return None;
         }
+        let factor_checkpoint = match &mut self.face_configuration_domains {
+            Some(factors) => {
+                match factors.refine_edges(&assigned, self.boundary_propagation_budget) {
+                    Ok(checkpoint) => checkpoint,
+                    Err(()) => {
+                        self.rollback_face_configuration(assigned);
+                        return None;
+                    }
+                }
+            }
+            None => None,
+        };
         Some(AppliedFaceConfiguration {
             assigned,
             affected_faces,
             coordinate_domains: next_coordinate_domains,
+            factor_checkpoint,
         })
     }
 
@@ -2221,14 +2317,22 @@ impl IncidenceComponentSearch<'_, '_> {
         component_faces: &[usize],
     ) {
         let mut assigned = Vec::new();
+        let mut factor_checkpoint = None;
         let mut states = quotient_states.to_vec();
         let mut domains = coordinate_domains.cloned();
         while let Some(applied) = self.apply_face_configuration(option, domains.as_ref()) {
+            let applied_factor_checkpoint = applied.factor_checkpoint;
             let Some(next_states) = self.advance_ordered_faces(applied.affected_faces, states)
             else {
                 self.rollback_face_configuration(applied.assigned);
+                if let Some(factors) = &mut self.face_configuration_domains {
+                    factors.restore(applied_factor_checkpoint);
+                }
                 break;
             };
+            if factor_checkpoint.is_none() {
+                factor_checkpoint = applied_factor_checkpoint;
+            }
             assigned.extend(applied.assigned);
             states = next_states;
             domains = applied.coordinate_domains;
@@ -2264,6 +2368,9 @@ impl IncidenceComponentSearch<'_, '_> {
             }
         }
         self.rollback_face_configuration(assigned);
+        if let Some(factors) = &mut self.face_configuration_domains {
+            factors.restore(factor_checkpoint);
+        }
     }
 
     pub(crate) fn search(&mut self) {

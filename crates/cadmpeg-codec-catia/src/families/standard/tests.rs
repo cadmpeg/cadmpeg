@@ -1273,6 +1273,67 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
 }
 
 #[test]
+fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1], [2, 3]]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+
+    let edge_faces = [[0, 0]; 2];
+    let face_edges = vec![vec![0, 1]];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let prepared =
+        prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
+            .expect("compiled face factors");
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: Some(prepared),
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    search.search();
+
+    assert_eq!(
+        search.solutions,
+        vec![
+            vec![(0, [0, 1]), (1, [0, 1])],
+            vec![(0, [2, 3]), (1, [2, 3])],
+        ]
+    );
+}
+
+#[test]
 fn persistent_face_configuration_preparation_retains_global_contradictions() {
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
