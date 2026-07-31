@@ -211,9 +211,10 @@ current scores require those matrices and representative fixtures.
   Coverage partitions schema references, resolved, terminal-null, and
   unresolved entity references, classified and unclassified referenced
   entities, row classes, and row successors. Complete root-to-terminal chains
-  retain their class identity, ordered row entity identities, terminal identity,
-  and every available selected entity class. Source-ordered chains retain every
-  same-graph entity in each open row-to-successor identity interval. Coverage
+  retain ordered link incidences carrying each row identity, successor payload
+  offset, successor identity, and every available selected entity class.
+  Source-ordered links retain every same-graph entity in their open
+  row-to-successor identity intervals. Coverage
   partitions resolved, terminal-null, and unresolved terminals, partitions
   their ordered links from links whose order remains unresolved, and counts
   source-ordered chains, intervening entities, and complete `Configuration`

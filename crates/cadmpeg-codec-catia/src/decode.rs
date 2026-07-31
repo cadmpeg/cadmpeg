@@ -34,7 +34,7 @@ fn configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
         native
             .configuration_row_chains
             .iter()
-            .map(|chain| chain.rows.len())
+            .map(|chain| chain.links.len())
             .sum(),
     )
 }
@@ -1084,12 +1084,14 @@ fn finish_decode(
     let resolved_configuration_row_chain_terminal_count = native
         .configuration_row_chains
         .iter()
-        .filter(|chain| chain.terminal.entity.is_some())
+        .filter_map(|chain| chain.links.last())
+        .filter(|link| link.successor.entity.is_some())
         .count();
     let null_configuration_row_chain_terminal_count = native
         .configuration_row_chains
         .iter()
-        .filter(|chain| chain.terminal.is_null)
+        .filter_map(|chain| chain.links.last())
+        .filter(|link| link.successor.is_null)
         .count();
     let unresolved_configuration_row_chain_terminal_count = complete_configuration_row_chain_count
         - resolved_configuration_row_chain_terminal_count
@@ -1097,19 +1099,25 @@ fn finish_decode(
     let classified_configuration_row_chain_terminal_count = native
         .configuration_row_chains
         .iter()
-        .filter(|chain| chain.terminal.class_name.is_some())
+        .filter_map(|chain| chain.links.last())
+        .filter(|link| link.successor.class_name.is_some())
         .count();
     let configuration_row_intervening_entity_count = native
         .configuration_row_chains
         .iter()
-        .filter_map(|chain| chain.intervening_entities.as_ref())
+        .flat_map(|chain| &chain.links)
+        .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
-        .map(Vec::len)
-        .sum();
+        .count();
     let configuration_row_source_interval_chain_count = native
         .configuration_row_chains
         .iter()
-        .filter(|chain| chain.intervening_entities.is_some())
+        .filter(|chain| {
+            chain
+                .links
+                .iter()
+                .all(|link| link.intervening_entities.is_some())
+        })
         .count();
     let configuration_entities = native
         .entity_records
@@ -1120,8 +1128,8 @@ fn finish_decode(
     let configuration_row_intervening_configuration_count = native
         .configuration_row_chains
         .iter()
-        .filter_map(|chain| chain.intervening_entities.as_ref())
-        .flatten()
+        .flat_map(|chain| &chain.links)
+        .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
         .filter_map(|reference| reference.entity.as_deref())
         .filter(|entity| configuration_entities.contains(entity))

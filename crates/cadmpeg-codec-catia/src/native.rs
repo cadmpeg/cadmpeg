@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 254;
+pub const CATIA_NATIVE_VERSION: u32 = 255;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -111,6 +111,9 @@ pub(crate) const CATIA_SUFFIX_SCHEMA_OFFSET_VERSION: u32 = 253;
 /// Native schema version retaining suffix evaluation-opcode offsets.
 #[cfg(test)]
 pub(crate) const CATIA_SUFFIX_EVALUATION_OFFSET_VERSION: u32 = 254;
+/// Native schema version retaining ordered configuration-row link incidences.
+#[cfg(test)]
+pub(crate) const CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION: u32 = 255;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1668,17 +1671,25 @@ pub struct CatiaConfigurationRowChain {
     pub id: String,
     /// Object graph containing every row link.
     pub object_graph: String,
-    /// Stored class identity that selects the root row.
-    pub class_reference: CatiaEntityReference,
-    /// Row entities in successor order from the selected root.
-    pub rows: Vec<CatiaEntityReference>,
-    /// Same-graph entities strictly between each row and its successor, aligned with `rows`.
+    /// Successor incidences in chain order from the root row.
+    #[serde(default)]
+    pub links: Vec<CatiaConfigurationRowChainLink>,
+}
+
+/// One ordered edge in a complete configuration-row successor chain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConfigurationRowChainLink {
+    /// Row entity carrying the successor occurrence.
+    pub row: CatiaEntityReference,
+    /// Byte offset of the successor atom within the row object's payload.
+    pub successor_payload_offset: u64,
+    /// Stored successor identity and its same-graph resolution.
+    pub successor: CatiaEntityReference,
+    /// Same-graph entities strictly between the row and successor.
     ///
-    /// Absent when successor identities do not increase in source order.
+    /// Absent when the successor does not follow the row in source order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub intervening_entities: Option<Vec<Vec<CatiaEntityReference>>>,
-    /// First successor identity that does not select another row link.
-    pub terminal: CatiaEntityReference,
+    pub intervening_entities: Option<Vec<CatiaEntityReference>>,
 }
 
 /// Exact framing production for a compound relation-program instance.
@@ -3483,7 +3494,7 @@ fn derive_configuration_row_chains(
         .filter(|entity| entity.configuration_row_link.is_some())
         .map(|entity| (entity.object_graph.as_str(), entity.entity_id))
         .collect::<HashSet<_>>();
-    let mut groups = HashMap::<(&str, u32), Vec<(u32, u32)>>::new();
+    let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaConfigurationRowLink)>>::new();
     for entity in records {
         let Some(link) = &entity.configuration_row_link else {
             continue;
@@ -3491,7 +3502,7 @@ fn derive_configuration_row_chains(
         groups
             .entry((entity.object_graph.as_str(), link.class_reference.entity_id))
             .or_default()
-            .push((entity.entity_id, link.successor.entity_id));
+            .push((entity.entity_id, link));
     }
     let mut groups = groups.into_iter().collect::<Vec<_>>();
     groups.sort_by(
@@ -3510,40 +3521,38 @@ fn derive_configuration_row_chains(
             let mut row_ids_in_order = Vec::with_capacity(links.len());
             let mut visited = HashSet::new();
             let mut current = root;
-            while let Some(successor) = successors.get(&current).copied() {
+            while let Some(link) = successors.get(&current).copied() {
                 if !visited.insert(current) {
                     return None;
                 }
                 row_ids_in_order.push(current);
-                current = successor;
+                current = link.successor.entity_id;
             }
             if visited.len() != links.len() || row_ids.contains(&(graph, current)) {
                 return None;
             }
-            let intervals = row_ids_in_order
-                .iter()
-                .copied()
-                .zip(
-                    row_ids_in_order
-                        .iter()
-                        .copied()
-                        .skip(1)
-                        .chain(std::iter::once(current)),
-                )
-                .collect::<Vec<_>>();
-            let intervening_entities = intervals
-                .iter()
-                .all(|(row, successor)| row < successor)
-                .then(|| {
-                    intervals
-                        .into_iter()
-                        .map(|(row, successor)| {
+            let links = row_ids_in_order
+                .into_iter()
+                .map(|row_id| {
+                    let link = successors[&row_id];
+                    let successor_id = link.successor.entity_id;
+                    CatiaConfigurationRowChainLink {
+                        row: entity_reference(
+                            graph,
+                            row_id,
+                            entities,
+                            entity_classes,
+                            terminal_nulls,
+                        ),
+                        successor_payload_offset: link.successor_payload_offset,
+                        successor: link.successor.clone(),
+                        intervening_entities: (row_id < successor_id).then(|| {
                             records
                                 .iter()
                                 .filter(|entity| {
                                     entity.object_graph == graph
-                                        && entity.entity_id > row
-                                        && entity.entity_id < successor
+                                        && entity.entity_id > row_id
+                                        && entity.entity_id < successor_id
                                 })
                                 .map(|entity| {
                                     entity_reference(
@@ -3555,33 +3564,14 @@ fn derive_configuration_row_chains(
                                     )
                                 })
                                 .collect()
-                        })
-                        .collect()
-                });
+                        }),
+                    }
+                })
+                .collect();
             Some(CatiaConfigurationRowChain {
                 id: format!("{graph}:configuration-row-chain#{root}"),
                 object_graph: graph.to_string(),
-                class_reference: entity_reference(
-                    graph,
-                    root,
-                    entities,
-                    entity_classes,
-                    terminal_nulls,
-                ),
-                rows: row_ids_in_order
-                    .into_iter()
-                    .map(|entity_id| {
-                        entity_reference(graph, entity_id, entities, entity_classes, terminal_nulls)
-                    })
-                    .collect(),
-                intervening_entities,
-                terminal: entity_reference(
-                    graph,
-                    current,
-                    entities,
-                    entity_classes,
-                    terminal_nulls,
-                ),
+                links,
             })
         })
         .collect()
@@ -9280,10 +9270,7 @@ impl CatiaNative {
             &entity_classes_by_graph_identity,
             &terminal_nulls_by_graph,
         );
-        if namespace.version < CATIA_CONFIGURATION_ROW_CHAIN_VERSION
-            || namespace.version < CATIA_CONFIGURATION_ROW_INTERVAL_VERSION
-            || namespace.version < CATIA_TYPED_INCIDENCE_NULL_VERSION
-        {
+        if namespace.version < CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION {
             configuration_row_chains = expected_configuration_row_chains;
         } else if configuration_row_chains != expected_configuration_row_chains {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
