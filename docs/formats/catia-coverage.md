@@ -59,8 +59,10 @@ current scores require those matrices and representative fixtures.
   fields, the graph's terminal null identity, and other unresolved identities.
   Complete reference-signature packets retain the exact signature and its
   validated source-ordered symbol, decimal, call, comma, hexadecimal qualifier,
-  and difference instruction program with payload-relative offsets, and the
-  exact consecutive stored
+  and difference instruction program with payload-relative offsets. Coverage
+  partitions the two prefix atoms. Fixed type atoms, the signature-length
+  extent, and the `E`-symbol count equation gate the packet. The exact
+  consecutive stored
   identity pair with each same-graph entity, class, terminal-null, or unresolved
   incidence state. Records sharing one pair form a source-ordered cohort whose
   members retain exact entity-record identities.

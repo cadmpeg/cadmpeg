@@ -528,6 +528,16 @@ fn finish_decode(
         .iter()
         .filter(|record| record.reference_signature.is_some())
         .count();
+    let reference_signature_prefix_atom_2_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.reference_signature.as_ref())
+        .filter(|signature| {
+            signature.production.prefix == entity_table::ReferenceSignaturePrefix::Atom2
+        })
+        .count();
+    let reference_signature_prefix_atom_35_count =
+        reference_signature_count - reference_signature_prefix_atom_2_count;
     let reference_signature_cohort_count = native.reference_signature_cohorts.len();
     let multi_member_reference_signature_cohort_count = native
         .reference_signature_cohorts
@@ -2204,6 +2214,14 @@ fn finish_decode(
         (
             "decoded_reference_signature_count".to_string(),
             reference_signature_count,
+        ),
+        (
+            "decoded_reference_signature_prefix_atom_2_count".to_string(),
+            reference_signature_prefix_atom_2_count,
+        ),
+        (
+            "decoded_reference_signature_prefix_atom_35_count".to_string(),
+            reference_signature_prefix_atom_35_count,
         ),
         (
             "decoded_reference_signature_cohort_count".to_string(),

@@ -10992,8 +10992,8 @@ fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() 
 #[test]
 fn native_namespace_retains_and_validates_complete_entity_reference_signatures() {
     let value = [
-        0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x8c, 0x81, b'2', b'(', b'E', b')', 0xfe,
-        0x32, 4, 0, 0, 0, 0x83, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+        0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x85, 0x81, b'2', b'(', b'E', b')', 0xfe,
+        0x32, 4, 0, 0, 0, 0x82, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
     ];
     let records = [
         object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe]),
@@ -11095,8 +11095,8 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     native
         .store(&mut stored)
         .expect("store reference-signature program");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_PROGRAM_VERSION - 1;
-    stored
+    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_FRAME_VERSION - 1;
+    let stored_signature = stored
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
@@ -11104,8 +11104,9 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
-        .expect("stored reference-signature object")
-        .remove("signature_program");
+        .expect("stored reference-signature object");
+    stored_signature.remove("prefix");
+    stored_signature.remove("signature_program");
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("parse reference-signature program");
     assert_eq!(
@@ -11148,6 +11149,14 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     assert_eq!(
         decoded.report.coverage["decoded_reference_signature_count"],
         2
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_reference_signature_prefix_atom_2_count"],
+        2
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_reference_signature_prefix_atom_35_count"],
+        0
     );
     assert_eq!(
         decoded.report.coverage["decoded_reference_signature_cohort_count"],

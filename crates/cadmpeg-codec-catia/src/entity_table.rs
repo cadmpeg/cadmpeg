@@ -72,6 +72,16 @@ pub enum ReferenceSignatureSymbol {
     T,
 }
 
+/// Variable prefix form of a complete reference-signature packet.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReferenceSignaturePrefix {
+    /// Compact atom `2`.
+    #[default]
+    Atom2,
+    /// Compact atom `35`.
+    Atom35,
+}
+
 /// One instruction in a complete reference-signature descriptor program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum ReferenceSignatureInstruction {
@@ -125,12 +135,9 @@ pub enum ReferenceSignatureInstruction {
 pub struct ReferenceSignature {
     /// First fixed-width reference.
     pub first_reference: u32,
-    /// Compact atom preceding the nested signature frame.
-    pub prefix_atom: u32,
-    /// Compact nested-frame type atom following the first `0xE8`.
-    pub type_atom: u32,
-    /// One-byte layout atom following the first `0x37`.
-    pub layout_atom: u32,
+    /// Variable compact atom preceding the nested signature frame.
+    #[serde(default)]
+    pub prefix: ReferenceSignaturePrefix,
     /// Printable signature bytes between `0x81` and the first terminator.
     pub signature: String,
     /// Source-ordered instruction program spanning the complete signature.
@@ -144,10 +151,6 @@ pub struct ReferenceSignature {
     /// Byte offset of the second reference marker within the `7C07` payload.
     #[serde(default)]
     pub second_reference_offset: usize,
-    /// One-byte atom preceding the closing nested frame.
-    pub closing_atom: u32,
-    /// Compact closing-frame type atom following `0xE9`.
-    pub closing_type_atom: u32,
 }
 
 fn reference_signature_program(
@@ -241,6 +244,37 @@ fn reference_signature_program(
         }
     }
     (!expects_operand && call_depth == 0).then_some(program)
+}
+
+fn reference_signature_has_one_outer_call(program: &[ReferenceSignatureInstruction]) -> bool {
+    if !matches!(
+        program,
+        [
+            ReferenceSignatureInstruction::Decimal { digits, .. },
+            ReferenceSignatureInstruction::OpenCall { .. },
+            ..,
+            ReferenceSignatureInstruction::CloseCall { .. }
+        ] if digits == "2"
+    ) {
+        return false;
+    }
+    let mut depth = 0_usize;
+    for (ordinal, instruction) in program.iter().enumerate().skip(1) {
+        match instruction {
+            ReferenceSignatureInstruction::OpenCall { .. } => depth += 1,
+            ReferenceSignatureInstruction::CloseCall { .. } => {
+                let Some(next) = depth.checked_sub(1) else {
+                    return false;
+                };
+                depth = next;
+                if depth == 0 && ordinal + 1 != program.len() {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0
 }
 
 /// One exact packet in a tokenized `7C07` value program.
@@ -796,11 +830,19 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
     }
     let first_reference = u32_le(payload, 1)?;
     let (prefix_atom, mut at) = one_byte_atom(payload, 5)?;
+    let prefix = match prefix_atom {
+        2 => ReferenceSignaturePrefix::Atom2,
+        35 => ReferenceSignaturePrefix::Atom35,
+        _ => return None,
+    };
     if payload.get(at) != Some(&0xe8) {
         return None;
     }
     at += 1;
     let (type_atom, next) = compact_atom(payload, at)?;
+    if type_atom != 3851 {
+        return None;
+    }
     at = next;
     if payload.get(at) != Some(&0x37) {
         return None;
@@ -823,6 +865,11 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
     }
     let signature = std::str::from_utf8(signature_bytes).ok()?.to_owned();
     let signature_program = reference_signature_program(&signature, signature_offset)?;
+    if !reference_signature_has_one_outer_call(&signature_program)
+        || usize::try_from(layout_atom).ok() != signature_bytes.len().checked_add(1)
+    {
+        return None;
+    }
     at = signature_end + 1;
     let second_reference_offset = at;
     if payload.get(at) != Some(&0x32) {
@@ -833,27 +880,41 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     let (closing_atom, next) = one_byte_atom(payload, at + 5)?;
+    let entity_instruction_count = signature_program
+        .iter()
+        .filter(|instruction| {
+            matches!(
+                instruction,
+                ReferenceSignatureInstruction::Symbol {
+                    symbol: ReferenceSignatureSymbol::E,
+                    ..
+                }
+            )
+        })
+        .count();
+    if usize::try_from(closing_atom).ok() != entity_instruction_count.checked_add(1) {
+        return None;
+    }
     at = next;
     if payload.get(at) != Some(&0xe9) {
         return None;
     }
     let (closing_type_atom, next) = compact_atom(payload, at + 1)?;
+    if closing_type_atom != 3864 {
+        return None;
+    }
     at = next;
     if payload.get(at..at + 5) != Some(&[0x08, 0x37, 0xfe, 0xfe, 0xfe]) {
         return None;
     }
     (at + 5 == payload.len()).then_some(ReferenceSignature {
         first_reference,
-        prefix_atom,
-        type_atom,
-        layout_atom,
+        prefix,
         signature,
         signature_program,
         signature_offset,
         second_reference,
         second_reference_offset,
-        closing_atom,
-        closing_type_atom,
     })
 }
 
@@ -889,7 +950,7 @@ mod tests {
         parse_definition_schema_selectors, parse_numeric_pair, parse_reference_signature,
         parse_runs, value_packets, DefinitionSchemaSelector, EntityValuePacket, NumericPacketItem,
         NumericPair, NumericPairSlot, ReferenceSignature, ReferenceSignatureInstruction,
-        ReferenceSignatureSymbol,
+        ReferenceSignaturePrefix, ReferenceSignatureSymbol,
     };
     use crate::value_block;
 
@@ -1056,9 +1117,7 @@ mod tests {
             parse_reference_signature(&payload),
             Some(ReferenceSignature {
                 first_reference: 207,
-                prefix_atom: 2,
-                type_atom: 3851,
-                layout_atom: 12,
+                prefix: ReferenceSignaturePrefix::Atom2,
                 signature: "2(E,0(E,4))".to_owned(),
                 signature_program: vec![
                     ReferenceSignatureInstruction::Decimal {
@@ -1091,14 +1150,34 @@ mod tests {
                 signature_offset: 12,
                 second_reference: 208,
                 second_reference_offset: 24,
-                closing_atom: 3,
-                closing_type_atom: 3864,
             })
         );
 
         let mut nonconsecutive = payload;
         nonconsecutive[25] += 1;
         assert_eq!(parse_reference_signature(&nonconsecutive), None);
+
+        for (offset, replacement) in [
+            (5, 0x83),
+            (8, 0x0b),
+            (10, 0x8b),
+            (12, b'E'),
+            (29, 0x82),
+            (32, 0x18),
+        ] {
+            let mut malformed = payload;
+            malformed[offset] = replacement;
+            assert_eq!(parse_reference_signature(&malformed), None);
+        }
+
+        let mut alternate_prefix = payload;
+        alternate_prefix[5] = 0xa3;
+        assert_eq!(
+            parse_reference_signature(&alternate_prefix)
+                .expect("alternate reference-signature prefix")
+                .prefix,
+            ReferenceSignaturePrefix::Atom35
+        );
     }
 
     #[test]
@@ -1125,6 +1204,7 @@ mod tests {
     fn reference_signature_program_types_calls_qualifiers_and_differences() {
         let program = super::reference_signature_program("2(E#A(E,3)-0(T))", 12)
             .expect("complete descriptor program");
+        assert!(super::reference_signature_has_one_outer_call(&program));
         assert!(program.iter().any(|instruction| matches!(
             instruction,
             ReferenceSignatureInstruction::Qualifier {

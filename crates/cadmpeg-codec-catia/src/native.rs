@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 266;
+pub const CATIA_NATIVE_VERSION: u32 = 267;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -138,9 +138,9 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_COHORT_VERSION: u32 = 264;
 /// Native schema version retaining exact nullable numeric-pair productions.
 #[cfg(test)]
 pub(crate) const CATIA_NUMERIC_PAIR_VERSION: u32 = 265;
-/// Native schema version retaining validated reference-signature instruction programs.
+/// Native schema version enforcing canonical reference-signature framing equations.
 #[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_PROGRAM_VERSION: u32 = 266;
+pub(crate) const CATIA_REFERENCE_SIGNATURE_FRAME_VERSION: u32 = 267;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -9354,7 +9354,7 @@ impl CatiaNative {
                 }
             }
         }
-        if namespace.version < CATIA_REFERENCE_SIGNATURE_PROGRAM_VERSION {
+        if namespace.version < CATIA_REFERENCE_SIGNATURE_FRAME_VERSION {
             for entity in &mut entity_records {
                 let Some(signature) = &mut entity.reference_signature else {
                     continue;
