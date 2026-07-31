@@ -38,9 +38,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What are the field roles of the extension run in an `off_spl_sur` record?
 
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the run's field sequence and the prefix states that require it. A run written to that sequence is accepted on read and is retained field for field, so the sequence is the true layout. The first fields agree with the start of a surface-to-surface intersection payload. That start is a presence logical, a six-integer header, an intersection curve, two pcurve logicals, and a tolerance. The four `-1` integers at the end are more than the three endpoint-term slots of that layout. The six integers, the two logicals after the curve, and the four `-1` integers have no established meaning, and a run whose fields all hold their neutral values is accepted, so acceptance does not constrain them.
+**Known.** `f3d.md` §7.3 `off_spl_sur` gives the run's field sequence, the prefix states that require it, the zero first integer, and the unit-independent tolerance. A run written to that sequence is accepted on read and is retained field for field, so the sequence is the true layout. The first fields agree with the start of a surface-to-surface intersection payload. That start is a presence logical, a six-integer header, an intersection curve, two pcurve logicals, and a tolerance. The four `-1` integers at the end are more than the three endpoint-term slots of that layout. The five integers after the leading zero are retained verbatim and have no established meaning. A run whose four `-1` integers hold `0 1 2 3` is refused on read, and so is a run whose two post-curve logicals are both true; a refusal does not give the accepted sets.
 
-**Need.** We can now make a record that has a run, but only by copying a run we read. To make one from a neutral model we must know what the six integers, the two logicals, and the four `-1` integers hold.
+**Need.** We can now make a record that has a run, but only by copying a run we read. To make one from a neutral model we must know what the five integers, the two logicals, and the four `-1` integers hold, and which values each accepts.
 
 ### GC-08. Shared revision-gated surface tail enum values other than `0` and `2`
 
@@ -78,13 +78,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The decoder rejects every selector value outside `0`, `1`, `2`, `3`, and `7`, and we cannot read those records. A selector-2 record whose cache is not current would rebuild into an unknown cross-section. **Blocked on a specimen:** a document whose selector carries another value bounds the value set, and a document whose selector-2 record stores a cache that is not marked current shows the selector-2 cross-section; no such document is available to read.
 
-### GC-19. First `tvertex` tolerance evaluation
+### GC-19. Third-slot raise predicate of a `tvertex` record
 
-**Question.** What does the first tolerance evaluation of a `tvertex` record hold, and what controls its set state?
+**Question.** Which incident edges contribute the third slot's `1e-6` raise?
 
-**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots, the second slot's construction from the incident edge-endpoint gaps and tolerant-edge tolerances, the third slot's raise over the incident edges that are not tolerant, and the set-state relation between the second and third slots. The first slot is unset in every record a current writer emits, so its content and its set condition are undetermined. A set first slot is accepted on read, is retained to the last digit, converts with the stream's length unit exactly as the other two slots do, and takes no part in the second and third slots' evaluation. A record whose first slot is unset keeps it unset even when the second and third slots are evaluated again, so no writer produces a value for the slot and the slot has no known producer to read the meaning off. The predicate that selects which incident edges contribute the third slot's `1e-6` raise is narrower than "every edge that is not tolerant": some records carry a third slot equal to the second where that rule predicts a raise.
+**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots, the first slot's content — the vertex's own stored tolerance, unit-converted like the other two slots — the second slot's construction from the incident edge-endpoint gaps and tolerant-edge tolerances, the third slot's raise over the incident edges that are not tolerant, and the set-state relation between the second and third slots. The predicate that selects which incident edges contribute the raise is narrower than "every edge that is not tolerant": some records carry a third slot equal to the second where that rule predicts a raise. A record whose second and third slots are equal does not separate candidate predicates.
 
-**Need.** To write the first slot from a neutral model we must know which length it measures and when a writer must set it. Setting the slot by hand does not answer this, because the value is kept as given; only a construction that makes a writer set the slot itself can answer it. To write the third slot exactly we must know the contribution predicate.
+**Need.** To write the third slot exactly we must know the contribution predicate. The decoder retains the stored slots, so the item blocks only writing from a neutral model.
 
 ### GC-21. Revision-gated `loft_spl_sur` type-zero member and ASM-integer gate
 
