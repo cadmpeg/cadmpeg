@@ -1796,15 +1796,16 @@ pub struct RevisionCompoundLoftConstruction {
 /// One boundary record in a native vertex-blend patch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VertexBlendBoundary {
-    /// Native boundary type enum.
-    pub boundary_type: i64,
+    /// Native cross flag. The wire form is a logical, so the value is the
+    /// tag itself and no payload follows.
+    pub boundary_type: bool,
     /// Native magic direction. A unit direction or the zero vector, never a
     /// length, so it carries no unit scale.
     pub magic: Vector3,
-    /// Native U-smoothing enum.
-    pub u_smoothing: i64,
-    /// Native V-smoothing enum.
-    pub v_smoothing: i64,
+    /// Native U-smoothing flag, a logical on the wire.
+    pub u_smoothing: bool,
+    /// Native V-smoothing flag, a logical on the wire.
+    pub v_smoothing: bool,
     /// Native fullness scalar.
     pub fullness: f64,
     /// Structurally selected boundary geometry.
@@ -1831,8 +1832,8 @@ pub enum VertexBlendBoundaryGeometry {
         twists: Vec<Point3>,
         /// Two ordered curve parameters.
         parameters: [f64; 2],
-        /// Native sense enum.
-        sense: i64,
+        /// Native sense flag, a logical on the wire.
+        sense: bool,
     },
     /// Degenerate boundary at a model-space location.
     Degenerate {
@@ -1852,8 +1853,8 @@ pub enum VertexBlendBoundaryGeometry {
         /// Native BS2 pcurve, absent for `nullbs`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pcurve: Option<PcurveGeometry>,
-        /// Native sense enum.
-        sense: i64,
+        /// Native sense flag, a logical on the wire.
+        sense: bool,
         /// Parameter-space fit tolerance.
         fit_tolerance: f64,
     },

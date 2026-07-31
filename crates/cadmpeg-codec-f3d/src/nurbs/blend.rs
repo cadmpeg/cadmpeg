@@ -959,10 +959,10 @@ fn decode_vertex_blend_boundary(
     int_width: usize,
 ) -> Option<EmbeddedVertexBlendBoundary> {
     let kind = take_native_string(bytes, position)?;
-    let boundary_type = i64::from(take_bool(bytes, position)?);
+    let boundary_type = take_bool(bytes, position)?;
     let magic = take_native_vec3(bytes, position, 0x13)?;
-    let u_smoothing = i64::from(take_bool(bytes, position)?);
-    let v_smoothing = i64::from(take_bool(bytes, position)?);
+    let u_smoothing = take_bool(bytes, position)?;
+    let v_smoothing = take_bool(bytes, position)?;
     let fullness = take_f64(bytes, position)?;
     let geometry = match kind.as_str() {
         "circle" => {
@@ -985,7 +985,7 @@ fn decode_vertex_blend_boundary(
                 ));
             }
             let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
-            let sense = i64::from(take_bool(bytes, position)?);
+            let sense = take_bool(bytes, position)?;
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve: CurveGeometry::Nurbs(curve.curve),
                 curve_endpoints: [None; 2],
@@ -1014,7 +1014,7 @@ fn decode_vertex_blend_boundary(
         "pcurve" => {
             let surface = decode_embedded_surface(bytes, position, int_width)?;
             let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-            let sense = i64::from(take_bool(bytes, position)?);
+            let sense = take_bool(bytes, position)?;
             let fit_tolerance = take_f64(bytes, position)?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface,
@@ -1062,10 +1062,10 @@ fn decode_revision_vertex_blend_boundary(
 ) -> Option<EmbeddedVertexBlendBoundary> {
     let (active_bytes, tables) = resolver?;
     let kind = take_native_ident(bytes, position)?;
-    let boundary_type = i64::from(take_bool(bytes, position)?);
+    let boundary_type = take_bool(bytes, position)?;
     let magic = take_native_vec3(bytes, position, 0x14)?;
-    let u_smoothing = i64::from(take_bool(bytes, position)?);
-    let v_smoothing = i64::from(take_bool(bytes, position)?);
+    let u_smoothing = take_bool(bytes, position)?;
+    let v_smoothing = take_bool(bytes, position)?;
     let fullness = take_f64(bytes, position)?;
     let geometry = match kind.as_str() {
         "circle" => {
@@ -1097,7 +1097,7 @@ fn decode_revision_vertex_blend_boundary(
                 ));
             }
             let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
-            let sense = i64::from(take_bool(bytes, position)?);
+            let sense = take_bool(bytes, position)?;
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve: CurveGeometry::Nurbs(curve),
                 curve_endpoints,
@@ -1132,7 +1132,7 @@ fn decode_revision_vertex_blend_boundary(
                 tables,
             )?;
             let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-            let sense = i64::from(take_bool(bytes, position)?);
+            let sense = take_bool(bytes, position)?;
             let fit_tolerance = take_f64(bytes, position)?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface: surface?,

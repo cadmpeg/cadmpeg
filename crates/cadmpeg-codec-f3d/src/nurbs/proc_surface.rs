@@ -273,7 +273,7 @@ pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
         form: i64,
         twists: Vec<Point3>,
         parameters: [f64; 2],
-        sense: i64,
+        sense: bool,
     },
     Degenerate {
         location: Point3,
@@ -283,7 +283,7 @@ pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
         surface: SurfaceGeometry,
         support_bounds: [Option<f64>; 4],
         pcurve: Option<NurbsPcurve>,
-        sense: i64,
+        sense: bool,
         fit_tolerance: f64,
     },
     Plane {
@@ -295,10 +295,10 @@ pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
 }
 
 pub(crate) struct EmbeddedVertexBlendBoundary {
-    pub(crate) boundary_type: i64,
+    pub(crate) boundary_type: bool,
     pub(crate) magic: Vector3,
-    pub(crate) u_smoothing: i64,
-    pub(crate) v_smoothing: i64,
+    pub(crate) u_smoothing: bool,
+    pub(crate) v_smoothing: bool,
     pub(crate) fullness: f64,
     pub(crate) geometry: EmbeddedVertexBlendBoundaryGeometry,
 }

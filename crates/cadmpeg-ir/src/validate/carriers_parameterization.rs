@@ -681,8 +681,17 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::Unknown { .. } => {}
         }
     }
-    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
-    for link in native_unknowns.iter().flat_map(|record| &record.links) {
+    // Only the link targets are wanted, so the records are consumed one at a
+    // time and dropped; an arena that cannot be read contributes nothing, as it
+    // did when the whole population was deserialized in one fallible step.
+    let native_links = ir
+        .all_native_unknowns_iter()
+        .try_fold(Vec::new(), |mut links, record| {
+            links.extend(record?.links);
+            Ok::<_, crate::native::NativeConvertError>(links)
+        })
+        .unwrap_or_default();
+    for link in &native_links {
         surfaces.insert(link);
         curves.insert(link);
     }

@@ -17658,7 +17658,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         assert_eq!(*form, 1);
         assert_eq!(twists, &[cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0)]);
         assert_eq!(*parameters, [0.1, 0.9]);
-        assert_eq!(*sense, 0);
+        assert!(!*sense);
         assert!(matches!(
             construction.boundaries[1].geometry,
             VertexBlendBoundaryGeometry::Degenerate { .. }

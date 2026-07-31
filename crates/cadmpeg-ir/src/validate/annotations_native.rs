@@ -308,8 +308,7 @@ pub(super) fn check_native_links(
         }
     }
 
-    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
-    for record in &native_unknowns {
+    for record in ir.all_native_unknowns_iter().flatten() {
         for target in &record.links {
             if !all_ids.contains(target) {
                 findings.push(Finding {

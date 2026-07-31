@@ -288,11 +288,10 @@ impl IdSets {
                 .map(|e| e.id.clone())
                 .collect(),
             unknowns: ir
-                .all_native_unknowns()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|record| record.id.0)
-                .collect(),
+                .all_native_unknowns_iter()
+                .map(|record| record.map(|record| record.id.0))
+                .collect::<Result<_, _>>()
+                .unwrap_or_default(),
         }
     }
 }

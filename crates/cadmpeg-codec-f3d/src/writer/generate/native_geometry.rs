@@ -3220,19 +3220,6 @@ fn native_variable_blend_value(
     Ok(())
 }
 
-fn native_vertex_blend_bool(bytes: &mut Vec<u8>, value: i64) -> Result<(), CodecError> {
-    match value {
-        0 => bytes.push(native_bool(false)),
-        1 => bytes.push(native_bool(true)),
-        _ => {
-            return Err(CodecError::Malformed(
-                "a vertex-blend boundary flag is a logical and must be 0 or 1".into(),
-            ));
-        }
-    }
-    Ok(())
-}
-
 fn native_vertex_blend_boundary(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -3251,7 +3238,7 @@ fn native_vertex_blend_boundary(
     } else {
         native_string(bytes, kind)?;
     }
-    native_vertex_blend_bool(bytes, boundary.boundary_type)?;
+    bytes.push(native_bool(boundary.boundary_type));
     // The magic item is a unit direction or the zero vector, not a
     // length-bearing location, so it takes no unit conversion.
     if revision {
@@ -3265,8 +3252,8 @@ fn native_vertex_blend_boundary(
             [boundary.magic.x, boundary.magic.y, boundary.magic.z],
         );
     }
-    native_vertex_blend_bool(bytes, boundary.u_smoothing)?;
-    native_vertex_blend_bool(bytes, boundary.v_smoothing)?;
+    bytes.push(native_bool(boundary.u_smoothing));
+    bytes.push(native_bool(boundary.v_smoothing));
     native_f64(bytes, boundary.fullness);
     match &boundary.geometry {
         VertexBlendBoundaryGeometry::Circle {
@@ -3324,7 +3311,7 @@ fn native_vertex_blend_boundary(
             }
             native_f64(bytes, parameters[0]);
             native_f64(bytes, parameters[1]);
-            native_vertex_blend_bool(bytes, *sense)?;
+            bytes.push(native_bool(*sense));
         }
         VertexBlendBoundaryGeometry::Degenerate { location, normals } => {
             native_point(
@@ -3360,7 +3347,7 @@ fn native_vertex_blend_boundary(
                 native_embedded_surface(bytes, &surface.geometry)?;
             }
             native_optional_pcurve(bytes, pcurve.as_ref())?;
-            native_vertex_blend_bool(bytes, *sense)?;
+            bytes.push(native_bool(*sense));
             native_f64(bytes, *fit_tolerance);
         }
         VertexBlendBoundaryGeometry::Plane {

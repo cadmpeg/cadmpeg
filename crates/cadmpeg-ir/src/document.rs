@@ -280,14 +280,23 @@ impl CadIr {
     pub fn all_native_unknowns(
         &self,
     ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
+        self.all_native_unknowns_iter().collect()
+    }
+
+    /// Deserialize every reserved native `unknowns` arena one record at a time.
+    ///
+    /// A caller that only scans the population — collecting link targets or
+    /// record ids — should consume this rather than
+    /// [`all_native_unknowns`](Self::all_native_unknowns), so only what it keeps
+    /// stays resident instead of the whole typed population alongside it.
+    pub fn all_native_unknowns_iter(
+        &self,
+    ) -> impl Iterator<Item = Result<NativeUnknownRecord, crate::native::NativeConvertError>> + '_
+    {
         self.native
             .0
             .values()
-            .filter(|namespace| namespace.arenas.contains_key("unknowns"))
-            .try_fold(Vec::new(), |mut records, namespace| {
-                records.extend(namespace.arena_as::<NativeUnknownRecord>("unknowns")?);
-                Ok(records)
-            })
+            .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
     }
 
     /// Replace the reserved `unknowns` arena for `format`.
