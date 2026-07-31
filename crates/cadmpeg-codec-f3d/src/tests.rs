@@ -17736,6 +17736,49 @@ fn generated_revision_exact_surface_round_trips() {
     assert_revision_surface_round_trip(smbh, "exact");
 }
 
+/// Tail form `0` stores a solved cache and its fit tolerance together, so a
+/// construction that reaches the writer with the cache and without the
+/// tolerance is inconsistent. The writer names the carrier and refuses instead
+/// of substituting a tolerance of its own, which the tail cannot be
+/// distinguished from a stored zero.
+#[test]
+fn revision_gated_solved_tails_refuse_a_missing_fit_tolerance() {
+    for (smbh, carrier) in [
+        (
+            synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
+                push_revision_surface_tail(surface);
+                push_optional_value_quartet(surface);
+                push_tagged_i64(surface, 0x15, 0);
+            }),
+            "exact spline surface",
+        ),
+        (synthetic_versioned_cyl_spl_sur_smbh(), "extrusion surface"),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{carrier} decode: {error}"));
+        assert!(decoded.ir.model.procedural_surfaces[0]
+            .cache_fit_tolerance
+            .is_some());
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+        let mut encoded = Vec::new();
+        let error = F3dCodec.encode(&source_less, &mut encoded).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("{carrier} requires a native cache-fit tolerance")),
+            "unexpected {carrier} error: {error}"
+        );
+        assert!(encoded.is_empty());
+    }
+}
+
 #[test]
 fn generated_revision_exact_surface_carries_two_unextended_intervals() {
     use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
