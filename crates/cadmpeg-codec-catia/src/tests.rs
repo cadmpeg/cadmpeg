@@ -9458,6 +9458,19 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             .collect::<Vec<_>>(),
         [vec![3, 4], vec![4, 3]]
     );
+    assert_eq!(
+        table
+            .rows
+            .iter()
+            .map(|row| {
+                row.cells
+                    .iter()
+                    .map(|cell| cell.payload_offset)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(),
+        [vec![2, 2], vec![4, 4]]
+    );
     assert!(table.rows.iter().flat_map(|row| &row.cells).all(|cell| {
         cell.field.is_some() && cell.field_class.is_some() && cell.design_object.is_some()
     }));
@@ -9485,6 +9498,51 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let mut malformed_offset = native.clone();
+    malformed_offset.design_objects[0]
+        .parallel_reference_table
+        .as_mut()
+        .expect("parallel reference table")
+        .rows[0]
+        .cells[0]
+        .payload_offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_offset
+        .store(&mut namespace)
+        .expect("store malformed parallel-reference cell offset");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut version_255_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut version_255_namespace)
+        .expect("store pre-offset parallel reference table");
+    let mut version_255_objects: Vec<crate::native::CatiaDesignObject> = version_255_namespace
+        .arena_as("design_objects")
+        .expect("load version 255 design objects");
+    for cell in version_255_objects[0]
+        .parallel_reference_table
+        .as_mut()
+        .expect("parallel reference table")
+        .rows
+        .iter_mut()
+        .flat_map(|row| &mut row.cells)
+    {
+        cell.payload_offset = 0;
+    }
+    version_255_namespace
+        .set_arena("design_objects", &version_255_objects)
+        .expect("store version 255 design objects");
+    version_255_namespace.version = crate::native::CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION - 1;
+    let migrated = crate::native::CatiaNative::load(&version_255_namespace)
+        .expect("migrate parallel-reference cell offsets");
+    assert_eq!(
+        migrated.design_objects[0].parallel_reference_table,
+        Some(expected.clone())
+    );
 
     let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
     native

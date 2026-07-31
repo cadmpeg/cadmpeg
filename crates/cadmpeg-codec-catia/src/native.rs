@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 255;
+pub const CATIA_NATIVE_VERSION: u32 = 256;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -114,6 +114,9 @@ pub(crate) const CATIA_SUFFIX_EVALUATION_OFFSET_VERSION: u32 = 254;
 /// Native schema version retaining ordered configuration-row link incidences.
 #[cfg(test)]
 pub(crate) const CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION: u32 = 255;
+/// Native schema version retaining parallel-reference cell offsets.
+#[cfg(test)]
+pub(crate) const CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION: u32 = 256;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -122,8 +125,6 @@ const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
 const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
 #[cfg(test)]
 const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
-#[cfg(test)]
-const CATIA_PARALLEL_REFERENCE_TABLE_VERSION: u32 = 207;
 #[cfg(test)]
 const CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION: u32 = 206;
 #[cfg(test)]
@@ -2015,6 +2016,9 @@ pub enum CatiaDesignObjectRelationSource {
 /// One cell in a row-aligned design-object reference table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDesignReferenceCell {
+    /// Byte offset of the reference item within the source field's payload.
+    #[serde(default)]
+    pub payload_offset: u64,
     /// Stored target entity identity.
     pub entity_id: u32,
     /// The stored identity is the graph's terminal null identity.
@@ -2270,7 +2274,7 @@ fn design_parallel_reference_table(
             let references = items
                 .iter()
                 .map(|item| match item {
-                    ListItem::Reference { value, .. } => Some(*value),
+                    ListItem::Reference { value, offset } => Some((*value, *offset)),
                     ListItem::Atom { .. } => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -2290,11 +2294,13 @@ fn design_parallel_reference_table(
             let cells = columns
                 .iter()
                 .map(|(_, _, references)| {
-                    let target_entity_id = references[row];
+                    let (target_entity_id, payload_offset) = references[row];
                     let target = record_indices
                         .get(&target_entity_id)
                         .and_then(|index| graph.records.get(*index));
                     CatiaDesignReferenceCell {
+                        payload_offset: u64::try_from(payload_offset)
+                            .expect("bounded CATIA list-item offset fits u64"),
                         entity_id: target_entity_id,
                         is_null: Some(target_entity_id) == terminal_null_entity_id,
                         field: target.map(|record| record.id.clone()),
@@ -9609,9 +9615,7 @@ impl CatiaNative {
                     }
                 }
             }
-            if namespace.version < CATIA_PARALLEL_REFERENCE_TABLE_VERSION
-                || namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION
-            {
+            if namespace.version < CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION {
                 let derived_by_id = design_objects
                     .iter()
                     .map(|object| (object.id.as_str(), object))
