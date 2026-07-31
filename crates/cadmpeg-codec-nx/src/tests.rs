@@ -1423,10 +1423,11 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
     };
 
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::ReplaceFace {
+        FeatureDefinition::ReplaceFace {
             targets: complete_targets.clone(),
             replacements: complete_replacements.clone(),
-        }),
+        }
+        .body_output_family(),
         Some("replace face")
     );
     assert!(!crate::decode::face_selection_is_incomplete(
@@ -1563,10 +1564,11 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         &[],
     ));
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::Revolve {
+        FeatureDefinition::Revolve {
             construction: complete.clone(),
             op: BooleanOp::NewBody,
-        }),
+        }
+        .body_output_family(),
         Some("revolve"),
     );
 
@@ -2292,17 +2294,18 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert!(losses[0].message.contains("base feature (1)"));
 
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::DatumPointUnresolved),
+        FeatureDefinition::DatumPointUnresolved.body_output_family(),
         None
     );
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::BaseFeature {
+        FeatureDefinition::BaseFeature {
             bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-        }),
+        }
+        .body_output_family(),
         Some("base feature")
     );
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::Loft {
+        FeatureDefinition::Loft {
             sections: Vec::new(),
             centerline: None,
             guides: Vec::new(),
@@ -2313,24 +2316,27 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             max_degree: None,
             check_compatibility: None,
             allow_multi_profile_faces: None,
-        }),
+        }
+        .body_output_family(),
         Some("loft")
     );
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::Draft {
+        FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
             pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
             angle: Some(cadmpeg_ir::features::Angle(0.1)),
             outward: Some(false),
-        }),
+        }
+        .body_output_family(),
         Some("draft")
     );
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::DeleteBody {
+        FeatureDefinition::DeleteBody {
             bodies: cadmpeg_ir::features::BodySelection::Unresolved,
             mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
-        }),
+        }
+        .body_output_family(),
         None
     );
 }

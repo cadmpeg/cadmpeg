@@ -10072,7 +10072,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     let mut incomplete_feature_families = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
         if feature.suppressed != Some(true) {
-            if let Some(family) = body_output_feature_family(&feature.definition).filter(|_| {
+            if let Some(family) = feature.definition.body_output_family().filter(|_| {
                 feature.outputs.is_empty()
                     || feature.outputs.iter().collect::<BTreeSet<_>>().len()
                         != feature.outputs.len()
@@ -10656,34 +10656,6 @@ fn unit_feature_direction(direction: Vector3) -> bool {
 fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
     let scale = first.norm() * second.norm();
     scale.is_finite() && first.dot(second).abs() <= 1e-9 * scale
-}
-
-pub(crate) fn body_output_feature_family(definition: &FeatureDefinition) -> Option<&'static str> {
-    match definition {
-        FeatureDefinition::BaseFeature { .. } => Some("base feature"),
-        FeatureDefinition::Block { .. } => Some("block"),
-        FeatureDefinition::ExtractBody { .. } => Some("extract body"),
-        FeatureDefinition::Loft { .. } => Some("loft"),
-        FeatureDefinition::TrimSurface { .. } => Some("trim surface"),
-        FeatureDefinition::ExtendSurface { .. } => Some("extend surface"),
-        FeatureDefinition::Hole { .. } => Some("hole"),
-        FeatureDefinition::Rib { .. } => Some("rib"),
-        FeatureDefinition::Chamfer { .. } => Some("chamfer"),
-        FeatureDefinition::Fillet { .. } => Some("fillet"),
-        FeatureDefinition::FaceBlend { .. } => Some("face blend"),
-        FeatureDefinition::SewBodies { .. } => Some("sew bodies"),
-        FeatureDefinition::TrimBodies { .. } => Some("trim bodies"),
-        FeatureDefinition::Extrude { .. } => Some("extrude"),
-        FeatureDefinition::Revolve { .. } => Some("revolve"),
-        FeatureDefinition::Sweep { .. } => Some("sweep"),
-        FeatureDefinition::OffsetSurface { .. } => Some("offset surface"),
-        FeatureDefinition::Thicken { .. } => Some("thicken"),
-        FeatureDefinition::Draft { .. } => Some("draft"),
-        FeatureDefinition::Pattern { .. } => Some("pattern"),
-        FeatureDefinition::Combine { .. } => Some("body combine"),
-        FeatureDefinition::ReplaceFace { .. } => Some("replace face"),
-        _ => None,
-    }
 }
 
 pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<ParameterId> {
