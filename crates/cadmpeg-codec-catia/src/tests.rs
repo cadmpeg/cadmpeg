@@ -12883,6 +12883,66 @@ fn relation_expression_signature_accepts_an_empty_input_list_with_an_empty_place
 }
 
 #[test]
+fn relation_expression_signature_requires_exact_outer_whitespace() {
+    for signature in [
+        "( ) : LENGTH",
+        "() :  LENGTH",
+        "() : LENGTH ",
+        "() : LENGTH\n\n",
+    ] {
+        let native = crate::native::CatiaNative::decode(
+            &standard_catpart_with_relation_expression_signature("param", "", signature),
+        );
+
+        assert!(
+            native.entity_records[0]
+                .relation_expression
+                .as_ref()
+                .expect("relation expression")
+                .signature
+                .is_none(),
+            "{signature:?}"
+        );
+    }
+}
+
+#[test]
+fn native_migrates_and_validates_relation_signature_outer_whitespace() {
+    let mut native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_expression_signature("param", "", "( ) : LENGTH"),
+    );
+    let entity = &mut native.entity_records[0];
+    let expression = entity
+        .relation_expression
+        .as_mut()
+        .expect("relation expression");
+    assert!(expression.signature.is_none());
+    expression.signature = Some(crate::native::CatiaRelationTypeSignature {
+        inputs: Vec::new(),
+        result_type: "LENGTH".to_string(),
+    });
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store pre-canonical signature");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    namespace.version = crate::native::CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION - 1;
+    let migrated =
+        crate::native::CatiaNative::load(&namespace).expect("migrate signature whitespace");
+    assert!(migrated.entity_records[0]
+        .relation_expression
+        .as_ref()
+        .expect("relation expression")
+        .signature
+        .is_none());
+}
+
+#[test]
 fn relation_expression_signature_rejects_duplicate_inputs() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression_signature(

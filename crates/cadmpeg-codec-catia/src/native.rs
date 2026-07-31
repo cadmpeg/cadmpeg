@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 257;
+pub const CATIA_NATIVE_VERSION: u32 = 258;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -120,6 +120,9 @@ pub(crate) const CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION: u32 = 256;
 /// Native schema version retaining parallel-reference column incidences.
 #[cfg(test)]
 pub(crate) const CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION: u32 = 257;
+/// Native schema version requiring exact relation-signature outer whitespace.
+#[cfg(test)]
+pub(crate) const CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION: u32 = 258;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -2769,11 +2772,10 @@ fn relation_type_signature(
     let source = source.strip_suffix('\n').unwrap_or(source);
     let (input_clause, result_type) = source.rsplit_once(") : ")?;
     let input_clause = input_clause.strip_prefix('(')?;
-    let result_type = result_type.trim();
-    if result_type.is_empty() {
+    if result_type.is_empty() || result_type.trim() != result_type {
         return None;
     }
-    let inputs = if input_clause.trim().is_empty() {
+    let inputs = if input_clause.is_empty() {
         Vec::new()
     } else {
         input_clause
@@ -9055,7 +9057,9 @@ impl CatiaNative {
                 entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
             }
         }
-        if namespace.version < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION {
+        if namespace.version < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION
+            || namespace.version < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
+        {
             for entity in &mut entity_records {
                 entity.relation_expression = relation_expression(
                     &entity.definition_schema_selections,
@@ -9207,6 +9211,7 @@ impl CatiaNative {
             || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
             || namespace.version < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
             || namespace.version < CATIA_FORMULA_REFERENCE_OFFSET_VERSION
+            || namespace.version < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
         {
             let records_by_id = records
                 .iter()
@@ -9242,6 +9247,7 @@ impl CatiaNative {
             || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
             || namespace.version < CATIA_RELATION_REFERENCE_OFFSET_VERSION
             || namespace.version < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
+            || namespace.version < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
         {
             let records_by_id = records
                 .iter()
