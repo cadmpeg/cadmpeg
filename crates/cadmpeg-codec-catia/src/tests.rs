@@ -11064,8 +11064,8 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
-        .expect("store tokenized reference-signature descriptor");
-    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_TOKEN_VERSION - 1;
+        .expect("store reference-signature syntax");
+    stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_SYNTAX_VERSION - 1;
     stored
         .arenas
         .get_mut("entity_records")
@@ -11075,9 +11075,9 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("stored reference signature")
         .as_object_mut()
         .expect("stored reference-signature object")
-        .remove("signature_tokens");
+        .remove("signature_syntax");
     let migrated =
-        crate::native::CatiaNative::load(&stored).expect("tokenize reference-signature descriptor");
+        crate::native::CatiaNative::load(&stored).expect("parse reference-signature syntax");
     assert_eq!(
         migrated.entity_records[0].reference_signature,
         Some(expected)
@@ -11093,6 +11093,10 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     assert_eq!(
         decoded.report.coverage["decoded_reference_signature_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_reference_signature_syntax_node_count"],
+        2
     );
     assert_eq!(
         decoded.report.coverage["decoded_reference_signature_token_count"],
@@ -11149,12 +11153,12 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .as_mut()
         .expect("complete reference signature")
         .production
-        .signature_tokens
+        .signature_syntax
         .clear();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
-        .expect("store malformed reference-signature tokens");
+        .expect("store malformed reference-signature syntax");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))

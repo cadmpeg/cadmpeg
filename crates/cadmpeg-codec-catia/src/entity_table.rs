@@ -50,9 +50,9 @@ pub enum NumericTupleItem {
     },
 }
 
-/// One lexical token in a reference-signature descriptor program.
+/// One syntax node in a reference-signature descriptor program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub enum ReferenceSignatureToken {
+pub enum ReferenceSignatureSyntax {
     /// One maximal ASCII alphabetic run.
     Identifier {
         /// Exact identifier text.
@@ -74,6 +74,15 @@ pub enum ReferenceSignatureToken {
         /// Byte offset within the `7C07` payload.
         offset: usize,
     },
+    /// One balanced parenthesized group.
+    Group {
+        /// Byte offset of the opening parenthesis within the `7C07` payload.
+        open_offset: usize,
+        /// Source-ordered nodes inside the group.
+        children: Vec<ReferenceSignatureSyntax>,
+        /// Byte offset of the closing parenthesis within the `7C07` payload.
+        close_offset: usize,
+    },
 }
 
 /// One fully consumed reference-signature production in a nested `7C07` payload.
@@ -89,9 +98,9 @@ pub struct ReferenceSignature {
     pub layout_atom: u32,
     /// Printable signature bytes between `0x81` and the first terminator.
     pub signature: String,
-    /// Source-ordered lexical tokens spanning the complete signature.
+    /// Source-ordered syntax tree spanning the complete signature.
     #[serde(default)]
-    pub signature_tokens: Vec<ReferenceSignatureToken>,
+    pub signature_syntax: Vec<ReferenceSignatureSyntax>,
     /// Byte offset of the first signature byte within the `7C07` payload.
     #[serde(default)]
     pub signature_offset: usize,
@@ -106,22 +115,42 @@ pub struct ReferenceSignature {
     pub closing_type_atom: u32,
 }
 
-fn reference_signature_tokens(
+fn reference_signature_syntax(
     signature: &str,
     signature_offset: usize,
-) -> Option<Vec<ReferenceSignatureToken>> {
+) -> Option<Vec<ReferenceSignatureSyntax>> {
     let bytes = signature.as_bytes();
-    let mut tokens = Vec::new();
+    let mut root = Vec::new();
+    let mut groups: Vec<(usize, Vec<ReferenceSignatureSyntax>)> = Vec::new();
     let mut at = 0;
-    let mut depth = 0_usize;
     while at < bytes.len() {
         let start = at;
-        let token = if bytes[at].is_ascii_alphabetic() {
+        if bytes[start] == b'(' {
+            groups.push((signature_offset + start, Vec::new()));
+            at += 1;
+            continue;
+        }
+        if bytes[start] == b')' {
+            let (open_offset, children) = groups.pop()?;
+            let node = ReferenceSignatureSyntax::Group {
+                open_offset,
+                children,
+                close_offset: signature_offset + start,
+            };
+            if let Some((_, children)) = groups.last_mut() {
+                children.push(node);
+            } else {
+                root.push(node);
+            }
+            at += 1;
+            continue;
+        }
+        let node = if bytes[at].is_ascii_alphabetic() {
             at += 1;
             while bytes.get(at).is_some_and(u8::is_ascii_alphabetic) {
                 at += 1;
             }
-            ReferenceSignatureToken::Identifier {
+            ReferenceSignatureSyntax::Identifier {
                 text: signature[start..at].to_owned(),
                 offset: signature_offset + start,
             }
@@ -130,25 +159,24 @@ fn reference_signature_tokens(
             while bytes.get(at).is_some_and(u8::is_ascii_digit) {
                 at += 1;
             }
-            ReferenceSignatureToken::Decimal {
+            ReferenceSignatureSyntax::Decimal {
                 digits: signature[start..at].to_owned(),
                 offset: signature_offset + start,
             }
         } else {
-            match bytes[start] {
-                b'(' => depth = depth.checked_add(1)?,
-                b')' => depth = depth.checked_sub(1)?,
-                _ => {}
-            }
             at += 1;
-            ReferenceSignatureToken::Punctuation {
+            ReferenceSignatureSyntax::Punctuation {
                 byte: bytes[start],
                 offset: signature_offset + start,
             }
         };
-        tokens.push(token);
+        if let Some((_, children)) = groups.last_mut() {
+            children.push(node);
+        } else {
+            root.push(node);
+        }
     }
-    (depth == 0).then_some(tokens)
+    groups.is_empty().then_some(root)
 }
 
 /// One exact packet in a tokenized `7C07` value program.
@@ -727,7 +755,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         return None;
     }
     let signature = std::str::from_utf8(signature_bytes).ok()?.to_owned();
-    let signature_tokens = reference_signature_tokens(&signature, signature_offset)?;
+    let signature_syntax = reference_signature_syntax(&signature, signature_offset)?;
     at = signature_end + 1;
     let second_reference_offset = at;
     if payload.get(at) != Some(&0x32) {
@@ -750,7 +778,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
         type_atom,
         layout_atom,
         signature,
-        signature_tokens,
+        signature_syntax,
         signature_offset,
         second_reference,
         second_reference_offset,
@@ -790,7 +818,7 @@ mod tests {
     use super::{
         parse_definition_schema_selectors, parse_numeric_tuple, parse_reference_signature,
         parse_runs, value_packets, DefinitionSchemaSelector, EntityValuePacket, NumericTuple,
-        NumericTupleItem, ReferenceSignature, ReferenceSignatureToken,
+        NumericTupleItem, ReferenceSignature, ReferenceSignatureSyntax,
     };
     use crate::value_block;
 
@@ -945,48 +973,42 @@ mod tests {
                 type_atom: 3851,
                 layout_atom: 12,
                 signature: "(E,0(E,4))".to_owned(),
-                signature_tokens: vec![
-                    ReferenceSignatureToken::Punctuation {
-                        byte: b'(',
-                        offset: 12,
-                    },
-                    ReferenceSignatureToken::Identifier {
-                        text: "E".to_owned(),
-                        offset: 13,
-                    },
-                    ReferenceSignatureToken::Punctuation {
-                        byte: b',',
-                        offset: 14,
-                    },
-                    ReferenceSignatureToken::Decimal {
-                        digits: "0".to_owned(),
-                        offset: 15,
-                    },
-                    ReferenceSignatureToken::Punctuation {
-                        byte: b'(',
-                        offset: 16,
-                    },
-                    ReferenceSignatureToken::Identifier {
-                        text: "E".to_owned(),
-                        offset: 17,
-                    },
-                    ReferenceSignatureToken::Punctuation {
-                        byte: b',',
-                        offset: 18,
-                    },
-                    ReferenceSignatureToken::Decimal {
-                        digits: "4".to_owned(),
-                        offset: 19,
-                    },
-                    ReferenceSignatureToken::Punctuation {
-                        byte: b')',
-                        offset: 20,
-                    },
-                    ReferenceSignatureToken::Punctuation {
-                        byte: b')',
-                        offset: 21,
-                    },
-                ],
+                signature_syntax: vec![ReferenceSignatureSyntax::Group {
+                    open_offset: 12,
+                    children: vec![
+                        ReferenceSignatureSyntax::Identifier {
+                            text: "E".to_owned(),
+                            offset: 13,
+                        },
+                        ReferenceSignatureSyntax::Punctuation {
+                            byte: b',',
+                            offset: 14,
+                        },
+                        ReferenceSignatureSyntax::Decimal {
+                            digits: "0".to_owned(),
+                            offset: 15,
+                        },
+                        ReferenceSignatureSyntax::Group {
+                            open_offset: 16,
+                            children: vec![
+                                ReferenceSignatureSyntax::Identifier {
+                                    text: "E".to_owned(),
+                                    offset: 17,
+                                },
+                                ReferenceSignatureSyntax::Punctuation {
+                                    byte: b',',
+                                    offset: 18,
+                                },
+                                ReferenceSignatureSyntax::Decimal {
+                                    digits: "4".to_owned(),
+                                    offset: 19,
+                                },
+                            ],
+                            close_offset: 20,
+                        },
+                    ],
+                    close_offset: 21,
+                }],
                 signature_offset: 12,
                 second_reference: 208,
                 second_reference_offset: 23,

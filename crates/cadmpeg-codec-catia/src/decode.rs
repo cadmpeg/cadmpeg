@@ -528,12 +528,30 @@ fn finish_decode(
         .iter()
         .filter(|record| record.reference_signature.is_some())
         .count();
-    let reference_signature_token_count = native
+    let (reference_signature_syntax_node_count, reference_signature_token_count) = native
         .entity_records
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
-        .map(|signature| signature.production.signature_tokens.len())
-        .sum();
+        .fold((0_usize, 0_usize), |(nodes, tokens), signature| {
+            let mut nodes = nodes;
+            let mut tokens = tokens;
+            let mut pending = vec![signature.production.signature_syntax.as_slice()];
+            while let Some(siblings) = pending.pop() {
+                nodes += siblings.len();
+                for node in siblings {
+                    if let crate::entity_table::ReferenceSignatureSyntax::Group {
+                        children, ..
+                    } = node
+                    {
+                        tokens += 2;
+                        pending.push(children);
+                    } else {
+                        tokens += 1;
+                    }
+                }
+            }
+            (nodes, tokens)
+        });
     let (
         resolved_reference_signature_entity_count,
         null_reference_signature_entity_count,
@@ -2179,6 +2197,10 @@ fn finish_decode(
         (
             "decoded_reference_signature_count".to_string(),
             reference_signature_count,
+        ),
+        (
+            "decoded_reference_signature_syntax_node_count".to_string(),
+            reference_signature_syntax_node_count,
         ),
         (
             "decoded_reference_signature_token_count".to_string(),

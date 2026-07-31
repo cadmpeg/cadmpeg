@@ -57,10 +57,10 @@ current scores require those matrices and representative fixtures.
   occupying an assigned owner slot remains distinct from both a reference owner
   and a head without an owner role. Payload references distinguish resolved
   fields, the graph's terminal null identity, and other unresolved identities.
-  Complete reference-signature packets retain the exact signature, its
-  source-ordered identifier, decimal, and punctuation tokens with
-  payload-relative offsets, and both stored identities with their same-graph
-  entity, class, terminal-null, or unresolved incidence state.
+  Complete reference-signature packets retain the exact signature, its nested
+  parenthesized syntax tree, source-ordered identifier, decimal, and punctuation
+  nodes with payload-relative offsets, and both stored identities with their
+  same-graph entity, class, terminal-null, or unresolved incidence state.
 - Equal-cardinality all-reference lists spanning every field of a design object
   retain their source-ordered columns and ordinal-aligned rows as one parallel
   reference table. Each column retains its source field, list-tag payload
