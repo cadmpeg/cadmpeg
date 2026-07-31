@@ -76,6 +76,10 @@ current scores require those matrices and representative fixtures.
   ownership. Each design object retains its chain-value entity identities in
   field order. Finite and unset evaluations, atoms, controls, separators, and
   nested schema selectors are counted independently.
+- Relation-expression coverage partitions distinct expressions referenced by
+  formulas, compound relation-program instances, either incidence, and neither
+  incidence. An expression selected by both incidence forms is counted once in
+  the referenced total.
 - Legacy typed relations retain their `body` and `param` role selectors and
   exact parameter identities when those selectors close within one identity
   run. Complete `synchrone` fields retain synchronous and asynchronous

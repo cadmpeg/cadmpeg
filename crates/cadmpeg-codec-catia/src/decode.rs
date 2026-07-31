@@ -1124,12 +1124,26 @@ fn finish_decode(
         .filter_map(|reference| reference.entity.as_deref())
         .filter(|entity| configuration_entities.contains(entity))
         .count();
-    let referenced_relation_expressions = native
+    let formula_referenced_relation_expressions = native
         .entity_records
         .iter()
         .filter_map(|record| record.formula_relation.as_ref())
         .filter_map(|formula| formula.expression_entity.entity.as_deref())
         .collect::<HashSet<_>>();
+    let program_referenced_relation_expressions = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|instance| instance.relation_expression.as_deref())
+        .collect::<HashSet<_>>();
+    let referenced_relation_expressions = formula_referenced_relation_expressions
+        .union(&program_referenced_relation_expressions)
+        .copied()
+        .collect::<HashSet<_>>();
+    let formula_referenced_relation_expression_count =
+        formula_referenced_relation_expressions.len();
+    let program_referenced_relation_expression_count =
+        program_referenced_relation_expressions.len();
     let referenced_relation_expression_count = native
         .entity_records
         .iter()
@@ -2157,6 +2171,14 @@ fn finish_decode(
         (
             "decoded_referenced_relation_expression_count".to_string(),
             referenced_relation_expression_count,
+        ),
+        (
+            "decoded_formula_referenced_relation_expression_count".to_string(),
+            formula_referenced_relation_expression_count,
+        ),
+        (
+            "decoded_program_referenced_relation_expression_count".to_string(),
+            program_referenced_relation_expression_count,
         ),
         (
             "decoded_relation_program_instance_count".to_string(),

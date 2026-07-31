@@ -11805,6 +11805,22 @@ fn decode_reports_exact_relation_program_instances() {
             expression
         );
         assert_eq!(
+            decoded.report.coverage["decoded_referenced_relation_expression_count"],
+            expression
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_formula_referenced_relation_expression_count"],
+            0
+        );
+        assert_eq!(
+            decoded.report.coverage["decoded_program_referenced_relation_expression_count"],
+            expression
+        );
+        assert_eq!(
+            decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+            1 - expression
+        );
+        assert_eq!(
             decoded.report.coverage["decoded_relation_program_parameter_dependency_count"],
             expression * 3
         );
@@ -14842,6 +14858,14 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(
         decoded.report.coverage["decoded_referenced_relation_expression_count"],
         1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_formula_referenced_relation_expression_count"],
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage["decoded_program_referenced_relation_expression_count"],
+        0
     );
     assert_eq!(
         decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
