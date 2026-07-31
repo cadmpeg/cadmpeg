@@ -2467,7 +2467,8 @@ pub(crate) struct ParsedSketchRelation {
     pub(crate) parsed_end: usize,
 }
 
-/// Largest plausible reference-run cardinality; larger counts are a misparse.
+/// Largest plausible counted run inside a sketch relation; a larger count is a
+/// misparse rather than a record that owns that many members.
 const MAX_RELATION_RUN: usize = 4096;
 
 /// Whether a sketch-relation record carries the paired member run. That leading
