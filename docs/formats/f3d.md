@@ -630,7 +630,7 @@ cyl_spl_sur :=
   0x10
 ```
 
-The compact layout above stores the directrix interval before its carriers. The versioned nested layout stores `LONG schema_version`, the `intcurve` carrier name, a true Boolean, one balanced embedded intcurve subtype, two `OPTIONAL_RANGE_ENDPOINT` directrix parameters, `VECTOR_3D extrusion_direction`, `POSITION`, and the optional final surface cache. `u_start` and `u_end` are directrix parameters in either layout. `extrusion_direction` is length-bearing. `POSITION` is stored in model-space length units and is retained independently of the directrix. It is the extrusion axis reference point: the representative of the axis line orthogonal to `extrusion_direction`, satisfying `POSITION · extrusion_direction = 0`. It equals the direction-orthogonal projection of the directrix control-point average at construction time and is retained unchanged when the directrix is re-approximated; the field is redundant for surface evaluation. The optional final `surface-cache` is the solved NURBS surface, and `cache_fit_tolerance` is a length. Without that cache, the directrix, parameter interval, direction, and position still define and retain the exact translational-extrusion construction. Native generation writes the stored interval and position without deriving or replacing either field.
+The compact layout above stores the directrix interval before its carriers. The versioned nested layout stores `LONG schema_version`, the `intcurve` carrier name, a true Boolean, one balanced embedded intcurve subtype, two `OPTIONAL_RANGE_ENDPOINT` directrix parameters, `VECTOR_3D extrusion_direction`, `POSITION`, and the shared revision-gated surface tail, which closes the subtype scope. The tail's form `0` carries this record's surface cache and fit tolerance; its form `2` carries neither, and the U parameter interval it stores is the directrix parameter interval except where the tail's U closure enum marks that direction closed. A surface block inside the embedded intcurve subtype belongs to that subtype and is never this record's cache. `u_start` and `u_end` are directrix parameters in either layout. `extrusion_direction` is length-bearing. `POSITION` is stored in model-space length units and is retained independently of the directrix. It is the extrusion axis reference point: the representative of the axis line orthogonal to `extrusion_direction`, satisfying `POSITION · extrusion_direction = 0`. It equals the direction-orthogonal projection of the directrix control-point average at construction time and is retained unchanged when the directrix is re-approximated; the field is redundant for surface evaluation. The optional final `surface-cache` is the solved NURBS surface, and `cache_fit_tolerance` is a length. Without that cache, the directrix, parameter interval, direction, and position still define and retain the exact translational-extrusion construction. Native generation writes the stored interval and position without deriving or replacing either field.
 
 A translational extrusion is an analytic cylinder when its directrix is a closed nonperiodic rational NURBS comprising four ordered quarter-circle Bézier spans and `extrusion_direction` is parallel to the circle normal. For degree `p >= 2`, the carrier has `4p + 1` poles, endpoint knot multiplicity `p + 1`, interior knot multiplicity `p`, and four positive parameter spans. Repeated homogeneous Bézier degree reduction of every span produces a rational quadratic with one common nonzero endpoint weight `w` and middle weight `w sqrt(1/2)`; multiplying every homogeneous weight by the same nonzero scalar does not change the carrier. In Euclidean coordinates, each reduced middle pole is the sum of its two endpoint poles minus the common center. Consecutive endpoint radial vectors are perpendicular, have the same positive length, and have consistently oriented cross products. The cylinder origin is the common center, its axis follows the normalized extrusion direction, its reference direction follows the first radial vector, and its radius is the shared radial length. The analytic carrier takes precedence over an optional solved NURBS cache. A nonclosed, noncircular, degenerate, or obliquely extruded directrix remains a procedural extrusion or retains its solved NURBS carrier.
 
@@ -650,12 +650,23 @@ rb_blend_spl_sur :=
   LONG shape_prefix
   DOUBLE parameter[2]
   LONG tail
-  ENUM_VALUE cache_selector
-  surface-cache
-  DOUBLE cache_fit_tolerance
-  FLOAT_ARRAY discontinuity[3]
+  revision-gated-surface-tail
   [rolling-ball-third-side]
+  LONG tail_extension[3]
   0x10
+
+revision-gated-surface-tail :=
+  ENUM_VALUE tail_form
+  ( 0 surface-cache
+      DOUBLE cache_fit_tolerance
+  | 2 OPTIONAL_RANGE_ENDPOINT u_interval[2]
+      OPTIONAL_RANGE_ENDPOINT v_interval[2]
+      ENUM_VALUE u_closure
+      ENUM_VALUE v_closure
+      ENUM_VALUE u_singularity
+      ENUM_VALUE v_singularity )
+  FLOAT_ARRAY discontinuity[6]
+  BOOLEAN discontinuity_flag
 
 rolling-ball-side :=
   TEXT support_kind
@@ -683,7 +694,7 @@ rolling-ball-third-side :=
   BOOLEAN flag
 ```
 
-`serializer_revision` is the serializer-revision integer in the release ×100 stamp family, the same field that opens `var_blend_spl_sur`. `support_kind` uses the closed blend-support discriminator set defined for variable blends. `null_surface`, `null_curve`, and `nullbs` encode absent support geometry. Every present embedded side or slice curve is followed by two optional parameter-range endpoints. Modern sides append the extension integer and tertiary pcurve; legacy sides end after the secondary pcurve. An optional range endpoint is `BOOLEAN false` when absent and `BOOLEAN true DOUBLE value` when finite. The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absent-radius branch; a `DOUBLE` carries an explicit selector value. `sss_blend_spl_sur` appends the third-side graph after the three discontinuity arrays. The final surface cache is the solved face surface.
+`serializer_revision` is the serializer-revision integer in the release ×100 stamp family, the same field that opens `var_blend_spl_sur`. `support_kind` uses the closed blend-support discriminator set defined for variable blends. `null_surface`, `null_curve`, and `nullbs` encode absent support geometry. Every present embedded side or slice curve is followed by two optional parameter-range endpoints. Modern sides append the extension integer and tertiary pcurve; legacy sides end after the secondary pcurve. An optional range endpoint is `BOOLEAN false` when absent and `BOOLEAN true DOUBLE value` when finite. The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absent-radius branch; a `DOUBLE` carries an explicit selector value. `tail_form` is the shared tail's form enum, not a selector private to this subtype: form `0` stores the solved face surface and its fit tolerance, and form `2` stores no cache and no fit tolerance, so a form-`2` record's construction graph is its own carrier. `sss_blend_spl_sur` appends the third-side graph after the shared tail. The three `tail_extension` integers close the subtype scope in both subtypes.
 
 A circular rolling-ball construction with equal nonzero signed offsets has a constant radius equal to the offset magnitude. Two nonparallel plane supports and a nonperiodic collinear NURBS slice define an analytic cylinder when the slice direction is parallel to the planes' intersection and every slice pole lies on a line whose perpendicular distance from each plane equals the constant radius. The cylinder axis is that line, the radius is the offset magnitude, and its reference direction is the canonical direction derived from the axis.
 

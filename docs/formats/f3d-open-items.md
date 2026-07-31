@@ -109,6 +109,22 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the binding to parse law text that a different writer produced without full parenthesization. Text this codec emits is unaffected, because it parenthesizes both operands.
 
+### GC-25. Payload after a true shared revision-gated surface tail logical
+
+**Question.** What follows the closing logical of the shared revision-gated surface tail when that logical is true?
+
+**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" ends the tail with six counted float arrays and one logical, for each value of the form enum. The specification gives no payload after that logical, and the decoder ends the tail there for either value.
+
+**Need.** A false logical is the only state the decoder can account for. A carrier whose tail is its last field, such as the revision-gated `cyl_spl_sur`, would end its scope at a true logical and drop the bytes after it without a diagnostic, and would then write the record back short. A carrier with its own fields after the tail, such as `rb_blend_spl_sur` and `var_blend_spl_sur`, reads those fields at the wrong offset instead and keeps the whole record as opaque bytes. No subtype scope has a full-consumption check that would separate the two outcomes from a correct decode.
+
+### GC-26. Position of the `sss_blend_spl_sur` third-side graph
+
+**Question.** Does the third-side graph of an `sss_blend_spl_sur` record come between the shared revision-gated surface tail and the three trailing integers, or after those integers?
+
+**Known.** `f3d.md` §7.6 `rb_blend_spl_sur` puts the third-side graph after the tail and before the three `tail_extension` integers. The two-support subtypes end with the tail and those integers, which fixes the integers as the last fields of that scope but does not fix the third-side graph against them.
+
+**Need.** The decoder and the source-less writer both use the position the specification gives. The wrong position makes every `sss_blend_spl_sur` record fail its decode and stay opaque, and makes a generated record ungrammatical.
+
 ## 2. Container, header, and design records
 
 ### DR-03. ACT table trailing GUID run
