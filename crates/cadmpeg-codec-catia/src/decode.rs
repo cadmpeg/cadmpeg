@@ -528,6 +528,17 @@ fn finish_decode(
         .iter()
         .filter(|record| record.reference_signature.is_some())
         .count();
+    let reference_signature_cohort_count = native.reference_signature_cohorts.len();
+    let multi_member_reference_signature_cohort_count = native
+        .reference_signature_cohorts
+        .iter()
+        .filter(|cohort| cohort.members.len() > 1)
+        .count();
+    let reference_signature_cohort_member_count = native
+        .reference_signature_cohorts
+        .iter()
+        .map(|cohort| cohort.members.len())
+        .sum();
     let (reference_signature_syntax_node_count, reference_signature_token_count) = native
         .entity_records
         .iter()
@@ -2197,6 +2208,18 @@ fn finish_decode(
         (
             "decoded_reference_signature_count".to_string(),
             reference_signature_count,
+        ),
+        (
+            "decoded_reference_signature_cohort_count".to_string(),
+            reference_signature_cohort_count,
+        ),
+        (
+            "decoded_multi_member_reference_signature_cohort_count".to_string(),
+            multi_member_reference_signature_cohort_count,
+        ),
+        (
+            "decoded_reference_signature_cohort_member_count".to_string(),
+            reference_signature_cohort_member_count,
         ),
         (
             "decoded_reference_signature_syntax_node_count".to_string(),

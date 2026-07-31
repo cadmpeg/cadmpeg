@@ -61,7 +61,8 @@ current scores require those matrices and representative fixtures.
   parenthesized syntax tree, source-ordered identifier, decimal, and punctuation
   nodes with payload-relative offsets, and the exact consecutive stored
   identity pair with each same-graph entity, class, terminal-null, or unresolved
-  incidence state.
+  incidence state. Records sharing one pair form a source-ordered cohort whose
+  members retain exact entity-record identities.
 - Equal-cardinality all-reference lists spanning every field of a design object
   retain their source-ordered columns and ordinal-aligned rows as one parallel
   reference table. Each column retains its source field, list-tag payload

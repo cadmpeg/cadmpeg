@@ -20,7 +20,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 263;
+pub const CATIA_NATIVE_VERSION: u32 = 264;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -135,6 +135,9 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_SYNTAX_VERSION: u32 = 262;
 /// Native schema version requiring consecutive reference-signature identities.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_PAIR_VERSION: u32 = 263;
+/// Native schema version retaining reference-signature cohorts.
+#[cfg(test)]
+pub(crate) const CATIA_REFERENCE_SIGNATURE_COHORT_VERSION: u32 = 264;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -179,6 +182,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "object_graph_records",
     "object_graphs",
     "preview_images",
+    "reference_signature_cohorts",
     "value_blocks",
     "value_schema_selections",
     "zero_entity_edge_strides",
@@ -1666,6 +1670,27 @@ pub struct CatiaReferenceSignature {
     /// Entity incidence selected by the second fixed-width reference.
     #[serde(default)]
     pub second_entity: CatiaEntityReference,
+}
+
+/// Source-ordered descriptor records sharing one exact reference pair.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaReferenceSignatureCohort {
+    /// Globally unique cohort identity.
+    pub id: String,
+    /// Containing object graph.
+    pub parent: String,
+    /// Zero-based order of the cohort's first member within the graph.
+    pub ordinal: u64,
+    /// First identity shared by every member.
+    pub first_reference: u32,
+    /// Common same-graph incidence selected by the first identity.
+    pub first_entity: CatiaEntityReference,
+    /// Consecutive second identity shared by every member.
+    pub second_reference: u32,
+    /// Common same-graph incidence selected by the second identity.
+    pub second_entity: CatiaEntityReference,
+    /// Descriptor-bearing entity records in source order.
+    pub members: Vec<String>,
 }
 
 /// One exact self-defining `Configuration` object production.
@@ -3497,6 +3522,48 @@ fn reference_signature(
     }
 }
 
+fn derive_reference_signature_cohorts(
+    entity_records: &[CatiaEntityRecord],
+) -> Vec<CatiaReferenceSignatureCohort> {
+    let mut cohorts = Vec::<CatiaReferenceSignatureCohort>::new();
+    let mut cohort_by_pair = HashMap::<(String, u32, u32), usize>::new();
+    let mut next_ordinal_by_graph = HashMap::<String, u64>::new();
+    for entity in entity_records {
+        let Some(signature) = &entity.reference_signature else {
+            continue;
+        };
+        let key = (
+            entity.object_graph.clone(),
+            signature.production.first_reference,
+            signature.production.second_reference,
+        );
+        if let Some(index) = cohort_by_pair.get(&key).copied() {
+            cohorts[index].members.push(entity.id.clone());
+            continue;
+        }
+        let ordinal = next_ordinal_by_graph
+            .entry(entity.object_graph.clone())
+            .and_modify(|ordinal| *ordinal += 1)
+            .or_insert(0);
+        let index = cohorts.len();
+        cohorts.push(CatiaReferenceSignatureCohort {
+            id: format!(
+                "{}:reference-signature-cohort#{:08}",
+                entity.object_graph, *ordinal
+            ),
+            parent: entity.object_graph.clone(),
+            ordinal: *ordinal,
+            first_reference: signature.production.first_reference,
+            first_entity: signature.first_entity.clone(),
+            second_reference: signature.production.second_reference,
+            second_entity: signature.second_entity.clone(),
+            members: vec![entity.id.clone()],
+        });
+        cohort_by_pair.insert(key, index);
+    }
+    cohorts
+}
+
 fn configuration_record(
     entity_id: u32,
     object: &CatiaObjectRecord,
@@ -4855,6 +4922,9 @@ pub struct CatiaNative {
     /// Exact JPEG previews extracted from summary-information records.
     #[serde(default)]
     pub preview_images: Vec<CatiaPreviewImage>,
+    /// Source-ordered descriptor cohorts grouped by exact reference pair.
+    #[serde(default)]
+    pub reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort>,
     /// Framed value blocks adjacent to source-schema catalogs.
     #[serde(default)]
     pub value_blocks: Vec<CatiaValueBlock>,
@@ -4916,6 +4986,7 @@ impl Default for CatiaNative {
             legacy_entity_runs: Vec::new(),
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
+            reference_signature_cohorts: Vec::new(),
             value_blocks: Vec::new(),
             zero_entity_edge_strides: Vec::new(),
             zero_entity_oriented_use_pairs: Vec::new(),
@@ -8873,6 +8944,7 @@ impl CatiaNative {
                 &parameter_bindings,
             );
         }
+        let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
         let configuration_row_chains = derive_configuration_row_chains(
             &entity_records,
             &entities_by_graph_identity,
@@ -9037,6 +9109,7 @@ impl CatiaNative {
             legacy_entity_runs,
             object_graphs,
             preview_images,
+            reference_signature_cohorts,
             value_blocks,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
@@ -9111,6 +9184,8 @@ impl CatiaNative {
         let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
         let mut configuration_row_chains: Vec<CatiaConfigurationRowChain> =
             namespace.arena_as("configuration_row_chains")?;
+        let mut reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort> =
+            namespace.arena_as("reference_signature_cohorts")?;
         if namespace.version < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
             for entity in &mut entity_records {
                 entity.reference_signature = entity_table::parse_reference_signature(
@@ -9298,6 +9373,15 @@ impl CatiaNative {
                     reference_signature(production, &entity.object_graph, &entity_references)
                 });
             }
+        }
+        let expected_reference_signature_cohorts =
+            derive_reference_signature_cohorts(&entity_records);
+        if namespace.version < CATIA_REFERENCE_SIGNATURE_COHORT_VERSION {
+            reference_signature_cohorts = expected_reference_signature_cohorts;
+        } else if reference_signature_cohorts != expected_reference_signature_cohorts {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "CATIA reference-signature cohorts are not canonical".to_string(),
+            ));
         }
         if namespace.version < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
             for graph in &graphs {
@@ -10154,6 +10238,7 @@ impl CatiaNative {
             legacy_entity_runs,
             object_graphs: graphs,
             preview_images,
+            reference_signature_cohorts,
             value_blocks,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
@@ -10266,6 +10351,10 @@ impl CatiaNative {
         namespace.set_arena("object_graphs", &graphs)?;
         namespace.set_arena("object_graph_records", &records)?;
         namespace.set_arena("preview_images", &self.preview_images)?;
+        namespace.set_arena(
+            "reference_signature_cohorts",
+            &self.reference_signature_cohorts,
+        )?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
         namespace.set_arena("zero_entity_edge_strides", &self.zero_entity_edge_strides)?;
@@ -10335,6 +10424,7 @@ impl CatiaNative {
             legacy_entity_runs,
             mut object_graphs,
             preview_images,
+            reference_signature_cohorts,
             mut value_blocks,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
@@ -10404,6 +10494,7 @@ impl CatiaNative {
         namespace.set_arena("legacy_entity_runs", &legacy_entity_runs)?;
         namespace.set_arena("alias_rows", &alias_rows)?;
         namespace.set_arena("preview_images", &preview_images)?;
+        namespace.set_arena("reference_signature_cohorts", &reference_signature_cohorts)?;
         namespace.set_arena("value_blocks", &value_blocks)?;
         namespace.set_arena("value_schema_selections", &value_schema_selections)?;
         namespace.set_arena("zero_entity_edge_strides", &zero_entity_edge_strides)?;
