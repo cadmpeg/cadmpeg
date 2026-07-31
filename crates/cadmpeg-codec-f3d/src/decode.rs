@@ -2773,6 +2773,9 @@ fn source_and_tolerances(
     if let Some(off) = primary_model_brep.solved_record_limit {
         attributes.insert("solved_record_len".to_string(), off.to_string());
     }
+    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
+        attributes.insert("modeling_length_unit".to_string(), unit);
+    }
 
     let mut tolerances = Tolerances::default();
     if let Some(h) = &primary_model_brep.header {
@@ -2979,6 +2982,9 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
         "zip_entry_count".to_string(),
         scan.entries.len().to_string(),
     );
+    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
+        attributes.insert("modeling_length_unit".to_string(), unit);
+    }
 
     if let Some(brep) = container::select_fallback_brep(scan) {
         attributes.insert("active_brep".to_string(), brep.name.clone());

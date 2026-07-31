@@ -18042,6 +18042,48 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
 }
 
 #[test]
+fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
+    // The `Custom` system's `modelingLengthName` is the document's display
+    // length unit. It reaches `SourceMeta`, not `CadIr::units`: no stored
+    // quantity depends on it, and model-space coordinates stay centimetres
+    // under every value.
+    let design = crate::design::decode::units::tests::stream([
+        "centimeter",
+        "millimeter",
+        "meter",
+        "inch",
+        "foot",
+        "inch",
+    ]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+        .unwrap();
+    zip.write_all(&synthetic_geometry_smbh()).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&design).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let result = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("decode with a unit-systems design stream");
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("modeling_length_unit"))
+            .map(String::as_str),
+        Some("inch")
+    );
+    // The IR stays millimetre-canonical regardless of the display unit.
+    assert_eq!(result.ir.units, cadmpeg_ir::units::Units::default());
+}
+
+#[test]
 fn record_level_surface_bounds_round_trip() {
     let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
         push_revision_surface_tail(surface);
