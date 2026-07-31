@@ -311,17 +311,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the class-365 whole-body operand fields after the asset UUID and the context UUID hold? This question excludes the bounded nested-record join and the body-recipe join.
 
-**Known.** `f3d.md` §8.1 "A class-365 whole-body member" gives the reference count, the ordered `(Design reference, form)` pairs, the asset UUID, the context UUID, the `u32 2`, the four zero bytes, the paired header, and the nested indexed headers. It gives the byte layout of these fields and no meaning for the `u32 2` and the four zero bytes.
+**Known.** `f3d.md` §8.1 "A class-365 whole-body member" gives the reference count, the ordered `(Design reference, form)` pairs, the asset UUID, the context UUID, the `u32 2`, the four zero bytes, the paired header, and the nested indexed headers. The `u32 2` is a literal that never varies. The four bytes after it are not always zero, and the u32 after those takes a broad range of small values. The `0x01`-tagged value before the two UUIDs is a reference whose target is the containing entity plus three, so the two zero bytes after it are that reference's flags.
 
-**Need.** We must know the field meanings to write a complete class-365 member.
+**Need.** We must know what the two variable u32 select to write a complete class-365 member.
 
 ### DR-25. Base Feature six-byte fields
 
 **Question.** What do the six-byte fields after the Base Feature body suffixes and after the Base Feature record references hold?
 
-**Known.** `f3d.md` §8.1 "A `Base Feature` scope" states that every value has a six-byte trailing field. The fields are zero except one per-scope form that reads as `u16 0` and then `u32 1` across a scope's body-entity run. The decoder keeps each field as six opaque bytes. A one-body scope zeroes every field in all four runs, so the nonzero form is not the default shape of a body-entity run.
+**Known.** `f3d.md` §8.1 "**References.**" resolves the six bytes that follow an eleven-byte element: they are the target entity ID's high half and the two reference flags. A fifteen-byte element already carries the full entity ID, so its six bytes are instead the two flags and a further u32 member of the element. The `u16 0` then `u32 1` form is that member holding `1`: the flags are both clear, and a cross-segment reference would put `1` in the second flag byte rather than in the u32. The value is uniform across a scope's body-entity run.
 
-**Need.** We must know the meaning to write a Base Feature from a neutral model. The nonzero form has not been seen together with a known distinguishing property of its scope, so we cannot say what selects it.
+**Need.** We must know what the per-element u32 selects to write a Base Feature from a neutral model. It is `1` on one scope and `0` on every other, and it does not track the body count, so we cannot say what selects it.
 
 ### DR-26. Sketch-text fields
 
@@ -353,13 +353,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the member names and their meanings to build component references in a neutral model.
 
-### XR-03. `DcXRefPCIFeature` eight-byte value
+### XR-03. Cross-document reference asset GUID
 
-**Question.** What does the `0x01`-tagged eight-byte value before the owning-design GUID hold? This value is in a `DcXRefPCIFeature` record.
+**Question.** What does the LP-UTF16 asset GUID of a cross-document reference name?
 
-**Known.** `f3d.md` §1.4 "**Design-segment XRef records.**" gives the field order. The record holds marker-tagged integer fields, then this eight-byte value, then a `u32`-count NUL-terminated ASCII GUID. The GUID names the owning design object. The value repeats across the records of one occurrence group, occurs with different owning GUIDs, and is not a fragment of a GUID.
+**Known.** `f3d.md` §8.1 "**References.**" gives the cross-document form. The eight-byte value the item once asked about is the reference's target entity ID, and the ASCII GUID after it is the target record's type GUID; both resolve against the segment the reference's segment ID names in the target document. The UTF-16 asset GUID between them is one value per link and does not equal the target segment's own asset GUID.
 
-**Need.** We must know the meaning to write this record from a neutral model.
+**Need.** A writer must emit this GUID to build a cross-document reference, and we cannot derive it from either end of the link.
 
 ### XR-04. Occurrence-placement tail fields
 

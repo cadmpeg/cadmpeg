@@ -79,7 +79,7 @@ A document that places other documents records each placement as an **XRef** key
 
 **`ComponentReferenceData.json`** is a top-level STORED entry containing a JSON object. The object is an open document: member names and values are retained without a closed schema.
 
-**Design-segment XRef records.** The Design BulkStream registers the record class name `DcXRefPCIFeatureMetaType`. Its dynamic three-digit ASCII class tag and record index form the indexed-record header. A standalone occurrence record carries, in order: a `u32`-count UTF-16LE record GUID; marker-tagged integer fields; a `0x01`-tagged eight-byte value; a `u32`-count NUL-terminated ASCII GUID naming the owning design object (the same GUID appears in the Design MetaStream object table); a `0x01`-tagged `u32` zero; and a `u32`-count UTF-16LE occurrence-role string equal to the reference's `neutronRole`. A grouped component-insert carrier can contain several occurrences and repeat the same occurrence-role string in metadata, placement, and construction-reference fields. Several placements may therefore carry the same role and place the same target document more than once. Each occurrence-role string is also present in the ACT-segment GUID pool.
+**Design-segment XRef records.** The Design BulkStream registers the record class name `DcXRefPCIFeatureMetaType`. Its dynamic three-digit ASCII class tag and record index form the indexed-record header. A standalone occurrence record carries, in order: a `u32`-count UTF-16LE record GUID; marker-tagged integer fields; a `0x01`-tagged eight-byte value, which is the presence flag and target entity ID of a cross-document reference; a `u32`-count ASCII GUID, which is that target record's type GUID and appears in the target segment's MetaStream type table; a `0x01`-tagged `u32` zero; and a `u32`-count UTF-16LE occurrence-role string equal to the reference's `neutronRole`. A grouped component-insert carrier can contain several occurrences and repeat the same occurrence-role string in metadata, placement, and construction-reference fields. Several placements may therefore carry the same role and place the same target document more than once. Each occurrence-role string is also present in the ACT-segment GUID pool.
 
 **Placement.** A standalone role-adjacent occurrence tail starts after the occurrence-role string with `u8 0`, one marked record reference (`u8 1 + u32 record_index + six zero bytes`), zero or more entries of `u8 1 + u64 record_reference + two zero bytes + u32`, and two zero bytes. A non-identity placement then stores sixteen little-endian f64 values as one row-major 4×4 homogeneous matrix. When that local matrix is absent, a tagged record reference can instead name an indexed placement record containing the matrix. In a grouped component-insert carrier, the placement occurrence of a role is followed directly by two zero bytes and the matrix. Every such role/matrix pair is one occurrence in source order; repeated roles preserve multiplicity. Other occurrences of the same role carry metadata or construction references and do not define placements. Other tagged references can name component records and do not override a role-adjacent matrix. The first matrix in an indexed placement-record list starts 32 bytes after its header; consecutive matrices start 142 bytes apart. Columns 0, 1, and 2 are an orthonormal placed basis, column 3 is the translation in centimetres, and the bottom row is `(0, 0, 0, 1)`. The transform belongs to the occurrence record rather than the referenced target. Each reference placement projects as one root external occurrence whose target path is `relativePath`; translation converts from centimetres to millimetres. An external occurrence without a serialized transform places the target document's model in the referencing document's frame unchanged.
 
@@ -676,13 +676,38 @@ One plane support, one circular-cylinder support, and a four-quarter rational-ci
 
 `MetaStream.dat` is a segment header, a type table, two record indexes, and an optional property block. It is not a sequence of independent object records.
 
-The header is the LP-ASCII segment type name, a u32, an LP-UTF16 asset GUID, a u32 serializer magic, three further u32 when that magic is `1234` and one otherwise, a second LP-ASCII segment type name, an LP-ASCII add-in name, and two u32. The two type names need not be equal: the first is the segment's short name and the second its full type name.
+The header is the LP-ASCII segment type name, the u32 segment ID, an LP-UTF16 asset GUID, a u32 serializer magic, three further u32 when that magic is `1234` and one otherwise, a second LP-ASCII segment type name, an LP-ASCII add-in name, and two u32. The two type names need not be equal: the first is the segment's short name and the second its full type name.
 
 The type table is `u32 count` and that many entries. An entry is an LP-ASCII type GUID, an LP-ASCII base type GUID, a u32 type version, an LP-ASCII add-in name, a u32 id count, and that many little-endian u64 design-entity IDs. The base type GUID is empty for a root type. The ID count is a count rather than a flag; an entry carries any number of IDs, including none. The add-in name names the owning module — `Fusion`, `MSketch`, `Geometry`, `Body`, `Component`, `EntityTracking`, `CommonData`, `Scene`, `ACT` — and is shared by every type that module registers, so it classifies a type's module and does not identify the type.
 
 The type table is followed by `u32 count` and that many u64 named-entity IDs, then the record index as `u32 count` and that many `(u64 entity ID, u64 BulkStream offset)` pairs, then a secondary index in the same form, then a u64 next-entity-ID counter. A modern segment appends a u32 and a property block of `u32 count` and that many `(LP-ASCII key, u32 value)` pairs; a legacy segment ends after the counter. These fields close the stream exactly.
 
 Record-index offsets increase strictly, and the index covers every record in the sibling `BulkStream`. The named-entity ID list is exactly the set of entity IDs whose bulk record carries a nonempty name. Every secondary-index entity ID is also a record-index entity ID, and its offset lies strictly inside that entity's record, locating a nested record header carried within that record's own payload.
+
+The segment ID is unique within its asset folder, not within the archive, so a cross-segment reference resolves against the segments of its own asset. It is not a fixed enum and it is not positional: a Design segment is not always `0`. The two u32 after the add-in name are a segment *type* code — `1` Design, `5` ACT, `6` Browser — and are the same in every archive; they are not the segment ID.
+
+**References.** Every reference member of every record in every Fusion segment uses one encoding:
+
+```
+u8   present               0 ends the reference; nothing follows
+u64  target entity ID
+u8   cross_document
+if cross_document == 0:
+    u8   different_segment
+    if different_segment == 1: u32 target segment ID
+if cross_document == 1:
+    u32  target segment ID          a segment of the TARGET document
+    LP-UTF16 asset GUID
+    u8   same_document
+    if same_document == 0:
+        LP-ASCII 36 target type GUID
+        LP-UTF16 link name          equals a `RedirectionsStream.dat` `neutronRole`
+        u8   0
+```
+
+`cross_document` and `different_segment` are booleans. So a null reference is one byte, a same-segment reference is eleven, and a cross-segment reference is fifteen: any length arithmetic that assumes one reference width fails on a record that reaches another segment. The recurring idiom `0x01`, a u32 record index, and six zero bytes elsewhere in this document is this encoding read with a 32-bit id — the six bytes are the id's high half, which is zero while entity IDs stay small, followed by the two flag bytes.
+
+One container generation writes a wider local form: where the meta stream's serializer magic is not `1234` and the first integer after it is `3`, a present reference carries an LP-ASCII 36 **target type GUID** between the target entity ID and `cross_document`, making the local form 51 bytes. The `0x24` length prefix cannot be confused with a `cross_document` flag of `0` or `1`, so a reader can detect the form from the bytes rather than from the header. An LP-ASCII GUID inside a reference always names the target record's type, in this form and in the cross-document form alike; it never names a document.
 
 Within the payload, members are written one class level at a time, most-derived level first, and within a level in **case-sensitive lexicographic order of the member name**, so an uppercase initial sorts before a lowercase one. Declaration order does not reach the stream. A member added at a later record version takes its place in that ordering rather than at the end, so a version gate moves a member into the middle of a level, not onto its tail.
 
