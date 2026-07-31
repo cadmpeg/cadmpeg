@@ -33,6 +33,7 @@ use std::collections::{HashMap, HashSet};
 pub fn decode_parameter_scopes(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
+    types: &[crate::records::DesignType],
     parameter_owners: &[crate::records::DesignParameterOwner],
     component_occurrences: &[DesignComponentOccurrence],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
@@ -45,6 +46,8 @@ pub fn decode_parameter_scopes(
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
+        let type_versions =
+            crate::design::decode::sketch::type_versions_for_stream(types, &entry.name);
         for header in parameter_scope_candidate_headers(bytes, &records) {
             let Some(mut scope) = parse_parameter_scope(bytes, &records, &header) else {
                 continue;
@@ -104,7 +107,9 @@ pub fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some((position, offset)) = exact_work_point_position(bytes, &records, &scope) {
+            if let Some((position, offset)) =
+                exact_work_point_position(bytes, &records, &scope, &type_versions)
+            {
                 scope.work_point_position = Some(position);
                 scope.work_point_position_offset = Some(offset);
             }
@@ -2171,15 +2176,17 @@ fn point_data_level(bytes: &[u8], start: usize, end: usize, version: u32) -> Opt
 
 /// The coordinate of a `WorkPoint`'s point-data record.
 ///
-/// The record version is not carried by the record, so every version whose
-/// member sequence fits the frame is a candidate. The versions differ by
-/// members before and after `point3d`; a version that moves `point3d` names a
-/// different coordinate, so the reader accepts a frame only when every
-/// candidate version puts the coordinate at the same offset.
+/// The versions differ by members before and after `point3d`, so a version that
+/// moves `point3d` names a different coordinate. `type_versions` carries the
+/// record's own version from its segment's type table and settles the frame
+/// outright. Where the record's entity is not registered there, every version
+/// whose member sequence fits the frame stays a candidate and the frame is read
+/// only when they agree on the offset.
 pub(crate) fn exact_work_point_position(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    type_versions: &HashMap<u64, u32>,
 ) -> Option<([f64; 3], u64)> {
     if scope.kind != "WorkPoint" {
         return None;
@@ -2202,8 +2209,11 @@ pub(crate) fn exact_work_point_position(
                 continue;
             };
             // `refType` names a construction rule; a value outside that set
-            // means the version being tried has desynchronized the members.
-            let mut offsets = (0..=3)
+            // means the version being read has desynchronized the members.
+            let stored = type_versions.get(&u64::from(*record_index)).copied();
+            let mut offsets = stored
+                .map_or_else(|| (0..=3).collect::<Vec<_>>(), |version| vec![version])
+                .into_iter()
                 .filter_map(|version| point_data_level(bytes, payload_at, paired, version))
                 .filter(|(_, reference_type)| matches!(reference_type, 1..=20))
                 .map(|(position_at, _)| position_at)
@@ -3110,6 +3120,7 @@ mod tests {
     use super::{exact_work_point_position, parse_parameter_scope};
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::records::{DesignParameterScope, DesignRecordHeader};
+    use std::collections::HashMap;
 
     fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
@@ -3129,6 +3140,7 @@ mod tests {
         pick_point: Option<u64>,
         position: [f64; 3],
         reference_type: u32,
+        trailer: u32,
     ) -> (Vec<u8>, DesignParameterScope, usize) {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -3193,7 +3205,7 @@ mod tests {
                 bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
             }
         }
-        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&trailer.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"259");
         bytes.extend_from_slice(&55u32.to_le_bytes());
@@ -3212,10 +3224,15 @@ mod tests {
     #[test]
     fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
         let (bytes, scope, position_at) =
-            work_point_stream(3, true, Some(9), [1.25, -2.5, 3.75], 20);
+            work_point_stream(3, true, Some(9), [1.25, -2.5, 3.75], 20, 0);
 
         assert_eq!(
-            exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
+            exact_work_point_position(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &HashMap::new()
+            ),
             Some(([1.25, -2.5, 3.75], position_at as u64))
         );
     }
@@ -3224,10 +3241,15 @@ mod tests {
     fn work_point_position_reads_every_class_version_that_stores_one() {
         for version in 0..=3 {
             let (bytes, scope, position_at) =
-                work_point_stream(version, false, None, [4.0, 5.0, 6.0], 5);
+                work_point_stream(version, false, None, [4.0, 5.0, 6.0], 5, 0);
 
             assert_eq!(
-                exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
+                exact_work_point_position(
+                    &bytes,
+                    &IndexedRecordOffsets::build(&bytes),
+                    &scope,
+                    &HashMap::new()
+                ),
                 Some(([4.0, 5.0, 6.0], position_at as u64)),
                 "class version {version}"
             );
@@ -3235,11 +3257,37 @@ mod tests {
     }
 
     #[test]
+    fn work_point_reads_the_class_version_its_type_table_stores() {
+        let (bytes, scope, position_at) = work_point_stream(2, false, None, [4.0, 5.0, 6.0], 5, 0);
+        let records = IndexedRecordOffsets::build(&bytes);
+        assert_eq!(
+            exact_work_point_position(&bytes, &records, &scope, &HashMap::from([(55, 2)])),
+            Some(([4.0, 5.0, 6.0], position_at as u64))
+        );
+        // The stored version drives the read: a version that describes a
+        // different member sequence does not yield this frame's coordinate.
+        assert_ne!(
+            exact_work_point_position(&bytes, &records, &scope, &HashMap::from([(55, 0)])),
+            Some(([4.0, 5.0, 6.0], position_at as u64))
+        );
+        // An unregistered entity falls back to the agreement sweep.
+        assert_eq!(
+            exact_work_point_position(&bytes, &records, &scope, &HashMap::from([(9, 0)])),
+            exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+        );
+    }
+
+    #[test]
     fn work_point_rejects_a_record_whose_reference_type_is_not_a_construction_rule() {
-        let (bytes, scope, _) = work_point_stream(2, false, None, [1.0, 2.0, 3.0], 4096);
+        let (bytes, scope, _) = work_point_stream(2, false, None, [1.0, 2.0, 3.0], 4096, 0);
 
         assert_eq!(
-            exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
+            exact_work_point_position(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &HashMap::new()
+            ),
             None
         );
     }

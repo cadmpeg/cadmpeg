@@ -2258,6 +2258,7 @@ fn extend_related_design_records(
     native.design_parameter_scopes = crate::design::decode::scopes::decode_parameter_scopes(
         scan,
         &native.design_entity_headers,
+        &native.design_types,
         &native.design_parameter_owners,
         &native.design_component_occurrences,
     )?;

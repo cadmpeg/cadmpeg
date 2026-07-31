@@ -706,6 +706,27 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<DesignType>, CodecError>
     Ok(out)
 }
 
+/// Record versions of the types registered by the design `MetaStream` beside
+/// `bulk_entry_name`, keyed by the design entity ids those types own. A record
+/// carries no version of its own: its class tag selects a type-table entry, and
+/// that entry's version fixes the member sequence the record was written under.
+pub fn type_versions_for_stream(types: &[DesignType], bulk_entry_name: &str) -> HashMap<u64, u32> {
+    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
+        return HashMap::new();
+    };
+    let meta_scope = ids::native_scope(&format!("{prefix}MetaStream.dat"));
+    types
+        .iter()
+        .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
+        .flat_map(|design_type| {
+            design_type
+                .entity_ids
+                .iter()
+                .map(|entity_id| (*entity_id, design_type.version))
+        })
+        .collect()
+}
+
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
 /// zero bytes, an optional slot, and the UTF-16LE entity id whose numeric
 /// suffix equals the header's entity suffix.

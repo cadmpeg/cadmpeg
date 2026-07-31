@@ -3505,14 +3505,24 @@ fn work_point_direct_record_carries_model_space_position() {
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("WorkPoint scope");
     assert_eq!(
-        exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
+        exact_work_point_position(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new()
+        ),
         Some(([1.25, -2.5, 3.75], position_at as u64))
     );
     bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
     bytes[point_at + 94..point_at + 98].copy_from_slice(&1u32.to_le_bytes());
     bytes.drain(point_at + 197..point_at + 208);
     assert_eq!(
-        exact_work_point_position(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
+        exact_work_point_position(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new()
+        ),
         Some(([1.25, -2.5, 3.75], position_at as u64))
     );
 }
