@@ -3561,6 +3561,15 @@ fn encode_native_revision_compound_loft(
             ));
         }
     }
+    // The trailing curve pairs with the parameter values: a reader recovers it
+    // from their presence alone, so the two have to agree or the record is
+    // unreadable.
+    if construction.interval.iter().all(Option::is_some) != construction.trailing_curve.is_some() {
+        return Err(CodecError::Malformed(
+            "revision-gated cl_loft_spl_sur pairs its trailing curve with both parameter values"
+                .into(),
+        ));
+    }
     for value in construction.interval {
         native_optional_f64(bytes, value);
     }

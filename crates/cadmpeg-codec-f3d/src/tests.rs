@@ -17955,6 +17955,93 @@ fn generated_revision_compound_loft_trailing_curve_round_trips() {
 }
 
 #[test]
+fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    // The trailing curve is present exactly when both parameter values are
+    // present, so a payload carrying two present values and closing straight
+    // away is not a legal record. The decoder reads the curve on the parameter
+    // pair alone; it does not look ahead for the subtype-close byte.
+    let smbh = synthetic_revision_surface_smbh("cl_loft_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        push_revision_cl_scale(surface, false);
+        t_long(surface, 1);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 1.0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        surface.push(0x0a);
+        t_dbl(surface, 1.0);
+        surface.push(0x0a);
+        t_dbl(surface, 0.0);
+    });
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode retains the record as a native unknown");
+    assert!(!decoded
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            ProceduralSurfaceDefinition::RevisionCompoundLoft { .. }
+        )));
+
+    // The writer refuses the same state rather than emitting bytes no reader
+    // can recover the curve from.
+    let legal = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_revision_surface_smbh(
+                "cl_loft_spl_sur",
+                |surface| {
+                    push_revision_surface_tail(surface);
+                    push_revision_cl_scale(surface, false);
+                    t_long(surface, 1);
+                    push_revision_cl_scale(surface, false);
+                    t_dbl(surface, 1.0);
+                    surface.push(0x0b);
+                    surface.push(0x0b);
+                    t_long(surface, 0);
+                    surface.push(0x0b);
+                    surface.push(0x0b);
+                    t_long(surface, 0);
+                    t_vec(surface, [0.0, 0.0, 1.0]);
+                    surface.push(0x0a);
+                    t_dbl(surface, 1.0);
+                    surface.push(0x0a);
+                    t_dbl(surface, 0.0);
+                    surface.extend_from_slice(&generated_curve_block());
+                },
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("legal revision compound loft decode")
+        .ir;
+    let mut edited = legal.clone();
+    edited.source = None;
+    edited.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
+        &mut edited.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected revision compound loft")
+    };
+    construction.trailing_curve = None;
+    let error = F3dCodec.encode(&edited, &mut Vec::new()).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("pairs its trailing curve with both parameter values"));
+}
+
+#[test]
 fn record_level_surface_bounds_round_trip() {
     let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
         push_revision_surface_tail(surface);

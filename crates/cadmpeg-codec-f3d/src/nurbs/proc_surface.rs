@@ -1753,12 +1753,15 @@ fn decode_revision_compound_loft(
         take_optional_range_value(span, &mut position)?,
         take_optional_range_value(span, &mut position)?,
     ];
-    let trailing_curve = if span.get(position) == Some(&0x10) {
-        None
-    } else {
+    // The trailing curve is present exactly when both parameter values are
+    // present. Nothing in the byte stream marks its absence; the parameter pair
+    // is what selects it.
+    let trailing_curve = if interval.iter().all(Option::is_some) {
         let curve = decode_curve_block(span, position, int_width)?;
         position = curve.end;
         Some(curve.curve)
+    } else {
+        None
     };
     (span.get(position) == Some(&0x10)).then_some(())?;
     Some(DecodedProceduralSurface {
