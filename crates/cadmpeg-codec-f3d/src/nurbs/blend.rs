@@ -409,14 +409,11 @@ fn decode_variable_blend_value(
                 take_f64(bytes, position)? * LEN_TO_MM,
             ],
         },
-        "edge_offset" if discriminator == 0 => VariableBlendValuePayload::EdgeOffset {
-            scalars: vec![take_f64(bytes, position)?, take_f64(bytes, position)?],
-            lengths: vec![take_f64(bytes, position)? * LEN_TO_MM],
-        },
-        // Without the leading sub-discriminator the payload is the law-domain
-        // parameter range and one offset, so the second field is a parameter and
-        // only the third is a length.
-        "edge_offset" if discriminator == 1 => VariableBlendValuePayload::EdgeOffset {
+        // The payload is the law-domain parameter range and one offset, so the
+        // second field is a parameter and only the third is a length. The
+        // sub-discriminator selects no layout here; it is still read and written
+        // as the format stores it, and no value outside `0` and `1` is defined.
+        "edge_offset" if matches!(discriminator, 0 | 1) => VariableBlendValuePayload::EdgeOffset {
             scalars: vec![take_f64(bytes, position)?, take_f64(bytes, position)?],
             lengths: vec![take_f64(bytes, position)? * LEN_TO_MM],
         },
