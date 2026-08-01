@@ -12,7 +12,6 @@ use crate::solve::UnionFind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 pub(crate) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
 const TRIM_KINDS: [u8; 14] = [
@@ -403,10 +402,10 @@ pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
     let mut tied = false;
     let mut position = 0;
     while position + 8 <= bytes.len() {
-        if bytes[position..].starts_with(&FBB_ROW) {
+        if crate::container::is_fbb_row(&bytes[position..]) {
             let start = position;
             let mut count = 0;
-            while position + 8 <= bytes.len() && bytes[position..].starts_with(&FBB_ROW) {
+            while position + 8 <= bytes.len() && crate::container::is_fbb_row(&bytes[position..]) {
                 count += 1;
                 position += 8;
             }

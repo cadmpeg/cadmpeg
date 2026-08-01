@@ -428,6 +428,12 @@ fn standard_face_population_ignores_shorter_fbb_marker_runs() {
 }
 
 #[test]
+fn standard_face_population_accepts_flagged_fbb_rows() {
+    let row = [0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1];
+    assert_eq!(standard_face_count(&row.repeat(6)), Some(6));
+}
+
+#[test]
 fn standard_face_population_rejects_equal_largest_fbb_runs() {
     let row = [0x30, 0x04, 0x04, 0xff, 0xff, 0xff, 0xd2, 0xd2];
     let mut bytes = row.repeat(2);

@@ -16,7 +16,7 @@ A file stores its geometry in one of six families; the family determines the rec
 | **FBB-only partial spine**       | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table                  | FBB face group + vertex records; post-FBB edge rows and trim `H` handles share a selected `u8`, `u16be`, or `u24be` width |
 | **E5 `0D 03` stream**            | Coherent walked E5 record stream in the preamble or a FINJPL segment                                                 | Native E5 records: faces, loops, edge-uses, p-curves, curve supports, surface carriers        |
 | **Zero-entity `a9 03`**          | No nested inner `V5_CFV2`; outer preamble carries `a9 03 XX YY` record families                                      | Outer-preamble `a9 03` records                                                                |
-| **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no `30 04 04 ff` FBB spine, large vertex/object-graph/float populations                        | Object-stream (`b5 03` / `a8 03`) records; surface-kind markers only for the pure marker case |
+| **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no standard FBB spine, large vertex/object-graph/float populations                              | Object-stream (`b5 03` / `a8 03`) records; surface-kind markers only for the pure marker case |
 | **Inner body without directory** | Nested `V5_CFV2` whose directory contains no BREP body; the body occupies the contiguous region before the directory | Contiguous inner records and freeform carrier families                                        |
 
 Detection invariants: a standard file has one nested inner `V5_CFV2` past byte 8; the standard BREP spine contains the largest FBB run followed by parseable edge tables and a `kind=0x06` table of 15-byte `05 08 01` vertex records. E5 classification requires a coherent record walk. Zero-entity classification requires no inner `V5_CFV2` and at least one recognized `a9 03` family.
@@ -125,7 +125,7 @@ A parallel representation of faces/edges/vertices indexed by the same topologica
 | `7C 02`                               | outer preamble             | total-length-framed source-schema string catalog                         |
 | `7C 05` / `7C 08` / `7C 09` / `7C 0A` | outer preamble             | entity table / object-graph root / object records / tagged-atom payloads |
 | `7C D9`                               | outer preamble             | literal float-data bytes (not a framed record family)                    |
-| `30 04 04 ff`                         | inner body                 | face outer-bound (FBB) spine row marker                                  |
+| `(30|b0) 04 04 ff`                    | inner body                 | face outer-bound (FBB) spine row marker                                  |
 | `10 24 04 ff ff 00 00 00`             | inner body                 | standard edge-table delimiter                                            |
 | `05 08 01`                            | inner body / E5 areas      | 15-byte vertex XYZ record (3×f32le)                                      |
 | `00 33 30`                            | inner body                 | surface-of-revolution kind tag (geometry in a `b2 03 2d` record)         |
@@ -152,7 +152,7 @@ Face identity is the native ordinal within the FBB row sequence.
 ### 5.2 Spine grammar
 
 ```text
-face_outer_bound_group := (30 04 04 ff <4 raw bytes>){N}  at stride 8
+face_outer_bound_group := ((30|b0) 04 04 ff <4 raw bytes>){N}  at stride 8
 count_header := 01 <kind> <count_u8>  |  01 <kind> ff <count_u32le>
 edge_table   := count_header(kind∈{0x01,0x02}) edge_row{count} [delimiter]
 edge_row     := 02 <arity_u8> <payload[arity*2]>
@@ -161,7 +161,7 @@ vertex_table := count_header(kind=0x06) vertex_record{count}
 vertex_record:= 05 08 01 <x_f32le> <y_f32le> <z_f32le>
 ```
 
-Spine invariants: the face population is the unique largest contiguous stride-8 `30 04 04 ff` run; shorter marker runs are not members of that population. Equal-largest runs do not identify one governing face population. Edge-row payloads are big-endian handles. A standard-spine row's first and last handles are graph endpoint ports. An FBB-only row uses its family's selected `u8`, `u16`, or `u24` width and its first and last handles are the endpoints of its complete trim-boundary run. The counted `01 06` table is the vertex coordinate source. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run, such as `ffffd2d2`, and carries no per-face tag.
+Spine invariants: the face population is the unique largest contiguous stride-8 FBB run. Its four-byte marker is `(30|b0) 04 04 ff`; bit 7 of the leading byte is a form flag and does not change row ownership. Shorter marker runs are not members of that population. Equal-largest runs do not identify one governing face population. Edge-row payloads are big-endian handles. A standard-spine row's first and last handles are graph endpoint ports. An FBB-only row uses its family's selected `u8`, `u16`, or `u24` width and its first and last handles are the endpoints of its complete trim-boundary run. The counted `01 06` table is the vertex coordinate source. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run and carries no per-face tag.
 
 ### 5.3 Trim records (indexed triangle-mesh packets)
 
@@ -853,7 +853,7 @@ Each FBB-only edge-row handle is a same-width trim-mesh boundary-vertex handle. 
 
 ## 11. Float-packed inner-no-FBB variant
 
-A nested-`V5_CFV2` file without a `30 04 04 ff` spine uses the object-stream `b5 03` grammar (§6.6) for topology. A pure-marker path stores `00 33 3X` surface-kind markers and identifies one face per marker without loop or edge topology.
+A nested-`V5_CFV2` file without a standard FBB spine uses the object-stream `b5 03` grammar (§6.6) for topology. A pure-marker path stores `00 33 3X` surface-kind markers and identifies one face per marker without loop or edge topology.
 
 ---
 

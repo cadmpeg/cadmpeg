@@ -457,7 +457,6 @@ fn count_e5_records(data: &[u8]) -> usize {
 }
 
 /// Standard-nested BREP-spine markers used for variant identification.
-const FBB_MARKER: &[u8; 4] = &[0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: &[u8; 8] = &[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
 const A9_MARKER: &[u8; 2] = &[0xa9, 0x03];
@@ -514,7 +513,7 @@ pub struct InnerDir {
 /// Census counts used for variant identification and reporting.
 #[derive(Debug, Clone, Default)]
 pub struct Census {
-    /// Contiguous stride-8 `30 04 04 ff` FBB runs in the BREP stream.
+    /// Contiguous stride-8 FBB runs in the BREP stream.
     pub fbb_runs: usize,
     /// `10 24 04 ff ff 00 00 00` standard edge-table delimiters in the BREP stream.
     pub edge_delimiters: usize,
@@ -571,7 +570,7 @@ fn count_stride8_fbb(body: &[u8]) -> usize {
     let mut count = 0;
     let mut i = 0;
     while i + 4 <= body.len() {
-        if &body[i..i + 4] == FBB_MARKER {
+        if is_fbb_row(&body[i..]) {
             count += 1;
             i += 8;
         } else {
@@ -579,6 +578,12 @@ fn count_stride8_fbb(body: &[u8]) -> usize {
         }
     }
     count
+}
+
+/// A standard face-outer-bound row. Bit 7 of the leading `30` byte is a form
+/// flag; the structural `04 04 ff` tail is stable.
+pub(crate) fn is_fbb_row(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && bytes[0] & 0x7f == 0x30 && bytes[1..4] == [0x04, 0x04, 0xff]
 }
 
 fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {

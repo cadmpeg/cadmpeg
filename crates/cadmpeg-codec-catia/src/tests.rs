@@ -3644,6 +3644,16 @@ fn scan_parses_directory_and_identifies_standard() {
 }
 
 #[test]
+fn flagged_fbb_marker_is_structural() {
+    assert!(crate::container::is_fbb_row(&[
+        0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1,
+    ]));
+    assert!(!crate::container::is_fbb_row(&[
+        0x20, 0x04, 0x04, 0xff, 0xff, 0xc4, 0xb2, 0xaa,
+    ]));
+}
+
+#[test]
 fn standard_decode_retains_native_surface_carrier_tags() {
     let decoded = CatiaCodec
         .decode(
