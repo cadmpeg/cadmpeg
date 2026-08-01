@@ -9,12 +9,12 @@
 //! [`crate::decode`] passes the selected stream to the SAB and B-rep layers.
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read};
+use std::io::Read;
 
-use cadmpeg_codec_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_ir::hash::sha256_hex;
-use zip::CompressionMethod;
 
 use crate::asm_header;
 
@@ -22,8 +22,6 @@ use crate::asm_header;
 const INPUT_CAP: u64 = 256 * 1024 * 1024;
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = INPUT_CAP;
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
-
-const EXPAND_CHUNK: usize = 16 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
@@ -125,15 +123,6 @@ pub fn classify(name: &str) -> &'static str {
     }
 }
 
-fn compression_label(method: CompressionMethod) -> String {
-    match method {
-        CompressionMethod::Stored => "stored".to_string(),
-        CompressionMethod::Deflated => "deflate".to_string(),
-        CompressionMethod::Zstd => "zstd".to_string(),
-        other => format!("{other:?}").to_lowercase(),
-    }
-}
-
 /// One decoded BREP stream's header facts, kept for the summary and decode
 /// metadata.
 #[derive(Debug, Clone)]
@@ -185,59 +174,6 @@ impl<'a> ContainerScan<'a> {
     }
 }
 
-/// Admit one archive entry and enforce its declared uncompressed size.
-pub(crate) fn admit_entry<'a>(
-    ctx: &DecodeContext<'a>,
-    parent: View<'a>,
-    file: &mut zip::read::ZipFile<'_, Cursor<&'a [u8]>>,
-    name: &str,
-) -> Result<View<'a>, CodecError> {
-    let compression = file.compression();
-    let compressed_size = file.compressed_size();
-    let uncompressed_size = file.size();
-    let data_start = file
-        .data_start()
-        .ok_or_else(|| CodecError::Malformed(format!("entry {name} has no local data offset")))?;
-    let data_end = data_start
-        .checked_add(compressed_size)
-        .ok_or_else(|| CodecError::Malformed(format!("entry {name} data range overflows")))?;
-
-    if compression == CompressionMethod::Stored {
-        let view = ctx.register_slice(
-            parent,
-            ByteRange {
-                start: data_start,
-                end: data_end,
-            },
-        )?;
-        return Ok(view);
-    }
-
-    let source = child_range(parent, data_start, data_end).ok_or_else(|| {
-        CodecError::Malformed(format!("entry {name} data range escapes its parent space"))
-    })?;
-    let mut writer = ctx.begin_expand(source, ExpandSpec::Exact(uncompressed_size))?;
-    let mut chunk = [0u8; EXPAND_CHUNK];
-    loop {
-        let read = file
-            .read(&mut chunk)
-            .map_err(|e| CodecError::Malformed(format!("cannot inflate {name}: {e}")))?;
-        if read == 0 {
-            break;
-        }
-        writer.write(&chunk[..read])?;
-    }
-    writer.finalize()
-}
-
-/// Build a child view over an absolute `[start, end)` root range, refusing a
-/// range that escapes the root window or overflows the address space.
-fn child_range(root: View<'_>, start: u64, end: u64) -> Option<View<'_>> {
-    let start = usize::try_from(start).ok()?;
-    let end = usize::try_from(end).ok()?;
-    root.child(start, end)
-}
-
 /// Read and classify every entry, decoding ASM headers for BREP streams.
 ///
 /// Every entry is registered as a slice when stored or a decompressed space
@@ -250,8 +186,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         )));
     }
 
-    let mut archive = zip::ZipArchive::new(Cursor::new(source_image))
-        .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
+    let archive = ArchiveSnapshot::new(root)?;
 
     let mut entries = Vec::new();
     let mut breps = Vec::new();
@@ -259,16 +194,12 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     let mut inflated_entries = BTreeMap::new();
     let mut total_declared_inflated = 0_u64;
 
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| CodecError::Malformed(format!("bad ZIP entry {i}: {e}")))?;
-        let name = file.name().to_string();
+    for file in archive.entries() {
+        let name = file.name.clone();
         let role = classify(&name);
-        let method = file.compression();
-        let compression = compression_label(method);
-        let compressed_size = file.compressed_size();
-        let uncompressed_size = file.size();
+        let compression = file.compression.label().to_string();
+        let compressed_size = file.compressed_size;
+        let uncompressed_size = file.uncompressed_size;
         if uncompressed_size > MAX_INFLATED_ENTRY_BYTES {
             return Err(CodecError::Malformed(format!(
                 "ZIP entry {name} declares {uncompressed_size} inflated bytes, exceeding the \
@@ -287,8 +218,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
-        let view = admit_entry(ctx, root, &mut file, &name)?;
-        drop(file);
+        let view = archive.open(ctx, file)?;
         let buf = view.window();
         if is_brep {
             if asset_folder.is_none() {
