@@ -24,7 +24,6 @@ use crate::wire::Uuid;
 /// This codec-local cap bounds the addressable offset space indexed by the
 /// chunk walker independently of the platform input limit.
 pub(crate) const INPUT_CAP: u64 = 256 * 1024 * 1024;
-
 /// Maximum direct table records retained or described in one document.
 ///
 /// Bounds record-descriptor amplification from an attacker-controlled table body independently of the
