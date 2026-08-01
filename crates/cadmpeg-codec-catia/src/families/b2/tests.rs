@@ -948,6 +948,61 @@ fn b2_nurbs_curve_parser_rejects_broken_frame_invariants() {
     assert!(crate::families::b2::records::b2_nurbs_curves(&nonpositive_weight).is_empty());
 }
 
+fn b2_spatial_circle_stream() -> Vec<u8> {
+    let cosine = 0.696_706_709_347_165_3_f64;
+    let sine = 0.717_356_090_899_522_8_f64;
+    let values = [
+        17.0,
+        23.0,
+        13.0,
+        cosine,
+        -sine,
+        0.0,
+        sine,
+        cosine,
+        -0.0,
+        7.0,
+        0.0,
+        11.2,
+        1.0,
+        -16.391_148_575_128_55,
+    ];
+    let mut record = vec![0xb2, 0x03, 0x0f, 112, 0x05];
+    for value in values {
+        record.extend_from_slice(&value.to_le_bytes());
+    }
+    record
+}
+
+#[test]
+fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {
+    let circles = crate::families::b2::records::b2_spatial_circles(&b2_spatial_circle_stream());
+    let [circle] = circles.as_slice() else {
+        panic!("one spatial circle");
+    };
+    assert_eq!(
+        circle.center,
+        cadmpeg_ir::math::Point3::new(17.0, 23.0, 13.0)
+    );
+    assert!((circle.axis.z - 1.0).abs() < 1e-12);
+    assert_eq!(circle.radius, 7.0);
+    assert_eq!(circle.range, [0.0, 11.2]);
+    assert_eq!(circle.chart_shift, -16.391_148_575_128_55);
+}
+
+#[test]
+fn b2_spatial_circle_parser_rejects_nonorthonormal_and_invalid_charts() {
+    for scalar in [3usize, 6, 9, 11, 12] {
+        let mut broken = b2_spatial_circle_stream();
+        let offset = 5 + scalar * 8;
+        broken[offset..offset + 8].copy_from_slice(&0.0f64.to_le_bytes());
+        assert!(
+            crate::families::b2::records::b2_spatial_circles(&broken).is_empty(),
+            "scalar {scalar}"
+        );
+    }
+}
+
 #[test]
 fn b2_composite_parser_reads_embedded_cylinder_frame() {
     let bytes = b2_embedded_cylinder_stream();

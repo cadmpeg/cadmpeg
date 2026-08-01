@@ -924,6 +924,71 @@ pub struct B2NurbsCurve {
     pub geometry: NurbsCurve,
 }
 
+/// One spatial circle carrier stored in a `b2 03 0f` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2SpatialCircle {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded record token.
+    pub header_token: u32,
+    /// Circle centre.
+    pub center: Point3,
+    /// Unit circle-plane normal.
+    pub axis: Vector3,
+    /// Unit radial reference direction.
+    pub ref_direction: Vector3,
+    /// Positive radius in millimetres.
+    pub radius: f64,
+    /// Stored arc-length interval.
+    pub range: [f64; 2],
+    /// Stored chart shift.
+    pub chart_shift: f64,
+}
+
+/// Decode length-closed `b2/b3/b4 03 0f` spatial circles.
+#[must_use]
+pub fn b2_spatial_circles(data: &[u8]) -> Vec<B2SpatialCircle> {
+    b_family_frames(data, 0x0f)
+        .into_iter()
+        .filter_map(|frame| parse_b2_spatial_circle(data, frame))
+        .collect()
+}
+
+fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2SpatialCircle> {
+    let values = read_f64_array::<14>(data, frame.payload)?;
+    if frame.end.checked_sub(frame.payload)? != 14 * size_of::<f64>() {
+        return None;
+    }
+    let center = Point3::new(values[0], values[1], values[2]);
+    let ref_direction = Vector3::new(values[3], values[4], values[5]);
+    let transverse = Vector3::new(values[6], values[7], values[8]);
+    let ref_norm = ref_direction.norm();
+    let transverse_norm = transverse.norm();
+    let orthogonality = ref_direction.dot(transverse).abs();
+    let axis = ref_direction.cross(transverse).unit()?;
+    let radius = values[9];
+    let range = [values[10], values[11]];
+    if (ref_norm - 1.0).abs() > 1e-12
+        || (transverse_norm - 1.0).abs() > 1e-12
+        || orthogonality > 1e-12
+        || radius <= 0.0
+        || range[0] >= range[1]
+        || values[12].to_bits() != 1.0f64.to_bits()
+    {
+        return None;
+    }
+    Some(B2SpatialCircle {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        center,
+        axis,
+        ref_direction,
+        radius,
+        range,
+        chart_shift: values[13],
+    })
+}
+
 /// Decode length-closed `b2 03 16` rational NURBS curves.
 ///
 /// The record stores one clamped span. The first compact integer is the degree,

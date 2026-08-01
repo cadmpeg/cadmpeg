@@ -171,10 +171,13 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     let b2_nurbs_curve_count = b2_nurbs_curves.len();
     let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves(&scan.data);
     let a5_nurbs_curve_count = a5_nurbs_curves.len();
+    let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles(&scan.data);
+    let b2_spatial_circle_count = b2_spatial_circles.len();
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
         && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
         && b2_nurbs_curves.is_empty()
         && a5_nurbs_curves.is_empty()
+        && b2_spatial_circles.is_empty()
     {
         return None;
     }
@@ -260,6 +263,33 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
             )),
         });
     }
+    for circle in b2_spatial_circles {
+        let id = CurveId(format!("catia:b2:circle#{}", ir.model.curves.len()));
+        annotate(
+            &mut annotations,
+            &id,
+            "consolidated_b2_03_0f",
+            circle.pos as u64,
+            format!(
+                "header_token:{:08x}:range:{:?}:chart_shift:{}",
+                circle.header_token, circle.range, circle.chart_shift
+            ),
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Circle {
+                center: circle.center,
+                axis: circle.axis,
+                ref_direction: circle.ref_direction,
+                radius: circle.radius,
+            },
+            source_object: Some(cgm_source_key(
+                "b2-spatial-circle-frame",
+                format!("{:010}", circle.pos),
+            )),
+        });
+    }
     let mut losses = if topology_transferred && b5_complete {
         vec![LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
@@ -299,6 +329,10 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     coverage.insert(
         "decoded_a5_nurbs_curve_count".to_string(),
         a5_nurbs_curve_count,
+    );
+    coverage.insert(
+        "decoded_b2_spatial_circle_count".to_string(),
+        b2_spatial_circle_count,
     );
     if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
         coverage.insert(
