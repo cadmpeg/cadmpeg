@@ -3372,9 +3372,10 @@ pub struct SketchText {
     /// last column of its placement transform. Path text stores neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<Point2>,
-    /// Rotation of the text about its anchor in radians, taken from the
-    /// placement transform's 2×2 basis. Only the `textex_tag` identity form
-    /// stores a transform, and path text within it stores none.
+    /// Rotation of the text about its anchor in radians. The `txt_tag` identity
+    /// form stores the angle directly after the property block. Frame text in the
+    /// `textex_tag` form derives it from the placement transform's 2×2 basis;
+    /// path text stores none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation: Option<f64>,
     /// Parameter record driving the height, absent when the record omits the

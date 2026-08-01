@@ -30,6 +30,8 @@ const CHUNK_STREAM: u32 = 4;
 const LZMA_PROPERTIES: u8 = 0x5D;
 /// Base-2 logarithm of the LZMA1 dictionary size.
 const LZMA_DICTIONARY_LOG: u8 = 0x14;
+/// Raw-stream selector following the common properties byte.
+const RAW_STREAM_MODE: u8 = 0xfe;
 /// Largest stream this decoder inflates.
 const MAX_STREAM_BYTES: u32 = 64 * 1024 * 1024;
 /// Protobuf wire type of a length-delimited field.
@@ -167,19 +169,27 @@ fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecErro
 
 /// Descriptor and decompressed bytes of one named stream.
 struct MeshStream {
-    descriptor: Vec<(String, u64)>,
+    descriptor: Vec<(String, StreamDescriptorValue)>,
     bytes: Vec<u8>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreamDescriptorValue {
+    Integer(u64),
+    Boolean(bool),
+}
+
 /// Read the integer-valued `MessagePack` descriptor map of one kind-4 chunk.
-fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
-    fn integer(bytes: &[u8], at: &mut usize) -> Result<u64, CodecError> {
+fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)>, CodecError> {
+    fn value(bytes: &[u8], at: &mut usize) -> Result<StreamDescriptorValue, CodecError> {
         let tag = *bytes
             .get(*at)
             .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
         *at += 1;
         let width = match tag {
-            0x00..=0x7f => return Ok(u64::from(tag)),
+            0x00..=0x7f => return Ok(StreamDescriptorValue::Integer(u64::from(tag))),
+            0xc2 => return Ok(StreamDescriptorValue::Boolean(false)),
+            0xc3 => return Ok(StreamDescriptorValue::Boolean(true)),
             0xcc => 1,
             0xcd => 2,
             0xce => 4,
@@ -194,9 +204,10 @@ fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
             .get(*at..*at + width)
             .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
         *at += width;
-        Ok(raw
-            .iter()
-            .fold(0, |value, byte| (value << 8) | u64::from(*byte)))
+        Ok(StreamDescriptorValue::Integer(
+            raw.iter()
+                .fold(0, |value, byte| (value << 8) | u64::from(*byte)),
+        ))
     }
 
     let mut at = 0usize;
@@ -232,7 +243,7 @@ fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
         if entries.iter().any(|(existing, _)| existing == &key) {
             return Err(malformed("paramesh stream descriptor repeats a key"));
         }
-        entries.push((key, integer(bytes, &mut at)?));
+        entries.push((key, value(bytes, &mut at)?));
     }
     if at != bytes.len() {
         return Err(malformed("paramesh stream descriptor has trailing bytes"));
@@ -263,14 +274,23 @@ fn inflate_stream(body: &[u8]) -> Result<MeshStream, CodecError> {
     let properties = body
         .get(at + 4..at + 6)
         .ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
-    if properties != [LZMA_PROPERTIES, LZMA_DICTIONARY_LOG] {
-        return Err(malformed(
-            "paramesh stream carries undefined LZMA1 properties",
-        ));
-    }
     let payload = body
         .get(at + 6..)
         .ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
+    if properties == [LZMA_PROPERTIES, RAW_STREAM_MODE] {
+        if payload.len() != declared as usize {
+            return Err(malformed(
+                "raw paramesh stream length differs from its declared byte count",
+            ));
+        }
+        return Ok(MeshStream {
+            descriptor,
+            bytes: payload.to_vec(),
+        });
+    }
+    if properties != [LZMA_PROPERTIES, LZMA_DICTIONARY_LOG] {
+        return Err(malformed("paramesh stream carries an undefined encoding"));
+    }
     // `lzma-rs` reads the properties byte and the four-byte dictionary size
     // from the stream, which the container stores as a properties byte and a
     // base-2 dictionary exponent instead.
@@ -310,16 +330,21 @@ fn require_layout(
     delta_coded: bool,
 ) -> Result<(), CodecError> {
     let value = |key: &str| {
-        stream
-            .descriptor
-            .iter()
-            .find_map(|(name, value)| (name == key).then_some(*value))
+        stream.descriptor.iter().find_map(|(name, value)| {
+            (name == key)
+                .then_some(*value)
+                .and_then(|value| match value {
+                    StreamDescriptorValue::Integer(value) => Some(value),
+                    StreamDescriptorValue::Boolean(_) => None,
+                })
+        })
     };
+    let has = |key: &str| stream.descriptor.iter().any(|(name, _)| name == key);
     if value("D") != components
         || value("T") != Some(component_type)
-        || (value("d") == Some(1)) != delta_coded
-        || value("d").is_some_and(|value| value != 1)
-        || value("U").is_some()
+        || has("d") != delta_coded
+        || (delta_coded && value("d") != Some(1))
+        || has("U")
     {
         return Err(malformed(
             "paramesh stream descriptor does not match its implemented layout",
@@ -350,21 +375,60 @@ fn decode_vertices(stream: &[u8]) -> Result<Vec<[f64; 3]>, CodecError> {
     Ok(vertices)
 }
 
-/// Resolve the delta-coded corner indices into triangles. Each stored value is
-/// the two's-complement difference between consecutive corner indices, the
-/// first index is zero, and the last stored value does not continue the
-/// sequence.
+/// Resolve the delta-coded corner indices into triangles. The first corner is
+/// implicit and is the unique starting index that keeps the complete corner
+/// sequence inside the vertex domain. Every value before the last is the
+/// two's-complement difference to the next corner. The final stored value does
+/// not continue the sequence.
 fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, CodecError> {
     if !stream.len().is_multiple_of(4) || stream.is_empty() {
         return Err(malformed(
             "paramesh corner stream is not a whole number of values",
         ));
     }
-    let mut corners = vec![0u32];
-    let mut current = 0i64;
     let values = stream.len() / 4;
-    for raw in stream.chunks_exact(4).take(values - 1) {
-        let delta = i64::from(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]));
+    if !values.is_multiple_of(3) {
+        return Err(malformed(
+            "paramesh corner count is not a whole number of triangles",
+        ));
+    }
+    let deltas = stream
+        .chunks_exact(4)
+        .take(values - 1)
+        .map(|raw| i64::from(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])))
+        .collect::<Vec<_>>();
+    let mut relative = 0i64;
+    let mut minimum = 0i64;
+    let mut maximum = 0i64;
+    for delta in &deltas {
+        relative = relative
+            .checked_add(*delta)
+            .ok_or_else(|| malformed("paramesh corner delta accumulation overflows"))?;
+        minimum = minimum.min(relative);
+        maximum = maximum.max(relative);
+    }
+    let last_vertex = i64::try_from(vertices)
+        .ok()
+        .and_then(|count| count.checked_sub(1))
+        .ok_or_else(|| malformed("paramesh corner stream has no vertex domain"))?;
+    let lowest_start = minimum
+        .checked_neg()
+        .ok_or_else(|| malformed("paramesh corner start is out of range"))?;
+    let highest_start = last_vertex
+        .checked_sub(maximum)
+        .ok_or_else(|| malformed("paramesh corner start is out of range"))?;
+    if lowest_start != highest_start || lowest_start < 0 {
+        return Err(malformed(
+            "paramesh corner deltas do not determine one implicit starting index",
+        ));
+    }
+
+    let mut current = lowest_start;
+    let mut corners = Vec::with_capacity(values);
+    corners.push(
+        u32::try_from(current).map_err(|_| malformed("paramesh corner index is out of range"))?,
+    );
+    for delta in deltas {
         current += delta;
         let index = u32::try_from(current)
             .map_err(|_| malformed("paramesh corner index is out of range"))?;
@@ -372,11 +436,6 @@ fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, Cod
             return Err(malformed("paramesh corner index names no vertex"));
         }
         corners.push(index);
-    }
-    if !corners.len().is_multiple_of(3) {
-        return Err(malformed(
-            "paramesh corner count is not a whole number of triangles",
-        ));
     }
     Ok(corners
         .chunks_exact(3)
@@ -491,6 +550,16 @@ mod tests {
         chunk
     }
 
+    fn raw_stream_body(descriptor: &[u8], declared: u32, payload: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(descriptor.len() as u16).to_le_bytes());
+        body.extend_from_slice(descriptor);
+        body.extend_from_slice(&declared.to_le_bytes());
+        body.extend_from_slice(&[LZMA_PROPERTIES, RAW_STREAM_MODE]);
+        body.extend_from_slice(payload);
+        body
+    }
+
     /// One container holding `v` and `t` in that stream-id order.
     fn container(guid: &str, vertices: &[f32], corners: &[i32]) -> Vec<u8> {
         let mut protobuf = vec![0x0a, 11];
@@ -534,9 +603,8 @@ mod tests {
 
     const GUID: &str = "8a52d9b8-99b1-4a19-8409-c7c734298305";
 
-    /// Two triangles over four vertices. The first corner index is zero, each
-    /// stored value is the difference to the next corner, and the last stored
-    /// value does not continue the sequence.
+    /// Two triangles over four vertices. The delta range uniquely determines
+    /// implicit starting corner zero, and the terminal value is not a corner.
     #[test]
     fn container_decodes_its_vertices_and_delta_coded_corners() {
         let container = container(
@@ -549,6 +617,50 @@ mod tests {
         assert_eq!(mesh.vertices.len(), 4);
         assert_eq!(mesh.vertices[2], [1.0, 1.0, 0.0]);
         assert_eq!(mesh.triangles, [[0, 1, 2], [3, 1, 2]]);
+    }
+
+    #[test]
+    fn corner_delta_bounds_determine_nonzero_implicit_start() {
+        let triangles = decode_triangles(
+            &[
+                -4i32, 1, 3, -3, 1, 2, -2, 1, 1, -1, -3, 5, -4, -1, 5, -3, -1, 4, -2, -1, 3, -5, 3,
+                3,
+            ]
+            .into_iter()
+            .flat_map(i32::to_le_bytes)
+            .collect::<Vec<_>>(),
+            6,
+        )
+        .expect("bounded corner deltas");
+        assert_eq!(
+            triangles,
+            [
+                [4, 0, 1],
+                [4, 1, 2],
+                [4, 2, 3],
+                [4, 3, 0],
+                [5, 1, 0],
+                [5, 2, 1],
+                [5, 3, 2],
+                [5, 0, 3],
+            ]
+        );
+    }
+
+    #[test]
+    fn odd_fan_delta_bounds_determine_zero_implicit_start() {
+        let triangles = decode_triangles(
+            &[1i32, 1, -2, 2, 1, -3, 3, 1, -4, 4, 1, -5, 5, -4, 1]
+                .into_iter()
+                .flat_map(i32::to_le_bytes)
+                .collect::<Vec<_>>(),
+            6,
+        )
+        .expect("odd fan deltas");
+        assert_eq!(
+            triangles,
+            [[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 5], [0, 5, 1]]
+        );
     }
 
     /// A corner run that does not close into whole triangles is refused rather
@@ -612,5 +724,29 @@ mod tests {
             .expect("properties");
         container[at] = 0x00;
         assert!(decode_mesh_container(&container).is_err());
+    }
+
+    #[test]
+    fn raw_stream_requires_its_exact_declared_byte_count() {
+        let descriptor = [0x82, 0xa1, b'T', 1, 0xa1, b'd', 1];
+        let payload = [1, 2, 3, 4];
+        let stream =
+            inflate_stream(&raw_stream_body(&descriptor, 4, &payload)).expect("exact raw stream");
+        assert_eq!(stream.bytes, payload);
+        assert!(inflate_stream(&raw_stream_body(&descriptor, 3, &payload)).is_err());
+        assert!(inflate_stream(&raw_stream_body(&descriptor, 5, &payload)).is_err());
+    }
+
+    #[test]
+    fn stream_descriptor_retains_boolean_values() {
+        assert_eq!(
+            stream_descriptor(&[0x83, 0xa1, b'D', 3, 0xa1, b'T', 3, 0xa1, b'U', 0xc3])
+                .expect("descriptor"),
+            vec![
+                ("D".into(), StreamDescriptorValue::Integer(3)),
+                ("T".into(), StreamDescriptorValue::Integer(3)),
+                ("U".into(), StreamDescriptorValue::Boolean(true)),
+            ]
+        );
     }
 }

@@ -832,6 +832,9 @@ pub(crate) fn decode_var_blend_spl_sur(
                     take_f64(span, &mut position)?,
                 ],
             }),
+            selector @ (2 | 4 | 5 | 6) => Some(VariableBlendCrossSection::UnclassifiedBare {
+                selector: selector.try_into().ok()?,
+            }),
             3 => {
                 let radius = if take_bool(span, &mut position)? {
                     Some(Box::new(decode_variable_blend_value(

@@ -1664,10 +1664,9 @@ const SKETCH_TEXT_TRAILING_RUN: usize = 30;
 /// misframed bytes would meet.
 const TEXT_PLACEMENT_TOLERANCE: f64 = 1e-9;
 
-/// Bytes from the property block to the four f32 RGBA colour components in the
-/// `txt_tag` form: the `0` byte that opens the run and twelve bytes that store
-/// no width factor. The components close the run at the u32 font-family count.
-const TXT_TAG_HEAD_RUN: usize = 13;
+/// Bytes between the end of the stored `txt_tag` rotation and the four f32 RGBA
+/// components. The first byte is zero and four further bytes are unclassified.
+const TXT_TAG_POST_ROTATION_RUN: usize = 5;
 
 /// Bytes between the text-anchor coordinates and the u32 text count in the
 /// `txt_tag` form, from [`TXT_TAG_ANCHOR_MEMBER_VERSION`] onward.
@@ -1683,9 +1682,10 @@ const TXT_TAG_ANCHOR_MEMBER_VERSION: u32 = 4;
 /// persistent identity at all.
 const TXT_TAG_IDENTITY_KEY_VERSION: u32 = 4;
 
-/// Bytes between the `txt_tag` form's counted reference run and the thirty-byte
-/// run that closes every sketch-text record.
+/// Three unknown bytes, one i32 font weight, and eight further bytes between
+/// the `txt_tag` form's counted reference run and the thirty-byte class tail.
 const TXT_TAG_MEMBER_RUN: usize = 15;
+const TXT_TAG_FONT_WEIGHT_AT: usize = 3;
 
 /// Which identity key a sketch-text record carries. The key selects the layout
 /// the record uses from the property block onward.
@@ -1779,6 +1779,7 @@ struct SketchTextHead {
     height: f64,
     width_factor: Option<f64>,
     color: Color,
+    txt_tag_rotation: Option<f64>,
     cursor: usize,
 }
 
@@ -1842,13 +1843,28 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
             .find(|(name, _)| name == key)
             .map(|(_, value)| *value)
     };
-    let (identity, persistent_id) = match (property("textex_tag"), property("txt_tag")) {
-        (Some(value), _) => (SketchTextIdentity::TextexTag, Some(value)),
-        (None, Some(value)) => (SketchTextIdentity::TxtTag, Some(value)),
-        (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => {
-            (SketchTextIdentity::TxtTag, None)
-        }
+    let identity = match (property("textex_tag"), property("txt_tag")) {
+        (Some(_), _) => SketchTextIdentity::TextexTag,
+        (None, Some(_)) => SketchTextIdentity::TxtTag,
+        (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => SketchTextIdentity::TxtTag,
         (None, None) => return None,
+    };
+    let txt_tag_rotation = if identity == SketchTextIdentity::TxtTag {
+        let rotation = f64_at(payload, cursor)?;
+        rotation.is_finite().then_some(())?;
+        Some(rotation)
+    } else {
+        None
+    };
+    let property = |key: &str| {
+        properties
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| *value)
+    };
+    let persistent_id = match identity {
+        SketchTextIdentity::TextexTag => property("textex_tag"),
+        SketchTextIdentity::TxtTag => property("txt_tag"),
     };
     let (width_factor, color) = match identity {
         SketchTextIdentity::TextexTag => {
@@ -1861,8 +1877,9 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
             (Some(width_factor), color)
         }
         SketchTextIdentity::TxtTag => {
+            cursor = cursor.checked_add(8)?;
             (payload.get(cursor)? == &0).then_some(())?;
-            cursor = cursor.checked_add(TXT_TAG_HEAD_RUN)?;
+            cursor = cursor.checked_add(TXT_TAG_POST_ROTATION_RUN)?;
             let color = read_sketch_text_color(payload, &mut cursor)?;
             (None, color)
         }
@@ -1889,6 +1906,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         height,
         width_factor,
         color,
+        txt_tag_rotation,
         cursor,
     })
 }
@@ -1956,6 +1974,7 @@ fn decode_txt_tag_sketch_text_tail(
     payload: &[u8],
     mut cursor: usize,
     class_version: u32,
+    rotation: f64,
 ) -> Option<SketchTextTail> {
     cursor = cursor.checked_add(2)?;
     let anchor = Point2::new(
@@ -1983,7 +2002,7 @@ fn decode_txt_tag_sketch_text_tail(
     for _ in 0..references {
         take_reference(payload, &mut cursor)?;
     }
-    let font_weight = u32_at(payload, cursor.checked_add(3)?)? as i32;
+    let font_weight = u32_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
     let owner = take_reference(payload, &mut cursor)?;
@@ -1994,8 +2013,7 @@ fn decode_txt_tag_sketch_text_tail(
         text,
         font_weight,
         anchor: Some(anchor),
-        // This form writes no placement transform, so it stores no rotation.
-        rotation: None,
+        rotation: Some(rotation),
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -2028,9 +2046,12 @@ pub(crate) fn decode_sketch_text_record(
             }
             closed?
         }
-        SketchTextIdentity::TxtTag => {
-            decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version)?
-        }
+        SketchTextIdentity::TxtTag => decode_txt_tag_sketch_text_tail(
+            payload,
+            head.cursor,
+            class_version,
+            head.txt_tag_rotation?,
+        )?,
     };
     Some(SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),

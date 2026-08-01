@@ -5,19 +5,23 @@
 //! and three Design record classes join the container to its body ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)):
 //! the entry-name class stores the blob-part entry name, the GUID class stores
 //! the GUID the container's protobuf message carries as `fusion_uuid`, and the
-//! mesh-body class carries the scale matrix between container coordinates and
+//! mesh-body class carries the affine map between container coordinates and
 //! model centimetres. The two identity records reference each other, and the
 //! body record references the GUID record.
 
 use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::{indexed_record_index, next_indexed_record_offset};
 use crate::ids;
-use crate::paramesh::{decode_mesh_container, MeshContainer};
+use crate::paramesh::decode_mesh_container;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::le::f64_at;
 
 /// Row-major 4x4 f64 matrix byte length.
 const MATRIX_BYTES: usize = 128;
+const MESH_BODY_FIRST_MATRIX_AT: usize = 42;
+const MESH_BODY_MATRIX_SEPARATOR_BYTES: usize = 1;
+const MESH_BODY_SECOND_MATRIX_AT: usize =
+    MESH_BODY_FIRST_MATRIX_AT + MATRIX_BYTES + MESH_BODY_MATRIX_SEPARATOR_BYTES;
 
 /// One mesh body's geometry, in model millimetres.
 pub struct MeshBody {
@@ -29,39 +33,61 @@ pub struct MeshBody {
     pub triangles: Vec<[u32; 3]>,
 }
 
-/// The uniform scale a 4x4 row-major diagonal matrix applies, when every
-/// off-diagonal cell is zero, the three leading diagonal cells are equal,
-/// positive, and finite, and the last diagonal cell is one.
-fn diagonal_scale(bytes: &[u8], at: usize) -> Option<f64> {
-    let mut scale = None;
-    for row in 0..4 {
-        for column in 0..4 {
-            let value = f64_at(bytes, at + (row * 4 + column) * 8)?;
-            if !value.is_finite() {
-                return None;
-            }
-            if row != column {
-                (value == 0.0).then_some(())?;
-            } else if row == 3 {
-                (value == 1.0).then_some(())?;
-            } else if let Some(scale) = scale {
-                (value == scale).then_some(())?;
-            } else {
-                (value > 0.0).then_some(())?;
-                scale = Some(value);
-            }
+/// A finite, orientation-preserving row-major affine map.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MeshAffineTransform([f64; 16]);
+
+impl MeshAffineTransform {
+    fn parse(bytes: &[u8], at: usize) -> Option<Self> {
+        let mut cells = [0.0; 16];
+        for (index, cell) in cells.iter_mut().enumerate() {
+            *cell = f64_at(bytes, at.checked_add(index.checked_mul(8)?)?)?;
+            cell.is_finite().then_some(())?;
         }
+        (cells[12..16] == [0.0, 0.0, 0.0, 1.0]).then_some(())?;
+        let determinant = cells[0] * (cells[5] * cells[10] - cells[6] * cells[9])
+            - cells[1] * (cells[4] * cells[10] - cells[6] * cells[8])
+            + cells[2] * (cells[4] * cells[9] - cells[5] * cells[8]);
+        (determinant.is_finite() && determinant > 0.0).then_some(Self(cells))
     }
-    scale
+
+    fn transform(self, point: [f64; 3]) -> cadmpeg_ir::math::Point3 {
+        let [x, y, z] = point;
+        let cells = self.0;
+        cadmpeg_ir::math::Point3::new(
+            (cells[0] * x + cells[1] * y + cells[2] * z + cells[3])
+                * crate::nurbs::reader::LEN_TO_MM,
+            (cells[4] * x + cells[5] * y + cells[6] * z + cells[7])
+                * crate::nurbs::reader::LEN_TO_MM,
+            (cells[8] * x + cells[9] * y + cells[10] * z + cells[11])
+                * crate::nurbs::reader::LEN_TO_MM,
+        )
+    }
 }
 
-/// The scale a mesh-body record stores: the first of its two scale matrices.
-/// The second follows one byte after the first and carries the same scale.
-fn mesh_body_scale(payload: &[u8]) -> Option<f64> {
-    (0..payload.len().saturating_sub(MATRIX_BYTES * 2)).find_map(|at| {
-        let scale = diagonal_scale(payload, at)?;
-        (diagonal_scale(payload, at + MATRIX_BYTES + 1)? == scale).then_some(scale)
-    })
+/// The two equal affine maps stored by a mesh-body class record.
+fn mesh_body_transform(payload: &[u8]) -> Option<MeshAffineTransform> {
+    let first = MeshAffineTransform::parse(payload, MESH_BODY_FIRST_MATRIX_AT)?;
+    let second = MeshAffineTransform::parse(payload, MESH_BODY_SECOND_MATRIX_AT)?;
+    (first == second).then_some(first)
+}
+
+/// Result of decoding and joining one `.paramesh` entry.
+pub enum MeshContainerOutcome {
+    /// Geometry and its Design body record were decoded and joined.
+    Joined(MeshBody),
+    /// The container decoded, but no complete Design join named it.
+    Unjoined {
+        /// Native archive entry name.
+        entry_name: String,
+    },
+    /// Reading or parsing the container failed independently of other entries.
+    Failed {
+        /// Native archive entry name.
+        entry_name: String,
+        /// Exact read or parse failure.
+        error: CodecError,
+    },
 }
 
 /// The eleven bytes of a same-segment reference naming `entity`.
@@ -118,84 +144,78 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord<'_>> {
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
 /// mesh-body record that names its GUID record.
-pub fn decode_mesh_bodies(scan: &ContainerScan) -> Result<Vec<MeshBody>, CodecError> {
-    // A container this decoder cannot read leaves its body without geometry,
-    // which the caller reports against the container count. It does not fail
-    // the document: every other body still decodes.
-    let containers = scan
-        .entries
-        .iter()
-        .filter(|entry| entry.role == role::PARAMESH)
-        .filter_map(|entry| {
-            let container = decode_mesh_container(scan.entry_bytes(&entry.name).ok()?).ok()?;
-            Some((entry.name.clone(), container))
-        })
-        .collect::<Vec<(String, MeshContainer)>>();
-    if containers.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut out = Vec::new();
-    for entry in scan
+pub fn decode_mesh_bodies(scan: &ContainerScan) -> Result<Vec<MeshContainerOutcome>, CodecError> {
+    let design_streams = scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .map(|entry| scan.entry_bytes(&entry.name).map(indexed_records))
+        .collect::<Result<Vec<_>, _>>()?;
+    let records = design_streams.iter().flatten().collect::<Vec<_>>();
+    let mut outcomes = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::PARAMESH)
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let records = indexed_records(bytes);
-        for (name, container) in &containers {
-            let base = name.rsplit('/').next().unwrap_or(name);
-            // The GUID record stores the container's `fusion_uuid`, and the
-            // entry-name record stores the blob-part entry name and references
-            // the GUID record. Both identities come from the container, so a
-            // record carrying one names that container and no other.
-            let guid = lp_ascii_bytes(&container.fusion_uuid);
-            let Some(guid_record) = records
-                .iter()
-                .find(|record| contains(record.payload, &guid))
-                .map(|record| record.index)
-            else {
-                continue;
-            };
-            let reference = same_segment_reference(guid_record);
-            let entry_name = lp_utf16_bytes(base);
-            if !records.iter().any(|record| {
-                contains(record.payload, &entry_name) && contains(record.payload, &reference)
-            }) {
+        let container = match scan
+            .entry_bytes(&entry.name)
+            .and_then(decode_mesh_container)
+        {
+            Ok(container) => container,
+            Err(error) => {
+                outcomes.push(MeshContainerOutcome::Failed {
+                    entry_name: entry.name.clone(),
+                    error,
+                });
                 continue;
             }
-            // The body record is the one that names the GUID record and stores
-            // the scale matrices; the entry-name record names it and stores no
-            // matrix.
-            let Some((body, scale)) = records.iter().find_map(|record| {
-                contains(record.payload, &reference)
-                    .then(|| mesh_body_scale(record.payload))
-                    .flatten()
-                    .map(|scale| (record, scale))
-            }) else {
-                continue;
-            };
-            // Container coordinates scale to model centimetres, and the IR
-            // carries model lengths in millimetres.
-            let scale = scale * crate::nurbs::reader::LEN_TO_MM;
-            out.push(MeshBody {
-                id: ids::native_mesh_body_id(&entry.name, body.offset),
-                vertices: container
-                    .vertices
+        };
+        let name = &entry.name;
+        let base = name.rsplit('/').next().unwrap_or(name);
+        let guid = lp_ascii_bytes(&container.fusion_uuid);
+        let joined = records
+            .iter()
+            .find_map(|guid_record| {
+                contains(guid_record.payload, &guid).then_some(guid_record.index)
+            })
+            .and_then(|guid_record| {
+                let reference = same_segment_reference(guid_record);
+                let entry_name = lp_utf16_bytes(base);
+                records
                     .iter()
-                    .map(|point| {
-                        cadmpeg_ir::math::Point3::new(
-                            point[0] * scale,
-                            point[1] * scale,
-                            point[2] * scale,
-                        )
+                    .any(|record| {
+                        contains(record.payload, &entry_name)
+                            && contains(record.payload, &reference)
                     })
-                    .collect(),
-                triangles: container.triangles.clone(),
+                    .then_some(reference)
+            })
+            .and_then(|reference| {
+                records.iter().find_map(|record| {
+                    contains(record.payload, &reference)
+                        .then(|| mesh_body_transform(record.payload))
+                        .flatten()
+                        .map(|transform| (record, transform))
+                })
             });
-        }
+        let Some((body, transform)) = joined else {
+            outcomes.push(MeshContainerOutcome::Unjoined {
+                entry_name: entry.name.clone(),
+            });
+            continue;
+        };
+        outcomes.push(MeshContainerOutcome::Joined(MeshBody {
+            id: ids::native_mesh_body_id(&entry.name, body.offset),
+            vertices: container
+                .vertices
+                .iter()
+                .copied()
+                .map(|point| transform.transform(point))
+                .collect(),
+            triangles: container.triangles,
+        }));
     }
-    Ok(out)
+    Ok(outcomes)
 }
 
 /// Whether `haystack` holds `needle`.
@@ -207,54 +227,50 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    /// A row-major 4x4 diagonal matrix.
-    fn matrix(scale: f64, last: f64) -> Vec<u8> {
+    fn matrix(cells: [f64; 16]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(MATRIX_BYTES);
-        for row in 0..4 {
-            for column in 0..4 {
-                let value = match (row == column, row) {
-                    (false, _) => 0.0,
-                    (true, 3) => last,
-                    (true, _) => scale,
-                };
-                bytes.extend_from_slice(&value.to_le_bytes());
-            }
+        for value in cells {
+            bytes.extend_from_slice(&value.to_le_bytes());
         }
         bytes
     }
 
-    /// The scale comes from the matrix the record stores, not from a constant.
-    #[test]
-    fn mesh_body_scale_reads_the_stored_diagonal() {
-        let mut payload = vec![0u8; 11];
-        payload.extend_from_slice(&matrix(0.25, 1.0));
+    fn mesh_body_payload(cells: [f64; 16]) -> Vec<u8> {
+        let mut payload = vec![0; MESH_BODY_FIRST_MATRIX_AT];
+        payload.extend_from_slice(&matrix(cells));
         payload.push(0);
-        payload.extend_from_slice(&matrix(0.25, 1.0));
-        payload.extend_from_slice(&[0; 16]);
-        assert_eq!(mesh_body_scale(&payload), Some(0.25));
+        payload.extend_from_slice(&matrix(cells));
+        payload
     }
 
-    /// A record carrying one matrix, a matrix whose off-diagonal cells are not
-    /// zero, or two matrices of different scales is not a mesh-body record.
     #[test]
-    fn mesh_body_scale_refuses_records_without_a_matrix_pair() {
-        let single = matrix(0.1, 1.0);
-        assert_eq!(mesh_body_scale(&single), None);
+    fn mesh_body_transform_applies_nonuniform_scale_and_translation() {
+        let cells = [
+            0.175, 0.0, 0.0, 0.4, 0.0, 0.06, 0.0, 0.7, 0.0, 0.0, 0.125, 0.3, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
+        assert_eq!(
+            transform.transform([2.0, 5.0, 8.0]),
+            cadmpeg_ir::math::Point3::new(7.5, 10.0, 13.0)
+        );
+    }
 
-        let mut mismatched = matrix(0.1, 1.0);
-        mismatched.push(0);
-        mismatched.extend_from_slice(&matrix(0.2, 1.0));
-        assert_eq!(mesh_body_scale(&mismatched), None);
+    #[test]
+    fn mesh_body_transform_refuses_mismatched_projective_and_reflected_pairs() {
+        let identity = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut mismatched = mesh_body_payload(identity);
+        mismatched[MESH_BODY_SECOND_MATRIX_AT..MESH_BODY_SECOND_MATRIX_AT + 8]
+            .copy_from_slice(&2.0f64.to_le_bytes());
+        assert!(mesh_body_transform(&mismatched).is_none());
 
-        let mut sheared = matrix(0.1, 1.0);
-        sheared[8..16].copy_from_slice(&1.0f64.to_le_bytes());
-        sheared.push(0);
-        sheared.extend_from_slice(&matrix(0.1, 1.0));
-        assert_eq!(mesh_body_scale(&sheared), None);
+        let mut projective = identity;
+        projective[12] = 1.0;
+        assert!(mesh_body_transform(&mesh_body_payload(projective)).is_none());
 
-        let mut unnormalized = matrix(0.1, 2.0);
-        unnormalized.push(0);
-        unnormalized.extend_from_slice(&matrix(0.1, 2.0));
-        assert_eq!(mesh_body_scale(&unnormalized), None);
+        let mut reflected = identity;
+        reflected[0] = -1.0;
+        assert!(mesh_body_transform(&mesh_body_payload(reflected)).is_none());
     }
 }

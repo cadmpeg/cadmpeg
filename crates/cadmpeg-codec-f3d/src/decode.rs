@@ -1832,25 +1832,31 @@ fn project_mesh_bodies(
     ir: &mut CadIr,
     report: &mut DecodeReport,
 ) -> Result<usize, CodecError> {
-    let bodies = crate::design::decode::mesh::decode_mesh_bodies(scan)?;
-    let count = bodies.len();
-    let containers = scan
-        .entries
-        .iter()
-        .filter(|entry| entry.role == container::role::PARAMESH)
-        .count();
-    if count < containers {
-        report.losses.push(LossNote {
-            code: LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{} mesh body geometry container(s) were not joined to a body record.",
-                containers - count
-            ),
-            provenance: None,
-        });
+    use crate::design::decode::mesh::MeshContainerOutcome;
+
+    let mut bodies = Vec::new();
+    for outcome in crate::design::decode::mesh::decode_mesh_bodies(scan)? {
+        match outcome {
+            MeshContainerOutcome::Joined(body) => bodies.push(body),
+            MeshContainerOutcome::Unjoined { entry_name } => report.losses.push(LossNote {
+                code: LossCode::AssetNotTransferred,
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: format!(
+                    "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
+                ),
+                provenance: None,
+            }),
+            MeshContainerOutcome::Failed { entry_name, error } => report.losses.push(LossNote {
+                code: LossCode::DecodeDiagnostic,
+                category: LossCategory::Geometry,
+                severity: Severity::Error,
+                message: format!("mesh geometry container `{entry_name}` was not decoded: {error}"),
+                provenance: None,
+            }),
+        }
     }
+    let count = bodies.len();
     ir.model
         .tessellations
         .extend(bodies.into_iter().map(|body| {
@@ -1906,11 +1912,12 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
         return;
     }
     report.losses.retain(|loss| {
-        !(loss.severity >= Severity::Error
-            && matches!(
-                loss.category,
-                LossCategory::Geometry | LossCategory::Topology
-            ))
+        !matches!(
+            loss.code,
+            LossCode::GeometryNotTransferred
+                | LossCode::TopologyNotTransferred
+                | LossCode::MissingGeometryStream
+        )
     });
     report.geometry_transferred = true;
     report.losses.push(LossNote {

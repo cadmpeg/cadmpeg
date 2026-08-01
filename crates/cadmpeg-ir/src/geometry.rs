@@ -1665,6 +1665,48 @@ pub enum VariableBlendCrossSection {
         /// Ordered native shape parameters.
         parameters: [f64; 2],
     },
+    /// A zero-width native selector whose record framing is known but whose
+    /// geometric cross-section law is not classified.
+    UnclassifiedBare {
+        /// Exact numeric selector retained from the native record.
+        selector: VariableBlendBareCrossSection,
+    },
+}
+
+/// Native zero-width variable-blend cross-section selectors whose framing is
+/// established while their geometric laws remain unclassified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[repr(i64)]
+pub enum VariableBlendBareCrossSection {
+    /// Native selector `2`.
+    Selector2 = 2,
+    /// Native selector `4`.
+    Selector4 = 4,
+    /// Native selector `5`.
+    Selector5 = 5,
+    /// Native selector `6`.
+    Selector6 = 6,
+}
+
+impl VariableBlendBareCrossSection {
+    /// Numeric selector stored in the native variable-blend record.
+    pub const fn native_selector(self) -> i64 {
+        self as i64
+    }
+}
+
+impl TryFrom<i64> for VariableBlendBareCrossSection {
+    type Error = ();
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            2 => Ok(Self::Selector2),
+            4 => Ok(Self::Selector4),
+            5 => Ok(Self::Selector5),
+            6 => Ok(Self::Selector6),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Native variable-radius blend surface subtype.

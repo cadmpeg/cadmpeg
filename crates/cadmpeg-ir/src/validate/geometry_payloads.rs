@@ -1496,6 +1496,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
                             radius.as_deref().is_none_or(variable_blend_value_valid)
                         }
+                        crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
                     });
             let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
                 && construction.shape_parameter.is_finite()

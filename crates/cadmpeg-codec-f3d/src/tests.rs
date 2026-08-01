@@ -8,6 +8,7 @@ use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
+use cadmpeg_ir::report::{LossCode, Severity};
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
@@ -5646,6 +5647,28 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
         .iter()
         .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("T-spline control cage not decoded")));
+}
+
+#[test]
+fn malformed_paramesh_reports_its_entry_and_parser_failure() {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    let entry = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
+    zip.start_file(entry, stored).unwrap();
+    zip.write_all(b"not a paramesh container").unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("independent malformed mesh entry must not abort document decode");
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == LossCode::DecodeDiagnostic
+            && loss.severity == Severity::Error
+            && loss.message.contains(entry)
+            && loss.message.contains("paramesh container has no magic")
+    }));
 }
 
 fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32) {
@@ -18362,6 +18385,58 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
             &round_trip.ir.model.procedural_surfaces[0].definition,
             ProceduralSurfaceDefinition::VariableBlend { construction }
                 if construction == &expected
+        ));
+    }
+}
+
+#[test]
+fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, VariableBlendBareCrossSection, VariableBlendCrossSection,
+    };
+
+    for (selector, expected) in [
+        (2, VariableBlendBareCrossSection::Selector2),
+        (4, VariableBlendBareCrossSection::Selector4),
+        (5, VariableBlendBareCrossSection::Selector5),
+        (6, VariableBlendBareCrossSection::Selector6),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_selector(
+                    "srf_srf_v_bl_spl_sur",
+                    false,
+                    Some(selector),
+                    [None, None],
+                ))),
+                &DecodeOptions::default(),
+            )
+            .expect("bare cross-section decode");
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected variable blend")
+        };
+        assert_eq!(
+            construction.cross_section,
+            Some(VariableBlendCrossSection::UnclassifiedBare { selector: expected })
+        );
+
+        let expected_construction = construction.clone();
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("bare cross-section source-less encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("bare cross-section round trip");
+        assert!(matches!(
+            &round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::VariableBlend { construction }
+                if construction == &expected_construction
         ));
     }
 }

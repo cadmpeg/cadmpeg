@@ -15806,6 +15806,17 @@ fn txt_tag_sketch_text_record_at(
     anchor: (f64, f64),
     class_version: u32,
 ) -> Vec<u8> {
+    txt_tag_sketch_text_record_at_with_rotation(properties, frame, run, anchor, class_version, 0.0)
+}
+
+fn txt_tag_sketch_text_record_at_with_rotation(
+    properties: &[(&str, u64)],
+    frame: &[u32],
+    run: &[u32],
+    anchor: (f64, f64),
+    class_version: u32,
+    rotation: f64,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -15837,10 +15848,9 @@ fn txt_tag_sketch_text_record_at(
         push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
         bytes.extend_from_slice(&value.to_le_bytes());
     }
-    // Twenty-nine bytes to the font-family count: the `0` byte, twelve bytes
-    // that store no width factor, and the four f32 RGBA colour components.
-    bytes.push(0);
-    bytes.extend_from_slice(&[0; 12]);
+    bytes.extend_from_slice(&rotation.to_le_bytes());
+    // Five bytes separate the rotation from the four f32 RGBA components.
+    bytes.extend_from_slice(&[0; 5]);
     for component in [0.0f32, 0.3, 1.0, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
@@ -15891,6 +15901,7 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     assert_eq!(text.text, "sketch text");
     assert_eq!(text.font_family, "Arial");
     assert_eq!(text.font_weight, 400);
+    assert_eq!(text.rotation, Some(0.0));
     assert_eq!(text.height, 5.0);
     // The form stores no width factor, and the anchor is the field pair the
     // other form omits.
@@ -15909,6 +15920,25 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     );
     assert_eq!(text.first_reference, None);
     assert_eq!(text.second_reference, None);
+}
+
+#[test]
+fn txt_tag_sketch_text_record_decodes_stored_rotation() {
+    let stored_rotation = std::f64::consts::TAU - std::f64::consts::FRAC_PI_6;
+    let text = decode_sketch_text(&txt_tag_sketch_text_record_at_with_rotation(
+        &[("txt_tag", 115)],
+        &[261],
+        &[261],
+        (0.8114737226243502, -1.4340080595768365),
+        4,
+        stored_rotation,
+    ))
+    .expect("rotated txt_tag");
+    assert_eq!(text.rotation, Some(stored_rotation));
+    assert_eq!(
+        text.anchor,
+        Some(Point2::new(8.114737226243502, -14.340080595768365))
+    );
 }
 
 #[test]

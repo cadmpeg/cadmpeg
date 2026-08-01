@@ -3832,6 +3832,9 @@ fn encode_native_variable_blend(
                     native_f64(bytes, *parameter);
                 }
             }
+            CrossSection::UnclassifiedBare { selector } => {
+                native_enum(bytes, selector.native_selector());
+            }
         }
     }
     for range in [construction.u_range, construction.v_range] {

@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What layouts do the shared revision-gated surface tail enum values other than `0` and `2` select?
 
-**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the layouts of `0` and `2`. Zero selects the solved cache and its fit tolerance; two replaces both with the two bool-gated parameter intervals and four closure and singularity enums. The decoder keeps a record with any other value as opaque bytes. A tail written with the spelling `historical`, `optimal`, `none`, or `summary` and with the payload the same-named `law_spl_sur` mode selects is refused on read in all four cases. A refusal separates a spelling the tail does not have from a payload the value selects differently, so it does not narrow the accepted spelling set.
+**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the layouts of `0` and `2`. Zero selects the solved cache and its fit tolerance; two replaces both with the two bool-gated parameter intervals and four closure and singularity enums. The decoder keeps a record with any other value as opaque bytes. Values `3` and `4` paired with the complete value-zero cache payload are refused on read. Tails written with the spelling `historical`, `optimal`, `none`, or `summary` and with the payload the same-named `law_spl_sur` mode selects are also refused. Each refusal rejects only the complete submitted value-and-layout pair; it does not reject that numeral with another layout or narrow the accepted spelling set.
 
 **Need.** We cannot read a record with a value other than `0` or `2`. **Blocked on a specimen:** a document whose shared surface tail carries another value gives that value's layout, and a document whose `off_spl_sur` tail carries form `2` shows the cacheless form on that carrier; no such document is available to read.
 
@@ -70,13 +70,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** We must find three answers:
 
-- the selector values other than `0`, `1`, `2`, `3`, and `7`
-- the cross-section selector `2` builds
+- whether selector values outside `0` through `7` exist
+- the cross-sections selectors `2`, `4`, `5`, and `6` build
 - the relation between a selector-seven `edge_offset` length and the solved second-side contact distance
 
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layouts of selectors `0`, `1`, `2`, `3`, and `7`, the cross-section family of each selector other than `2`, the side order, and the contact offsets. Selector `2` carries no payload of its own, and every record with selector `2` stores a cache marked current, so the retained cache does not show the cross-section the selector builds. A rebuilt selector-seven surface meets its first side at the stored offset exactly and its second side short of the stored offset by near one per cent, far above the achieved fit tolerance, so the selector-seven offset is not exactly the second-side contact distance and no other relation is established.
+**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layouts of selectors `0` through `7`, the classified cross-section families, the side order, and the contact offsets. Selectors `2`, `4`, `5`, and `6` carry no selector-local payload; each retains its numeric value and continues at the same common tail. Their records store current solved caches, so the caches do not identify the cross-section laws. A rebuilt selector-seven surface meets its first side at the stored offset exactly and its second side short of the stored offset by near one per cent, far above the achieved fit tolerance, so the selector-seven offset is not exactly the second-side contact distance and no other relation is established.
 
-**Need.** The decoder rejects every selector value outside `0`, `1`, `2`, `3`, and `7`, and we cannot read those records. A selector-2 record whose cache is not current would rebuild into an unknown cross-section. **Blocked on a specimen:** a document whose selector carries another value bounds the value set, and a document whose selector-2 record stores a cache that is not marked current shows the selector-2 cross-section; no such document is available to read.
+**Need.** A record using a selector outside `0` through `7` would extend the value set. A record whose selector `2`, `4`, `5`, or `6` cache is not current would rebuild into the corresponding cross-section law.
 
 ### GC-19. Third-slot raise predicate of a `tvertex` record
 
@@ -98,7 +98,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What layouts do the cache-first intcurve leading enum values other than `0` and `2` select?
 
-**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder reads both and retains a record with any other value verbatim. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is refused on read in all three cases. A refusal separates a spelling the enum does not have from a payload the value selects differently, so it does not narrow the accepted spelling set.
+**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder reads both and retains a record with any other value verbatim. Value `2` paired with the complete value-zero cache payload is refused on read; the valid value-two layout replaces that cache rather than retaining it. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is also refused. Each refusal rejects only the complete submitted value-and-layout pair and does not narrow other layouts or spellings.
 
 **Need.** We cannot read a record with a value other than `0` or `2`. **Blocked on a specimen:** a document whose cache-first intcurve leading enum carries a value other than `0` or `2` gives that value's layout, and no such document is available to read. GC-27 gives the separate limit that value `2` reaches.
 
@@ -122,7 +122,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Does the third-side graph of an `sss_blend_spl_sur` record come between the shared revision-gated surface tail and the three trailing integers, or after those integers?
 
-**Known.** `f3d.md` §7.6 `rb_blend_spl_sur` puts the third-side graph after the tail and before the three `tail_extension` integers. The two-support subtypes end with the tail and those integers, which fixes the integers as the last fields of that scope but does not fix the third-side graph against them.
+**Known.** `f3d.md` §7.6 `rb_blend_spl_sur` puts the third-side graph after the tail and before the three `tail_extension` integers. The two-support subtypes end with the tail and those integers, which fixes the integers as the last fields of that scope but does not fix the third-side graph against them. Replacing only the accepted subtype name `rb_blend_spl_sur` with `sss_blend_spl_sur` is refused in a fresh reader session while the unchanged control is accepted. The rename-only payload is therefore not the `sss_blend_spl_sur` grammar, but the refusal does not select either candidate graph position.
 
 **Need.** The decoder and the source-less writer both use the position the specification gives. The wrong position makes every `sss_blend_spl_sur` record fail its decode and stay opaque, and makes a generated record ungrammatical. **Blocked on a specimen:** a document holding an `sss_blend_spl_sur` record fixes the graph position against the trailing integers, and no such document is available to read.
 
@@ -315,12 +315,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 - the thirty bytes of the class tail
 - the flag byte after the horizontal-alignment enum and the flag byte after the vertical-alignment enum
-- the twelve bytes of a `txt_tag` record's twenty-nine-byte run that the leading byte and the colour components do not fill, the two bytes between its height and its anchor coordinates, and the eleven bytes between those coordinates and its text string, ten of them below class version 4
-- the targets of the reference run a `txt_tag` record writes after its text string, the three bytes and the f64 that follow that run, and the pairs of its leading block
+- the five bytes between a `txt_tag` record's rotation and its colour components, the two bytes between its height and its anchor coordinates, and the eleven bytes between those coordinates and its text string, ten of them below class version 4
+- the targets of the reference run a `txt_tag` record writes after its text string, the three bytes and eight unclassified bytes around its font weight, and the pairs of its leading block
 
-**Known.** `f3d.md` §8.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §8.1 "In a `textex_tag` record the property block" and `f3d.md` §8.1 "In a `txt_tag` record the run" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §8.1 "A `textex_tag` record writes two optional" and `f3d.md` §8.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. The text rotation and the frame-text anchor come from that transform, and the colour components come from the run ahead of the font family. The decoder reads all three. A `txt_tag` record stores no width factor.
+**Known.** `f3d.md` §8.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §8.1 "In a `textex_tag` record the property block" and `f3d.md` §8.1 "In a `txt_tag` record the run" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §8.1 "A `textex_tag` record writes two optional" and `f3d.md` §8.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. A `txt_tag` record's f64 directly after the property block is its stored rotation in radians about the anchor; zero is explicit. The `textex_tag` form derives frame-text rotation and anchor from its transform. The colour components come from the run ahead of the font family. The decoder reads both forms. A `txt_tag` record stores no width factor.
 
-The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 0`, and `u8 0`. It is the same in every record of both classes. Its field boundaries are thus fixed, but no field in it changes, so no field in it has a meaning we can read. Of the three bytes after the horizontal-alignment enum, only the first is ever set. The single byte after the vertical-alignment enum is set when that byte is set, and clear when it is clear. The two are one flag written twice, or one flag and an echo of it. The alignment enums change independently of each other, so neither flag byte continues an alignment value. `f3d.md` §8.1 "Sketch text occupies two record classes" gives the leading block that both classes carry. The f64 a `txt_tag` record writes after its font weight is positive, and it changes with the record. The twelve bytes of its twenty-nine-byte run are not all zero.
+The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 0`, and `u8 0`. It is the same in every record of both classes. Its field boundaries are thus fixed, but no field in it changes, so no field in it has a meaning we can read. Of the three bytes after the horizontal-alignment enum, only the first is ever set. The single byte after the vertical-alignment enum is set when that byte is set, and clear when it is clear. The two are one flag written twice, or one flag and an echo of it. The alignment enums change independently of each other, so neither flag byte continues an alignment value. `f3d.md` §8.1 "Sketch text occupies two record classes" gives the leading block that both classes carry.
 
 **Need.** We must know the meanings to write sketch text from a neutral model. A record that sets one of the two flag bytes and clears the other separates them. A class tail that differs from the constant above gives its fields a meaning. Nothing else in a sketch-text record changes with either.
 
@@ -473,21 +473,20 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 ### PM-01. `.paramesh` undecoded streams and container fields
 
-**Question.** We must find seven answers:
+**Question.** We must find six answers:
 
 - how an `r0` stream frames its elements, because its descriptor sets `U`
 - what `r0` holds
 - what `r0i` and `r1` hold
-- what the last value of the `t` stream encodes
 - what the `r2` per-triangle value selects
 - what descriptor `T` values other than `0`, `1`, and `3` select, and what `U` selects
 - what the protobuf message fields other than the stream registry, the resource GUIDs, and `fusion_uuid` hold
 
-**Known.** `f3d.md` §1.1.2 "The container layout is" gives the container framing, and `f3d.md` §1.1.2 "A kind-3 body is" gives the chunk bodies, the descriptor keys, and the compression. The `v`, `t`, `r3`, and `r4` streams are decoded. `r2` carries the value `0` in each record available to read.
+**Known.** `f3d.md` §1.1.2 "The container layout is" gives the container framing, both compressed and raw stream encodings, and the descriptor value types. The `v` and `t` streams are decoded. The `t` stream's implicit initial corner is the unique start that keeps every reconstructed corner inside the vertex domain; every stored difference except the terminal value contributes one corner. `r2` carries one zero u32 per triangle while imported per-triangle colours instead add the `r3`, `r3i`, and `r4` family, so `r2` is not that colour selector.
 
-An `r0` stream declares three components of type f32. Where the mesh is a cube, every component in it is `-1`, `0`, or `1`, which is the component set of the six face normals of a cube, and the stream holds sixty-four components, which three does not divide. Where a mesh has eight vertices, twelve triangles, and thirty-six corners, `r0i` and `r1` each hold twenty-four values, so neither stream holds one value per vertex, per triangle, or per corner. The `r0i` values accumulate to an increasing sequence that ends below the component count of `r0`, so `r0i` can hold offsets into `r0`. The `r1` values accumulate to a sequence that goes below zero, so `r1` does not hold offsets. The last `t` value read as a further index difference gives an index outside the vertex range in one container and inside it in another, so that reading is wrong and no other reading is established.
+An `r0` stream declares three components of type f32 and boolean `U = true`. Where the mesh is a cube, every component in it is `-1`, `0`, or `1`, which is the component set of the six face normals of a cube, and the stream holds sixty-four components, which three does not divide. Where a mesh has eight vertices, twelve triangles, and thirty-six corners, `r0i` and `r1` each hold twenty-four values, so neither stream holds one value per vertex, per triangle, or per corner. The `r0i` values accumulate to an increasing sequence that ends below the component count of `r0`, so `r0i` can hold offsets into `r0`. The `r1` values accumulate to a sequence that goes below zero, so `r1` does not hold offsets. The colour-family streams have established framing but their `r3i` to `r3` indexing and `r4` field semantics are not decoded.
 
-**Need.** The decoder keeps the undecoded streams as opaque bytes. We must know their contents, the remaining descriptor selectors, and the message fields to write a container from a neutral model.
+**Need.** The decoder keeps the auxiliary streams as opaque bytes. We must know their contents, the remaining descriptor selectors, the colour-family indexing, and the message fields to write a container from a neutral model.
 
 ### PM-02. Mesh Design-record classes without decoded content
 
@@ -501,6 +500,6 @@ An `r0` stream declares three components of type f32. Where the mesh is a cube, 
   - `f85f2e62-7627-4922-a16d-53e1275d2aac` (add-in `Scene`)
 - which of the two matrices of an `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record governs the map from container coordinates to model space, and whether that matrix is the complete map
 
-**Known.** `f3d.md` §8.1 "A mesh body's geometry container" gives the three decoded classes. Each of the five classes above occurs once per mesh body and does not occur in a document without one. The `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record stores two equal scale matrices; which of the two governs, and whether any other field takes part in the coordinate map, is not established.
+**Known.** `f3d.md` §8.1 "A mesh body's geometry container" gives the three decoded classes. Each of the five classes above occurs once per mesh body and does not occur in a document without one. The `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record stores two equal affine matrices. Applying either matrix to container coordinates in model centimetres supplies the complete nonuniform scale and translation of a placed mesh. Separate mesh bodies retain separate containers, identities, and matrices even when their geometry bytes are equal.
 
-**Need.** We must know the five payloads to write a mesh body from a neutral model, and the coordinate map to place a mesh whose scale matrix is not `diag(0.1, 0.1, 0.1, 1)`.
+**Need.** We must know the five payloads to write a mesh body from a neutral model, which duplicate matrix governs if they differ, and how a negative-determinant matrix affects triangle winding.
