@@ -1,5 +1,6 @@
 use std::io::{Cursor, Write};
 
+use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
     InnerWireTaper, Length, PathRef, RevolveExtent, ShellJoin, ShellMode, SweepOrientation,
@@ -45,7 +46,11 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
-        .encode(&edited, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &edited,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
     assert!(report.losses.is_empty());
     let round_trip = FcstdCodec
@@ -106,7 +111,11 @@ fn write_target_and_source_requirements_are_explicit() {
 
     let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let missing_graph = FcstdCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
     assert!(missing_graph.to_string().contains("source-less"));
 }
@@ -120,11 +129,20 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         )
         .expect("decode source");
     let mut staged = Vec::new();
-    FcstdCodec.encode(&decoded.ir, &mut staged).unwrap();
-    let mut streamed = Cursor::new(Vec::new());
     FcstdCodec
-        .encode_seekable_with_source_fidelity(&decoded.ir, None, &mut streamed)
-        .unwrap();
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut staged))
+        .expect("write-only fallback");
+    let mut streamed = Cursor::new(Vec::new());
+    crate::writer::write_seekable(
+        &decoded.ir,
+        &mut streamed,
+        crate::FcstdWriteOptions::default(),
+    )
+    .expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);
 }
@@ -148,7 +166,11 @@ fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
         .set_arena("objects", &objects)
         .expect("replace objects");
     let error = FcstdCodec
-        .encode(&declaration_edit, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &declaration_edit,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unserialized declaration edit must fail");
     assert!(error.to_string().contains("declaration edits"));
 
@@ -167,7 +189,11 @@ fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
         .set_arena("entries", &entries)
         .expect("replace entries");
     let error = FcstdCodec
-        .encode(&stale_entry, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &stale_entry,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("stale entry metadata must fail");
     assert!(error.to_string().contains("stale length or digest"));
 }
@@ -234,7 +260,13 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .expect("replace side entry");
 
     let mut encoded = Vec::new();
-    FcstdCodec.encode(&ir, &mut encoded).expect("write graph");
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("write graph");
     let round_trip = FcstdCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode generated file");
@@ -4911,7 +4943,10 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
         "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
         SimpleFileOptions::default().large_file(true),
     );
-    let scan = crate::container::scan(&mut Cursor::new(bytes)).expect("ZIP64 streaming ZIP");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        .expect("ZIP64 archive fits root policy");
+    let scan = crate::container::scan(&ctx, root).expect("ZIP64 streaming ZIP");
     assert!(scan
         .ledger
         .iter()
@@ -4927,7 +4962,10 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
 #[test]
 fn frames_streaming_data_descriptor_separately_from_padding() {
     let bytes = streaming_archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
-    let scan = crate::container::scan(&mut Cursor::new(bytes)).expect("streaming ZIP");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        .expect("archive fits root policy");
+    let scan = crate::container::scan(&ctx, root).expect("streaming ZIP");
     let descriptors = scan
         .ledger
         .iter()

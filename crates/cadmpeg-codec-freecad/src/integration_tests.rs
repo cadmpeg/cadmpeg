@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Integration contracts over synthesized FCStd archives and application graphs.
+#![allow(clippy::unwrap_used)]
+//! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 use super::*;
 
@@ -93,7 +94,13 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
         .unwrap();
 
     let mut bytes = Vec::new();
-    FcstdCodec.encode(&ir, &mut bytes).unwrap();
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
     let round_trip = decode(bytes);
     let namespace = round_trip.ir.native.namespace("fcstd").unwrap();
     let entries = namespace

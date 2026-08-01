@@ -182,6 +182,8 @@ enum InputFormat {
     /// IGES `.igs` or `.iges`.
     #[value(alias = "igs")]
     Iges,
+    /// ISO 10303 STEP.
+    Step,
     /// Canonical CADIR JSON.
     Cadir,
 }
@@ -203,6 +205,7 @@ impl InputFormat {
             Self::Creo => ForcedInput::Codec("creo"),
             Self::Rhino => ForcedInput::Codec("rhino"),
             Self::Iges => ForcedInput::Codec("iges"),
+            Self::Step => ForcedInput::Codec("step"),
             Self::Cadir => ForcedInput::Cadir,
         }
     }
@@ -246,10 +249,7 @@ enum LimitProfile {
 
 impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
-        let limits = match self.limits {
-            LimitProfile::Desktop => cadmpeg_codec_core::decode::ResourceLimits::desktop(),
-            LimitProfile::Service => cadmpeg_codec_core::decode::ResourceLimits::service(),
-        };
+        let limits = self.limits.limits();
         let mode = if self.strict {
             cadmpeg_codec_core::decode::DecodeMode::Strict
         } else {
@@ -258,6 +258,15 @@ impl DecodeArgs {
         cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
             policy: cadmpeg_codec_core::decode::DecodePolicy { mode, limits },
+        }
+    }
+}
+
+impl LimitProfile {
+    const fn limits(self) -> cadmpeg_codec_core::decode::ResourceLimits {
+        match self {
+            LimitProfile::Desktop => cadmpeg_codec_core::decode::ResourceLimits::desktop(),
+            LimitProfile::Service => cadmpeg_codec_core::decode::ResourceLimits::service(),
         }
     }
 }
@@ -271,6 +280,9 @@ enum Command {
         /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
+        /// Resource-limit profile applied during inspection.
+        #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+        limits: LimitProfile,
         #[command(flatten)]
         input_args: InputArgs,
     },
@@ -387,20 +399,21 @@ enum Command {
 
 fn main() -> ExitCode {
     let command = Cli::parse().command;
-    let mut registry = Registry::with_builtins();
-    match &command {
-        Command::Export { step, .. } | Command::Convert { step, .. } => {
-            registry.set_step_options(step.options());
-        }
-        _ => {}
-    }
+    let registry = Registry::with_builtins();
     let result = match command {
         Command::Inspect {
             input,
             json,
+            limits,
             input_args,
-        } => commands::inspect(&registry, &input, input_args.forced(), json)
-            .map(|()| ExitCode::SUCCESS),
+        } => commands::inspect(
+            &registry,
+            &input,
+            input_args.forced(),
+            json,
+            limits.limits(),
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Decode {
             input,
             output,
@@ -436,18 +449,20 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
-            step: _,
+            step,
         } => commands::export(
             &registry,
             &input,
             format,
             output.as_deref(),
-            commands::ExportSettings {
+            commands::ConversionPlan {
                 force,
                 report,
+                validation: commands::ValidationMode::Skipped,
                 allow_empty,
                 reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
+                step_options: step.options(),
                 forced_input: input_args.forced(),
             },
             &decode,
@@ -466,19 +481,20 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
-            step: _,
+            step,
         } => commands::convert(
             &registry,
             &input,
             format,
             output.as_deref(),
-            &commands::ConvertSettings {
+            commands::ConversionPlan {
                 force,
                 report,
-                allow_invalid,
+                validation: commands::ValidationMode::Required { allow_invalid },
                 allow_empty,
                 reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
+                step_options: step.options(),
                 forced_input: input_args.forced(),
             },
             &decode,

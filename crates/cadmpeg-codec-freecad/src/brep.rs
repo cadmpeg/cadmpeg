@@ -669,12 +669,6 @@ fn census_surface(
 }
 
 fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
-    const MAX_TEXT_BREP_BYTES: usize = 256 * 1024 * 1024;
-    if bytes.len() > MAX_TEXT_BREP_BYTES {
-        return Err(CodecError::Malformed(
-            "text B-rep size limit exceeded".into(),
-        ));
-    }
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let topology_version = if text.contains("CASCADE Topology V1, (c) Matra-Datavision") {
@@ -773,12 +767,6 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
 }
 
 fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
-    const MAX_BINARY_BREP_BYTES: usize = 256 * 1024 * 1024;
-    if bytes.len() > MAX_BINARY_BREP_BYTES {
-        return Err(CodecError::Malformed(
-            "binary B-rep exceeds the 256 MiB parser limit".into(),
-        ));
-    }
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
@@ -839,7 +827,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
                     let power = cursor.i32("binary location power")?;
                     let powered =
                         transform_power(locations[referenced - 1].transform, i64::from(power))?;
-                    transform = multiply_transform(powered, transform);
+                    transform = powered.compose(transform);
                     factors.push(LocationFactor {
                         location: referenced,
                         power: i64::from(power),
@@ -2148,7 +2136,7 @@ fn parse_locations(
                     }
                     let power = cursor.integer("location factor power")?;
                     let powered = transform_power(locations[referenced - 1].transform, power)?;
-                    transform = multiply_transform(powered, transform);
+                    transform = powered.compose(transform);
                     factors.push(LocationFactor {
                         location: referenced,
                         power,
@@ -2316,20 +2304,6 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
     })
 }
 
-fn multiply_transform(left: Transform, right: Transform) -> Transform {
-    let mut result = Transform {
-        rows: [[0.0; 4]; 4],
-    };
-    for row in 0..4 {
-        for column in 0..4 {
-            result.rows[row][column] = (0..4)
-                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
-                .sum();
-        }
-    }
-    result
-}
-
 fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecError> {
     let mut base = if power < 0 {
         invert_affine(transform)?
@@ -2340,11 +2314,11 @@ fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecE
     let mut result = Transform::identity();
     while exponent > 0 {
         if exponent & 1 == 1 {
-            result = multiply_transform(result, base);
+            result = result.compose(base);
         }
         exponent >>= 1;
         if exponent > 0 {
-            base = multiply_transform(base, base);
+            base = base.compose(base);
         }
     }
     Ok(result)

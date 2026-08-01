@@ -9,10 +9,12 @@ use cadmpeg_ir::geometry::{
     SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId,
+    BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
+    ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -167,8 +169,17 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
+    let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves(&scan.data);
+    let b2_nurbs_curve_count = b2_nurbs_curves.len();
+    let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves(&scan.data);
+    let a5_nurbs_curve_count = a5_nurbs_curves.len();
+    let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles(&scan.data);
+    let b2_spatial_circle_count = b2_spatial_circles.len();
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
         && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
+        && b2_nurbs_curves.is_empty()
+        && a5_nurbs_curves.is_empty()
+        && b2_spatial_circles.is_empty()
     {
         return None;
     }
@@ -216,10 +227,97 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     }
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     append_consolidated_line_profiles(&mut ir, &mut annotations, &scan.data);
-    let mut losses = if topology_transferred && b5_complete {
+    let mut standalone_wires = Vec::new();
+    for curve in b2_nurbs_curves {
+        let id = CurveId(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()));
+        let parameter_range = [
+            *curve.geometry.knots.first().expect("parsed knot vector"),
+            *curve.geometry.knots.last().expect("parsed knot vector"),
+        ];
+        annotate(
+            &mut annotations,
+            &id,
+            "consolidated_b2_03_16",
+            curve.pos as u64,
+            format!("header_token:{:08x}", curve.header_token),
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Nurbs(curve.geometry),
+            source_object: Some(cgm_source_key(
+                "b2-nurbs-curve-frame",
+                format!("{:010}", curve.pos),
+            )),
+        });
+        standalone_wires.push((id, parameter_range, curve.pos));
+    }
+    for curve in a5_nurbs_curves {
+        let id = CurveId(format!("catia:a5:nurbs-curve#{}", ir.model.curves.len()));
+        let parameter_range = [
+            *curve.geometry.knots.first().expect("parsed knot vector"),
+            *curve.geometry.knots.last().expect("parsed knot vector"),
+        ];
+        annotate(
+            &mut annotations,
+            &id,
+            "consolidated_a5_13_16",
+            curve.pos as u64,
+            format!("header_token:{:08x}", curve.header_token),
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Nurbs(curve.geometry),
+            source_object: Some(cgm_source_key(
+                "a5-nurbs-curve-frame",
+                format!("{:010}", curve.pos),
+            )),
+        });
+        standalone_wires.push((id, parameter_range, curve.pos));
+    }
+    for circle in b2_spatial_circles {
+        let id = CurveId(format!("catia:b2:circle#{}", ir.model.curves.len()));
+        let parameter_range = [
+            circle.range[0] / circle.radius,
+            circle.range[1] / circle.radius,
+        ];
+        annotate(
+            &mut annotations,
+            &id,
+            "consolidated_b2_03_0f",
+            circle.pos as u64,
+            format!(
+                "header_token:{:08x}:range:{:?}:chart_shift:{}",
+                circle.header_token, circle.range, circle.chart_shift
+            ),
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Circle {
+                center: circle.center,
+                axis: circle.axis,
+                ref_direction: circle.ref_direction,
+                radius: circle.radius,
+            },
+            source_object: Some(cgm_source_key(
+                "b2-spatial-circle-frame",
+                format!("{:010}", circle.pos),
+            )),
+        });
+        standalone_wires.push((id, parameter_range, circle.pos));
+    }
+    let wire_topology_transferred = !topology_transferred
+        && ir.model.surfaces.is_empty()
+        && standalone_wires.len() == ir.model.curves.len()
+        && !standalone_wires.is_empty()
+        && attach_standalone_wires(&mut ir, &mut annotations, &standalone_wires);
+    let mut losses = if wire_topology_transferred {
+        Vec::new()
+    } else if topology_transferred && b5_complete {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Warning,
             message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
                 .to_string(),
@@ -227,8 +325,7 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         }]
     } else if topology_transferred {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph."
                 .to_string(),
@@ -236,8 +333,7 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         }]
     } else {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
                 .to_string(),
@@ -248,6 +344,22 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
     let mut coverage = std::collections::BTreeMap::new();
+    coverage.insert(
+        "decoded_b2_nurbs_curve_count".to_string(),
+        b2_nurbs_curve_count,
+    );
+    coverage.insert(
+        "decoded_a5_nurbs_curve_count".to_string(),
+        a5_nurbs_curve_count,
+    );
+    coverage.insert(
+        "decoded_b2_spatial_circle_count".to_string(),
+        b2_spatial_circle_count,
+    );
+    coverage.insert(
+        "attached_standalone_wire_edge_count".to_string(),
+        usize::from(wire_topology_transferred) * standalone_wires.len(),
+    );
     if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
         coverage.insert(
             "resolved_object_stream_face_terminal_control_03_count".to_string(),
@@ -384,6 +496,127 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         annotations,
         unknowns,
     })
+}
+
+fn attach_standalone_wires(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    wires: &[(CurveId, [f64; 2], usize)],
+) -> bool {
+    let plans = wires
+        .iter()
+        .enumerate()
+        .map(|(index, (curve_id, range, pos))| {
+            let geometry = &ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *curve_id)?
+                .geometry;
+            let start = cadmpeg_ir::eval::curve_point(geometry, range[0])?;
+            let end = cadmpeg_ir::eval::curve_point(geometry, range[1])?;
+            Some((index, curve_id.clone(), *range, *pos, start, end))
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(plans) = plans else {
+        return false;
+    };
+    let body_id = BodyId("catia:freeform:wire-body#0".to_string());
+    let region_id = RegionId("catia:freeform:wire-region#0".to_string());
+    let shell_id = ShellId("catia:freeform:wire-shell#0".to_string());
+    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+        annotate(
+            annotations,
+            id,
+            "consolidated_curve_wire",
+            0,
+            "standalone_wire_owner",
+            Exactness::Inferred,
+        );
+    }
+    let mut edge_ids = Vec::with_capacity(plans.len());
+    for (index, curve_id, range, pos, start, end) in plans {
+        let point_ids = [
+            PointId(format!("catia:freeform:wire-point#{index}:start")),
+            PointId(format!("catia:freeform:wire-point#{index}:end")),
+        ];
+        let vertex_ids = [
+            VertexId(format!("catia:freeform:wire-vertex#{index}:start")),
+            VertexId(format!("catia:freeform:wire-vertex#{index}:end")),
+        ];
+        let edge_id = EdgeId(format!("catia:freeform:wire-edge#{index}"));
+        for id in [
+            &point_ids[0].0,
+            &point_ids[1].0,
+            &vertex_ids[0].0,
+            &vertex_ids[1].0,
+            &edge_id.0,
+        ] {
+            annotate(
+                annotations,
+                id,
+                "consolidated_curve_wire",
+                pos as u64,
+                "curve_domain_endpoint",
+                Exactness::Derived,
+            );
+        }
+        ir.model.points.extend([
+            Point {
+                id: point_ids[1].clone(),
+                position: end,
+                source_object: None,
+            },
+            Point {
+                id: point_ids[0].clone(),
+                position: start,
+                source_object: None,
+            },
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: vertex_ids[1].clone(),
+                point: point_ids[1].clone(),
+                tolerance: None,
+            },
+            Vertex {
+                id: vertex_ids[0].clone(),
+                point: point_ids[0].clone(),
+                tolerance: None,
+            },
+        ]);
+        ir.model.edges.push(Edge {
+            id: edge_id.clone(),
+            curve: Some(curve_id),
+            start: vertex_ids[0].clone(),
+            end: vertex_ids[1].clone(),
+            param_range: Some(range),
+            tolerance: None,
+        });
+        edge_ids.push(edge_id);
+    }
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Wire,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id,
+        shells: vec![shell_id.clone()],
+    });
+    ir.model.shells.push(Shell {
+        id: shell_id,
+        region: region_id,
+        faces: Vec::new(),
+        wire_edges: edge_ids,
+        free_vertices: Vec::new(),
+    });
+    true
 }
 
 fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
@@ -1763,13 +1996,13 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 mod tests {
     use super::{
         append_freeform_surface_pools, append_resolved_consolidated_surface_curves,
-        freeform_surface_carriers, rechart_equivalent_surface_pcurve, same_surface_locus,
-        unique_endpoint_pair_match, unique_paired_surface_lift_match,
+        attach_standalone_wires, freeform_surface_carriers, rechart_equivalent_surface_pcurve,
+        same_surface_locus, unique_endpoint_pair_match, unique_paired_surface_lift_match,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
-        ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,
+        PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
         CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, ShellId, SurfaceId,
@@ -1779,6 +2012,41 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn standalone_clamped_curve_becomes_a_valid_wire_edge() {
+        let mut ir = CadIr::empty(Units::default());
+        let curve_id = CurveId("catia:test:curve#0".to_string());
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(2.0, 3.0, 5.0), Point3::new(7.0, 11.0, 13.0)],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        });
+        assert!(attach_standalone_wires(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[(curve_id, [0.0, 1.0], 17)],
+        ));
+        assert_eq!(
+            ir.model.bodies[0].kind,
+            cadmpeg_ir::topology::BodyKind::Wire
+        );
+        assert_eq!(
+            ir.model.shells[0].wire_edges,
+            [ir.model.edges[0].id.clone()]
+        );
+        assert_eq!(ir.model.points[1].position, Point3::new(2.0, 3.0, 5.0));
+        assert_eq!(ir.model.points[0].position, Point3::new(7.0, 11.0, 13.0));
+        ir.finalize();
+        let validation = cadmpeg_ir::validate(&ir, Vec::new());
+        assert!(validation.is_ok(), "{:?}", validation.findings);
+    }
 
     #[test]
     fn rolling_ball_pool_retains_both_exact_limiting_curves() {

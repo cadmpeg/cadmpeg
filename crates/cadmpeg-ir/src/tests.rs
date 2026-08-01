@@ -18,7 +18,7 @@ use crate::ids::{
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
 use crate::provenance::{Exactness, SourceObjectAssociation};
-use crate::report::{Check, LossCategory, LossCode, LossNote, Severity};
+use crate::report::{Check, LossKind, LossNote, Severity};
 use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
@@ -317,7 +317,13 @@ fn unit_cube_has_expected_census() {
 fn cadir_encoder_streams_the_canonical_json_shape() {
     let ir = unit_cube();
     let mut encoded = Vec::new();
-    CadirEncoder.encode(&ir, &mut encoded).unwrap();
+    CadirEncoder
+        .plan(crate::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let mut canonical = ir.to_canonical_json().unwrap();
     canonical.push('\n');
     assert_eq!(encoded, canonical.as_bytes());
@@ -2849,8 +2855,7 @@ fn schema_generation_produces_definitions() {
 #[test]
 fn loss_provenance_root_alias_constructs_and_serializes() {
     let note = LossNote {
-        code: LossCode::GeometryNotTransferred,
-        category: LossCategory::Geometry,
+        code: LossKind::GeometryNotTransferred,
         severity: Severity::Warning,
         message: "geometry was retained as metadata".into(),
         provenance: Some(LossProvenance {

@@ -177,6 +177,25 @@ fn standard_edge_row_arity_uses_widened_count_form() {
 }
 
 #[test]
+fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
+    let mut bytes = vec![
+        0x01, 0x01, 0x02, // two kind-1 rows
+        0x02, 0x02, 0x02, 0x00, // edge 2 -> 0
+        0x02, 0x02, 0x00, 0x01, // edge 0 -> 1
+    ];
+    bytes.extend_from_slice(&EDGE_DELIMITER);
+    bytes.extend_from_slice(&[0x01, 0x06, 0x00]);
+
+    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("u8 edge rows");
+    assert_eq!(rows[0].handles, [2, 0]);
+    assert_eq!(rows[1].handles, [0, 1]);
+    assert!(rows
+        .iter()
+        .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun));
+    assert_eq!(vertex_header, bytes.len() - 3);
+}
+
+#[test]
 fn coordinate_rows_canonicalize_logical_vertex_labels() {
     let topology = |start_vertex, end_vertex| StandardTopology {
         faces: vec![FaceTopology {
@@ -425,6 +444,12 @@ fn standard_face_population_ignores_shorter_fbb_marker_runs() {
     bytes.extend_from_slice(&row);
 
     assert_eq!(standard_face_count(&bytes), Some(3));
+}
+
+#[test]
+fn standard_face_population_accepts_flagged_fbb_rows() {
+    let row = [0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1];
+    assert_eq!(standard_face_count(&row.repeat(6)), Some(6));
 }
 
 #[test]

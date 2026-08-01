@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -1765,7 +1765,7 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| "document units are unavailable".to_string())?;
         let local = crate::instances::scale_translation(reference.transform, scale)
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
-        let transform = crate::instances::compose(parent, local);
+        let transform = parent.compose(local);
         let definition_id = definition.id;
         let definition_members = definition.members.clone();
         stack.push(definition_id);
@@ -1845,7 +1845,7 @@ impl<'a> DecodeContext<'a> {
         }
         for point in &mut self.ir.model.points[before.points..] {
             if before.bodies == self.ir.model.bodies.len() {
-                point.position = crate::instances::point(transform, point.position);
+                point.position = transform.apply_point(point.position);
                 derived_ids.push(point.id.to_string());
             }
         }
@@ -1865,10 +1865,11 @@ impl<'a> DecodeContext<'a> {
         }
         for mesh in &mut self.ir.model.tessellations[before.tessellations..] {
             for vertex in &mut mesh.vertices {
-                *vertex = crate::instances::point(transform, *vertex);
+                *vertex = transform.apply_point(*vertex);
             }
             for value in &mut mesh.normals {
-                *value = crate::instances::normal(transform, *value)
+                *value = transform
+                    .apply_normal(*value)
                     .ok_or_else(|| "mesh normal transform is singular".to_string())?;
             }
             links.push(mesh.id.clone());
@@ -1876,7 +1877,7 @@ impl<'a> DecodeContext<'a> {
         }
         for subd in &mut self.ir.model.subds[before.subds..] {
             for vertex in &mut subd.vertices {
-                vertex.point = crate::instances::point(transform, vertex.point);
+                vertex.point = transform.apply_point(vertex.point);
             }
             links.push(subd.id.to_string());
             derived_ids.push(subd.id.to_string());
@@ -2091,8 +2092,7 @@ impl<'a> DecodeContext<'a> {
             .sum::<usize>();
         let total = self.scan.objects.len();
         losses.push(LossNote {
-            code: LossCode::ObjectRecordsUntransferred,
-            category: LossCategory::Geometry,
+            code: LossKind::ObjectRecordsUntransferred,
             severity: Severity::Info,
             message: format!("decoded {decoded}/{total} Rhino object records"),
             provenance: None,
@@ -2101,8 +2101,7 @@ impl<'a> DecodeContext<'a> {
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
                 omissions.push(LossNote {
-                    code: LossCode::UnsupportedObjectFamily,
-                    category: LossCategory::Geometry,
+                    code: LossKind::UnsupportedObjectFamily,
                     severity: Severity::Warning,
                     message: format!(
                         "retained {} object record(s) for class {class}; geometry is not decoded",
@@ -2113,8 +2112,7 @@ impl<'a> DecodeContext<'a> {
             }
             if outcome.attribute_degraded > 0 {
                 losses.push(LossNote {
-                    code: LossCode::AttributesNotTransferred,
-                    category: LossCategory::Attribute,
+                    code: LossKind::AttributesNotTransferred,
                     severity: Severity::Warning,
                     message: format!(
                         "{} object record(s) for class {class} have degraded attributes",
@@ -2125,8 +2123,7 @@ impl<'a> DecodeContext<'a> {
             }
             if outcome.failed_framed > 0 {
                 losses.push(LossNote {
-                    code: LossCode::DecodeDiagnostic,
-                    category: LossCategory::Other,
+                    code: LossKind::DecodeDiagnostic,
                     severity: Severity::Error,
                     message: format!(
                         "{} framed object record(s) for class {class} could not be decoded",
@@ -2139,8 +2136,7 @@ impl<'a> DecodeContext<'a> {
         self.typed_losses.extend(omissions);
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(LossNote {
-                code: LossCode::DecodeDiagnostic,
-                category: LossCategory::Other,
+                code: LossKind::DecodeDiagnostic,
                 severity: Severity::Warning,
                 message: format!(
                     "retained {} malformed, ambiguous, or checksum-degraded instance-definition record(s); first: {}",
@@ -2157,8 +2153,7 @@ impl<'a> DecodeContext<'a> {
         }
         losses.append(&mut self.typed_losses);
         losses.extend(self.scan.warnings.iter().map(|warning| LossNote {
-            code: LossCode::DecodeDiagnostic,
-            category: LossCategory::Other,
+            code: LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message: warning.clone(),
             provenance: None,
@@ -2179,8 +2174,7 @@ impl<'a> DecodeContext<'a> {
             phase_families
                 .into_iter()
                 .map(|(family, (count, first))| LossNote {
-                    code: LossCode::DecodeDiagnostic,
-                    category: LossCategory::Other,
+                    code: LossKind::DecodeDiagnostic,
                     severity: Severity::Warning,
                     message: if count == 1 {
                         format!("{family}: {first}")
@@ -2209,7 +2203,7 @@ impl<'a> DecodeContext<'a> {
         source_fidelity
             .attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)
             .expect("Rhino source records separate from product identities");
-        DecodeResult::with_source_fidelity(
+        DecodeResult::new(
             self.ir,
             DecodeReport {
                 format: "rhino".to_string(),
@@ -2934,8 +2928,7 @@ impl<'a> DecodeContext<'a> {
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
                             self.typed_losses.push(LossNote {
-                                code: LossCode::TopologyNotTransferred,
-                                category: LossCategory::Topology,
+                                code: LossKind::TopologyNotTransferred,
                                 severity: Severity::Warning,
                                 message: format!("Brep topology fallback: {cause}"),
                                 provenance: None,
@@ -4624,7 +4617,7 @@ fn decoded_curve_entity_count(curve: &crate::curves::DecodedCurve) -> usize {
 
 fn compose_body_transform(body: &mut Body, transform: Transform) {
     body.transform = Some(match body.transform {
-        Some(existing) => crate::instances::compose(transform, existing),
+        Some(existing) => transform.compose(existing),
         None => transform,
     });
 }
@@ -4670,7 +4663,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
     curve.geometry = match geometry {
         CurveGeometry::Nurbs(mut nurbs) => {
             for pole in &mut nurbs.control_points {
-                *pole = crate::instances::point(transform, *pole);
+                *pole = transform.apply_point(*pole);
             }
             CurveGeometry::Nurbs(nurbs)
         }
@@ -4693,20 +4686,17 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
             for pole in &mut nurbs.control_points {
-                *pole = crate::instances::point(transform, *pole);
+                *pole = transform.apply_point(*pole);
             }
             CurveGeometry::Nurbs(nurbs)
         }
         CurveGeometry::Line { origin, direction } => {
-            let transformed_origin = crate::instances::point(transform, origin);
-            let endpoint = crate::instances::point(
-                transform,
-                Point3::new(
-                    origin.x + direction.x,
-                    origin.y + direction.y,
-                    origin.z + direction.z,
-                ),
-            );
+            let transformed_origin = transform.apply_point(origin);
+            let endpoint = transform.apply_point(Point3::new(
+                origin.x + direction.x,
+                origin.y + direction.y,
+                origin.z + direction.z,
+            ));
             let value = cadmpeg_ir::math::Vector3::new(
                 endpoint.x - transformed_origin.x,
                 endpoint.y - transformed_origin.y,
@@ -4726,7 +4716,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             }
         }
         CurveGeometry::Degenerate { point } => CurveGeometry::Degenerate {
-            point: crate::instances::point(transform, point),
+            point: transform.apply_point(point),
         },
         CurveGeometry::Unknown { record } => {
             curve.geometry = CurveGeometry::Unknown { record };
@@ -4750,7 +4740,7 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     surface.geometry = match geometry {
         SurfaceGeometry::Nurbs(mut nurbs) => {
             for pole in &mut nurbs.control_points {
-                *pole = crate::instances::point(transform, *pole);
+                *pole = transform.apply_point(*pole);
             }
             SurfaceGeometry::Nurbs(nurbs)
         }
@@ -4759,17 +4749,15 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             normal,
             u_axis,
         } => {
-            let origin = crate::instances::point(transform, source_origin);
-            let normal = crate::instances::normal(transform, normal)
+            let origin = transform.apply_point(source_origin);
+            let normal = transform
+                .apply_normal(normal)
                 .ok_or_else(|| "instance plane normal transform is singular".to_string())?;
-            let endpoint = crate::instances::point(
-                transform,
-                Point3::new(
-                    source_origin.x + u_axis.x,
-                    source_origin.y + u_axis.y,
-                    source_origin.z + u_axis.z,
-                ),
-            );
+            let endpoint = transform.apply_point(Point3::new(
+                source_origin.x + u_axis.x,
+                source_origin.y + u_axis.y,
+                source_origin.z + u_axis.z,
+            ));
             let projected = cadmpeg_ir::math::Vector3::new(
                 endpoint.x - origin.x,
                 endpoint.y - origin.y,
@@ -5113,10 +5101,9 @@ mod tests {
         };
         compose_body_transform(&mut body, instance);
         assert_eq!(
-            crate::instances::point(
-                body.transform.expect("required invariant"),
-                Point3::new(1.0, 0.0, 0.0)
-            ),
+            body.transform
+                .expect("required invariant")
+                .apply_point(Point3::new(1.0, 0.0, 0.0)),
             Point3::new(12.0, 0.0, 0.0)
         );
     }

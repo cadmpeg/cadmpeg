@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_codec_core::CodecError;
-use cadmpeg_ir::codec::WriteSeek;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
@@ -15,6 +14,9 @@ use crate::native::{
     DocumentFacts, EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
 use crate::FcstdWriteOptions;
+
+pub(crate) trait WriteSeek: Write + Seek {}
+impl<T: Write + Seek> WriteSeek for T {}
 
 pub(crate) fn write(
     ir: &CadIr,
@@ -134,11 +136,13 @@ pub(crate) fn write_seekable(
         })?;
     }
     let validation = cadmpeg_ir::validate(ir, Vec::new());
-    let total_entities = validation.entity_counts.values().sum();
     Ok(ExportReport {
         format: "fcstd".into(),
-        entity_counts: validation.entity_counts,
-        total_entities,
+        census: cadmpeg_ir::EntityCensus {
+            basis: cadmpeg_ir::CensusBasis::IrArenas,
+            counts: validation.entity_counts,
+        },
+        fidelity: cadmpeg_ir::FidelityResolution::NotProvided,
         losses: Vec::new(),
         notes: vec![
             format!(

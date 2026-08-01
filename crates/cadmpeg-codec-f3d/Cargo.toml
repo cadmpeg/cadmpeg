@@ -14,6 +14,7 @@ keywords = ["cad", "fusion-360", "f3d", "brep", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
+cadmpeg-container.workspace = true
 cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 zip.workspace = true

@@ -2,6 +2,10 @@
 //! Bounded Compound File Binary container reader.
 
 use std::collections::BTreeSet;
+use std::io::Read;
+
+use cadmpeg_codec_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_codec_core::CodecError;
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
@@ -9,7 +13,6 @@ const END_OF_CHAIN: u32 = 0xffff_fffe;
 const FAT_SECTOR: u32 = 0xffff_fffd;
 const DIFAT_SECTOR: u32 = 0xffff_fffc;
 const NO_STREAM: u32 = 0xffff_ffff;
-const MAX_DECODED_STREAM: usize = 512 * 1024 * 1024;
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = [
     0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
 ];
@@ -36,7 +39,28 @@ struct DirectoryEntry {
 
 pub(crate) fn streams(bytes: &[u8]) -> Option<Vec<Stream>> {
     let file = CompoundFile::parse(bytes)?;
-    file.read_streams()
+    file.read_streams(decode_wrapped_payload)
+}
+
+pub(crate) fn streams_budgeted<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<Option<Vec<Stream>>, CodecError> {
+    let Some(file) = CompoundFile::parse(root.window()) else {
+        return Ok(None);
+    };
+    let mut failure = None;
+    let streams =
+        file.read_streams(
+            |payload| match decode_wrapped_payload_budgeted(ctx, root, payload) {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    failure = Some(error);
+                    None
+                }
+            },
+        );
+    failure.map_or(Ok(streams), Err)
 }
 
 struct CompoundFile<'a> {
@@ -188,7 +212,10 @@ impl<'a> CompoundFile<'a> {
         })
     }
 
-    fn read_streams(&self) -> Option<Vec<Stream>> {
+    fn read_streams(
+        &self,
+        mut decode_wrapped: impl FnMut(&[u8]) -> Option<Vec<u8>>,
+    ) -> Option<Vec<Stream>> {
         let sector_count = (self.bytes.len() - self.sector_size) / self.sector_size;
         let root = self.directory.first()?;
         let mini_stream = if root.size == 0 {
@@ -263,7 +290,7 @@ impl<'a> CompoundFile<'a> {
                 path,
                 directory_id: u32::try_from(id).ok()?,
                 start_sector: entry.start_sector,
-                decoded_bytes: decode_wrapped_payload(&payload),
+                decoded_bytes: decode_wrapped(&payload),
                 bytes: payload,
             });
         }
@@ -272,22 +299,85 @@ impl<'a> CompoundFile<'a> {
 }
 
 fn decode_wrapped_payload(payload: &[u8]) -> Option<Vec<u8>> {
-    use std::io::Read;
-
     if payload.get(..16)? != WRAPPED_PAYLOAD_MAGIC {
         return None;
     }
     let uncompressed_size = le_u32(payload, 16)? as usize;
     let compressed_size = le_u32(payload, 20)? as usize;
-    if uncompressed_size == 0 || uncompressed_size > MAX_DECODED_STREAM || compressed_size == 0 {
+    if uncompressed_size == 0 || compressed_size == 0 {
         return None;
     }
     let member = payload.get(24..24usize.checked_add(compressed_size)?)?;
     let mut decoder = flate2::read::ZlibDecoder::new(member);
     let mut decoded = Vec::with_capacity(uncompressed_size.min(1 << 20));
-    decoder.read_to_end(&mut decoded).ok()?;
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = decoder.read(&mut chunk).ok()?;
+        if read == 0 {
+            break;
+        }
+        if read > uncompressed_size.saturating_sub(decoded.len()) {
+            return None;
+        }
+        decoded.try_reserve(read).ok()?;
+        decoded.extend_from_slice(&chunk[..read]);
+    }
     (decoded.len() == uncompressed_size && decoder.total_in() as usize == compressed_size)
         .then_some(decoded)
+}
+
+fn decode_wrapped_payload_budgeted<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    payload: &[u8],
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let Some(uncompressed_size) = le_u32(payload, 16).map(u64::from) else {
+        return Ok(None);
+    };
+    let Some(compressed_size) = le_u32(payload, 20).and_then(|size| usize::try_from(size).ok())
+    else {
+        return Ok(None);
+    };
+    if uncompressed_size == 0 || compressed_size == 0 {
+        return Ok(None);
+    }
+    let Some(member_end) = 24usize.checked_add(compressed_size) else {
+        return Ok(None);
+    };
+    let Some(member) = payload.get(24..member_end) else {
+        return Ok(None);
+    };
+    let mut decoder = flate2::read::ZlibDecoder::new(member);
+    let mut writer = ctx.begin_expand(source, ExpandSpec::Exact(uncompressed_size))?;
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let Ok(read) = decoder.read(&mut chunk) else {
+            return Ok(None);
+        };
+        if read == 0 {
+            break;
+        }
+        if let Err(error) = writer.write(&chunk[..read]) {
+            return match error {
+                CodecError::ResourceLimit(_) => Err(error),
+                _ => Ok(None),
+            };
+        }
+    }
+    if decoder.total_in() as usize != compressed_size {
+        return Ok(None);
+    }
+    let decoded = match writer.finalize() {
+        Ok(decoded) => decoded,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    ctx.copy_retained(
+        decoded.window(),
+        "retain decoded CFB stream",
+        Some(source.location()),
+    )
+    .map(Some)
 }
 
 fn parse_directory(bytes: &[u8], major_version: u16) -> Option<Vec<DirectoryEntry>> {

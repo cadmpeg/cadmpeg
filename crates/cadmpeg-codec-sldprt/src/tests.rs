@@ -7,7 +7,7 @@ use std::io::{Cursor, Write};
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 
 use cadmpeg_codec_core::decode::InspectOptions;
-use cadmpeg_ir::LossCode;
+use cadmpeg_ir::LossKind;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -2091,7 +2091,13 @@ fn encoder_writes_source_less_ir() {
         .for_each(|edge| edge.param_range = None);
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.directory.len(), 1);
@@ -2149,7 +2155,13 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         native_ref: None,
     });
 
-    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    let error = SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("requires retained extrusion profile data"));
@@ -2426,7 +2438,13 @@ fn encoder_writes_source_less_line_sketches() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
@@ -2685,7 +2703,13 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -2808,7 +2832,13 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         native_ref: None,
     });
 
-    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    let error = SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_codec_core::CodecError::NotImplemented(_)
@@ -3318,7 +3348,13 @@ fn encoder_writes_source_less_curved_sketches() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -3597,7 +3633,13 @@ fn encoder_writes_source_less_curved_sketches() {
         .expect("source distance parameter");
     parameter.expression = "5mm".into();
     parameter.value = Some(ParameterValue::Length(Length(5.0)));
-    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    let error = SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("not satisfied by measured geometry"));
@@ -3662,7 +3704,13 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -3888,7 +3936,13 @@ fn encoder_writes_source_less_native_features() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
@@ -4674,7 +4728,13 @@ fn encoder_writes_source_less_datum_features() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -4737,7 +4797,13 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.finalize();
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert!(scan
         .blocks
@@ -4965,7 +5031,13 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     ir.model.configurations[1].active = true;
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert!(scan
         .blocks
@@ -5354,7 +5426,13 @@ fn encoder_writes_source_less_neutral_parameters() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -5406,7 +5484,13 @@ fn encoder_bakes_rigid_body_transform() {
     let expected_normal = Vector3::new(-original_normal.y, original_normal.x, original_normal.z);
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -5468,7 +5552,13 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     prepare(&mut base);
     base.model.bodies[0].transform = None;
     let mut base_bytes = Vec::new();
-    SldprtCodec.encode(&base, &mut base_bytes).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &base,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut base_bytes))
+        .unwrap();
     let reference = SldprtCodec
         .decode(&mut Cursor::new(base_bytes), &DecodeOptions::default())
         .unwrap();
@@ -5485,7 +5575,13 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         prepare(&mut moved);
         moved.model.bodies[0].transform = Some(Transform { rows });
         let mut bytes = Vec::new();
-        SldprtCodec.encode(&moved, &mut bytes).unwrap();
+        SldprtCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &moved,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .unwrap();
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
@@ -5521,7 +5617,11 @@ fn decode_encode_decode_reaches_fixpoint() {
 
     let mut reencoded = Vec::new();
     SldprtCodec
-        .encode_with_source_fidelity(&first.ir, Some(&first.source_fidelity), &mut reencoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &first.ir,
+            fidelity: Some(&first.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut reencoded))
         .expect("re-encode");
 
     let second = SldprtCodec
@@ -5809,7 +5909,7 @@ fn strict_accepts_operator_requested_container_only() {
 
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let fixture = synthetic_sldprt();
 
@@ -5821,17 +5921,17 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::GeometryNotTransferred));
+        .any(|note| note.code == LossKind::GeometryNotTransferred));
     assert!(salvaged
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::TopologyNotTransferred));
+        .any(|note| note.code == LossKind::TopologyNotTransferred));
     assert!(salvaged
         .report
         .losses
         .iter()
-        .any(|note| note.code.strict_consequence() == StrictConsequence::Reject));
+        .any(|note| note.strict_consequence() == StrictConsequence::Reject));
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
@@ -5847,7 +5947,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
     let strict = SldprtCodec
@@ -5858,12 +5958,12 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .report
         .losses
         .iter()
-        .all(|note| note.code.strict_consequence() == StrictConsequence::Tolerate));
+        .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
     assert!(strict
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::TopologyGaugeSubstituted));
+        .any(|note| note.code == LossKind::TopologyGaugeSubstituted));
 }
 
 #[test]
@@ -8180,7 +8280,11 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     decoded.ir.model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .encode_with_source_fidelity(&decoded.ir, Some(&decoded.source_fidelity), &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19544,7 +19648,11 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     );
 
     let error = SldprtCodec
-        .encode_with_source_fidelity(&decoded.ir, Some(&decoded.source_fidelity), &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(matches!(
         error,
@@ -20600,14 +20708,14 @@ fn face_on_untyped_surface_keeps_topology() {
         .report
         .losses
         .iter()
-        .any(|l| l.code == LossCode::GeometryNotTransferred));
+        .any(|l| l.code == LossKind::GeometryNotTransferred));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -20634,9 +20742,9 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .report
         .losses
         .iter()
-        .find(|l| l.code == LossCode::GeometryNotTransferred)
+        .find(|l| l.code == LossKind::GeometryNotTransferred)
         .expect("untyped support surface raises a census note");
-    assert_eq!(census.code.strict_consequence(), StrictConsequence::Reject);
+    assert_eq!(census.strict_consequence(), StrictConsequence::Reject);
 
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
@@ -21197,7 +21305,10 @@ fn source_less_cube() -> cadmpeg_ir::CadIr {
 
 fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec::DecodeResult {
     let mut encoded = Vec::new();
-    SldprtCodec.encode(ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap()

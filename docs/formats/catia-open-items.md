@@ -715,3 +715,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md:851` defines the admitted marker family. Marker bytes can also occur inside numeric payloads.
 
 **Need.** We must know the delimiter grammar to separate adjacent surface records without a false marker match.
+
+## 8. Appearance
+
+### AP-01. `FeatureForColor` face selection
+
+**Question.** How does `SelectingFeatureForColorUuid` select the face targeted by an `EC 03 R G B A` override that occurs with an `EB 01 R G B` all-face color?
+
+**Known.** `catia.md` defines both color packets. The `EB` value applies to the complete face population. The `EC` value supplies the override color asset. The application object graph contains `FeatureForColor` and `SelectingFeatureForColorUuid`, but the UUID-to-standard-face incidence is not assigned.
+
+**Need.** We must know the incidence to bind the override color to one face without using face order or geometry as a substitute for source ownership.

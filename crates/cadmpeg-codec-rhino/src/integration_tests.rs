@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end contracts over synthesized OpenNURBS archives.
+#![allow(clippy::unwrap_used)]
+//! End-to-end contracts over synthesized `OpenNURBS` archives.
 
 use super::*;
 use crate::archive_test_support as support;
+use crate::{RhinoArchiveVersion, RhinoEncoder};
 use cadmpeg_ir::Encoder;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -169,7 +171,11 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
     ] {
         let mut bytes = Vec::new();
         crate::RhinoEncoder::new(version)
-            .encode(&point_ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &point_ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .unwrap();
         let result = decode(bytes);
         assert_eq!(
@@ -197,7 +203,13 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         point.source_object = None;
     }
     let mut bytes = Vec::new();
-    RhinoCodec.encode(&sheet, &mut bytes).unwrap();
+    RhinoEncoder::new(RhinoArchiveVersion::V8)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &sheet,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
     let result = decode(bytes);
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_valid(&result);

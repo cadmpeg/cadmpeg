@@ -7,7 +7,7 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{LossNote, Severity};
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -205,8 +205,7 @@ pub(crate) struct Projection {
 
 pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     LossNote {
-        code: cadmpeg_ir::LossCode::RecordNotTyped,
-        category: LossCategory::Geometry,
+        code: cadmpeg_ir::LossKind::RecordNotTyped,
         severity: Severity::Warning,
         message: format!(
             "IGES entity type {} form {} was not projected: {}",

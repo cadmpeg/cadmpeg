@@ -7,10 +7,9 @@
 
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, Encoder};
-use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
-use std::io::Write;
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::report::{ExportReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::FidelityResolution;
 
 pub(crate) mod annotations;
 pub(crate) mod brep;
@@ -84,58 +83,6 @@ impl RhinoEncoder {
     pub const fn new(version: RhinoArchiveVersion) -> Self {
         Self { version }
     }
-
-    fn export_report(self, ir: &CadIr) -> ExportReport {
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
-        let total_entities = validation.entity_counts.values().sum();
-        let vertex_quantization = self.version == RhinoArchiveVersion::V5
-            && ir
-                .model
-                .tessellations
-                .iter()
-                .flat_map(|mesh| &mesh.vertices)
-                .any(|point| {
-                    f64::from(point.x as f32) != point.x
-                        || f64::from(point.y as f32) != point.y
-                        || f64::from(point.z as f32) != point.z
-                });
-        let normal_quantization = ir
-            .model
-            .tessellations
-            .iter()
-            .flat_map(|mesh| &mesh.normals)
-            .any(|normal| {
-                f64::from(normal.x as f32) != normal.x
-                    || f64::from(normal.y as f32) != normal.y
-                    || f64::from(normal.z as f32) != normal.z
-            });
-        let mut losses = Vec::new();
-        if vertex_quantization {
-            losses.push(LossNote {
-                code: LossCode::MeshVertexPrecision,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: "archive version 50 stores standalone mesh vertices as f32".into(),
-                provenance: None,
-            });
-        }
-        if normal_quantization {
-            losses.push(LossNote {
-                code: LossCode::MeshVertexPrecision,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: "3DM mesh normals are stored as f32".into(),
-                provenance: None,
-            });
-        }
-        ExportReport {
-            format: "rhino".into(),
-            total_entities,
-            entity_counts: validation.entity_counts,
-            losses,
-            notes: vec![format!("3DM archive version {}", self.version.value())],
-        }
-    }
 }
 
 impl Codec for RhinoCodec {
@@ -173,42 +120,66 @@ impl Encoder for RhinoEncoder {
         "rhino"
     }
 
-    fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        writer::write(ir, self.version.value(), output)?;
-        Ok(self.export_report(ir))
-    }
-
-    fn encode_seekable_with_source_fidelity(
-        &self,
-        ir: &CadIr,
-        _source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
-        output: &mut dyn cadmpeg_ir::codec::WriteSeek,
-    ) -> Result<ExportReport, CodecError> {
-        writer::write_seekable(ir, self.version.value(), output)?;
-        Ok(self.export_report(ir))
-    }
-}
-
-impl Encoder for RhinoCodec {
-    fn id(&self) -> &'static str {
-        "rhino"
-    }
-
-    fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        RhinoEncoder::new(RhinoArchiveVersion::V8).encode(ir, output)
-    }
-
-    fn encode_seekable_with_source_fidelity(
-        &self,
-        ir: &CadIr,
-        source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
-        output: &mut dyn cadmpeg_ir::codec::WriteSeek,
-    ) -> Result<ExportReport, CodecError> {
-        RhinoEncoder::new(RhinoArchiveVersion::V8).encode_seekable_with_source_fidelity(
-            ir,
-            source_fidelity,
-            output,
-        )
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        writer::write(input.ir, self.version.value(), &mut bytes)?;
+        let validation = cadmpeg_ir::validate(input.ir, Vec::new());
+        let vertex_quantization = self.version == RhinoArchiveVersion::V5
+            && input
+                .ir
+                .model
+                .tessellations
+                .iter()
+                .flat_map(|mesh| &mesh.vertices)
+                .any(|point| {
+                    f64::from(point.x as f32) != point.x
+                        || f64::from(point.y as f32) != point.y
+                        || f64::from(point.z as f32) != point.z
+                });
+        let normal_quantization = input
+            .ir
+            .model
+            .tessellations
+            .iter()
+            .flat_map(|mesh| &mesh.normals)
+            .any(|normal| {
+                f64::from(normal.x as f32) != normal.x
+                    || f64::from(normal.y as f32) != normal.y
+                    || f64::from(normal.z as f32) != normal.z
+            });
+        let mut losses = Vec::new();
+        if vertex_quantization {
+            losses.push(LossNote {
+                code: LossKind::MeshVertexPrecision,
+                severity: Severity::Warning,
+                message: "archive version 50 stores standalone mesh vertices as f32".into(),
+                provenance: None,
+            });
+        }
+        if normal_quantization {
+            losses.push(LossNote {
+                code: LossKind::MeshVertexPrecision,
+                severity: Severity::Warning,
+                message: "3DM mesh normals are stored as f32".into(),
+                provenance: None,
+            });
+        }
+        let report = ExportReport {
+            format: "rhino".into(),
+            census: cadmpeg_ir::EntityCensus {
+                basis: cadmpeg_ir::CensusBasis::IrArenas,
+                counts: validation.entity_counts,
+            },
+            fidelity: FidelityResolution::NotProvided,
+            losses,
+            notes: vec![format!("3DM archive version {}", self.version.value())],
+        };
+        let fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        };
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 

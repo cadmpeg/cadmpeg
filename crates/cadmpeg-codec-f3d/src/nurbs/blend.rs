@@ -700,7 +700,7 @@ mod variable_blend_value_tests {
     #[test]
     fn decodes_interp_point_with_unset_derivatives() {
         // Sentinel value marking an unset first/second derivative.
-        const UNSET: f64 = 9.9999999999999995e+36;
+        const UNSET: f64 = 9.999_999_999_999_999_5e+36;
         let mut bytes = Vec::new();
         text(&mut bytes, "interp");
         integer(&mut bytes, 0x15, 0);

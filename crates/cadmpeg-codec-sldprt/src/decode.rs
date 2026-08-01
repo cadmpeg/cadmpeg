@@ -92,12 +92,12 @@ struct EvaluatedFeatureState<'a> {
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_bytes(root.window());
+    let scan = container::scan(ctx, root)?;
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(ctx, ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
@@ -111,22 +111,24 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 &decoded.configuration_bodies,
             )?;
             append_design_losses(&ir, &mut report);
-            return decode_result(ir, report, annotations, unknowns);
+            return decode_result(ctx, ir, report, annotations, unknowns);
         }
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
     append_design_losses(&ir, &mut report);
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(ctx, ir, report, annotations, unknowns)
 }
 
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
@@ -140,11 +142,7 @@ fn decode_result(
         source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
     set_semantic_hash(&mut ir);
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {

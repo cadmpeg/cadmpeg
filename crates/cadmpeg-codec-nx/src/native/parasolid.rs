@@ -3168,7 +3168,7 @@ mod tests {
         assert_eq!(result.ir.model.procedural_curves.len(), 1);
         assert_eq!(result.ir.model.procedural_curves[0].curve, curve.id);
         assert!(result.report.losses.iter().any(|loss| {
-            loss.category == LossCategory::Geometry
+            loss.code.category() == LossCategory::Geometry
                 && loss.message.starts_with("1 surface-intersection record(s)")
         }));
         assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
@@ -3299,7 +3299,7 @@ mod tests {
         assert_eq!(context.parameter_range, [0.0, 0.01]);
         assert!(result.ir.model.coedges[0].pcurves.is_empty());
         assert!(!result.report.losses.iter().any(|loss| {
-            loss.category == LossCategory::Geometry
+            loss.code.category() == LossCategory::Geometry
                 && loss.message.contains("surface-intersection record(s)")
         }));
         let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());

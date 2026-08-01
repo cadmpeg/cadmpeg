@@ -1659,7 +1659,7 @@ mod tests {
     /// millimetre reading and must not be silently taken as one.
     #[test]
     fn a_non_length_distance_tag_yields_no_value() {
-        let record = distance_record(0x2100_8, 1.0);
+        let record = distance_record(0x0002_1008, 1.0);
         assert_eq!(super::distance_property(&record, "Depth"), None);
     }
 }

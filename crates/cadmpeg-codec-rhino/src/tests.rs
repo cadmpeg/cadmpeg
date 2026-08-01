@@ -5,7 +5,7 @@ use cadmpeg_codec_core::decode::InspectOptions;
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::LossCode;
+use cadmpeg_ir::LossKind;
 use cadmpeg_ir::IR_VERSION;
 
 use super::chunks::{
@@ -1702,6 +1702,20 @@ fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
         );
         assert!(matches!(result, Err(CodecError::NotImplemented(_))));
     }
+}
+
+#[test]
+fn top_level_framing_preserves_truncation_classification() {
+    let bytes = header("50");
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(matches!(
+        RhinoCodec.inspect(
+            &mut Cursor::new(truncated),
+            &InspectOptions::default()
+        ),
+        Err(CodecError::Truncated { location, context })
+            if location.offset == 31 && context.operation == "rhino chunk framing"
+    ));
 }
 
 #[test]
@@ -3405,7 +3419,7 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
             .report
             .losses
             .iter()
-            .any(|loss| { loss.code == LossCode::AttributesNotTransferred }));
+            .any(|loss| { loss.code == LossKind::AttributesNotTransferred }));
     });
 }
 
@@ -3466,7 +3480,8 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .losses
         .iter()
         .find(|loss| {
-            loss.category == cadmpeg_ir::report::LossCategory::Geometry && loss.provenance.is_some()
+            loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
+                && loss.provenance.is_some()
         })
         .and_then(|loss| loss.provenance.as_ref())
         .expect("retained geometry loss has provenance");

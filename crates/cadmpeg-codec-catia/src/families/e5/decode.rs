@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -159,16 +159,14 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
             "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
         };
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Warning,
             message: message.to_string(),
             provenance: None,
         }]
     } else {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."
                 .to_string(),

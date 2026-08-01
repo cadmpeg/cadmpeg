@@ -15,7 +15,7 @@ use cadmpeg_codec_core::decode::DecodeContext;
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
-use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::{Native, NativeRecord};
 
 use crate::container::ContainerScan;
@@ -84,6 +84,9 @@ pub fn decode(
     let mut stack = vec![manifest.root.clone()];
     let merged = merge_references(ctx, &mut root, scan, &table, &mut stack)?;
     if merged > 0 {
+        root.source_fidelity
+            .retained_records
+            .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
         root.report.notes.push(format!(
             "{merged} merged component(s) retain occurrence-scoped model entities and native \
              records; member source streams remain archive-local"
@@ -96,11 +99,12 @@ pub fn decode(
     let hash = crate::decode::semantic_hash(&root.ir);
     if let Some(source) = &mut root.ir.source {
         source.attributes.insert("semantic_sha256".into(), hash);
-        source
-            .attributes
-            .insert("f3z_root".into(), manifest.root.clone());
     }
-    Ok(DecodeResult::new(root.ir, root.report))
+    Ok(DecodeResult::new(
+        root.ir,
+        root.report,
+        root.source_fidelity,
+    ))
 }
 
 /// Read the two external-reference arenas out of a decoded document.
@@ -147,8 +151,7 @@ fn merge_references(
         );
         if stack.contains(&reference.relative_path) {
             parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
+                code: LossKind::AssemblyComponentsExternal,
                 severity: Severity::Error,
                 message: format!(
                     "xref {label}: reference cycle through {}; the occurrence was not resolved",
@@ -160,8 +163,7 @@ fn merge_references(
         }
         let Some(member_view) = scan.entry_view(&reference.relative_path) else {
             parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
+                code: LossKind::AssemblyComponentsExternal,
                 severity: Severity::Error,
                 message: format!(
                     "xref {label}: member {} is not present in the archive; the occurrence was \
@@ -176,8 +178,7 @@ fn merge_references(
             Ok(component) => component,
             Err(error) => {
                 parent.report.losses.push(LossNote {
-                    code: LossCode::AssemblyComponentsExternal,
-                    category: LossCategory::Geometry,
+                    code: LossKind::AssemblyComponentsExternal,
                     severity: Severity::Error,
                     message: format!(
                         "xref {label}: member {} failed to decode ({error}); the occurrence was \
@@ -191,8 +192,7 @@ fn merge_references(
         };
         if component.ir.units != parent.ir.units {
             parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
+                code: LossKind::AssemblyComponentsExternal,
                 severity: Severity::Error,
                 message: format!(
                     "xref {label}: component units differ from the containing document; the \
@@ -209,7 +209,7 @@ fn merge_references(
         let DecodeResult {
             ir: mut component_ir,
             report: component_report,
-            ..
+            source_fidelity: component_fidelity,
         } = component;
         if let Some(transform) = reference.transform {
             apply_occurrence_transform(&mut component_ir.model, transform);
@@ -222,6 +222,11 @@ fn merge_references(
             .model
             .extend_rewritten(component_ir.model, &mut scope)?;
         extend_native(&mut parent.ir.native, component_ir.native, &occurrence);
+        merge_annotations(
+            &mut parent.source_fidelity.annotations,
+            component_fidelity.annotations,
+            &occurrence,
+        )?;
         merged += descendants + 1;
         parent.report.geometry_transferred |= component_report.geometry_transferred;
         for loss in component_report.losses {
@@ -242,6 +247,59 @@ fn merge_references(
         ));
     }
     Ok(merged)
+}
+
+fn merge_annotations(
+    target: &mut cadmpeg_ir::annotations::Annotations,
+    source: cadmpeg_ir::annotations::Annotations,
+    occurrence: &str,
+) -> Result<(), CodecError> {
+    let mut stream_map = Vec::with_capacity(source.streams.len());
+    for stream in source.streams {
+        let index = if let Some(index) = target
+            .streams
+            .iter()
+            .position(|candidate| candidate == &stream)
+        {
+            index
+        } else {
+            target.streams.push(stream);
+            target.streams.len() - 1
+        };
+        stream_map.push(u32::try_from(index).map_err(|_| {
+            CodecError::Malformed("merged F3Z annotation stream count exceeds u32::MAX".into())
+        })?);
+    }
+    for (id, mut provenance) in source.provenance {
+        let stream = usize::try_from(provenance.stream)
+            .ok()
+            .and_then(|index| stream_map.get(index))
+            .copied()
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "component annotation {id} references missing stream {}",
+                    provenance.stream
+                ))
+            })?;
+        provenance.stream = stream;
+        target
+            .provenance
+            .insert(remap_id_text(&id, occurrence), provenance);
+    }
+    target.exactness.extend(
+        source
+            .exactness
+            .into_iter()
+            .map(|(id, note)| (remap_id_text(&id, occurrence), note)),
+    );
+    Ok(())
+}
+
+fn remap_id_text(text: &str, occurrence: &str) -> String {
+    text.strip_prefix("f3d:").map_or_else(
+        || text.to_owned(),
+        |rest| format!("f3d:xref/{occurrence}/{rest}"),
+    )
 }
 
 /// The id-prefix key for one occurrence: its role string, or its ordinal when

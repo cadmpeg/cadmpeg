@@ -27,32 +27,35 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    if let Some((edge_rows, _, _)) = parse_edge_tables_scoped_at(bytes, after_faces) {
+    // The two-table FBB grammar overlaps the generic scoped-table grammar.
+    // Resolve it first because repeated handles within one FBB table are the
+    // serialized endpoint identities; generic rows allocate independent ports.
+    if let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(bytes, after_faces) {
+        let mut identity_by_handle = HashMap::new();
         return edge_rows
             .iter()
-            .enumerate()
-            .map(|(edge, row)| {
-                row.handles.first().zip(row.handles.last())?;
-                let start = edge.checked_mul(2)?;
-                Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
+            .zip(scopes)
+            .map(|(row, scope)| {
+                let mut pair = [0; 2];
+                for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let next = u32::try_from(identity_by_handle.len()).ok()?;
+                    pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
+                }
+                Some(pair)
             })
             .collect();
     }
-    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
-    let mut identity_by_handle = HashMap::new();
+    let (edge_rows, _, _) = parse_edge_tables_scoped_at(bytes, after_faces)?;
     edge_rows
         .iter()
-        .zip(scopes)
-        .map(|(row, scope)| {
-            let mut pair = [0; 2];
-            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
-                .into_iter()
-                .enumerate()
-            {
-                let next = u32::try_from(identity_by_handle.len()).ok()?;
-                pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
-            }
-            Some(pair)
+        .enumerate()
+        .map(|(edge, row)| {
+            row.handles.first().zip(row.handles.last())?;
+            let start = edge.checked_mul(2)?;
+            Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
         })
         .collect()
 }

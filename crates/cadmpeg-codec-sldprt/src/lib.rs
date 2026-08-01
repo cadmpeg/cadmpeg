@@ -90,12 +90,12 @@ mod writer_transform;
 
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, Encoder};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
+use cadmpeg_ir::{Annotations, FidelityResolution, Finding, LossNote, Severity, SourceFidelity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
@@ -141,12 +141,12 @@ impl SldprtCodec {
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
             return writer::write_semantic_with_records(ir, annotations, records, writer);
         }
-        let record = records
+        let Some(record) = records
             .iter()
             .find(|record| record.id.0 == "sldprt:file:source-image#0")
-            .ok_or_else(|| {
-                CodecError::NotImplemented("IR has no retained SLDPRT source image".into())
-            })?;
+        else {
+            return writer::write_semantic_with_records(ir, annotations, records, writer);
+        };
         let data = record.data.as_ref().ok_or_else(|| {
             CodecError::Malformed("retained SLDPRT source image has no bytes".into())
         })?;
@@ -199,20 +199,50 @@ impl Encoder for SldprtCodec {
         "sldprt"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        Self::encode_with_annotations(ir, &Annotations::default(), &[], writer)
-    }
-
-    fn encode_with_source_fidelity(
-        &self,
-        ir: &CadIr,
-        source_fidelity: Option<&SourceFidelity>,
-        writer: &mut dyn Write,
-    ) -> Result<ExportReport, CodecError> {
-        match source_fidelity {
-            Some(value) => Self::encode_with_fidelity(ir, value, writer),
-            None => Self::encode_with_annotations(ir, &Annotations::default(), &[], writer),
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        let mut report = match input.fidelity {
+            Some(value) => Self::encode_with_fidelity(input.ir, value, &mut bytes)?,
+            None => {
+                Self::encode_with_annotations(input.ir, &Annotations::default(), &[], &mut bytes)?
+            }
+        };
+        let replay = input
+            .fidelity
+            .and_then(|value| value.retained_record("sldprt:file:source-image#0"))
+            .is_some();
+        let expects_preserved_source = input
+            .ir
+            .source
+            .as_ref()
+            .is_some_and(|source| source.format == "sldprt");
+        let fidelity = match (input.fidelity.is_some() || expects_preserved_source, replay) {
+            (_, true) => FidelityResolution::Replayed,
+            (true, false) => FidelityResolution::Degraded {
+                reason: "preserved SLDPRT source image is unavailable".into(),
+            },
+            (false, false) => FidelityResolution::NotProvided,
+        };
+        if replay {
+            report.notes[0] = input
+                .fidelity
+                .and_then(|value| value.retained_record("sldprt:file:source-image#0"))
+                .filter(|source| source.data.as_deref() == Some(bytes.as_slice()))
+                .map_or(
+                    "preserved source container replayed with semantic patches",
+                    |_| "preserved source container replayed verbatim",
+                )
+                .into();
         }
+        if matches!(fidelity, FidelityResolution::Degraded { .. }) {
+            report.losses.push(LossNote {
+                code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
+                severity: Severity::Blocking,
+                message: "preserved SLDPRT source image is unavailable; regenerated from IR".into(),
+                provenance: None,
+            });
+        }
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 
@@ -237,11 +267,13 @@ impl SldprtCodec {
             .any(|record| record.id.0 == "sldprt:file:source-image#0");
         Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());
-        let total_entities = validation.entity_counts.values().sum();
         Ok(ExportReport {
             format: "sldprt".into(),
-            entity_counts: validation.entity_counts,
-            total_entities,
+            census: cadmpeg_ir::EntityCensus {
+                basis: cadmpeg_ir::CensusBasis::IrArenas,
+                counts: validation.entity_counts,
+            },
+            fidelity: FidelityResolution::NotProvided,
             losses: Vec::new(),
             notes: vec![
                 if replay {

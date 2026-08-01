@@ -217,6 +217,130 @@ pub struct A5GuideCurve {
     pub second_derivatives: Vec<[f64; 6]>,
 }
 
+/// One non-rational degree-5 NURBS curve stored in an `a5 13 16` frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A5NurbsCurve {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded record token.
+    pub header_token: u32,
+    /// Exact neutral curve.
+    pub geometry: NurbsCurve,
+}
+
+/// Decode length-closed `a5/a6/a7 13 16` non-rational NURBS curves.
+#[must_use]
+pub fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
+    a5_nurbs_curve_frames(data)
+        .into_iter()
+        .filter_map(|frame| parse_a5_nurbs_curve(data, frame))
+        .collect()
+}
+
+fn a5_nurbs_curve_frames(data: &[u8]) -> Vec<ConsolidatedFrame> {
+    let mut frames = Vec::new();
+    for pos in 0..data.len().saturating_sub(8) {
+        let Some(width) = data[pos]
+            .checked_sub(0xa4)
+            .filter(|width| (1..=3).contains(width))
+        else {
+            continue;
+        };
+        if !matches!(data[pos + 1], 0x03 | 0x13 | 0x83) || data[pos + 2] != 0x16 {
+            continue;
+        }
+        let Some(length) = u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
+        else {
+            continue;
+        };
+        let token_start = pos + 7;
+        let payload = token_start + usize::from(width);
+        let Some(end) = payload.checked_add(length).filter(|end| *end <= data.len()) else {
+            continue;
+        };
+        let header_token = data[token_start..payload]
+            .iter()
+            .enumerate()
+            .fold(0u32, |value, (shift, byte)| {
+                value | (u32::from(*byte) << (8 * shift))
+            });
+        frames.push(ConsolidatedFrame {
+            pos,
+            payload,
+            end,
+            header_token,
+        });
+    }
+    frames
+}
+
+fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5NurbsCurve> {
+    let mut at = frame.payload;
+    let degree = compact_int(data, &mut at)?;
+    let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+    if degree != 5 || !(2..=8192).contains(&knot_count) || data.get(at) != Some(&0x0c) {
+        return None;
+    }
+    at += 1;
+    let mut distinct_knots = Vec::with_capacity(knot_count);
+    for _ in 0..knot_count {
+        distinct_knots.push(f64_le(data, at)?);
+        at += 8;
+    }
+    if distinct_knots.windows(2).any(|pair| pair[0] >= pair[1]) || data.get(at) != Some(&0x01) {
+        return None;
+    }
+    at += 1;
+    let control_count = 6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
+    let control_points = (0..control_count)
+        .map(|_| {
+            let point = Point3::new(
+                f64_le(data, at)?,
+                f64_le(data, at + 8)?,
+                f64_le(data, at + 16)?,
+            );
+            at += 24;
+            Some(point)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 2 {
+        return None;
+    }
+    let range_origin = f64_le(data, at)?;
+    let repeated_end = f64_le(data, at + 8)?;
+    let scale = f64_le(data, at + 16)?;
+    let offset = f64_le(data, at + 24)?;
+    at += 32;
+    if range_origin.to_bits() != 0.0f64.to_bits()
+        || repeated_end.to_bits() != distinct_knots.last()?.to_bits()
+        || scale.to_bits() != 1.0f64.to_bits()
+        || offset.to_bits() != 0.0f64.to_bits()
+        || data.get(at..frame.end) != Some(&[0x00, 0x07])
+    {
+        return None;
+    }
+    let mut knots = Vec::with_capacity(control_count + usize::try_from(degree).ok()? + 1);
+    for (index, knot) in distinct_knots.into_iter().enumerate() {
+        let multiplicity = if index == 0 || index + 1 == knot_count {
+            6
+        } else {
+            3
+        };
+        knots.extend(std::iter::repeat_n(knot, multiplicity));
+    }
+    Some(A5NurbsCurve {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        geometry: NurbsCurve {
+            degree,
+            knots,
+            control_points,
+            weights: None,
+            periodic: false,
+        },
+    })
+}
+
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[must_use]
 pub fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {

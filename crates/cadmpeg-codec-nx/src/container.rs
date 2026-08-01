@@ -6,9 +6,11 @@
 //! in-bounds file offset and size. [`crate::parasolid`] uses the canonical
 //! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
+use std::borrow::Cow;
+
 use cadmpeg_codec_core::cursor::bounded_len;
 use cadmpeg_codec_core::le::{u32_at as u32_le, u64_at as u64_le};
-use cadmpeg_codec_core::{CodecError, ReadSeek};
+use cadmpeg_codec_core::CodecError;
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
 pub const MAGIC: &[u8; 8] = b"SPLMSSTR";
@@ -180,7 +182,7 @@ impl Region {
     }
 }
 
-impl Container {
+impl Container<'_> {
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
     pub fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
         let entry = self
@@ -639,9 +641,9 @@ pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32
 
 /// A parsed SPLMSSTR container and its directory entries.
 #[derive(Debug, Clone)]
-pub struct Container {
+pub struct Container<'a> {
     /// The whole file image.
-    pub data: Vec<u8>,
+    pub data: Cow<'a, [u8]>,
     /// Version byte at file offset 8.
     pub version: u8,
     /// File-specific 24-bit little-endian value at offset 9.
@@ -680,18 +682,9 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
     v
 }
 
-/// Read a complete SPLMSSTR file and parse its header and directories.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<Container, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut data = Vec::new();
-    reader.read_to_end(&mut data).map_err(CodecError::Io)?;
-    scan_bytes(data)
-}
-
 /// Parse an SPLMSSTR file image.
-pub fn scan_bytes(data: Vec<u8>) -> Result<Container, CodecError> {
+pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, CodecError> {
+    let data = data.into();
     if !data.starts_with(MAGIC) {
         return Err(CodecError::WrongFormat(
             "missing SPLMSSTR magic".to_string(),

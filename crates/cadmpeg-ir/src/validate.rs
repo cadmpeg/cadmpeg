@@ -121,11 +121,6 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     )
 }
 
-/// Count registered neutral and native entities without running validation.
-pub(crate) fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
-    collect_entity_counts(ir)
-}
-
 /// Validate one neutral product model.
 pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     validate_with_ids(ir, losses).0

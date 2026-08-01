@@ -27,7 +27,7 @@ use crate::topology::{self, BlendSurface, Graph, OffsetSurface, SurfaceCurve, Tr
 /// full-record merges applied. Unpaired delta streams that carry records or tombstones
 /// are merged against an empty partition; paired delta streams are merged into their
 /// partition and then cleared.
-pub(crate) fn topology_streams(scan: &Scan) -> Vec<Cow<'_, [u8]>> {
+pub(crate) fn topology_streams<'a>(scan: &'a Scan<'_>) -> Vec<Cow<'a, [u8]>> {
     let mut semantic = scan
         .streams
         .iter()
@@ -324,7 +324,7 @@ mod tests {
     fn unchanged_stream_views_borrow_the_inflated_bytes() {
         let scan = crate::decode::Scan {
             container: crate::container::Container {
-                data: Vec::new(),
+                data: Vec::new().into(),
                 version: 0,
                 file_tag: 0,
                 footer_offset: 0,

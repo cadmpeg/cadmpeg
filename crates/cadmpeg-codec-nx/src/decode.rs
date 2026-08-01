@@ -43,7 +43,7 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -59,14 +59,14 @@ use crate::topology::{Graph, Node};
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 /// Parsed container data shared by inspection and entity decoding.
-pub struct Scan {
+pub struct Scan<'a> {
     /// Parsed SPLMSSTR container.
-    pub container: Container,
+    pub container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
     pub streams: Vec<Stream>,
 }
 
-impl Scan {
+impl Scan<'_> {
     /// Count streams with the requested classification.
     pub fn count(&self, kind: StreamKind) -> usize {
         self.streams.iter().filter(|s| s.kind == kind).count()
@@ -81,8 +81,8 @@ impl Scan {
 }
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecError> {
-    let container = container::scan_bytes(root.window().to_vec())?;
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+    let container = container::scan_bytes(root.window())?;
     let streams = parasolid::extract_streams(ctx, root, &container)?;
     Ok(Scan { container, streams })
 }
@@ -98,17 +98,17 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let scan = scan(ctx, root)?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report);
         return decode_result(ir, report, annotations, unknowns);
     }
 
-    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
+    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(ctx, root, &scan) {
         return decode_result(ir, report, annotations, unknowns);
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
     decode_result(ir, report, annotations, unknowns)
@@ -125,19 +125,14 @@ fn decode_result(
         ..cadmpeg_ir::SourceFidelity::default()
     };
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
 fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
         report.losses.push(LossNote {
-            code: LossCode::RecordNotTyped,
-            category: LossCategory::DesignIntent,
+            code: LossKind::RecordNotTyped,
             severity: Severity::Warning,
             message: format!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
@@ -150,8 +145,7 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
         let content = entry.content();
         if content.retains_opaque_payload() {
             report.losses.push(LossNote {
-                code: LossCode::RecordNotTyped,
-                category: LossCategory::Other,
+                code: LossKind::RecordNotTyped,
                 severity: Severity::Info,
                 message: format!(
                     "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not typed.",
@@ -165,8 +159,7 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
             report.losses.push(LossNote {
-                code: LossCode::PassthroughRecordOmitted,
-                category: LossCategory::Other,
+                code: LossKind::PassthroughRecordOmitted,
                 severity: Severity::Info,
                 message: format!(
                     "Non-Parasolid {} stream #{index} was classified but not transferred.",
@@ -973,6 +966,8 @@ fn positive_weights(weights: Option<&[f64]>) -> bool {
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 fn try_decode_geometry(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     scan: &Scan,
 ) -> Option<(
     CadIr,
@@ -1625,7 +1620,8 @@ fn try_decode_geometry(
     // bytes for the seven feature/segment families body selection consumes.
     // This moves extraction slightly earlier on the geometry path — the RFC's
     // accepted memory-high-water cost.
-    let model = crate::native::NativeModel::extract(&scan.container, &scan.streams, &parsed);
+    let model =
+        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
     let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
@@ -9790,8 +9786,7 @@ fn build_geometry_report(
     let mut losses = Vec::new();
 
     losses.push(LossNote {
-        code: LossCode::CarrierSummary,
-        category: LossCategory::Geometry,
+        code: LossKind::CarrierSummary,
         severity: Severity::Info,
         message: format!(
             "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
@@ -9815,8 +9810,7 @@ fn build_geometry_report(
 
     if tessellation_count != 0 {
         losses.push(LossNote {
-            code: LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
+            code: LossKind::CarrierSummary,
             severity: Severity::Info,
             message: format!(
                 "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
@@ -9827,8 +9821,7 @@ fn build_geometry_report(
 
     if !has_topology {
         losses.push(LossNote {
-            code: LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
                       reconstructed because the surviving typed records did not form a complete \
@@ -9843,8 +9836,7 @@ fn build_geometry_report(
 
     if counts.intersection_rejections.total() > 0 {
         losses.push(LossNote {
-            code: LossCode::ObjectRecordsUntransferred,
-            category: LossCategory::Geometry,
+            code: LossKind::ObjectRecordsUntransferred,
             severity: Severity::Warning,
             message: format!(
                 "{} surface-intersection record(s) without a complete validated CHART_s and \
@@ -9872,8 +9864,7 @@ fn build_geometry_report(
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
-            code: LossCode::DecodeDiagnostic,
-            category: LossCategory::Topology,
+            code: LossKind::DecodeDiagnostic,
             severity: if unmatched_tombstones == 0 {
                 Severity::Info
             } else {
@@ -9920,8 +9911,7 @@ fn build_geometry_report(
 
     if has_unresolved_sub_bodies {
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::Topology,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "This part is composed of {} sub-body partition(s); its decoded feature-history \
@@ -9937,8 +9927,7 @@ fn build_geometry_report(
     append_design_intent_losses(ir, &mut losses);
 
     losses.push(LossNote {
-        code: LossCode::AttributesNotTransferred,
-        category: LossCategory::Attribute,
+        code: LossKind::AttributesNotTransferred,
         severity: Severity::Warning,
         message: "Material and appearance assignment, class-specific entity attribute fields, and \
                   assembly occurrence placements were not transferred: their remaining NX \
@@ -9966,8 +9955,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if unresolved_suppression_count != 0 {
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "Suppression state remains unresolved for {unresolved_suppression_count} NX \
@@ -10007,8 +9995,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if incomplete_configuration_count != 0 {
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "Activation, complete body membership, evaluated feature state, or evaluated \
@@ -10022,8 +10009,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     let incomplete_expression_count = incomplete_expression_parameters(ir).len();
     if incomplete_expression_count != 0 {
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "Neutral evaluation or dependency semantics remain incomplete for \
@@ -10046,8 +10032,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "NX feature-history operation(s) remain native-only because their complete neutral \
@@ -10077,8 +10062,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "NX feature family identities were transferred, but their neutral construction \
@@ -10483,8 +10467,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .collect::<Vec<_>>()
             .join(", ");
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "NX feature families were transferred as typed neutral operations, but \
@@ -10514,8 +10497,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if unresolved_sketch_feature_count != 0 {
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
@@ -10526,8 +10508,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     } else if sketch_feature_count != 0 && ir.model.sketch_constraints.is_empty() {
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "Decoded {} NX sketch record(s), but no sketch constraints were transferred because \
@@ -10562,8 +10543,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .count();
     if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
         losses.push(LossNote {
-            code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::DesignIntent,
+            code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
                 "Neutral semantics remain unresolved for {native_sketch_entity_count} NX sketch \
@@ -11489,6 +11469,8 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
 }
 
 fn build_metadata_ir(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     scan: &Scan,
 ) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
@@ -11507,7 +11489,8 @@ fn build_metadata_ir(
         }
     }
     let parsed = crate::native::ParsedStreams::parse(scan);
-    let model = crate::native::NativeModel::extract(&scan.container, &scan.streams, &parsed);
+    let model =
+        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
     crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     Ok((ir, annotations.build(), unknowns))
@@ -11525,8 +11508,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 
     if assembly {
         losses.push(LossNote {
-            code: LossCode::AssemblyComponentsExternal,
-            category: LossCategory::Geometry,
+            code: LossKind::AssemblyComponentsExternal,
             severity: Severity::Blocking,
             message: "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
                       lives in external child .prt files named in EXTREFSTREAM, and the assembled \
@@ -11537,8 +11519,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         });
     } else {
         losses.push(LossNote {
-            code: LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
+            code: LossKind::GeometryNotTransferred,
             severity: Severity::Blocking,
             message: "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
                       in the embedded Parasolid streams (they may hold only B-spline/procedural \
@@ -11551,8 +11532,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 
     if container_only {
         losses.push(LossNote {
-            code: LossCode::ContainerOnly,
-            category: LossCategory::Geometry,
+            code: LossKind::ContainerOnly,
             severity: Severity::Info,
             message: "Container-only decode requested; entity decode was not attempted."
                 .to_string(),

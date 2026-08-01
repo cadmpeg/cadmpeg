@@ -3,6 +3,7 @@
 //! fixtures or inline), and expected STEP fragments are asserted inline. No test
 //! depends on an external STEP consumer.
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 
@@ -15,6 +16,7 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
+use std::fmt::Write as _;
 use std::io::Cursor;
 
 use crate::{
@@ -98,11 +100,7 @@ fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
 fn parser_bounds_exponential_anchor_expansion() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..40 {
-        anchors.push_str(&format!(
-            "<a{index}>=(<a{}>,<a{}>);\n",
-            index - 1,
-            index - 1
-        ));
+        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1).unwrap();
     }
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
@@ -115,15 +113,12 @@ fn parser_bounds_exponential_anchor_expansion() {
 fn parser_bounds_aggregate_anchor_materialization() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..18 {
-        anchors.push_str(&format!(
-            "<a{index}>=(<a{}>,<a{}>);\n",
-            index - 1,
-            index - 1
-        ));
+        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1).unwrap();
     }
-    let records = (1..=8)
-        .map(|id| format!("#{id}=ITEM(<a17>);"))
-        .collect::<String>();
+    let records = (1..=8).fold(String::new(), |mut records, id| {
+        write!(records, "#{id}=ITEM(<a17>);").unwrap();
+        records
+    });
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
@@ -1418,7 +1413,7 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.normals.len(), 3);
     assert_eq!(
-        mesh.body.as_ref().map(|body| body.as_str()),
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     let complex = result
@@ -1751,17 +1746,21 @@ fn mapped_representation_dag_is_memoized() {
         let map = 1_000 + level;
         let first = 2_000 + level * 2;
         let second = first + 1;
-        records.push_str(&format!(
+        write!(
+            records,
             "#{representation}=SHAPE_REPRESENTATION('',(#{first},#{second}),$);\n\
 #{map}=REPRESENTATION_MAP($,#{next});\n\
 #{first}=MAPPED_ITEM('',#{map},$);\n\
 #{second}=MAPPED_ITEM('',#{map},$);\n"
-        ));
+        )
+        .unwrap();
     }
-    records.push_str(&format!(
+    write!(
+        records,
         "#{}=SHAPE_REPRESENTATION('',(#9000),$);\n#9000=MANIFOLD_SOLID_BREP('',#9001);\n#9001=CLOSED_SHELL('',());",
         100 + depth
-    ));
+    )
+    .unwrap();
 
     let result = decode_inline(&records);
     assert_eq!(result.ir.model.products.len(), 1);
@@ -2714,9 +2713,9 @@ fn every_reference_resolves() {
 fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     let mut buf = Vec::new();
     let report = write_step(&unit_cube(), &mut buf, &StepWriteOptions::default()).unwrap();
-    assert_eq!(report.total_entities, buf_line_count(&buf));
-    assert_eq!(report.entity_counts.get("ADVANCED_FACE"), Some(&6));
-    assert_eq!(report.entity_counts.get("VERTEX_POINT"), Some(&8));
+    assert_eq!(report.census.total(), buf_line_count(&buf));
+    assert_eq!(report.census.counts.get("ADVANCED_FACE"), Some(&6));
+    assert_eq!(report.census.counts.get("VERTEX_POINT"), Some(&8));
     // The cube is fully representable: no error/blocking losses.
     assert_eq!(report.error_count(), 0);
 }
@@ -2977,21 +2976,21 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message
                 .contains("1 subdivision surface(s) were omitted")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message
                 .contains("1 tessellation(s) require an AP242 target")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Metadata
+        loss.code.category() == cadmpeg_ir::LossCategory::Metadata
             && loss
                 .message
                 .contains("2 source-object association(s) were not represented")
@@ -3051,7 +3050,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     let report = write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
         .expect("polygonal face is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("unknown or STEP-unsupported surface")
     }));
 
@@ -3074,7 +3073,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     )
     .expect("transformed unknown curve is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("STEP-unsupported transform")
     }));
 }
@@ -3093,7 +3092,7 @@ fn signed_analytic_radius_normalization_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("normalized to positive STEP radii")
     }));
 }
@@ -3114,7 +3113,7 @@ fn elliptical_cone_reduction_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("elliptical cone surface(s)")
     }));
 }
@@ -3318,7 +3317,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
             b: 0.125,
             a: 1.0,
         }),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -3327,7 +3326,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
@@ -3378,7 +3377,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
             b: 0.0,
             a: 1.0,
         }),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -3387,7 +3386,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
 
     let s = export(&ir);
@@ -3399,7 +3398,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Each color's style chain is emitted once and shared; grouping the styled
     // items by their style ref must yield exactly two groups sized 1 and
     // face_count - 1 (the lone override plus every inherited face).
-    let mut per_style: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut per_style = std::collections::BTreeMap::<String, usize>::default();
     for item in &styled {
         // STYLED_ITEM('color',(#psa),#face)
         let psa = item

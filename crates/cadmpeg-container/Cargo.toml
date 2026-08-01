@@ -12,6 +12,7 @@ rust-version.workspace = true
 [dependencies]
 cadmpeg-codec-core.workspace = true
 flate2.workspace = true
+crc32fast.workspace = true
 zip.workspace = true
 
 [lints]

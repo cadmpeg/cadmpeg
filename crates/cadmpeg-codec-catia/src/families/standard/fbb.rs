@@ -12,7 +12,6 @@ use crate::solve::UnionFind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 pub(crate) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
 const TRIM_KINDS: [u8; 14] = [
@@ -26,6 +25,19 @@ const TRIM_KINDS: [u8; 14] = [
 #[must_use]
 pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
     largest_fbb_run(bytes).map(|(_, count, _)| count)
+}
+
+/// RGBA display color for each positional standard face row.
+#[must_use]
+pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
+    let (start, count, _) = largest_fbb_run(bytes)?;
+    let marker: [u8; 4] = bytes.get(start..start + 4)?.try_into().ok()?;
+    (0..count)
+        .map(|index| {
+            let row = bytes.get(start + index * 8..start + (index + 1) * 8)?;
+            (row[..4] == marker).then_some([row[7], row[6], row[5], row[4]])
+        })
+        .collect()
 }
 
 /// Unit frame vector for each positional standard trim packet. The result is
@@ -403,10 +415,10 @@ pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
     let mut tied = false;
     let mut position = 0;
     while position + 8 <= bytes.len() {
-        if bytes[position..].starts_with(&FBB_ROW) {
+        if crate::container::is_fbb_row(&bytes[position..]) {
             let start = position;
             let mut count = 0;
-            while position + 8 <= bytes.len() && bytes[position..].starts_with(&FBB_ROW) {
+            while position + 8 <= bytes.len() && crate::container::is_fbb_row(&bytes[position..]) {
                 count += 1;
                 position += 8;
             }
@@ -424,6 +436,25 @@ pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
         None
     } else {
         best
+    }
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::standard_face_colors;
+
+    #[test]
+    fn face_colors_are_abgr_and_require_one_marker_family() {
+        let bytes = [
+            0xb0, 4, 4, 0xff, 0x99, 0x1f, 0x1a, 0xd1, 0xb0, 4, 4, 0xff, 0xff, 0xe0, 0x3d, 0x14,
+        ];
+        assert_eq!(
+            standard_face_colors(&bytes),
+            Some(vec![[0xd1, 0x1a, 0x1f, 0x99], [0x14, 0x3d, 0xe0, 0xff]])
+        );
+        let mut mixed = bytes;
+        mixed[8] = 0x30;
+        assert_eq!(standard_face_colors(&mixed), None);
     }
 }
 
@@ -454,7 +485,26 @@ pub(crate) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec
 
 pub(crate) fn parse_edge_tables_scoped_at(
     bytes: &[u8],
+    position: usize,
+) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
+    let solutions = [1, 2, 3]
+        .into_iter()
+        .filter_map(|handle_width| {
+            let parsed = parse_edge_tables_scoped_width(bytes, position, handle_width)?;
+            parse_vertex_table(bytes, parsed.2)
+                .is_some()
+                .then_some(parsed)
+        })
+        .collect::<Vec<_>>();
+    <[_; 1]>::try_from(solutions)
+        .ok()
+        .map(|[solution]| solution)
+}
+
+fn parse_edge_tables_scoped_width(
+    bytes: &[u8],
     mut position: usize,
+    handle_width: usize,
 ) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
     let mut rows = Vec::new();
     let mut scopes = Vec::new();
@@ -478,20 +528,25 @@ pub(crate) fn parse_edge_tables_scoped_at(
             if arity < 2 {
                 return None;
             }
-            if arity > bytes.len().saturating_sub(position) / 2 {
+            if arity > bytes.len().saturating_sub(position) / handle_width {
                 return None;
             }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
-                handles.push(u32::from(u16::from_be_bytes(
-                    bytes.get(position..position + 2)?.try_into().ok()?,
-                )));
-                position += 2;
+                let mut encoded = [0u8; 4];
+                encoded[4 - handle_width..]
+                    .copy_from_slice(bytes.get(position..position + handle_width)?);
+                handles.push(u32::from_be_bytes(encoded));
+                position += handle_width;
             }
             rows.push(EdgeRow {
                 kind,
                 handles,
-                boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+                boundary_layout: if arity == 2 {
+                    EdgeBoundaryLayout::CompleteBoundaryRun
+                } else {
+                    EdgeBoundaryLayout::InteriorWithFlankingCorners
+                },
             });
             scopes.push(scope);
         }

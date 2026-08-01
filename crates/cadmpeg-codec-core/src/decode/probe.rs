@@ -10,6 +10,7 @@
 //! candidate".
 
 use super::error::SourceLocation;
+use crate::CodecError;
 
 /// A classified failure after commitment, with its location.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +19,39 @@ pub struct ParseError {
     pub location: SourceLocation,
     /// What kind of failure it was.
     pub kind: ParseErrorKind,
+    /// The committed operation in progress.
+    pub operation: &'static str,
+}
+
+impl ParseError {
+    /// Replaces the operation label as the error crosses a parsing boundary.
+    #[must_use]
+    pub fn during(mut self, operation: &'static str) -> Self {
+        self.operation = operation;
+        self
+    }
+}
+
+impl From<ParseError> for CodecError {
+    fn from(error: ParseError) -> Self {
+        match error.kind {
+            ParseErrorKind::UnexpectedEof { .. } => {
+                CodecError::truncated(error.location, error.operation)
+            }
+            ParseErrorKind::InvalidValue => CodecError::Malformed(format!(
+                "invalid value during {} at space {} offset {}",
+                error.operation,
+                error.location.space.index(),
+                error.location.offset
+            )),
+            ParseErrorKind::InvalidFraming => CodecError::Malformed(format!(
+                "invalid framing during {} at space {} offset {}",
+                error.operation,
+                error.location.space.index(),
+                error.location.offset
+            )),
+        }
+    }
 }
 
 /// The classified reason a committed parse failed.

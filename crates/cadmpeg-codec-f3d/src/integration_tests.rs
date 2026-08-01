@@ -125,7 +125,11 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     drop(f3d_native_mut(&mut ir));
     let mut bytes = Vec::new();
     F3dCodec
-        .encode(&ir, &mut bytes)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less F3D encode");
     assert_eq!(F3dCodec.detect(&bytes), Confidence::High);
     let round_trip = decode(bytes);

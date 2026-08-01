@@ -31,6 +31,7 @@
 
 pub mod annotations;
 pub mod appearance;
+pub mod artifact;
 pub mod assets;
 pub mod attributes;
 pub mod bytes;
@@ -66,6 +67,7 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
+pub use artifact::{DocumentArtifact, DocumentOrigin};
 pub use codec::{
     CadirEncoder, Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult, Encoder,
 };
@@ -97,8 +99,8 @@ pub use products::{
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, DecodeReport, ExportReport, Finding, LossCategory, LossCode, LossNote, Severity,
-    StrictConsequence, ValidationReport,
+    CensusBasis, Check, CoverageKey, DecodeReport, EntityCensus, ExportReport, FidelityResolution,
+    Finding, LossCategory, LossKind, LossNote, Severity, StrictConsequence, ValidationReport,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
@@ -107,7 +109,10 @@ pub use sketches::{
     SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry,
     SpatialSketchId, SpatialSketchProfile,
 };
-pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
+pub use source_fidelity::{
+    decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
+    SourceFidelity, DECODE_SIDECAR_VERSION, SOURCE_FIDELITY_VERSION,
+};
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,

@@ -52,8 +52,7 @@ pub(crate) fn decode(
             Ok(parsed) => {
                 if parsed.unknown_records != 0 {
                     losses.push(cadmpeg_ir::report::LossNote {
-                        code: cadmpeg_ir::report::LossCode::RecordNotTyped,
-                        category: cadmpeg_ir::report::LossCategory::Geometry,
+                        code: cadmpeg_ir::report::LossKind::RecordNotTyped,
                         severity: cadmpeg_ir::report::Severity::Warning,
                         message: format!(
                             "{} T-spline record(s) were retained without typed semantics.",
@@ -65,8 +64,7 @@ pub(crate) fn decode(
                 cages.push(parsed.surface);
             }
             Err(error) => losses.push(cadmpeg_ir::report::LossNote {
-                code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-                category: cadmpeg_ir::report::LossCategory::Geometry,
+                code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
                 severity: cadmpeg_ir::report::Severity::Error,
                 message: format!("T-spline control cage not decoded: {error}"),
                 provenance: None,

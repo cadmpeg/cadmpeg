@@ -73,6 +73,14 @@ impl<'a> View<'a> {
         }
     }
 
+    /// Returns a source location at an absolute offset in this view's space.
+    pub fn location_at(self, offset: usize) -> SourceLocation {
+        SourceLocation {
+            space: self.space,
+            offset: offset as u64,
+        }
+    }
+
     /// Returns the readable window `start..end` as a slice.
     pub fn window(self) -> &'a [u8] {
         self.bytes.get(self.start..self.end).unwrap_or_default()
@@ -137,6 +145,7 @@ impl<'a> View<'a> {
                 needed,
                 remaining: self.remaining() as u64,
             },
+            operation: "required_read",
         }
     }
 

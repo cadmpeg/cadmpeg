@@ -61,17 +61,21 @@ fn standard_nested_pipeline_builds_a_valid_radial_topology_graph() {
     assert_eq!(result.ir.model.edges.len(), 6);
     assert_eq!(result.ir.model.coedges.len(), 12);
     assert_eq!(
-        result.report.coverage["attempted_standard_topology_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["attached_standard_topology_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert!(!result.report.losses.iter().any(|loss| {
         loss.severity == Severity::Blocking
             && matches!(
-                loss.category,
+                loss.code.category(),
                 LossCategory::Geometry | LossCategory::Topology
             )
     }));
@@ -91,7 +95,7 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
     assert_eq!(result.ir.model.surfaces.len(), 2);
     assert!(result.ir.model.faces.is_empty());
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == LossCategory::Topology && loss.severity == Severity::Blocking
+        loss.code.category() == LossCategory::Topology && loss.severity == Severity::Blocking
     }));
     assert_valid(&result);
 }
@@ -119,7 +123,9 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
         .iter()
         .any(|curve| { matches!(curve.geometry, CurveGeometry::Procedural { .. }) }));
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_parametric_surface_curve_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        ),
         1
     );
     assert_valid(&result);

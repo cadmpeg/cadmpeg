@@ -4957,7 +4957,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut sweep = vec![0; 499];
     sweep[25..29].copy_from_slice(&4u32.to_le_bytes());
     bytes.extend_from_slice(&sweep);
-    let sweep_values: [f64; 6] = [0.8, 0.0, 1.0, 1.0, 6.632251157578453, 0.0];
+    let sweep_values: [f64; 6] = [0.8, 0.0, 1.0, 1.0, 6.632_251_157_578_453, 0.0];
     let sweep_scalar_start = bytes.len();
     for (ordinal, value) in sweep_values.into_iter().enumerate() {
         let record_index = 80 + ordinal as u32;
@@ -5018,7 +5018,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
                 along_fraction: 0.8,
                 against_fraction: 0.0,
             }),
-            twist: Some(cadmpeg_ir::features::Angle(6.632251157578453)),
+            twist: Some(cadmpeg_ir::features::Angle(6.632_251_157_578_453)),
             taper: None,
             ..
         })
@@ -15933,7 +15933,7 @@ fn txt_tag_sketch_text_record_decodes_stored_rotation() {
         &[("txt_tag", 115)],
         &[261],
         &[261],
-        (0.8114737226243502, -1.4340080595768365),
+        (0.811_473_722_624_350_2, -1.434_008_059_576_836_5),
         4,
         stored_rotation,
     ))
@@ -15941,7 +15941,7 @@ fn txt_tag_sketch_text_record_decodes_stored_rotation() {
     assert_eq!(text.rotation, Some(stored_rotation));
     assert_eq!(
         text.anchor,
-        Some(Point2::new(8.114737226243502, -14.340080595768365))
+        Some(Point2::new(8.114_737_226_243_502, -14.340_080_595_768_365,))
     );
 }
 

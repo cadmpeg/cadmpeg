@@ -535,7 +535,17 @@ pub fn write_semantic(
             continue;
         }
         let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry.read_to_end(&mut bytes)?;
+        let mut chunk = [0_u8; 16 * 1024];
+        loop {
+            let read = entry.read(&mut chunk)?;
+            if read == 0 {
+                break;
+            }
+            bytes
+                .try_reserve(read)
+                .map_err(|_| CodecError::Malformed(format!("cannot allocate ZIP entry {name}")))?;
+            bytes.extend_from_slice(&chunk[..read]);
+        }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
         }
