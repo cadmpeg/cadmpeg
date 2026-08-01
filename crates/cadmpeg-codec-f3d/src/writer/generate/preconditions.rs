@@ -404,14 +404,9 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         }
         if header.in_sketch_module() {
             // `record_reference` is absent on the sentinel (no-base-record)
-            // reference-list form; the declared count must always match.
-            if header.declared_reference_count != u32::try_from(header.reference_indices.len()).ok()
-            {
-                return Err(CodecError::Malformed(format!(
-                    "F3D Design sketch header {} has an inconsistent reference list",
-                    header.id
-                )));
-            }
+            // reference-list form. The writer derives the list count from the
+            // references because decoded source streams are merged into one
+            // canonical Design stream.
         } else if header.record_reference.is_some()
             || header.declared_reference_count.is_some()
             || !header.reference_indices.is_empty()
@@ -525,12 +520,7 @@ pub(crate) fn validate_source_less_act(native: &F3dNative) -> Result<(), CodecEr
         *channel_counts.entry(guid).or_default() += 1;
     }
     let mut predicted = Vec::new();
-    for (ordinal, guid) in native.act_guids.iter().enumerate() {
-        if guid.ordinal != ordinal as u32 {
-            return Err(CodecError::Malformed(
-                "F3D ACT GUID ordinals must be contiguous in stream order".into(),
-            ));
-        }
+    for guid in &native.act_guids {
         let remaining = channel_counts.entry(guid.guid.as_str()).or_default();
         if *remaining > 0 {
             *remaining -= 1;

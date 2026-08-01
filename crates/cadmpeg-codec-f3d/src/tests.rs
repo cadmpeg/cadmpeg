@@ -9431,12 +9431,17 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         .encode(&source_less, &mut encoded)
         .expect("source-less Design ownership encode");
     f3d_native_mut(&mut source_less).design_entity_headers[0].declared_reference_count = Some(3);
-    let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
-        .expect_err("mismatched sketch reference counts must not be normalized");
-    assert!(error
-        .to_string()
-        .contains("has an inconsistent reference list"));
+    let mut normalized = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut normalized)
+        .expect("source sketch reference count is regenerated");
+    let normalized = F3dCodec
+        .decode(&mut Cursor::new(normalized), &DecodeOptions::default())
+        .expect("regenerated sketch reference count round trip");
+    assert_eq!(
+        f3d_native(&normalized.ir).design_entity_headers[0].declared_reference_count,
+        Some(2)
+    );
     {
         let mut native = f3d_native_mut(&mut source_less);
         native.design_entity_headers[0].declared_reference_count = Some(2);
