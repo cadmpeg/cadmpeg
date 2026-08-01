@@ -3,7 +3,7 @@
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Seek, Write};
+use std::io::{self, BufWriter, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -661,7 +661,12 @@ fn export_ir(
         report
     } else {
         let mut temporary = tempfile::tempfile().context("creating temporary output")?;
-        let report = encode(&mut temporary)?;
+        let report = {
+            let mut buffered = BufWriter::new(&mut temporary);
+            let report = encode(&mut buffered)?;
+            buffered.flush().context("flushing temporary output")?;
+            report
+        };
         temporary.rewind().context("rewinding temporary output")?;
         io::copy(&mut temporary, &mut io::stdout()).context("writing output")?;
         report
@@ -735,8 +740,15 @@ fn write_output_with<T>(
     }
     let mut temporary = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("creating temporary output in {}", parent.display()))?;
-    let result = write(&mut temporary)
-        .with_context(|| format!("writing temporary output for {}", output.display()))?;
+    let result = {
+        let mut buffered = BufWriter::new(&mut temporary);
+        let result = write(&mut buffered)
+            .with_context(|| format!("writing temporary output for {}", output.display()))?;
+        buffered
+            .flush()
+            .with_context(|| format!("flushing temporary output for {}", output.display()))?;
+        result
+    };
     temporary
         .flush()
         .with_context(|| format!("flushing temporary output for {}", output.display()))?;

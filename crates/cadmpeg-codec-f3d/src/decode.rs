@@ -913,7 +913,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let (mut ir, unknowns) = build_metadata_ir(&scan);
         annotate_docstruct(&mut ir, &scan);
         let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None, &unknowns);
-        let source_image = preserve_source_image(&scan, &mut ir);
+        let source_image = preserve_source_image(&scan);
         let mut report = build_container_report(&scan, true);
         if let Ok(Some(table)) = crate::xref::decode(&scan) {
             apply_assembly_classification(&mut report, &scan, &table);
@@ -1419,7 +1419,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 Some((&primary_model_brep.name, &annotation_records)),
                 &unknowns,
             );
-            let source_image = preserve_source_image(&scan, &mut ir);
+            let source_image = preserve_source_image(&scan);
             return decode_result(ir, report, annotations, unknowns, source_image);
         }
     }
@@ -1777,7 +1777,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let mesh_bodies = project_mesh_bodies(&scan, &mut ir, &mut report)?;
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
-    let source_image = preserve_source_image(&scan, &mut ir);
+    let source_image = preserve_source_image(&scan);
     if mesh_bodies > 0 {
         apply_mesh_body_classification(&mut report, &scan, mesh_bodies);
     }
@@ -1977,13 +1977,8 @@ fn decode_result(
     ))
 }
 
-fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> UnknownRecord {
+fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     let id = crate::ids::FILE_SOURCE_IMAGE_ID;
-    ir.finalize();
-    let hash = semantic_hash(ir);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert("semantic_sha256".into(), hash);
-    }
     UnknownRecord {
         id: UnknownId(id.into()),
         offset: 0,

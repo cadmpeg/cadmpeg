@@ -339,11 +339,11 @@ impl Encoder for CadirEncoder {
         serde_json::to_writer_pretty(&mut *writer, ir)
             .map_err(|error| CodecError::Malformed(error.to_string()))?;
         writer.write_all(b"\n")?;
-        let validation = crate::validate(ir, Vec::new());
-        let total_entities = validation.entity_counts.values().sum();
+        let entity_counts = crate::validate::entity_counts(ir);
+        let total_entities = entity_counts.values().sum();
         Ok(ExportReport {
             format: "cadir".into(),
-            entity_counts: validation.entity_counts,
+            entity_counts,
             total_entities,
             losses: Vec::new(),
             notes: Vec::new(),

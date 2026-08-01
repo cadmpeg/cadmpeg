@@ -51,7 +51,10 @@ use geometry_consistency::{
     check_procedural_support_consistency,
 };
 use geometry_payloads::{check_bounds, check_tessellations};
-use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
+use identity_order::{
+    check_identity_and_order, check_version, collect_native_ids,
+    entity_counts as collect_entity_counts,
+};
 use pmi::check_pmi;
 use presentation::check_presentation;
 use product::check_products as check_step_products;
@@ -110,12 +113,17 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
 
     (
         ValidationReport {
-            entity_counts: entity_counts(ir),
+            entity_counts: collect_entity_counts(ir),
             findings,
             losses,
         },
         all_ids,
     )
+}
+
+/// Count registered neutral and native entities without running validation.
+pub(crate) fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
+    collect_entity_counts(ir)
 }
 
 /// Validate one neutral product model.
