@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native Rhino 3DM archive writing.
 
-use std::io::{Cursor, SeekFrom, Write};
+use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_ir::codec::{CodecError, WriteSeek};
 use cadmpeg_ir::document::CadIr;
@@ -76,9 +76,10 @@ const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
-    let mut staged = Cursor::new(Vec::new());
+    let mut staged = tempfile::tempfile()?;
     write_seekable(ir, version, &mut staged)?;
-    output.write_all(staged.get_ref())?;
+    staged.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut staged, output)?;
     Ok(())
 }
 
@@ -87,23 +88,15 @@ pub(crate) fn write_seekable(
     version: u64,
     output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
-    let plan = prepare_write(ir)?;
+    let mut plan = prepare_write(ir)?;
     write_archive_prefix(ir, version, output)?;
     let table_start = output.stream_position()?;
     output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
     output.write_all(&0_i64.to_le_bytes())?;
     let body_start = output.stream_position()?;
 
-    for prepared in &plan.breps {
-        let body = &prepared.scope.ir.model.bodies[0];
-        output.write_all(&brep_object_record(
-            &prepared.payload,
-            &body.id.0,
-            body.name.as_deref(),
-            body.color,
-            body.visible,
-        )?)?;
-    }
+    plan.brep_records.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut plan.brep_records, output)?;
     for point in ir
         .model
         .points
@@ -276,18 +269,13 @@ struct BrepScope {
     pcurves: std::collections::BTreeSet<String>,
 }
 
-struct PreparedBrep {
-    scope: BrepScope,
-    payload: BrepPayload,
-}
-
 struct BrepPayload {
     body: Vec<u8>,
     direct: Vec<u8>,
 }
 
 struct WritePlan {
-    breps: Vec<PreparedBrep>,
+    brep_records: std::fs::File,
     topology_points: std::collections::BTreeSet<String>,
     topology_curves: std::collections::BTreeSet<String>,
     topology_surfaces: std::collections::BTreeSet<String>,
@@ -617,40 +605,28 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
         ));
     }
     let breps = brep_scopes(ir)?;
-    let prepared_breps = breps
-        .into_iter()
-        .map(|scope| {
-            let payload = planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "body {} topology is not a writable Brep",
-                    scope.ir.model.bodies[0].id.0
-                ))
-            })?;
-            Ok(PreparedBrep { scope, payload })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let used_pcurves = prepared_breps
+    let used_pcurves = breps
         .iter()
-        .flat_map(|prepared| prepared.scope.pcurves.iter())
+        .flat_map(|scope| scope.pcurves.iter())
         .collect::<std::collections::BTreeSet<_>>();
     if used_pcurves.len() != model.pcurves.len() {
         return Err(CodecError::NotImplemented(
             "pcurves without writable Brep coedge ownership are not writable".into(),
         ));
     }
-    let topology_curves = prepared_breps
+    let topology_curves = breps
         .iter()
-        .flat_map(|prepared| prepared.scope.curves.iter().cloned())
+        .flat_map(|scope| scope.curves.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>();
-    let topology_surfaces = prepared_breps
+    let topology_surfaces = breps
         .iter()
-        .flat_map(|prepared| prepared.scope.surfaces.iter().cloned())
+        .flat_map(|scope| scope.surfaces.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>();
     let general = general_topology_ir(ir);
     let scoped_count = |select: fn(&cadmpeg_ir::document::Model) -> usize| {
-        prepared_breps
+        breps
             .iter()
-            .map(|prepared| select(&prepared.scope.ir.model))
+            .map(|scope| select(&scope.ir.model))
             .sum::<usize>()
             + select(&general.model)
     };
@@ -668,8 +644,8 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
         ));
     }
     let (mut topology_points, point_groups) = free_vertex_groups(&general)?;
-    for prepared in &prepared_breps {
-        topology_points.extend(prepared.scope.points.iter().cloned());
+    for scope in &breps {
+        topology_points.extend(scope.points.iter().cloned());
     }
     for curve in &model.curves {
         if topology_curves.contains(&curve.id.0) {
@@ -747,8 +723,25 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
     for mesh in &model.tessellations {
         check_mesh(mesh)?;
     }
+    let mut brep_records = tempfile::tempfile()?;
+    for scope in &breps {
+        let body = &scope.ir.model.bodies[0];
+        let payload = planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "body {} topology is not a writable Brep",
+                body.id.0
+            ))
+        })?;
+        brep_records.write_all(&brep_object_record(
+            &payload,
+            &body.id.0,
+            body.name.as_deref(),
+            body.color,
+            body.visible,
+        )?)?;
+    }
     Ok(WritePlan {
-        breps: prepared_breps,
+        brep_records,
         topology_points,
         topology_curves,
         topology_surfaces,
