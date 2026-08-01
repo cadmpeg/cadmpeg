@@ -4,6 +4,23 @@
 
 use std::collections::HashMap;
 
+#[cfg(test)]
+thread_local! {
+    static LOAD_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+/// Reset the per-thread typed-native load counter used by writer tests.
+pub(crate) fn reset_load_count() {
+    LOAD_COUNT.set(0);
+}
+
+#[cfg(test)]
+/// Number of typed-native loads performed on this test thread since reset.
+pub(crate) fn load_count() -> usize {
+    LOAD_COUNT.get()
+}
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -295,6 +312,8 @@ macro_rules! sort_f3d_arenas {
     ($($field:ident: $ty:ty;)*) => {
         impl F3dNative {
             pub fn load(namespace: &cadmpeg_ir::NativeNamespace) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+                #[cfg(test)]
+                LOAD_COUNT.set(LOAD_COUNT.get() + 1);
                 // `asm_histories` is not a flat arena: its delta states,
                 // bulletin boards, entity changes, and history records live in
                 // four sibling arenas and are grafted back on below.

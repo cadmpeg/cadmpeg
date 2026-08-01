@@ -13,53 +13,51 @@ use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::math::Point3;
 
 use super::attributes::source_less_body_key;
+use super::index::NativeGenerationIndex;
 use super::native_bytes::{native_f64, native_i64, native_ref};
 use super::native_geometry::native_nurbs_curve;
 use super::preconditions::DesignBindingsValidated;
+use crate::native::F3dNative;
 use crate::nurbs::reader::LEN_TO_MM;
-use crate::writer::primitives::{f3d_native, native_bool};
+use crate::writer::primitives::native_bool;
 
 pub(crate) fn tolerant_coedge_range(
-    target: &CadIr,
+    index: &NativeGenerationIndex<'_>,
     coedge: &CoedgeId,
-) -> Result<Option<[f64; 2]>, CodecError> {
-    Ok(f3d_native(target)?.and_then(|native| {
-        native
-            .tolerant_coedge_parameters
-            .into_iter()
-            .find(|parameters| parameters.coedge == *coedge)
-            .map(|parameters| parameters.parameter_range)
-    }))
+) -> Option<[f64; 2]> {
+    index
+        .tolerant_coedges
+        .get(coedge.as_str())
+        .map(|parameters| parameters.parameter_range)
 }
 
 pub(crate) fn native_tolerant_coedge_extension(
     records: &mut Vec<u8>,
     target: &CadIr,
+    index: &NativeGenerationIndex<'_>,
     coedge: &CoedgeId,
 ) -> Result<(), CodecError> {
-    let extension = f3d_native(target)?
-        .and_then(|native| {
-            native
-                .tolerant_coedge_parameters
-                .into_iter()
-                .find(|parameters| parameters.coedge == *coedge)
-        })
-        .map(|parameters| parameters.extension)
-        .unwrap_or_default();
+    let extension = index
+        .tolerant_coedges
+        .get(coedge.as_str())
+        .map(|parameters| &parameters.extension);
     match extension {
-        crate::records::TolerantCoedgeExtension::None
-        | crate::records::TolerantCoedgeExtension::Empty { target: None } => {
+        None
+        | Some(
+            crate::records::TolerantCoedgeExtension::None
+            | crate::records::TolerantCoedgeExtension::Empty { target: None },
+        ) => {
             native_ref(records, -1);
             native_i64(records, 0);
             native_i64(records, 0);
             Ok(())
         }
-        crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+        Some(crate::records::TolerantCoedgeExtension::EmbeddedCurve {
             target: None,
             curve_reversed,
             parameter_range,
             ..
-        } => {
+        }) => {
             let model_coedge = target
                 .model
                 .coedges
@@ -81,16 +79,16 @@ pub(crate) fn native_tolerant_coedge_extension(
                 )));
             };
             let mut native_curve = curve.clone();
-            if curve_reversed {
+            if *curve_reversed {
                 crate::brep::geometry::reverse_nurbs_curve(&mut native_curve);
             }
             native_ref(records, -1);
             native_i64(records, 1);
-            records.push(native_bool(curve_reversed));
+            records.push(native_bool(*curve_reversed));
             records.push(0x0f);
             native_nurbs_curve(records, &native_curve)?;
             records.push(0x10);
-            if let Some([start, end]) = parameter_range {
+            if let Some([start, end]) = *parameter_range {
                 records.push(0x0a);
                 native_f64(records, start);
                 records.push(0x0a);
@@ -107,10 +105,7 @@ pub(crate) fn native_tolerant_coedge_extension(
     }
 }
 
-pub(crate) fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(native) = f3d_native(target)? else {
-        return Ok(None);
-    };
+pub(crate) fn encode_act_bulkstream(native: &F3dNative) -> Result<Option<Vec<u8>>, CodecError> {
     if native.act_entities.is_empty()
         && native.act_guids.is_empty()
         && native.act_root_components.is_empty()
@@ -215,8 +210,11 @@ pub(crate) fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, C
     Ok(Some(out))
 }
 
-pub(crate) fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
-    let native = f3d_native(target)?.unwrap_or_default();
+pub(crate) fn encode_design_bulkstream(
+    target: &CadIr,
+    native: &F3dNative,
+    attributes: &super::attributes::AttributeIndex<'_>,
+) -> Result<Option<Vec<u8>>, CodecError> {
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
@@ -286,21 +284,24 @@ pub(crate) fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>
         .iter()
         .map(|assignment| (assignment.asm_body_key, assignment.entity_suffix))
         .collect::<BTreeMap<_, _>>();
+    let body_visibilities = native
+        .body_visibilities
+        .iter()
+        .map(|metadata| (metadata.body.as_str(), metadata))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut visibility_rows = Vec::new();
     for (ordinal, body) in target.model.bodies.iter().enumerate() {
         let Some(visible) = body.visible else {
             continue;
         };
-        let metadata = native
-            .body_visibilities
-            .iter()
-            .find(|metadata| metadata.body == body.id);
-        let asm_body_key = match metadata {
-            Some(metadata) => metadata.asm_body_key,
-            None => u64::try_from(source_less_body_key(target, body, ordinal)?).map_err(|_| {
-                CodecError::Malformed("source-less ASM body key is negative".into())
-            })?,
-        };
+        let metadata = body_visibilities.get(body.id.as_str()).copied();
+        let asm_body_key =
+            match metadata {
+                Some(metadata) => metadata.asm_body_key,
+                None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
+                    |_| CodecError::Malformed("source-less ASM body key is negative".into()),
+                )?,
+            };
         let entity_suffix = metadata
             .map(|metadata| metadata.entity_suffix)
             .or_else(|| body_map.get(&asm_body_key).copied())

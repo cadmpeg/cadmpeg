@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
 use super::attributes::source_less_body_key;
 use super::records::validate_dynamic_class_tag;
-use crate::writer::primitives::{f3d_native, history_change_kind};
+use crate::writer::primitives::history_change_kind;
 
 pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
@@ -93,7 +93,10 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
     Ok(())
 }
 
-pub(crate) fn validate_source_less_topology_tolerances(target: &CadIr) -> Result<(), CodecError> {
+pub(crate) fn validate_source_less_topology_tolerances(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
     if let Some(face) = target
         .model
         .faces
@@ -114,19 +117,23 @@ pub(crate) fn validate_source_less_topology_tolerances(target: &CadIr) -> Result
             edge.id
         )));
     }
-    let tolerant = f3d_native(target)?
-        .map(|native| native.tolerant_coedge_parameters)
-        .unwrap_or_default();
-    if let Some(coedge) = target.model.coedges.iter().find(|coedge| {
-        coedge.use_curve.is_some()
-            && !tolerant.iter().any(|parameters| {
-                parameters.coedge == coedge.id
-                    && matches!(
-                        parameters.extension,
-                        crate::records::TolerantCoedgeExtension::EmbeddedCurve { target: None, .. }
-                    )
-            })
-    }) {
+    let tolerant = native
+        .tolerant_coedge_parameters
+        .iter()
+        .filter(|parameters| {
+            matches!(
+                parameters.extension,
+                crate::records::TolerantCoedgeExtension::EmbeddedCurve { target: None, .. }
+            )
+        })
+        .map(|parameters| parameters.coedge.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    if let Some(coedge) = target
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.use_curve.is_some() && !tolerant.contains(coedge.id.as_str()))
+    {
         return Err(CodecError::NotImplemented(format!(
             "source-less F3D coedge {} use curve lacks a cache-local tolerant extension",
             coedge.id
@@ -656,6 +663,7 @@ pub(crate) fn validate_source_less_history_graph(
 pub(crate) fn validate_source_less_design_links(
     target: &CadIr,
     native: &F3dNative,
+    attributes: &super::attributes::AttributeIndex<'_>,
 ) -> Result<(), CodecError> {
     if let Some(sentinel) = native.mesh_surface_sentinels.first() {
         return Err(CodecError::NotImplemented(format!(
@@ -786,6 +794,18 @@ pub(crate) fn validate_source_less_design_links(
         .iter()
         .map(|coedge| &coedge.id)
         .collect::<BTreeSet<_>>();
+    let coedge_by_id = target
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curve_by_id = target
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.as_str(), curve))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut tolerant_coedges = BTreeSet::new();
     for parameters in &native.tolerant_coedge_parameters {
         if !coedge_ids.contains(&parameters.coedge) {
@@ -818,11 +838,9 @@ pub(crate) fn validate_source_less_design_links(
                 parameter_range,
                 ..
             } => {
-                let coedge = target
-                    .model
-                    .coedges
-                    .iter()
-                    .find(|coedge| coedge.id == parameters.coedge)
+                let coedge = coedge_by_id
+                    .get(parameters.coedge.as_str())
+                    .copied()
                     .expect("validated tolerant-coedge target");
                 let curve_id = coedge.use_curve.as_ref().ok_or_else(|| {
                     CodecError::Malformed(format!(
@@ -830,17 +848,12 @@ pub(crate) fn validate_source_less_design_links(
                         parameters.id
                     ))
                 })?;
-                let curve = target
-                    .model
-                    .curves
-                    .iter()
-                    .find(|curve| curve.id == *curve_id)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "F3D tolerant-coedge extension {} references missing use curve {curve_id}",
-                            parameters.id
-                        ))
-                    })?;
+                let curve = curve_by_id.get(curve_id.as_str()).copied().ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D tolerant-coedge extension {} references missing use curve {curve_id}",
+                        parameters.id
+                    ))
+                })?;
                 if !matches!(curve.geometry, CurveGeometry::Nurbs(_)) {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
@@ -882,6 +895,37 @@ pub(crate) fn validate_source_less_design_links(
         .iter()
         .map(|item| &item.id)
         .collect::<BTreeSet<_>>();
+    let body_by_id = target
+        .model
+        .bodies
+        .iter()
+        .enumerate()
+        .map(|(ordinal, body)| (body.id.as_str(), (ordinal, body)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_by_id = target
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| (vertex.id.as_str(), vertex))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edge_by_id = target
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let shell_by_id = target
+        .model
+        .shells
+        .iter()
+        .map(|shell| (shell.id.as_str(), shell))
+        .collect::<std::collections::HashMap<_, _>>();
+    let face_by_id = target
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.as_str(), face))
+        .collect::<std::collections::HashMap<_, _>>();
     macro_rules! validate_unique_targets {
         ($items:expr, $field:ident, $valid:expr, $label:literal) => {{
             let mut seen = BTreeSet::new();
@@ -937,11 +981,9 @@ pub(crate) fn validate_source_less_design_links(
     }
 
     for visibility in &native.body_visibilities {
-        let body = target
-            .model
-            .bodies
-            .iter()
-            .find(|body| body.id == visibility.body)
+        let (ordinal, body) = body_by_id
+            .get(visibility.body.as_str())
+            .copied()
             .expect("validated body-visibility target");
         if body.visible != Some(visibility.visible) {
             return Err(CodecError::Malformed(format!(
@@ -949,13 +991,7 @@ pub(crate) fn validate_source_less_design_links(
                 visibility.id, visibility.body
             )));
         }
-        let ordinal = target
-            .model
-            .bodies
-            .iter()
-            .position(|body| body.id == visibility.body)
-            .expect("validated body-visibility target");
-        let emitted_key = source_less_body_key(target, body, ordinal)?;
+        let emitted_key = source_less_body_key(attributes, body, ordinal)?;
         if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key) {
             return Err(CodecError::Malformed(format!(
                 "F3D body visibility {} uses an ASM key different from body {}",
@@ -964,11 +1000,9 @@ pub(crate) fn validate_source_less_design_links(
         }
     }
     for hints in &native.transform_hints {
-        if target
-            .model
-            .bodies
-            .iter()
-            .find(|body| body.id == hints.body)
+        if body_by_id
+            .get(hints.body.as_str())
+            .map(|(_, body)| *body)
             .is_none_or(|body| body.transform.is_none())
         {
             return Err(CodecError::Malformed(format!(
@@ -982,11 +1016,9 @@ pub(crate) fn validate_source_less_design_links(
             .leading_tolerances
             .iter()
             .any(|value| !value.is_finite())
-            || target
-                .model
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == tail.vertex)
+            || vertex_by_id
+                .get(tail.vertex.as_str())
+                .copied()
                 .is_none_or(|vertex| vertex.tolerance.is_none())
         {
             return Err(CodecError::Malformed(format!(
@@ -996,11 +1028,9 @@ pub(crate) fn validate_source_less_design_links(
         }
     }
     for tail in &native.tolerant_edge_tails {
-        if target
-            .model
-            .edges
-            .iter()
-            .find(|edge| edge.id == tail.edge)
+        if edge_by_id
+            .get(tail.edge.as_str())
+            .copied()
             .is_none_or(|edge| edge.tolerance.is_none())
         {
             return Err(CodecError::Malformed(format!(
@@ -1010,11 +1040,9 @@ pub(crate) fn validate_source_less_design_links(
         }
     }
     for wire in &native.wire_topologies {
-        let shell = target
-            .model
-            .shells
-            .iter()
-            .find(|shell| shell.id == wire.shell)
+        let shell = shell_by_id
+            .get(wire.shell.as_str())
+            .copied()
             .expect("validated wire-topology target");
         let member_form_is_valid = match (&wire.edges[..], &wire.free_vertex) {
             (edges, None) if !edges.is_empty() => {
@@ -1031,11 +1059,9 @@ pub(crate) fn validate_source_less_design_links(
         }
     }
     for sidedness in &native.face_sidedness {
-        let face = target
-            .model
-            .faces
-            .iter()
-            .find(|face| face.id == sidedness.face)
+        let face = face_by_id
+            .get(sidedness.face.as_str())
+            .copied()
             .expect("validated face-sidedness target");
         if sidedness.normalized_sense != face.sense {
             return Err(CodecError::Malformed(format!(

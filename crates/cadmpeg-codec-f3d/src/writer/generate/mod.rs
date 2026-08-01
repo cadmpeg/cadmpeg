@@ -3,7 +3,7 @@
 //! `CadIr` with no retained source.
 
 use std::collections::BTreeSet;
-use std::io::{Cursor, Write};
+use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -13,6 +13,7 @@ use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
 pub(crate) mod attributes;
+pub(crate) mod index;
 pub(crate) mod native_bytes;
 pub(crate) mod native_geometry;
 pub(crate) mod preconditions;
@@ -31,8 +32,11 @@ use smbh::encode_planar_triangle_smbh;
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
-    let native = f3d_native(target)?;
-    validate_assembly_projection(target, native.as_ref())?;
+    let loaded_native = f3d_native(target)?;
+    validate_assembly_projection(target, loaded_native.as_ref())?;
+    let has_native = loaded_native.is_some();
+    let native = loaded_native.unwrap_or_default();
+    let attributes = attributes::AttributeIndex::new(target, &native);
     if !target.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),
@@ -44,23 +48,24 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         ));
     }
     validate_source_less_procedural_carriers(target)?;
-    validate_source_less_topology_tolerances(target)?;
+    validate_source_less_topology_tolerances(target, &native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    let design_bindings = if let Some(native) = &native {
-        validate_configuration_projection(target, native)?;
-        validate_source_less_history_graph(target, native)?;
-        validate_source_less_act(native)?;
-        let design_bindings = validate_source_less_design_bindings(native)?;
-        validate_source_less_design_ownership(native)?;
-        validate_source_less_sketch_graph(native)?;
-        validate_source_less_recipes(native)?;
-        validate_source_less_design_links(target, native)?;
+    let design_bindings = if has_native {
+        validate_configuration_projection(target, &native)?;
+        validate_source_less_history_graph(target, &native)?;
+        validate_source_less_act(&native)?;
+        let design_bindings = validate_source_less_design_bindings(&native)?;
+        validate_source_less_design_ownership(&native)?;
+        validate_source_less_sketch_graph(&native)?;
+        validate_source_less_recipes(&native)?;
+        validate_source_less_design_links(target, &native, &attributes)?;
         Some(design_bindings)
     } else {
         None
     };
-    let smbh = encode_planar_triangle_smbh(target)?;
-    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let smbh = encode_planar_triangle_smbh(target, &native, &attributes)?;
+    let mut staged = tempfile::tempfile()?;
+    let mut archive = zip::ZipWriter::new(&mut staged);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     archive
         .start_file("Manifest.dat", options)
@@ -77,7 +82,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         )
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
     archive.write_all(&smbh)?;
-    if let Some(native) = &native {
+    if has_native {
         let mut configuration_names = BTreeSet::new();
         let mut configuration_ids = BTreeSet::new();
         for configuration in &native.design_configurations {
@@ -119,7 +124,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             archive.write_all(&payload)?;
         }
     }
-    if let Some(bulk_stream) = encode_design_bulkstream(target)? {
+    if let Some(bulk_stream) = encode_design_bulkstream(target, &native, &attributes)? {
         archive
             .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
             .map_err(|error| {
@@ -137,7 +142,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             archive.write_all(&meta_stream)?;
         }
     }
-    if let Some(act_stream) = encode_act_bulkstream(target)? {
+    if let Some(act_stream) = encode_act_bulkstream(&native)? {
         archive
             .start_file(
                 "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
@@ -162,10 +167,10 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             })?;
         archive.write_all(&protein)?;
     }
-    let bytes = archive
+    archive
         .finish()
-        .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
-        .into_inner();
-    writer.write_all(&bytes)?;
+        .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?;
+    staged.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut staged, writer)?;
     Ok(())
 }

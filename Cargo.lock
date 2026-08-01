@@ -196,6 +196,7 @@ dependencies = [
  "serde-value",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror",
  "zip",
 ]

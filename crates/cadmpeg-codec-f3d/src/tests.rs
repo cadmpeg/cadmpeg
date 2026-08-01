@@ -6021,9 +6021,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         }];
     }
     let mut encoded = Vec::new();
+    crate::native::reset_load_count();
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less F3D encode");
+    assert_eq!(crate::native::load_count(), 1);
     let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
     let mut properties = Vec::new();
     archive

@@ -2,11 +2,12 @@
 //! Low-level native record byte writers for source-less generation.
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
 
-use crate::writer::primitives::{f3d_native, history_change_kind, native_bool};
+use crate::native::F3dNative;
+use crate::writer::generate::index::NativeGenerationIndex;
+use crate::writer::primitives::{history_change_kind, native_bool};
 
 pub(crate) fn native_ident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x0d, value)
@@ -129,7 +130,7 @@ pub(crate) fn native_vector(bytes: &mut Vec<u8>, vector: [f64; 3]) {
 
 pub(crate) fn native_transform(
     bytes: &mut Vec<u8>,
-    target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     body: &Body,
     transform: Transform,
 ) -> Result<(), CodecError> {
@@ -159,17 +160,10 @@ pub(crate) fn native_transform(
         native_vector(bytes, vector);
     }
     native_f64(bytes, transform.rows[3][3]);
-    let hints = f3d_native(target)?
-        .and_then(|native| {
-            native
-                .transform_hints
-                .into_iter()
-                .find(|hints| hints.body == body.id)
-        })
-        .map_or_else(
-            || derived_transform_hints(transform),
-            |hints| [hints.rotation, hints.reflection, hints.shear],
-        );
+    let hints = topology.transform_hints.get(body.id.as_str()).map_or_else(
+        || derived_transform_hints(transform),
+        |hints| [hints.rotation, hints.reflection, hints.shear],
+    );
     for hint in hints {
         bytes.push(native_bool(hint));
     }
@@ -215,11 +209,11 @@ fn derived_transform_hints(transform: Transform) -> [bool; 3] {
     [rotation, reflection, shear]
 }
 
-pub(crate) fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
-    let native = f3d_native(target)?;
-    let histories = native
-        .as_ref()
-        .map_or(&[][..], |native| native.asm_histories.as_slice());
+pub(crate) fn native_history_tail(
+    bytes: &mut Vec<u8>,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
+    let histories = native.asm_histories.as_slice();
     if histories.is_empty() {
         native_ident(bytes, "delta_state")?;
         return Ok(());
