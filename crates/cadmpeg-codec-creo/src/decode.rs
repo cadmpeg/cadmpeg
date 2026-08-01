@@ -28446,11 +28446,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         ..cadmpeg_ir::SourceFidelity::default()
     };
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
 fn preserve_passthrough_sections(

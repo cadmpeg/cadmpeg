@@ -21056,6 +21056,52 @@ fn f3z_archive_merges_identity_occurrences() {
             shell_owner.id.0
         );
     }
+    assert!(decoded
+        .source_fidelity
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .is_none());
+    assert_eq!(
+        decoded.source_fidelity.annotations.provenance.len(),
+        component_alone.source_fidelity.annotations.provenance.len()
+    );
+    assert!(decoded
+        .source_fidelity
+        .annotations
+        .provenance
+        .keys()
+        .all(|id| id.starts_with(&prefix)));
+    let mut regenerated = Vec::new();
+    let report = F3dCodec
+        .encode_with_source_fidelity(
+            &decoded.ir,
+            Some(&decoded.source_fidelity),
+            &mut regenerated,
+        )
+        .expect("merged F3Z regenerates instead of replaying a member");
+    assert!(!regenerated.is_empty());
+    assert!(report
+        .notes
+        .iter()
+        .any(|note| note == "source container regenerated from IR"));
+}
+
+#[test]
+fn f3z_archive_without_merged_components_preserves_root_replay() {
+    let root = f3d_with_smbh(&synthetic_geometry_smbh());
+    let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded
+        .source_fidelity
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .is_some());
+    let mut replayed = Vec::new();
+    F3dCodec
+        .encode_with_source_fidelity(&decoded.ir, Some(&decoded.source_fidelity), &mut replayed)
+        .expect("unmerged F3Z root member remains replayable");
+    assert_eq!(replayed, root);
 }
 
 #[test]

@@ -78,7 +78,10 @@ fn decode_exchange_mode(
             .collect(),
     };
     if options.container_only {
-        return (DecodeResult::new(ir, report), BTreeSet::new());
+        return (
+            DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
+            BTreeSet::new(),
+        );
     }
 
     let geometry = geometry::decode(exchange, &mut ir);
@@ -262,7 +265,10 @@ fn decode_exchange_mode(
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
         }));
-    (DecodeResult::new(ir, report), opaque_offsets)
+    (
+        DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
+        opaque_offsets,
+    )
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

@@ -116,7 +116,7 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
     notes.extend(graph::summary_notes(&references));
-    Ok(DecodeResult::with_source_fidelity(
+    Ok(DecodeResult::new(
         ir,
         DecodeReport {
             format: "iges".into(),

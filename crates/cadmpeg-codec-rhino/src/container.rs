@@ -678,6 +678,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
             losses,
             notes,
         },
+        cadmpeg_ir::SourceFidelity::default(),
     )
 }
 

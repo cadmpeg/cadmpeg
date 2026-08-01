@@ -1940,7 +1940,7 @@ impl<'a> DecodeContext<'a> {
         source_fidelity
             .attach_native_unknown_records(&mut self.ir, "rhino", &self.unknowns)
             .expect("Rhino source records separate from product identities");
-        DecodeResult::with_source_fidelity(
+        DecodeResult::new(
             self.ir,
             DecodeReport {
                 format: "rhino".to_string(),

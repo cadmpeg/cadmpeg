@@ -79,22 +79,8 @@ pub struct DecodeResult {
 }
 
 impl DecodeResult {
-    /// Build a result after canonicalizing the document's arena order.
-    pub fn new(mut ir: CadIr, report: DecodeReport) -> Self {
-        ir.finalize();
-        Self {
-            ir,
-            report,
-            source_fidelity: SourceFidelity::default(),
-        }
-    }
-
-    /// Build a result with an explicit source-fidelity sidecar.
-    pub fn with_source_fidelity(
-        mut ir: CadIr,
-        report: DecodeReport,
-        mut source_fidelity: SourceFidelity,
-    ) -> Self {
+    /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
+    pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
         ir.finalize();
         source_fidelity.finalize();
         Self {

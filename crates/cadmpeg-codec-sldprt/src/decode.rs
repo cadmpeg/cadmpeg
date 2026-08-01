@@ -140,11 +140,7 @@ fn decode_result(
         source_fidelity.retain_unknown_records("sldprt", std::slice::from_ref(&source_image));
     }
     set_semantic_hash(&mut ir);
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {

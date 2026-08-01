@@ -1407,7 +1407,7 @@ impl Codec for FcstdCodec {
         } else {
             semantic_losses(&ir)
         };
-        Ok(DecodeResult::with_source_fidelity(
+        Ok(DecodeResult::new(
             ir,
             DecodeReport {
                 format: "fcstd".into(),

@@ -3177,11 +3177,7 @@ fn decode_result(
         ..SourceFidelity::default()
     };
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
 #[cfg(test)]

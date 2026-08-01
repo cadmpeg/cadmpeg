@@ -1671,11 +1671,7 @@ fn decode_result(
     if let Some(source) = &mut ir.source {
         source.attributes.insert("semantic_sha256".into(), hash);
     }
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
 fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> UnknownRecord {

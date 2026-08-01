@@ -84,6 +84,9 @@ pub fn decode(
     let mut stack = vec![manifest.root.clone()];
     let merged = merge_references(ctx, &mut root, scan, &table, &mut stack)?;
     if merged > 0 {
+        root.source_fidelity
+            .retained_records
+            .retain(|record| record.id != crate::ids::FILE_SOURCE_IMAGE_ID);
         root.report.notes.push(format!(
             "{merged} merged component(s) retain occurrence-scoped model entities and native \
              records; member source streams remain archive-local"
@@ -96,11 +99,12 @@ pub fn decode(
     let hash = crate::decode::semantic_hash(&root.ir);
     if let Some(source) = &mut root.ir.source {
         source.attributes.insert("semantic_sha256".into(), hash);
-        source
-            .attributes
-            .insert("f3z_root".into(), manifest.root.clone());
     }
-    Ok(DecodeResult::new(root.ir, root.report))
+    Ok(DecodeResult::new(
+        root.ir,
+        root.report,
+        root.source_fidelity,
+    ))
 }
 
 fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
@@ -187,6 +191,11 @@ fn merge_references(
         let mut component_native = serialize_native(&component.ir)?;
         remap_ids(&mut component_native, &occurrence);
         extend_native_arenas(&mut native_value, component_native)?;
+        merge_annotations(
+            &mut parent.source_fidelity.annotations,
+            component.source_fidelity.annotations,
+            &occurrence,
+        )?;
         merged += descendants + 1;
         parent.report.geometry_transferred |= component.report.geometry_transferred;
         for loss in component.report.losses {
@@ -218,6 +227,59 @@ fn merge_references(
             CodecError::Malformed(format!("merged native data is invalid: {error}"))
         })?;
     Ok(merged)
+}
+
+fn merge_annotations(
+    target: &mut cadmpeg_ir::annotations::Annotations,
+    source: cadmpeg_ir::annotations::Annotations,
+    occurrence: &str,
+) -> Result<(), CodecError> {
+    let mut stream_map = Vec::with_capacity(source.streams.len());
+    for stream in source.streams {
+        let index = if let Some(index) = target
+            .streams
+            .iter()
+            .position(|candidate| candidate == &stream)
+        {
+            index
+        } else {
+            target.streams.push(stream);
+            target.streams.len() - 1
+        };
+        stream_map.push(u32::try_from(index).map_err(|_| {
+            CodecError::Malformed("merged F3Z annotation stream count exceeds u32::MAX".into())
+        })?);
+    }
+    for (id, mut provenance) in source.provenance {
+        let stream = usize::try_from(provenance.stream)
+            .ok()
+            .and_then(|index| stream_map.get(index))
+            .copied()
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "component annotation {id} references missing stream {}",
+                    provenance.stream
+                ))
+            })?;
+        provenance.stream = stream;
+        target
+            .provenance
+            .insert(remap_id_text(&id, occurrence), provenance);
+    }
+    target.exactness.extend(
+        source
+            .exactness
+            .into_iter()
+            .map(|(id, note)| (remap_id_text(&id, occurrence), note)),
+    );
+    Ok(())
+}
+
+fn remap_id_text(text: &str, occurrence: &str) -> String {
+    text.strip_prefix("f3d:").map_or_else(
+        || text.to_owned(),
+        |rest| format!("f3d:xref/{occurrence}/{rest}"),
+    )
 }
 
 fn serialize_model(model: &Model) -> Result<Value, CodecError> {
