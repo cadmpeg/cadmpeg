@@ -57,6 +57,7 @@ anyhow = "1"
 zip = { version = "8", default-features = false, features = ["deflate", "zstd"] }
 lzma-rs = "0.3"
 flate2 = "1"
+zstd = "0.13"
 crc32fast = "1"
 roxmltree = "0.21"
 regex = "1.13"

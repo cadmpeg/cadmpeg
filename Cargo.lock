@@ -296,6 +296,7 @@ dependencies = [
  "crc32fast",
  "flate2",
  "zip",
+ "zstd",
 ]
 
 [[package]]
