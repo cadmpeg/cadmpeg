@@ -1004,6 +1004,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 build_geometry_ir(&scan, &primary_model_brep, brep);
             let (subds, subd_losses) = crate::tsm::decode(&scan)?;
             ir.model.subds = subds;
+            project_mesh_bodies(&scan, &mut ir, &mut report)?;
             report.losses.extend(subd_losses);
             native.body_visibilities = body_visibilities;
             for history_brep in container::history_breps(&scan) {
@@ -1764,10 +1765,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
     );
+    let mut report = build_container_report(&scan, false);
+    let mesh_bodies = project_mesh_bodies(&scan, &mut ir, &mut report)?;
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
     let source_image = preserve_source_image(&scan, &mut ir);
-    let mut report = build_container_report(&scan, false);
+    if mesh_bodies > 0 {
+        apply_mesh_body_classification(&mut report, &scan, mesh_bodies);
+    }
     report_unresolved_dimension_companions(&mut report, &native);
     match &xref_table {
         Ok(Some(table)) => apply_assembly_classification(&mut report, &scan, table),
@@ -1775,6 +1780,57 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         Err(error) => report.losses.push(xref_parse_loss(error)),
     }
     decode_result(ir, report, annotations, unknowns, source_image)
+}
+
+/// Project each mesh body's container geometry into the tessellation arena.
+///
+/// A mesh body carries no B-rep topology: its geometry is a triangle list, and
+/// the neutral tessellation arena is where a standalone triangle list belongs.
+/// Returns the number of bodies projected and reports every mesh-geometry
+/// container that no body claimed.
+fn project_mesh_bodies(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    report: &mut DecodeReport,
+) -> Result<usize, CodecError> {
+    let bodies = crate::design::decode::mesh::decode_mesh_bodies(scan)?;
+    let count = bodies.len();
+    let containers = scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == container::role::PARAMESH)
+        .count();
+    if count < containers {
+        report.losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} mesh body geometry container(s) were not joined to a body record.",
+                containers - count
+            ),
+            provenance: None,
+        });
+    }
+    ir.model
+        .tessellations
+        .extend(bodies.into_iter().map(|body| {
+            cadmpeg_ir::tessellation::Tessellation {
+                id: body.id,
+                body: None,
+                faces: Vec::new(),
+                // The container stores no chordal deflection: a mesh body's
+                // triangles are its geometry, not an approximation of a surface.
+                chordal_deflection: None,
+                source_object: None,
+                vertices: body.vertices,
+                triangles: body.triangles,
+                strip_lengths: Vec::new(),
+                normals: Vec::new(),
+                channels: Vec::new(),
+            }
+        }));
+    Ok(count)
 }
 
 /// Record the `Properties.dat` docstruct declaration on the source metadata.
@@ -1801,6 +1857,32 @@ fn xref_parse_loss(error: &CodecError) -> LossNote {
         message: format!("external-reference table was not decoded: {error}"),
         provenance: None,
     }
+}
+
+/// Reclassify a mesh-body document: a body whose geometry is a mesh container
+/// stores no B-rep, so a document carrying only mesh bodies is not missing
+/// geometry ([spec §1.1.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#112-mesh-geometry-containers)).
+fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerScan, bodies: usize) {
+    if !scan.breps.is_empty() {
+        return;
+    }
+    report.losses.retain(|loss| {
+        !(loss.severity >= Severity::Error
+            && matches!(
+                loss.category,
+                LossCategory::Geometry | LossCategory::Topology
+            ))
+    });
+    report.geometry_transferred = true;
+    report.losses.push(LossNote {
+        code: LossCode::MeshVertexPrecision,
+        category: LossCategory::Geometry,
+        severity: Severity::Warning,
+        message: format!(
+            "{bodies} mesh body geometry container(s) store vertex coordinates at f32 precision"
+        ),
+        provenance: None,
+    });
 }
 
 /// Reclassify a BREP-less assembly document: its model is the placement of

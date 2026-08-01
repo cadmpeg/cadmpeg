@@ -592,6 +592,11 @@ native_record_id!(
     "sketch-surface"
 );
 native_record_id!(
+    /// The native mesh-body record key.
+    native_mesh_body_id,
+    "mesh-body"
+);
+native_record_id!(
     /// The native design-body-member record key.
     native_design_body_member_id,
     "design-body-member"

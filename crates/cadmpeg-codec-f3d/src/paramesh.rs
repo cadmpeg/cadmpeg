@@ -74,7 +74,7 @@ fn protobuf_fusion_uuid(message: &[u8]) -> Result<String, CodecError> {
     );
     at += 1;
     let value = message
-        .get(at..at + count)
+        .get(at..at.saturating_add(count))
         .ok_or_else(|| malformed("paramesh fusion_uuid value is truncated"))?;
     let value = std::str::from_utf8(value)
         .map_err(|_| malformed("paramesh fusion_uuid value is not ASCII"))?;
@@ -171,7 +171,9 @@ fn inflate_stream(body: &[u8]) -> Result<Vec<u8>, CodecError> {
     let descriptor_count = usize::from(
         u16_at(body, 0).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?,
     );
-    let at = 2 + descriptor_count;
+    let at = descriptor_count
+        .checked_add(2)
+        .ok_or_else(|| malformed("paramesh stream chunk is out of range"))?;
     let declared =
         u32_at(body, at).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
     if declared > MAX_STREAM_BYTES {
@@ -288,12 +290,15 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
             .ok_or_else(|| malformed("paramesh container is truncated"))?,
     )
     .map_err(|_| malformed("paramesh protobuf message is out of range"))?;
+    let protobuf_end = PROTOBUF_AT
+        .checked_add(protobuf_count)
+        .ok_or_else(|| malformed("paramesh protobuf message is out of range"))?;
     let message = bytes
-        .get(PROTOBUF_AT..PROTOBUF_AT + protobuf_count)
+        .get(PROTOBUF_AT..protobuf_end)
         .ok_or_else(|| malformed("paramesh protobuf message is truncated"))?;
     let fusion_uuid = protobuf_fusion_uuid(message)?;
 
-    let mut at = PROTOBUF_AT + protobuf_count;
+    let mut at = protobuf_end;
     let mut name_table: Option<Vec<(String, u64)>> = None;
     let mut streams = Vec::new();
     while at < bytes.len() {
@@ -303,12 +308,16 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
         .map_err(|_| malformed("paramesh chunk is out of range"))?;
         let kind =
             u32_at(bytes, at + 8).ok_or_else(|| malformed("paramesh chunk header is truncated"))?;
-        let body = bytes
-            .get(at + 12..at + 12 + body_count)
-            .ok_or_else(|| malformed("paramesh chunk body is truncated"))?;
-        at = at
-            .checked_add(12 + body_count)
+        let body_at = at
+            .checked_add(12)
             .ok_or_else(|| malformed("paramesh chunk is out of range"))?;
+        let body_end = body_at
+            .checked_add(body_count)
+            .ok_or_else(|| malformed("paramesh chunk is out of range"))?;
+        let body = bytes
+            .get(body_at..body_end)
+            .ok_or_else(|| malformed("paramesh chunk body is truncated"))?;
+        at = body_end;
         match kind {
             CHUNK_NAME_TABLE => {
                 if name_table.replace(message_pack_name_table(body)?).is_some() {

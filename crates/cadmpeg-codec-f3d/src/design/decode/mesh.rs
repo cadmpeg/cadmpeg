@@ -119,15 +119,18 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord<'_>> {
 /// Decode every mesh body: one per `.paramesh` container joined to the
 /// mesh-body record that names its GUID record.
 pub fn decode_mesh_bodies(scan: &ContainerScan) -> Result<Vec<MeshBody>, CodecError> {
+    // A container this decoder cannot read leaves its body without geometry,
+    // which the caller reports against the container count. It does not fail
+    // the document: every other body still decodes.
     let containers = scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::PARAMESH)
-        .map(|entry| {
-            let container = decode_mesh_container(scan.entry_bytes(&entry.name)?)?;
-            Ok((entry.name.clone(), container))
+        .filter_map(|entry| {
+            let container = decode_mesh_container(scan.entry_bytes(&entry.name).ok()?).ok()?;
+            Some((entry.name.clone(), container))
         })
-        .collect::<Result<Vec<(String, MeshContainer)>, CodecError>>()?;
+        .collect::<Vec<(String, MeshContainer)>>();
     if containers.is_empty() {
         return Ok(Vec::new());
     }

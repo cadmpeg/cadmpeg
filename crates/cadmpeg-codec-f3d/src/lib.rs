@@ -84,6 +84,7 @@ mod ids;
 pub mod materials;
 mod native;
 pub mod nurbs;
+mod paramesh;
 mod protein;
 pub mod records;
 pub mod sab;
