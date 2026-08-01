@@ -1647,11 +1647,11 @@ const TXT_TAG_MEMBER_RUN: usize = 15;
 /// the record uses from the property block onward.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SketchTextIdentity {
-    /// `textex_tag`: a `1` byte, the width factor, and a zero byte between the
-    /// font family and the height.
+    /// `textex_tag`: a `1` byte, the width factor, a zero byte between the font
+    /// family and the height, and the anchor inside a placement transform.
     TextexTag,
     /// `txt_tag`: a `0` byte, no width factor, the height directly after the
-    /// font family, and the text anchor point.
+    /// font family, and the anchor stored on its own.
     TxtTag,
 }
 
@@ -1725,8 +1725,7 @@ fn reference_index(reference: &Reference) -> Option<u32> {
         .and_then(|target| u32::try_from(target).ok())
 }
 
-/// Class-level fields of a sketch-text record, ending at the text height or,
-/// in the `txt_tag` form, at the anchor point that follows it.
+/// Class-level fields of a sketch-text record, ending at the text height.
 struct SketchTextHead {
     identity: SketchTextIdentity,
     entity_genesis: Option<u64>,
@@ -1736,7 +1735,6 @@ struct SketchTextHead {
     height: f64,
     width_factor: Option<f64>,
     color: Color,
-    anchor: Option<Point2>,
     cursor: usize,
 }
 
@@ -1831,17 +1829,6 @@ fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     let height = f64_at(payload, cursor)? * 10.0;
     cursor = cursor.checked_add(8)?;
     (height.is_finite() && height > 0.0).then_some(())?;
-    let anchor = match identity {
-        SketchTextIdentity::TextexTag => None,
-        SketchTextIdentity::TxtTag => {
-            cursor = cursor.checked_add(2)?;
-            let x = f64_at(payload, cursor)? * 10.0;
-            let y = f64_at(payload, cursor.checked_add(8)?)? * 10.0;
-            cursor = cursor.checked_add(16)?;
-            (x.is_finite() && y.is_finite()).then_some(())?;
-            Some(Point2::new(x, y))
-        }
-    };
     Some(SketchTextHead {
         identity,
         entity_genesis: property("EntityGenesis"),
@@ -1851,7 +1838,6 @@ fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
         height,
         width_factor,
         color,
-        anchor,
         cursor,
     })
 }
@@ -1902,13 +1888,20 @@ fn decode_sketch_text_tail(
     })
 }
 
-/// Read the `txt_tag` form's members from the anchor point to the end of the
-/// record. The form writes no parameter-reference slot: an eleven-byte run
-/// carries the alignment fields, and the text string is followed by a counted
-/// reference run, fifteen bytes, and the trailing run and owning-sketch
-/// reference that close both forms.
+/// Read the `txt_tag` form's members from the height to the end of the record.
+/// Two bytes separate the height from the anchor coordinates, which this form
+/// stores directly rather than in a placement transform. The form writes no
+/// parameter-reference slot: an eleven-byte run carries the alignment fields,
+/// and the text string is followed by a counted reference run, fifteen bytes,
+/// and the trailing run and owning-sketch reference that close both forms.
 fn decode_txt_tag_sketch_text_tail(payload: &[u8], mut cursor: usize) -> Option<SketchTextTail> {
-    cursor = cursor.checked_add(TXT_TAG_ANCHOR_RUN)?;
+    cursor = cursor.checked_add(2)?;
+    let anchor = Point2::new(
+        f64_at(payload, cursor)? * 10.0,
+        f64_at(payload, cursor.checked_add(8)?)? * 10.0,
+    );
+    (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
+    cursor = cursor.checked_add(16 + TXT_TAG_ANCHOR_RUN)?;
     let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
         return None;
@@ -1930,9 +1923,8 @@ fn decode_txt_tag_sketch_text_tail(payload: &[u8], mut cursor: usize) -> Option<
         first_reference: None,
         second_reference: None,
         text,
-        // This form writes no transform: its anchor is read in the head and it
-        // stores no rotation.
-        anchor: None,
+        anchor: Some(anchor),
+        // This form writes no placement transform, so it stores no rotation.
         rotation: None,
         owner_reference: reference_index(&owner)?,
     })
@@ -1981,10 +1973,7 @@ pub(crate) fn decode_sketch_text_record(
         height: head.height,
         width_factor: head.width_factor,
         color: head.color,
-        // The two classes store one anchor in two places: `txt_tag` ahead of
-        // the text string, `textex_tag` in the class tail's placement
-        // transform. Neither writes the other's, so at most one is present.
-        anchor: head.anchor.or(tail.anchor),
+        anchor: tail.anchor,
         rotation: tail.rotation,
         first_reference: tail.first_reference,
         second_reference: tail.second_reference,
