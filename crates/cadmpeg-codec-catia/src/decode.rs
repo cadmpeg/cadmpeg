@@ -1574,6 +1574,22 @@ fn finish_decode(
         .count();
     report.coverage.extend([
         (
+            "decoded_appearance_packet_count".to_string(),
+            appearance_transfer.transferred_packets + appearance_transfer.unresolved_packets,
+        ),
+        (
+            "unresolved_appearance_packet_count".to_string(),
+            appearance_transfer.unresolved_packets,
+        ),
+        (
+            "transferred_appearance_asset_count".to_string(),
+            appearance_transfer.emitted_assets,
+        ),
+        (
+            "transferred_appearance_binding_count".to_string(),
+            appearance_transfer.emitted_bindings,
+        ),
+        (
             "decoded_consolidated_circle_count".to_string(),
             native.consolidated_circles.len(),
         ),
@@ -3119,13 +3135,13 @@ fn finish_decode(
             provenance: None,
         });
     }
-    if appearance_transfer.unresolved_packets != 0 {
+    if !native.value_blocks.is_empty() {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::AttributesNotTransferred,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
-                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven neutral binding ({} packet(s) transferred).",
+                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven neutral binding ({} packet(s) transferred), while other visualization fields remain native.",
                 native.value_blocks.len(),
                 appearance_transfer.unresolved_packets,
                 appearance_transfer.transferred_packets,

@@ -27,6 +27,19 @@ pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
     largest_fbb_run(bytes).map(|(_, count, _)| count)
 }
 
+/// RGBA display color for each positional standard face row.
+#[must_use]
+pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
+    let (start, count, _) = largest_fbb_run(bytes)?;
+    let marker: [u8; 4] = bytes.get(start..start + 4)?.try_into().ok()?;
+    (0..count)
+        .map(|index| {
+            let row = bytes.get(start + index * 8..start + (index + 1) * 8)?;
+            (row[..4] == marker).then_some([row[7], row[6], row[5], row[4]])
+        })
+        .collect()
+}
+
 /// Unit frame vector for each positional standard trim packet. The result is
 /// index-aligned with the FBB face population; packets without the optional
 /// vector retain an empty slot.
@@ -423,6 +436,25 @@ pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
         None
     } else {
         best
+    }
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::standard_face_colors;
+
+    #[test]
+    fn face_colors_are_abgr_and_require_one_marker_family() {
+        let bytes = [
+            0xb0, 4, 4, 0xff, 0x99, 0x1f, 0x1a, 0xd1, 0xb0, 4, 4, 0xff, 0xff, 0xe0, 0x3d, 0x14,
+        ];
+        assert_eq!(
+            standard_face_colors(&bytes),
+            Some(vec![[0xd1, 0x1a, 0x1f, 0x99], [0x14, 0x3d, 0xe0, 0xff]])
+        );
+        let mut mixed = bytes;
+        mixed[8] = 0x30;
+        assert_eq!(standard_face_colors(&mixed), None);
     }
 }
 
