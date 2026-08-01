@@ -16,13 +16,13 @@ use cadmpeg_ir::topology::Color;
 /// unsigned decimal spelling of `0xFFFFFFFF`.
 pub(crate) const SKETCH_LINK_SENSE_UNCONSTRAINED: i64 = 0xFFFF_FFFF;
 
-/// Provenance link from a solved B-rep coedge to its source sketch curve.
+/// Provenance link from a solved B-rep entity to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchCurveLink {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Solved B-rep coedge this link provenances back to a sketch curve.
-    pub coedge: CoedgeId,
+    /// Solved B-rep entity this link provenances back to a sketch curve.
+    pub target: AttributeTarget,
     /// Numeric design-entity id of the source sketch-curve record.
     pub sketch_curve_id: i64,
     /// Which of the sketch curve's two senses this link takes, `0` or `1`.

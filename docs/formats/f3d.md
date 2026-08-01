@@ -475,7 +475,7 @@ reference_count * (04 i64 design_reference)
 
 `reference_count` supplies the only boundary for the signed reference vector. The token retains its UTF-8 spelling, including the `"-1"` form. Face and edge groups are distinct from the fixed-width body persistent-ID history and do not use the body group's five-field interpretation.
 
-`sketch_attrib_def` is coedge-owned source-link metadata. After its three-integer attribute header, a tagged UTF-8 field stores the six-integer ASCII tuple `(sketch_curve_id, ref_b, sense, 0, enum_a, enum_b)`. `sense` takes three values: `0` and `1` select one of the sketch curve's two senses, and `4294967295`, the unsigned decimal spelling of `0xFFFFFFFF`, leaves the sense unconstrained. It links a B-rep coedge to a sketch curve and does not define analytic geometry.
+`sketch_attrib_def` is source-link metadata owned by a coedge, an edge, or a vertex. After its three-integer attribute header, a tagged UTF-8 field stores the six-integer ASCII tuple `(sketch_curve_id, ref_b, sense, 0, enum_a, enum_b)`. `sense` takes three values: `0` and `1` select one of the sketch curve's two senses, and `4294967295`, the unsigned decimal spelling of `0xFFFFFFFF`, leaves the sense unconstrained. It links its owning B-rep entity to a sketch curve and does not define analytic geometry.
 
 `Timestamp_attrib_def` stores an integer marker `1` followed by one tagged f64. The f64 is the original authoring time in microseconds since the Unix epoch. It is distinct from the ASM header save time and participates in the owning entity's ordinary attribute-ref chain.
 

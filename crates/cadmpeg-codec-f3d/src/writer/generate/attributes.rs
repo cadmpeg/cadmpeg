@@ -481,7 +481,9 @@ fn sketch_link(target: &CadIr, coedge: &Coedge) -> Option<SketchCurveLink> {
         .flatten()?
         .sketch_curve_links
         .into_iter()
-        .find(|link| link.coedge == coedge.id)
+        .find(|link| {
+            link.target == cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge.id.clone())
+        })
 }
 
 pub(crate) fn sketch_link_attribute_ref(

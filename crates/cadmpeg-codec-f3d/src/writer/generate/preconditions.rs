@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
 use crate::records::{PersistentDesignLink, PersistentSubentityTag};
+use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -680,16 +681,21 @@ pub(crate) fn validate_source_less_design_links(
         .collect::<BTreeSet<_>>();
     let mut linked_coedges = BTreeSet::new();
     for link in &native.sketch_curve_links {
-        if !coedges.contains(&link.coedge) {
+        // Only a coedge-owned link is regenerated; a link on any other owner is
+        // reported as a source-fidelity loss instead of refusing the write.
+        let AttributeTarget::Coedge(coedge) = &link.target else {
+            continue;
+        };
+        if !coedges.contains(coedge) {
             return Err(CodecError::Malformed(format!(
                 "F3D sketch-curve link {} targets a missing coedge {}",
-                link.id, link.coedge.0
+                link.id, coedge.0
             )));
         }
-        if !linked_coedges.insert(&link.coedge) {
+        if !linked_coedges.insert(coedge) {
             return Err(CodecError::Malformed(format!(
                 "source-less F3D generation supports one sketch-curve link per coedge: {}",
-                link.coedge.0
+                coedge.0
             )));
         }
     }

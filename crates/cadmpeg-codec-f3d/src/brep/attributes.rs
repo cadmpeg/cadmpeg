@@ -15,9 +15,9 @@ use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
-    let AttributeTarget::Coedge(coedge) = &attribute.target else {
+    if matches!(attribute.target, AttributeTarget::Document) {
         return None;
-    };
+    }
     let family = attribute.values.iter().position(
         |value| matches!(value, AttributeValue::String(name) if name == "sketch_attrib_def"),
     )?;
@@ -50,7 +50,7 @@ pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCur
     };
     Some(SketchCurveLink {
         id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
-        coedge: coedge.clone(),
+        target: attribute.target.clone(),
         sketch_curve_id: *sketch_curve_id,
         sense: (*sense != SKETCH_LINK_SENSE_UNCONSTRAINED).then_some(*sense),
         role: *role,
