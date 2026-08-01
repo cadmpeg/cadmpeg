@@ -139,7 +139,8 @@ pub(crate) enum EmbeddedDeformableData {
         leading_vectors: [Vector3; 4],
         leading_parameter: f64,
         leading_flags: [bool; 3],
-        trailing_vectors: [Vector3; 3],
+        trailing_point: Point3,
+        trailing_vectors: [Vector3; 2],
         frame_parameter: f64,
         frame_flags: [bool; 2],
         parameters: [f64; 3],
@@ -441,7 +442,13 @@ fn decode_embedded_deformable(
                 take_bool(bytes, &mut position)?,
                 take_bool(bytes, &mut position)?,
             ];
-            let mut trailing_vectors = [Vector3::new(0.0, 0.0, 0.0); 3];
+            let value = take_native_vec3(bytes, &mut position, 0x13)?;
+            let trailing_point = Point3::new(
+                value[0] * LEN_TO_MM,
+                value[1] * LEN_TO_MM,
+                value[2] * LEN_TO_MM,
+            );
+            let mut trailing_vectors = [Vector3::new(0.0, 0.0, 0.0); 2];
             for vector in &mut trailing_vectors {
                 let value = take_native_vec3(bytes, &mut position, 0x14)?;
                 *vector = Vector3::new(value[0], value[1], value[2]);
@@ -469,6 +476,7 @@ fn decode_embedded_deformable(
                 leading_vectors,
                 leading_parameter,
                 leading_flags,
+                trailing_point,
                 trailing_vectors,
                 frame_parameter,
                 frame_flags,

@@ -4688,6 +4688,7 @@ pub(crate) fn native_procedural_curve(
                 leading_vectors,
                 leading_parameter,
                 leading_flags,
+                trailing_point,
                 trailing_vectors,
                 frame_parameter,
                 frame_flags,
@@ -4704,6 +4705,14 @@ pub(crate) fn native_procedural_curve(
                 for flag in leading_flags {
                     bytes.push(native_bool(*flag));
                 }
+                native_point(
+                    bytes,
+                    [
+                        trailing_point.x / LEN_TO_MM,
+                        trailing_point.y / LEN_TO_MM,
+                        trailing_point.z / LEN_TO_MM,
+                    ],
+                );
                 for vector in trailing_vectors {
                     native_vector(bytes, [vector.x, vector.y, vector.z]);
                 }

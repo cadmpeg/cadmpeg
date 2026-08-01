@@ -2107,6 +2107,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::geometry::DeformableCurveData::Mode3 {
                     leading_vectors,
                     leading_parameter,
+                    trailing_point,
                     trailing_vectors,
                     frame_parameter,
                     parameters,
@@ -2115,6 +2116,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 } => {
                     leading_vectors.iter().all(finite_vector)
                         && leading_parameter.is_finite()
+                        && [trailing_point.x, trailing_point.y, trailing_point.z]
+                            .into_iter()
+                            .all(f64::is_finite)
                         && trailing_vectors.iter().all(finite_vector)
                         && frame_parameter.is_finite()
                         && parameters.iter().all(|value| value.is_finite())

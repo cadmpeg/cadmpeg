@@ -2903,7 +2903,8 @@ fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8> {
                     }
                     t_dbl(curve, 0.5);
                     curve.extend_from_slice(&[0x0a, 0x0b, 0x0a]);
-                    for vector in [[13.0, 14.0, 15.0], [16.0, 17.0, 18.0], [19.0, 20.0, 21.0]] {
+                    t_pos(curve, [13.0, 14.0, 15.0]);
+                    for vector in [[16.0, 17.0, 18.0], [19.0, 20.0, 21.0]] {
                         t_vec(curve, vector);
                     }
                     t_dbl(curve, 1.5);
@@ -21789,6 +21790,44 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                     ]
         ));
     }
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_deformable_curve_smbh(8),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("native-reference deformable decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralCurveDefinition::Deformable { source, .. } =
+        &mut source_less.model.procedural_curves[0].definition
+    else {
+        panic!("expected deformable construction")
+    };
+    *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+        flag: false,
+        index: 10_000,
+    };
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("native-reference deformable encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("native-reference deformable round trip");
+    assert!(matches!(
+        &round_trip.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Deformable {
+            source: cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+                flag: false,
+                index: 10_000,
+            },
+            ..
+        }
+    ));
 }
 
 #[test]

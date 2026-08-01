@@ -2790,9 +2790,11 @@ pub enum DeformableCurveData {
         leading_parameter: f64,
         /// Three flags following the leading scalar.
         leading_flags: [bool; 3],
-        /// Three vectors following the leading flags.
-        trailing_vectors: [Vector3; 3],
-        /// Scalar following the trailing vectors.
+        /// Position following the leading flags.
+        trailing_point: Point3,
+        /// Two vectors following the position.
+        trailing_vectors: [Vector3; 2],
+        /// Scalar following the trailing frame.
         frame_parameter: f64,
         /// Two flags following the frame scalar.
         frame_flags: [bool; 2],
