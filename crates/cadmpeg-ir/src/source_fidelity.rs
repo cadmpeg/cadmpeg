@@ -3,14 +3,99 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 use crate::annotations::Annotations;
 use crate::document::CadIr;
 use crate::native::NativeConvertError;
+use crate::report::DecodeReport;
 use crate::unknown::UnknownRecord;
 
 /// Current serialized sidecar version.
 pub const SOURCE_FIDELITY_VERSION: &str = "3";
+
+/// Current serialized decode-sidecar version.
+pub const DECODE_SIDECAR_VERSION: &str = "1";
+
+/// A decode report and source fidelity bound to exact CADIR bytes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DecodeSidecar {
+    /// Serialized sidecar format version.
+    pub version: String,
+    /// SHA-256 of the exact CADIR bytes this sidecar describes.
+    pub ir_sha256: String,
+    /// Native decode transfer report.
+    pub report: DecodeReport,
+    /// Decode-time annotations and retained source records.
+    pub fidelity: SourceFidelity,
+}
+
+impl DecodeSidecar {
+    /// Binds decode metadata to exact serialized CADIR bytes.
+    pub fn bind(ir_bytes: &[u8], report: DecodeReport, mut fidelity: SourceFidelity) -> Self {
+        fidelity.finalize();
+        Self {
+            version: DECODE_SIDECAR_VERSION.into(),
+            ir_sha256: crate::hash::sha256_hex(ir_bytes),
+            report,
+            fidelity,
+        }
+    }
+
+    /// Returns whether this sidecar is bound to the supplied CADIR bytes.
+    pub fn matches(&self, ir_bytes: &[u8]) -> bool {
+        self.ir_sha256 == crate::hash::sha256_hex(ir_bytes)
+    }
+
+    /// Serializes this sidecar as canonical compact JSON.
+    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
+        let mut canonical = self.clone();
+        canonical.fidelity.finalize();
+        serde_json::to_string(&canonical)
+    }
+
+    /// Parses and validates a decode sidecar.
+    pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
+        let sidecar: Self = serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
+        if sidecar.version != DECODE_SIDECAR_VERSION {
+            return Err(DecodeSidecarParseError::Version {
+                found: sidecar.version,
+            });
+        }
+        sidecar
+            .fidelity
+            .validate()
+            .map_err(DecodeSidecarParseError::Fidelity)?;
+        Ok(sidecar)
+    }
+}
+
+/// Returns the sidecar path for a CADIR path.
+pub fn decode_sidecar_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let stem = file_name.strip_suffix(".json").unwrap_or(file_name);
+    path.with_file_name(format!("{stem}.fidelity.json"))
+}
+
+/// Failure parsing a decode sidecar.
+#[derive(Debug, thiserror::Error)]
+pub enum DecodeSidecarParseError {
+    /// Invalid JSON.
+    #[error("invalid decode-sidecar JSON: {0}")]
+    Json(serde_json::Error),
+    /// Unsupported sidecar version.
+    #[error("unsupported decode-sidecar version: {found}")]
+    Version {
+        /// Version found in the sidecar.
+        found: String,
+    },
+    /// Invalid source fidelity.
+    #[error(transparent)]
+    Fidelity(FidelityError),
+}
 
 /// Source bytes retained for native recovery or replay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -268,5 +353,40 @@ mod tests {
             sidecar.validate(),
             Err(FidelityError::Digest { .. })
         ));
+    }
+
+    #[test]
+    fn decode_sidecar_binds_exact_ir_bytes_and_validates_versions() {
+        let report = DecodeReport {
+            format: "test".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: Default::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
+        assert!(sidecar.matches(b"cad-ir"));
+        assert!(!sidecar.matches(b"changed"));
+
+        let json = sidecar.to_canonical_json().expect("serialize sidecar");
+        assert_eq!(DecodeSidecar::from_json(&json).unwrap(), sidecar);
+        let wrong_version = json.replacen("\"version\":\"1\"", "\"version\":\"2\"", 1);
+        assert!(matches!(
+            DecodeSidecar::from_json(&wrong_version),
+            Err(DecodeSidecarParseError::Version { .. })
+        ));
+    }
+
+    #[test]
+    fn decode_sidecar_path_replaces_only_a_trailing_json_suffix() {
+        assert_eq!(
+            decode_sidecar_path(Path::new("part.cadir.json")),
+            PathBuf::from("part.cadir.fidelity.json")
+        );
+        assert_eq!(
+            decode_sidecar_path(Path::new("part.cadir")),
+            PathBuf::from("part.cadir.fidelity.json")
+        );
     }
 }
