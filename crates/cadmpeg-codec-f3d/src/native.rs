@@ -2,10 +2,15 @@
 #![deny(clippy::disallowed_methods)]
 //! Autodesk Fusion native design and construction-history records.
 
+use std::collections::HashMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::history_records::AsmHistory;
+use crate::history_records::{
+    AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
+    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
+};
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
@@ -94,6 +99,108 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "xref_references",
 ];
 
+#[derive(Serialize)]
+struct FlatAsmHistory<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_size: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    history_entry_count: Option<i64>,
+    states: &'a [AsmDeltaState],
+}
+
+impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
+    fn from(history: &'a AsmHistory) -> Self {
+        Self {
+            id: &history.id,
+            byte_offset: history.byte_offset,
+            stream_size: history.stream_size,
+            history_entry_count: history.history_entry_count,
+            states: &[],
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct FlatAsmDeltaState<'a> {
+    id: &'a str,
+    parent: &'a str,
+    byte_offset: u64,
+    state_id: i64,
+    version_flag: i64,
+    state_flag: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_ref: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_ref: Option<i64>,
+    node_index: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partner_ref: Option<i64>,
+    owner_ref: i64,
+    bulletin_boards: &'a [AsmBulletinBoard],
+    records: &'a [AsmHistoryRecord],
+    #[serde(skip_serializing_if = "slice_is_empty")]
+    entity_versions: &'a [AsmEntityVersion],
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    record_table_complete: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topology: Option<&'a AsmHistoricalTopology>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transition: Option<&'a AsmHistoricalTransition>,
+}
+
+impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
+    fn from(state: &'a AsmDeltaState) -> Self {
+        Self {
+            id: &state.id,
+            parent: &state.parent,
+            byte_offset: state.byte_offset,
+            state_id: state.state_id,
+            version_flag: state.version_flag,
+            state_flag: state.state_flag,
+            previous_ref: state.previous_ref,
+            next_ref: state.next_ref,
+            node_index: state.node_index,
+            partner_ref: state.partner_ref,
+            owner_ref: state.owner_ref,
+            bulletin_boards: &[],
+            records: &[],
+            entity_versions: &state.entity_versions,
+            record_table_complete: state.record_table_complete,
+            topology: state.topology.as_ref(),
+            transition: state.transition.as_ref(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct FlatAsmBulletinBoard<'a> {
+    id: &'a str,
+    parent: &'a str,
+    byte_offset: u64,
+    owner_ref: i64,
+    number: i64,
+    changes: &'a [crate::history_records::AsmEntityChange],
+}
+
+impl<'a> From<&'a AsmBulletinBoard> for FlatAsmBulletinBoard<'a> {
+    fn from(board: &'a AsmBulletinBoard) -> Self {
+        Self {
+            id: &board.id,
+            parent: &board.parent,
+            byte_offset: board.byte_offset,
+            owner_ref: board.owner_ref,
+            number: board.number,
+            changes: &[],
+        }
+    }
+}
+
+fn slice_is_empty<T>(slice: &&[T]) -> bool {
+    slice.is_empty()
+}
+
 macro_rules! f3d_arenas {
     ($macro:ident) => {
         $macro! {
@@ -172,44 +279,37 @@ macro_rules! sort_f3d_arenas {
                     asm_histories: namespace.arena_as("asm_histories")?,
                     $($field: namespace.arena_as(stringify!($field))?,)*
                 };
-                let mut states: Vec<crate::history_records::AsmDeltaState> = namespace.arena_as("asm_delta_states")?;
-                let mut boards: Vec<crate::history_records::AsmBulletinBoard> = namespace.arena_as("asm_bulletin_boards")?;
+                let states: Vec<crate::history_records::AsmDeltaState> = namespace.arena_as("asm_delta_states")?;
+                let boards: Vec<crate::history_records::AsmBulletinBoard> = namespace.arena_as("asm_bulletin_boards")?;
                 let changes: Vec<crate::history_records::AsmEntityChange> = namespace.arena_as("asm_entity_changes")?;
                 let records: Vec<crate::history_records::AsmHistoryRecord> = namespace.arena_as("asm_history_records")?;
-                for board in &mut boards { board.changes = changes.iter().filter(|change| change.parent == board.id).cloned().collect(); }
-                for state in &mut states {
-                    state.bulletin_boards = boards.iter().filter(|board| board.parent == state.id).cloned().collect();
-                    state.records = records.iter().filter(|record| record.parent == state.id).cloned().collect();
+                let mut changes_by_parent = HashMap::<String, Vec<_>>::new();
+                for change in changes { changes_by_parent.entry(change.parent.clone()).or_default().push(change); }
+                let mut boards_by_parent = HashMap::<String, Vec<_>>::new();
+                for mut board in boards {
+                    board.changes = changes_by_parent.remove(&board.id).unwrap_or_default();
+                    boards_by_parent.entry(board.parent.clone()).or_default().push(board);
                 }
-                for history in &mut native.asm_histories { history.states = states.iter().filter(|state| state.parent == history.id).cloned().collect(); }
+                let mut records_by_parent = HashMap::<String, Vec<_>>::new();
+                for record in records { records_by_parent.entry(record.parent.clone()).or_default().push(record); }
+                let mut states_by_parent = HashMap::<String, Vec<_>>::new();
+                for mut state in states {
+                    state.bulletin_boards = boards_by_parent.remove(&state.id).unwrap_or_default();
+                    state.records = records_by_parent.remove(&state.id).unwrap_or_default();
+                    states_by_parent.entry(state.parent.clone()).or_default().push(state);
+                }
+                for history in &mut native.asm_histories { history.states = states_by_parent.remove(&history.id).unwrap_or_default(); }
                 Ok(native)
             }
 
             pub fn store(&self, namespace: &mut cadmpeg_ir::NativeNamespace) -> Result<(), cadmpeg_ir::NativeConvertError> {
                 namespace.version = F3D_NATIVE_VERSION;
                 $(namespace.set_arena(stringify!($field), &self.$field)?;)*
-                // Store the history tree split across its five arenas. Writing
-                // `asm_histories` with its states still attached would convert
-                // the whole tree to `serde_json` values only to overwrite it.
-                // Detaching a level means cloning the record it lives on, so
-                // each level is detached one record at a time rather than
-                // collected into a second copy of the whole population.
-                namespace.set_arena_from("asm_histories", self.asm_histories.iter().map(|history| {
-                    let mut history = history.clone();
-                    history.states.clear();
-                    history
-                }))?;
-                namespace.set_arena_from("asm_delta_states", self.asm_histories.iter().flat_map(|history| &history.states).map(|state| {
-                    let mut state = state.clone();
-                    state.bulletin_boards.clear();
-                    state.records.clear();
-                    state
-                }))?;
-                namespace.set_arena_from("asm_bulletin_boards", self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.bulletin_boards).map(|board| {
-                    let mut board = board.clone();
-                    board.changes.clear();
-                    board
-                }))?;
+                // The history tree is stored in five flat arenas. Borrowed
+                // views omit child populations without cloning their payloads.
+                namespace.set_arena_from("asm_histories", self.asm_histories.iter().map(FlatAsmHistory::from))?;
+                namespace.set_arena_from("asm_delta_states", self.asm_histories.iter().flat_map(|history| &history.states).map(FlatAsmDeltaState::from))?;
+                namespace.set_arena_from("asm_bulletin_boards", self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.bulletin_boards).map(FlatAsmBulletinBoard::from))?;
                 namespace.set_arena_from("asm_entity_changes", self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.bulletin_boards).flat_map(|board| &board.changes))?;
                 namespace.set_arena_from("asm_history_records", self.asm_histories.iter().flat_map(|history| &history.states).flat_map(|state| &state.records))?;
                 debug_assert!(F3D_ARENA_NAMES
