@@ -55372,7 +55372,19 @@ fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
         let ceiling = target.len().saturating_add(1);
         let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..]).take(ceiling as u64);
         let mut inflated = Vec::with_capacity(ceiling);
-        if decoder.read_to_end(&mut inflated).is_ok() && inflated == target {
+        let mut chunk = [0_u8; 8192];
+        let mut valid = true;
+        loop {
+            match decoder.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(read) => inflated.extend_from_slice(&chunk[..read]),
+                Err(_) => {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        if valid && inflated == target {
             return Some((start, start + decoder.into_inner().total_in() as usize));
         }
     }

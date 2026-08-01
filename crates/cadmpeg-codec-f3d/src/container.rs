@@ -18,9 +18,7 @@ use cadmpeg_ir::hash::sha256_hex;
 
 use crate::asm_header;
 
-/// Maximum `.f3d` archive accepted by the container scanner.
-const INPUT_CAP: u64 = 256 * 1024 * 1024;
-pub(crate) const MAX_ARCHIVE_BYTES: u64 = INPUT_CAP;
+pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
@@ -75,7 +73,23 @@ pub(crate) fn read_entry_bounded(
         )));
     }
     let mut bytes = Vec::new();
-    Read::take(entry, MAX_INFLATED_ENTRY_BYTES + 1).read_to_end(&mut bytes)?;
+    let mut limited = Read::take(entry, MAX_INFLATED_ENTRY_BYTES + 1);
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = limited.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        bytes.try_reserve(read).map_err(|_| {
+            cadmpeg_codec_core::decode::refuse_local_limit(
+                "F3D entry allocation",
+                MAX_INFLATED_ENTRY_BYTES,
+                bytes.len().saturating_add(read) as u64,
+                None,
+            )
+        })?;
+        bytes.extend_from_slice(&chunk[..read]);
+    }
     if bytes.len() as u64 > MAX_INFLATED_ENTRY_BYTES {
         return Err(CodecError::Malformed(format!(
             "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
@@ -180,19 +194,12 @@ impl<'a> ContainerScan<'a> {
 /// when compressed.
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
     let source_image = root.window();
-    if source_image.len() as u64 > INPUT_CAP {
-        return Err(CodecError::Malformed(format!(
-            "input exceeds f3d size cap of {INPUT_CAP} bytes"
-        )));
-    }
-
     let archive = ArchiveSnapshot::new(root)?;
 
     let mut entries = Vec::new();
     let mut breps = Vec::new();
     let mut asset_folder = None;
     let mut inflated_entries = BTreeMap::new();
-    let mut total_declared_inflated = 0_u64;
 
     for file in archive.entries() {
         let name = file.name.clone();
@@ -200,21 +207,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let compression = file.compression.label().to_string();
         let compressed_size = file.compressed_size;
         let uncompressed_size = file.uncompressed_size;
-        if uncompressed_size > MAX_INFLATED_ENTRY_BYTES {
-            return Err(CodecError::Malformed(format!(
-                "ZIP entry {name} declares {uncompressed_size} inflated bytes, exceeding the \
-                 {MAX_INFLATED_ENTRY_BYTES}-byte entry limit"
-            )));
-        }
-        total_declared_inflated = total_declared_inflated
-            .checked_add(uncompressed_size)
-            .ok_or_else(|| CodecError::Malformed("F3D total inflated size overflows u64".into()))?;
-        if total_declared_inflated > MAX_ARCHIVE_BYTES {
-            return Err(CodecError::Malformed(format!(
-                "F3D entries declare {total_declared_inflated} inflated bytes, exceeding the \
-                 {MAX_ARCHIVE_BYTES}-byte archive limit"
-            )));
-        }
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;

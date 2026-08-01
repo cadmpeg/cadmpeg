@@ -310,7 +310,18 @@ fn decode_wrapped_payload(payload: &[u8]) -> Option<Vec<u8>> {
     let member = payload.get(24..24usize.checked_add(compressed_size)?)?;
     let mut decoder = flate2::read::ZlibDecoder::new(member);
     let mut decoded = Vec::with_capacity(uncompressed_size.min(1 << 20));
-    decoder.read_to_end(&mut decoded).ok()?;
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = decoder.read(&mut chunk).ok()?;
+        if read == 0 {
+            break;
+        }
+        if read > uncompressed_size.saturating_sub(decoded.len()) {
+            return None;
+        }
+        decoded.try_reserve(read).ok()?;
+        decoded.extend_from_slice(&chunk[..read]);
+    }
     (decoded.len() == uncompressed_size && decoder.total_in() as usize == compressed_size)
         .then_some(decoded)
 }
