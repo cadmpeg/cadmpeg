@@ -71,16 +71,16 @@ A kind-3 body is a MessagePack map from stream name to integer stream id. A kind
 
 The streams are:
 
-| Name  | Id | Content                                  |
-| ----- | -- | ---------------------------------------- |
-| `v`   | 2  | one f32 coordinate triple per vertex     |
-| `t`   | 3  | one u32 per triangle corner, delta-coded |
-| `r0`  | 4  | undecoded                                |
-| `r0i` | 5  | undecoded                                |
-| `r1`  | 6  | undecoded                                |
-| `r2`  | 7  | one u32 per triangle                     |
-| `r3`  | 8  | one RGBA f32 quad per vertex             |
-| `r4`  | 9  | an XML `<Attrib>` document               |
+| Name  | Id  | Content                                  |
+| ----- | --- | ---------------------------------------- |
+| `v`   | 2   | one f32 coordinate triple per vertex     |
+| `t`   | 3   | one u32 per triangle corner, delta-coded |
+| `r0`  | 4   | undecoded                                |
+| `r0i` | 5   | undecoded                                |
+| `r1`  | 6   | undecoded                                |
+| `r2`  | 7   | one u32 per triangle                     |
+| `r3`  | 8   | one RGBA f32 quad per vertex             |
+| `r4`  | 9   | an XML `<Attrib>` document               |
 
 `v` coordinates are not model centimetres: the mesh-body Design record (§8.1) stores the scale matrix that relates them to model space. In `t`, each value is the two's-complement difference between consecutive corner indices with an implicit initial index of zero; the values before the last yield the corner-index sequence, and the last value does not continue it. `r3` and `r4` are present exactly when the container carries per-vertex colour. The `r4` document is `<Attrib><TriName>color_tt<guid></TriName><AmtName>mecol</AmtName></Attrib>`, and its GUID equals a resource GUID in the protobuf message.
 
