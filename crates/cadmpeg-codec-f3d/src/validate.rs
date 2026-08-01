@@ -1655,8 +1655,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::SurfacePatch) => {
-                        ((scope.frame_length == 339 && group.role == 0x0000_0041_0000_0000)
-                            || (scope.frame_length != 339 && group.role == 0x0000_0004_0000_0000))
+                        ((scope.reference_members.len() == 3
+                            && group.role == 0x0000_0041_0000_0000)
+                            || (scope.reference_members.len() > 3
+                                && (scope.reference_members.len() - 1).is_multiple_of(3)
+                                && group.role == 0x0000_0004_0000_0000))
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
