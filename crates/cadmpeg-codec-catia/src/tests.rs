@@ -22,6 +22,47 @@ use crate::variant::Variant;
 
 use crate::CatiaCodec;
 
+struct NativeFieldsMut<'a> {
+    record: &'a mut cadmpeg_ir::NativeRecord,
+    fields: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+impl std::ops::Deref for NativeFieldsMut<'_> {
+    type Target = serde_json::Map<String, serde_json::Value>;
+
+    fn deref(&self) -> &Self::Target {
+        self.fields.as_ref().expect("native fields guard")
+    }
+}
+
+impl std::ops::DerefMut for NativeFieldsMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.fields.as_mut().expect("native fields guard")
+    }
+}
+
+impl Drop for NativeFieldsMut<'_> {
+    fn drop(&mut self) {
+        let id = self.record.id().to_owned();
+        let fields = self.fields.take().expect("native fields guard");
+        *self.record = cadmpeg_ir::NativeRecord::new(id, fields);
+    }
+}
+
+trait NativeRecordTestExt {
+    fn fields_mut(&mut self) -> NativeFieldsMut<'_>;
+}
+
+impl NativeRecordTestExt for cadmpeg_ir::NativeRecord {
+    fn fields_mut(&mut self) -> NativeFieldsMut<'_> {
+        let fields = self.fields();
+        NativeFieldsMut {
+            record: self,
+            fields: Some(fields),
+        }
+    }
+}
+
 fn summary_preview_segment() -> Vec<u8> {
     let mut bytes = b"FINJPL  \x01\x01\x00\x03\x00\x00\x00\x15\x00CATSummaryInformation".to_vec();
     bytes.extend_from_slice(b"LastSaveVersion\0<Version>5/<Version><Release>27/<Release><ServicePack>2/<ServicePack><BuildDate>03-10-2017.22.00/<BuildDate><HotFix>0/<HotFix>\0");
@@ -9553,7 +9594,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .arenas
         .get_mut("design_objects")
         .expect("stored design objects")[0]
-        .fields()
+        .fields_mut()
         .get_mut("parallel_reference_table")
         .expect("stored parallel reference table")
         .as_object_mut()
@@ -11055,7 +11096,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields()
+        .fields_mut()
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
@@ -11078,7 +11119,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields()
+        .fields_mut()
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
@@ -11101,7 +11142,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields()
+        .fields_mut()
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
@@ -12318,7 +12359,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 .arenas
                 .get_mut("entity_records")
                 .expect("stored entity records")[1]
-                .fields()
+                .fields_mut()
                 .get_mut("relation_program_instance")
                 .expect("stored relation-program field")
                 .as_object_mut()
@@ -12362,7 +12403,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .arenas
             .get_mut("entity_records")
             .expect("stored entity records")[1]
-            .fields()
+            .fields_mut()
             .get_mut("relation_program_instance")
             .expect("stored relation-program field")
             .as_object_mut()
@@ -12390,7 +12431,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .arenas
             .get_mut("entity_records")
             .expect("stored entity records")[1]
-            .fields()
+            .fields_mut()
             .get_mut("relation_program_instance")
             .expect("stored relation-program field")
             .as_object_mut()
@@ -12854,7 +12895,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .get_mut("entity_records")
         .expect("stored entity records");
     let configuration = entities[0]
-        .fields()
+        .fields_mut()
         .get_mut("configuration_record")
         .expect("stored configuration record")
         .as_object_mut()
@@ -15433,7 +15474,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields()
+        .fields_mut()
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15479,7 +15520,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields()
+        .fields_mut()
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15510,7 +15551,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields()
+        .fields_mut()
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15538,7 +15579,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields()
+        .fields_mut()
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15733,7 +15774,7 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields()
+        .fields_mut()
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
