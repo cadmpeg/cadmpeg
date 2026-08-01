@@ -2,7 +2,7 @@
 //! Lossless retained-document serialization.
 
 use std::collections::HashSet;
-use std::io::{Cursor, Write};
+use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_ir::codec::{CodecError, WriteSeek};
 use cadmpeg_ir::document::CadIr;
@@ -20,9 +20,10 @@ pub(crate) fn write(
     output: &mut dyn Write,
     options: FcstdWriteOptions,
 ) -> Result<ExportReport, CodecError> {
-    let mut staged = Cursor::new(Vec::new());
+    let mut staged = tempfile::tempfile()?;
     let report = write_seekable(ir, &mut staged, options)?;
-    output.write_all(staged.get_ref())?;
+    staged.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut staged, output)?;
     Ok(report)
 }
 
@@ -55,18 +56,37 @@ pub(crate) fn write_seekable(
             options.file_version
         )));
     }
-    let entries = namespace.arena_as::<EntryRecord>("entries")?;
+    let entry_records = namespace
+        .arenas
+        .get("entries")
+        .map_or(&[][..], Vec::as_slice);
+    let mut entries = entry_records
+        .iter()
+        .enumerate()
+        .map(|(record_index, record)| {
+            record
+                .field("name")
+                .and_then(|name| name.as_str().map(str::to_owned))
+                .map(|name| EntrySlot { record_index, name })
+                .ok_or_else(|| {
+                    CodecError::Malformed("FCStd entry record has no string name".into())
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
-    validate_entries(&entries)?;
-    let source_document = entries
+    validate_entry_names(&entries)?;
+    let source_document_slot = entries
         .iter()
         .find(|entry| entry.name == "Document.xml")
         .ok_or_else(|| {
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
+    let source_document = entry_at(namespace, source_document_slot.record_index)?;
+    validate_entry(&source_document)?;
     let document_xml = patch_document(&source_document.data, &properties)?;
+    drop(source_document);
     let written_graph = crate::persistence::parse(&document_xml)?;
     validate_declarations(
         &objects,
@@ -90,9 +110,13 @@ pub(crate) fn write_seekable(
         let file_options = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .last_modified_time(zip::DateTime::default());
-        let mut ordered_entries = entries.iter().collect::<Vec<_>>();
-        ordered_entries.sort_by_key(|entry| (entry.name != "Document.xml", entry.name.as_str()));
-        for entry in ordered_entries {
+        entries.sort_by(|left, right| {
+            (left.name != "Document.xml", left.name.as_str())
+                .cmp(&(right.name != "Document.xml", right.name.as_str()))
+        });
+        for slot in &entries {
+            let entry = entry_at(namespace, slot.record_index)?;
+            validate_entry(&entry)?;
             archive
                 .start_file(&entry.name, file_options)
                 .map_err(|error| {
@@ -134,7 +158,23 @@ fn exactly_one<'a, T>(values: &'a [T], description: &str) -> Result<&'a T, Codec
     Ok(&values[0])
 }
 
-fn validate_entries(entries: &[EntryRecord]) -> Result<(), CodecError> {
+struct EntrySlot {
+    record_index: usize,
+    name: String,
+}
+
+fn entry_at(
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+    index: usize,
+) -> Result<EntryRecord, CodecError> {
+    namespace
+        .arena_iter_as::<EntryRecord>("entries")
+        .nth(index)
+        .ok_or_else(|| CodecError::Malformed("FCStd entry record disappeared".into()))?
+        .map_err(CodecError::from)
+}
+
+fn validate_entry_names(entries: &[EntrySlot]) -> Result<(), CodecError> {
     let mut names = HashSet::new();
     for entry in entries {
         if entry.name.is_empty()
@@ -155,12 +195,16 @@ fn validate_entries(entries: &[EntryRecord]) -> Result<(), CodecError> {
                 entry.name
             )));
         }
-        if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
-            return Err(CodecError::Malformed(format!(
-                "FCStd output entry {} has stale length or digest metadata",
-                entry.name
-            )));
-        }
+    }
+    Ok(())
+}
+
+fn validate_entry(entry: &EntryRecord) -> Result<(), CodecError> {
+    if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
+        return Err(CodecError::Malformed(format!(
+            "FCStd output entry {} has stale length or digest metadata",
+            entry.name
+        )));
     }
     Ok(())
 }
