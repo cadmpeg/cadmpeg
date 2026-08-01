@@ -305,16 +305,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do these sketch-text fields hold?
 
-- the two bytes between the height and the anchor coordinates, the eleven bytes between those coordinates and the text string, and the twelve bytes of the twenty-nine-byte run before the font-family count that the leading byte and the colour components do not fill, of a `txt_tag` record
-- the members a `txt_tag` record writes between its text string and the thirty-byte class tail, and the pair list it writes as its leading block
-- the flag bytes after the two alignment enums
 - the thirty bytes of the class tail
-- the field that holds the text rotation
-- where a `txt_tag` record stores its horizontal width factor
+- the flag byte after the horizontal-alignment enum and the flag byte after the vertical-alignment enum
+- the twelve bytes of a `txt_tag` record's twenty-nine-byte run that the leading byte and the colour components do not fill, the two bytes between its height and its anchor coordinates, and the eleven bytes between those coordinates and its text string
+- the members a `txt_tag` record writes between its text string and the thirty-byte class tail, and the pair list it writes as its leading block
 
-**Known.** `f3d.md` §8.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §8.1 "In a `textex_tag` record the property block" and `f3d.md` §8.1 "In a `txt_tag` record the run" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §8.1 "A `textex_tag` record writes two optional" and `f3d.md` §8.1 "A `textex_tag` record's class tail opens" give the remaining members. The byte runs named above have a width and no meaning, and no known field holds a rotation. The last sixteen bytes of the twenty-nine-byte run hold the colour components, whose f32 alpha is `1`; the twelve between them and the leading byte are not all zero, and no eight-byte window of the run reads as a width factor, so the decoder reads no width factor from a `txt_tag` record. The `txt_tag` form also writes a leading block of `(reference, u32)` pairs, and between its text string and the thirty-byte class tail it writes a u32-counted reference run, three bytes, an i32 font weight, and one f64.
+**Known.** `f3d.md` §8.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §8.1 "In a `textex_tag` record the property block" and `f3d.md` §8.1 "In a `txt_tag` record the run" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §8.1 "A `textex_tag` record writes two optional" and `f3d.md` §8.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. The text rotation and the frame-text anchor come from that transform, and the colour components come from the run ahead of the font family. The decoder reads all three. A `txt_tag` record stores no width factor.
 
-**Need.** We must know the meanings to write sketch text from a neutral model. **Blocked on a specimen:** a document whose sketch texts carry two or more different heights and a nonzero rotation locates the rotation field and separates the unnamed byte runs from constants, and no such document is available to read.
+The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 0`, and `u8 0`. It is the same in every record of both classes. Its field boundaries are thus fixed, but no field in it changes, so no field in it has a meaning we can read. Of the three bytes after the horizontal-alignment enum, only the first is ever set. The single byte after the vertical-alignment enum is set when that byte is set, and clear when it is clear. The two are one flag written twice, or one flag and an echo of it. The alignment enums change independently of each other, so neither flag byte continues an alignment value. The `txt_tag` class writes a leading block of `(reference, u32)` pairs. Between its text string and the thirty-byte class tail it writes a u32-counted reference run, three bytes, an i32 font weight, and one f64. The twelve bytes of its twenty-nine-byte run are not all zero.
+
+**Need.** We must know the meanings to write sketch text from a neutral model. A record that sets one of the two flag bytes and clears the other separates them. A class tail that differs from the constant above gives its fields a meaning. Nothing else in a sketch-text record changes with either.
 
 ### DR-27. Sketch-relation class-member meanings
 
