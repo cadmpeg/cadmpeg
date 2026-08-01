@@ -6430,7 +6430,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     );
     assert_annotation(
         &result.source_fidelity.annotations,
-        records[0].id()(),
+        records[0].id(),
         "creo:DEPDB_DATA",
         scan.curves.expressions[0].expression_offset as u64,
         "curve_expression_program",
