@@ -2001,6 +2001,8 @@ fn populate_annotations(
     brep: Option<(&str, &[brep::AnnotationRecord])>,
     unknowns: &[UnknownRecord],
 ) -> cadmpeg_ir::Annotations {
+    use std::collections::{HashMap, HashSet};
+
     let mut annotations = AnnotationBuilder::new();
     if let Some((stream_name, records)) = brep {
         let stream = annotations.stream(crate::ids::native_scope(stream_name));
@@ -2013,6 +2015,35 @@ fn populate_annotations(
             }
         }
     }
+
+    let mut constraints_by_native = HashMap::new();
+    for constraint in &ir.model.sketch_constraints {
+        if let Some(native_ref) = constraint.native_ref.as_deref() {
+            constraints_by_native
+                .entry(native_ref)
+                .or_insert(constraint.id.0.as_str());
+        }
+    }
+    let mut entities_by_native = HashMap::new();
+    for entity in &ir.model.sketch_entities {
+        if let Some(native_ref) = entity.native_ref.as_deref() {
+            entities_by_native
+                .entry(native_ref)
+                .or_insert(entity.id.0.as_str());
+        }
+    }
+    let planar_sketches = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| sketch.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let spatial_sketches = ir
+        .model
+        .spatial_sketches
+        .iter()
+        .map(|sketch| sketch.id.0.as_str())
+        .collect::<HashSet<_>>();
 
     let native_stream = annotations.stream("f3d:native");
     let mut note = |id: &str, tag: &str| {
@@ -2040,46 +2071,26 @@ fn populate_annotations(
         }
         for entity in &native.design_dimension_locus_pairs {
             note(&entity.id, "design_dimension_locus_pair");
-            if let Some(projected) = ir
-                .model
-                .sketch_constraints
-                .iter()
-                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
-            {
-                note(&projected.id.0, "sketch_constraint");
+            if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
+                note(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_annotation_frames {
             note(&entity.id, "design_dimension_annotation_frame");
-            if let Some(projected) = ir
-                .model
-                .sketch_constraints
-                .iter()
-                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
-            {
-                note(&projected.id.0, "sketch_constraint");
+            if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
+                note(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_locus_groups {
             note(&entity.id, "design_dimension_locus_group");
-            if let Some(projected) = ir
-                .model
-                .sketch_constraints
-                .iter()
-                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
-            {
-                note(&projected.id.0, "sketch_constraint");
+            if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
+                note(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_null_locus_pairs {
             note(&entity.id, "design_dimension_null_locus_pair");
-            if let Some(projected) = ir
-                .model
-                .sketch_constraints
-                .iter()
-                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
-            {
-                note(&projected.id.0, "sketch_constraint");
+            if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
+                note(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_parameter_owners {
@@ -2097,16 +2108,11 @@ fn populate_annotations(
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
             let planar = crate::ids::neutral_sketch_id(entity);
-            if ir.model.sketches.iter().any(|sketch| sketch.id == planar) {
+            if planar_sketches.contains(planar.0.as_str()) {
                 note(&planar.0, "sketch");
             }
             let spatial = crate::ids::neutral_spatial_sketch_id(entity);
-            if ir
-                .model
-                .spatial_sketches
-                .iter()
-                .any(|sketch| sketch.id == spatial)
-            {
+            if spatial_sketches.contains(spatial.0.as_str()) {
                 note(&spatial.0, "spatial_sketch");
             }
         }
@@ -2124,12 +2130,7 @@ fn populate_annotations(
         }
         for entity in &native.sketch_relations {
             note(&entity.id, "sketch_relation");
-            if ir
-                .model
-                .sketch_constraints
-                .iter()
-                .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
-            {
+            if constraints_by_native.contains_key(entity.id.as_str()) {
                 note(
                     &crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index).0,
                     "sketch_constraint",
@@ -2138,24 +2139,14 @@ fn populate_annotations(
         }
         for entity in &native.sketch_points {
             note(&entity.id, "sketch_point");
-            if let Some(projected) = ir
-                .model
-                .sketch_entities
-                .iter()
-                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
-            {
-                note(&projected.id.0, "sketch_entity");
+            if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
+                note(projected, "sketch_entity");
             }
         }
         for entity in &native.sketch_curve_identities {
             note(&entity.id, "sketch_curve");
-            if let Some(projected) = ir
-                .model
-                .sketch_entities
-                .iter()
-                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
-            {
-                note(&projected.id.0, "sketch_entity");
+            if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
+                note(projected, "sketch_entity");
             }
         }
         for entity in &native.sketch_surfaces {
