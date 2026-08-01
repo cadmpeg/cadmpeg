@@ -15520,7 +15520,7 @@ fn sketch_text_record(properties: &[(&str, u64)], slots: [Option<u32>; 2], path:
     }
     bytes.push(1);
     bytes.extend_from_slice(&0.8f64.to_le_bytes());
-    for component in [0.0f32, 0.0, 0.0, 1.0] {
+    for component in [0.25f32, 0.5, 0.75, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
     push_utf16(&mut bytes, "Arial");
@@ -15584,8 +15584,34 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     // factor is the field before it.
     assert_eq!(text.height, 10.0);
     assert_eq!(text.width_factor, Some(0.8));
+    // The four f32 after the width factor are red, green, blue, and alpha in
+    // that order.
+    assert_eq!(
+        text.color,
+        cadmpeg_ir::topology::Color {
+            r: 0.25,
+            g: 0.5,
+            b: 0.75,
+            a: 1.0,
+        }
+    );
     assert_eq!(text.first_reference, Some(307));
     assert_eq!(text.second_reference, Some(310));
+}
+
+#[test]
+fn sketch_text_record_refuses_a_colour_component_outside_the_unit_range() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], true);
+    let mut over = bytes.clone();
+    let at = bytes
+        .windows(4)
+        .position(|window| window == 0.5f32.to_le_bytes())
+        .expect("green component");
+    over[at..at + 4].copy_from_slice(&1.5f32.to_le_bytes());
+    assert!(decode_sketch_text(&over).is_none());
+    let mut under = bytes;
+    under[at..at + 4].copy_from_slice(&(-0.5f32).to_le_bytes());
+    assert!(decode_sketch_text(&under).is_none());
 }
 
 #[test]
@@ -15680,7 +15706,7 @@ fn txt_tag_sketch_text_record(
     // that store no width factor, and the four f32 RGBA colour components.
     bytes.push(0);
     bytes.extend_from_slice(&[0; 12]);
-    for component in [0.0f32, 0.0, 0.0, 1.0] {
+    for component in [0.0f32, 0.3, 1.0, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
     push_utf16(&mut bytes, "Arial");
@@ -15721,6 +15747,17 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     // other form omits.
     assert_eq!(text.width_factor, None);
     assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(2.5, -15.0)));
+    // The colour closes the twenty-nine-byte run in the same component order
+    // as the other form.
+    assert_eq!(
+        text.color,
+        cadmpeg_ir::topology::Color {
+            r: 0.0,
+            g: 0.3,
+            b: 1.0,
+            a: 1.0,
+        }
+    );
     assert_eq!(text.first_reference, None);
     assert_eq!(text.second_reference, None);
 }

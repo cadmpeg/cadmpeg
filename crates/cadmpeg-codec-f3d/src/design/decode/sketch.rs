@@ -14,8 +14,9 @@ use crate::records::{
     SketchRelationOperand, SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
+use cadmpeg_ir::le::{f64_at, f64s_at, take_f32, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::topology::Color;
 use std::collections::HashMap;
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
@@ -1622,10 +1623,10 @@ const TEXT_REFERENCE_SLOTS: [TextReferenceSlot; 2] =
 /// Bytes between the placement transform and the owning-sketch reference.
 const SKETCH_TEXT_TRAILING_RUN: usize = 30;
 
-/// Bytes from the property block to the u32 font-family count in the `txt_tag`
-/// form: the `0` byte that opens the run, twelve bytes, and the four f32 RGBA
-/// colour components.
-const TXT_TAG_HEAD_RUN: usize = 29;
+/// Bytes from the property block to the four f32 RGBA colour components in the
+/// `txt_tag` form: the `0` byte that opens the run and twelve bytes that store
+/// no width factor. The components close the run at the u32 font-family count.
+const TXT_TAG_HEAD_RUN: usize = 13;
 
 /// Bytes between the text-anchor coordinates and the u32 text count in the
 /// `txt_tag` form.
@@ -1660,6 +1661,21 @@ fn read_text_reference(
     }
 }
 
+/// Read the four f32 RGBA colour components both sketch-text classes store,
+/// advancing `cursor` past them. Every component is a fraction of full
+/// intensity, so a run leaving `[0, 1]` says the record is misframed rather
+/// than that the text carries an out-of-range colour.
+fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
+    let mut components = [0f32; 4];
+    for component in &mut components {
+        let value = take_f32(payload, cursor)?;
+        (0.0..=1.0).contains(&value).then_some(())?;
+        *component = value;
+    }
+    let [r, g, b, a] = components;
+    Some(Color { r, g, b, a })
+}
+
 /// The record index a reference names, absent when the reference is null.
 fn reference_index(reference: &Reference) -> Option<u32> {
     reference
@@ -1677,6 +1693,7 @@ struct SketchTextHead {
     font_family: String,
     height: f64,
     width_factor: Option<f64>,
+    color: Color,
     anchor: Option<Point2>,
     cursor: usize,
 }
@@ -1740,23 +1757,21 @@ fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
         (None, Some(value)) => (SketchTextIdentity::TxtTag, value),
         (None, None) => return None,
     };
-    let width_factor = match identity {
+    let (width_factor, color) = match identity {
         SketchTextIdentity::TextexTag => {
             (payload.get(cursor)? == &1).then_some(())?;
             cursor += 1;
             let width_factor = f64_at(payload, cursor)?;
-            // The width factor and four f32 RGBA colour components.
-            cursor = cursor.checked_add(24)?;
+            cursor = cursor.checked_add(8)?;
+            let color = read_sketch_text_color(payload, &mut cursor)?;
             (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
-            Some(width_factor)
+            (Some(width_factor), color)
         }
         SketchTextIdentity::TxtTag => {
             (payload.get(cursor)? == &0).then_some(())?;
-            // The run holds the four f32 RGBA colour components in its last
-            // sixteen bytes; the twelve between them and the byte above store
-            // no width factor.
             cursor = cursor.checked_add(TXT_TAG_HEAD_RUN)?;
-            None
+            let color = read_sketch_text_color(payload, &mut cursor)?;
+            (None, color)
         }
     };
     let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
@@ -1791,6 +1806,7 @@ fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
         font_family,
         height,
         width_factor,
+        color,
         anchor,
         cursor,
     })
@@ -1911,6 +1927,7 @@ pub(crate) fn decode_sketch_text_record(
         font_family: head.font_family,
         height: head.height,
         width_factor: head.width_factor,
+        color: head.color,
         anchor: head.anchor,
         first_reference: tail.first_reference,
         second_reference: tail.second_reference,

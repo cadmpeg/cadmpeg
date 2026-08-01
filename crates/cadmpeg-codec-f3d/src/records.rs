@@ -10,6 +10,7 @@ use std::num::NonZeroU32;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::topology::Color;
 
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -3315,6 +3316,10 @@ pub struct SketchText {
     /// is not established.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width_factor: Option<f64>,
+    /// Display colour of the glyphs. Both identity forms store it, so it is
+    /// never absent. `SketchGeometry` carries no display attribute on any
+    /// variant, so the colour stays on the native record.
+    pub color: Color,
     /// Text anchor point in the sketch frame in millimetres, present in the
     /// `txt_tag` identity form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
