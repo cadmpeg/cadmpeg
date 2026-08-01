@@ -98,9 +98,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What layouts do the cache-first intcurve leading enum values other than `0` and `2` select?
 
-**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder reads both and retains a record with any other value verbatim. Form `2` stores no `bs3_curve`, and the record-level cache search that selects a carrier's solved curve takes the first curve block in the record, so a form-`2` record reaches the shared context only when its own construction stores a curve block of its own. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is refused on read in all three cases. A refusal separates a spelling the enum does not have from a payload the value selects differently, so it does not narrow the accepted spelling set.
+**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder reads both and retains a record with any other value verbatim. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is refused on read in all three cases. A refusal separates a spelling the enum does not have from a payload the value selects differently, so it does not narrow the accepted spelling set.
 
-**Need.** We cannot read a record with a value other than `0` or `2`, and we cannot give a cacheless form-`2` record a solved carrier. **Blocked on a specimen:** a document whose cache-first intcurve leading enum carries a value other than `0` or `2` gives that value's layout, and no such document is available to read.
+**Need.** We cannot read a record with a value other than `0` or `2`. **Blocked on a specimen:** a document whose cache-first intcurve leading enum carries a value other than `0` or `2` gives that value's layout, and no such document is available to read. GC-27 gives the separate limit that value `2` reaches.
 
 ### GC-24. Binding of the law formula text infix operator `O`
 
@@ -125,6 +125,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `f3d.md` §7.6 `rb_blend_spl_sur` puts the third-side graph after the tail and before the three `tail_extension` integers. The two-support subtypes end with the tail and those integers, which fixes the integers as the last fields of that scope but does not fix the third-side graph against them.
 
 **Need.** The decoder and the source-less writer both use the position the specification gives. The wrong position makes every `sss_blend_spl_sur` record fail its decode and stay opaque, and makes a generated record ungrammatical. **Blocked on a specimen:** a document holding an `sss_blend_spl_sur` record fixes the graph position against the trailing integers, and no such document is available to read.
+
+### GC-27. Solved carrier of a cache-first intcurve that stores no cache
+
+**Question.** Which curve gives the parameter domain of a cache-first intcurve record whose leading enum is `2` and whose construction stores no curve block?
+
+**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layout of leading enum `2`: the record stores a bool-gated curve interval and a closed-form enum in place of the solved-curve cache and the fit tolerance that enum `0` stores. The shared cache-first context takes its parameter domain from the record's solved curve, and the record-level search takes the first curve block in the record as that curve. A form-`2` record therefore has a solved carrier only when a nested construction stores a curve block.
+
+**Need.** A form-`2` record that stores no curve block anywhere gives the context no parameter domain, so the decoder retains the record verbatim and the neutral model loses the curve. To read such a record the shared context and every carrier that builds it must accept a record with no solved curve. Whether the record then takes its domain from the interval the form stores, from the support surfaces, or from a curve outside the record is not established. **Blocked on a specimen:** a document holding a form-`2` record whose construction stores no curve block settles which of the three the domain comes from, and no such document is available to read.
 
 ## 2. Container, header, and design records
 
@@ -201,7 +209,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the values of `PatchContinuity` and `PatchFlip` mean?
 
-**Known.** `f3d.md` §8.1 "A surface-patch boundary-settings record's" gives the member order, the offsets, and the types. The decoder reads `IsSeedSel`, `PatchContinuity`, `PatchFlip`, `PatchScale`, and the `rPatchModelRef` record index onto the owning scope; every stored value is retained. `PatchScale` is `-1.0` and `PatchContinuity` is `0` in every record. `PatchFlip` takes `0` and `2`, `IsSeedSel` takes `0` and `1`, and all four of their combinations occur.
+**Known.** `f3d.md` §8.1 "A surface-patch boundary-settings record has" gives the member order, the offsets, and the types. The decoder reads `IsSeedSel`, `PatchContinuity`, `PatchFlip`, `PatchScale`, and the `rPatchModelRef` record index onto the owning scope; every stored value is retained. `PatchScale` is `-1.0` and `PatchContinuity` is `0` in every record. `PatchFlip` takes `0` and `2`, `IsSeedSel` takes `0` and `1`, and all four of their combinations occur.
 
 **Need.** Each retained value needs a neutral meaning before it can drive a neutral patch. `PatchContinuity` carries one value, so no mapping from it to a neutral continuity is decidable in either direction, and the neutral patch leaves continuity absent. `PatchFlip` carries two values whose difference is not decidable from the records either, because no pair of patches differs only in the boundary side.
 
@@ -308,11 +316,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 - the thirty bytes of the class tail
 - the flag byte after the horizontal-alignment enum and the flag byte after the vertical-alignment enum
 - the twelve bytes of a `txt_tag` record's twenty-nine-byte run that the leading byte and the colour components do not fill, the two bytes between its height and its anchor coordinates, and the eleven bytes between those coordinates and its text string, ten of them below class version 4
-- the members a `txt_tag` record writes between its text string and the thirty-byte class tail, and the pair list it writes as its leading block
+- the targets of the reference run a `txt_tag` record writes after its text string, the three bytes and the f64 that follow that run, and the pairs of its leading block
 
 **Known.** `f3d.md` §8.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §8.1 "In a `textex_tag` record the property block" and `f3d.md` §8.1 "In a `txt_tag` record the run" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §8.1 "A `textex_tag` record writes two optional" and `f3d.md` §8.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. The text rotation and the frame-text anchor come from that transform, and the colour components come from the run ahead of the font family. The decoder reads all three. A `txt_tag` record stores no width factor.
 
-The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 0`, and `u8 0`. It is the same in every record of both classes. Its field boundaries are thus fixed, but no field in it changes, so no field in it has a meaning we can read. Of the three bytes after the horizontal-alignment enum, only the first is ever set. The single byte after the vertical-alignment enum is set when that byte is set, and clear when it is clear. The two are one flag written twice, or one flag and an echo of it. The alignment enums change independently of each other, so neither flag byte continues an alignment value. The `txt_tag` class writes a leading block of `(reference, u32)` pairs. Between its text string and the thirty-byte class tail it writes a u32-counted reference run, three bytes, an i32 font weight, and one f64. The twelve bytes of its twenty-nine-byte run are not all zero.
+The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 0`, and `u8 0`. It is the same in every record of both classes. Its field boundaries are thus fixed, but no field in it changes, so no field in it has a meaning we can read. Of the three bytes after the horizontal-alignment enum, only the first is ever set. The single byte after the vertical-alignment enum is set when that byte is set, and clear when it is clear. The two are one flag written twice, or one flag and an echo of it. The alignment enums change independently of each other, so neither flag byte continues an alignment value. `f3d.md` §8.1 "Sketch text occupies two record classes" gives the leading block that both classes carry. The f64 a `txt_tag` record writes after its font weight is positive, and it changes with the record. The twelve bytes of its twenty-nine-byte run are not all zero.
 
 **Need.** We must know the meanings to write sketch text from a neutral model. A record that sets one of the two flag bytes and clears the other separates them. A class tail that differs from the constant above gives its fields a meaning. Nothing else in a sketch-text record changes with either.
 
@@ -457,29 +465,33 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 ### PM-01. `.paramesh` undecoded streams and container fields
 
-**Question.** We must find five answers:
+**Question.** We must find seven answers:
 
-- what the `r0`, `r0i`, and `r1` streams hold
+- how an `r0` stream frames its elements, because its descriptor sets `U`
+- what `r0` holds
+- what `r0i` and `r1` hold
 - what the last value of the `t` stream encodes
 - what the `r2` per-triangle value selects
-- what each descriptor-map key selects
+- what descriptor `T` values other than `0`, `1`, and `3` select, and what `U` selects
 - what the protobuf message fields other than the stream registry, the resource GUIDs, and `fusion_uuid` hold
 
-**Known.** `f3d.md` §1.1.2 "The container layout is" gives the container framing, and `f3d.md` §1.1.2 "A kind-3 body is" gives the chunk bodies and the compression. The `v`, `t`, `r3`, and `r4` streams are decoded. `r2` carries the value `0` in every record available. `r0` decompresses to a byte count that is not a multiple of one f32 triple per vertex or per triangle, so it is not a plain per-vertex or per-triangle vector stream. The last `t` value read as a further index difference gives an index outside the vertex range in one container and inside it in another, so that reading is wrong and no other reading is established.
+**Known.** `f3d.md` §1.1.2 "The container layout is" gives the container framing, and `f3d.md` §1.1.2 "A kind-3 body is" gives the chunk bodies, the descriptor keys, and the compression. The `v`, `t`, `r3`, and `r4` streams are decoded. `r2` carries the value `0` in each record available to read.
 
-**Need.** The decoder keeps the undecoded streams as opaque bytes. We must know their contents, the descriptor keys, and the message fields to write a container from a neutral model.
+An `r0` stream declares three components of type f32. Where the mesh is a cube, every component in it is `-1`, `0`, or `1`, which is the component set of the six face normals of a cube, and the stream holds sixty-four components, which three does not divide. Where a mesh has eight vertices, twelve triangles, and thirty-six corners, `r0i` and `r1` each hold twenty-four values, so neither stream holds one value per vertex, per triangle, or per corner. The `r0i` values accumulate to an increasing sequence that ends below the component count of `r0`, so `r0i` can hold offsets into `r0`. The `r1` values accumulate to a sequence that goes below zero, so `r1` does not hold offsets. The last `t` value read as a further index difference gives an index outside the vertex range in one container and inside it in another, so that reading is wrong and no other reading is established.
+
+**Need.** The decoder keeps the undecoded streams as opaque bytes. We must know their contents, the remaining descriptor selectors, and the message fields to write a container from a neutral model.
 
 ### PM-02. Mesh Design-record classes without decoded content
 
-**Question.** What do the five mesh-joined record classes hold?
+**Question.** We must find two answers:
 
-- `443807AD-8025-41A3-8A50-5157579C3D78` (add-in `ParaMesh`)
-- `6FC173DC-C7E3-402C-A8C0-891A26DADF8D` (add-in `ParaMesh`)
-- `E5B3F49A-D8D0-4EEF-BC2B-FCDDAEF9745E` (add-in `ParaMesh`)
-- `99F6967E-ED35-4222-B906-5CCF0AC70B53` (add-in `Fusion`)
-- `f85f2e62-7627-4922-a16d-53e1275d2aac` (add-in `Scene`)
-
-Is the `EA90DA22-556C-4C61-89BB-20C2681B7A9D` scale matrix the complete map from container coordinates to model space?
+- what these five mesh-joined record classes hold:
+  - `443807AD-8025-41A3-8A50-5157579C3D78` (add-in `ParaMesh`)
+  - `6FC173DC-C7E3-402C-A8C0-891A26DADF8D` (add-in `ParaMesh`)
+  - `E5B3F49A-D8D0-4EEF-BC2B-FCDDAEF9745E` (add-in `ParaMesh`)
+  - `99F6967E-ED35-4222-B906-5CCF0AC70B53` (add-in `Fusion`)
+  - `f85f2e62-7627-4922-a16d-53e1275d2aac` (add-in `Scene`)
+- which of the two matrices of an `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record governs the map from container coordinates to model space, and whether that matrix is the complete map
 
 **Known.** `f3d.md` §8.1 "A mesh body's geometry container" gives the three decoded classes. Each of the five classes above occurs once per mesh body and does not occur in a document without one. The `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record stores two equal scale matrices; which of the two governs, and whether any other field takes part in the coordinate map, is not established.
 
