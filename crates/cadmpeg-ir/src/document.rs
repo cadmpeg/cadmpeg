@@ -13,7 +13,7 @@ use crate::features::{DesignConfiguration, DesignParameter, Feature, FeatureInpu
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
 use crate::presentation::{PresentationDocument, ViewPresentation};
-use crate::products::{AssemblyJoint, Component, Occurrence};
+use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{
     Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
@@ -55,7 +55,7 @@ macro_rules! arena_registry {
             spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
             spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
             spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
-            components: Component, "Product component arena.", [serde(default)] => |e| e.id.0.clone();
+            product_definitions: ProductDefinition, "Product definition arena.", [serde(default)] => |e| e.id.0.clone();
             occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
             assembly_joints: AssemblyJoint, "Assembly joint arena.", [serde(default)] => |e| e.id.0.clone();
             drawings: Drawing, "Drawing page, resource, view, and annotation arena.", [serde(default)] => |e| e.id.0.clone();
@@ -107,7 +107,7 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "4";
+pub const IR_VERSION: &str = "5";
 
 arena_registry!(declare_model);
 

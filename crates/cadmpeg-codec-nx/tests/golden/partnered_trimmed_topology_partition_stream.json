@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -36,7 +36,6 @@
             "sense": "forward"
           }
         ],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -137,6 +136,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
+        "product_definitions": [],
         "product_occurrences": [],
         "products": [],
         "regions": [

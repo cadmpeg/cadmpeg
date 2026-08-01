@@ -1,5 +1,5 @@
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": {
     "length": "millimeter"
   },
@@ -58,7 +58,7 @@
         }
       },
       {
-        "id": "synthetÿÿÿÿ2:curve#v",
+        "id": "syntheticÿÿÿÿcurve#v",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -199,7 +199,7 @@
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
     "spreadsheets": [],
-    "components": [],
+    "product_definitions": [],
     "occurrences": [],
     "assembly_joints": [],
     "drawings": [],

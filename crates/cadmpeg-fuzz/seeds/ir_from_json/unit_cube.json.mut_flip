@@ -1,5 +1,5 @@
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": {
     "length": "millimeter"
   },
@@ -380,7 +380,7 @@
         "sense": "reversed"
       },
       {
-        "id": "synthetic:cubš:coedge#top:3",
+        "id": "synthetic:cube:coe›ge#top:3",
         "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#4",
         "next": "synthetic:cube:coedge#top:0",
@@ -946,7 +946,7 @@
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
     "spreadsheets": [],
-    "components": [],
+    "product_definitions": [],
     "occurrences": [],
     "assembly_joints": [],
     "drawings": [],

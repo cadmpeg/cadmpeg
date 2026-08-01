@@ -131,6 +131,10 @@ id_type!(
     ProductId
 );
 id_type!(
+    /// Identifies a canonical [`crate::products::ProductDefinition`].
+    ProductDefinitionId
+);
+id_type!(
     /// Identifies a placed [`crate::product::ProductOccurrence`].
     OccurrenceId
 );

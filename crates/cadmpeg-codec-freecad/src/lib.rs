@@ -1302,19 +1302,16 @@ impl Codec for FcstdCodec {
                 &shape_payloads,
                 &entry_records,
             )?;
-            let (components, occurrences) = product::transfer_neutral(
+            let (product_definitions, occurrences) = product::transfer_neutral(
                 &product_nodes,
                 &joint_records,
                 &graph.objects,
                 &graph.properties,
             )?;
-            ir.model.components = components;
+            ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
-            ir.model.assembly_joints = joint::transfer_neutral(
-                &joint_records,
-                &ir.model.components,
-                &ir.model.occurrences,
-            );
+            ir.model.assembly_joints =
+                joint::transfer_neutral(&joint_records, &ir.model.occurrences);
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")

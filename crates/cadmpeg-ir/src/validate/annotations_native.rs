@@ -6,7 +6,7 @@ use super::*;
 use crate::drawings::Drawing;
 use crate::features::{DesignConfiguration, DesignParameter, FeatureInputTopology};
 use crate::presentation::{PresentationDocument, ViewPresentation};
-use crate::products::{AssemblyJoint, Component, Occurrence};
+use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{
     Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,

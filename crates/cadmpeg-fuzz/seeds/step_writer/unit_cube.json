@@ -1,5 +1,5 @@
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": {
     "length": "millimeter"
   },
@@ -946,7 +946,7 @@
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
     "spreadsheets": [],
-    "components": [],
+    "product_definitions": [],
     "occurrences": [],
     "assembly_joints": [],
     "drawings": [],

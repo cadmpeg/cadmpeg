@@ -11,6 +11,7 @@ use crate::math::{Point3, Vector3};
 /// The explicit matrix preserves source coefficients. Validation checks the
 /// affine bottom row.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
 pub struct Transform {
     /// Row-major 4×4 matrix; `rows[3]` is normally `[0, 0, 0, 1]`.
     pub rows: [[f64; 4]; 4],

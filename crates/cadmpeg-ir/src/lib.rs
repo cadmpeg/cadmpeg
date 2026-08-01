@@ -90,9 +90,9 @@ pub use presentation::{
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use product::{OccurrenceParent, Product, ProductOccurrence};
 pub use products::{
-    AssemblyJoint, Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
+    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChangePolicy,
     ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
-    Occurrence, OccurrenceId,
+    Occurrence, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;
