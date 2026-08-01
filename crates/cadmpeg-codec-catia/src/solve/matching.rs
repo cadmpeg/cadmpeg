@@ -2,7 +2,7 @@
 //!
 //! Pure combinatorics over caller-supplied domains; no byte knowledge.
 
-use crate::solve::mesh_quotient::MeshConstraintBudget;
+use cadmpeg_codec_core::decode::WorkBudget;
 use std::collections::{HashSet, VecDeque};
 
 pub(crate) fn domains_have_distinct_matching<'a>(
@@ -21,7 +21,7 @@ pub(crate) enum MatchingEdgeConstraint {
 pub(crate) fn distinct_domain_matching_with_budget<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
     edge_constraint: Option<MatchingEdgeConstraint>,
 ) -> Option<Vec<usize>> {
     let domains = domains.into_iter().collect::<Vec<_>>();
@@ -158,7 +158,7 @@ pub(crate) fn repair_distinct_domain_matching_with_budget<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
     matching: &[usize],
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
 ) -> Option<Vec<usize>> {
     let domains = domains.into_iter().collect::<Vec<_>>();
     if domains.len() != matching.len() || domains.len() > point_count {
@@ -226,7 +226,7 @@ pub(crate) fn retain_distinct_matching_supports(
     domains: &mut [Vec<usize>],
     point_count: usize,
     matching: &[usize],
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
 ) -> Option<bool> {
     if domains.len() != matching.len()
         || domains.len() > point_count

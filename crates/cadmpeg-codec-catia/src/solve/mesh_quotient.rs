@@ -2,6 +2,8 @@
 //!
 //! Closes vertex-coordinate quotients and enumerates face endpoint configurations.
 
+use cadmpeg_codec_core::decode::WorkBudget;
+
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 use crate::families::standard::topology::{
     incidence_cycles, orient_face_cycles, reconstruct_mesh_selection, CoedgeUse, EdgeRow,
@@ -107,7 +109,7 @@ fn enforce_edge_arc_consistency(
     edge_ids: &[usize],
     root_edges: &[Vec<usize>],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
 ) -> bool {
     let support_work = edge_ids
         .iter()
@@ -149,7 +151,7 @@ fn enforce_edge_arc_consistency(
             }
             supported.iter().any(|point| other_domain.contains(point))
         });
-        if budget.is_some_and(|budget| budget.exhausted.get()) || domains[root].is_empty() {
+        if budget.is_some_and(WorkBudget::exhausted) || domains[root].is_empty() {
             return false;
         }
         if domains[root].len() == before {
@@ -173,7 +175,7 @@ fn enforce_edge_arc_consistency_from(
     root_edges: &[Vec<usize>],
     edge_candidates: &[Vec<[usize; 2]>],
     initial_edges: &[usize],
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
 ) -> bool {
     let mut queued = vec![[true; 2]; edges.len()];
     let mut queue = initial_edges
@@ -204,7 +206,7 @@ fn enforce_edge_arc_consistency_from(
                     || (pair[1] == *point && other_domain.contains(&pair[0]))
             })
         });
-        if budget.is_some_and(|budget| budget.exhausted.get()) || domains[root].is_empty() {
+        if budget.is_some_and(WorkBudget::exhausted) || domains[root].is_empty() {
             return false;
         }
         if domains[root].len() == before {
@@ -227,7 +229,7 @@ fn enforce_sparse_endpoint_membership(
     edges: &[[usize; 2]],
     edge_ids: &[usize],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
 ) -> bool {
     let mut ordered = (0..edges.len()).collect::<Vec<_>>();
     ordered.sort_unstable_by_key(|edge| edge_candidates[edge_ids[*edge]].len());
@@ -244,7 +246,7 @@ fn enforce_sparse_endpoint_membership(
             continue;
         }
         let work = support_work.saturating_add(domain_work);
-        if budget.is_some_and(|budget| work > budget.remaining.get()) {
+        if budget.is_some_and(|budget| work > budget.remaining()) {
             continue;
         }
         if budget.is_some_and(|budget| !budget.charge_by(work)) {
@@ -479,7 +481,7 @@ impl MeshCoordinateRootDomains {
         &self,
         edge: usize,
         required: usize,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
         mut valid: impl FnMut([usize; 2]) -> bool,
     ) -> Option<bool> {
         self.edge_candidates.get(edge)?.is_empty().then_some(())?;
@@ -528,7 +530,7 @@ impl MeshCoordinateRootDomains {
     fn coverage_matching(
         domains: &[Vec<usize>],
         point_count: usize,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<Vec<usize>> {
         let mut roots_by_point = vec![Vec::new(); point_count];
         for (root, domain) in domains.iter().enumerate() {
@@ -554,7 +556,7 @@ impl MeshCoordinateRootDomains {
         edge_candidates: &[Vec<[usize; 2]>],
         initial_edges: &[usize],
         mut propagate_all_different: bool,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<(Vec<Vec<usize>>, Vec<usize>)> {
         let mut affected_edges = initial_edges.to_vec();
         let mut coverage_matching = self.coverage_matching.clone();
@@ -636,7 +638,7 @@ impl MeshCoordinateRootDomains {
                 .collect::<Vec<_>>();
             let support_count = affected_domains.iter().map(Vec::len).sum::<usize>();
             let propagation_work = support_count.saturating_mul(4);
-            if budget.is_some_and(|budget| propagation_work > budget.remaining.get()) {
+            if budget.is_some_and(|budget| propagation_work > budget.remaining()) {
                 return Some((domains, coverage_matching));
             }
             retain_distinct_matching_supports(
@@ -675,7 +677,7 @@ impl MeshCoordinateRootDomains {
         &self,
         edge: usize,
         pair: [usize; 2],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<Self> {
         let candidates = self.edge_candidates.get(edge)?;
         if candidates.as_slice() == [pair] {
@@ -709,7 +711,7 @@ impl MeshCoordinateRootDomains {
     pub(crate) fn refine_candidates(
         &self,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<Self> {
         if edge_candidates.len() != self.edge_candidates.len() {
             return None;
@@ -972,7 +974,7 @@ impl MeshQuotient {
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<MeshCoordinateRootDomains> {
         if self.union.len() != edge_candidates.len().saturating_mul(2) {
             return None;
@@ -1108,7 +1110,7 @@ impl MeshQuotient {
         &mut self,
         root: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> bool {
         let edges = self.members[root]
             .iter()
@@ -1122,7 +1124,7 @@ impl MeshQuotient {
         &mut self,
         edges: impl IntoIterator<Item = usize>,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> bool {
         fn enqueue_component_edges(
             root: usize,
@@ -1261,7 +1263,7 @@ impl MeshQuotient {
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<HashMap<usize, usize>> {
         match self.coordinate_root_closure_outcome(point_count, edge_candidates, None, budget) {
             CoordinateRootClosure::Solved(assignment) => Some(assignment),
@@ -1279,7 +1281,7 @@ impl MeshQuotient {
         edge_faces: &[[usize; 2]],
         face_count: usize,
         boundary_domains: &[MeshFaceBoundaryDomain],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<HashMap<usize, usize>> {
         (edge_faces.len() == edge_candidates.len()
             && edge_faces.iter().flatten().all(|face| *face < face_count)
@@ -1305,7 +1307,7 @@ impl MeshQuotient {
         edge_faces: &[[usize; 2]],
         face_count: usize,
         boundary_domains: &[MeshFaceBoundaryDomain],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> CoordinateRootClosure {
         if edge_faces.len() != edge_candidates.len()
             || edge_faces.iter().flatten().any(|face| *face >= face_count)
@@ -1327,7 +1329,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> CoordinateRootClosure {
         self.coordinate_root_closure_outcome_with_component_budget(
             point_count,
@@ -1343,7 +1345,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
         component_search_budget: Option<usize>,
     ) -> CoordinateRootClosure {
         let ambiguous = Cell::new(false);
@@ -1357,9 +1359,7 @@ impl MeshQuotient {
         );
         match result {
             Some(assignment) => CoordinateRootClosure::Solved(assignment),
-            None if budget.is_some_and(|budget| budget.exhausted.get()) => {
-                CoordinateRootClosure::Exhausted
-            }
+            None if budget.is_some_and(WorkBudget::exhausted) => CoordinateRootClosure::Exhausted,
             None if ambiguous.get() => CoordinateRootClosure::Ambiguous,
             None => CoordinateRootClosure::Rejected,
         }
@@ -1370,7 +1370,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
         component_search_budget: Option<usize>,
         ambiguous: &Cell<bool>,
     ) -> Option<HashMap<usize, usize>> {
@@ -1391,7 +1391,7 @@ impl MeshQuotient {
             domains: &[Vec<usize>],
             assigned: &[Option<usize>],
             candidate: (usize, usize),
-            budget: Option<&MeshConstraintBudget>,
+            budget: Option<&WorkBudget<'static>>,
         ) -> bool {
             let directions = |use_: MeshBoundaryEdgeCandidate| match use_.reversed {
                 Some(reversed) => [Some(reversed), None],
@@ -1479,7 +1479,7 @@ impl MeshQuotient {
             global_edge_count: usize,
             assigned: &[Option<usize>],
             candidate: (usize, usize),
-            budget: Option<&MeshConstraintBudget>,
+            budget: Option<&WorkBudget<'static>>,
         ) -> bool {
             fn augment(
                 component: usize,
@@ -1631,7 +1631,7 @@ impl MeshQuotient {
             state_limit: usize,
             exhausted: &mut bool,
             base_degrees: &mut HashMap<(usize, usize), u8>,
-            budget: Option<&MeshConstraintBudget>,
+            budget: Option<&WorkBudget<'static>>,
         ) {
             fn adjust_assignment_degrees(
                 root: usize,
@@ -1681,7 +1681,7 @@ impl MeshQuotient {
                 root_edges: &[Vec<usize>],
                 edge_faces: Option<&[[usize; 2]]>,
                 degrees: &mut HashMap<(usize, usize), u8>,
-                budget: Option<&MeshConstraintBudget>,
+                budget: Option<&WorkBudget<'static>>,
             ) -> bool {
                 if budget.is_some_and(|budget| !budget.charge_by(root_edges[root].len())) {
                     return false;
@@ -1761,7 +1761,7 @@ impl MeshQuotient {
                 |root: usize,
                  assigned: &[Option<usize>],
                  base_degrees: &HashMap<(usize, usize), u8>,
-                 work_budget: Option<&MeshConstraintBudget>| {
+                 work_budget: Option<&WorkBudget<'static>>| {
                     domains[root]
                         .iter()
                         .copied()
@@ -1904,7 +1904,7 @@ impl MeshQuotient {
                             .filter(|(_, point)| point.is_none())
                             .map(|(root, _)| domains[root].len().saturating_add(1))
                             .fold(0usize, usize::saturating_add)
-                            > budget.remaining.get()
+                            > budget.remaining()
                     });
                 let remaining = assigned.iter().filter(|point| point.is_none()).count();
                 let unused = component_points
@@ -1925,8 +1925,7 @@ impl MeshQuotient {
                     if assigned[root].is_some() {
                         continue;
                     }
-                    let work_budget =
-                        budget.map(|budget| MeshConstraintBudget::new(budget.remaining.get()));
+                    let work_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
                     if work_budget.as_ref().is_some_and(|budget| {
                         !budget.charge_by(domains[root].len().saturating_add(1))
                     }) {
@@ -1934,15 +1933,12 @@ impl MeshQuotient {
                         continue;
                     }
                     let values = viable_values(root, assigned, base_degrees, work_budget.as_ref());
-                    if work_budget
-                        .as_ref()
-                        .is_some_and(|budget| budget.exhausted.get())
-                    {
+                    if work_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                         scan_deferred = true;
                         continue;
                     }
                     if let (Some(budget), Some(work_budget)) = (budget, work_budget.as_ref()) {
-                        let work = budget.remaining.get() - work_budget.remaining.get();
+                        let work = budget.remaining() - work_budget.remaining();
                         if !budget.charge_by(work) {
                             *exhausted = true;
                             break;
@@ -2013,7 +2009,7 @@ impl MeshQuotient {
                         continue;
                     }
                     if let Some(budget) = budget {
-                        budget.exhausted.set(true);
+                        budget.exhaust();
                     }
                     *exhausted = true;
                     break None;
@@ -2064,8 +2060,7 @@ impl MeshQuotient {
                     ));
                     continue;
                 }
-                let matching_budget =
-                    budget.map(|budget| MeshConstraintBudget::new(budget.remaining.get()));
+                let matching_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
                 let support_domains = point_supports
                     .iter()
                     .map(|(_, roots)| roots.as_slice())
@@ -2088,10 +2083,7 @@ impl MeshQuotient {
                         )
                         .is_none()
                         {
-                            if matching_budget
-                                .as_ref()
-                                .is_some_and(|budget| budget.exhausted.get())
-                            {
+                            if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                                 break;
                             }
                             matching_forced = Some((point_supports[support].0, root));
@@ -2112,10 +2104,7 @@ impl MeshQuotient {
                                 )
                                 .is_none()
                                 {
-                                    if matching_budget
-                                        .as_ref()
-                                        .is_some_and(|budget| budget.exhausted.get())
-                                    {
+                                    if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                                         break 'supports;
                                     }
                                     unsupported_matches.insert((root, point_supports[support].0));
@@ -2126,12 +2115,12 @@ impl MeshQuotient {
                 }
                 if matching_budget
                     .as_ref()
-                    .is_none_or(|budget| !budget.exhausted.get())
+                    .is_none_or(|budget| !budget.exhausted())
                 {
                     if let (Some(budget), Some(matching_budget)) =
                         (budget, matching_budget.as_ref())
                     {
-                        let work = budget.remaining.get() - matching_budget.remaining.get();
+                        let work = budget.remaining() - matching_budget.remaining();
                         if !budget.charge_by(work) {
                             *exhausted = true;
                             break None;
@@ -2299,7 +2288,7 @@ impl MeshQuotient {
             };
             if *states >= state_limit {
                 if let Some(budget) = budget {
-                    budget.exhausted.set(true);
+                    budget.exhaust();
                 }
                 *exhausted = true;
                 rollback(
@@ -2515,7 +2504,7 @@ impl MeshQuotient {
                     });
                 base.saturating_add(state_work.saturating_mul(state_limit))
             });
-            let component_budget = component_limit.map(MeshConstraintBudget::new);
+            let component_budget = component_limit.map(WorkBudget::new);
             let budget = component_budget.as_ref().or(shared_budget);
             let local_edges = edge_ids
                 .iter()
@@ -2583,7 +2572,7 @@ impl MeshQuotient {
                 return None;
             }
             let mut arc_domains = local_domains.clone();
-            let arc_budget = budget.map(|budget| MeshConstraintBudget::new(budget.remaining.get()));
+            let arc_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
             let arc_consistent = enforce_edge_arc_consistency(
                 &mut arc_domains,
                 &local_edges,
@@ -2594,16 +2583,13 @@ impl MeshQuotient {
             );
             if arc_consistent {
                 if let (Some(budget), Some(arc_budget)) = (budget, arc_budget.as_ref()) {
-                    let work = budget.remaining.get() - arc_budget.remaining.get();
+                    let work = budget.remaining() - arc_budget.remaining();
                     if !budget.charge_by(work) {
                         return None;
                     }
                 }
                 local_domains = arc_domains;
-            } else if arc_budget
-                .as_ref()
-                .is_none_or(|budget| !budget.exhausted.get())
-            {
+            } else if arc_budget.as_ref().is_none_or(|budget| !budget.exhausted()) {
                 return None;
             }
             if local_domains
@@ -2641,12 +2627,9 @@ impl MeshQuotient {
                 budget,
             );
             if exhausted {
-                if component_budget
-                    .as_ref()
-                    .is_some_and(|budget| budget.exhausted.get())
-                {
+                if component_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                     if let Some(shared_budget) = shared_budget {
-                        shared_budget.exhausted.set(true);
+                        shared_budget.exhaust();
                     }
                 }
                 return None;
@@ -2682,7 +2665,7 @@ impl MeshQuotient {
         &self,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> bool {
         fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
             use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
@@ -2949,7 +2932,7 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         oriented_edges: &HashSet<usize>,
         limit: usize,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
         fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
             use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
@@ -2975,7 +2958,7 @@ impl MeshQuotient {
             oriented: &mut HashSet<usize>,
             gaugeable_edges: &HashSet<usize>,
             limit: usize,
-            budget: Option<&MeshConstraintBudget>,
+            budget: Option<&WorkBudget<'static>>,
         ) {
             if output.len() >= limit {
                 return;
@@ -3277,7 +3260,7 @@ impl MeshQuotient {
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<HashMap<usize, usize>> {
         let mut solutions =
             self.point_assignments_with_budget(point_count, edge_candidates, 2, budget);
@@ -3288,7 +3271,7 @@ impl MeshQuotient {
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> bool {
         !self
             .point_assignments_with_budget(point_count, edge_candidates, 1, budget)
@@ -3300,7 +3283,7 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         solution_limit: usize,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Vec<HashMap<usize, usize>> {
         type PointNeighbors = HashMap<usize, HashSet<usize>>;
 
@@ -3374,7 +3357,7 @@ impl MeshQuotient {
             used: &mut HashSet<usize>,
             solutions: &mut Vec<Vec<usize>>,
             solution_limit: usize,
-            budget: Option<&MeshConstraintBudget>,
+            budget: Option<&WorkBudget<'static>>,
         ) {
             fn rollback(
                 assigned: &mut [Option<usize>],
@@ -3579,7 +3562,7 @@ fn materialize_deferred_quotient_option(
     base_nodes: &[usize],
     affected_edges: impl IntoIterator<Item = usize>,
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<MeshQuotient> {
     let mut materialized = base.clone();
     for local_node in 0..base_nodes.len() {
@@ -3598,7 +3581,7 @@ fn deferred_face_quotient_options_limited(
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &MeshQuotient,
     limit: usize,
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<DeferredFaceQuotientOptions> {
     #[derive(Clone, Copy)]
     struct Gap {
@@ -3623,9 +3606,9 @@ fn deferred_face_quotient_options_limited(
         base_nodes: &[usize],
         output: &mut Vec<MeshQuotient>,
         limit: usize,
-        budget: &MeshConstraintBudget,
+        budget: &WorkBudget<'static>,
     ) {
-        if output.len() >= limit || budget.exhausted.get() {
+        if output.len() >= limit || budget.exhausted() {
             return;
         }
         if at == target {
@@ -3689,7 +3672,7 @@ fn deferred_face_quotient_options_limited(
                     limit,
                     budget,
                 );
-                if output.len() >= limit || budget.exhausted.get() {
+                if output.len() >= limit || budget.exhausted() {
                     return;
                 }
             }
@@ -3709,9 +3692,9 @@ fn deferred_face_quotient_options_limited(
         base_nodes: &[usize],
         output: &mut Vec<MeshQuotient>,
         limit: usize,
-        budget: &MeshConstraintBudget,
+        budget: &WorkBudget<'static>,
     ) {
-        if output.len() >= limit || budget.exhausted.get() {
+        if output.len() >= limit || budget.exhausted() {
             return;
         }
         if gap == gaps.len() {
@@ -3767,7 +3750,7 @@ fn deferred_face_quotient_options_limited(
                 limit,
                 budget,
             );
-            if output.len() >= limit || budget.exhausted.get() {
+            if output.len() >= limit || budget.exhausted() {
                 return;
             }
         }
@@ -3894,7 +3877,7 @@ fn deferred_face_quotient_options_limited(
         limit,
         budget,
     );
-    (!budget.exhausted.get()).then_some(DeferredFaceQuotientOptions {
+    (!budget.exhausted()).then_some(DeferredFaceQuotientOptions {
         alternatives: output,
         base_nodes,
     })
@@ -3904,7 +3887,7 @@ fn propagate_common_deferred_quotients(
     mut options: DeferredFaceQuotientOptions,
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<()> {
     let node_count = options.base_nodes.len();
     let mut equivalence_classes = HashMap::<Vec<usize>, Vec<usize>>::new();
@@ -3958,7 +3941,7 @@ fn propagate_common_deferred_quotients(
 fn common_supported_corner_equations(
     quotient: &mut MeshQuotient,
     assignments: &[MeshFaceBoundaryAssignment],
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<HashSet<[usize; 2]>> {
     fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
         use_.edge
@@ -4174,7 +4157,7 @@ pub(crate) fn propagate_common_ordered_face_quotients(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<()> {
     const MAX_FACE_OPTIONS: usize = 4_096;
     const MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS: usize = 64;
@@ -4190,7 +4173,7 @@ pub(crate) fn propagate_common_ordered_face_quotients(
         let before = quotient.monotone_measure();
         for &face in &face_order {
             let domain = &domains[face];
-            let face_budget = MeshConstraintBudget::new(match domain {
+            let face_budget = WorkBudget::new(match domain {
                 MeshFaceBoundaryDomain::DeferredValidation(_) => {
                     MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS
                 }
@@ -4279,7 +4262,7 @@ pub(crate) fn propagate_common_ordered_face_quotients(
                     return None;
                 }
             }
-            if face_budget.exhausted.get() {
+            if face_budget.exhausted() {
                 continue;
             }
             let mut alternatives = Vec::new();
@@ -4296,7 +4279,7 @@ pub(crate) fn propagate_common_ordered_face_quotients(
                     MAX_FACE_OPTIONS + 1,
                     Some(&face_budget),
                 );
-                if face_budget.exhausted.get() {
+                if face_budget.exhausted() {
                     truncated = true;
                     break;
                 }
@@ -4355,13 +4338,13 @@ pub(crate) fn bounded_unordered_cycle_assignments(
     edges: &[usize],
     quotient: &MeshQuotient,
     limit: usize,
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<Vec<MeshFaceBoundaryAssignment>> {
     struct Search<'a> {
         edges: &'a [usize],
         compatible: &'a HashSet<(usize, usize)>,
         limit: usize,
-        budget: &'a MeshConstraintBudget,
+        budget: &'a WorkBudget<'static>,
         assignments: Vec<MeshFaceBoundaryAssignment>,
     }
 
@@ -4467,7 +4450,7 @@ fn advance_boundary_component_states(
     states: &[MeshQuotientGaugeState],
     edge_candidates: &[Vec<[usize; 2]>],
     limit: usize,
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<Vec<MeshQuotientGaugeState>> {
     let mut next = Vec::new();
     let mut signatures = HashSet::new();
@@ -4564,7 +4547,7 @@ fn advance_boundary_component_states(
                 return None;
             }
         }
-        if budget.exhausted.get() {
+        if budget.exhausted() {
             return None;
         }
     }
@@ -4653,7 +4636,7 @@ pub(crate) fn propagate_common_boundary_components(
             selected_edges.extend(mesh_boundary_domain_edges(&domains[face]));
             ordered_faces.push(face);
         }
-        let budget = MeshConstraintBudget::new(MAX_COMPONENT_OPERATIONS);
+        let budget = WorkBudget::new(MAX_COMPONENT_OPERATIONS);
         for _ in 0..MAX_COMPONENT_ROUNDS {
             let before = quotient.monotone_measure();
             let mut cursor = 0usize;
@@ -4874,7 +4857,7 @@ pub(crate) fn possible_face_choices_with_limit(
             .checked_add(usize::from(if end { !reversed } else { reversed }))
     }
 
-    let budget = MeshConstraintBudget::new(limit);
+    let budget = WorkBudget::new(limit);
     let choices = faces
         .iter()
         .zip(face_equations)
@@ -4950,7 +4933,7 @@ pub(crate) fn possible_face_choices_with_limit(
             choices
         })
         .collect();
-    (!budget.exhausted.get()).then_some(choices)
+    (!budget.exhausted()).then_some(choices)
 }
 
 #[cfg(test)]
@@ -5008,7 +4991,7 @@ pub(crate) fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBou
 
 pub(crate) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     assignment: &MeshFaceBoundaryAssignment,
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<bool> {
@@ -5102,7 +5085,7 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
 pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<bool> {
     mesh_assignment_endpoint_cycles_viable_by(
@@ -5120,7 +5103,7 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
 
 pub(crate) fn mesh_assignment_endpoint_cycle_support_by<'a>(
     assignment: &MeshFaceBoundaryAssignment,
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
@@ -5131,7 +5114,7 @@ pub(crate) fn mesh_assignment_endpoint_cycle_support_by<'a>(
     fn compose_relations(
         left: &EndpointRelation,
         right: &EndpointRelation,
-        budget: Option<&MeshConstraintBudget>,
+        budget: Option<&WorkBudget<'static>>,
     ) -> Option<EndpointRelation> {
         let mut composed = EndpointRelation::new();
         let mut state_count = 0usize;
@@ -5163,7 +5146,7 @@ pub(crate) fn mesh_assignment_endpoint_cycle_support_by<'a>(
             .collect()
     }
 
-    let charge = || budget.is_none_or(MeshConstraintBudget::charge);
+    let charge = || budget.is_none_or(WorkBudget::charge);
     let mut assignment_support = HashMap::<usize, HashSet<[usize; 2]>>::new();
     for boundary in &assignment.boundaries {
         if boundary.is_empty() {
@@ -5250,7 +5233,7 @@ pub(crate) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                                 .is_some_and(|ends| ends.contains(&start))
                         })
                     });
-                if budget.is_some_and(|budget| budget.exhausted.get()) {
+                if budget.is_some_and(WorkBudget::exhausted) {
                     return None;
                 }
                 if supported {
@@ -5286,7 +5269,7 @@ fn mesh_assignment_endpoint_cycles_viable_with(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
     required: Option<(usize, [usize; 2])>,
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'static>>,
 ) -> Option<bool> {
     mesh_assignment_endpoint_cycles_viable_where(
         assignment,
@@ -5309,40 +5292,11 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable(
         .unwrap_or(true)
 }
 
-pub(crate) struct MeshConstraintBudget {
-    remaining: Cell<usize>,
-    pub(crate) exhausted: Cell<bool>,
-}
-
-impl MeshConstraintBudget {
-    pub(crate) fn new(limit: usize) -> Self {
-        Self {
-            remaining: Cell::new(limit),
-            exhausted: Cell::new(false),
-        }
-    }
-
-    pub(crate) fn charge(&self) -> bool {
-        self.charge_by(1)
-    }
-
-    pub(crate) fn charge_by(&self, work: usize) -> bool {
-        let remaining = self.remaining.get();
-        if work > remaining {
-            self.exhausted.set(true);
-            false
-        } else {
-            self.remaining.set(remaining - work);
-            true
-        }
-    }
-}
-
 pub(crate) fn mesh_face_endpoint_configurations(
     assignments: &[MeshFaceBoundaryAssignment],
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<MeshFaceEndpointConfigurations> {
     fn insert_pair(
         configuration: &mut MeshFaceEndpointConfiguration,
@@ -5364,7 +5318,7 @@ pub(crate) fn mesh_face_endpoint_configurations(
         edge_candidates: &[Vec<[usize; 2]>],
         selected: &[Option<[usize; 2]>],
         work: &mut usize,
-        budget: &MeshConstraintBudget,
+        budget: &WorkBudget<'static>,
     ) -> Option<MeshFaceEndpointConfigurations> {
         let charge = |work: &mut usize| {
             *work = work.checked_add(1)?;
@@ -5489,7 +5443,7 @@ pub(crate) fn prune_mesh_endpoint_pair_support_with_limit(
     edge_candidates: &mut [Vec<[usize; 2]>],
     limit: usize,
 ) -> bool {
-    let budget = MeshConstraintBudget::new(limit);
+    let budget = WorkBudget::new(limit);
     'fixpoint: loop {
         let mut changed = false;
         for face in assignments.iter_mut() {
@@ -5503,7 +5457,7 @@ pub(crate) fn prune_mesh_endpoint_pair_support_with_limit(
                 )
                 .unwrap_or(true)
             });
-            if budget.exhausted.get() {
+            if budget.exhausted() {
                 // Pair-support pruning is optional. Every removal made before
                 // exhaustion was proved locally; the independently bounded
                 // quotient search can continue from that sound partial result.
@@ -5554,7 +5508,7 @@ pub(crate) fn prune_mesh_endpoint_pair_support_with_limit(
                     })
                 })
             });
-            if budget.exhausted.get() {
+            if budget.exhausted() {
                 // Do not turn incomplete propagation into a contradiction.
                 return true;
             }
@@ -5788,7 +5742,7 @@ impl MeshSelectionSearch<'_> {
 
     #[cfg(test)]
     pub(crate) fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
-        let budget = MeshConstraintBudget::new(usize::MAX);
+        let budget = WorkBudget::new(usize::MAX);
         self.propagate_forced_face_equations_from(quotient, None, &budget)
     }
 
@@ -5796,7 +5750,7 @@ impl MeshSelectionSearch<'_> {
         &self,
         quotient: &mut MeshQuotient,
         changed_edges: Option<&HashSet<usize>>,
-        budget: &MeshConstraintBudget,
+        budget: &WorkBudget<'static>,
     ) -> bool {
         let mut queue = self
             .selected
@@ -5847,7 +5801,7 @@ impl MeshSelectionSearch<'_> {
                         &self.assignments[face],
                         budget,
                     ) else {
-                        return budget.exhausted.get();
+                        return budget.exhausted();
                     };
                     let equations = common.into_iter().collect::<Vec<_>>();
                     let mut cache = self.face_equation_cache.borrow_mut();
@@ -6000,7 +5954,7 @@ impl MeshSelectionSearch<'_> {
         &self,
         quotient: &MeshQuotient,
         changed_edges: &HashSet<usize>,
-        propagation_budget: &MeshConstraintBudget,
+        propagation_budget: &WorkBudget<'static>,
     ) -> Option<MeshQuotient> {
         let mut measured = quotient.clone();
         if !self.propagate_forced_face_equations_from(
@@ -6026,8 +5980,8 @@ impl MeshSelectionSearch<'_> {
     }
 
     pub(crate) fn search_with_limit(&mut self, quotient: &MeshQuotient, limit: usize) {
-        let budget = MeshConstraintBudget::new(limit);
-        let propagation_budget = MeshConstraintBudget::new(limit);
+        let budget = WorkBudget::new(limit);
+        let propagation_budget = WorkBudget::new(limit);
         self.search_from_state(quotient, false, &budget, &propagation_budget);
     }
 
@@ -6035,8 +5989,8 @@ impl MeshSelectionSearch<'_> {
         &mut self,
         quotient: &MeshQuotient,
         prepared: bool,
-        budget: &MeshConstraintBudget,
-        propagation_budget: &MeshConstraintBudget,
+        budget: &WorkBudget<'static>,
+        propagation_budget: &WorkBudget<'static>,
     ) {
         const MAX_SELECTION_STATES: usize = 512;
 
@@ -6155,7 +6109,7 @@ impl MeshSelectionSearch<'_> {
                 ))
             })
             .min();
-        if budget.exhausted.get() {
+        if budget.exhausted() {
             self.exhausted = true;
             return;
         }
@@ -6166,7 +6120,7 @@ impl MeshSelectionSearch<'_> {
                 self.edge_candidates,
                 Some(budget),
             ) else {
-                if budget.exhausted.get() {
+                if budget.exhausted() {
                     self.exhausted = true;
                 }
                 return;
@@ -6283,7 +6237,7 @@ impl MeshSelectionSearch<'_> {
                 remaining,
                 Some(budget),
             );
-            if budget.exhausted.get() {
+            if budget.exhausted() {
                 self.exhausted = true;
                 return;
             }
@@ -6327,7 +6281,7 @@ impl MeshSelectionSearch<'_> {
                     // `prepare_selected_branch` has already applied the recursive
                     // entry preflight to this quotient.
                     self.search_from_state(&next_quotient, true, budget, propagation_budget);
-                } else if budget.exhausted.get() {
+                } else if budget.exhausted() {
                     self.exhausted = true;
                 }
             }
@@ -6642,12 +6596,12 @@ fn resolve_standard_mesh_endpoint_candidates(
     else {
         return MeshEndpointResolve::Rejected;
     };
-    let option_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let option_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     for face in &mut assignments {
         face.retain(|assignment| {
             quotient.assignment_has_option(assignment, &edge_candidates, Some(&option_budget))
         });
-        if option_budget.exhausted.get() {
+        if option_budget.exhausted() {
             return MeshEndpointResolve::Exhausted;
         }
         if face.is_empty() {
@@ -6786,7 +6740,7 @@ where
         let mut mesh_quotient =
             initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)?;
         let completed_edge_candidates = if edge_candidates.iter().any(Vec::is_empty) {
-            let common_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let common_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut propagated_quotient = mesh_quotient.clone();
             match propagate_common_ordered_face_quotients(
                 &mesh_domains,
@@ -6795,7 +6749,7 @@ where
                 &common_budget,
             ) {
                 Some(()) => mesh_quotient = propagated_quotient,
-                None if common_budget.exhausted.get() => {}
+                None if common_budget.exhausted() => {}
                 None => return None,
             }
             propagate_common_boundary_components(
@@ -7021,7 +6975,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
     let boundary_domains = (0..COMPONENT_COUNT)
         .map(|face| MeshFaceBoundaryDomain::UnorderedFullCycle((face * 3..face * 3 + 3).collect()))
         .collect::<Vec<_>>();
-    let shared_budget = MeshConstraintBudget::new(1);
+    let shared_budget = WorkBudget::new(1);
     let mut shared = quotient.clone();
     assert_eq!(
         shared.coordinate_root_closure_outcome(
@@ -7033,7 +6987,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
         CoordinateRootClosure::Exhausted
     );
 
-    let shared_incidence_budget = MeshConstraintBudget::new(100);
+    let shared_incidence_budget = WorkBudget::new(100);
     let mut shared_incidence = quotient.clone();
     assert!(shared_incidence
         .close_coordinate_roots_for_incidence_with_budget(
@@ -7045,9 +6999,9 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
             Some(&shared_incidence_budget),
         )
         .is_none());
-    assert!(shared_incidence_budget.exhausted.get());
+    assert!(shared_incidence_budget.exhausted());
 
-    let preparation_budget = MeshConstraintBudget::new(100);
+    let preparation_budget = WorkBudget::new(100);
     let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
         COMPONENT_COUNT * 3,
         &candidates,
@@ -7060,5 +7014,5 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
         matches!(outcome, CoordinateRootClosure::Solved(_)),
         "{outcome:?}"
     );
-    assert!(!preparation_budget.exhausted.get());
+    assert!(!preparation_budget.exhausted());
 }

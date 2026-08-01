@@ -9,8 +9,9 @@ use crate::families::standard::fbb::{
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
-use crate::solve::mesh_quotient::{MeshConstraintBudget, MAX_MESH_CONSTRAINT_OPERATIONS};
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::UnionFind;
+use cadmpeg_codec_core::decode::WorkBudget;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -1853,7 +1854,7 @@ pub fn parse_standard_mesh_selection(
 fn boundary_endpoint_support(
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'static>,
 ) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
     #[derive(Clone, Copy)]
     struct State {
@@ -2005,7 +2006,7 @@ pub fn standard_mesh_prune_endpoint_candidates(
         })
         .collect::<Vec<_>>();
     let mut faces = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     loop {
         let before = (
             faces.iter().map(Vec::len).sum::<usize>(),
