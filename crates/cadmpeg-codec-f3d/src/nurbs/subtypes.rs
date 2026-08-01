@@ -47,7 +47,7 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: usize) -> Vec<(usize, 
         match bytes[pos] {
             0x0f => {
                 if depth == 0 && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
-                    let len = usize::from(bytes[pos + 2]);
+                    let len = usize::from(*bytes.get(pos + 2).unwrap_or(&0));
                     if let Some(name) = bytes.get(pos + 3..pos + 3 + len) {
                         owned.push((pos, name));
                     }
