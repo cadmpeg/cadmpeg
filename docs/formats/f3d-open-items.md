@@ -348,6 +348,14 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A writer must emit the value the source would have written. Without the bit meanings, a neutral model cannot choose between `0x0`, `0x4`, and `0x8`.
 
+### DR-30. `sketch_attrib_def` tuple field one
+
+**Question.** What does field one of the `sketch_attrib_def` six-integer tuple hold?
+
+**Known.** `f3d.md` §6 "`sketch_attrib_def` is coedge-owned" names it `ref_b` and gives its position. It is zero in most tuples; the values that are not zero are large and repeat across the tuples of one stream. Field three at the same width is zero in every tuple.
+
+**Need.** The decoder accepts only the zero form, so a tuple with a non-zero `ref_b` yields no sketch-curve link and a writer cannot restore the value.
+
 ## 3. External references
 
 ### XR-01. `neutronData` with a different GUID

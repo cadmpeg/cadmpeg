@@ -3,6 +3,7 @@
 
 use crate::records::{
     CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    SKETCH_LINK_SENSE_UNCONSTRAINED,
 };
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -601,7 +602,7 @@ fn native_sketch_link_attribute(
         &format!(
             "{} 0 {} 0 {} {}",
             link.sketch_curve_id,
-            link.signed_reference.unwrap_or(-1),
+            link.sense.unwrap_or(SKETCH_LINK_SENSE_UNCONSTRAINED),
             link.role,
             link.closure
         ),

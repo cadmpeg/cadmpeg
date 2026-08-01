@@ -2967,7 +2967,7 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     bytes
 }
 
-fn synthetic_geometry_with_sketch_link_smbh() -> Vec<u8> {
+fn synthetic_geometry_with_sketch_link_smbh(tuple: &str) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -2990,7 +2990,7 @@ fn synthetic_geometry_with_sketch_link_smbh() -> Vec<u8> {
     for value in [1, 1, 3] {
         t_long(&mut attribute, value);
     }
-    push_u8_string(&mut attribute, "113 0 1 0 2 3");
+    push_u8_string(&mut attribute, tuple);
     t_end(&mut attribute);
     bytes.splice(delta..delta, attribute);
     bytes
@@ -8614,7 +8614,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         id: "generated:sketch-curve-link#0".into(),
         coedge: coedge_id.clone(),
         sketch_curve_id: 113,
-        signed_reference: Some(1),
+        sense: Some(1),
         role: 2,
         closure: 3,
     }];
@@ -8663,7 +8663,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     }));
     assert_eq!(native.sketch_curve_links.len(), 1);
     assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
-    assert_eq!(native.sketch_curve_links[0].signed_reference, Some(1));
+    assert_eq!(native.sketch_curve_links[0].sense, Some(1));
     assert_eq!(native.sketch_curve_links[0].role, 2);
     assert_eq!(native.sketch_curve_links[0].closure, 3);
     assert_eq!(native.creation_timestamps.len(), 5);
@@ -8715,7 +8715,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
             id: format!("generated:sketch-curve-link#{ordinal}"),
             coedge: coedge.clone(),
             sketch_curve_id: 113 + ordinal,
-            signed_reference: Some(1),
+            sense: Some(1),
             role: 2,
             closure: 3,
         })
@@ -22832,7 +22832,7 @@ fn generated_f3d_rewrites_creation_timestamp() {
 
 #[test]
 fn decode_transfers_generated_sketch_curve_link() {
-    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh());
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh("113 0 1 0 2 3"));
     let result = F3dCodec
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
@@ -22844,7 +22844,51 @@ fn decode_transfers_generated_sketch_curve_link() {
         .unwrap();
     assert_eq!(link.coedge.0, "f3d:brep:entity#7");
     assert_eq!(link.sketch_curve_id, 113);
-    assert_eq!(link.signed_reference, Some(1));
+    assert_eq!(link.sense, Some(1));
+    assert_eq!((link.role, link.closure), (2, 3));
+}
+
+#[test]
+fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
+    use crate::records::SketchCurveLink;
+
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
+        "113 0 4294967295 0 2 3",
+    ));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        f3d_native(&decoded.ir).sketch_curve_links[0].sense,
+        None,
+        "4294967295 is the disabled sense, not a stored one"
+    );
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let coedge = source_less.model.coedges[0].id.clone();
+    f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
+        id: "generated:sketch-curve-link#0".into(),
+        coedge,
+        sketch_curve_id: 113,
+        sense: None,
+        role: 2,
+        closure: 3,
+    }];
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less sketch-link encode");
+    assert!(
+        encoded
+            .windows(b"113 0 4294967295 0 2 3".len())
+            .any(|window| window == b"113 0 4294967295 0 2 3"),
+        "the writer must re-emit the disabled sense in its source spelling"
+    );
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less sketch-link round trip");
+    let link = &f3d_native(&round_trip.ir).sketch_curve_links[0];
+    assert_eq!((link.sketch_curve_id, link.sense), (113, None));
     assert_eq!((link.role, link.closure), (2, 3));
 }
 

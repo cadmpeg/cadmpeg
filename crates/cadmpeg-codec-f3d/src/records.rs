@@ -12,6 +12,10 @@ use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
 
+/// The `sketch_attrib_def` sense value that constrains nothing, written as the
+/// unsigned decimal spelling of `0xFFFFFFFF`.
+pub(crate) const SKETCH_LINK_SENSE_UNCONSTRAINED: i64 = 0xFFFF_FFFF;
+
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchCurveLink {
@@ -21,10 +25,10 @@ pub struct SketchCurveLink {
     pub coedge: CoedgeId,
     /// Numeric design-entity id of the source sketch-curve record.
     pub sketch_curve_id: i64,
-    /// Signed variant of `sketch_curve_id` carrying orientation of the sketch curve
-    /// relative to the coedge, when the source record encoded one.
+    /// Which of the sketch curve's two senses this link takes, `0` or `1`.
+    /// Absent when the source record leaves the sense unconstrained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signed_reference: Option<i64>,
+    pub sense: Option<i64>,
     /// Source role tag distinguishing how the sketch curve participates in the link
     /// (e.g. profile edge vs. construction reference).
     pub role: i64,

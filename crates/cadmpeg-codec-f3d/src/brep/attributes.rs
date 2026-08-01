@@ -5,6 +5,7 @@
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::records::{
     CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    SKETCH_LINK_SENSE_UNCONSTRAINED,
 };
 use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -44,14 +45,14 @@ pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCur
                 .take(6)
                 .collect()
         });
-    let [sketch_curve_id, 0, signed_reference, 0, role, closure] = fields.as_slice() else {
+    let [sketch_curve_id, 0, sense, 0, role, closure] = fields.as_slice() else {
         return None;
     };
     Some(SketchCurveLink {
         id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
         coedge: coedge.clone(),
         sketch_curve_id: *sketch_curve_id,
-        signed_reference: (*signed_reference != -1).then_some(*signed_reference),
+        sense: (*sense != SKETCH_LINK_SENSE_UNCONSTRAINED).then_some(*sense),
         role: *role,
         closure: *closure,
     })
