@@ -7768,3 +7768,6 @@ fn decode_retains_post_terminate_physical_record() {
         8
     );
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

@@ -5925,3 +5925,6 @@ fn inspects_and_closes_physical_ledger() {
         );
     }
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

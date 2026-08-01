@@ -19601,3 +19601,6 @@ fn every_decode_path_populates_v1_annotations() {
         &container_only.source_fidelity.annotations,
     );
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

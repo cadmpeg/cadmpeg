@@ -9716,3 +9716,6 @@ fn inspect_summary_has_layout_and_census_notes() {
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

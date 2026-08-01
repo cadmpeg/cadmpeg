@@ -21238,3 +21238,6 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
         sorted_point_positions(&second)
     );
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

@@ -3510,3 +3510,6 @@ fn typed_class_constants_preserve_canonical_uuid_display() {
         "f09ba4d9-455b-42c3-ba3b-e6ccacef853b"
     );
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

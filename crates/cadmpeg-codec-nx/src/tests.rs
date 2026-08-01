@@ -13579,6 +13579,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(losses[5].message.contains("no sketch constraints"));
 }
 
+#[path = "integration_tests.rs"]
+mod integration_tests;
+
 #[test]
 fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     let part = zlib_compress_at_level(&partition_stream(), 6);

@@ -21120,3 +21120,6 @@ fn f3z_prefix_detects_as_f3d() {
         Confidence::High
     );
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;
