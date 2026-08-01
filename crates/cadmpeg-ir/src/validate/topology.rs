@@ -1368,8 +1368,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralCurveDefinition::Deformable {
                 context, source, ..
             } => {
-                if !ids.curves.contains(&source.0) {
-                    ref_error(findings, &procedural.id.0, "curve", &source.0);
+                if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
                 }
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {

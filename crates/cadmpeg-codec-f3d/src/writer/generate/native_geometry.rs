@@ -4622,17 +4622,6 @@ pub(crate) fn native_procedural_curve(
         data,
     } = &procedural.definition
     {
-        let source = target
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == *source)
-            .ok_or_else(|| CodecError::Malformed("deformable source curve is missing".into()))?;
-        let source_range = [
-            source_parameter_range[0].unwrap_or(context.parameter_range[0]),
-            source_parameter_range[1].unwrap_or(context.parameter_range[1]),
-        ];
-        let source_curve = native_interval_curve(&source.geometry, source_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "defm_int_cur")?;
@@ -4644,7 +4633,32 @@ pub(crate) fn native_procedural_curve(
             Some(solved_cache),
             procedural.cache_fit_tolerance,
         )?;
-        native_nurbs_curve(bytes, &source_curve)?;
+        match source {
+            cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve } => {
+                let source = target
+                    .model
+                    .curves
+                    .iter()
+                    .find(|candidate| candidate.id == *curve)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("deformable source curve is missing".into())
+                    })?;
+                let source_range = [
+                    source_parameter_range[0].unwrap_or(context.parameter_range[0]),
+                    source_parameter_range[1].unwrap_or(context.parameter_range[1]),
+                ];
+                let source_curve = native_interval_curve(&source.geometry, source_range)?;
+                native_nurbs_curve(bytes, &source_curve)?;
+            }
+            cadmpeg_ir::geometry::DeformableCurveSource::NativeReference { flag, index } => {
+                native_ident(bytes, "intcurve")?;
+                bytes.push(native_bool(*flag));
+                bytes.push(0x0f);
+                native_ident(bytes, "ref")?;
+                native_i64(bytes, *index);
+                bytes.push(0x10);
+            }
+        }
         for bound in source_parameter_range {
             native_optional_f64(bytes, *bound);
         }

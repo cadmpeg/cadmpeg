@@ -155,9 +155,14 @@ pub(crate) struct EmbeddedDeformable {
     pub(crate) pcurves: [Option<NurbsPcurve>; 2],
     pub(crate) parameter_range: [f64; 2],
     pub(crate) discontinuities: [Vec<f64>; 3],
-    pub(crate) source: NurbsCurve,
+    pub(crate) source: EmbeddedDeformableSource,
     pub(crate) source_parameter_range: [Option<f64>; 2],
     pub(crate) data: EmbeddedDeformableData,
+}
+
+pub(crate) enum EmbeddedDeformableSource {
+    Curve(NurbsCurve),
+    NativeReference { flag: bool, index: i64 },
 }
 
 /// A procedural curve cache together with its native subtype and fit contract.
@@ -377,13 +382,27 @@ fn decode_embedded_deformable(
         active_bytes,
         tables,
     )?;
-    let source = decode_embedded_base_curve_resolving_refs(
+    let source_start = position;
+    let source = if let Some(curve) = decode_embedded_base_curve_resolving_refs(
         bytes,
         &mut position,
         int_width,
         active_bytes,
         tables,
-    )?;
+    ) {
+        EmbeddedDeformableSource::Curve(curve)
+    } else {
+        position = source_start;
+        (take_native_ident(bytes, &mut position)?.as_str() == "intcurve").then_some(())?;
+        let flag = take_bool(bytes, &mut position)?;
+        let reference = position;
+        let marker = b"\x0f\x0d\x03ref\x04";
+        bytes.get(reference..)?.starts_with(marker).then_some(())?;
+        let index = read_int(bytes, reference + marker.len(), int_width)?;
+        let reference_span = subtype_span(bytes, reference, int_width)?;
+        position = reference + reference_span.len();
+        EmbeddedDeformableSource::NativeReference { flag, index }
+    };
     let source_parameter_range = [
         take_optional_range_value(bytes, &mut position)?,
         take_optional_range_value(bytes, &mut position)?,

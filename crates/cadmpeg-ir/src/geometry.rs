@@ -2807,6 +2807,24 @@ pub enum DeformableCurveData {
     },
 }
 
+/// Source slot of a deformable native intcurve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeformableCurveSource {
+    /// Source geometry resolved to a neutral curve carrier.
+    Curve {
+        /// Curve being deformed.
+        curve: CurveId,
+    },
+    /// Native intcurve reference whose target is absent from the active subtype table.
+    NativeReference {
+        /// Boolean stored before the reference scope.
+        flag: bool,
+        /// Integer stored by the native `ref` subtype.
+        index: i64,
+    },
+}
+
 /// Neutral semantics for a procedural curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -2946,8 +2964,8 @@ pub enum ProceduralCurveDefinition {
         context: IntcurveSupportContext,
         /// Cache-first serializer fields surrounding the solved curve cache.
         cache_first: CacheFirstCurveForm,
-        /// Curve being deformed.
-        source: CurveId,
+        /// Curve being deformed or its unresolved native reference.
+        source: DeformableCurveSource,
         /// Optional native bounds following the source curve.
         source_parameter_range: [Option<f64>; 2],
         /// Discriminator-specific deformation payload.

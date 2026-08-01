@@ -2746,12 +2746,21 @@ fn emit_carrier_curve(
                     periodic: pcurve.periodic,
                 })
             });
-            let source = CurveId(format!("f3d:brep:procedural_curve#{i}:deformable_source"));
-            out.curves.push(Curve {
-                id: source.clone(),
-                geometry: CurveGeometry::Nurbs(embedded.source),
-                source_object: None,
-            });
+            let source = match embedded.source {
+                crate::nurbs::proc_curve::EmbeddedDeformableSource::Curve(geometry) => {
+                    let curve = CurveId(format!("f3d:brep:procedural_curve#{i}:deformable_source"));
+                    out.curves.push(Curve {
+                        id: curve.clone(),
+                        geometry: CurveGeometry::Nurbs(geometry),
+                        source_object: None,
+                    });
+                    cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve }
+                }
+                crate::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference {
+                    flag,
+                    index,
+                } => cadmpeg_ir::geometry::DeformableCurveSource::NativeReference { flag, index },
+            };
             let data = match embedded.data {
                 EmbeddedDeformableData::VectorField {
                     vectors,

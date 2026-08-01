@@ -627,7 +627,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::Deformable {
                 context, source, ..
             } => {
-                curves.insert(&source.0);
+                if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                    curves.insert(&curve.0);
+                }
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(&surface.0);

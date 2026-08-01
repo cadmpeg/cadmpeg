@@ -21692,6 +21692,9 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         else {
             panic!("expected deformable construction")
         };
+        let cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve: source } = source else {
+            panic!("expected resolved deformable source")
+        };
         assert_eq!(cache_first.revision, 23100);
         assert_eq!(context.parameter_range, [-1.0, 2.0]);
         assert_eq!(*source_parameter_range, [Some(0.0), Some(1.0)]);
@@ -21747,6 +21750,12 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         } = &round_trip.ir.model.procedural_curves[0].definition
         else {
             panic!("expected round-trip deformable construction")
+        };
+        let cadmpeg_ir::geometry::DeformableCurveSource::Curve {
+            curve: round_source,
+        } = round_source
+        else {
+            panic!("expected resolved round-trip deformable source")
         };
         match (&expected_data, round_data) {
             (DeformableCurveData::VectorField { .. }, DeformableCurveData::VectorField { .. }) => {
