@@ -19334,7 +19334,7 @@ fn decode_reports_generated_partial_rolling_ball_supports() {
 
 #[test]
 fn subtype_reference_resolves_surface_cache() {
-    use crate::nurbs::core::decode_surface_cache_resolving_refs;
+    use crate::nurbs::core::decode_surface_cache_resolving_refs_at;
 
     let mut target = Vec::new();
     target.extend_from_slice(b"\x0f\x0d\x07surface");
@@ -19351,10 +19351,11 @@ fn subtype_reference_resolves_surface_cache() {
 
     let mut active = target;
     active.extend_from_slice(&source);
-    let decoded = decode_surface_cache_resolving_refs(
+    let decoded = decode_surface_cache_resolving_refs_at(
         &source,
         &active,
         &crate::nurbs::subtypes::SubtypeTables::from_stream(&active),
+        8,
     )
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count, decoded.v_count), (2, 2));

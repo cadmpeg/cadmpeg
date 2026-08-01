@@ -392,18 +392,6 @@ pub(crate) fn decode_surface_cache_resolving_refs_at(
     )
 }
 
-/// [`decode_surface_cache_resolving_refs_at`] at whichever integer width parses,
-/// for a caller holding a slice whose stream header it has not read.
-pub fn decode_surface_cache_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-) -> Option<NurbsSurface> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_surface_cache_resolving_refs_at(record_bytes, active_bytes, tables, int_width)
-    })
-}
-
 /// Decode the 3D curve cache of a procedural curve record: the FIRST valid curve
 /// block (surface and 2D pcurve blocks in the record are skipped because they do
 /// not parse as a 3D curve block). Returns `None` when none is present.
