@@ -39,6 +39,12 @@ pub enum NativeConvertError {
     MissingRetainedSourceRecord(String),
 }
 
+impl From<NativeConvertError> for crate::codec::CodecError {
+    fn from(error: NativeConvertError) -> Self {
+        Self::Malformed(error.to_string())
+    }
+}
+
 /// One source-native record with a stable identity and codec-owned fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct NativeRecord {

@@ -3,15 +3,14 @@
 
 use std::cell::Cell;
 
-use crate::codec::{CodecError, DecodeResult, ReadSeek};
-use crate::report::StrictConsequence;
+use crate::codec::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
 use super::error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 use super::policy::{
-    DecodeMode, DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
+    DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
     DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE,
 };
 use super::space::{ByteRange, SpaceId};
@@ -299,42 +298,13 @@ impl<'a> DecodeContext<'a> {
 
     // --- lifecycle ----------------------------------------------------------
 
-    /// Closes an inspection, returning a fused resource error even when codec
-    /// code swallowed the charge that caused it.
-    pub(crate) fn finish_inspection<T>(
-        self,
-        result: Result<T, CodecError>,
-    ) -> Result<T, CodecError> {
+    /// Closes a decode or inspection session, returning a fused resource error
+    /// even when codec code swallowed the charge that caused it.
+    pub fn finish_session(self) -> Result<(), CodecError> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        result
-    }
-
-    /// Closes a decode, returning a fused resource error even when codec code
-    /// swallowed the charge that caused it.
-    pub fn finish(
-        self,
-        result: Result<DecodeResult, CodecError>,
-    ) -> Result<DecodeResult, CodecError> {
-        if let Some(limit) = self.fuse.get() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
-        let result = result?;
-        if self.policy.mode == DecodeMode::Strict && !result.report.container_only {
-            if let Some(loss) = result
-                .report
-                .losses
-                .iter()
-                .find(|loss| loss.code.strict_consequence() == StrictConsequence::Reject)
-            {
-                return Err(CodecError::Malformed(format!(
-                    "strict mode rejects {}: {}",
-                    loss.code, loss.message
-                )));
-            }
-        }
-        Ok(result)
+        Ok(())
     }
 }
 
