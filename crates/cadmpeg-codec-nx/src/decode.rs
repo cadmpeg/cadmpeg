@@ -59,14 +59,14 @@ use crate::topology::{Graph, Node};
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 /// Parsed container data shared by inspection and entity decoding.
-pub struct Scan {
+pub struct Scan<'a> {
     /// Parsed SPLMSSTR container.
-    pub container: Container,
+    pub container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
     pub streams: Vec<Stream>,
 }
 
-impl Scan {
+impl Scan<'_> {
     /// Count streams with the requested classification.
     pub fn count(&self, kind: StreamKind) -> usize {
         self.streams.iter().filter(|s| s.kind == kind).count()
@@ -81,8 +81,8 @@ impl Scan {
 }
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecError> {
-    let container = container::scan_bytes(root.window().to_vec())?;
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+    let container = container::scan_bytes(root.window())?;
     let streams = parasolid::extract_streams(ctx, root, &container)?;
     Ok(Scan { container, streams })
 }

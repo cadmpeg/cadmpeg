@@ -15278,7 +15278,7 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
     }
 }
 
-fn feature_reference_name(scan: &ContainerScan, feature_id: u32) -> Option<&str> {
+fn feature_reference_name<'a>(scan: &'a ContainerScan<'_>, feature_id: u32) -> Option<&'a str> {
     let mut records = scan
         .features
         .reference_names
@@ -15316,10 +15316,10 @@ fn owned_section_feature_id(scan: &ContainerScan, definition_id: u32) -> Option<
     Some(row.feature_id)
 }
 
-fn section_definition_for_history_feature(
-    scan: &ContainerScan,
+fn section_definition_for_history_feature<'a>(
+    scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<&crate::feature::FeatureDefinition> {
+) -> Option<&'a crate::feature::FeatureDefinition> {
     let rows = scan
         .features
         .rows
@@ -24355,12 +24355,12 @@ fn prototype_local_frame(
 #[cfg(test)]
 mod prototype_local_frame_tests;
 
-fn unique_surface_prototype_associations(
-    scan: &ContainerScan,
+fn unique_surface_prototype_associations<'a>(
+    scan: &'a ContainerScan<'_>,
 ) -> Vec<(
-    &crate::surface::SurfacePrototypeRecord,
-    &crate::surface::SurfaceRow,
-    &crate::container::Section,
+    &'a crate::surface::SurfacePrototypeRecord,
+    &'a crate::surface::SurfaceRow,
+    &'a crate::container::Section,
 )> {
     let mut associations = Vec::new();
     for record in &scan.surfaces.prototype_records {
@@ -28433,7 +28433,7 @@ fn transfer_cross_section_planes(
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_bytes(root.window().to_vec());
+    let scan = container::scan_bytes(root.window());
 
     let (mut ir, annotations, unknowns, coverage) = if ctx.container_only() {
         build_container_ir(&scan)?

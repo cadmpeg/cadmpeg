@@ -3825,7 +3825,7 @@ mod tests {
         data.push(2);
         data.extend_from_slice(&compressed);
         let container = Container {
-            data: data.clone(),
+            data: data.clone().into(),
             version: 6,
             file_tag: 0,
             footer_offset: 0,
@@ -3892,12 +3892,12 @@ mod tests {
         assert_eq!(sequences[0].tail, [6, 5]);
 
         let mut malformed_compression = container.clone();
-        malformed_compression.data[193..197]
+        malformed_compression.data.to_mut()[193..197]
             .copy_from_slice(&(compressed.len() as u32 + 2).to_le_bytes());
         assert!(super::display_jt_segments(&malformed_compression, &documents).is_empty());
 
         let mut malformed = container;
-        malformed.data[28] = b'X';
+        malformed.data.to_mut()[28] = b'X';
         assert!(super::display_jt_indices(&malformed).is_empty());
     }
 
@@ -3921,7 +3921,7 @@ mod tests {
         data.extend_from_slice(&[0xff; 16]);
         data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
         let container = Container {
-            data,
+            data: data.into(),
             version: 6,
             file_tag: 0,
             footer_offset: 0,
@@ -3950,7 +3950,11 @@ mod tests {
         assert_eq!(elements[0].body_byte_len, 3);
 
         let mut malformed = container;
-        *malformed.data.last_mut().expect("required invariant") = 1;
+        *malformed
+            .data
+            .to_mut()
+            .last_mut()
+            .expect("required invariant") = 1;
         assert!(super::display_jt_shape_lod_elements(&malformed, &[segment]).is_empty());
     }
 
@@ -4008,7 +4012,7 @@ mod tests {
         let mut data = vec![0; 33];
         data.extend_from_slice(&compressed);
         let container = Container {
-            data,
+            data: data.into(),
             version: 6,
             file_tag: 0,
             footer_offset: 0,
@@ -4758,7 +4762,7 @@ mod tests {
         let mut data = vec![0; source_offset as usize + 25];
         data.extend_from_slice(&body);
         let container = crate::container::Container {
-            data,
+            data: data.into(),
             version: 1,
             file_tag: 0,
             footer_offset: 0,

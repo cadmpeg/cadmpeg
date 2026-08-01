@@ -93,7 +93,7 @@ impl Codec for CreoCodec {
         _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window().to_vec());
+        let scan = container::scan_bytes(root.window());
         Ok(container::summarize(&scan))
     }
 

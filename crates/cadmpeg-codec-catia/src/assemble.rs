@@ -567,7 +567,7 @@ pub(crate) fn preserve_raw_payload(
 ) {
     let (bytes, stream) = match scan.brep.as_ref() {
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
-        None => (scan.data.as_slice(), "CATPart"),
+        None => (scan.data.as_ref(), "CATPart"),
     };
     let id = UnknownId(id.to_string());
     annotate(

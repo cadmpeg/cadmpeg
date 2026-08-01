@@ -50,7 +50,7 @@ fn configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
 /// return a model wins, a `None` falls through to the next applicable route, and
 /// exhausting the table yields the metadata-only fallback.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_bytes(root.window().to_vec());
+    let scan = container::scan_bytes(root.window());
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
@@ -100,6 +100,12 @@ fn finish_decode(
         &native,
         &mut annotations,
         modeling_graph_scope.as_ref(),
+    );
+    let appearance_transfer = crate::appearance::transfer(
+        &mut ir,
+        &native,
+        modeling_graph_scope.as_ref(),
+        scan.brep.as_deref(),
     );
     let object_record_count: usize = native
         .object_graphs
@@ -3113,14 +3119,16 @@ fn finish_decode(
             provenance: None,
         });
     }
-    if !native.value_blocks.is_empty() {
+    if appearance_transfer.unresolved_packets != 0 {
         report.losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::AttributesNotTransferred,
             category: LossCategory::Attribute,
             severity: Severity::Warning,
             message: format!(
-                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); neutral visualization and display-property bindings remain unresolved.",
+                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven neutral binding ({} packet(s) transferred).",
                 native.value_blocks.len(),
+                appearance_transfer.unresolved_packets,
+                appearance_transfer.transferred_packets,
             ),
             provenance: None,
         });

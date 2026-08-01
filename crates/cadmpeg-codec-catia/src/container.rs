@@ -12,6 +12,7 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
@@ -526,9 +527,9 @@ pub struct Census {
 }
 
 /// Everything read from a `.CATPart`, shared by `inspect` and `decode`.
-pub struct ContainerScan {
+pub struct ContainerScan<'a> {
     /// The whole file image.
-    pub data: Vec<u8>,
+    pub data: Cow<'a, [u8]>,
     /// Outer directory offset (big-endian, from `+8`).
     pub outer_dir_offset: u32,
     /// Outer directory length (big-endian, from `+12`).
@@ -1002,7 +1003,8 @@ fn identify_variant(
 
 /// Identify a whole `.CATPart` byte image. Split out so tests drive it from a
 /// synthetic buffer without a reader.
-pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
+pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
+    let data = data.into();
     let outer_dir_offset = u32_be(&data, 8).unwrap_or(0);
     let outer_dir_length = u32_be(&data, 12).unwrap_or(0);
 
@@ -1323,7 +1325,7 @@ mod tests {
     #[test]
     fn container_summary_exposes_extent_flags_in_logical_order() {
         let scan = ContainerScan {
-            data: Vec::new(),
+            data: Vec::new().into(),
             outer_dir_offset: 0,
             outer_dir_length: 0,
             outer: Some(InnerDir {
@@ -1451,7 +1453,7 @@ mod tests {
         assert!(outer_container_declarations(&data, &ambiguous_outer).is_empty());
 
         let scan = ContainerScan {
-            data,
+            data: data.into(),
             outer_dir_offset: 0,
             outer_dir_length: 0,
             outer: Some(outer),

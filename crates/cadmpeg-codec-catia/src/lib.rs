@@ -41,6 +41,7 @@
 //! crate-private; nothing but `CatiaCodec` is part of the public API.
 
 pub(crate) mod analytic;
+mod appearance;
 pub(crate) mod assemble;
 pub(crate) mod catalog;
 pub(crate) mod container;
@@ -102,7 +103,7 @@ impl Codec for CatiaCodec {
         _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window().to_vec());
+        let scan = container::scan_bytes(root.window());
         Ok(container::summarize(&scan))
     }
 

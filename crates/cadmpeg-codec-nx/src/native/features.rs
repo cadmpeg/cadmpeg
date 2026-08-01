@@ -4509,7 +4509,7 @@ pub(crate) fn offset_data_block_bytes_for_section<'a>(
     blocks
 }
 
-fn offset_data_block_bytes(container: &Container) -> BTreeMap<String, (&[u8], u64)> {
+fn offset_data_block_bytes<'a>(container: &'a Container<'_>) -> BTreeMap<String, (&'a [u8], u64)> {
     let mut blocks = BTreeMap::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
