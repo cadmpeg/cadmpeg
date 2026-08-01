@@ -98,9 +98,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What layouts do the cache-first intcurve leading enum values other than `0` and `2` select?
 
-**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder retains a record with a nonzero value verbatim, including value `2`, whose layout is now defined but not yet decoded. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is refused on read in all three cases. A refusal separates a spelling the enum does not have from a payload the value selects differently, so it does not narrow the accepted spelling set.
+**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder reads both and retains a record with any other value verbatim. Form `2` stores no `bs3_curve`, and the record-level cache search that selects a carrier's solved curve takes the first curve block in the record, so a form-`2` record reaches the shared context only when its own construction stores a curve block of its own. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is refused on read in all three cases. A refusal separates a spelling the enum does not have from a payload the value selects differently, so it does not narrow the accepted spelling set.
 
-**Need.** We cannot read a record with a value other than `0`. **Blocked on a specimen:** a document whose cache-first intcurve leading enum carries a nonzero value gives that value's layout, and no such document is available to read.
+**Need.** We cannot read a record with a value other than `0` or `2`, and we cannot give a cacheless form-`2` record a solved carrier. **Blocked on a specimen:** a document whose cache-first intcurve leading enum carries a value other than `0` or `2` gives that value's layout, and no such document is available to read.
 
 ### GC-24. Binding of the law formula text infix operator `O`
 
@@ -303,12 +303,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do these sketch-text fields hold?
 
-- the two bytes between the height and the anchor coordinates, the eleven bytes between those coordinates and the text string, and the four bytes of the twenty-nine-byte run before the font-family count that the leading byte, the width factor, and the colour components do not fill, of a `txt_tag` record
+- the two bytes between the height and the anchor coordinates, the eleven bytes between those coordinates and the text string, and the twelve bytes of the twenty-nine-byte run before the font-family count that the leading byte and the colour components do not fill, of a `txt_tag` record
+- the members a `txt_tag` record writes between its text string and the thirty-byte class tail, and the pair list it writes as its leading block
 - the flag bytes after the two alignment enums
 - the thirty bytes of the class tail
 - the field that holds the text rotation
+- where a `txt_tag` record stores its horizontal width factor
 
-**Known.** `f3d.md` §8.1 "A sketch-text record carries" gives the identity keys, the class GUID, and the members up to the height. `f3d.md` §8.1 "A record whose identity key is" gives the anchor-point coordinates of the `txt_tag` form. `f3d.md` §8.1 "Two optional parameter-reference members" and `f3d.md` §8.1 "The class tail opens with" give the remaining members. The byte runs named above have a width and no meaning, and no known field holds a rotation. Every byte of the run before the font-family count is zero except the four immediately before that count, which hold f32 `1`, so the position of the four unfilled bytes within the run is not fixed by the record.
+**Known.** `f3d.md` §8.1 "A sketch-text record carries" gives the identity keys, the class GUID, and the members up to the height. `f3d.md` §8.1 "A record whose identity key is" gives the anchor-point coordinates of the `txt_tag` form. `f3d.md` §8.1 "Two optional parameter-reference members" and `f3d.md` §8.1 "The class tail opens with" give the remaining members. The byte runs named above have a width and no meaning, and no known field holds a rotation. The last sixteen bytes of the twenty-nine-byte run hold the colour components, whose f32 alpha is `1`; the twelve between them and the leading byte are not all zero, and no eight-byte window of the run reads as a width factor, so the decoder reads no width factor from a `txt_tag` record. The `txt_tag` form also writes a leading block of `(reference, u32)` pairs, and between its text string and the thirty-byte class tail it writes a u32-counted reference run, three bytes, an i32 font weight, and one f64.
 
 **Need.** We must know the meanings to write sketch text from a neutral model. **Blocked on a specimen:** a document whose sketch texts carry two or more different heights and a nonzero rotation locates the rotation field and separates the unnamed byte runs from constants, and no such document is available to read.
 
