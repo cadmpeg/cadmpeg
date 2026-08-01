@@ -18,7 +18,10 @@ use crate::assemble::{annotate, link_payload_carriers, preserve_raw_payload, sou
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 
-pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutput> {
+pub(crate) fn try_decode_zero_entity(
+    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Option<FamilyOutput> {
     let surfaces = crate::families::zero_entity::records::zero_entity_surfaces(&scan.data);
     if surfaces.is_empty() {
         return None;

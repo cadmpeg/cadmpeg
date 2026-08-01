@@ -395,6 +395,16 @@ impl<'a> WorkBudget<'a> {
         WorkBudget::new(limit.min(self.remaining()))
     }
 
+    /// Creates a child slice capped by this budget's remainder and attached to its session.
+    pub fn session_child_slice(&self, limit: usize) -> WorkBudget<'_> {
+        WorkBudget {
+            limit: limit.min(self.remaining()),
+            remaining: Cell::new(limit.min(self.remaining())),
+            exhausted: Cell::new(false),
+            session: self.session,
+        }
+    }
+
     /// Charges this budget for work consumed by a child slice.
     pub fn consume_child(&self, child: &WorkBudget<'_>) -> bool {
         self.charge_by(child.consumed())

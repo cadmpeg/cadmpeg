@@ -21,7 +21,7 @@ pub(crate) enum MatchingEdgeConstraint {
 pub(crate) fn distinct_domain_matching_with_budget<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
-    budget: Option<&WorkBudget<'static>>,
+    budget: Option<&WorkBudget<'_>>,
     edge_constraint: Option<MatchingEdgeConstraint>,
 ) -> Option<Vec<usize>> {
     let domains = domains.into_iter().collect::<Vec<_>>();
@@ -158,7 +158,7 @@ pub(crate) fn repair_distinct_domain_matching_with_budget<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
     matching: &[usize],
-    budget: Option<&WorkBudget<'static>>,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<Vec<usize>> {
     let domains = domains.into_iter().collect::<Vec<_>>();
     if domains.len() != matching.len() || domains.len() > point_count {
@@ -226,7 +226,7 @@ pub(crate) fn retain_distinct_matching_supports(
     domains: &mut [Vec<usize>],
     point_count: usize,
     matching: &[usize],
-    budget: Option<&WorkBudget<'static>>,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<bool> {
     if domains.len() != matching.len()
         || domains.len() > point_count

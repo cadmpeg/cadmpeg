@@ -33,7 +33,10 @@ use crate::solve::UnionFind;
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
-pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
+pub(crate) fn try_decode_e5(
+    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Option<FamilyOutput> {
     let stream_range = container::e5_record_stream(&scan.data)?;
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);

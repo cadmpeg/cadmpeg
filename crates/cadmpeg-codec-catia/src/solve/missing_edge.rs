@@ -1854,7 +1854,7 @@ pub fn parse_standard_mesh_selection(
 fn boundary_endpoint_support(
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: &WorkBudget<'static>,
+    budget: &WorkBudget<'_>,
 ) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
     #[derive(Clone, Copy)]
     struct State {

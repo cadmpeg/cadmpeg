@@ -60,7 +60,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     for route in families::ROUTES {
         if (route.applicable)(scan.variant) {
-            if let Some(out) = (route.decode)(&scan) {
+            if let Some(out) = (route.decode)(ctx, &scan) {
                 return finish_decode(
                     ctx,
                     &scan,

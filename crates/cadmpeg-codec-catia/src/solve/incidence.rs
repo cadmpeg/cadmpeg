@@ -474,9 +474,9 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) solution_visitor: Option<MeshEndpointSolutionVisitor<'v>>,
     pub(crate) partial_solution_filter: Option<MeshPartialEndpointConstraint<'a>>,
     pub(crate) dead_states: HashSet<Vec<Option<[usize; 2]>>>,
-    pub(crate) budget: &'a WorkBudget<'static>,
-    pub(crate) coordinate_propagation_budget: &'a WorkBudget<'static>,
-    pub(crate) boundary_propagation_budget: &'a WorkBudget<'static>,
+    pub(crate) budget: &'a WorkBudget<'a>,
+    pub(crate) coordinate_propagation_budget: &'a WorkBudget<'a>,
+    pub(crate) boundary_propagation_budget: &'a WorkBudget<'a>,
     pub(crate) exhausted: bool,
     pub(crate) stopped: bool,
 }
@@ -554,7 +554,7 @@ fn configuration_mask_contains(mask: &[u64], index: usize) -> bool {
 impl FaceFactorGraph {
     fn compile(
         domains: &[MeshFaceEndpointConfigurations],
-        budget: &WorkBudget<'static>,
+        budget: &WorkBudget<'_>,
     ) -> Option<Self> {
         let edge_sets = domains
             .iter()
@@ -640,7 +640,7 @@ impl FaceFactorGraph {
         &self,
         active: &mut [Vec<u64>],
         initial: impl IntoIterator<Item = usize>,
-        budget: &WorkBudget<'static>,
+        budget: &WorkBudget<'_>,
     ) -> Option<bool> {
         let mut queue = initial.into_iter().collect::<VecDeque<_>>();
         while let Some(arc_index) = queue.pop_front() {
@@ -675,7 +675,7 @@ impl FaceFactorGraph {
         Some(true)
     }
 
-    fn propagate_all(&self, active: &mut [Vec<u64>], budget: &WorkBudget<'static>) -> Option<bool> {
+    fn propagate_all(&self, active: &mut [Vec<u64>], budget: &WorkBudget<'_>) -> Option<bool> {
         self.propagate(active, 0..self.arcs.len(), budget)
     }
 
@@ -683,7 +683,7 @@ impl FaceFactorGraph {
         &self,
         domain: usize,
         active: &mut [Vec<u64>],
-        budget: &WorkBudget<'static>,
+        budget: &WorkBudget<'_>,
     ) -> Option<bool> {
         self.propagate(active, self.incoming[domain].iter().copied(), budget)
     }
@@ -698,7 +698,7 @@ impl PreparedFaceFactors {
     fn refine_edges(
         &mut self,
         assigned: &[(usize, [usize; 2])],
-        budget: &WorkBudget<'static>,
+        budget: &WorkBudget<'_>,
     ) -> Result<Option<Vec<Vec<u64>>>, ()> {
         let (Some(graph), Some(active)) = (&self.graph, &mut self.active) else {
             return Ok(None);
@@ -757,7 +757,7 @@ impl PreparedFaceFactors {
     fn assignment_state(
         &self,
         assignment: &[Option<[usize; 2]>],
-        budget: &WorkBudget<'static>,
+        budget: &WorkBudget<'_>,
     ) -> Result<Option<Vec<Vec<u64>>>, ()> {
         let (Some(graph), Some(retained)) = (&self.graph, &self.active) else {
             return Ok(None);
@@ -807,7 +807,7 @@ fn retain_configuration_masks(domains: &mut [MeshFaceEndpointConfigurations], ac
 
 pub(crate) fn prune_face_configuration_support(
     domains: &mut [MeshFaceEndpointConfigurations],
-    budget: &WorkBudget<'static>,
+    budget: &WorkBudget<'_>,
 ) -> bool {
     let edge_sets = domains
         .iter()
@@ -895,7 +895,7 @@ pub(crate) fn prune_face_configuration_support(
 
 pub(crate) fn prune_face_configuration_singleton_support(
     domains: &mut [MeshFaceEndpointConfigurations],
-    budget: &WorkBudget<'static>,
+    budget: &WorkBudget<'_>,
 ) -> bool {
     let Some(graph) = FaceFactorGraph::compile(domains, budget) else {
         return true;
@@ -975,7 +975,7 @@ pub(crate) fn prune_face_configuration_singleton_support(
 pub(crate) fn prune_ordered_face_endpoint_support(
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
-    budget: &WorkBudget<'static>,
+    budget: &WorkBudget<'_>,
 ) -> bool {
     loop {
         let mut changed = false;
@@ -1051,7 +1051,7 @@ pub(crate) fn prune_implicit_ordered_face_endpoint_support(
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
     coordinate_domains: &MeshCoordinateRootDomains,
-    budget: &WorkBudget<'static>,
+    budget: &WorkBudget<'_>,
 ) -> bool {
     loop {
         let mut changed = false;
@@ -1364,7 +1364,7 @@ pub(crate) fn compact_boundary_domain_viable(
 pub(crate) fn labeled_assignment_endpoint_cycles_viable(
     assignment: &MeshFaceBoundaryAssignment,
     edge_points: &[Option<[usize; 2]>],
-    budget: Option<&WorkBudget<'static>>,
+    budget: Option<&WorkBudget<'_>>,
 ) -> bool {
     let directions = |use_: MeshBoundaryEdgeCandidate| match use_.reversed {
         Some(reversed) => [Some(reversed), None],
@@ -1414,7 +1414,7 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
     mut states: Vec<MeshQuotientGaugeState>,
-    budget: &WorkBudget<'static>,
+    budget: &WorkBudget<'_>,
 ) -> Option<Vec<MeshQuotientGaugeState>> {
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
@@ -1539,7 +1539,7 @@ pub(crate) fn compact_boundary_domains_jointly_viable<'a>(
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
     quotient: &MeshQuotient,
-    budget: &WorkBudget<'static>,
+    budget: &WorkBudget<'_>,
 ) -> bool {
     advance_compact_boundary_domains(
         domains,
@@ -3049,7 +3049,7 @@ pub(crate) fn partial_face_orientability_viable(
     assignment: &[Option<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_edges: &[Vec<usize>],
-    budget: &WorkBudget<'static>,
+    budget: &WorkBudget<'_>,
 ) -> bool {
     if !edge_faces.iter().any(|faces| faces[0] != faces[1]) {
         return true;
@@ -3262,6 +3262,7 @@ where
     F: Fn(&[[usize; 2]]) -> bool,
     V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
 {
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     visit_component_incidence_pair_solutions_with_coordinate_root_policy(
         choices,
         edge_faces,
@@ -3273,6 +3274,7 @@ where
         partial_solution_valid,
         solution_valid,
         visitor,
+        &budget,
     )
 }
 
@@ -3288,6 +3290,7 @@ fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
     visitor: &mut V,
+    session_budget: &WorkBudget<'_>,
 ) -> IncidenceSolve<usize>
 where
     F: Fn(&[[usize; 2]]) -> bool,
@@ -3305,10 +3308,10 @@ where
         assignment: &[Option<[usize; 2]>],
         degrees: &[BTreeMap<usize, u8>],
         point_count: usize,
-        budget: &WorkBudget<'static>,
-        coordinate_propagation_budget: &WorkBudget<'static>,
-        boundary_propagation_budget: &WorkBudget<'static>,
-        orientation_budget: &WorkBudget<'static>,
+        budget: &WorkBudget<'_>,
+        coordinate_propagation_budget: &WorkBudget<'_>,
+        boundary_propagation_budget: &WorkBudget<'_>,
+        orientation_budget: &WorkBudget<'_>,
         solution_visitor: Option<MeshEndpointSolutionVisitor<'_>>,
     ) -> bool {
         let mut active = vec![false; choices.len()];
@@ -3427,15 +3430,16 @@ where
         assignment: &mut [Option<[usize; 2]>],
         degrees: &mut [BTreeMap<usize, u8>],
         point_count: usize,
-        budget: &WorkBudget<'static>,
+        budget: &WorkBudget<'_>,
         visitor: &mut V,
         visited: &mut usize,
         ambiguous: &mut bool,
         components: &[Vec<usize>],
-        component_budgets: &[WorkBudget<'static>],
-        orientation_budget: &WorkBudget<'static>,
-        coordinate_propagation_budget: &WorkBudget<'static>,
-        boundary_propagation_budget: &WorkBudget<'static>,
+        component_budgets: &[WorkBudget<'_>],
+        orientation_budget: &WorkBudget<'_>,
+        coordinate_propagation_budget: &WorkBudget<'_>,
+        boundary_propagation_budget: &WorkBudget<'_>,
+        session_budget: &WorkBudget<'_>,
     ) -> Result<ControlFlow<()>, ()>
     where
         F: Fn(&[[usize; 2]]) -> bool,
@@ -3472,7 +3476,7 @@ where
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
-                let closure_budget = WorkBudget::new(closure_limit);
+                let closure_budget = session_budget.session_child_slice(closure_limit);
                 let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
                     point_count,
                     &singleton,
@@ -3567,6 +3571,7 @@ where
                     orientation_budget,
                     coordinate_propagation_budget,
                     boundary_propagation_budget,
+                    session_budget,
                 )
             } else {
                 Ok(ControlFlow::Continue(()))
@@ -3643,7 +3648,7 @@ where
                 let mut quotient = quotient.clone();
                 let preparation_limit =
                     quotient.coordinate_domain_preparation_limit(point_count, choices)?;
-                let preparation_budget = WorkBudget::new(preparation_limit);
+                let preparation_budget = session_budget.session_child_slice(preparation_limit);
                 let Some(domains) = quotient.prepare_coordinate_root_domains(
                     point_count,
                     choices,
@@ -3666,7 +3671,8 @@ where
             .to_vec();
         let mut narrowed_choices = base_choices.clone();
         if let Some(domains) = mesh_assignments {
-            let implicit_support_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let implicit_support_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let implicit_support_viable = coordinate_domains.as_ref().is_none_or(|coordinate| {
                 prune_implicit_ordered_face_endpoint_support(
                     domains,
@@ -3683,7 +3689,8 @@ where
                 narrowed_choices.clone_from(&base_choices);
             }
             let implicit_choices = narrowed_choices.clone();
-            let face_support_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let face_support_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             if !prune_ordered_face_endpoint_support(
                 domains,
                 &mut narrowed_choices,
@@ -3695,7 +3702,8 @@ where
             if face_support_budget.exhausted() {
                 narrowed_choices = implicit_choices;
             } else if let Some(domains) = coordinate_domains.take() {
-                let refinement_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+                let refinement_budget =
+                    session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
                 match domains.refine_candidates(&narrowed_choices, Some(&refinement_budget)) {
                     Some(refined) => {
                         narrowed_choices = refined.edge_candidates().to_vec();
@@ -3764,7 +3772,7 @@ where
                 let mut quotient = quotient.clone();
                 let closure_limit =
                     quotient.coordinate_domain_preparation_limit(point_count, &singleton)?;
-                let budget = WorkBudget::new(closure_limit);
+                let budget = session_budget.session_child_slice(closure_limit);
                 let Some(domains) = mesh_assignments else {
                     if !quotient.point_assignment_exists(point_count, &singleton, Some(&budget)) {
                         exhausted = budget.exhausted();
@@ -3802,10 +3810,14 @@ where
             return Some(());
         }
         for component in &components {
-            let preflight_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-            let orientation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-            let coordinate_preflight_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-            let boundary_preflight_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let preflight_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let orientation_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let coordinate_preflight_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let boundary_preflight_budget =
+                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
             let mut accept_first = |solution: &[MeshEndpointPair]| {
                 let mut completed = fixed.clone();
@@ -3858,15 +3870,17 @@ where
             }
         }
         rejection = IncidenceRejection::ComponentComposition;
-        let composition_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let composition_budget = session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let component_budgets = (0..components.len())
-            .map(|_| WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS))
+            .map(|_| session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS))
             .collect::<Vec<_>>();
-        let orientation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let orientation_budget = session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         // These deductions can reduce composition work but cannot establish a
         // solution. Keep their exhaustion independent of the exact search budget.
-        let coordinate_propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let boundary_propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let coordinate_propagation_budget =
+            session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let boundary_propagation_budget =
+            session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         if visit_components(
             0,
             choices,
@@ -3890,6 +3904,7 @@ where
             &orientation_budget,
             &coordinate_propagation_budget,
             &boundary_propagation_budget,
+            session_budget,
         )
         .is_err()
         {
@@ -4000,7 +4015,7 @@ pub(crate) fn visit_incidence_endpoint_pair_solutions<F, V>(
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
     mesh_quotient: Option<&MeshQuotient>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
-    complete_solution_budget: Option<&WorkBudget<'static>>,
+    complete_solution_budget: Option<&WorkBudget<'_>>,
     solution_valid: &F,
     visitor: &mut V,
 ) -> IncidenceSolve<usize>
@@ -4035,7 +4050,7 @@ pub(crate) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_polic
     mesh_quotient: Option<&MeshQuotient>,
     coordinate_root_policy: CoordinateRootPolicy,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
-    complete_solution_budget: Option<&WorkBudget<'static>>,
+    complete_solution_budget: Option<&WorkBudget<'_>>,
     solution_valid: &F,
     visitor: &mut V,
 ) -> IncidenceSolve<usize>
@@ -4092,6 +4107,8 @@ where
             visitor(points)
         }
     };
+    let fallback_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let session_budget = complete_solution_budget.unwrap_or(&fallback_budget);
     let outcome = visit_component_incidence_pair_solutions_with_coordinate_root_policy(
         &choices,
         edge_faces,
@@ -4103,6 +4120,7 @@ where
         partial_solution_valid,
         &complete_valid,
         &mut budgeted_visitor,
+        session_budget,
     );
     if complete_solution_budget.is_some_and(WorkBudget::exhausted) {
         IncidenceSolve::Exhausted
