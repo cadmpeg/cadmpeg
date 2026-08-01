@@ -11106,8 +11106,9 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("stored reference-signature object");
     stored_signature.remove("signature_offset");
     stored_signature.remove("second_reference_offset");
-    let migrated = drop(stored_fields);
-    crate::native::CatiaNative::load(&stored).expect("migrate reference-signature incidences");
+    drop(stored_fields);
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("migrate reference-signature incidences");
     assert_eq!(
         migrated.entity_records[0].reference_signature,
         Some(expected.clone())
@@ -11130,8 +11131,9 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("stored reference-signature object");
     stored_signature.remove("first_entity");
     stored_signature.remove("second_entity");
-    let migrated = drop(stored_fields);
-    crate::native::CatiaNative::load(&stored).expect("resolve reference-signature incidences");
+    drop(stored_fields);
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("resolve reference-signature incidences");
     assert_eq!(
         migrated.entity_records[0].reference_signature,
         Some(expected.clone())
@@ -11154,8 +11156,9 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("stored reference-signature object");
     stored_signature.remove("prefix");
     stored_signature.remove("signature_program");
-    let migrated = drop(stored_fields);
-    crate::native::CatiaNative::load(&stored).expect("parse reference-signature program");
+    drop(stored_fields);
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("parse reference-signature program");
     assert_eq!(
         migrated.entity_records[0].reference_signature,
         Some(expected.clone())
