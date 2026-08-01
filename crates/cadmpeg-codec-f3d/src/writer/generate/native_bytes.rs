@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Low-level native record byte writers for source-less generation.
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;

@@ -3,7 +3,7 @@
 
 use std::io::Write;
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -3474,6 +3474,7 @@ mod tests {
     use std::io::Cursor;
 
     use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::PointId;
     use cadmpeg_ir::math::Point3;
@@ -3563,7 +3564,10 @@ mod tests {
             let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
                 .encode(&ir, &mut output)
                 .expect_err("invalid tolerance must not be serialized");
-            assert!(matches!(error, cadmpeg_ir::codec::CodecError::Malformed(_)));
+            assert!(matches!(
+                error,
+                cadmpeg_codec_core::CodecError::Malformed(_)
+            ));
             assert_eq!(output, [0xaa]);
         }
     }

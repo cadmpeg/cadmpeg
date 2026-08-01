@@ -7,7 +7,8 @@
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
+
+use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
@@ -4972,7 +4973,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     assert!(matches!(
         invalid,
-        Err(cadmpeg_ir::codec::CodecError::Malformed(message))
+        Err(cadmpeg_codec_core::CodecError::Malformed(message))
             if message.contains("configuration JSON must be an object")
     ));
 
@@ -5004,7 +5005,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         );
         assert!(matches!(
             invalid,
-            Err(cadmpeg_ir::codec::CodecError::Malformed(message))
+            Err(cadmpeg_codec_core::CodecError::Malformed(message))
                 if message.contains(expected)
         ));
     }
@@ -5019,7 +5020,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     assert!(matches!(
         invalid_rule,
-        Err(cadmpeg_ir::codec::CodecError::Malformed(message))
+        Err(cadmpeg_codec_core::CodecError::Malformed(message))
             if message.contains("`when` and `activate` must be paired strings")
     ));
 }
@@ -5078,7 +5079,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
 }
 
@@ -5343,7 +5344,7 @@ fn generated_source_less_f3d_rejects_subds() {
     let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+        cadmpeg_codec_core::CodecError::NotImplemented(message)
             if message.contains("does not support SubD surfaces")
     ));
 }
@@ -5379,7 +5380,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
     let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("must equal the projection")
     ));
 }
@@ -5631,7 +5632,10 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
     let error = F3dCodec
         .encode(&source_less, &mut Vec::new())
         .expect_err("open face cannot be emitted as a solid body");
-    assert!(matches!(error, cadmpeg_ir::codec::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_codec_core::CodecError::Malformed(_)
+    ));
 }
 
 #[test]
@@ -9714,7 +9718,7 @@ fn generated_f3d_rejects_act_binding_divergence() {
         .expect_err("divergent ACT and appearance binding must fail");
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
 }
 
@@ -9734,7 +9738,7 @@ fn generated_f3d_rejects_material_assignment_divergence() {
         .expect_err("divergent assignment and appearance must fail");
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
 }
 
@@ -9753,7 +9757,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         .write_preserved_with_source_fidelity(&invalid, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("out-of-range refraction must be refused");
     assert!(
-        matches!(error, cadmpeg_ir::codec::CodecError::Malformed(message) if message.contains("refraction_index"))
+        matches!(error, cadmpeg_codec_core::CodecError::Malformed(message) if message.contains("refraction_index"))
     );
 
     let mut structural = decoded.ir;
@@ -9768,7 +9772,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         )
         .expect_err("new Protein property must be refused");
     assert!(
-        matches!(error, cadmpeg_ir::codec::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
+        matches!(error, cadmpeg_codec_core::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
     );
 }
 
@@ -14091,7 +14095,7 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .expect_err("a sweep without its native graph must not be guessed");
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+        cadmpeg_codec_core::CodecError::NotImplemented(message)
             if message.contains("lacks its native construction graph")
     ));
 }

@@ -23,7 +23,7 @@ CADIR input bypasses codec detection and parses directly into `CadIr`. The parse
 
 ## Decode session
 
-The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`. `DecodeContext` owns budget counters and the address-space registry; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_ir::decode`.
+The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`. `DecodeContext` owns budget counters and the address-space registry; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_codec_core::decode`.
 
 ## CLI stream and exit contract
 

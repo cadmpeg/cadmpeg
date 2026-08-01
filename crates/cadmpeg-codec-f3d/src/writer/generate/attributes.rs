@@ -4,7 +4,7 @@
 use crate::records::{
     CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
 };
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face};
 

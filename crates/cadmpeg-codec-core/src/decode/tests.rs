@@ -2,7 +2,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::codec::CodecError;
+use crate::CodecError;
 
 use super::*;
 

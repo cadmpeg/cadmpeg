@@ -24,10 +24,10 @@ use crate::nurbs::reader::{
 use crate::nurbs::subtypes::{
     find_subtype_marker, first_construction_subtype, next_token, subtype_span, SubtypeTables,
 };
+use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_int};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.

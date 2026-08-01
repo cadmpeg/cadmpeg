@@ -5,7 +5,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_ir::codec::{CodecEntry, CodecError, DecodeOptions};
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use zip::write::SimpleFileOptions;

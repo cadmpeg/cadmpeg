@@ -19,6 +19,7 @@ name = "cadmpeg"
 path = "src/main.rs"
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-codec-f3d.workspace = true
 cadmpeg-codec-freecad.workspace = true

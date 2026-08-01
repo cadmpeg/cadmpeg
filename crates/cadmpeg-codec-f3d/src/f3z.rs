@@ -11,8 +11,9 @@
 use serde::Deserialize;
 use serde_value::Value;
 
-use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::DecodeContext;
+use cadmpeg_codec_core::decode::DecodeContext;
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 

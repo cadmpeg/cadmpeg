@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::be::{f64_at, u16_at};
+use cadmpeg_codec_core::be::{f64_at, u16_at};
 
 use super::LEN_TO_MM;
 

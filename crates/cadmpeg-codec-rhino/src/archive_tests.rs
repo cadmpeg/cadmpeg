@@ -4,6 +4,7 @@ use std::fmt::Write;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::report::Severity;
 use sha2::{Digest, Sha256};

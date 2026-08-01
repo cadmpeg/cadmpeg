@@ -5,7 +5,8 @@
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::decode::InspectOptions;
+
+use cadmpeg_codec_core::decode::InspectOptions;
 use cadmpeg_ir::LossCode;
 
 use crate::container::{self, role, MARKER};
@@ -2782,7 +2783,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
     assert!(error
         .to_string()
@@ -5756,7 +5757,7 @@ fn decode_builds_valid_topology_and_plane() {
 }
 
 fn strict_options() -> DecodeOptions {
-    use cadmpeg_ir::decode::{DecodeMode, DecodePolicy};
+    use cadmpeg_codec_core::decode::{DecodeMode, DecodePolicy};
     DecodeOptions {
         container_only: false,
         policy: DecodePolicy {
@@ -5804,7 +5805,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_ir::CodecError::Malformed(message)) => {
+        Err(cadmpeg_codec_core::CodecError::Malformed(message)) => {
             assert!(
                 message.contains("strict mode rejects geometry_not_transferred"),
                 "unexpected message: {message}"
@@ -6109,7 +6110,10 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
             &mut Vec::new(),
         )
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::codec::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_codec_core::CodecError::Malformed(_)
+    ));
 }
 
 #[test]
@@ -6130,7 +6134,7 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
 }
 
@@ -6160,7 +6164,7 @@ fn semantic_writer_rejects_subds() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+        cadmpeg_codec_core::CodecError::NotImplemented(message)
             if message.contains("does not support SubD surfaces")
     ));
 }
@@ -6186,7 +6190,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
     ] {
         assert!(matches!(
             crate::writer::curve_values(&geometry, 0.001),
-            Err(cadmpeg_ir::codec::CodecError::NotImplemented(_))
+            Err(cadmpeg_codec_core::CodecError::NotImplemented(_))
         ));
     }
 }
@@ -6216,7 +6220,7 @@ fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("ellipse major radius is smaller than its minor radius")
     ));
 }
@@ -6245,7 +6249,7 @@ fn semantic_writer_rejects_nonfinite_analytic_carriers() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("circle center is not finite")
     ));
 }
@@ -6316,7 +6320,7 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
 
         assert!(matches!(
             error,
-            cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            cadmpeg_codec_core::CodecError::NotImplemented(message)
                 if message.contains(&surface_id) && message.contains(expected)
         ));
     }
@@ -19499,7 +19503,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
     assert!(error
         .to_string()
@@ -20043,7 +20047,7 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("conflicting positions")
     ));
 }
@@ -20755,7 +20759,7 @@ fn native_patch_requires_point_provenance_annotation() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("requires provenance annotation") && message.contains(&point_id)
     ));
 }

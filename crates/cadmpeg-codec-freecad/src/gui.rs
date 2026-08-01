@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::presentation::{

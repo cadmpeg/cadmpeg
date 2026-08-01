@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+
 use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
 use cadmpeg_ir::Exactness;
 
@@ -9709,7 +9710,10 @@ fn inspect_summary_has_layout_and_census_notes() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(7, 9))]);
     let mut reader = Cursor::new(data);
     let summary = CreoCodec
-        .inspect(&mut reader, &cadmpeg_ir::decode::InspectOptions::default())
+        .inspect(
+            &mut reader,
+            &cadmpeg_codec_core::decode::InspectOptions::default(),
+        )
         .expect("inspect");
     assert_eq!(summary.format, "creo");
     assert_eq!(summary.container_kind, "psb");

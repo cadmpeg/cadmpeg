@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-container"
+description = "Budgeted compression and archive support for cadmpeg codecs."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cadmpeg-codec-core.workspace = true
+flate2.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true

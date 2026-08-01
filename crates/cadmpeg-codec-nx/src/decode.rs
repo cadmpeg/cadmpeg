@@ -12,8 +12,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,

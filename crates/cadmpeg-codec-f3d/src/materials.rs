@@ -11,12 +11,12 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
 use crate::records::DesignMaterialAssignment;
+use cadmpeg_codec_core::le::{u32_at, u64_at};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
-use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
-use cadmpeg_ir::le::{u32_at, u64_at};
 use cadmpeg_ir::topology::Color;
 
 use crate::bytes::{

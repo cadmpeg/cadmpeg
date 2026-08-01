@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::{JointRecord, ObjectRecord, ProductNodeRecord, PropertyRecord};
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::products::{
     Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
     ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceId,

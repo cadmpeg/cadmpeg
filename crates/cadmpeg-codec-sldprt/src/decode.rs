@@ -15,16 +15,17 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_codec_core::be::u32_at as be_u32;
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::be::u32_at as be_u32;
-use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
-use cadmpeg_ir::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
 use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::SldprtLossCode;

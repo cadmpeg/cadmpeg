@@ -6,6 +6,7 @@ use std::io::Cursor;
 use std::time::{Duration, Instant};
 
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
@@ -92,7 +93,10 @@ fn main() {
         let mut input = Cursor::new(&opaque);
         black_box(
             codec
-                .inspect(&mut input, &cadmpeg_ir::decode::InspectOptions::default())
+                .inspect(
+                    &mut input,
+                    &cadmpeg_codec_core::decode::InspectOptions::default(),
+                )
                 .expect("required invariant"),
         );
     });

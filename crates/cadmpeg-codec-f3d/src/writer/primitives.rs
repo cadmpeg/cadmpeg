@@ -4,7 +4,7 @@
 
 use crate::history_records::AsmEntityChangeKind;
 use crate::native::F3dNative;
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;

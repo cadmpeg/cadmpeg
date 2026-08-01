@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
 use crate::native::SldprtNative;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
-use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};

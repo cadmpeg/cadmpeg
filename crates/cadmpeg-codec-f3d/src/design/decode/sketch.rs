@@ -12,8 +12,8 @@ use crate::records::{
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
     SketchRelationOperand, SketchSurface, SketchText,
 };
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
+use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::HashMap;
 

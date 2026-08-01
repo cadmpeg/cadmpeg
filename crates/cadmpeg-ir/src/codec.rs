@@ -12,25 +12,20 @@
 //! `Codec`, so a codec cannot override an entry point and drop the
 //! enforcement.
 
-use std::collections::BTreeMap;
 use std::fmt;
-use std::io::{Read, Seek, Write};
+use std::io::Write;
 
-use crate::decode::{
-    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ErrorContext, InspectOptions,
-    ResourceLimit, SourceLocation, View,
-};
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::ExportReport;
 use crate::report::StrictConsequence;
 use crate::source_fidelity::SourceFidelity;
+use cadmpeg_codec_core::decode::{
+    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
+};
+use cadmpeg_codec_core::{CodecError, ContainerSummary, ReadSeek};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-/// Object-safe input bound combining [`Read`] and [`Seek`].
-pub trait ReadSeek: Read + Seek {}
-impl<T: Read + Seek> ReadSeek for T {}
 
 /// How confident a codec is that it can handle a given byte prefix.
 #[derive(
@@ -57,40 +52,6 @@ impl fmt::Display for Confidence {
             Self::High => "high",
         })
     }
-}
-
-/// One stream or segment in a container summary.
-///
-/// `role` and `attributes` are codec-defined. The ordered attribute map keeps
-/// the format-independent summary deterministic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ContainerEntry {
-    /// Entry name/path within the container.
-    pub name: String,
-    /// Codec-defined role classification.
-    pub role: String,
-    /// Compression method label (e.g. `"stored"`, `"deflate"`, `"zstd"`).
-    pub compression: String,
-    /// Compressed size in bytes.
-    pub compressed_size: u64,
-    /// Uncompressed size in bytes.
-    pub uncompressed_size: u64,
-    /// Extra codec-extracted attributes, sorted by key.
-    #[serde(default)]
-    pub attributes: BTreeMap<String, String>,
-}
-
-/// The result of inspecting a container without decoding its geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ContainerSummary {
-    /// Source format id.
-    pub format: String,
-    /// Container kind, e.g. `"zip"`.
-    pub container_kind: String,
-    /// Enumerated entries.
-    pub entries: Vec<ContainerEntry>,
-    /// Codec-defined informational notes.
-    pub notes: Vec<String>,
 }
 
 /// Options controlling source decoding.
@@ -144,50 +105,6 @@ impl DecodeResult {
     }
 }
 
-/// Errors a codec can raise.
-///
-/// Marked `#[non_exhaustive]`: external exhaustive matches must carry a
-/// wildcard arm. Same-crate matches keep exhaustiveness checking.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum CodecError {
-    /// The bytes are not this codec's format.
-    #[error("not the expected format: {0}")]
-    WrongFormat(String),
-    /// The container was structurally malformed.
-    #[error("malformed container: {0}")]
-    Malformed(String),
-    /// A required read extended past the end of its window after commitment.
-    ///
-    /// Distinct from [`CodecError::Malformed`]: a truncation is missing input,
-    /// not an inconsistency inside the bytes that are present.
-    #[error(
-        "truncated input during {} at space {} offset {}",
-        .context.operation, .location.space.index(), .location.offset
-    )]
-    Truncated {
-        /// Where the truncated read began.
-        location: SourceLocation,
-        /// Static context for the failure.
-        context: ErrorContext,
-    },
-    /// A resource limit refused the decode: policy or the allocator.
-    ///
-    /// Never reported as [`CodecError::Malformed`]: a budget refusal is a
-    /// statement about policy, not about the input.
-    #[error(
-        "resource limit on {:?}: {:?} (limit {}, used {}, requested {})",
-        .0.dimension, .0.reason, .0.limit, .0.used, .0.additional
-    )]
-    ResourceLimit(ResourceLimit),
-    /// The codec does not implement a required capability.
-    #[error("not implemented yet: {0}")]
-    NotImplemented(String),
-    /// Underlying I/O failure.
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-}
-
 /// Decoder and container inspector for one source format.
 pub trait Codec {
     /// Stable short id for this codec, e.g. `"f3d"`.
@@ -231,11 +148,11 @@ mod sealed {
 ///
 /// ```compile_fail
 /// use cadmpeg_ir::codec::{
-///     Codec, CodecEntry, CodecError, Confidence, ContainerSummary, DecodeOptions,
-///     DecodeResult, ReadSeek,
+///     Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult,
 /// };
-/// use cadmpeg_ir::decode::{DecodeContext, View};
-/// use cadmpeg_ir::decode::InspectOptions;
+/// use cadmpeg_codec_core::{CodecError, ContainerSummary, ReadSeek};
+/// use cadmpeg_codec_core::decode::{DecodeContext, View};
+/// use cadmpeg_codec_core::decode::InspectOptions;
 ///
 /// struct Rogue;
 /// impl Codec for Rogue {

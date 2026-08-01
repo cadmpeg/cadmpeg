@@ -7,7 +7,7 @@ use crate::records::{
     ConstructionRecipeKind, DesignObjectKind, PersistentReferenceKind, SketchCurveGeometry,
     SketchText,
 };
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;

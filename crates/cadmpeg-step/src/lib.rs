@@ -51,11 +51,9 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::appearance::Appearance;
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
-    Encoder,
-};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult, Encoder};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
@@ -2901,8 +2899,8 @@ impl Codec for StepCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &cadmpeg_ir::decode::DecodeContext<'_>,
-        root: cadmpeg_ir::decode::View<'_>,
+        _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+        root: cadmpeg_codec_core::decode::View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bytes = root.window();
         refuse_alternate_encoding(bytes)?;
@@ -3068,8 +3066,8 @@ impl Codec for StepCodec {
 
     fn decode_impl(
         &self,
-        ctx: &cadmpeg_ir::decode::DecodeContext<'_>,
-        root: cadmpeg_ir::decode::View<'_>,
+        ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+        root: cadmpeg_codec_core::decode::View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         let bytes = root.window();
         refuse_alternate_encoding(bytes)?;

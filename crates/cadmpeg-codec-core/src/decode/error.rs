@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resource-failure types shared by the budget and [`CodecError`].
 //!
-//! [`CodecError`]: crate::codec::CodecError
+//! [`CodecError`]: crate::CodecError
 
 use super::space::SpaceId;
 

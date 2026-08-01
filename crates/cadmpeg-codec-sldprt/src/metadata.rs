@@ -2,10 +2,10 @@
 //! Typed SW Objects document metadata.
 
 use crate::container::{ContainerScan, Section};
+use cadmpeg_codec_core::le::{f64_at as f64_le, u32_at as u32_le, u64_at as u64_le};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::le::{f64_at as f64_le, u32_at as u32_le, u64_at as u64_le};
 use cadmpeg_ir::Exactness;
 
 pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<SourceAttribute> {

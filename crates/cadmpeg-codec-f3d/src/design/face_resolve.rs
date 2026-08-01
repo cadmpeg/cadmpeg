@@ -10,7 +10,7 @@ use crate::records::{
     DesignParameterScope, DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity,
     SketchPoint,
 };
-use cadmpeg_ir::le::f64_at;
+use cadmpeg_codec_core::le::f64_at;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 

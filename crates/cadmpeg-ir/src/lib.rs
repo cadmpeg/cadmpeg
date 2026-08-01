@@ -16,8 +16,9 @@
 //!
 //! Format crates implement [`Codec`]. Detection selects a codec from a byte
 //! prefix, inspection enumerates a container, and decoding returns a
-//! [`DecodeResult`]. Operation failures use [`CodecError`]. A successful decode
-//! reports partial transfer through [`DecodeReport`] and [`LossNote`].
+//! [`DecodeResult`]. Operation failures use [`cadmpeg_codec_core::CodecError`].
+//! A successful decode reports partial transfer through [`DecodeReport`] and
+//! [`LossNote`].
 //!
 //! [`Annotations`] records source locations and fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
@@ -31,12 +32,8 @@
 pub mod annotations;
 pub mod appearance;
 pub mod attributes;
-pub mod be;
 pub mod bytes;
 pub mod codec;
-pub mod compression;
-pub mod cursor;
-pub mod decode;
 
 pub mod diff;
 pub mod document;
@@ -48,7 +45,6 @@ pub mod geometry;
 pub mod hash;
 
 pub mod ids;
-pub mod le;
 pub mod math;
 pub mod native;
 pub mod pmi;
@@ -56,7 +52,6 @@ pub mod presentation;
 pub mod product;
 pub mod products;
 mod provenance;
-pub mod read;
 pub mod report;
 pub mod semantic_annotations;
 pub mod sketches;
@@ -71,8 +66,7 @@ pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
 pub use codec::{
-    CadirEncoder, Codec, CodecEntry, CodecError, Confidence, ContainerEntry, ContainerSummary,
-    DecodeOptions, DecodeResult, Encoder, ReadSeek,
+    CadirEncoder, Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult, Encoder,
 };
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};

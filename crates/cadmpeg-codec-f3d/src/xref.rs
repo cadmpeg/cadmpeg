@@ -10,7 +10,7 @@
 
 use serde::Deserialize;
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 
 use crate::bytes::lp_ascii_strict;
 use crate::container::role;

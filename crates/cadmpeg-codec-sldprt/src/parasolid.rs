@@ -8,7 +8,7 @@
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
 use crate::container::parasolid_offset;
-use cadmpeg_ir::compression::inflate_zlib_prefix;
+use cadmpeg_container::compression::inflate_zlib_prefix;
 use cadmpeg_ir::math::Point3;
 
 /// The constant 16-byte prefix of the wrapped Parasolid transmit-container
@@ -139,7 +139,7 @@ pub struct StreamHeader {
 pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let sig = parasolid_offset(payload)?;
     let desc_len_at = sig + 4;
-    let desc_len = usize::from(cadmpeg_ir::be::u16_at(payload, desc_len_at)?);
+    let desc_len = usize::from(cadmpeg_codec_core::be::u16_at(payload, desc_len_at)?);
     let desc_start = desc_len_at + 2;
     let desc_end = desc_start + desc_len;
     let description = String::from_utf8_lossy(payload.get(desc_start..desc_end)?).into_owned();
