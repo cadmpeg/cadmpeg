@@ -262,6 +262,11 @@ current scores require those matrices and representative fixtures.
   closure, endpoint resolution, and distinct reconstructed topology. Bounded
   search exhaustion is partitioned into quotient preparation, incidence
   enumeration, and endpoint resolution.
+- The standard face spine admits both unflagged `30 04 04 ff` and flagged
+  `b0 04 04 ff` rows. Standard edge-table handle width is selected uniquely
+  from one, two, or three bytes by landing on the complete counted vertex
+  table. A two-handle row is a complete boundary segment; longer rows retain
+  flanking endpoint ports around their interior trim handles.
 - Zero-entity face-local support occurrences with complete lifted endpoint
   tapes form radial endpoint-pair candidates when two occurrences have one
   reciprocal unordered model-space endpoint match and the surrounding
@@ -290,6 +295,11 @@ current scores require those matrices and representative fixtures.
   carriers, or seam centers remain unbound atomically.
 - Every consolidated line profile transfers its placed signed-distance
   analytic line carrier and stored parameter interval.
+- Complete `b2 03 16` rational clamped curves, `a5 13 16` degree-five clamped
+  curves, and `b2 03 0f` bounded spatial circles transfer as standalone wire
+  edges when they are the complete geometric population and no surface graph
+  is present. Their exact knot or angular domains supply evaluated endpoint
+  vertices and wire-body ownership.
 - Consolidated edge-run coverage partitions runs with zero, one, or two
   resolved support bindings and independently counts shared sampled loci and
   endpoint loci. A validated consolidated sphere binds one pcurve side when
