@@ -348,13 +348,13 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A writer must emit the value the source would have written. Without the bit meanings, a neutral model cannot choose between `0x0`, `0x4`, and `0x8`.
 
-### DR-30. `sketch_attrib_def` tuple field one
+### DR-30. `sketch_attrib_def` member `ref_b`
 
-**Question.** What does field one of the `sketch_attrib_def` six-integer tuple hold?
+**Question.** What does `ref_b`, the second member of the `sketch_attrib_def` payload, name?
 
-**Known.** `f3d.md` §6 "`sketch_attrib_def` is coedge-owned" names it `ref_b` and gives its position. It is zero in most tuples; the values that are not zero are large and repeat across the tuples of one stream. Field three at the same width is zero in every tuple.
+**Known.** `f3d.md` §6 "`sketch_attrib_def` is source-link metadata" names it, gives its position in the tuple, and gives its range. It is zero in most links, and the decoder keeps a non-zero value as written. A non-zero value repeats across the links of one stream and is drawn from a small set per document. Where a document has sketch text, the values that recur most are the Design entity ids of its sketch-text records, and the `sketch_curve_id` beside them matches no sketch-curve record's persistent identity in that document. Where a document has no sketch text, non-zero values still occur and the `sketch_curve_id` beside them does match a stored sketch-curve identity. So the field names neither a sketch text in particular nor, by itself, the namespace `sketch_curve_id` is drawn from. One document spells it `18446744073709551615` throughout, the all-ones 64-bit pattern, where `0` is the value every other document writes for a link with no such reference.
 
-**Need.** The decoder accepts only the zero form, so a tuple with a non-zero `ref_b` yields no sketch-curve link and a writer cannot restore the value.
+**Need.** A writer must choose the value to emit for a link a neutral model does not carry. Without the meaning, only a link decoded from source restores it.
 
 ## 3. External references
 

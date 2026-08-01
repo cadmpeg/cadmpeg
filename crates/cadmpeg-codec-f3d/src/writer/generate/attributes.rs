@@ -602,8 +602,9 @@ fn native_sketch_link_attribute(
     native_string(
         records,
         &format!(
-            "{} 0 {} 0 {} {}",
+            "{} {} {} 0 {} {}",
             link.sketch_curve_id,
+            link.ref_b,
             link.sense.unwrap_or(SKETCH_LINK_SENSE_UNCONSTRAINED),
             link.role,
             link.closure

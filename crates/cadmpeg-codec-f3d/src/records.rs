@@ -25,6 +25,10 @@ pub struct SketchCurveLink {
     pub target: AttributeTarget,
     /// Numeric design-entity id of the source sketch-curve record.
     pub sketch_curve_id: i64,
+    /// Second member of the source tuple, retained in the spelling the source
+    /// writes. It is `0` in most links; what a non-zero value names is open as
+    /// `DR-30`.
+    pub ref_b: u64,
     /// Which of the sketch curve's two senses this link takes, `0` or `1`.
     /// Absent when the source record leaves the sense unconstrained.
     #[serde(default, skip_serializing_if = "Option::is_none")]

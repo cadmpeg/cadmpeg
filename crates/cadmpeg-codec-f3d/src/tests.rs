@@ -8614,6 +8614,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         id: "generated:sketch-curve-link#0".into(),
         target: AttributeTarget::Coedge(coedge_id.clone()),
         sketch_curve_id: 113,
+        ref_b: 0,
         sense: Some(1),
         role: 2,
         closure: 3,
@@ -8715,6 +8716,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
             id: format!("generated:sketch-curve-link#{ordinal}"),
             target: AttributeTarget::Coedge(coedge.clone()),
             sketch_curve_id: 113 + ordinal,
+            ref_b: 0,
             sense: Some(1),
             role: 2,
             closure: 3,
@@ -22854,6 +22856,28 @@ fn decode_transfers_generated_sketch_curve_link() {
     assert_eq!((link.role, link.closure), (2, 3));
 }
 
+/// The one sketch-curve link a synthetic archive carries for `tuple`.
+fn decoded_sketch_link(tuple: &str) -> Option<crate::records::SketchCurveLink> {
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(tuple));
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    f3d_native(&result.ir).sketch_curve_links.first().cloned()
+}
+
+#[test]
+fn a_sketch_link_keeps_the_second_tuple_member_the_source_writes() {
+    let link = decoded_sketch_link("113 4550 1 0 2 3")
+        .expect("a non-zero second member does not refuse the link");
+    assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
+    assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
+    // The member reaches the full unsigned 64-bit range, so it does not fit the
+    // signed reading the other members take.
+    let link = decoded_sketch_link("113 18446744073709551615 1 0 2 3")
+        .expect("a second member above i64::MAX does not refuse the link");
+    assert_eq!(link.ref_b, u64::MAX);
+}
+
 #[test]
 fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     use crate::records::SketchCurveLink;
@@ -22876,6 +22900,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         id: "generated:sketch-curve-link#0".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
         sketch_curve_id: 113,
+        ref_b: 0,
         sense: None,
         role: 2,
         closure: 3,
