@@ -3,7 +3,7 @@
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -642,29 +642,30 @@ fn export_ir(
     force: bool,
     rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
 ) -> Result<ExportReport> {
-    let mut bytes = Vec::new();
     if rhino_version.is_some() && format != Format::Rhino {
         bail!("--rhino-version requires Rhino output");
     }
-    let report = registry
-        .encode_by_id(
-            format.name(),
-            rhino_version,
-            ir,
-            source_fidelity,
-            &mut bytes,
-        )
-        .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
-    if let Some(path) = out {
-        write_output(input, path, &bytes, force)?;
+    let encode = |writer: &mut dyn Write| {
+        registry
+            .encode_by_id(format.name(), rhino_version, ir, source_fidelity, writer)
+            .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))?
+            .map_err(Into::into)
+    };
+    let report = if let Some(path) = out {
+        let report = write_output_with(input, path, force, encode)?;
         eprintln!(
             "wrote {} ({} entities)",
             path.display(),
             report.total_entities
         );
+        report
     } else {
-        io::stdout().write_all(&bytes)?;
-    }
+        let mut temporary = tempfile::tempfile().context("creating temporary output")?;
+        let report = encode(&mut temporary)?;
+        temporary.rewind().context("rewinding temporary output")?;
+        io::copy(&mut temporary, &mut io::stdout()).context("writing output")?;
+        report
+    };
     if !report.losses.is_empty() {
         eprintln!("{} export losses:", report.format);
         for loss in &report.losses {
@@ -700,6 +701,17 @@ fn write_command_report(
 }
 
 fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
+    write_output_with(input, output, force, |writer| {
+        writer.write_all(bytes).map_err(Into::into)
+    })
+}
+
+fn write_output_with<T>(
+    input: &Path,
+    output: &Path,
+    force: bool,
+    write: impl FnOnce(&mut dyn Write) -> Result<T>,
+) -> Result<T> {
     let input = std::fs::canonicalize(input)
         .with_context(|| format!("canonicalizing {}", input.display()))?;
     let parent = output
@@ -723,14 +735,16 @@ fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Resul
     }
     let mut temporary = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("creating temporary output in {}", parent.display()))?;
-    temporary
-        .write_all(bytes)
+    let result = write(&mut temporary)
         .with_context(|| format!("writing temporary output for {}", output.display()))?;
+    temporary
+        .flush()
+        .with_context(|| format!("flushing temporary output for {}", output.display()))?;
     temporary
         .persist(output)
         .map_err(|error| error.error)
         .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-    Ok(())
+    Ok(result)
 }
 
 fn print_id_delta(label: &str, ids: &[String]) {

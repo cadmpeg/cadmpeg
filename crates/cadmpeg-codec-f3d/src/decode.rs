@@ -1281,6 +1281,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                     linear_tolerance: ir.tolerances.linear,
                 },
             );
+            crate::history::discard_projection_caches(&mut native.asm_histories);
             crate::design::face_resolve::bind_extrude_start_planes(
                 &mut ir.model.features,
                 &ir.model.sketches,

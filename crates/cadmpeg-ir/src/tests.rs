@@ -4,6 +4,7 @@
 //! and each validation check actually fires when its invariant is broken.
 
 use crate::annotations::{ExactnessNote, Provenance};
+use crate::codec::{CadirEncoder, Encoder};
 use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::features::ExtrudeDirection;
@@ -310,6 +311,16 @@ fn unit_cube_has_expected_census() {
     assert_eq!(ir.model.points.len(), 8);
     assert_eq!(ir.model.surfaces.len(), 6);
     assert_eq!(ir.model.curves.len(), 12);
+}
+
+#[test]
+fn cadir_encoder_streams_the_canonical_json_shape() {
+    let ir = unit_cube();
+    let mut encoded = Vec::new();
+    CadirEncoder.encode(&ir, &mut encoded).unwrap();
+    let mut canonical = ir.to_canonical_json().unwrap();
+    canonical.push('\n');
+    assert_eq!(encoded, canonical.as_bytes());
 }
 
 #[test]

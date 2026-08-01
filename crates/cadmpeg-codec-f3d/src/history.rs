@@ -465,6 +465,16 @@ fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
     }
 }
 
+/// Release complete historical snapshots after every projection consumer has
+/// finished. Raw history records and sparse transitions remain retained.
+pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
+    for state in histories.iter_mut().flat_map(|history| &mut history.states) {
+        state.entity_versions.clear();
+        state.record_table_complete = false;
+        state.topology = None;
+    }
+}
+
 fn historical_transition(
     current: &AsmDeltaState,
     previous: Option<&AsmDeltaState>,
@@ -4628,6 +4638,52 @@ mod tests {
             Some("example.smbh")
         );
         assert_eq!(historical_brep_source("f3d:unqualified:state#42"), None);
+    }
+
+    #[test]
+    fn projection_caches_end_after_history_consumers() {
+        let transition = crate::history_records::AsmHistoricalTransition {
+            previous_state_id: Some(1),
+            records: Default::default(),
+            topology: Default::default(),
+        };
+        let state = AsmDeltaState {
+            id: "history:state#2".into(),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id: 2,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 2,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: vec![crate::history_records::AsmEntityVersion {
+                entity_ref: 3,
+                record_ref: 4,
+            }],
+            record_table_complete: true,
+            topology: Some(AsmHistoricalTopology::default()),
+            transition: Some(transition.clone()),
+        };
+        let mut histories = [AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            states: vec![state],
+        }];
+
+        discard_projection_caches(&mut histories);
+
+        let state = &histories[0].states[0];
+        assert!(state.entity_versions.is_empty());
+        assert!(!state.record_table_complete);
+        assert!(state.topology.is_none());
+        assert_eq!(state.transition, Some(transition));
     }
 
     #[test]
