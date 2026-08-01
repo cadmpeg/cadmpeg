@@ -9,7 +9,7 @@ use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{CadirEncoder, Codec, CodecError, Confidence, Encoder};
+use cadmpeg_ir::codec::{CadirEncoder, Codec, CodecError, Confidence, Encoder, WriteSeek};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::SourceFidelity;
@@ -92,7 +92,7 @@ impl Registry {
         rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
         ir: &CadIr,
         source_fidelity: Option<&SourceFidelity>,
-        output: &mut dyn std::io::Write,
+        output: &mut dyn WriteSeek,
     ) -> Option<Result<ExportReport, CodecError>> {
         if rhino_version.is_some() && id != "rhino" {
             return Some(Err(CodecError::Malformed(
@@ -102,16 +102,14 @@ impl Registry {
         if id == "rhino" {
             if let Some(version) = rhino_version {
                 return Some(
-                    cadmpeg_codec_rhino::RhinoEncoder::new(version).encode_with_source_fidelity(
-                        ir,
-                        source_fidelity,
-                        output,
-                    ),
+                    cadmpeg_codec_rhino::RhinoEncoder::new(version)
+                        .encode_seekable_with_source_fidelity(ir, source_fidelity, output),
                 );
             }
         }
-        self.encoder_by_id(id)
-            .map(|encoder| encoder.encode_with_source_fidelity(ir, source_fidelity, output))
+        self.encoder_by_id(id).map(|encoder| {
+            encoder.encode_seekable_with_source_fidelity(ir, source_fidelity, output)
+        })
     }
 }
 

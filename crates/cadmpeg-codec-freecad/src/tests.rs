@@ -112,6 +112,24 @@ fn write_target_and_source_requirements_are_explicit() {
 }
 
 #[test]
+fn seekable_encoder_matches_the_write_only_fallback() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut staged = Vec::new();
+    FcstdCodec.encode(&decoded.ir, &mut staged).unwrap();
+    let mut streamed = Cursor::new(Vec::new());
+    FcstdCodec
+        .encode_seekable_with_source_fidelity(&decoded.ir, None, &mut streamed)
+        .unwrap();
+
+    assert_eq!(streamed.into_inner(), staged);
+}
+
+#[test]
 fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
     let decoded = FcstdCodec
         .decode(

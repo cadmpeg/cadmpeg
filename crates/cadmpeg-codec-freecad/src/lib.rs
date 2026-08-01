@@ -1434,6 +1434,15 @@ impl Encoder for FcstdCodec {
     ) -> Result<ExportReport, CodecError> {
         self.encode_with_options(ir, output, FcstdWriteOptions::default())
     }
+
+    fn encode_seekable_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        _source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+        output: &mut dyn cadmpeg_ir::codec::WriteSeek,
+    ) -> Result<ExportReport, CodecError> {
+        writer::write_seekable(ir, output, FcstdWriteOptions::default())
+    }
 }
 
 fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {

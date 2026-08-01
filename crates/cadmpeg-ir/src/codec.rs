@@ -31,6 +31,10 @@ use serde::{Deserialize, Serialize};
 pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
 
+/// Object-safe output bound combining [`Write`] and [`Seek`].
+pub trait WriteSeek: Write + Seek {}
+impl<T: Write + Seek> WriteSeek for T {}
+
 /// How confident a codec is that it can handle a given byte prefix.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
@@ -323,6 +327,28 @@ pub trait Encoder {
     ) -> Result<ExportReport, CodecError> {
         let _ = source_fidelity;
         self.encode(ir, writer)
+    }
+
+    /// Encode to a seekable destination when the container can avoid staging
+    /// its complete artifact in memory.
+    fn encode_seekable_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: Option<&SourceFidelity>,
+        writer: &mut dyn WriteSeek,
+    ) -> Result<ExportReport, CodecError> {
+        struct WriteAdapter<'a>(&'a mut dyn WriteSeek);
+        impl Write for WriteAdapter<'_> {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.write(bytes)
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                self.0.flush()
+            }
+        }
+
+        self.encode_with_source_fidelity(ir, source_fidelity, &mut WriteAdapter(writer))
     }
 }
 

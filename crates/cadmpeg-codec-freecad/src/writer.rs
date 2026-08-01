@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::codec::{CodecError, WriteSeek};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
@@ -18,6 +18,17 @@ use crate::FcstdWriteOptions;
 pub(crate) fn write(
     ir: &CadIr,
     output: &mut dyn Write,
+    options: FcstdWriteOptions,
+) -> Result<ExportReport, CodecError> {
+    let mut staged = Cursor::new(Vec::new());
+    let report = write_seekable(ir, &mut staged, options)?;
+    output.write_all(staged.get_ref())?;
+    Ok(report)
+}
+
+pub(crate) fn write_seekable(
+    ir: &CadIr,
+    output: &mut dyn WriteSeek,
     options: FcstdWriteOptions,
 ) -> Result<ExportReport, CodecError> {
     if (options.schema_version, options.file_version) != (4, 1) {
@@ -74,9 +85,8 @@ pub(crate) fn write(
         }
     }
 
-    let mut archive_bytes = Cursor::new(Vec::new());
     {
-        let mut archive = zip::ZipWriter::new(&mut archive_bytes);
+        let mut archive = zip::ZipWriter::new(&mut *output);
         let file_options = SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .last_modified_time(zip::DateTime::default());
@@ -98,8 +108,6 @@ pub(crate) fn write(
             CodecError::Malformed(format!("cannot finish FCStd archive: {error}"))
         })?;
     }
-    output.write_all(archive_bytes.get_ref())?;
-
     let validation = cadmpeg_ir::validate(ir, Vec::new());
     let total_entities = validation.entity_counts.values().sum();
     Ok(ExportReport {

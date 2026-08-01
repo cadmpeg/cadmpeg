@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
+use cadmpeg_ir::codec::WriteSeek;
 use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
@@ -645,7 +646,7 @@ fn export_ir(
     if rhino_version.is_some() && format != Format::Rhino {
         bail!("--rhino-version requires Rhino output");
     }
-    let encode = |writer: &mut dyn Write| {
+    let encode = |writer: &mut dyn WriteSeek| {
         registry
             .encode_by_id(format.name(), rhino_version, ir, source_fidelity, writer)
             .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))?
@@ -715,7 +716,7 @@ fn write_output_with<T>(
     input: &Path,
     output: &Path,
     force: bool,
-    write: impl FnOnce(&mut dyn Write) -> Result<T>,
+    write: impl FnOnce(&mut dyn WriteSeek) -> Result<T>,
 ) -> Result<T> {
     let input = std::fs::canonicalize(input)
         .with_context(|| format!("canonicalizing {}", input.display()))?;
