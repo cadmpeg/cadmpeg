@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native Rhino 3DM archive writing.
 
-use std::io::Write;
+use std::io::{Cursor, SeekFrom, Write};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::codec::{CodecError, WriteSeek};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -76,45 +76,63 @@ const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
-    let plan = prepare_write(ir)?;
-    let mut objects = plan
-        .breps
-        .iter()
-        .map(|prepared| {
-            let scope = &prepared.scope;
-            brep_object_record(
-                &prepared.payload,
-                &scope.body.id.0,
-                scope.body.name.as_deref(),
-                scope.body.color,
-                scope.body.visible,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut staged = Cursor::new(Vec::new());
+    write_seekable(ir, version, &mut staged)?;
+    output.write_all(staged.get_ref())?;
+    Ok(())
+}
 
-    objects.extend(
-        ir.model
-            .points
-            .iter()
-            .filter(|point| !plan.topology_points.contains(&point.id.0))
-            .map(|point| {
-                let position = point.position;
-                let mut payload = vec![0x10];
-                payload.extend(position.x.to_le_bytes());
-                payload.extend(position.y.to_le_bytes());
-                payload.extend(position.z.to_le_bytes());
-                attributed_object_record(1, POINT_CLASS, &payload, &point.id.0, None, None, None)
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-    for group in plan.point_groups {
+pub(crate) fn write_seekable(
+    ir: &CadIr,
+    version: u64,
+    output: &mut dyn WriteSeek,
+) -> Result<(), CodecError> {
+    let plan = prepare_write(ir)?;
+    write_archive_prefix(ir, version, output)?;
+    let table_start = output.stream_position()?;
+    output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
+    output.write_all(&0_i64.to_le_bytes())?;
+    let body_start = output.stream_position()?;
+
+    for prepared in &plan.breps {
+        let body = &prepared.scope.ir.model.bodies[0];
+        output.write_all(&brep_object_record(
+            &prepared.payload,
+            &body.id.0,
+            body.name.as_deref(),
+            body.color,
+            body.visible,
+        )?)?;
+    }
+    for point in ir
+        .model
+        .points
+        .iter()
+        .filter(|point| !plan.topology_points.contains(&point.id.0))
+    {
+        let position = point.position;
+        let mut payload = vec![0x10];
+        payload.extend(position.x.to_le_bytes());
+        payload.extend(position.y.to_le_bytes());
+        payload.extend(position.z.to_le_bytes());
+        output.write_all(&attributed_object_record(
+            1,
+            POINT_CLASS,
+            &payload,
+            &point.id.0,
+            None,
+            None,
+            None,
+        )?)?;
+    }
+    for group in &plan.point_groups {
         if group.points.len() == 1 {
             let point = group.points[0];
             let mut payload = vec![0x10];
             payload.extend(point.x.to_le_bytes());
             payload.extend(point.y.to_le_bytes());
             payload.extend(point.z.to_le_bytes());
-            objects.push(attributed_object_record(
+            output.write_all(&attributed_object_record(
                 1,
                 POINT_CLASS,
                 &payload,
@@ -122,9 +140,9 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
                 group.name.as_deref(),
                 group.color,
                 group.visible,
-            )?);
+            )?)?;
         } else {
-            objects.push(attributed_object_record(
+            output.write_all(&attributed_object_record(
                 2,
                 POINT_CLOUD_CLASS,
                 &point_cloud_payload(&group.points),
@@ -132,15 +150,11 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
                 group.name.as_deref(),
                 group.color,
                 group.visible,
-            )?);
+            )?)?;
         }
     }
     for curve in &ir.model.curves {
-        if plan
-            .breps
-            .iter()
-            .any(|prepared| prepared.scope.curves.contains(&curve.id.0))
-        {
+        if plan.topology_curves.contains(&curve.id.0) {
             continue;
         }
         let (class, payload) = match &curve.geometry {
@@ -156,7 +170,7 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             CurveGeometry::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
             _ => unreachable!("representability checked before serialization"),
         };
-        objects.push(attributed_object_record(
+        output.write_all(&attributed_object_record(
             4,
             class,
             &payload,
@@ -164,14 +178,10 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             None,
             None,
             None,
-        )?);
+        )?)?;
     }
     for surface in &ir.model.surfaces {
-        if plan
-            .breps
-            .iter()
-            .any(|prepared| prepared.scope.surfaces.contains(&surface.id.0))
-        {
+        if plan.topology_surfaces.contains(&surface.id.0) {
             continue;
         }
         let (class, payload) = match &surface.geometry {
@@ -186,7 +196,7 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
             _ => unreachable!("representability checked before serialization"),
         };
-        objects.push(attributed_object_record(
+        output.write_all(&attributed_object_record(
             8,
             class,
             &payload,
@@ -194,32 +204,44 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             None,
             None,
             None,
-        )?);
+        )?)?;
     }
     for mesh in &ir.model.tessellations {
         let payload = mesh_payload(mesh, version);
-        objects.push(mesh_object_record(&payload, &mesh.id)?);
+        output.write_all(&mesh_object_record(&payload, &mesh.id)?)?;
     }
 
-    write_archive(ir, version, &objects, output)
+    output.write_all(&short_chunk(TCODE_ENDOFTABLE, 0))?;
+    let table_end = output.stream_position()?;
+    let body_len = i64::try_from(table_end - body_start)
+        .map_err(|_| CodecError::Malformed("3DM object table size overflow".into()))?;
+    output.seek(SeekFrom::Start(table_start + 4))?;
+    output.write_all(&body_len.to_le_bytes())?;
+    output.seek(SeekFrom::Start(table_end))?;
+    output.write_all(&table(TCODE_HISTORY_RECORD_TABLE, &[]))?;
+    let final_size = output
+        .stream_position()?
+        .checked_add(20)
+        .ok_or_else(|| CodecError::Malformed("3DM output size overflow".into()))?;
+    output.write_all(&long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes()))?;
+    Ok(())
 }
 
-fn write_archive(
+fn write_archive_prefix(
     ir: &CadIr,
     version: u64,
-    objects: &[Vec<u8>],
-    output: &mut dyn Write,
+    output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
-    let mut bytes = header(version)?;
-    bytes.extend(long_chunk(1, b"cadmpeg"));
-    bytes.extend(table(
+    output.write_all(&header(version)?)?;
+    output.write_all(&long_chunk(1, b"cadmpeg"))?;
+    output.write_all(&table(
         TCODE_PROPERTIES_TABLE,
         &[short_chunk(TCODE_PROPERTIES_OPENNURBS_VERSION, 200_712_190)],
-    ));
-    bytes.extend(table(
+    ))?;
+    output.write_all(&table(
         TCODE_SETTINGS_TABLE,
         &[units_record(ir.tolerances.linear, ir.tolerances.angular)],
-    ));
+    ))?;
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -232,34 +254,22 @@ fn write_archive(
         TCODE_HATCH_PATTERN_TABLE,
         TCODE_INSTANCE_DEFINITION_TABLE,
     ] {
-        bytes.extend(table(typecode, &[]));
+        output.write_all(&table(typecode, &[]))?;
         if typecode == TCODE_LINETYPE_TABLE {
-            bytes.extend(table(
+            output.write_all(&table(
                 TCODE_LAYER_TABLE,
                 &[zero_crc_chunk(
                     TCODE_LAYER_RECORD,
                     &class_wrapper(LAYER_CLASS, &default_layer_payload()),
                 )],
-            ));
+            ))?;
         }
     }
-    bytes.extend(table(TCODE_OBJECT_TABLE, objects));
-    bytes.extend(table(TCODE_HISTORY_RECORD_TABLE, &[]));
-    let final_size = bytes
-        .len()
-        .checked_add(20)
-        .ok_or_else(|| CodecError::Malformed("3DM output size overflow".into()))?;
-    bytes.extend(long_chunk(
-        TCODE_ENDOFFILE,
-        &(final_size as u64).to_le_bytes(),
-    ));
-    output.write_all(&bytes)?;
     Ok(())
 }
 
 struct BrepScope {
     ir: CadIr,
-    body: cadmpeg_ir::topology::Body,
     points: std::collections::BTreeSet<String>,
     surfaces: std::collections::BTreeSet<String>,
     curves: std::collections::BTreeSet<String>,
@@ -279,6 +289,8 @@ struct BrepPayload {
 struct WritePlan {
     breps: Vec<PreparedBrep>,
     topology_points: std::collections::BTreeSet<String>,
+    topology_curves: std::collections::BTreeSet<String>,
+    topology_surfaces: std::collections::BTreeSet<String>,
     point_groups: Vec<PointGroup>,
 }
 
@@ -397,59 +409,77 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             }
         }
 
-        let mut scoped = ir.clone();
-        scoped
-            .model
-            .bodies
-            .retain(|candidate| candidate.id == body.id);
-        scoped
-            .model
+        let mut scoped = CadIr::empty(ir.units.clone());
+        scoped.tolerances = ir.tolerances;
+        scoped.model.bodies.push(body.clone());
+        scoped.model.regions = model
             .regions
-            .retain(|entity| regions.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| regions.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.shells = model
             .shells
-            .retain(|entity| shells.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| shells.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.faces = model
             .faces
-            .retain(|entity| faces.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| faces.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.loops = model
             .loops
-            .retain(|entity| loops.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| loops.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.coedges = model
             .coedges
-            .retain(|entity| coedges.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| coedges.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.edges = model
             .edges
-            .retain(|entity| edges.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| edges.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.vertices = model
             .vertices
-            .retain(|entity| vertices.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| vertices.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.points = model
             .points
-            .retain(|entity| points.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| points.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.surfaces = model
             .surfaces
-            .retain(|entity| surfaces.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| surfaces.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.curves = model
             .curves
-            .retain(|entity| curves.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| curves.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.pcurves = model
             .pcurves
-            .retain(|entity| pcurves.contains(&entity.id.0));
-        scoped.model.tessellations.clear();
+            .iter()
+            .filter(|entity| pcurves.contains(&entity.id.0))
+            .cloned()
+            .collect();
         scopes.push(BrepScope {
             ir: scoped,
-            body: body.clone(),
             points,
             surfaces,
             curves,
@@ -463,45 +493,67 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
     use cadmpeg_ir::topology::BodyKind;
     use std::collections::BTreeSet;
 
-    let mut scoped = ir.clone();
-    scoped
+    let mut scoped = CadIr::empty(ir.units.clone());
+    scoped.tolerances = ir.tolerances;
+    scoped.model.bodies = ir
         .model
         .bodies
-        .retain(|body| body.kind == BodyKind::General);
+        .iter()
+        .filter(|body| body.kind == BodyKind::General)
+        .cloned()
+        .collect();
     let bodies = scoped
         .model
         .bodies
         .iter()
         .map(|body| body.id.0.clone())
         .collect::<BTreeSet<_>>();
-    scoped
+    scoped.model.regions = ir
         .model
         .regions
-        .retain(|region| bodies.contains(&region.body.0));
+        .iter()
+        .filter(|region| bodies.contains(&region.body.0))
+        .cloned()
+        .collect();
     let regions = scoped
         .model
         .regions
         .iter()
         .map(|region| region.id.0.clone())
         .collect::<BTreeSet<_>>();
-    scoped
+    scoped.model.shells = ir
         .model
         .shells
-        .retain(|shell| regions.contains(&shell.region.0));
+        .iter()
+        .filter(|shell| regions.contains(&shell.region.0))
+        .cloned()
+        .collect();
     let vertices = scoped
         .model
         .shells
         .iter()
         .flat_map(|shell| shell.free_vertices.iter().map(|id| id.0.clone()))
         .collect::<BTreeSet<_>>();
-    scoped
+    scoped.model.vertices = ir
         .model
         .vertices
-        .retain(|vertex| vertices.contains(&vertex.id.0));
-    scoped.model.faces.clear();
-    scoped.model.loops.clear();
-    scoped.model.coedges.clear();
-    scoped.model.edges.clear();
+        .iter()
+        .filter(|vertex| vertices.contains(&vertex.id.0))
+        .cloned()
+        .collect();
+    let points = scoped
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.0.as_str())
+        .collect::<BTreeSet<_>>();
+    scoped.model.points = ir
+        .model
+        .points
+        .iter()
+        .filter(|point| points.contains(point.id.0.as_str()))
+        .cloned()
+        .collect();
     scoped
 }
 
@@ -571,7 +623,7 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
             let payload = planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "body {} topology is not a writable Brep",
-                    scope.body.id.0
+                    scope.ir.model.bodies[0].id.0
                 ))
             })?;
             Ok(PreparedBrep { scope, payload })
@@ -586,6 +638,14 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
             "pcurves without writable Brep coedge ownership are not writable".into(),
         ));
     }
+    let topology_curves = prepared_breps
+        .iter()
+        .flat_map(|prepared| prepared.scope.curves.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>();
+    let topology_surfaces = prepared_breps
+        .iter()
+        .flat_map(|prepared| prepared.scope.surfaces.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>();
     let general = general_topology_ir(ir);
     let scoped_count = |select: fn(&cadmpeg_ir::document::Model) -> usize| {
         prepared_breps
@@ -612,10 +672,7 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
         topology_points.extend(prepared.scope.points.iter().cloned());
     }
     for curve in &model.curves {
-        if prepared_breps
-            .iter()
-            .any(|prepared| prepared.scope.curves.contains(&curve.id.0))
-        {
+        if topology_curves.contains(&curve.id.0) {
             continue;
         }
         if curve.source_object.is_some() {
@@ -661,10 +718,7 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
         }
     }
     for surface in &model.surfaces {
-        if prepared_breps
-            .iter()
-            .any(|prepared| prepared.scope.surfaces.contains(&surface.id.0))
-        {
+        if topology_surfaces.contains(&surface.id.0) {
             continue;
         }
         if surface.source_object.is_some() {
@@ -696,6 +750,8 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
     Ok(WritePlan {
         breps: prepared_breps,
         topology_points,
+        topology_curves,
+        topology_surfaces,
         point_groups,
     })
 }

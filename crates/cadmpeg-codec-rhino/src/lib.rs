@@ -83,45 +83,8 @@ impl RhinoEncoder {
     pub const fn new(version: RhinoArchiveVersion) -> Self {
         Self { version }
     }
-}
 
-impl Codec for RhinoCodec {
-    fn id(&self) -> &'static str {
-        "rhino"
-    }
-
-    fn detect(&self, prefix: &[u8]) -> Confidence {
-        if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
-            Confidence::High
-        } else {
-            Confidence::No
-        }
-    }
-
-    fn inspect_impl(
-        &self,
-        _ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<ContainerSummary, CodecError> {
-        container::inspect(root)
-    }
-
-    fn decode_impl(
-        &self,
-        ctx: &DecodeContext<'_>,
-        root: View<'_>,
-    ) -> Result<DecodeResult, CodecError> {
-        container::decode(ctx, root, ctx.container_only())
-    }
-}
-
-impl Encoder for RhinoEncoder {
-    fn id(&self) -> &'static str {
-        "rhino"
-    }
-
-    fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        writer::write(ir, self.version.value(), output)?;
+    fn export_report(self, ir: &CadIr) -> ExportReport {
         let validation = cadmpeg_ir::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
         let vertex_quantization = self.version == RhinoArchiveVersion::V5
@@ -164,13 +127,64 @@ impl Encoder for RhinoEncoder {
                 provenance: None,
             });
         }
-        Ok(ExportReport {
+        ExportReport {
             format: "rhino".into(),
             total_entities,
             entity_counts: validation.entity_counts,
             losses,
             notes: vec![format!("3DM archive version {}", self.version.value())],
-        })
+        }
+    }
+}
+
+impl Codec for RhinoCodec {
+    fn id(&self) -> &'static str {
+        "rhino"
+    }
+
+    fn detect(&self, prefix: &[u8]) -> Confidence {
+        if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
+            Confidence::High
+        } else {
+            Confidence::No
+        }
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        container::inspect(root)
+    }
+
+    fn decode_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<DecodeResult, CodecError> {
+        container::decode(ctx, root, ctx.container_only())
+    }
+}
+
+impl Encoder for RhinoEncoder {
+    fn id(&self) -> &'static str {
+        "rhino"
+    }
+
+    fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        writer::write(ir, self.version.value(), output)?;
+        Ok(self.export_report(ir))
+    }
+
+    fn encode_seekable_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        _source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+        output: &mut dyn cadmpeg_ir::codec::WriteSeek,
+    ) -> Result<ExportReport, CodecError> {
+        writer::write_seekable(ir, self.version.value(), output)?;
+        Ok(self.export_report(ir))
     }
 }
 
@@ -181,6 +195,19 @@ impl Encoder for RhinoCodec {
 
     fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
         RhinoEncoder::new(RhinoArchiveVersion::V8).encode(ir, output)
+    }
+
+    fn encode_seekable_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+        output: &mut dyn cadmpeg_ir::codec::WriteSeek,
+    ) -> Result<ExportReport, CodecError> {
+        RhinoEncoder::new(RhinoArchiveVersion::V8).encode_seekable_with_source_fidelity(
+            ir,
+            source_fidelity,
+            output,
+        )
     }
 }
 
