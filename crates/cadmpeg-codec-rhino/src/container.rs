@@ -166,8 +166,17 @@ fn acquire(root: View<'_>) -> Result<&[u8], CodecError> {
     Ok(data)
 }
 
-fn malformed(error: &FramingError) -> CodecError {
-    CodecError::Malformed(error.to_string())
+fn framing_error(error: FramingError) -> CodecError {
+    match error {
+        FramingError::Truncated { offset, .. } => CodecError::truncated(
+            cadmpeg_codec_core::decode::SourceLocation {
+                space: cadmpeg_codec_core::decode::SpaceId::ROOT,
+                offset: offset as u64,
+            },
+            "rhino chunk framing",
+        ),
+        other => CodecError::Malformed(other.to_string()),
+    }
 }
 
 fn checksum_warning(
@@ -177,9 +186,8 @@ fn checksum_warning(
     parent_end: usize,
     archive: ArchiveVersion,
 ) -> Result<Option<String>, CodecError> {
-    let chunk =
-        chunk_at(data, offset, parent_end, archive, false).map_err(|error| malformed(&error))?;
-    match verify_checksum(data, &chunk).map_err(|error| malformed(&error))? {
+    let chunk = chunk_at(data, offset, parent_end, archive, false).map_err(framing_error)?;
+    match verify_checksum(data, &chunk).map_err(framing_error)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {offset} for typecode {typecode:#x}: expected {expected:#x}, got {actual:#x}"
         ))),
@@ -193,7 +201,7 @@ fn parse_record(
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<Record, CodecError> {
-    let chunk = chunk_at(data, offset, end, archive, false).map_err(|error| malformed(&error))?;
+    let chunk = chunk_at(data, offset, end, archive, false).map_err(framing_error)?;
     Ok(Record {
         typecode: chunk.typecode,
         range: offset..chunk.next_offset,
@@ -331,7 +339,7 @@ pub(crate) fn scan(data: &[u8]) -> Result<Scan<'_>, CodecError> {
 }
 
 fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, CodecError> {
-    let header = parse_header(data).map_err(|error| malformed(&error))?;
+    let header = parse_header(data).map_err(framing_error)?;
     let archive = header.archive_version;
     let comment = parse_record(data, 32, data.len(), archive)?;
     if comment.typecode != TCODE_COMMENT || comment.short {
@@ -355,15 +363,14 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
     let mut history = Vec::new();
     let mut record_count = 0_usize;
     while offset < data.len() {
-        let chunk = chunk_at(data, offset, data.len(), archive, false)
-            .map_err(|error| malformed(&error))?;
+        let chunk = chunk_at(data, offset, data.len(), archive, false).map_err(framing_error)?;
         if chunk.typecode == TCODE_ENDOFFILE {
             if !saw_properties || !saw_settings || !saw_objects {
                 return Err(CodecError::Malformed(
                     "properties, settings, and object tables are required".to_string(),
                 ));
             }
-            parse_eof(data, offset, archive).map_err(|error| malformed(&error))?;
+            parse_eof(data, offset, archive).map_err(framing_error)?;
             let metadata = crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
             resolve_identities(&mut all_objects, &metadata, &mut warnings);
             return Ok(Scan {
@@ -417,7 +424,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
         let mut terminated = false;
         while child_offset < chunk.body.end {
             let child = chunk_at(data, child_offset, chunk.body.end, archive, false)
-                .map_err(|error| malformed(&error))?;
+                .map_err(framing_error)?;
             if child.typecode == TCODE_ENDOFTABLE {
                 if !child.short || child.value != 0 {
                     return Err(CodecError::Malformed(
@@ -702,7 +709,7 @@ pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
 /// Inspect a Rhino stream, applying the version-specific scan depth.
 pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     let data = acquire(root)?;
-    let header = parse_header(data).map_err(|error| malformed(&error))?;
+    let header = parse_header(data).map_err(framing_error)?;
     if header_only(header.archive_version) {
         return Ok(ContainerSummary {
             format: "rhino".to_string(),
@@ -724,7 +731,7 @@ pub(crate) fn decode(
     container_only: bool,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
     let data = acquire(root)?;
-    let header = parse_header(data).map_err(|error| malformed(&error))?;
+    let header = parse_header(data).map_err(framing_error)?;
     if header_only(header.archive_version) {
         return Err(CodecError::NotImplemented(format!(
             "Rhino archive version {} decode is not implemented",

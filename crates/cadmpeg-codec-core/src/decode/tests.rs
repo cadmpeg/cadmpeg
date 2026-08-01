@@ -191,3 +191,22 @@ fn local_limit_refusal_uses_codec_dimension() {
                 && limit.context.operation == "records"
     ));
 }
+
+#[test]
+fn committed_reads_preserve_truncation_location_and_operation() {
+    let arena = DecodeArena::new();
+    let (_, mut root) =
+        DecodeContext::from_root_bytes(&[1, 2], &arena, &DecodePolicy::default()).unwrap();
+    let error: CodecError = root
+        .req_u32_le()
+        .unwrap_err()
+        .during("read header size")
+        .into();
+    assert!(matches!(
+        error,
+        CodecError::Truncated { location, context }
+            if location == root.location_at(0)
+                && context.operation == "read header size"
+                && context.location == Some(location)
+    ));
+}

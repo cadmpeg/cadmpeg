@@ -46,3 +46,16 @@ pub enum CodecError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
+
+impl CodecError {
+    /// Builds a truncation error at a qualified source location.
+    pub const fn truncated(location: SourceLocation, operation: &'static str) -> Self {
+        Self::Truncated {
+            location,
+            context: ErrorContext {
+                operation,
+                location: Some(location),
+            },
+        }
+    }
+}

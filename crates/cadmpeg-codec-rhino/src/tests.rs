@@ -1705,6 +1705,20 @@ fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
 }
 
 #[test]
+fn top_level_framing_preserves_truncation_classification() {
+    let bytes = header("50");
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(matches!(
+        RhinoCodec.inspect(
+            &mut Cursor::new(truncated),
+            &InspectOptions::default()
+        ),
+        Err(CodecError::Truncated { location, context })
+            if location.offset == 31 && context.operation == "rhino chunk framing"
+    ));
+}
+
+#[test]
 fn requires_end_of_table_and_rejects_wrong_order() {
     let archive = ArchiveVersion::V5;
     let mut missing = header("50");
