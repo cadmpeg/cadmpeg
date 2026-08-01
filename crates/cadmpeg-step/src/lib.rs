@@ -21,7 +21,7 @@
 //! let report = write_step(&ir, &mut bytes, &StepWriteOptions::default())?;
 //!
 //! assert!(bytes.starts_with(b"ISO-10303-21;"));
-//! assert!(report.total_entities > 0);
+//! assert!(report.census.total() > 0);
 //! # Ok::<(), cadmpeg_step::StepError>(())
 //! ```
 //!
@@ -53,7 +53,9 @@ use std::io::Write;
 
 use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::appearance::Appearance;
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult, Encoder};
+use cadmpeg_ir::codec::{
+    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
@@ -65,6 +67,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::FidelityResolution;
 
 use writer::{real, refs, string, Emitter, Ref};
 
@@ -2815,8 +2818,11 @@ impl<'a> Builder<'a> {
     fn finish_report(&self) -> ExportReport {
         ExportReport {
             format: "step".into(),
-            entity_counts: self.emitter.counts(),
-            total_entities: self.emitter.total(),
+            census: cadmpeg_ir::EntityCensus {
+                basis: cadmpeg_ir::CensusBasis::TargetRecords,
+                counts: self.emitter.counts(),
+            },
+            fidelity: FidelityResolution::NotProvided,
             losses: self.losses.clone(),
             notes: self.notes.clone(),
         }
@@ -2835,8 +2841,15 @@ impl Encoder for StepCodec {
         "step"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        write_step(ir, writer, &self.options).map_err(CodecError::from)
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        let report = write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;
+        let fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        };
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 

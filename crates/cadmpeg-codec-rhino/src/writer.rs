@@ -3504,7 +3504,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             assert_eq!(
                 std::str::from_utf8(&bytes[24..32])
@@ -3535,7 +3539,11 @@ mod tests {
 
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("coarse absolute tolerance is writable");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3562,7 +3570,11 @@ mod tests {
             ir.tolerances.angular = angular;
             let mut output = vec![0xaa];
             let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-                .encode(&ir, &mut output)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut output))
                 .expect_err("invalid tolerance must not be serialized");
             assert!(matches!(
                 error,
@@ -3584,7 +3596,11 @@ mod tests {
         });
         let mut output = vec![0xaa];
         assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .is_err());
         assert_eq!(output, [0xaa]);
     }
@@ -3604,7 +3620,11 @@ mod tests {
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3650,7 +3670,11 @@ mod tests {
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3733,7 +3757,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3778,7 +3806,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3823,7 +3855,11 @@ mod tests {
             });
         let mut v5 = Vec::new();
         let v5_report = RhinoEncoder::new(RhinoArchiveVersion::V5)
-            .encode(&ir, &mut v5)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut v5))
             .expect("required invariant");
         assert_eq!(v5_report.losses.len(), 1);
         let decoded_v5 = RhinoCodec
@@ -3832,7 +3868,11 @@ mod tests {
         assert_ne!(decoded_v5.ir.model.tessellations[0].vertices[0].x, 0.1);
         let mut v8 = Vec::new();
         let v8_report = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut v8)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut v8))
             .expect("required invariant");
         assert!(v8_report.losses.is_empty());
         let decoded = RhinoCodec
@@ -3882,7 +3922,11 @@ mod tests {
             });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3929,7 +3973,11 @@ mod tests {
 
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("channel bytes are opaque to chunk framing");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3991,7 +4039,11 @@ mod tests {
         }
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4017,7 +4069,11 @@ mod tests {
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&source, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let mut decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4027,7 +4083,11 @@ mod tests {
 
         let mut output = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&decoded.ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &decoded.ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect("required invariant");
         let rewritten = RhinoCodec
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
@@ -4048,7 +4108,11 @@ mod tests {
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&source, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let mut decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4067,7 +4131,11 @@ mod tests {
 
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&decoded.ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &decoded.ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("survival handling"));
         assert_eq!(output, [0xaa]);
@@ -4095,7 +4163,11 @@ mod tests {
         });
         let mut output = vec![0xaa];
         assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .is_err());
         assert_eq!(output, [0xaa]);
     }
@@ -4144,7 +4216,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4187,7 +4263,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4266,7 +4346,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4369,7 +4453,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4420,7 +4508,11 @@ mod tests {
         }];
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("does not exactly match"));
         assert_eq!(output, [0xaa]);
@@ -4458,7 +4550,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4496,7 +4592,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4542,7 +4642,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4658,7 +4762,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4693,7 +4801,11 @@ mod tests {
         direction.v += 0.25;
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("misses directed edge curve"));
         assert_eq!(output, [0xaa]);
@@ -4708,7 +4820,11 @@ mod tests {
         }
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("explicit pcurve"));
         assert_eq!(output, [0xaa]);
@@ -4725,7 +4841,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4795,7 +4915,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4860,7 +4984,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4892,7 +5020,11 @@ mod tests {
         ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("incidence"));
         assert_eq!(output, [0xaa]);
@@ -4907,7 +5039,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

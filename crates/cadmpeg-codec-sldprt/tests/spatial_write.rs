@@ -63,10 +63,11 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
 fn retained_spatial_line_endpoint_edits_round_trip() {
     let mut first_encoding = Vec::new();
     SldprtCodec
-        .encode(
-            &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
-            &mut first_encoding,
-        )
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut first_encoding))
         .expect("source-less spatial line should encode");
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(first_encoding), &DecodeOptions::default())
@@ -81,7 +82,11 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
 
     let mut second_encoding = Vec::new();
     SldprtCodec
-        .encode(&decoded, &mut second_encoding)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut second_encoding))
         .expect("edited retained spatial line should encode");
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(second_encoding), &DecodeOptions::default())

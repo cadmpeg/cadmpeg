@@ -1018,8 +1018,9 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
     assert_eq!(value["export"]["format"], "step");
-    assert!(value["export"]["entity_counts"].is_object());
-    assert!(value["export"]["total_entities"].is_number());
+    assert_eq!(value["export"]["census"]["basis"], "target_records");
+    assert!(value["export"]["census"]["counts"].is_object());
+    assert_eq!(value["export"]["fidelity"]["status"], "not_provided");
     assert!(value["export"]["losses"].is_array());
     assert!(value["export"]["notes"].is_array());
 

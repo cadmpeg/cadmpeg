@@ -10,7 +10,7 @@ use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{CadirEncoder, Codec, Confidence, Encoder};
+use cadmpeg_ir::codec::{CadirEncoder, Codec, Confidence, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::SourceFidelity;
@@ -41,7 +41,9 @@ impl Registry {
                 Box::new(FcstdCodec),
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
-                Box::new(RhinoCodec),
+                Box::new(cadmpeg_codec_rhino::RhinoEncoder::new(
+                    cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
+                )),
                 Box::new(StepCodec::default()),
                 Box::new(CadirEncoder),
             ],
@@ -103,16 +105,23 @@ impl Registry {
         if id == "rhino" {
             if let Some(version) = rhino_version {
                 return Some(
-                    cadmpeg_codec_rhino::RhinoEncoder::new(version).encode_with_source_fidelity(
-                        ir,
-                        source_fidelity,
-                        output,
-                    ),
+                    cadmpeg_codec_rhino::RhinoEncoder::new(version)
+                        .plan(EncodeInput {
+                            ir,
+                            fidelity: source_fidelity,
+                        })
+                        .and_then(|plan| plan.write_to(output)),
                 );
             }
         }
-        self.encoder_by_id(id)
-            .map(|encoder| encoder.encode_with_source_fidelity(ir, source_fidelity, output))
+        self.encoder_by_id(id).map(|encoder| {
+            encoder
+                .plan(EncodeInput {
+                    ir,
+                    fidelity: source_fidelity,
+                })
+                .and_then(|plan| plan.write_to(output))
+        })
     }
 }
 

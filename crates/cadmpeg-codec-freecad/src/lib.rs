@@ -34,7 +34,9 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult, Encoder};
+use cadmpeg_ir::codec::{
+    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -46,6 +48,7 @@ use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::FidelityResolution;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
 
 /// `FCStd` document codec.
@@ -1427,12 +1430,16 @@ impl Encoder for FcstdCodec {
         "fcstd"
     }
 
-    fn encode(
-        &self,
-        ir: &CadIr,
-        output: &mut dyn std::io::Write,
-    ) -> Result<ExportReport, CodecError> {
-        self.encode_with_options(ir, output, FcstdWriteOptions::default())
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        let report =
+            self.encode_with_options(input.ir, &mut bytes, FcstdWriteOptions::default())?;
+        let fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        };
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 

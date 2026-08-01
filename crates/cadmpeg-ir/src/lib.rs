@@ -98,8 +98,8 @@ pub use products::{
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, CoverageKey, DecodeReport, ExportReport, Finding, LossCategory, LossKind, LossNote,
-    Severity, StrictConsequence, ValidationReport,
+    CensusBasis, Check, CoverageKey, DecodeReport, EntityCensus, ExportReport, FidelityResolution,
+    Finding, LossCategory, LossKind, LossNote, Severity, StrictConsequence, ValidationReport,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,

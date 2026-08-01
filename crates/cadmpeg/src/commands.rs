@@ -655,7 +655,7 @@ fn export_ir(
         eprintln!(
             "wrote {} ({} entities)",
             path.display(),
-            report.total_entities
+            report.census.total()
         );
     } else {
         io::stdout().write_all(&bytes)?;

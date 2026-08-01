@@ -2714,9 +2714,9 @@ fn every_reference_resolves() {
 fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     let mut buf = Vec::new();
     let report = write_step(&unit_cube(), &mut buf, &StepWriteOptions::default()).unwrap();
-    assert_eq!(report.total_entities, buf_line_count(&buf));
-    assert_eq!(report.entity_counts.get("ADVANCED_FACE"), Some(&6));
-    assert_eq!(report.entity_counts.get("VERTEX_POINT"), Some(&8));
+    assert_eq!(report.census.total(), buf_line_count(&buf));
+    assert_eq!(report.census.counts.get("ADVANCED_FACE"), Some(&6));
+    assert_eq!(report.census.counts.get("VERTEX_POINT"), Some(&8));
     // The cube is fully representable: no error/blocking losses.
     assert_eq!(report.error_count(), 0);
 }

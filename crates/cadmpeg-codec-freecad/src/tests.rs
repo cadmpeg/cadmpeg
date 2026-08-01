@@ -46,7 +46,11 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
-        .encode(&edited, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &edited,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
     assert!(report.losses.is_empty());
     let round_trip = FcstdCodec
@@ -107,7 +111,11 @@ fn write_target_and_source_requirements_are_explicit() {
 
     let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let missing_graph = FcstdCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
     assert!(missing_graph.to_string().contains("source-less"));
 }
@@ -131,7 +139,11 @@ fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
         .set_arena("objects", &objects)
         .expect("replace objects");
     let error = FcstdCodec
-        .encode(&declaration_edit, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &declaration_edit,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unserialized declaration edit must fail");
     assert!(error.to_string().contains("declaration edits"));
 
@@ -150,7 +162,11 @@ fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
         .set_arena("entries", &entries)
         .expect("replace entries");
     let error = FcstdCodec
-        .encode(&stale_entry, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &stale_entry,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("stale entry metadata must fail");
     assert!(error.to_string().contains("stale length or digest"));
 }
@@ -217,7 +233,13 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .expect("replace side entry");
 
     let mut encoded = Vec::new();
-    FcstdCodec.encode(&ir, &mut encoded).expect("write graph");
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("write graph");
     let round_trip = FcstdCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode generated file");

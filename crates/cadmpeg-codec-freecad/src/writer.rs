@@ -101,11 +101,13 @@ pub(crate) fn write(
     output.write_all(archive_bytes.get_ref())?;
 
     let validation = cadmpeg_ir::validate(ir, Vec::new());
-    let total_entities = validation.entity_counts.values().sum();
     Ok(ExportReport {
         format: "fcstd".into(),
-        entity_counts: validation.entity_counts,
-        total_entities,
+        census: cadmpeg_ir::EntityCensus {
+            basis: cadmpeg_ir::CensusBasis::IrArenas,
+            counts: validation.entity_counts,
+        },
+        fidelity: cadmpeg_ir::FidelityResolution::NotProvided,
         losses: Vec::new(),
         notes: vec![
             format!(

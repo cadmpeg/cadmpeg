@@ -158,9 +158,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .namespace("fcstd")
             .ok_or("decoded fixture has no fcstd namespace")?;
         let mut first_write = Vec::new();
-        FcstdCodec.encode(&first.ir, &mut first_write)?;
+        FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &first.ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut first_write))?;
         let mut second_write = Vec::new();
-        FcstdCodec.encode(&first.ir, &mut second_write)?;
+        FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &first.ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut second_write))?;
         let written =
             FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
         let semantic_round_trip =
@@ -177,7 +187,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "cadmpeg L9 edit",
         )?;
         let mut edited_bytes = Vec::new();
-        FcstdCodec.encode(&edited_ir, &mut edited_bytes)?;
+        FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &edited_ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut edited_bytes))?;
         let edited =
             FcstdCodec.decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())?;
         let typed_edit_round_trip =
@@ -705,9 +720,19 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         )?;
     let ir = builder.build()?;
     let mut first = Vec::new();
-    FcstdCodec.encode(&ir, &mut first)?;
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut first))?;
     let mut second = Vec::new();
-    FcstdCodec.encode(&ir, &mut second)?;
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut second))?;
     let decoded = FcstdCodec.decode(&mut Cursor::new(&first), &DecodeOptions::default())?;
     let namespace = decoded
         .ir

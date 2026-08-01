@@ -394,14 +394,57 @@ impl DecodeReport {
 pub struct ExportReport {
     /// Target format id.
     pub format: String,
-    /// Exported entity counts keyed by target entity kind.
-    pub entity_counts: BTreeMap<String, usize>,
-    /// Total exported entities.
-    pub total_entities: usize,
+    /// Entity counts and the semantic basis on which they were measured.
+    pub census: EntityCensus,
+    /// How decode-time source fidelity was handled.
+    pub fidelity: FidelityResolution,
     /// Omitted, normalized, or reduced content.
     pub losses: Vec<LossNote>,
     /// Informational details about the export path.
     pub notes: Vec<String>,
+}
+
+/// How an encoder resolved optional source fidelity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub enum FidelityResolution {
+    /// The input had no decode-time fidelity state.
+    NotProvided,
+    /// Preserved source content was consumed successfully.
+    Replayed,
+    /// The encoder does not consume source fidelity.
+    NotConsumed,
+    /// Fidelity was available but could not be consumed.
+    Degraded {
+        /// Explanation of the degradation.
+        reason: String,
+    },
+}
+
+/// The model against which export entity counts were measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CensusBasis {
+    /// Counts describe records emitted in the target format.
+    TargetRecords,
+    /// Counts describe input IR arenas.
+    IrArenas,
+}
+
+/// Explicitly based entity counts for one export.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EntityCensus {
+    /// Semantic basis of `counts`.
+    pub basis: CensusBasis,
+    /// Counts keyed by arena or target-record kind.
+    pub counts: BTreeMap<String, usize>,
+}
+
+impl EntityCensus {
+    /// Total count across every census row.
+    pub fn total(&self) -> usize {
+        self.counts.values().sum()
+    }
 }
 
 impl ExportReport {
