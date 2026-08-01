@@ -167,8 +167,11 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
+    let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves(&scan.data);
+    let b2_nurbs_curve_count = b2_nurbs_curves.len();
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
         && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
+        && b2_nurbs_curves.is_empty()
     {
         return None;
     }
@@ -216,6 +219,25 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     }
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     append_consolidated_line_profiles(&mut ir, &mut annotations, &scan.data);
+    for curve in b2_nurbs_curves {
+        let id = CurveId(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()));
+        annotate(
+            &mut annotations,
+            &id,
+            "consolidated_b2_03_16",
+            curve.pos as u64,
+            format!("header_token:{:08x}", curve.header_token),
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Nurbs(curve.geometry),
+            source_object: Some(cgm_source_key(
+                "b2-nurbs-curve-frame",
+                format!("{:010}", curve.pos),
+            )),
+        });
+    }
     let mut losses = if topology_transferred && b5_complete {
         vec![LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
@@ -248,6 +270,10 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
     let mut coverage = std::collections::BTreeMap::new();
+    coverage.insert(
+        "decoded_b2_nurbs_curve_count".to_string(),
+        b2_nurbs_curve_count,
+    );
     if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
         coverage.insert(
             "resolved_object_stream_face_terminal_control_03_count".to_string(),

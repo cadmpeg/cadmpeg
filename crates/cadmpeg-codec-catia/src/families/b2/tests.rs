@@ -882,6 +882,72 @@ fn b2_offset_support_parser_ignores_other_construction_kinds() {
     assert!(crate::families::b2::records::b2_offset_supports(&record).is_empty());
 }
 
+fn b2_nurbs_curve_stream(weights: [f64; 4]) -> Vec<u8> {
+    let knot_end = 41.693_759_535_8_f64;
+    let mut payload = vec![0x0d, 0x09, 0x0c];
+    payload.extend_from_slice(&0.0f64.to_le_bytes());
+    payload.extend_from_slice(&knot_end.to_le_bytes());
+    payload.push(0x05);
+    for point in [
+        [11.0, 23.0, 37.0],
+        [15.0, 31.0, 41.0],
+        [24.0, 17.0, 43.0],
+        [31.0, 29.0, 37.0],
+    ] {
+        for coordinate in point {
+            payload.extend_from_slice(&f64::to_le_bytes(coordinate));
+        }
+    }
+    for weight in weights {
+        payload.extend_from_slice(&weight.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x05, 0x05]);
+    for value in [0.0, knot_end, 1.0, 0.0] {
+        payload.extend_from_slice(&f64::to_le_bytes(value));
+    }
+    payload.extend_from_slice(&[0x00, 0x07]);
+    assert_eq!(payload.len(), 184);
+    let mut record = vec![0xb2, 0x03, 0x16, 184, 0x19];
+    record.extend(payload);
+    record
+}
+
+#[test]
+fn b2_nurbs_curve_parser_preserves_asymmetric_weights_in_source_order() {
+    let curves = crate::families::b2::records::b2_nurbs_curves(&b2_nurbs_curve_stream([
+        1.0, 0.72, 1.31, 0.93,
+    ]));
+    let [curve] = curves.as_slice() else {
+        panic!("one rational curve");
+    };
+    assert_eq!(curve.geometry.degree, 3);
+    assert_eq!(curve.geometry.control_points.len(), 4);
+    assert_eq!(
+        curve.geometry.weights.as_deref(),
+        Some(&[1.0, 0.72, 1.31, 0.93][..])
+    );
+    assert_eq!(curve.geometry.knots.len(), 8);
+    assert_eq!(curve.geometry.knots[..4], [0.0; 4]);
+    assert_eq!(curve.geometry.knots[4..], [41.693_759_535_8; 4]);
+}
+
+#[test]
+fn b2_nurbs_curve_parser_rejects_broken_frame_invariants() {
+    let valid = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
+    for offset in [6, 7, 8, 16, 24, 153, 154, 155, 163, 171, 179, 187, 188] {
+        let mut broken = valid.clone();
+        broken[offset] ^= 1;
+        assert!(
+            crate::families::b2::records::b2_nurbs_curves(&broken).is_empty(),
+            "offset {offset}"
+        );
+    }
+    let mut nonpositive_weight = valid;
+    nonpositive_weight[5 + 3 + 16 + 1 + 4 * 24..5 + 3 + 16 + 1 + 4 * 24 + 8]
+        .copy_from_slice(&0.0f64.to_le_bytes());
+    assert!(crate::families::b2::records::b2_nurbs_curves(&nonpositive_weight).is_empty());
+}
+
 #[test]
 fn b2_composite_parser_reads_embedded_cylinder_frame() {
     let bytes = b2_embedded_cylinder_stream();

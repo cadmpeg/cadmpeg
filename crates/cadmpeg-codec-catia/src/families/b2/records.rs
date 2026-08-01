@@ -5,7 +5,7 @@
 //! parameter-space packets, and consolidated UV pcurves.
 
 use cadmpeg_codec_core::le::u16_at as u16_le;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashSet};
 use std::mem::size_of;
@@ -911,6 +911,98 @@ pub struct B2Circle {
     pub full_circle: bool,
     /// Length-valued angular chart shift.
     pub chart_shift: f64,
+}
+
+/// One clamped rational NURBS curve stored in a `b2 03 16` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2NurbsCurve {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded record token.
+    pub header_token: u32,
+    /// Exact neutral rational curve.
+    pub geometry: NurbsCurve,
+}
+
+/// Decode length-closed `b2 03 16` rational NURBS curves.
+///
+/// The record stores one clamped span. The first compact integer is the degree,
+/// so the control-point and weight cardinalities are both `degree + 1`. The two
+/// knot limits occur twice and the second pair must reproduce the first pair.
+#[must_use]
+pub fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
+    b_family_frames(data, 0x16)
+        .into_iter()
+        .filter_map(|frame| parse_b2_nurbs_curve(data, frame))
+        .collect()
+}
+
+fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2NurbsCurve> {
+    let mut at = frame.payload;
+    let degree = compact_int(data, &mut at)?;
+    let control_count = usize::try_from(degree.checked_add(1)?).ok()?;
+    if !(1..=64).contains(&degree) || compact_int(data, &mut at)? != 2 {
+        return None;
+    }
+    if data.get(at) != Some(&0x0c) {
+        return None;
+    }
+    at += 1;
+    let knot_start = f64_le(data, at)?;
+    let knot_end = f64_le(data, at + 8)?;
+    at += 16;
+    if knot_start >= knot_end || compact_int(data, &mut at)? != 1 {
+        return None;
+    }
+    let control_points = (0..control_count)
+        .map(|_| {
+            let point = Point3::new(
+                f64_le(data, at)?,
+                f64_le(data, at + 8)?,
+                f64_le(data, at + 16)?,
+            );
+            at += 24;
+            Some(point)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let weights = (0..control_count)
+        .map(|_| {
+            let weight = f64_le(data, at)?;
+            at += 8;
+            (weight > 0.0).then_some(weight)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 1 {
+        return None;
+    }
+    let repeated_start = f64_le(data, at)?;
+    let repeated_end = f64_le(data, at + 8)?;
+    let scale = f64_le(data, at + 16)?;
+    let offset = f64_le(data, at + 24)?;
+    at += 32;
+    if repeated_start.to_bits() != knot_start.to_bits()
+        || repeated_end.to_bits() != knot_end.to_bits()
+        || scale.to_bits() != 1.0f64.to_bits()
+        || offset.to_bits() != 0.0f64.to_bits()
+        || data.get(at..frame.end) != Some(&[0x00, 0x07])
+    {
+        return None;
+    }
+    let multiplicity = usize::try_from(degree.checked_add(1)?).ok()?;
+    let mut knots = Vec::with_capacity(2 * multiplicity);
+    knots.extend(std::iter::repeat_n(knot_start, multiplicity));
+    knots.extend(std::iter::repeat_n(knot_end, multiplicity));
+    Some(B2NurbsCurve {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        geometry: NurbsCurve {
+            degree,
+            knots,
+            control_points,
+            weights: Some(weights),
+            periodic: false,
+        },
+    })
 }
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
