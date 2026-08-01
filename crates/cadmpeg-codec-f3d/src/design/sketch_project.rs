@@ -207,7 +207,10 @@ pub fn project_sketch_design(
                 text: text.text.clone(),
                 font_family: text.font_family.clone(),
                 height: Length(text.height),
-                width_factor: text.width_factor,
+                // The record's `0` does not scale glyph advance to zero, so it
+                // is not a neutral horizontal scale of zero; only a positive
+                // factor carries one.
+                width_factor: text.width_factor.filter(|factor| *factor > 0.0),
             },
         })
     }));

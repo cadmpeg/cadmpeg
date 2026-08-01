@@ -3309,8 +3309,10 @@ pub struct SketchText {
     pub font_family: String,
     /// Nominal text height in millimetres.
     pub height: f64,
-    /// Horizontal scale relative to the nominal font width, absent in the
-    /// `txt_tag` identity form, which stores none.
+    /// Horizontal width factor stored ahead of the font-family name, absent in
+    /// the `txt_tag` identity form, which stores none. The field takes `0` and
+    /// `1`; a `0` does not scale glyph advance to zero, so what a `0` selects
+    /// is not established.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width_factor: Option<f64>,
     /// Text anchor point in the sketch frame in millimetres, present in the
