@@ -4615,31 +4615,39 @@ pub(crate) fn native_procedural_curve(
         return Ok(true);
     }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
-        extension,
-        bend,
+        context,
+        cache_first,
+        source,
+        source_parameter_range,
         data,
     } = &procedural.definition
     {
-        let bend = target
+        let source = target
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == *bend)
-            .ok_or_else(|| CodecError::Malformed("deformable bend curve is missing".into()))?;
-        let bend_range = [
-            solved_cache.knots.first().copied().ok_or_else(|| {
-                CodecError::Malformed("deformable solved curve has no knot domain".into())
-            })?,
-            solved_cache.knots.last().copied().ok_or_else(|| {
-                CodecError::Malformed("deformable solved curve has no knot domain".into())
-            })?,
+            .find(|curve| curve.id == *source)
+            .ok_or_else(|| CodecError::Malformed("deformable source curve is missing".into()))?;
+        let source_range = [
+            source_parameter_range[0].unwrap_or(context.parameter_range[0]),
+            source_parameter_range[1].unwrap_or(context.parameter_range[1]),
         ];
-        let bend = native_interval_curve(&bend.geometry, bend_range)?;
+        let source_curve = native_interval_curve(&source.geometry, source_range)?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "defm_int_cur")?;
-        native_i64(bytes, *extension);
-        native_nurbs_curve(bytes, &bend)?;
+        native_cache_first_curve_context(
+            bytes,
+            target,
+            context,
+            cache_first,
+            Some(solved_cache),
+            procedural.cache_fit_tolerance,
+        )?;
+        native_nurbs_curve(bytes, &source_curve)?;
+        for bound in source_parameter_range {
+            native_optional_f64(bytes, *bound);
+        }
         match data {
             cadmpeg_ir::geometry::DeformableCurveData::VectorField {
                 vectors,
@@ -4662,21 +4670,43 @@ pub(crate) fn native_procedural_curve(
                     native_f64(bytes, pair[1]);
                 }
             }
-            cadmpeg_ir::geometry::DeformableCurveData::Surface { surface } => {
-                native_i64(bytes, 5);
-                let surface = target
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|candidate| candidate.id == *surface)
-                    .ok_or_else(|| {
-                        CodecError::Malformed("deformable support surface is missing".into())
-                    })?;
-                native_embedded_surface(bytes, &surface.geometry)?;
+            cadmpeg_ir::geometry::DeformableCurveData::Mode3 {
+                leading_vectors,
+                leading_parameter,
+                leading_flags,
+                trailing_vectors,
+                frame_parameter,
+                frame_flags,
+                parameters,
+                trailing_flags,
+                trailing_parameter,
+                trailing_value,
+            } => {
+                native_i64(bytes, 3);
+                for vector in leading_vectors {
+                    native_vector(bytes, [vector.x, vector.y, vector.z]);
+                }
+                native_f64(bytes, *leading_parameter);
+                for flag in leading_flags {
+                    bytes.push(native_bool(*flag));
+                }
+                for vector in trailing_vectors {
+                    native_vector(bytes, [vector.x, vector.y, vector.z]);
+                }
+                native_f64(bytes, *frame_parameter);
+                for flag in frame_flags {
+                    bytes.push(native_bool(*flag));
+                }
+                for parameter in parameters {
+                    native_f64(bytes, *parameter);
+                }
+                for flag in trailing_flags {
+                    bytes.push(native_bool(*flag));
+                }
+                native_f64(bytes, *trailing_parameter);
+                native_i64(bytes, *trailing_value);
             }
         }
-        native_nurbs_curve(bytes, solved_cache)?;
-        write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
         return Ok(true);
     }

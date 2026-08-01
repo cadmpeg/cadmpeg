@@ -135,12 +135,28 @@ pub(crate) enum EmbeddedDeformableData {
         vectors: [Vector3; 4],
         parameter_pairs: Vec<[f64; 2]>,
     },
-    Surface(SurfaceGeometry),
+    Mode3 {
+        leading_vectors: [Vector3; 4],
+        leading_parameter: f64,
+        leading_flags: [bool; 3],
+        trailing_vectors: [Vector3; 3],
+        frame_parameter: f64,
+        frame_flags: [bool; 2],
+        parameters: [f64; 3],
+        trailing_flags: [bool; 5],
+        trailing_parameter: f64,
+        trailing_value: i64,
+    },
 }
 
 pub(crate) struct EmbeddedDeformable {
-    pub(crate) extension: i64,
-    pub(crate) bend: NurbsCurve,
+    pub(crate) form: cadmpeg_ir::geometry::CacheFirstCurveForm,
+    pub(crate) surfaces: [Option<SurfaceGeometry>; 2],
+    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
+    pub(crate) parameter_range: [f64; 2],
+    pub(crate) discontinuities: [Vec<f64>; 3],
+    pub(crate) source: NurbsCurve,
+    pub(crate) source_parameter_range: [Option<f64>; 2],
     pub(crate) data: EmbeddedDeformableData,
 }
 
@@ -299,6 +315,8 @@ fn decode_procedural_curve_recursive(
             decode_embedded_surface_offset(bytes, int_width, &decoded.curve, active_bytes, tables);
         let embedded_spring =
             decode_embedded_spring(bytes, int_width, &decoded.curve, active_bytes, tables);
+        let embedded_deformable =
+            decode_embedded_deformable(bytes, int_width, &decoded.curve, active_bytes, tables);
         return Some(DecodedProceduralCurve {
             curve: decoded.curve,
             native_kind,
@@ -315,7 +333,7 @@ fn decode_procedural_curve_recursive(
             embedded_silhouette: decode_embedded_silhouette(bytes, int_width),
             embedded_surface_offset,
             embedded_spring,
-            embedded_deformable: decode_embedded_deformable(bytes, int_width),
+            embedded_deformable,
             embedded_projection: decode_embedded_projection(bytes, int_width),
             embedded_law: decode_embedded_law_curve(bytes, int_width),
             cache_fit_tolerance,
@@ -341,13 +359,35 @@ fn decode_procedural_curve_recursive(
     None
 }
 
-fn decode_embedded_deformable(bytes: &[u8], int_width: usize) -> Option<EmbeddedDeformable> {
+fn decode_embedded_deformable(
+    bytes: &[u8],
+    int_width: usize,
+    solved: &NurbsCurve,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<EmbeddedDeformable> {
     let name = b"defm_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
-    let extension = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
-    let bend = decode_curve_block(bytes, position, int_width)?;
-    position = bend.end;
+    let context = decode_cache_first_curve_context(
+        bytes,
+        &mut position,
+        int_width,
+        solved,
+        active_bytes,
+        tables,
+    )?;
+    let source = decode_embedded_base_curve_resolving_refs(
+        bytes,
+        &mut position,
+        int_width,
+        active_bytes,
+        tables,
+    )?;
+    let source_parameter_range = [
+        take_optional_range_value(bytes, &mut position)?,
+        take_optional_range_value(bytes, &mut position)?,
+    ];
     let mode = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
     let data = match mode {
         8 => {
@@ -370,16 +410,65 @@ fn decode_embedded_deformable(bytes: &[u8], int_width: usize) -> Option<Embedded
                 parameter_pairs,
             }
         }
-        5 => EmbeddedDeformableData::Surface(decode_embedded_surface(
-            bytes,
-            &mut position,
-            int_width,
-        )?),
+        3 => {
+            let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+            for vector in &mut leading_vectors {
+                let value = take_native_vec3(bytes, &mut position, 0x14)?;
+                *vector = Vector3::new(value[0], value[1], value[2]);
+            }
+            let leading_parameter = take_f64(bytes, &mut position)?;
+            let leading_flags = [
+                take_bool(bytes, &mut position)?,
+                take_bool(bytes, &mut position)?,
+                take_bool(bytes, &mut position)?,
+            ];
+            let mut trailing_vectors = [Vector3::new(0.0, 0.0, 0.0); 3];
+            for vector in &mut trailing_vectors {
+                let value = take_native_vec3(bytes, &mut position, 0x14)?;
+                *vector = Vector3::new(value[0], value[1], value[2]);
+            }
+            let frame_parameter = take_f64(bytes, &mut position)?;
+            let frame_flags = [
+                take_bool(bytes, &mut position)?,
+                take_bool(bytes, &mut position)?,
+            ];
+            let parameters = [
+                take_f64(bytes, &mut position)?,
+                take_f64(bytes, &mut position)?,
+                take_f64(bytes, &mut position)?,
+            ];
+            let trailing_flags = [
+                take_bool(bytes, &mut position)?,
+                take_bool(bytes, &mut position)?,
+                take_bool(bytes, &mut position)?,
+                take_bool(bytes, &mut position)?,
+                take_bool(bytes, &mut position)?,
+            ];
+            let trailing_parameter = take_f64(bytes, &mut position)?;
+            let trailing_value = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+            EmbeddedDeformableData::Mode3 {
+                leading_vectors,
+                leading_parameter,
+                leading_flags,
+                trailing_vectors,
+                frame_parameter,
+                frame_flags,
+                parameters,
+                trailing_flags,
+                trailing_parameter,
+                trailing_value,
+            }
+        }
         _ => return None,
     };
-    Some(EmbeddedDeformable {
-        extension,
-        bend: bend.curve,
+    (bytes.get(position) == Some(&0x10)).then_some(EmbeddedDeformable {
+        form: context.form,
+        surfaces: context.surfaces,
+        pcurves: context.pcurves,
+        parameter_range: context.parameter_range,
+        discontinuities: context.discontinuities,
+        source,
+        source_parameter_range,
         data,
     })
 }

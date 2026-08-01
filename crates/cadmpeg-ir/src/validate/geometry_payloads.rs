@@ -2084,26 +2084,53 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds_err(findings, &procedural.id.0, "invalid spatial curve offset");
             }
         }
-        if let ProceduralCurveDefinition::Deformable { data, .. } = &procedural.definition {
-            if let crate::geometry::DeformableCurveData::VectorField {
-                vectors,
-                parameter_pairs,
-            } = data
-            {
-                let vectors_finite = vectors.iter().all(|vector| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                });
-                let pairs_finite = parameter_pairs
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite());
-                if !vectors_finite || !pairs_finite {
-                    bounds_err(
-                        findings,
-                        &procedural.id.0,
-                        "deformable vector-field payload is not finite",
-                    );
+        if let ProceduralCurveDefinition::Deformable {
+            source_parameter_range,
+            data,
+            ..
+        } = &procedural.definition
+        {
+            let finite_vector = |vector: &crate::math::Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let payload_finite = match data {
+                crate::geometry::DeformableCurveData::VectorField {
+                    vectors,
+                    parameter_pairs,
+                } => {
+                    vectors.iter().all(finite_vector)
+                        && parameter_pairs
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
                 }
+                crate::geometry::DeformableCurveData::Mode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    trailing_vectors,
+                    frame_parameter,
+                    parameters,
+                    trailing_parameter,
+                    ..
+                } => {
+                    leading_vectors.iter().all(finite_vector)
+                        && leading_parameter.is_finite()
+                        && trailing_vectors.iter().all(finite_vector)
+                        && frame_parameter.is_finite()
+                        && parameters.iter().all(|value| value.is_finite())
+                        && trailing_parameter.is_finite()
+                }
+            };
+            let range_valid = source_parameter_range
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite());
+            if !payload_finite || !range_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "deformable curve payload is not finite",
+                );
             }
             continue;
         }

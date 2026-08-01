@@ -2717,10 +2717,39 @@ fn emit_carrier_curve(
         } else if let Some(embedded) = procedural.11 {
             emit_spring_curve(out, i, embedded)
         } else if let Some(embedded) = procedural.12 {
-            let bend = CurveId(format!("f3d:brep:procedural_curve#{i}:bend"));
+            let support_ids: [Option<SurfaceId>; 2] = embedded
+                .surfaces
+                .into_iter()
+                .enumerate()
+                .map(|(side, geometry)| {
+                    geometry.map(|geometry| {
+                        let id = SurfaceId(format!(
+                            "f3d:brep:procedural_curve#{i}:deformable_support{side}"
+                        ));
+                        out.surfaces.push(Surface {
+                            id: id.clone(),
+                            geometry,
+                            source_object: None,
+                        });
+                        id
+                    })
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("two fixed support sides");
+            let pcurves = embedded.pcurves.map(|pcurve| {
+                pcurve.map(|pcurve| PcurveGeometry::Nurbs {
+                    degree: pcurve.degree,
+                    knots: pcurve.knots,
+                    control_points: pcurve.control_points,
+                    weights: pcurve.weights,
+                    periodic: pcurve.periodic,
+                })
+            });
+            let source = CurveId(format!("f3d:brep:procedural_curve#{i}:deformable_source"));
             out.curves.push(Curve {
-                id: bend.clone(),
-                geometry: CurveGeometry::Nurbs(embedded.bend),
+                id: source.clone(),
+                geometry: CurveGeometry::Nurbs(embedded.source),
                 source_object: None,
             });
             let data = match embedded.data {
@@ -2731,20 +2760,43 @@ fn emit_carrier_curve(
                     vectors,
                     parameter_pairs,
                 },
-                EmbeddedDeformableData::Surface(geometry) => {
-                    let surface =
-                        SurfaceId(format!("f3d:brep:procedural_curve#{i}:deformation_surface"));
-                    out.surfaces.push(Surface {
-                        id: surface.clone(),
-                        geometry,
-                        source_object: None,
-                    });
-                    cadmpeg_ir::geometry::DeformableCurveData::Surface { surface }
-                }
+                EmbeddedDeformableData::Mode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    leading_flags,
+                    trailing_vectors,
+                    frame_parameter,
+                    frame_flags,
+                    parameters,
+                    trailing_flags,
+                    trailing_parameter,
+                    trailing_value,
+                } => cadmpeg_ir::geometry::DeformableCurveData::Mode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    leading_flags,
+                    trailing_vectors,
+                    frame_parameter,
+                    frame_flags,
+                    parameters,
+                    trailing_flags,
+                    trailing_parameter,
+                    trailing_value,
+                },
             };
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
-                extension: embedded.extension,
-                bend,
+                context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                    sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                        surface: support_ids[side].clone(),
+                        pcurve: pcurves[side].clone(),
+                        pcurve_parameter_range: None,
+                    }),
+                    parameter_range: embedded.parameter_range,
+                    discontinuities: embedded.discontinuities,
+                },
+                cache_first: embedded.form,
+                source,
+                source_parameter_range: embedded.source_parameter_range,
                 data,
             }
         } else if let Some(embedded) = procedural.13 {

@@ -2782,10 +2782,28 @@ pub enum DeformableCurveData {
         /// Ordered pairs from the mode-8 scalar table.
         parameter_pairs: Vec<[f64; 2]>,
     },
-    /// Mode 5 supporting surface.
-    Surface {
-        /// Embedded deformation support surface.
-        surface: SurfaceId,
+    /// Mode 3 fixed deformation payload.
+    Mode3 {
+        /// Four vectors at the start of the payload.
+        leading_vectors: [Vector3; 4],
+        /// Scalar following the leading vectors.
+        leading_parameter: f64,
+        /// Three flags following the leading scalar.
+        leading_flags: [bool; 3],
+        /// Three vectors following the leading flags.
+        trailing_vectors: [Vector3; 3],
+        /// Scalar following the trailing vectors.
+        frame_parameter: f64,
+        /// Two flags following the frame scalar.
+        frame_flags: [bool; 2],
+        /// Three ordered scalars following the frame flags.
+        parameters: [f64; 3],
+        /// Five flags following the ordered scalars.
+        trailing_flags: [bool; 5],
+        /// Final scalar before the trailing integer.
+        trailing_parameter: f64,
+        /// Integer closing the mode-3 payload.
+        trailing_value: i64,
     },
 }
 
@@ -2922,13 +2940,17 @@ pub enum ProceduralCurveDefinition {
         /// Native `CURV_DIR` enum value.
         direction: i64,
     },
-    /// Deformation of an embedded bend curve.
+    /// Deformation of an embedded source curve.
     Deformable {
-        /// Native ASM extension integer preceding the bend curve.
-        extension: i64,
-        /// Embedded bend curve.
-        bend: CurveId,
-        /// Mode 8 vector field or mode 5 support surface.
+        /// Shared cache-first support context.
+        context: IntcurveSupportContext,
+        /// Cache-first serializer fields surrounding the solved curve cache.
+        cache_first: CacheFirstCurveForm,
+        /// Curve being deformed.
+        source: CurveId,
+        /// Optional native bounds following the source curve.
+        source_parameter_range: [Option<f64>; 2],
+        /// Discriminator-specific deformation payload.
         data: DeformableCurveData,
     },
     /// Projection of a source curve onto a support surface.
