@@ -24,9 +24,7 @@ use crate::nurbs::reader::{
     take_native_string, take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector,
     INT_WIDTHS, LEN_TO_MM,
 };
-use crate::nurbs::subtypes::{
-    find_owned_subtype_marker, first_construction_subtype, next_token, subtype_span, SubtypeTables,
-};
+use crate::nurbs::subtypes::{find_owned_subtype_marker, next_token, subtype_span, SubtypeTables};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, SurfaceGeometry,
 };
@@ -1190,8 +1188,8 @@ pub(crate) fn decode_vertex_blend_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"VBL_SURF", b"vertexblendsur"];
-    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
+    let name_len = name.len();
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     // The revision-gated layout stores the revision integer before the
@@ -1199,17 +1197,17 @@ pub(crate) fn decode_vertex_blend_spl_sur(
     // carry optional bounds and endpoints. The count is a `0x04` integer in
     // both layouts, so the revision layout is recognized by the second
     // `0x04` token: a legacy count is directly followed by a boundary type
-    // string, a revision integer by the count integer.
-    let revision = if span.get(position) == Some(&0x04)
-        && span.get(position + 1 + int_width) == Some(&0x04)
-    {
-        (first_construction_subtype(record_bytes).as_deref() == Some("VBL_SURF")).then_some(())?;
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
-        (revision > 0).then_some(())?;
-        Some(revision)
-    } else {
-        None
-    };
+    // string, a revision integer by the count integer. Only the modern name
+    // stores the revision layout.
+    let revision =
+        if span.get(position) == Some(&0x04) && span.get(position + 1 + int_width) == Some(&0x04) {
+            (name == b"VBL_SURF".as_slice()).then_some(())?;
+            let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            (revision > 0).then_some(())?;
+            Some(revision)
+        } else {
+            None
+        };
     let count = usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
     if count > 100_000 {
         return None;

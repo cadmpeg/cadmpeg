@@ -17,8 +17,7 @@ use crate::nurbs::reader::{
     take_tagged_int, INT_WIDTHS, LEN_TO_MM, NUBS_MARKER,
 };
 use crate::nurbs::subtypes::{
-    find_owned_subtype_marker, first_construction_subtype, owned_subtype_defs, subtype_refs,
-    subtype_span, SubtypeTables,
+    find_owned_subtype_marker, owned_subtype_defs, subtype_refs, subtype_span, SubtypeTables,
 };
 use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::geometry::{
@@ -443,17 +442,17 @@ fn decode_g2_blend_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"g2_blend_spl_sur", b"g2blnsur"];
-    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
+    let name_len = name.len();
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
         // Revision-gated layout: revision integer, two scalars, two sides in
         // the variable-blend side layout, center curve with endpoints, two
         // radii, radius selector, optional U/V bounds, shape prologue,
-        // shared tail, and three trailing integers.
-        (first_construction_subtype(record_bytes).as_deref() == Some("g2_blend_spl_sur"))
-            .then_some(())?;
+        // shared tail, and three trailing integers. Only the modern name
+        // stores it.
+        (name == b"g2_blend_spl_sur".as_slice()).then_some(())?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
         let leading_parameters = [
@@ -1531,13 +1530,12 @@ fn decode_loft_spl_sur(
 ) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
     let names: [&[u8]; 2] = [b"loft_spl_sur", b"loftsur"];
-    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
+    let name_len = name.len();
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
-    if span.get(position) == Some(&0x04)
-        && first_construction_subtype(record_bytes).as_deref() == Some("loft_spl_sur")
-    {
+    // Only the modern name stores the revision-gated layout.
+    if span.get(position) == Some(&0x04) && name == b"loft_spl_sur".as_slice() {
         if let Some(decoded) = decode_revision_loft(span, position, int_width, resolver) {
             return Some(decoded);
         }
@@ -1825,8 +1823,6 @@ fn decode_compound_loft_spl_sur(
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
     if span.get(position) == Some(&0x04) {
-        (first_construction_subtype(record_bytes).as_deref() == Some("cl_loft_spl_sur"))
-            .then_some(())?;
         return decode_revision_compound_loft(span, int_width, resolver);
     }
     let cache = decode_surface_block(span, position, int_width)?;
@@ -2546,12 +2542,13 @@ fn decode_sweep_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 3] = [b"sweep_spl_sur", b"sweep_sur", b"sweepsur"];
-    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
+    let name_len = name.len();
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
-        (first_construction_subtype(record_bytes).as_deref() == Some("sweep_sur")).then_some(())?;
+        // Only `sweep_sur` stores the revision-gated layout.
+        (name == b"sweep_sur".as_slice()).then_some(())?;
         return decode_revision_sweep_sur(span, position, int_width, resolver?);
     }
     let primary_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
@@ -2937,24 +2934,17 @@ fn decode_taper_spl_sur(
         (b"swept_tpr_spl_sur", 5),
         (b"swepttapersur", 5),
     ];
-    let (start, name_len, kind) = names.iter().find_map(|(name, kind)| {
-        record_bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == *name
-            })
-            .map(|start| (start, name.len(), *kind))
-    })?;
+    let candidates: Vec<&[u8]> = names.iter().map(|(name, _)| *name).collect();
+    let (start, name) = find_owned_subtype_marker(record_bytes, &candidates, int_width)?;
+    let kind = names
+        .iter()
+        .find_map(|(candidate, kind)| (*candidate == name).then_some(*kind))?;
+    let name_len = name.len();
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
-        // Revision-gated form, stored by the orthogonal subtype.
-        (kind == 1).then_some(())?;
-        (first_construction_subtype(record_bytes).as_deref() == Some("ortho_spl_sur"))
-            .then_some(())?;
+        // Revision-gated form, stored by the orthogonal subtype's modern name.
+        (name == b"ortho_spl_sur".as_slice()).then_some(())?;
         let (active_bytes, tables) = resolver?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
@@ -3191,8 +3181,8 @@ fn decode_off_spl_sur(
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
-        (first_construction_subtype(record_bytes).as_deref() == Some("off_spl_sur"))
-            .then_some(())?;
+        // Only the modern name stores the revision-gated layout.
+        modern.then_some(())?;
         let (active_bytes, tables) = resolver?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
@@ -3287,15 +3277,15 @@ fn decode_rot_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"rot_spl_sur", b"rotsur"];
-    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
+    let name_len = name.len();
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
         // Revision-gated layout: revision integer, profile curve with two
-        // optional endpoints, axis origin and direction, shared tail.
-        (first_construction_subtype(record_bytes).as_deref() == Some("rot_spl_sur"))
-            .then_some(())?;
+        // optional endpoints, axis origin and direction, shared tail. Only the
+        // modern name stores it.
+        (name == b"rot_spl_sur".as_slice()).then_some(())?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
         let (active_bytes, tables) = resolver?;
@@ -3404,15 +3394,15 @@ fn decode_sum_spl_sur(
     resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"sum_spl_sur", b"sumsur"];
-    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
+    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
+    let name_len = name.len();
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
     if span.get(position) == Some(&0x04) {
         // Revision-gated layout: revision integer, two curves each with two
-        // optional endpoints, model-space origin, shared tail.
-        (first_construction_subtype(record_bytes).as_deref() == Some("sum_spl_sur"))
-            .then_some(())?;
+        // optional endpoints, model-space origin, shared tail. Only the modern
+        // name stores it.
+        (name == b"sum_spl_sur".as_slice()).then_some(())?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
         let (active_bytes, tables) = resolver?;
@@ -3534,9 +3524,9 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     let mut position = name.len() + 3;
     if span.get(position) == Some(&0x04) {
         // Revision-gated layout: revision integer, shared tail, four optional
-        // parameter values, and the extension as an enum.
-        (first_construction_subtype(record_bytes).as_deref() == Some("exact_spl_sur"))
-            .then_some(())?;
+        // parameter values, and the extension as an enum. Only the modern name
+        // stores it.
+        (name == b"exact_spl_sur".as_slice()).then_some(())?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
         let RevisionSurfaceTail {
@@ -3635,7 +3625,6 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
         // Revision-gated layout: revision integer, shared tail, four optional
         // parameter values, the type code as an enum, then the nested
         // subtransform scope and trailing integer.
-        (first_construction_subtype(record_bytes).as_deref() == Some("t_spl_sur")).then_some(())?;
         let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
         (revision > 0).then_some(())?;
         let RevisionSurfaceTail {

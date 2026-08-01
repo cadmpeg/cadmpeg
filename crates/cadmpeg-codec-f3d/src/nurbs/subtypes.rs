@@ -5,18 +5,14 @@ use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::Record;
 use cadmpeg_ir::le::int_at as read_int;
 
-pub(crate) fn first_construction_subtype(bytes: &[u8]) -> Option<String> {
-    for pos in 0..bytes.len().saturating_sub(3) {
-        if bytes[pos] != 0x0f || !matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
-            continue;
-        }
-        let len = usize::from(*bytes.get(pos + 2)?);
-        let name = bytes.get(pos + 3..pos + 3 + len)?;
-        if name != b"ref" {
-            return Some(canonical_intcurve_kind(name).into());
-        }
-    }
-    None
+/// The construction `bytes` is, under its modern name: the first subtype
+/// definition `bytes` owns other than `ref`, canonicalized.
+pub(crate) fn owned_construction_subtype(bytes: &[u8], int_width: usize) -> Option<String> {
+    owned_subtype_defs(bytes, int_width)
+        .into_iter()
+        .map(|(_, name)| name)
+        .find(|name| *name != b"ref")
+        .map(|name| canonical_intcurve_kind(name).into())
 }
 
 fn canonical_intcurve_kind(name: &[u8]) -> &str {

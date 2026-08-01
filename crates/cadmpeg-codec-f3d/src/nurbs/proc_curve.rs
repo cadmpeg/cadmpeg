@@ -19,7 +19,7 @@ use crate::nurbs::reader::{
 };
 use crate::nurbs::subtypes::{
     find_intcurve_subtype, find_owned_subtype_marker, find_subtype_marker,
-    first_construction_subtype, subtype_refs, subtype_span, SubtypeTables,
+    owned_construction_subtype, subtype_refs, subtype_span, SubtypeTables,
 };
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
@@ -284,7 +284,7 @@ fn decode_procedural_curve_recursive(
             .then(|| read_f64(bytes, decoded.end + 1).map(|value| value * LEN_TO_MM))
             .flatten();
         let native_kind =
-            first_construction_subtype(bytes).unwrap_or_else(|| "intcurve".to_string());
+            owned_construction_subtype(bytes, int_width).unwrap_or_else(|| "intcurve".to_string());
         let definition = if native_kind == "exact_int_cur" {
             Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact)
         } else {
