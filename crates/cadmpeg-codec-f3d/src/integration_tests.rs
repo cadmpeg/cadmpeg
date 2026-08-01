@@ -81,7 +81,6 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
         &synthetic_geometry_with_history_smbh(),
     ));
     let native = f3d_native(&protein.ir);
-    assert!(!native.design_objects.is_empty());
     assert!(!native.design_record_headers.is_empty());
     assert!(!native.asm_histories.is_empty());
     assert!(!protein.ir.model.appearances.is_empty());

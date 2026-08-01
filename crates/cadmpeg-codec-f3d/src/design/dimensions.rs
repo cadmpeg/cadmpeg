@@ -1492,6 +1492,7 @@ pub(crate) fn constraint_parameters(
             .collect(),
         Definition::Disabled
         | Definition::Coincident { .. }
+        | Definition::ProjectedCopy { .. }
         | Definition::Polygon { .. }
         | Definition::SplineGroup { .. }
         | Definition::TextFrame { .. }
