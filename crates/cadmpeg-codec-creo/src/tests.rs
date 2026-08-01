@@ -4666,8 +4666,8 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
     assert_eq!(coverage["unresolved_feature_segment_geometry_count"], 4);
     assert_eq!(coverage["missing_feature_segment_row_count"], 0);
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossCode::GeometryNotTransferred
-            && loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code == cadmpeg_ir::report::LossKind::GeometryNotTransferred
+            && loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "4 decoded section segment(s) retain source-native geometry because their exact \
@@ -4700,8 +4700,8 @@ fn decode_reports_missing_declared_section_segment_rows() {
     );
     assert_eq!(coverage["missing_feature_segment_row_count"], 1);
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
-            && loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "1 declared section segment row(s) did not decode and remain unavailable to the \
@@ -4763,8 +4763,8 @@ fn decode_reports_missing_declared_solver_variable_rows() {
     assert_eq!(coverage["decoded_feature_solver_variable_count"], 1);
     assert_eq!(coverage["missing_feature_solver_variable_count"], 1);
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
-            && loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "1 declared section solver variable row(s) did not decode; stored and \
@@ -5609,7 +5609,7 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "2 dimension-driven section solver variable(s) retain unresolved exact values: 1 \
@@ -5618,7 +5618,7 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
             )
     }));
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "1 section solver variable pre-solve estimate(s) use a dimension-driven sentinel",
@@ -5682,8 +5682,8 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(coverage["resolved_feature_dimension_value_count"], 1);
     assert_eq!(coverage["unresolved_feature_dimension_value_count"], 2);
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
-            && loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "2 section dimension(s) retain source-native value tokens because their exact \
@@ -5895,8 +5895,8 @@ fn decode_reports_missing_declared_constraint_table_rows() {
         "1 declared section relation-incidence join row(s) did not decode",
     ] {
         assert!(result.report.losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
-                && loss.category == cadmpeg_ir::LossCategory::Attribute
+            loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+                && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
                 && loss.severity == cadmpeg_ir::Severity::Warning
                 && loss.message.contains(message)
         }));
@@ -5918,8 +5918,8 @@ fn decode_reports_malformed_relation_table_allocation_count() {
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::report::LossCode::FeatureHistoryRetained
-            && loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message
@@ -7038,7 +7038,7 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
     );
     assert_eq!(coverage["prohibited_active_curve_expression_kind_count"], 1);
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "1 active curve-equation record(s) containing prohibited datum-curve constructs \
@@ -7046,7 +7046,7 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
             )
     }));
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "1 prohibited datum-curve construct(s) across active curve-equation records were \
@@ -9589,7 +9589,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message

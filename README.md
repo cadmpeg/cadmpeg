@@ -107,7 +107,7 @@ cadmpeg diff     a.cadir.json b.cadir.json
 
 Output formats are `cadir`, `step`, `fcstd`, `f3d`, and `sldprt`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection.
 
-Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 4`. This command-envelope version is independent of the CAD IR's `ir_version: "4"`.
+Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 5`. This command-envelope version is independent of the CAD IR's `ir_version: "4"`.
 
 ## Contributing
 

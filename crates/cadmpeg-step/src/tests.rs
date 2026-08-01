@@ -2977,21 +2977,21 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message
                 .contains("1 subdivision surface(s) were omitted")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message
                 .contains("1 tessellation(s) require an AP242 target")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Metadata
+        loss.code.category() == cadmpeg_ir::LossCategory::Metadata
             && loss
                 .message
                 .contains("2 source-object association(s) were not represented")
@@ -3051,7 +3051,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     let report = write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
         .expect("polygonal face is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("unknown or STEP-unsupported surface")
     }));
 
@@ -3074,7 +3074,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     )
     .expect("transformed unknown curve is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("STEP-unsupported transform")
     }));
 }
@@ -3093,7 +3093,7 @@ fn signed_analytic_radius_normalization_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("normalized to positive STEP radii")
     }));
 }
@@ -3114,7 +3114,7 @@ fn elliptical_cone_reduction_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("elliptical cone surface(s)")
     }));
 }

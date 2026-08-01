@@ -92,7 +92,7 @@ pub enum StrictConsequence {
 )]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
-pub enum LossCode {
+pub enum LossKind {
     /// Container-only decode was requested; entity decode was not attempted.
     ContainerOnly,
     /// No geometry stream was located in the container, so no B-rep could be
@@ -179,9 +179,11 @@ pub enum LossCode {
     /// Appearance assets were reduced to base colors; schemas, textures, and
     /// shader properties were dropped.
     AppearanceReduced,
+    /// Preserved source bytes required for a byte-exact write were unavailable.
+    PreservedSourceUnavailable,
 }
 
-impl LossCode {
+impl LossKind {
     /// The stable `snake_case` identifier, matching the serialized form.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -220,11 +222,63 @@ impl LossCode {
             Self::ProceduralReduced => "procedural_reduced",
             Self::ParametricRecordOmitted => "parametric_record_omitted",
             Self::AppearanceReduced => "appearance_reduced",
+            Self::PreservedSourceUnavailable => "preserved_source_unavailable",
         }
     }
 
-    /// Returns the strict-mode consequence of this code.
-    pub fn strict_consequence(self) -> StrictConsequence {
+    /// Returns the subsystem affected by this kind of loss.
+    pub const fn category(self) -> LossCategory {
+        match self {
+            Self::TopologyNotTransferred
+            | Self::ReferenceGraphNotClosed
+            | Self::TopologyGaugeSubstituted
+            | Self::NoExportableSolids
+            | Self::HiddenBodyOmitted => LossCategory::Topology,
+            Self::MaterialNotTransferred | Self::AppearanceReduced => LossCategory::Material,
+            Self::MetadataNotTransferred | Self::SourceAssociationOmitted => LossCategory::Metadata,
+            Self::AttributesNotTransferred | Self::PmiOmitted => LossCategory::Attribute,
+            Self::FeatureHistoryRetained | Self::ParametricRecordOmitted => {
+                LossCategory::DesignIntent
+            }
+            Self::RecordNotTyped
+            | Self::DecodeDiagnostic
+            | Self::AssetNotTransferred
+            | Self::PassthroughRecordOmitted
+            | Self::PreservedSourceUnavailable => LossCategory::Other,
+            Self::ContainerOnly
+            | Self::MissingGeometryStream
+            | Self::GeometryNotTransferred
+            | Self::CarrierAxisInferred
+            | Self::CarrierSummary
+            | Self::AssemblyComponentsExternal
+            | Self::MeshVertexPrecision
+            | Self::ObjectRecordsUntransferred
+            | Self::UnsupportedObjectFamily
+            | Self::BodyTransformNotApplied
+            | Self::AnalyticSurfaceNormalized
+            | Self::EllipticalConeReduced
+            | Self::CurvelessEdgeOmitted
+            | Self::UnknownSurfaceFaceOmitted
+            | Self::PcurveOmitted
+            | Self::SubdOmitted
+            | Self::TessellationOmitted
+            | Self::ProceduralReduced => LossCategory::Geometry,
+        }
+    }
+
+    /// Returns the default severity for this kind of loss.
+    pub const fn default_severity(self) -> Severity {
+        match self {
+            Self::ContainerOnly | Self::CarrierSummary | Self::PassthroughRecordOmitted => {
+                Severity::Info
+            }
+            Self::MissingGeometryStream | Self::NoExportableSolids => Severity::Error,
+            _ => Severity::Warning,
+        }
+    }
+
+    /// Returns the minimum severity that makes strict mode reject this loss.
+    pub const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::MissingGeometryStream
             | Self::TopologyNotTransferred
@@ -233,13 +287,13 @@ impl LossCode {
             | Self::CurvelessEdgeOmitted
             | Self::UnknownSurfaceFaceOmitted
             | Self::SubdOmitted
-            | Self::NoExportableSolids => StrictConsequence::Reject,
-            _ => StrictConsequence::Tolerate,
+            | Self::NoExportableSolids => Some(Severity::Warning),
+            _ => None,
         }
     }
 }
 
-impl fmt::Display for LossCode {
+impl fmt::Display for LossKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
@@ -249,9 +303,7 @@ impl fmt::Display for LossCode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LossNote {
     /// Stable machine-readable loss kind.
-    pub code: LossCode,
-    /// Affected subsystem.
-    pub category: LossCategory,
+    pub code: LossKind,
     /// How serious the loss is.
     pub severity: Severity,
     /// Human-readable explanation.
@@ -259,6 +311,40 @@ pub struct LossNote {
     /// Where in the source the loss occurred, when attributable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Provenance>,
+}
+
+impl LossNote {
+    /// Creates a loss note with the kind's default severity and no provenance.
+    pub fn new(code: LossKind, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            severity: code.default_severity(),
+            message: message.into(),
+            provenance: None,
+        }
+    }
+
+    /// Overrides this note's severity.
+    #[must_use]
+    pub const fn with_severity(mut self, severity: Severity) -> Self {
+        self.severity = severity;
+        self
+    }
+
+    /// Attaches source provenance to this note.
+    #[must_use]
+    pub fn with_provenance(mut self, provenance: Provenance) -> Self {
+        self.provenance = Some(provenance);
+        self
+    }
+
+    /// Returns strict-mode handling after applying the kind's severity floor.
+    pub fn strict_consequence(&self) -> StrictConsequence {
+        match self.code.strict_floor() {
+            Some(floor) if self.severity >= floor => StrictConsequence::Reject,
+            _ => StrictConsequence::Tolerate,
+        }
+    }
 }
 
 /// Transfer status and loss details from a successful decode.
@@ -455,25 +541,32 @@ mod tests {
     #[test]
     fn loss_code_serializes_under_its_stable_identifier() {
         let note = LossNote {
-            code: LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: "topology graph not transferred".to_owned(),
             provenance: None,
         };
         let value: serde_json::Value = serde_json::to_value(&note).expect("required invariant");
         assert_eq!(value["code"], "topology_not_transferred");
-        assert_eq!(value["code"], LossCode::TopologyNotTransferred.as_str());
+        assert_eq!(value["code"], LossKind::TopologyNotTransferred.as_str());
     }
 
     #[test]
-    fn loss_code_carries_reversibility_and_strict_consequence() {
+    fn loss_kind_strict_consequence_depends_on_severity() {
         assert_eq!(
-            LossCode::TopologyNotTransferred.strict_consequence(),
+            LossNote::new(LossKind::TopologyNotTransferred, "missing topology")
+                .strict_consequence(),
             StrictConsequence::Reject
         );
         assert_eq!(
-            LossCode::PassthroughRecordOmitted.strict_consequence(),
+            LossNote::new(LossKind::TopologyNotTransferred, "diagnostic")
+                .with_severity(Severity::Info)
+                .strict_consequence(),
+            StrictConsequence::Tolerate
+        );
+        assert_eq!(
+            LossNote::new(LossKind::PassthroughRecordOmitted, "retained source")
+                .strict_consequence(),
             StrictConsequence::Tolerate
         );
     }

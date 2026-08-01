@@ -3863,7 +3863,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .report
         .losses
         .iter()
-        .any(|l| l.category == cadmpeg_ir::report::LossCategory::Topology));
+        .any(|l| l.code.category() == cadmpeg_ir::report::LossCategory::Topology));
     assert_eq!(
         result.report.coverage["attempted_standard_topology_count"],
         1
@@ -3974,7 +3974,7 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
         SurfaceGeometry::Unknown { record: Some(_) }
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 unresolved surface carriers")
     }));
@@ -4031,7 +4031,7 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     );
     assert!(!decoded.report.losses.iter().any(|loss| {
         matches!(
-            loss.category,
+            loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
@@ -4198,7 +4198,7 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains("legacy design run")
     }));
 }
@@ -6684,7 +6684,7 @@ fn decode_reports_zero_entity_surface_support_runs() {
         1
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss
                 .message
                 .contains("1 zero-entity surface-support run(s)")
@@ -6742,7 +6742,7 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         1
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.message.contains("1 edge-stride allocation tuple(s)")
             && loss.message.contains("1 oriented-use pair(s)")
             && loss.message.contains("1 vertex-incidence record(s)")
@@ -10463,7 +10463,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 design object(s)")
             && loss.message.contains("2 object-graph field record(s)")
@@ -10501,7 +10501,7 @@ fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
         2
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 retained object graph(s)")
             && loss.message.contains("2 field record(s)")
@@ -16077,7 +16077,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     );
     assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 0);
     assert!(decoded.report.losses.iter().all(|loss| {
-        loss.category != cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
@@ -17584,7 +17584,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
     );
     assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("4 modeling-scope field record(s)")
     }));
@@ -18714,7 +18714,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         ]
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("1 visualization value block(s)")
             && loss
@@ -18722,7 +18722,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
                 .contains("1 schema-selected presentation value(s)")
     }));
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("neutral features")
             && !loss.message.contains("value block")
@@ -18739,14 +18739,14 @@ fn visualization_values_do_not_assert_missing_design_intent() {
         .expect("decode visualization-only values");
 
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
             && loss.message.contains("schema-selected presentation value")
     }));
     assert!(decoded
         .report
         .losses
         .iter()
-        .all(|loss| loss.category != cadmpeg_ir::report::LossCategory::DesignIntent));
+        .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent));
 }
 
 #[test]
@@ -18777,7 +18777,7 @@ fn decode_does_not_promote_operation_field_class_names_to_features() {
             ["CurrentFeature", class]
         );
         assert!(decoded.report.losses.iter().any(|loss| {
-            loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
                 && loss.message.contains("neutral features")
         }));
     }
@@ -19241,7 +19241,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         .all(|pcurve| pcurve.parameter_range == Some([0.0, 1.0])));
     assert!(result.report.losses.iter().all(|loss| {
         !matches!(
-            loss.category,
+            loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
@@ -19458,7 +19458,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
     assert_eq!(result.ir.model.vertices.len(), 2);
     assert!(result.ir.model.edges.is_empty());
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(matches!(
@@ -19514,11 +19514,11 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         .iter()
         .all(|edge| edge.curve.is_some() && edge.param_range.is_some()));
     assert!(result.report.losses.iter().all(|loss| {
-        loss.category != cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() != cadmpeg_ir::report::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("two trailing orientation signs")
     }));

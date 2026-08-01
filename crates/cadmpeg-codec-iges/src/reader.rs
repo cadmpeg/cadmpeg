@@ -4,7 +4,7 @@
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -80,8 +80,7 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
     let mut losses = projection.losses;
     if product_occurrences_truncated {
         losses.push(LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Other,
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message: "IGES product occurrence expansion reached its configured output limit".into(),
             provenance: None,
@@ -97,8 +96,7 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
                             || !projection.handled.contains(&entry.sequence))
                 })
                 .map(|entry| LossNote {
-                    code: cadmpeg_ir::LossCode::RecordNotTyped,
-                    category: LossCategory::Other,
+                    code: cadmpeg_ir::LossKind::RecordNotTyped,
                     severity: Severity::Warning,
                     message: if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
                         format!(

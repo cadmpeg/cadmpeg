@@ -5419,7 +5419,7 @@ fn decode_reports_unclassified_bounded_offset_store_controls() {
     assert_eq!(attributes["classified_offset_store_control_count"], "0");
     assert_eq!(attributes["unclassified_offset_store_control_count"], "1");
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == LossCategory::Other
+        loss.code.category() == LossCategory::Other
             && loss
                 .message
                 .contains("1 of 1 bounded offset-store control block(s)")
@@ -7408,12 +7408,9 @@ fn decode_transfers_point_plane_cylinder_line() {
 
     // No topology graph is fabricated; the loss is reported as blocking.
     assert!(result.ir.model.faces.is_empty() && result.ir.model.edges.is_empty());
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|l| l.category == cadmpeg_ir::report::LossCategory::Topology
-            && l.severity == cadmpeg_ir::report::Severity::Blocking));
+    assert!(result.report.losses.iter().any(|l| l.code.category()
+        == cadmpeg_ir::report::LossCategory::Topology
+        && l.severity == cadmpeg_ir::report::Severity::Blocking));
 
     // The Parasolid stream is preserved verbatim.
     let unknowns = result.ir.native_unknowns("nx").unwrap();
@@ -7469,7 +7466,7 @@ fn decode_emits_connected_primitive_brep() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.category != cadmpeg_ir::report::LossCategory::Topology));
+        .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
@@ -13534,25 +13531,25 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 6);
-    assert_eq!(losses[0].category, LossCategory::DesignIntent);
+    assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
     assert!(losses[0]
         .message
         .contains("10 NX feature history operation"));
-    assert_eq!(losses[1].category, LossCategory::DesignIntent);
+    assert_eq!(losses[1].code.category(), LossCategory::DesignIntent);
     assert!(losses[1].message.contains("2 NX design configuration"));
-    assert_eq!(losses[2].category, LossCategory::DesignIntent);
+    assert_eq!(losses[2].code.category(), LossCategory::DesignIntent);
     assert!(losses[2].message.contains("DELETE (2)"));
-    assert_eq!(losses[3].category, LossCategory::DesignIntent);
+    assert_eq!(losses[3].code.category(), LossCategory::DesignIntent);
     assert!(losses[3].message.contains("datum coordinate system (1)"));
     assert!(losses[3].message.contains("datum plane (1)"));
     assert!(losses[3].message.contains("freeform surface (1)"));
     assert!(losses[3].message.contains("loft (2)"));
-    assert_eq!(losses[4].category, LossCategory::DesignIntent);
+    assert_eq!(losses[4].code.category(), LossCategory::DesignIntent);
     assert!(losses[4].message.contains("block (1)"));
     assert!(losses[4].message.contains("delete body (1)"));
     assert!(losses[4].message.contains("sketch (1)"));
     assert!(losses[4].message.contains("sweep (1)"));
-    assert_eq!(losses[5].category, LossCategory::DesignIntent);
+    assert_eq!(losses[5].code.category(), LossCategory::DesignIntent);
     assert!(losses[5].message.contains("1 NX sketch history feature"));
     assert!(losses[5].message.contains("1 have no neutral sketch graph"));
 

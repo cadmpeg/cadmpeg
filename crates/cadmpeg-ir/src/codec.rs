@@ -219,7 +219,7 @@ impl<C: Codec + ?Sized> CodecEntry for C {
                 .report
                 .losses
                 .iter()
-                .find(|loss| loss.code.strict_consequence() == StrictConsequence::Reject)
+                .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)
             {
                 return Err(CodecError::Malformed(format!(
                     "strict mode rejects {}: {}",

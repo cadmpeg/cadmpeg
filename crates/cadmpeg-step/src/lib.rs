@@ -60,7 +60,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{OccurrenceId, ProductId};
 use cadmpeg_ir::product::OccurrenceParent;
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{ExportReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
@@ -495,32 +495,18 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn loss(
-        &mut self,
-        code: LossCode,
-        category: LossCategory,
-        severity: Severity,
-        message: String,
-    ) {
+    fn loss(&mut self, code: LossKind, severity: Severity, message: String) {
         self.losses.push(LossNote {
             code,
-            category,
             severity,
             message,
             provenance: None,
         });
     }
 
-    fn omit(
-        &mut self,
-        code: LossCode,
-        category: LossCategory,
-        severity: Severity,
-        message: String,
-    ) {
+    fn omit(&mut self, code: LossKind, severity: Severity, message: String) {
         self.losses.push(LossNote {
             code,
-            category,
             severity,
             message,
             provenance: None,
@@ -537,8 +523,7 @@ impl<'a> Builder<'a> {
         emitted_items.extend(standalone_items.iter().copied());
         if emitted_items.is_empty() && !self.ir.model.bodies.is_empty() {
             self.losses.push(LossNote {
-                code: LossCode::NoExportableSolids,
-                category: LossCategory::Topology,
+                code: LossKind::NoExportableSolids,
                 severity: Severity::Warning,
                 message: "no exportable solids: the IR document contains no body/region/shell \
                           geometry, so the STEP representation is empty"
@@ -947,8 +932,7 @@ impl<'a> Builder<'a> {
             }
             if unsupported > 0 {
                 self.loss(
-                    LossCode::AttributesNotTransferred,
-                    LossCategory::Attribute,
+                    LossKind::AttributesNotTransferred,
                     Severity::Warning,
                     format!(
                         "layer '{}' has {unsupported} item(s) without a writable STEP carrier",
@@ -1151,8 +1135,7 @@ impl<'a> Builder<'a> {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 if !is_identity(&occurrence.transform.rows) {
                     self.loss(
-                        LossCode::BodyTransformNotApplied,
-                        LossCategory::Topology,
+                        LossKind::BodyTransformNotApplied,
                         Severity::Warning,
                         format!(
                             "root occurrence '{}' has a non-identity placement",
@@ -1164,8 +1147,7 @@ impl<'a> Builder<'a> {
             };
             let Some(parent_product) = occurrence_products.get(parent) else {
                 self.loss(
-                    LossCode::TopologyNotTransferred,
-                    LossCategory::Topology,
+                    LossKind::TopologyNotTransferred,
                     Severity::Warning,
                     format!("occurrence '{}' has an unresolved parent", occurrence.id),
                 );
@@ -1187,8 +1169,7 @@ impl<'a> Builder<'a> {
             };
             if !is_rigid_transform(&occurrence.transform.rows) {
                 self.loss(
-                    LossCode::BodyTransformNotApplied,
-                    LossCategory::Topology,
+                    LossKind::BodyTransformNotApplied,
                     Severity::Warning,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
                 );
@@ -1320,8 +1301,7 @@ impl<'a> Builder<'a> {
             };
             let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
                 self.loss(
-                    LossCode::TopologyNotTransferred,
-                    LossCategory::Topology,
+                    LossKind::TopologyNotTransferred,
                     Severity::Error,
                     format!("region {} has no writable outer shell", region.id),
                 );
@@ -1386,8 +1366,7 @@ impl<'a> Builder<'a> {
         };
         if !is_rigid_transform(&transform.rows) {
             self.loss(
-                LossCode::BodyTransformNotApplied,
-                LossCategory::Geometry,
+                LossKind::BodyTransformNotApplied,
                 Severity::Warning,
                 format!("body '{body_id}' carries a non-rigid transform"),
             );
@@ -1430,8 +1409,7 @@ impl<'a> Builder<'a> {
                 .count();
             if hidden != 0 {
                 self.loss(
-                    LossCode::AttributesNotTransferred,
-                    LossCategory::Metadata,
+                    LossKind::AttributesNotTransferred,
                     Severity::Warning,
                     format!(
                         "{hidden} hidden body visibility assignment(s) are unsupported by {}",
@@ -1464,8 +1442,7 @@ impl<'a> Builder<'a> {
         for shell in shells {
             if !shell.free_vertices.is_empty() {
                 self.loss(
-                    LossCode::TopologyNotTransferred,
-                    LossCategory::Topology,
+                    LossKind::TopologyNotTransferred,
                     Severity::Warning,
                     format!(
                         "wire shell '{}' has {} free vertex/vertices without an edge-based STEP carrier",
@@ -1569,8 +1546,7 @@ impl<'a> Builder<'a> {
         }
         if !self.schema.supports_tessellation() {
             self.loss(
-                LossCode::TessellationOmitted,
-                LossCategory::Geometry,
+                LossKind::TessellationOmitted,
                 Severity::Warning,
                 format!(
                     "{} tessellation(s) require an AP242 target",
@@ -1593,8 +1569,7 @@ impl<'a> Builder<'a> {
                 || (!mesh.normals.is_empty() && mesh.normals.len() != mesh.vertices.len())
             {
                 self.loss(
-                    LossCode::TessellationOmitted,
-                    LossCategory::Geometry,
+                    LossKind::TessellationOmitted,
                     Severity::Warning,
                     format!(
                         "tessellation '{}' has invalid vertex/index/normal cardinality",
@@ -2546,8 +2521,7 @@ impl<'a> Builder<'a> {
             .count();
         if nonstandard_analytic_surfaces > 0 {
             self.loss(
-                LossCode::AnalyticSurfaceNormalized,
-                LossCategory::Geometry,
+                LossKind::AnalyticSurfaceNormalized,
                 Severity::Warning,
                 format!(
                     "{nonstandard_analytic_surfaces} signed or self-intersecting analytic \
@@ -2569,8 +2543,7 @@ impl<'a> Builder<'a> {
             .count();
         if elliptical_cones > 0 {
             self.loss(
-                LossCode::EllipticalConeReduced,
-                LossCategory::Geometry,
+                LossKind::EllipticalConeReduced,
                 Severity::Warning,
                 format!(
                     "{elliptical_cones} elliptical cone surface(s) were reduced to circular STEP CONICAL_SURFACE carriers"
@@ -2579,8 +2552,7 @@ impl<'a> Builder<'a> {
         }
         if !self.curveless_edges.is_empty() {
             self.omit(
-                LossCode::CurvelessEdgeOmitted,
-                LossCategory::Geometry,
+                LossKind::CurvelessEdgeOmitted,
                 Severity::Warning,
                 format!(
                     "{} edge(s) have no typed 3D curve or carry a STEP-unsupported transform and were omitted from \
@@ -2591,8 +2563,7 @@ impl<'a> Builder<'a> {
         }
         if !self.unknown_surface_faces.is_empty() {
             self.omit(
-                LossCode::UnknownSurfaceFaceOmitted,
-                LossCategory::Geometry,
+                LossKind::UnknownSurfaceFaceOmitted,
                 Severity::Warning,
                 format!(
                     "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
@@ -2604,8 +2575,7 @@ impl<'a> Builder<'a> {
         }
         if self.unsupported_standalone_geometry > 0 {
             self.loss(
-                LossCode::GeometryNotTransferred,
-                LossCategory::Geometry,
+                LossKind::GeometryNotTransferred,
                 Severity::Warning,
                 format!(
                     "{} standalone unknown geometry carrier(s) were not written",
@@ -2623,8 +2593,7 @@ impl<'a> Builder<'a> {
             .count();
         if missing_pcurve_count > 0 {
             self.omit(
-                LossCode::PcurveOmitted,
-                LossCategory::Geometry,
+                LossKind::PcurveOmitted,
                 Severity::Warning,
                 format!(
                     "{missing_pcurve_count} coedge pcurve reference(s) have no geometry and were not written"
@@ -2647,8 +2616,7 @@ impl<'a> Builder<'a> {
             .count();
         if reduced_pcurve_count > 0 {
             self.omit(
-                LossCode::PcurveOmitted,
-                LossCategory::Geometry,
+                LossKind::PcurveOmitted,
                 Severity::Info,
                 format!(
                     "{reduced_pcurve_count} emitted coedge pcurve(s) carry native-only metadata not represented in STEP"
@@ -2657,8 +2625,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.subds.is_empty() {
             self.omit(
-                LossCode::SubdOmitted,
-                LossCategory::Geometry,
+                LossKind::SubdOmitted,
                 Severity::Warning,
                 format!(
                     "{} subdivision surface(s) were omitted because this STEP writer \
@@ -2670,8 +2637,7 @@ impl<'a> Builder<'a> {
         let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
         if unwritten_pmi > 0 {
             self.omit(
-                LossCode::PmiOmitted,
-                LossCategory::Attribute,
+                LossKind::PmiOmitted,
                 Severity::Warning,
                 format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
             );
@@ -2706,8 +2672,7 @@ impl<'a> Builder<'a> {
                 .count();
         if source_object_count > 0 {
             self.loss(
-                LossCode::SourceAssociationOmitted,
-                LossCategory::Metadata,
+                LossKind::SourceAssociationOmitted,
                 Severity::Info,
                 format!(
                     "{source_object_count} source-object association(s) were not represented in STEP"
@@ -2724,16 +2689,14 @@ impl<'a> Builder<'a> {
             .sum::<usize>();
         if unknown_count > 0 {
             self.loss(
-                LossCode::PassthroughRecordOmitted,
-                LossCategory::Metadata,
+                LossKind::PassthroughRecordOmitted,
                 Severity::Info,
                 format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
             );
         }
         if self.unstyled_colors > 0 {
             self.loss(
-                LossCode::AttributesNotTransferred,
-                LossCategory::Attribute,
+                LossKind::AttributesNotTransferred,
                 Severity::Info,
                 format!(
                     "{} display color(s) had no emitted STEP item and were not written \
@@ -2773,8 +2736,7 @@ impl<'a> Builder<'a> {
             .count();
         if lossy_appearances > 0 {
             self.loss(
-                LossCode::AppearanceReduced,
-                LossCategory::Material,
+                LossKind::AppearanceReduced,
                 Severity::Info,
                 format!(
                     "{lossy_appearances} appearance asset(s) were reduced to STYLED_ITEM base colors; \
@@ -2791,8 +2753,7 @@ impl<'a> Builder<'a> {
             .count();
         if lossy_binding_metadata > 0 {
             self.loss(
-                LossCode::AppearanceReduced,
-                LossCategory::Metadata,
+                LossKind::AppearanceReduced,
                 Severity::Info,
                 format!(
                     "{lossy_binding_metadata} appearance binding(s) carry source object or channel metadata not represented in STEP"
@@ -2801,8 +2762,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.attributes.is_empty() {
             self.loss(
-                LossCode::AttributesNotTransferred,
-                LossCategory::Attribute,
+                LossKind::AttributesNotTransferred,
                 Severity::Info,
                 format!(
                     "{} source attribute record(s) were not written to STEP",
@@ -2826,8 +2786,7 @@ impl<'a> Builder<'a> {
             .count();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
             self.loss(
-                LossCode::ProceduralReduced,
-                LossCategory::Geometry,
+                LossKind::ProceduralReduced,
                 Severity::Info,
                 format!(
                     "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
@@ -2844,8 +2803,7 @@ impl<'a> Builder<'a> {
             .sum();
         if source_native_records > 0 {
             self.loss(
-                LossCode::ParametricRecordOmitted,
-                LossCategory::Metadata,
+                LossKind::ParametricRecordOmitted,
                 Severity::Info,
                 format!(
                     "{source_native_records} source-native record(s) were not represented in STEP"

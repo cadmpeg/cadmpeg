@@ -9,7 +9,7 @@ use cadmpeg_ir::geometry::{
     ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -190,8 +190,7 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
             geometry_transferred: true,
             coverage,
             losses: vec![LossNote {
-                code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-                category: LossCategory::Topology,
+                code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
                 severity: Severity::Blocking,
                 message: if ownership_root.is_some() {
                     "Zero-entity loop members bind their face-local support occurrences and the terminal ownership root binds the complete face roster through one shell and body, but support-to-oriented-use, oriented-use-to-incidence, and physical endpoint bindings remain unresolved; no neutral topology was transferred."

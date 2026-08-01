@@ -11245,11 +11245,10 @@ fn decode_yields_metadata_and_honest_report() {
     assert!(!result.report.geometry_transferred);
     assert!(result.ir.model.faces.is_empty());
     assert!(result.report.error_count() >= 1);
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|l| matches!(l.category, cadmpeg_ir::report::LossCategory::Geometry)));
+    assert!(result.report.losses.iter().any(|l| matches!(
+        l.code.category(),
+        cadmpeg_ir::report::LossCategory::Geometry
+    )));
 
     // But the active BREP is preserved as an unknown passthrough with a hash,
     // and source metadata was captured.

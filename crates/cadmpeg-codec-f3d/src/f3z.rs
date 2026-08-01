@@ -15,7 +15,7 @@ use cadmpeg_codec_core::decode::DecodeContext;
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 
 use crate::container::ContainerScan;
 use crate::native::F3dNative;
@@ -133,8 +133,7 @@ fn merge_references(
         );
         if stack.contains(&reference.relative_path) {
             parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
+                code: LossKind::AssemblyComponentsExternal,
                 severity: Severity::Error,
                 message: format!(
                     "xref {label}: reference cycle through {}; the occurrence was not resolved",
@@ -146,8 +145,7 @@ fn merge_references(
         }
         let Some(member_view) = scan.entry_view(&reference.relative_path) else {
             parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
+                code: LossKind::AssemblyComponentsExternal,
                 severity: Severity::Error,
                 message: format!(
                     "xref {label}: member {} is not present in the archive; the occurrence was \
@@ -166,8 +164,7 @@ fn merge_references(
         })?;
         if component.ir.units != parent.ir.units {
             parent.report.losses.push(LossNote {
-                code: LossCode::AssemblyComponentsExternal,
-                category: LossCategory::Geometry,
+                code: LossKind::AssemblyComponentsExternal,
                 severity: Severity::Error,
                 message: format!(
                     "xref {label}: component units differ from the containing document; the \

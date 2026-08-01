@@ -71,7 +71,7 @@ fn standard_nested_pipeline_builds_a_valid_radial_topology_graph() {
     assert!(!result.report.losses.iter().any(|loss| {
         loss.severity == Severity::Blocking
             && matches!(
-                loss.category,
+                loss.code.category(),
                 LossCategory::Geometry | LossCategory::Topology
             )
     }));
@@ -91,7 +91,7 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
     assert_eq!(result.ir.model.surfaces.len(), 2);
     assert!(result.ir.model.faces.is_empty());
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == LossCategory::Topology && loss.severity == Severity::Blocking
+        loss.code.category() == LossCategory::Topology && loss.severity == Severity::Blocking
     }));
     assert_valid(&result);
 }

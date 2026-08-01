@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -1829,8 +1829,7 @@ impl<'a> DecodeContext<'a> {
             .sum::<usize>();
         let total = self.scan.objects.len();
         losses.push(LossNote {
-            code: LossCode::ObjectRecordsUntransferred,
-            category: LossCategory::Geometry,
+            code: LossKind::ObjectRecordsUntransferred,
             severity: Severity::Info,
             message: format!("decoded {decoded}/{total} Rhino object records"),
             provenance: None,
@@ -1839,8 +1838,7 @@ impl<'a> DecodeContext<'a> {
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
                 omissions.push(LossNote {
-                    code: LossCode::UnsupportedObjectFamily,
-                    category: LossCategory::Geometry,
+                    code: LossKind::UnsupportedObjectFamily,
                     severity: Severity::Warning,
                     message: format!(
                         "retained {} object record(s) for class {class}; geometry is not decoded",
@@ -1851,8 +1849,7 @@ impl<'a> DecodeContext<'a> {
             }
             if outcome.attribute_degraded > 0 {
                 losses.push(LossNote {
-                    code: LossCode::AttributesNotTransferred,
-                    category: LossCategory::Attribute,
+                    code: LossKind::AttributesNotTransferred,
                     severity: Severity::Warning,
                     message: format!(
                         "{} object record(s) for class {class} have degraded attributes",
@@ -1863,8 +1860,7 @@ impl<'a> DecodeContext<'a> {
             }
             if outcome.failed_framed > 0 {
                 losses.push(LossNote {
-                    code: LossCode::DecodeDiagnostic,
-                    category: LossCategory::Other,
+                    code: LossKind::DecodeDiagnostic,
                     severity: Severity::Error,
                     message: format!(
                         "{} framed object record(s) for class {class} could not be decoded",
@@ -1877,8 +1873,7 @@ impl<'a> DecodeContext<'a> {
         self.typed_losses.extend(omissions);
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(LossNote {
-                code: LossCode::DecodeDiagnostic,
-                category: LossCategory::Other,
+                code: LossKind::DecodeDiagnostic,
                 severity: Severity::Warning,
                 message: format!(
                     "retained {} malformed, ambiguous, or checksum-degraded instance-definition record(s); first: {}",
@@ -1895,8 +1890,7 @@ impl<'a> DecodeContext<'a> {
         }
         losses.append(&mut self.typed_losses);
         losses.extend(self.scan.warnings.iter().map(|warning| LossNote {
-            code: LossCode::DecodeDiagnostic,
-            category: LossCategory::Other,
+            code: LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message: warning.clone(),
             provenance: None,
@@ -1917,8 +1911,7 @@ impl<'a> DecodeContext<'a> {
             phase_families
                 .into_iter()
                 .map(|(family, (count, first))| LossNote {
-                    code: LossCode::DecodeDiagnostic,
-                    category: LossCategory::Other,
+                    code: LossKind::DecodeDiagnostic,
                     severity: Severity::Warning,
                     message: if count == 1 {
                         format!("{family}: {first}")
@@ -2658,8 +2651,7 @@ impl<'a> DecodeContext<'a> {
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
                             self.typed_losses.push(LossNote {
-                                code: LossCode::TopologyNotTransferred,
-                                category: LossCategory::Topology,
+                                code: LossKind::TopologyNotTransferred,
                                 severity: Severity::Warning,
                                 message: format!("Brep topology fallback: {cause}"),
                                 provenance: None,

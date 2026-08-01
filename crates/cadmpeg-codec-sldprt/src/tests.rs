@@ -7,7 +7,7 @@ use std::io::{Cursor, Write};
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 
 use cadmpeg_codec_core::decode::InspectOptions;
-use cadmpeg_ir::LossCode;
+use cadmpeg_ir::LossKind;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -5779,7 +5779,7 @@ fn strict_accepts_operator_requested_container_only() {
 
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let fixture = synthetic_sldprt();
 
@@ -5791,17 +5791,17 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::GeometryNotTransferred));
+        .any(|note| note.code == LossKind::GeometryNotTransferred));
     assert!(salvaged
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::TopologyNotTransferred));
+        .any(|note| note.code == LossKind::TopologyNotTransferred));
     assert!(salvaged
         .report
         .losses
         .iter()
-        .any(|note| note.code.strict_consequence() == StrictConsequence::Reject));
+        .any(|note| note.strict_consequence() == StrictConsequence::Reject));
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
@@ -5817,7 +5817,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
     let strict = SldprtCodec
@@ -5828,12 +5828,12 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .report
         .losses
         .iter()
-        .all(|note| note.code.strict_consequence() == StrictConsequence::Tolerate));
+        .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
     assert!(strict
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::TopologyGaugeSubstituted));
+        .any(|note| note.code == LossKind::TopologyGaugeSubstituted));
 }
 
 #[test]
@@ -20555,14 +20555,14 @@ fn face_on_untyped_surface_keeps_topology() {
         .report
         .losses
         .iter()
-        .any(|l| l.code == LossCode::GeometryNotTransferred));
+        .any(|l| l.code == LossKind::GeometryNotTransferred));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -20589,9 +20589,9 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .report
         .losses
         .iter()
-        .find(|l| l.code == LossCode::GeometryNotTransferred)
+        .find(|l| l.code == LossKind::GeometryNotTransferred)
         .expect("untyped support surface raises a census note");
-    assert_eq!(census.code.strict_consequence(), StrictConsequence::Reject);
+    assert_eq!(census.strict_consequence(), StrictConsequence::Reject);
 
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())

@@ -16,7 +16,7 @@ use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::Registry;
 use crate::{DecodeArgs, ForcedInput, Format};
 
-const CLI_SCHEMA_VERSION: u32 = 4;
+const CLI_SCHEMA_VERSION: u32 = 5;
 
 fn validate_ir(
     ir: &CadIr,
@@ -668,7 +668,12 @@ fn export_ir(
     if !report.losses.is_empty() {
         eprintln!("{} export losses:", report.format);
         for loss in &report.losses {
-            eprintln!("  [{}/{}] {}", loss.severity, loss.category, loss.message);
+            eprintln!(
+                "  [{}/{}] {}",
+                loss.severity,
+                loss.code.category(),
+                loss.message
+            );
         }
     }
     Ok(report)
@@ -764,7 +769,9 @@ fn print_decode_report(writer: &mut impl Write, report: &DecodeReport) -> io::Re
             writeln!(
                 writer,
                 "  [{}/{}] {}",
-                loss.severity, loss.category, loss.message
+                loss.severity,
+                loss.code.category(),
+                loss.message
             )?;
         }
     }
