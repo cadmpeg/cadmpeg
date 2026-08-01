@@ -100,16 +100,16 @@ Exit status `1` indicates a difference.
 
 ## Inputs and outputs
 
-The built-in codecs recognize `.f3d`, `.sldprt`, `.3dm`, `.CATPart`, and the
-NX and Creo `.prt` layouts by content. Commands that load models also accept
-CADIR JSON. Use `--input-format` to bypass detection for an ambiguous or
-extensionless input.
+The built-in codecs recognize `.f3d`, `.FCStd`, `.sldprt`, `.3dm`, `.CATPart`,
+IGES, STEP, and the NX and Creo `.prt` layouts by content. Commands that load
+models also accept CADIR JSON. Use `--input-format` to bypass detection for an
+ambiguous or extensionless input.
 
 Output formats are:
 
 - `cadir` for canonical CADIR JSON; `json` is an alias.
 - `step` for ISO 10303-21 STEP AP214.
-- `fcstd`, `f3d`, and `sldprt` for the native writers' supported subsets.
+- `fcstd`, `f3d`, `rhino`, and `sldprt` for the native writers' supported subsets.
 
 Native writing may depend on retained source data and rejects unsupported
 edits. The [format support page][support] defines each reader and writer's
