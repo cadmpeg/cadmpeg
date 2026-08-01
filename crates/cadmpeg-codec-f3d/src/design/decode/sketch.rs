@@ -1689,14 +1689,14 @@ const TXT_TAG_FONT_WEIGHT_AT: usize = 3;
 
 /// Which identity key a sketch-text record carries. The key selects the layout
 /// the record uses from the property block onward.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq)]
 enum SketchTextIdentity {
     /// `textex_tag`: a `1` byte, the width factor, a zero byte between the font
     /// family and the height, and the anchor inside a placement transform.
     TextexTag,
     /// `txt_tag`: a `0` byte, no width factor, the height directly after the
     /// font family, and the anchor stored on its own.
-    TxtTag,
+    TxtTag { rotation: f64 },
 }
 
 /// Read one parameter-reference slot in the given form, advancing `cursor` by
@@ -1779,7 +1779,6 @@ struct SketchTextHead {
     height: f64,
     width_factor: Option<f64>,
     color: Color,
-    txt_tag_rotation: Option<f64>,
     cursor: usize,
 }
 
@@ -1843,18 +1842,18 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
             .find(|(name, _)| name == key)
             .map(|(_, value)| *value)
     };
-    let identity = match (property("textex_tag"), property("txt_tag")) {
-        (Some(_), _) => SketchTextIdentity::TextexTag,
-        (None, Some(_)) => SketchTextIdentity::TxtTag,
-        (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => SketchTextIdentity::TxtTag,
+    let is_txt_tag = match (property("textex_tag"), property("txt_tag")) {
+        (Some(_), _) => false,
+        (None, Some(_)) => true,
+        (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => true,
         (None, None) => return None,
     };
-    let txt_tag_rotation = if identity == SketchTextIdentity::TxtTag {
+    let identity = if is_txt_tag {
         let rotation = f64_at(payload, cursor)?;
         rotation.is_finite().then_some(())?;
-        Some(rotation)
+        SketchTextIdentity::TxtTag { rotation }
     } else {
-        None
+        SketchTextIdentity::TextexTag
     };
     let property = |key: &str| {
         properties
@@ -1864,7 +1863,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
     };
     let persistent_id = match identity {
         SketchTextIdentity::TextexTag => property("textex_tag"),
-        SketchTextIdentity::TxtTag => property("txt_tag"),
+        SketchTextIdentity::TxtTag { .. } => property("txt_tag"),
     };
     let (width_factor, color) = match identity {
         SketchTextIdentity::TextexTag => {
@@ -1876,7 +1875,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
             (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
             (Some(width_factor), color)
         }
-        SketchTextIdentity::TxtTag => {
+        SketchTextIdentity::TxtTag { .. } => {
             cursor = cursor.checked_add(8)?;
             (payload.get(cursor)? == &0).then_some(())?;
             cursor = cursor.checked_add(TXT_TAG_POST_ROTATION_RUN)?;
@@ -1890,7 +1889,7 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
     }
     let (font_family, after_font) = utf16le_at(payload, cursor + 4, font_count)?;
     cursor = after_font;
-    if identity == SketchTextIdentity::TextexTag {
+    if matches!(identity, SketchTextIdentity::TextexTag) {
         (payload.get(cursor)? == &0).then_some(())?;
         cursor += 1;
     }
@@ -1906,7 +1905,6 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
         height,
         width_factor,
         color,
-        txt_tag_rotation,
         cursor,
     })
 }
@@ -2046,12 +2044,9 @@ pub(crate) fn decode_sketch_text_record(
             }
             closed?
         }
-        SketchTextIdentity::TxtTag => decode_txt_tag_sketch_text_tail(
-            payload,
-            head.cursor,
-            class_version,
-            head.txt_tag_rotation?,
-        )?,
+        SketchTextIdentity::TxtTag { rotation } => {
+            decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version, rotation)?
+        }
     };
     Some(SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),

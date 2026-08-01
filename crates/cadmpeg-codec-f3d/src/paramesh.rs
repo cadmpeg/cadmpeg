@@ -179,7 +179,7 @@ enum StreamDescriptorValue {
     Boolean(bool),
 }
 
-/// Read the integer-valued `MessagePack` descriptor map of one kind-4 chunk.
+/// Read the scalar-valued `MessagePack` descriptor map of one kind-4 chunk.
 fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)>, CodecError> {
     fn value(bytes: &[u8], at: &mut usize) -> Result<StreamDescriptorValue, CodecError> {
         let tag = *bytes
