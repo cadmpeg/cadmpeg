@@ -51,7 +51,7 @@ impl Codec for IgesCodec {
             }
             layout::Representation::FixedAscii => {}
         }
-        let scan = card::scan(root.window())?;
+        let scan = card::scan(&mut reader)?;
         let global = global::parse(&scan)?;
         let directory = directory::parse(&scan)?;
         let parameters = parameter::assemble(&scan, &directory, &global)?;
@@ -72,7 +72,7 @@ impl Codec for IgesCodec {
         let mut source = Cursor::new(root.window());
         match layout::classify(&mut source)? {
             layout::Representation::FixedAscii => reader::decode(
-                root.window(),
+                &mut source,
                 DecodeOptions {
                     container_only: ctx.container_only(),
                     policy: *ctx.policy(),

@@ -2,7 +2,7 @@
 //! Physical graph to CADIR native preservation and loss reporting.
 
 use crate::{card, directory, entities, global, graph, native, parameter};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_codec_core::{CodecError, ReadSeek};
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
@@ -41,8 +41,11 @@ fn source_meta(global: &global::Global) -> SourceMeta {
     }
 }
 
-pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
-    let scan = card::scan(bytes)?;
+pub(crate) fn decode(
+    reader: &mut dyn ReadSeek,
+    options: DecodeOptions,
+) -> Result<DecodeResult, CodecError> {
+    let scan = card::scan(reader)?;
     let global = global::parse(&scan)?;
     if global.version() != Some("5.3") {
         return Err(CodecError::NotImplemented(format!(
