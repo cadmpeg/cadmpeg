@@ -1150,6 +1150,76 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
 }
 
 #[test]
+fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
+    let dir = tempdir().unwrap();
+    for format in ["f3d", "sldprt"] {
+        let source_ir = if format == "sldprt" {
+            sldprt_cube()
+        } else {
+            unit_cube()
+        };
+        let cube = fixture(dir.path(), &format!("cube-{format}.cadir.json"), &source_ir);
+        let native = dir.path().join(format!("source.{format}"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "export",
+                cube.to_str().unwrap(),
+                "-o",
+                native.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+
+        let persisted = dir.path().join(format!("decoded-{format}.cadir.json"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "decode",
+                native.to_str().unwrap(),
+                "-o",
+                persisted.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let sidecar = cadmpeg_ir::decode_sidecar_path(&persisted);
+        assert!(sidecar.exists());
+
+        let replay = dir.path().join(format!("replay.{format}"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "export",
+                persisted.to_str().unwrap(),
+                "-o",
+                replay.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        assert_eq!(fs::read(&native).unwrap(), fs::read(&replay).unwrap());
+
+        fs::remove_file(sidecar).unwrap();
+        let refused = dir.path().join(format!("refused.{format}"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "export",
+                persisted.to_str().unwrap(),
+                "-o",
+                refused.to_str().unwrap(),
+                "--reject-lossy",
+            ])
+            .assert()
+            .code(1)
+            .stderr(
+                predicate::str::contains("Preserved")
+                    .or(predicate::str::contains("export planning reported 1 loss")),
+            );
+        assert!(!refused.exists());
+    }
+}
+
+#[test]
 fn reporting_commands_emit_versioned_json_only_on_stdout() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.json", &unit_cube());

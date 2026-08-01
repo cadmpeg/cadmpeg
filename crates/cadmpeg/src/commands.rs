@@ -41,18 +41,26 @@ fn validate_ir(
 /// The executable maps this error to exit status 1.
 pub struct SemanticFailure(String);
 
-/// Safety and reporting options for `convert`.
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "each bool is an independent, orthogonal CLI safety toggle the user opts into by name; an enum would obscure that they compose freely"
-)]
-pub struct ConvertSettings {
+/// Whether a conversion validates the neutral model before export.
+#[derive(Debug, Clone, Copy)]
+pub enum ValidationMode {
+    /// Validate and optionally permit invalid output.
+    Required {
+        /// Continue despite validation errors.
+        allow_invalid: bool,
+    },
+    /// Skip neutral validation.
+    Skipped,
+}
+
+/// Complete policy and target configuration for one conversion pipeline.
+pub struct ConversionPlan {
     /// Replace an existing output or report file.
     pub force: bool,
     /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
-    /// Export despite CADIR validation errors.
-    pub allow_invalid: bool,
+    /// Neutral validation policy.
+    pub validation: ValidationMode,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
     /// Refuse to export when the decode reported any loss.
@@ -83,6 +91,7 @@ pub fn inspect(
     path: &Path,
     forced: Option<ForcedInput>,
     json: bool,
+    limits: cadmpeg_codec_core::decode::ResourceLimits,
 ) -> Result<()> {
     let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
     let (codec, confidence) = match forced {
@@ -109,7 +118,7 @@ pub fn inspect(
     };
     let mut file = File::open(path)?;
     let summary = codec
-        .inspect(&mut file, &InspectOptions::default())
+        .inspect(&mut file, &InspectOptions { limits })
         .with_context(|| format!("inspecting {}", path.display()))?;
     if json {
         println!(
@@ -174,6 +183,7 @@ pub fn decode(
         force,
         None,
         cadmpeg_step::StepWriteOptions::default(),
+        false,
     )?;
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
@@ -232,102 +242,16 @@ pub fn validate_cmd(
     Ok(())
 }
 
-/// Safety and reporting options for `export`.
-pub struct ExportSettings {
-    /// Replace an existing output or report file.
-    pub force: bool,
-    /// Optional path for the versioned JSON command report.
-    pub report: Option<PathBuf>,
-    /// Export a geometry format when decoding transferred no geometry.
-    pub allow_empty: bool,
-    /// Refuse to export when the decode reported any loss.
-    pub reject_lossy: bool,
-    /// Explicit Rhino output archive version.
-    pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
-    /// STEP writer options selected by the caller.
-    pub step_options: cadmpeg_step::StepWriteOptions,
-    /// Explicit input format selected by the user.
-    pub forced_input: Option<ForcedInput>,
-}
-
 /// Decode if needed and export without validating CADIR.
 pub fn export(
     registry: &Registry,
     path: &Path,
     format: Option<Format>,
     out: Option<&Path>,
-    settings: ExportSettings,
+    plan: ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let ExportSettings {
-        force,
-        report: report_path,
-        allow_empty,
-        reject_lossy,
-        rhino_version,
-        step_options,
-        forced_input,
-    } = settings;
-    let format = resolve_format(format, out)?;
-    let loaded = loader::load_artifact(registry, path, args.options(), forced_input)?;
-    if let Some(report) = loaded.decode_report() {
-        print_decode_report(&mut io::stderr(), report)?;
-        eprintln!("note: export skips IR validation; use `convert` to validate");
-    }
-    if let Some(refusal) = lossy_refusal(reject_lossy, loaded.decode_report(), format) {
-        write_command_report(
-            path,
-            report_path.as_deref(),
-            force,
-            "export",
-            loaded.decode_report(),
-            None,
-            None,
-        )?;
-        return Err(refusal);
-    }
-    if format.is_geometry_export()
-        && loaded
-            .decode_report()
-            .as_ref()
-            .is_some_and(|report| !report.geometry_transferred)
-        && !allow_empty
-    {
-        write_command_report(
-            path,
-            report_path.as_deref(),
-            force,
-            "export",
-            loaded.decode_report(),
-            None,
-            None,
-        )?;
-        return Err(semantic(format!(
-            "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
-            format.name()
-        )));
-    }
-    let report = export_ir(
-        registry,
-        &loaded.ir,
-        loaded.decode_report(),
-        loaded.fidelity(),
-        format,
-        out,
-        path,
-        force,
-        rhino_version,
-        step_options,
-    )?;
-    write_command_report(
-        path,
-        report_path.as_deref(),
-        force,
-        "export",
-        loaded.decode_report(),
-        None,
-        Some(&report),
-    )
+    execute_conversion(registry, path, format, out, plan, args, "export")
 }
 
 /// Decode if needed, validate CADIR, and export.
@@ -336,64 +260,86 @@ pub fn convert(
     path: &Path,
     format: Option<Format>,
     out: Option<&Path>,
-    settings: &ConvertSettings,
+    plan: ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
+    execute_conversion(registry, path, format, out, plan, args, "convert")
+}
+
+fn execute_conversion(
+    registry: &Registry,
+    path: &Path,
+    format: Option<Format>,
+    out: Option<&Path>,
+    plan: ConversionPlan,
+    args: &DecodeArgs,
+    command: &'static str,
+) -> Result<()> {
     let format = resolve_format(format, out)?;
-    let loaded = loader::load_artifact(registry, path, args.options(), settings.forced_input)?;
+    let loaded = loader::load_artifact(registry, path, args.options(), plan.forced_input)?;
     let mut stderr = io::stderr();
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut stderr, report)?;
-        writeln!(stderr)?;
+        if matches!(plan.validation, ValidationMode::Skipped) {
+            eprintln!("note: export skips IR validation; use `convert` to validate");
+        } else {
+            writeln!(stderr)?;
+        }
     }
-    if let Some(refusal) = lossy_refusal(settings.reject_lossy, loaded.decode_report(), format) {
+    if let Some(refusal) = lossy_refusal(plan.reject_lossy, loaded.decode_report(), format) {
         write_command_report(
             path,
-            settings.report.as_deref(),
-            settings.force,
-            "convert",
+            plan.report.as_deref(),
+            plan.force,
+            command,
             loaded.decode_report(),
             None,
             None,
         )?;
         return Err(refusal);
     }
-    let validation = validate_ir(
-        registry,
-        &loaded.ir,
-        loaded.fidelity(),
-        losses(loaded.decode_report()),
-    );
-    print_validation_report(&mut stderr, &validation)?;
-    if !validation.is_ok() && !settings.allow_invalid {
-        write_command_report(
-            path,
-            settings.report.as_deref(),
-            settings.force,
-            "convert",
-            loaded.decode_report(),
-            Some(&validation),
-            None,
-        )?;
-        return Err(semantic(format!(
-            "validation found {} error(s); refusing to export (use --allow-invalid to override)",
-            validation.error_count()
-        )));
-    }
+    let validation = match plan.validation {
+        ValidationMode::Required { allow_invalid } => {
+            let validation = validate_ir(
+                registry,
+                &loaded.ir,
+                loaded.fidelity(),
+                losses(loaded.decode_report()),
+            );
+            print_validation_report(&mut stderr, &validation)?;
+            if !validation.is_ok() && !allow_invalid {
+                write_command_report(
+                    path,
+                    plan.report.as_deref(),
+                    plan.force,
+                    command,
+                    loaded.decode_report(),
+                    Some(&validation),
+                    None,
+                )?;
+                return Err(semantic(format!(
+                    "validation found {} error(s); refusing to export (use --allow-invalid to override)",
+                    validation.error_count()
+                )));
+            }
+            Some(validation)
+        }
+        ValidationMode::Skipped => None,
+    };
     if format.is_geometry_export()
         && loaded
             .decode_report()
             .as_ref()
             .is_some_and(|report| !report.geometry_transferred)
-        && !settings.allow_empty
+        && !plan.allow_empty
     {
         write_command_report(
             path,
-            settings.report.as_deref(),
-            settings.force,
-            "convert",
+            plan.report.as_deref(),
+            plan.force,
+            command,
             loaded.decode_report(),
-            Some(&validation),
+            validation.as_ref(),
             None,
         )?;
         return Err(semantic(format!(
@@ -409,17 +355,18 @@ pub fn convert(
         format,
         out,
         path,
-        settings.force,
-        settings.rhino_version,
-        settings.step_options.clone(),
+        plan.force,
+        plan.rhino_version,
+        plan.step_options,
+        plan.reject_lossy,
     )?;
     write_command_report(
         path,
-        settings.report.as_deref(),
-        settings.force,
-        "convert",
+        plan.report.as_deref(),
+        plan.force,
+        command,
         loaded.decode_report(),
-        Some(&validation),
+        validation.as_ref(),
         Some(&report),
     )
 }
@@ -648,10 +595,14 @@ fn export_ir(
     force: bool,
     rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     step_options: cadmpeg_step::StepWriteOptions,
+    reject_lossy: bool,
 ) -> Result<ExportReport> {
     let mut bytes = Vec::new();
     if rhino_version.is_some() && format != Format::Rhino {
         bail!("--rhino-version requires Rhino output");
+    }
+    if let Some(path) = out {
+        check_output_path(input, path, force)?;
     }
     let target_options = match format {
         Format::Step => TargetOptions::Step(step_options),
@@ -663,14 +614,20 @@ fn export_ir(
     let encoder = registry
         .encoder(format.name(), target_options)
         .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
-    let report = encoder
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir,
-            fidelity: source_fidelity,
-        })?
-        .write_to(&mut bytes)?;
+    let plan = encoder.plan(cadmpeg_ir::codec::EncodeInput {
+        ir,
+        fidelity: source_fidelity,
+    })?;
+    if reject_lossy && !plan.report().losses.is_empty() {
+        return Err(semantic(format!(
+            "export planning reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
+            plan.report().losses.len(),
+            format.name()
+        )));
+    }
+    let report = plan.write_to(&mut bytes)?;
     if let Some(path) = out {
-        write_output(input, path, &bytes, force)?;
+        write_atomic(path, &bytes)?;
         if format == Format::Cadir {
             persist_decode_sidecar(path, &bytes, decode_report, source_fidelity)?;
         }
@@ -767,6 +724,11 @@ fn write_command_report(
 }
 
 fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
+    check_output_path(input, output, force)?;
+    write_atomic(output, bytes)
+}
+
+fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
     let input = std::fs::canonicalize(input)
         .with_context(|| format!("canonicalizing {}", input.display()))?;
     let parent = output
@@ -788,7 +750,7 @@ fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Resul
     if output.exists() && !force {
         bail!("{} exists; pass --force to overwrite", output.display());
     }
-    write_atomic(output, bytes)
+    Ok(())
 }
 
 fn print_id_delta(label: &str, ids: &[String]) {

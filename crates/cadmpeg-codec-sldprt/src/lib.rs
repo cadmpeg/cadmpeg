@@ -132,12 +132,12 @@ impl SldprtCodec {
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
             return writer::write_semantic_with_records(ir, annotations, records, writer);
         }
-        let record = records
+        let Some(record) = records
             .iter()
             .find(|record| record.id.0 == "sldprt:file:source-image#0")
-            .ok_or_else(|| {
-                CodecError::NotImplemented("IR has no retained SLDPRT source image".into())
-            })?;
+        else {
+            return writer::write_semantic_with_records(ir, annotations, records, writer);
+        };
         let data = record.data.as_ref().ok_or_else(|| {
             CodecError::Malformed("retained SLDPRT source image has no bytes".into())
         })?;
