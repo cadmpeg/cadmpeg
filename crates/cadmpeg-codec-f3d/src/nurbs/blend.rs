@@ -22,7 +22,7 @@ use crate::nurbs::proc_surface::{
 use crate::nurbs::reader::{
     marker_at, marker_positions, owned_marker_positions, take_bool, take_f64, take_native_ident,
     take_native_string, take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector,
-    INT_WIDTHS, LEN_TO_MM,
+    LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{find_owned_subtype_marker, next_token, subtype_span, SubtypeTables};
 use cadmpeg_ir::geometry::{
@@ -32,12 +32,6 @@ use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
-pub fn decode_cyl_spl_sur(record_bytes: &[u8]) -> Option<DecodedProceduralSurface> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| decode_cyl_spl_sur_at(record_bytes, int_width))
-}
-
 pub(crate) fn decode_cyl_spl_sur_at(
     record_bytes: &[u8],
     int_width: usize,
