@@ -78,7 +78,7 @@ fn project_spatial_dimension_constraints(
 }
 use crate::design::edge_resolve::{
     feature_input_topology_id, partial_historical_edge_selection,
-    resolved_edge_candidate_intersection,
+    resolved_edge_candidate_intersection, resolved_edge_candidate_intersection_with_deleted_proofs,
 };
 use crate::design::face_resolve::resolved_face_group;
 use crate::design::feature_project::{
@@ -14113,6 +14113,27 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         None
     );
     assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
+    // Two reference sets that share no edge name no edge of this operand, so a
+    // proof drawn from outside those references cannot select one either.
+    assert_eq!(
+        resolved_edge_candidate_intersection_with_deleted_proofs(
+            &[selector(0, &[17])],
+            [&[17][..], &[18][..]],
+            &[],
+            Some(17),
+        ),
+        None
+    );
+    // The same proof stands where the references do share the edge.
+    assert_eq!(
+        resolved_edge_candidate_intersection_with_deleted_proofs(
+            &[selector(0, &[17])],
+            [&[17, 20][..], &[17, 21][..]],
+            &[],
+            Some(17),
+        ),
+        Some(17)
+    );
     assert_eq!(
         resolved_edge_candidate_intersection(
             &[
