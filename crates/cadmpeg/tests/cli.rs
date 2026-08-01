@@ -1103,7 +1103,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
         ])
         .assert()
         .success();
-    serde_json::from_slice::<serde_json::Value>(&fs::read(inferred).unwrap()).unwrap();
+    serde_json::from_slice::<serde_json::Value>(&fs::read(&inferred).unwrap()).unwrap();
 
     let native = geometryless_creo(dir.path(), "empty.prt");
     let stdout = Command::cargo_bin("cadmpeg")
@@ -1112,6 +1112,8 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
         .output()
         .unwrap();
     assert!(stdout.status.success());
+    assert!(String::from_utf8_lossy(&stdout.stderr)
+        .contains("stdout cannot carry its decode-fidelity sidecar"));
     let output = dir.path().join("empty.cadir.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -1123,7 +1125,28 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
         ])
         .assert()
         .success();
-    assert_eq!(stdout.stdout, fs::read(output).unwrap());
+    assert_eq!(stdout.stdout, fs::read(&output).unwrap());
+    let sidecar_path = cadmpeg_ir::decode_sidecar_path(&output);
+    let sidecar = cadmpeg_ir::DecodeSidecar::from_json(
+        &fs::read_to_string(&sidecar_path).expect("decode writes fidelity sidecar"),
+    )
+    .unwrap();
+    assert!(sidecar.matches(&fs::read(&output).unwrap()));
+
+    let neutral_sidecar = cadmpeg_ir::decode_sidecar_path(&inferred);
+    fs::write(&neutral_sidecar, "stale").unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "export",
+            cube.to_str().unwrap(),
+            "-o",
+            inferred.to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .success();
+    assert!(!neutral_sidecar.exists());
 }
 
 #[test]

@@ -10,7 +10,10 @@ use std::process::ExitCode;
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_codec_core::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
+use cadmpeg_ir::{
+    decode_sidecar_path, validate, validate_with_source_fidelity, CadIr, CodecEntry, DecodeSidecar,
+    SourceFidelity,
+};
 
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::Registry;
@@ -167,6 +170,7 @@ pub fn decode(
     export_ir(
         registry,
         &loaded.ir,
+        loaded.decode_report(),
         loaded.fidelity(),
         Format::Cadir,
         out,
@@ -305,6 +309,7 @@ pub fn export(
     let report = export_ir(
         registry,
         &loaded.ir,
+        loaded.decode_report(),
         loaded.fidelity(),
         format,
         out,
@@ -396,6 +401,7 @@ pub fn convert(
     let report = export_ir(
         registry,
         &loaded.ir,
+        loaded.decode_report(),
         loaded.fidelity(),
         format,
         out,
@@ -630,6 +636,7 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
 fn export_ir(
     registry: &Registry,
     ir: &CadIr,
+    decode_report: Option<&DecodeReport>,
     source_fidelity: Option<&SourceFidelity>,
     format: Format,
     out: Option<&Path>,
@@ -652,6 +659,9 @@ fn export_ir(
         .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
     if let Some(path) = out {
         write_output(input, path, &bytes, force)?;
+        if format == Format::Cadir {
+            persist_decode_sidecar(path, &bytes, decode_report, source_fidelity)?;
+        }
         eprintln!(
             "wrote {} ({} entities)",
             path.display(),
@@ -659,6 +669,9 @@ fn export_ir(
         );
     } else {
         io::stdout().write_all(&bytes)?;
+        if format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some() {
+            eprintln!("note: CADIR written to stdout cannot carry its decode-fidelity sidecar");
+        }
     }
     if !report.losses.is_empty() {
         eprintln!("{} export losses:", report.format);
@@ -672,6 +685,48 @@ fn export_ir(
         }
     }
     Ok(report)
+}
+
+fn persist_decode_sidecar(
+    cadir_path: &Path,
+    cadir_bytes: &[u8],
+    report: Option<&DecodeReport>,
+    fidelity: Option<&SourceFidelity>,
+) -> Result<()> {
+    let path = decode_sidecar_path(cadir_path);
+    match (report, fidelity) {
+        (Some(report), Some(fidelity)) => {
+            let sidecar = DecodeSidecar::bind(cadir_bytes, report.clone(), fidelity.clone());
+            let mut bytes = sidecar.to_canonical_json()?.into_bytes();
+            bytes.push(b'\n');
+            write_atomic(&path, &bytes)?;
+            eprintln!("wrote decode sidecar {}", path.display());
+        }
+        _ if path.exists() => {
+            std::fs::remove_file(&path)
+                .with_context(|| format!("removing stale decode sidecar {}", path.display()))?;
+            eprintln!("removed stale decode sidecar {}", path.display());
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn write_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
+    temporary
+        .write_all(bytes)
+        .with_context(|| format!("writing temporary output for {}", output.display()))?;
+    temporary
+        .persist(output)
+        .map_err(|error| error.error)
+        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
+    Ok(())
 }
 
 fn write_command_report(
@@ -721,16 +776,7 @@ fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Resul
     if output.exists() && !force {
         bail!("{} exists; pass --force to overwrite", output.display());
     }
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
-    temporary
-        .write_all(bytes)
-        .with_context(|| format!("writing temporary output for {}", output.display()))?;
-    temporary
-        .persist(output)
-        .map_err(|error| error.error)
-        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-    Ok(())
+    write_atomic(output, bytes)
 }
 
 fn print_id_delta(label: &str, ids: &[String]) {
