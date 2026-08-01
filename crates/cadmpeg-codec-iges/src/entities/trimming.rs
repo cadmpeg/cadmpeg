@@ -484,11 +484,12 @@ pub(super) fn project(
             continue;
         }
         let surface_id = SurfaceId(format!("iges:model:surface#D{surface_sequence}"));
-        let Some(support) = ir
+        let Some(support_geometry) = ir
             .model
             .surfaces
             .iter()
             .find(|surface| surface.id == surface_id)
+            .map(|surface| surface.geometry.clone())
         else {
             losses.push(entity_loss(
                 entry,
@@ -496,7 +497,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        let mut candidate = ir.clone();
+        let checkpoint = super::TopologyAppendCheckpoint::capture(ir);
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
         let region_id = RegionId(format!("iges:model:region#{stem}"));
@@ -552,7 +553,7 @@ pub(super) fn project(
                 let pcurves = segment
                     .pcurves
                     .iter()
-                    .map(|sequence| pcurve_geometry(ir, *sequence, &support.geometry, factor))
+                    .map(|sequence| pcurve_geometry(ir, *sequence, &support_geometry, factor))
                     .collect::<Option<Vec<_>>>();
                 let Some(pcurves) = pcurves else {
                     losses.push(entity_loss(
@@ -567,9 +568,9 @@ pub(super) fn project(
                         && global.minimum_resolution_mm().is_some_and(|tolerance| {
                             let (geometry, range) = &pcurves[0];
                             let mapped_start = evaluation::pcurve(geometry, range[0])
-                                .and_then(|uv| evaluation::surface(&support.geometry, uv));
+                                .and_then(|uv| evaluation::surface(&support_geometry, uv));
                             let mapped_end = evaluation::pcurve(geometry, range[1])
-                                .and_then(|uv| evaluation::surface(&support.geometry, uv));
+                                .and_then(|uv| evaluation::surface(&support_geometry, uv));
                             mapped_start.is_some_and(|point| {
                                 evaluation::distance(point, start) <= tolerance
                             }) && mapped_end
@@ -624,21 +625,11 @@ pub(super) fn project(
                 let edge_id = EdgeId(format!(
                     "iges:model:edge#{stem}:{boundary_index}:{segment_index}"
                 ));
-                let start_vertex = face_vertex(
-                    &mut candidate,
-                    &mut local_vertices,
-                    &stem,
-                    boundary_index,
-                    item.start,
-                );
-                let end_vertex = face_vertex(
-                    &mut candidate,
-                    &mut local_vertices,
-                    &stem,
-                    boundary_index,
-                    item.end,
-                );
-                candidate.model.edges.push(Edge {
+                let start_vertex =
+                    face_vertex(ir, &mut local_vertices, &stem, boundary_index, item.start);
+                let end_vertex =
+                    face_vertex(ir, &mut local_vertices, &stem, boundary_index, item.end);
+                ir.model.edges.push(Edge {
                     id: edge_id.clone(),
                     curve: Some(item.model_curve),
                     start: start_vertex,
@@ -654,7 +645,7 @@ pub(super) fn project(
                         let id = PcurveId(format!(
                             "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}:{pcurve_index}"
                         ));
-                        candidate.model.pcurves.push(Pcurve {
+                        ir.model.pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
                             wrapper_reversed: None,
@@ -670,7 +661,7 @@ pub(super) fn project(
                     })
                     .collect();
                 let coedge_id = coedge_ids[segment_index].clone();
-                candidate.model.coedges.push(Coedge {
+                ir.model.coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
@@ -684,7 +675,7 @@ pub(super) fn project(
                     use_curve_parameter_range: None,
                 });
             }
-            candidate.model.loops.push(Loop {
+            ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary_role: if trimmed_surface {
@@ -703,9 +694,10 @@ pub(super) fn project(
             consumed.push(sequence);
         }
         if !valid {
+            checkpoint.rollback_appended(ir);
             continue;
         }
-        candidate.model.faces.push(Face {
+        ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: surface_id,
@@ -715,19 +707,19 @@ pub(super) fn project(
             color: None,
             tolerance: None,
         });
-        candidate.model.shells.push(Shell {
+        ir.model.shells.push(Shell {
             id: shell_id.clone(),
             region: region_id.clone(),
             faces: vec![face_id],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         });
-        candidate.model.regions.push(Region {
+        ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id],
         });
-        candidate.model.bodies.push(Body {
+        ir.model.bodies.push(Body {
             id: body_id,
             kind: BodyKind::Sheet,
             regions: vec![region_id],
@@ -736,16 +728,17 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model.finalize();
-        let validation = cadmpeg_ir::validate(&candidate, Vec::new());
+        let appended_ids = checkpoint.appended_ids(ir);
+        ir.model.finalize();
+        let validation = cadmpeg_ir::validate(ir, Vec::new());
         if !validation.is_ok() {
             losses.push(entity_loss(
                 entry,
                 "trimmed sheet candidate failed neutral validation",
             ));
+            super::TopologyAppendCheckpoint::rollback(ir, &appended_ids);
             continue;
         }
-        *ir = candidate;
         decoded.insert(entry.sequence);
         decoded.extend(consumed);
     }

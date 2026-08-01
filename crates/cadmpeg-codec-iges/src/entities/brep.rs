@@ -117,8 +117,7 @@ fn topology_vertex(
 }
 
 fn project_pcurve_uses(
-    candidate: &mut CadIr,
-    source: &CadIr,
+    ir: &mut CadIr,
     uses: &[(bool, u32)],
     surface: &cadmpeg_ir::geometry::SurfaceGeometry,
     factor: f64,
@@ -127,9 +126,9 @@ fn project_pcurve_uses(
     uses.iter()
         .enumerate()
         .map(|(index, (isoparametric, sequence))| {
-            let (geometry, range) = pcurve_geometry(source, *sequence, surface, factor)?;
+            let (geometry, range) = pcurve_geometry(ir, *sequence, surface, factor)?;
             let id = PcurveId(format!("{id_stem}:{index}"));
-            candidate.model.pcurves.push(Pcurve {
+            ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
                 wrapper_reversed: None,
@@ -660,7 +659,7 @@ pub(super) fn project(
 
     for definition in body_definitions {
         let entry = definition.entry;
-        let mut candidate = ir.clone();
+        let checkpoint = super::TopologyAppendCheckpoint::capture(ir);
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
         let region_id = RegionId(format!("iges:model:region#{stem}"));
@@ -684,11 +683,12 @@ pub(super) fn project(
                 let face_definition = faces[&face_sequence].clone();
                 let surface_id =
                     SurfaceId(format!("iges:model:surface#D{}", face_definition.surface));
-                let Some(support) = ir
+                let Some(support_geometry) = ir
                     .model
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == surface_id)
+                    .map(|surface| surface.geometry.clone())
                 else {
                     valid = false;
                     break;
@@ -738,7 +738,7 @@ pub(super) fn project(
                                 continue;
                             };
                             let vertex = topology_vertex(
-                                &mut candidate,
+                                ir,
                                 &mut vertex_ids,
                                 &vertex_lists,
                                 &stem,
@@ -758,7 +758,7 @@ pub(super) fn project(
                                 pcurves_agree(
                                     ir,
                                     pcurves,
-                                    &support.geometry,
+                                    &support_geometry,
                                     factor,
                                     expected,
                                     expected,
@@ -773,10 +773,9 @@ pub(super) fn project(
                                 break;
                             }
                             let Some(projected) = project_pcurve_uses(
-                                &mut candidate,
                                 ir,
                                 pcurves,
-                                &support.geometry,
+                                &support_geometry,
                                 factor,
                                 &format!(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
@@ -797,14 +796,7 @@ pub(super) fn project(
                             (edge_definition.start_list, edge_definition.start_index),
                             (edge_definition.end_list, edge_definition.end_index),
                         ] {
-                            topology_vertex(
-                                &mut candidate,
-                                &mut vertex_ids,
-                                &vertex_lists,
-                                &stem,
-                                list,
-                                index,
-                            );
+                            topology_vertex(ir, &mut vertex_ids, &vertex_lists, &stem, list, index);
                         }
                         let edge_key = (*edge_list, *edge_index);
                         let natural_start =
@@ -820,7 +812,7 @@ pub(super) fn project(
                             pcurves_agree(
                                 ir,
                                 pcurves,
-                                &support.geometry,
+                                &support_geometry,
                                 factor,
                                 expected_start,
                                 expected_end,
@@ -882,7 +874,7 @@ pub(super) fn project(
                                 edge_key.0,
                                 edge_key.1 + 1
                             ));
-                            candidate.model.edges.push(Edge {
+                            ir.model.edges.push(Edge {
                                 id: id.clone(),
                                 curve: Some(curve_id),
                                 start: vertex_ids
@@ -898,10 +890,9 @@ pub(super) fn project(
                             id
                         };
                         let Some(projected) = project_pcurve_uses(
-                            &mut candidate,
                             ir,
                             pcurves,
-                            &support.geometry,
+                            &support_geometry,
                             factor,
                             &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
                         ) else {
@@ -920,7 +911,7 @@ pub(super) fn project(
                             .entry((shell_sequence, edge_key.0, edge_key.1))
                             .or_default()
                             .push(coedge_id.clone());
-                        candidate.model.coedges.push(Coedge {
+                        ir.model.coedges.push(Coedge {
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
@@ -938,7 +929,7 @@ pub(super) fn project(
                     if !valid {
                         break;
                     }
-                    candidate.model.loops.push(Loop {
+                    ir.model.loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         boundary_role: if face_definition.has_outer_loop && face_loop_index == 0 {
@@ -955,7 +946,7 @@ pub(super) fn project(
                 if !valid {
                     break;
                 }
-                candidate.model.faces.push(Face {
+                ir.model.faces.push(Face {
                     id: face_id.clone(),
                     shell: shell_id.clone(),
                     surface: surface_id,
@@ -971,7 +962,7 @@ pub(super) fn project(
             if !valid {
                 break;
             }
-            candidate.model.shells.push(Shell {
+            ir.model.shells.push(Shell {
                 id: shell_id.clone(),
                 region: region_id.clone(),
                 faces: shell_faces,
@@ -986,6 +977,7 @@ pub(super) fn project(
                 entry,
                 "shell topology references missing geometry",
             ));
+            checkpoint.rollback_appended(ir);
             continue;
         }
         if definition.closed
@@ -996,8 +988,7 @@ pub(super) fn project(
                 let senses = ring
                     .iter()
                     .filter_map(|id| {
-                        candidate
-                            .model
+                        ir.model
                             .coedges
                             .iter()
                             .find(|coedge| coedge.id == *id)
@@ -1011,26 +1002,22 @@ pub(super) fn project(
                 entry,
                 "closed shell does not use every edge exactly twice with opposite senses",
             ));
+            checkpoint.rollback_appended(ir);
             continue;
         }
         for ring in radial.values() {
             for (index, id) in ring.iter().enumerate() {
-                if let Some(coedge) = candidate
-                    .model
-                    .coedges
-                    .iter_mut()
-                    .find(|coedge| coedge.id == *id)
-                {
+                if let Some(coedge) = ir.model.coedges.iter_mut().find(|coedge| coedge.id == *id) {
                     coedge.radial_next = ring[(index + 1) % ring.len()].clone();
                 }
             }
         }
-        candidate.model.regions.push(Region {
+        ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
         });
-        candidate.model.bodies.push(Body {
+        ir.model.bodies.push(Body {
             id: body_id,
             kind: definition.kind,
             regions: vec![region_id],
@@ -1039,15 +1026,16 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model.finalize();
-        if !cadmpeg_ir::validate(&candidate, Vec::new()).is_ok() {
+        let appended_ids = checkpoint.appended_ids(ir);
+        ir.model.finalize();
+        if !cadmpeg_ir::validate(ir, Vec::new()).is_ok() {
             losses.push(entity_loss(
                 entry,
                 "shell candidate failed neutral validation",
             ));
+            super::TopologyAppendCheckpoint::rollback(ir, &appended_ids);
             continue;
         }
-        *ir = candidate;
         decoded.insert(entry.sequence);
         decoded.extend(consumed);
         decoded.extend(edge_ids.keys().map(|key| key.0));
