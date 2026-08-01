@@ -5419,7 +5419,7 @@ fn decode_reports_unclassified_bounded_offset_store_controls() {
     assert_eq!(attributes["classified_offset_store_control_count"], "0");
     assert_eq!(attributes["unclassified_offset_store_control_count"], "1");
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == LossCategory::DesignIntent
+        loss.category == LossCategory::Other
             && loss
                 .message
                 .contains("1 of 1 bounded offset-store control block(s)")

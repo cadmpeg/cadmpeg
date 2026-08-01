@@ -130,7 +130,7 @@ fn report_unresolved_configuration_rules(
     if count != 0 {
         report.losses.push(LossNote {
             code: LossCode::MetadataNotTransferred,
-            category: LossCategory::Other,
+            category: LossCategory::Metadata,
             severity: Severity::Warning,
             message: format!(
                 "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
@@ -145,7 +145,7 @@ fn report_unresolved_configuration_rules(
     if count != 0 {
         report.losses.push(LossNote {
             code: LossCode::MetadataNotTransferred,
-            category: LossCategory::Other,
+            category: LossCategory::Metadata,
             severity: Severity::Warning,
             message: format!(
                 "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
@@ -159,7 +159,7 @@ fn report_unresolved_configuration_rules(
     if count != 0 {
         report.losses.push(LossNote {
             code: LossCode::MetadataNotTransferred,
-            category: LossCategory::Other,
+            category: LossCategory::Metadata,
             severity: Severity::Warning,
             message: format!(
                 "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
@@ -173,7 +173,7 @@ fn report_unresolved_configuration_rules(
     if count != 0 {
         report.losses.push(LossNote {
             code: LossCode::MetadataNotTransferred,
-            category: LossCategory::Other,
+            category: LossCategory::Metadata,
             severity: Severity::Warning,
             message: format!(
                 "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
@@ -607,7 +607,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         if count != 0 {
             report.losses.push(LossNote {
                 code: LossCode::FeatureHistoryRetained,
-                category: LossCategory::Other,
+                category: LossCategory::DesignIntent,
                 severity: Severity::Warning,
                 message,
                 provenance: None,
@@ -2678,7 +2678,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     if s.undecoded_pcurve_refs > 0 {
         losses.push(LossNote {
             code: LossCode::ReferenceGraphNotClosed,
-            category: LossCategory::Geometry,
+            category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
                 "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
@@ -2705,7 +2705,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     if s.other_records > 0 {
         losses.push(LossNote {
             code: LossCode::RecordNotTyped,
-            category: LossCategory::Attribute,
+            category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
                 "{} active-slice application/refinement record(s) were not transferred: {}.",

@@ -137,7 +137,7 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     if classified_control_count != control_count {
         report.losses.push(LossNote {
             code: LossCode::RecordNotTyped,
-            category: LossCategory::DesignIntent,
+            category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
@@ -9876,7 +9876,7 @@ fn build_geometry_report(
             .join(", ");
         losses.push(LossNote {
             code: LossCode::DecodeDiagnostic,
-            category: LossCategory::Topology,
+            category: LossCategory::Other,
             severity: if unmatched_tombstones == 0 {
                 Severity::Info
             } else {
@@ -9924,7 +9924,7 @@ fn build_geometry_report(
     if has_unresolved_sub_bodies {
         losses.push(LossNote {
             code: LossCode::FeatureHistoryRetained,
-            category: LossCategory::Topology,
+            category: LossCategory::DesignIntent,
             severity: Severity::Warning,
             message: format!(
                 "This part is composed of {} sub-body partition(s); its decoded feature-history \
