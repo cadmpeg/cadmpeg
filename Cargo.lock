@@ -211,6 +211,7 @@ name = "cadmpeg-codec-freecad"
 version = "0.3.0"
 dependencies = [
  "cadmpeg-codec-core",
+ "cadmpeg-container",
  "cadmpeg-ir",
  "flate2",
  "roxmltree",

@@ -6,7 +6,6 @@ use std::io::{Cursor, Read, SeekFrom};
 use std::path::{Component, Path};
 
 use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
-use flate2::{Decompress, FlushDecompress};
 use zip::CompressionMethod;
 
 use crate::native::{ArchiveSpan, DocumentFacts};
@@ -37,16 +36,13 @@ pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
     let compressed = &prefix[data_start..];
     let document = match method {
         0 => compressed.to_vec(),
-        8 => {
-            let mut output = Vec::with_capacity(DETECTION_XML_BYTES);
-            if Decompress::new(false)
-                .decompress_vec(compressed, &mut output, FlushDecompress::None)
-                .is_err()
-            {
-                return false;
-            }
-            output
-        }
+        8 => match cadmpeg_container::compression::inflate_bounded_probe(
+            compressed,
+            DETECTION_XML_BYTES,
+        ) {
+            Some(output) => output,
+            None => return false,
+        },
         _ => return false,
     };
     contains(&document, b"<Document")

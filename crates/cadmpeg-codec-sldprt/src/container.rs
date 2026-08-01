@@ -465,11 +465,20 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
 /// decompression error (the CRC/round-trip gate rejects the marker hit).
 fn raw_inflate(data: &[u8], hint: usize) -> Option<Vec<u8>> {
     use flate2::read::DeflateDecoder;
-    let mut out = Vec::with_capacity(hint.min(1 << 20));
+    let mut out = Vec::new();
+    out.try_reserve(hint.min(1 << 20)).ok()?;
     let mut dec = DeflateDecoder::new(data);
-    match dec.read_to_end(&mut out) {
-        Ok(_) => Some(out),
-        Err(_) => None,
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = dec.read(&mut chunk).ok()?;
+        if read == 0 {
+            return Some(out);
+        }
+        if read > hint.saturating_sub(out.len()) {
+            return None;
+        }
+        out.try_reserve(read).ok()?;
+        out.extend_from_slice(&chunk[..read]);
     }
 }
 
