@@ -18,8 +18,8 @@ use crate::nurbs::reader::{
     take_optional_range_value, take_range_value, take_tagged_int, Nullable, INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
-    find_intcurve_subtype, find_owned_subtype_marker, find_subtype_marker,
-    owned_construction_subtype, subtype_refs, subtype_span, SubtypeTables,
+    find_owned_intcurve_subtype, find_owned_subtype_marker, owned_construction_subtype,
+    subtype_refs, subtype_span, SubtypeTables,
 };
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_int};
@@ -343,7 +343,7 @@ fn decode_procedural_curve_recursive(
 
 fn decode_embedded_deformable(bytes: &[u8], int_width: usize) -> Option<EmbeddedDeformable> {
     let name = b"defm_int_cur";
-    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
+    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
     let extension = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
     let bend = decode_curve_block(bytes, position, int_width)?;
@@ -419,7 +419,7 @@ fn take_law_version_bound(bytes: &[u8], position: &mut usize) -> Option<Option<f
 }
 
 fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedLawCurve> {
-    let (marker, name_len) = find_intcurve_subtype(bytes, b"law_int_cur")?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"law_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     // The stamped serializer form opens with `04 <stamp> 15 <enum>` before the
     // solved cache; the legacy form opens directly with the cache marker.
@@ -509,7 +509,7 @@ fn decode_embedded_spring(
     tables: &SubtypeTables,
 ) -> Option<EmbeddedSpring> {
     let name = b"spring_int_cur";
-    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let mut position = marker + name_len + 3;
     if bytes.get(position) == Some(&0x04) {
         let context = decode_cache_first_curve_context(
@@ -612,7 +612,7 @@ pub(crate) struct SpringPatchLayout {
 
 /// Locate spring context fields by walking the subtype grammar at `int_width`.
 pub(crate) fn spring_patch_layout(bytes: &[u8], int_width: usize) -> Option<SpringPatchLayout> {
-    let (marker, name_len) = find_intcurve_subtype(bytes, b"spring_int_cur")?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"spring_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     for _ in 0..2 {
         let saved = position;
@@ -697,7 +697,7 @@ pub(crate) struct CompoundPatchLayout {
 /// Locate both compound parameter arrays from their native counts.
 pub(crate) fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundPatchLayout> {
     let name = b"comp_int_cur";
-    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
+    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     let parameters = take_float_array_payloads(bytes, &mut position, int_width)?;
@@ -719,7 +719,7 @@ pub(crate) fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<Co
 /// Locate the subset range by consuming the subtype-owned parent curve.
 pub(crate) fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatchLayout> {
     let name = b"subset_int_cur";
-    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
+    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     position = decode_curve_block(bytes, position, int_width)?.end;
@@ -736,7 +736,7 @@ pub(crate) fn vector_offset_patch_layout(
     int_width: usize,
 ) -> Option<VectorOffsetPatchLayout> {
     let name = b"offset_int_cur";
-    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
+    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     take_bool(bytes, &mut position)?;
@@ -756,7 +756,7 @@ pub(crate) fn vector_offset_patch_layout(
 /// Locate helix fields by consuming the subtype prefix grammar.
 pub(crate) fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLayout> {
     let name = b"helix_int_cur";
-    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
+    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
@@ -797,8 +797,8 @@ pub(crate) fn extrusion_patch_layout(
     int_width: usize,
 ) -> Option<ExtrusionPatchLayout> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
-    let (start, name_len) =
-        find_subtype_marker(bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     subtype_span(bytes, start, int_width)?;
     let mut position = start + name_len + 3;
     let parameter_interval = [
@@ -829,8 +829,8 @@ pub(crate) fn rolling_ball_patch_layout(
         b"sss_blend_spl_sur",
         b"sssblndsur",
     ];
-    let (start, name_len) =
-        find_subtype_marker(bytes, &names).map(|(start, name)| (start, name.len()))?;
+    let (start, name_len) = find_owned_subtype_marker(bytes, &names, int_width)
+        .map(|(start, name)| (start, name.len()))?;
     let span = subtype_span(bytes, start, int_width)?;
     let payload_start = name_len + 3;
     let radii = (|| {
@@ -961,7 +961,7 @@ fn decode_embedded_surface_offset(
     tables: &SubtypeTables,
 ) -> Option<EmbeddedSurfaceOffset> {
     let name = b"off_surf_int_cur";
-    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let mut position = marker + name_len + 3;
     if bytes.get(position) == Some(&0x04) {
         let context = decode_cache_first_curve_context(
@@ -1084,7 +1084,7 @@ pub(crate) fn surface_offset_patch_layout(
     bytes: &[u8],
     int_width: usize,
 ) -> Option<SurfaceOffsetPatchLayout> {
-    let (marker, name_len) = find_intcurve_subtype(bytes, b"off_surf_int_cur")?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"off_surf_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1203,7 +1203,7 @@ pub(crate) fn silhouette_patch_layout(
         SilhouetteKind::Parametric => (&[b"para_silh_int_cur", b"parasil"], false),
         SilhouetteKind::Taper { .. } => (&[b"taper_silh_int_cur"], true),
     };
-    let (marker, name) = find_subtype_marker(bytes, names)?;
+    let (marker, name) = find_owned_subtype_marker(bytes, names, int_width)?;
     let mut position = marker + name.len() + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1574,7 +1574,7 @@ pub(crate) fn surface_curve_patch_layout(
         SurfaceCurveFamily::Parametric => &[b"par_int_cur", b"parcur"],
         SurfaceCurveFamily::Skin => &[b"skin_int_cur", b"d5c2_cur"],
     };
-    let (marker, name) = find_subtype_marker(bytes, names)?;
+    let (marker, name) = find_owned_subtype_marker(bytes, names, int_width)?;
     let mut position = marker + name.len() + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1600,7 +1600,7 @@ fn decode_embedded_three_surface_intersection(
     int_width: usize,
 ) -> Option<EmbeddedThreeSurfaceIntersection> {
     let name = b"sss_int_cur";
-    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
+    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
     let first = decode_embedded_surface(bytes, &mut position, int_width)?;
     let second = decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1641,7 +1641,7 @@ pub(crate) fn three_surface_patch_layout(
     bytes: &[u8],
     int_width: usize,
 ) -> Option<ThreeSurfacePatchLayout> {
-    let (marker, name_len) = find_intcurve_subtype(bytes, b"sss_int_cur")?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"sss_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1669,7 +1669,7 @@ pub(crate) fn three_surface_patch_layout(
 
 fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<EmbeddedProjection> {
     let name = b"proj_int_cur";
-    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let mut position = marker + name_len + 3;
     let surfaces = [
         decode_embedded_surface(bytes, &mut position, int_width)?,
@@ -1740,7 +1740,7 @@ pub(crate) fn projection_patch_layout(
     bytes: &[u8],
     int_width: usize,
 ) -> Option<ProjectionPatchLayout> {
-    let (marker, name_len) = find_intcurve_subtype(bytes, b"proj_int_cur")?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"proj_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1793,7 +1793,7 @@ fn decode_embedded_intersection(
     tables: &SubtypeTables,
 ) -> Option<(EmbeddedIntersection, bool)> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
-    let (marker, name) = find_subtype_marker(bytes, &names)?;
+    let (marker, name) = find_owned_subtype_marker(bytes, &names, int_width)?;
     let position = marker + name.len() + 3;
     decode_context_first_intersection(bytes, position, int_width).or_else(|| {
         decode_cache_first_intersection(bytes, position, int_width, solved, active_bytes, tables)
@@ -1900,7 +1900,7 @@ pub(crate) fn intersection_patch_layout(
     int_width: usize,
 ) -> Option<IntersectionPatchLayout> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
-    let (marker, name) = find_subtype_marker(bytes, &names)?;
+    let (marker, name) = find_owned_subtype_marker(bytes, &names, int_width)?;
     let mut position = marker + name.len() + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1929,7 +1929,7 @@ fn decode_embedded_two_sided_offset(
     int_width: usize,
 ) -> Option<EmbeddedTwoSidedOffset> {
     let name = b"off_int_cur";
-    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let mut position = marker + name_len + 3;
     let first_surface = decode_optional_embedded_surface(bytes, &mut position, int_width)?.value();
     let second_surface = decode_optional_embedded_surface(bytes, &mut position, int_width)?.value();
@@ -2002,7 +2002,7 @@ pub(crate) fn two_sided_offset_patch_layout(
     int_width: usize,
 ) -> Option<TwoSidedOffsetPatchLayout> {
     let name = b"off_int_cur";
-    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let mut position = marker + name_len + 3;
     skip_offset_support_surface(bytes, &mut position, int_width)?;
     skip_offset_support_surface(bytes, &mut position, int_width)?;
@@ -2303,7 +2303,7 @@ fn decode_two_sided_offset(
     };
 
     let name = b"off_int_cur";
-    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let mut position = marker + name_len + 3;
     for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
         if take_native_ident(bytes, &mut position)?.as_str() != expected {
@@ -2348,7 +2348,7 @@ fn decode_two_sided_offset(
 
 fn decode_compound_definition(bytes: &[u8], int_width: usize) -> Option<CompoundDefinition> {
     let name = b"comp_int_cur";
-    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
+    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
     let parameters = take_float_array(bytes, &mut position, int_width)?;
     let count = usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
@@ -2381,7 +2381,7 @@ fn decode_compound_definition(bytes: &[u8], int_width: usize) -> Option<Compound
 
 fn decode_subset_definition(bytes: &[u8], int_width: usize) -> Option<SubsetDefinition> {
     let name = b"subset_int_cur";
-    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let start = marker + name_len + 3;
     let source_marker = marker_positions(&bytes[start..]).into_iter().next()? + start;
     let source = decode_curve_block(bytes, source_marker, int_width)?;
@@ -2398,7 +2398,7 @@ fn decode_vector_offset_definition(
     int_width: usize,
 ) -> Option<VectorOffsetDefinition> {
     let name = b"offset_int_cur";
-    let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
+    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let start = marker + name_len + 3;
     let source_marker = marker_positions(&bytes[start..]).into_iter().next()? + start;
     let source = decode_curve_block(bytes, source_marker, int_width)?;
@@ -2434,7 +2434,7 @@ pub(crate) fn decode_helix_definition(
     int_width: usize,
 ) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
     let name = b"helix_int_cur";
-    let marker = find_subtype_marker(bytes, &[name]).map(|(marker, _)| marker)?;
+    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
     let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
     let lower = take_range_value(bytes, &mut position)?;

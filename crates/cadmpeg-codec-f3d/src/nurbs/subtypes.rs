@@ -35,27 +35,6 @@ fn canonical_intcurve_kind(name: &[u8]) -> &str {
     }
 }
 
-/// Byte offset of the first subtype-definition opening whose name matches one of
-/// `names`, together with the matched name. A definition opens as `0x0f`, a
-/// `0x0d`/`0x0e` name token, the name length, then the name bytes. Names are
-/// tried in order; the first name with a hit wins.
-pub(crate) fn find_subtype_marker<'n>(
-    bytes: &[u8],
-    names: &[&'n [u8]],
-) -> Option<(usize, &'n [u8])> {
-    names.iter().copied().find_map(|name| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|start| (start, name))
-    })
-}
-
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
 /// included. A definition inside a nested scope belongs to that scope's
@@ -109,7 +88,14 @@ pub(crate) fn find_owned_subtype_marker<'n>(
     })
 }
 
-pub(crate) fn find_intcurve_subtype(bytes: &[u8], modern: &[u8]) -> Option<(usize, usize)> {
+/// Byte offset and name length of the `intcurve` subtype definition `bytes`
+/// owns, given the subtype's modern name. The legacy spelling of the same
+/// construction is accepted as a second candidate.
+pub(crate) fn find_owned_intcurve_subtype(
+    bytes: &[u8],
+    modern: &[u8],
+    int_width: usize,
+) -> Option<(usize, usize)> {
     let legacy: &[u8] = match modern {
         b"blend_int_cur" => b"bldcur",
         b"spring_int_cur" => b"blndsprngcur",
@@ -131,7 +117,8 @@ pub(crate) fn find_intcurve_subtype(bytes: &[u8], modern: &[u8]) -> Option<(usiz
         .into_iter()
         .filter(|name| !name.is_empty())
         .collect();
-    find_subtype_marker(bytes, &candidates).map(|(marker, name)| (marker, name.len()))
+    find_owned_subtype_marker(bytes, &candidates, int_width)
+        .map(|(marker, name)| (marker, name.len()))
 }
 
 pub(crate) fn decode_cache_resolving_refs<T>(
@@ -331,4 +318,46 @@ pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: usize) -> Option<u
     };
     let next = pos.checked_add(fixed)?;
     (next <= bytes.len()).then_some(next)
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    /// A subtype definition opening: `0x0f`, name token, length, name bytes.
+    fn open(bytes: &mut Vec<u8>, name: &[u8]) {
+        bytes.push(0x0f);
+        bytes.push(0x0d);
+        bytes.push(u8::try_from(name.len()).expect("short name"));
+        bytes.extend_from_slice(name);
+    }
+
+    /// A `defm_int_cur` record whose bend data nests a complete `int_int_cur`
+    /// construction is the deformable curve, not the intersection: the
+    /// intersection belongs to the construction the record embeds.
+    #[test]
+    fn a_nested_intcurve_construction_does_not_own_the_record() {
+        for int_width in [4usize, 8] {
+            let mut bytes = Vec::new();
+            open(&mut bytes, b"defm_int_cur");
+            bytes.push(0x04);
+            bytes.extend_from_slice(&vec![0u8; int_width]);
+            open(&mut bytes, b"int_int_cur");
+            bytes.push(0x10);
+            bytes.push(0x10);
+
+            assert_eq!(
+                find_owned_intcurve_subtype(&bytes, b"defm_int_cur", int_width),
+                Some((0, b"defm_int_cur".len()))
+            );
+            assert_eq!(
+                find_owned_intcurve_subtype(&bytes, b"int_int_cur", int_width),
+                None
+            );
+            assert_eq!(
+                owned_construction_subtype(&bytes, int_width).as_deref(),
+                Some("defm_int_cur")
+            );
+        }
+    }
 }
