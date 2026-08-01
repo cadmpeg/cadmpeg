@@ -1575,7 +1575,7 @@ fn finish_decode(
     report.coverage.extend([
         (
             "decoded_appearance_packet_count".to_string(),
-            appearance_transfer.transferred_packets + appearance_transfer.unresolved_packets,
+            appearance_transfer.decoded_packets,
         ),
         (
             "unresolved_appearance_packet_count".to_string(),

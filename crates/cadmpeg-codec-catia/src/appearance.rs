@@ -13,6 +13,7 @@ use crate::value_block::ValueField;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct TransferResult {
+    pub(crate) decoded_packets: usize,
     pub(crate) transferred_packets: usize,
     pub(crate) unresolved_packets: usize,
     pub(crate) emitted_assets: usize,
@@ -52,7 +53,10 @@ pub(crate) fn transfer(
         })
         .flat_map(|block| block.fields.iter().filter_map(packet))
         .collect::<Vec<_>>();
-    let mut result = TransferResult::default();
+    let mut result = TransferResult {
+        decoded_packets: packets.len(),
+        ..TransferResult::default()
+    };
 
     let all_faces = packets
         .iter()
@@ -70,68 +74,71 @@ pub(crate) fn transfer(
         })
         .collect::<Vec<_>>();
 
-    // Assets are meaningful independently of topology ownership. A singular
-    // body-form packet beside an all-face packet is an unresolved face
-    // override, so its asset is retained without inventing the target. A
-    // positional body-form population supersedes the redundant opaque
-    // all-face packet.
-    for rgba in &body {
-        insert_appearance(ir, *rgba);
-    }
-    if body.len() <= 1 {
-        for rgba in &all_faces {
-            insert_appearance(ir, *rgba);
-        }
+    // Assets are meaningful independently of topology ownership. Retain every
+    // decoded color even when its target incidence remains unresolved.
+    for packet in &packets {
+        let rgba = match packet {
+            Packet::AllFaces(rgba) | Packet::Body(rgba) => *rgba,
+        };
+        insert_appearance(ir, rgba);
     }
 
-    if body.len() <= 1 && all_faces.len() == 1 && !ir.model.faces.is_empty() {
-        let rgba = all_faces[0];
-        let appearance = insert_appearance(ir, rgba);
+    let positional_colors = (body.len() > 1 && body.len() == ir.model.faces.len())
+        .then(|| brep.and_then(standard_face_colors))
+        .flatten()
+        .filter(|colors| colors.as_slice() == body.as_slice());
+    if let Some(colors) = positional_colors {
         let faces = ir
             .model
             .faces
             .iter()
             .map(|face| face.id.clone())
             .collect::<Vec<_>>();
-        for (index, face) in faces.into_iter().enumerate() {
+        for (index, (face, rgba)) in faces.into_iter().zip(colors).enumerate() {
+            let appearance = insert_appearance(ir, rgba);
             insert_binding(ir, &appearance, AppearanceTarget::Face(face), index);
         }
-        result.transferred_packets += 1;
-    } else if body.len() <= 1 {
-        result.unresolved_packets += all_faces.len();
-    }
-
-    match body.as_slice() {
-        [rgba] if packets.len() == 1 && ir.model.bodies.len() == 1 => {
-            let appearance = insert_appearance(ir, *rgba);
-            let target = AppearanceTarget::Body(ir.model.bodies[0].id.clone());
-            insert_binding(ir, &appearance, target, 0);
+        result.transferred_packets += body.len();
+        // A unique all-face packet is completely superseded by the proven
+        // positional population but its semantics are still transferred.
+        if all_faces.len() == 1 {
             result.transferred_packets += 1;
+        } else {
+            result.unresolved_packets += all_faces.len();
         }
-        values if values.len() > 1 && values.len() == ir.model.faces.len() => {
-            if let Some(colors) = brep
-                .and_then(standard_face_colors)
-                .filter(|colors| colors.as_slice() == values)
-            {
-                let faces = ir
-                    .model
-                    .faces
-                    .iter()
-                    .map(|face| face.id.clone())
-                    .collect::<Vec<_>>();
-                for (index, (face, rgba)) in faces.into_iter().zip(colors).enumerate() {
-                    let appearance = insert_appearance(ir, rgba);
-                    insert_binding(ir, &appearance, AppearanceTarget::Face(face), index);
-                }
-                result.transferred_packets += values.len();
-            } else {
-                result.unresolved_packets += values.len();
+    } else {
+        if all_faces.len() == 1 && !ir.model.faces.is_empty() {
+            let appearance = insert_appearance(ir, all_faces[0]);
+            let faces = ir
+                .model
+                .faces
+                .iter()
+                .map(|face| face.id.clone())
+                .collect::<Vec<_>>();
+            for (index, face) in faces.into_iter().enumerate() {
+                insert_binding(ir, &appearance, AppearanceTarget::Face(face), index);
             }
+            result.transferred_packets += 1;
+        } else {
+            result.unresolved_packets += all_faces.len();
         }
-        values => result.unresolved_packets += values.len(),
+
+        match body.as_slice() {
+            [rgba] if all_faces.is_empty() && ir.model.bodies.len() == 1 => {
+                let appearance = insert_appearance(ir, *rgba);
+                let target = AppearanceTarget::Body(ir.model.bodies[0].id.clone());
+                insert_binding(ir, &appearance, target, 0);
+                result.transferred_packets += 1;
+            }
+            values => result.unresolved_packets += values.len(),
+        }
     }
     result.emitted_assets = ir.model.appearances.len() - initial_assets;
     result.emitted_bindings = ir.model.appearance_bindings.len() - initial_bindings;
+    debug_assert_eq!(
+        result.decoded_packets,
+        result.transferred_packets + result.unresolved_packets
+    );
     result
 }
 
@@ -299,12 +306,13 @@ mod tests {
         );
         assert_eq!(
             (
+                result.decoded_packets,
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
                 result.emitted_bindings
             ),
-            (1, 0, 1, 1)
+            (1, 1, 0, 1, 1)
         );
         assert!(matches!(
             ir.model.appearance_bindings[0].target,
@@ -324,12 +332,13 @@ mod tests {
         );
         assert_eq!(
             (
+                result.decoded_packets,
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
                 result.emitted_bindings
             ),
-            (1, 0, 1, 6)
+            (1, 1, 0, 1, 6)
         );
         assert!(ir
             .model
@@ -352,12 +361,13 @@ mod tests {
         );
         assert_eq!(
             (
+                result.decoded_packets,
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
                 result.emitted_bindings
             ),
-            (1, 1, 2, 6)
+            (2, 1, 1, 2, 6)
         );
         assert!(ir
             .model
@@ -386,12 +396,13 @@ mod tests {
         );
         assert_eq!(
             (
+                result.decoded_packets,
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
                 result.emitted_bindings
             ),
-            (6, 0, 1, 6)
+            (6, 6, 0, 1, 6)
         );
         let ids = ir
             .model
@@ -413,11 +424,63 @@ mod tests {
         );
         assert_eq!(
             (
+                result.decoded_packets,
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_bindings
             ),
-            (0, 6, 0)
+            (6, 0, 6, 0)
         );
+    }
+
+    #[test]
+    fn positional_population_supersedes_but_still_accounts_for_all_faces_packet() {
+        let rgba = [0xd1, 0x1a, 0x1f, 0x99];
+        let mut fields = vec![inline(0xeb, &[1, 0xd1, 0x1a, 0x1f])];
+        fields.extend((0..6).map(|_| inline(0xec, &[3, rgba[0], rgba[1], rgba[2], rgba[3]])));
+        let mut ir = model(6);
+        let result = transfer(
+            &mut ir,
+            &native(fields.clone()),
+            None,
+            Some(&six_face_brep(rgba)),
+        );
+        assert_eq!(
+            (
+                result.decoded_packets,
+                result.transferred_packets,
+                result.unresolved_packets,
+                result.emitted_assets,
+                result.emitted_bindings
+            ),
+            (7, 7, 0, 2, 6)
+        );
+        assert!(ir
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|binding| binding.appearance.as_str().contains("d11a1f99")));
+
+        let mut ir = model(6);
+        let result = transfer(
+            &mut ir,
+            &native(fields),
+            None,
+            Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
+        );
+        assert_eq!(
+            (
+                result.decoded_packets,
+                result.transferred_packets,
+                result.unresolved_packets,
+                result.emitted_bindings
+            ),
+            (7, 1, 6, 6)
+        );
+        assert!(ir
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|binding| binding.appearance.as_str().contains("d11a1fff")));
     }
 }
