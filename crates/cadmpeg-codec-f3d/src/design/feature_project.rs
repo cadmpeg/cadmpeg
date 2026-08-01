@@ -2925,19 +2925,19 @@ pub(crate) fn project_surface_patch(
     if scope.kind != "SurfacePatch" {
         return None;
     }
-    let (boundary_count, boundary_role) =
-        if scope.frame_length == 339 && scope.reference_members.len() == 3 {
-            (1, 0x0000_0041_0000_0000)
-        } else {
-            let boundary_count = scope.reference_members.len().checked_sub(1)? / 3;
-            if boundary_count == 0
-                || scope.reference_members.len() != boundary_count * 3 + 1
-                || scope.frame_length != 354 + 44 * u64::try_from(boundary_count - 1).ok()?
-            {
-                return None;
-            }
-            (boundary_count, ROLE_0X4)
-        };
+    // The reference count separates the two forms: the fixed-path form has
+    // `3n + 1` references and the sketch-profile form has three. Frame length
+    // does not, because the Design scope envelope has two generations and the
+    // later one adds fourteen bytes to every `SurfacePatch` form.
+    let (boundary_count, boundary_role) = if scope.reference_members.len() == 3 {
+        (1, 0x0000_0041_0000_0000)
+    } else {
+        let boundary_count = scope.reference_members.len().checked_sub(1)? / 3;
+        if boundary_count == 0 || scope.reference_members.len() != boundary_count * 3 + 1 {
+            return None;
+        }
+        (boundary_count, ROLE_0X4)
+    };
     let stream = native_stream(&scope.id)?;
     let groups = construction_groups
         .iter()

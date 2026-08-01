@@ -14996,6 +14996,33 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         }) if native == &patch_group.id
     ));
 
+    // The earlier scope-envelope generation is fourteen bytes shorter in both
+    // forms and projects the same feature from the same reference shape.
+    patch_scope.frame_length = 325;
+    assert!(matches!(
+        crate::design::feature_project::project_surface_patch(
+            &patch_scope,
+            std::slice::from_ref(&patch_group)
+        ),
+        Some(FeatureDefinition::FilledSurface { .. })
+    ));
+    patch_scope.frame_length = 340;
+    patch_scope.reference_members = vec![100, 200, 300, 301];
+    patch_group.role = 0x0000_0004_0000_0000;
+    assert!(matches!(
+        crate::design::feature_project::project_surface_patch(
+            &patch_scope,
+            std::slice::from_ref(&patch_group)
+        ),
+        Some(FeatureDefinition::FilledSurface { .. })
+    ));
+    patch_scope.reference_members = vec![100, 200, 300, 301, 302];
+    assert!(crate::design::feature_project::project_surface_patch(
+        &patch_scope,
+        std::slice::from_ref(&patch_group)
+    )
+    .is_none());
+
     let mut fill_scope = scope.clone();
     fill_scope.kind = "BoundaryFill".into();
     fill_scope.reference_members = vec![100, 200, 201, 300, 301, 400];
