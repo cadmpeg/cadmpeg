@@ -131,6 +131,17 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     validate_with_ids(ir, losses).0
 }
 
+/// Validate one neutral product model together with borrowed annotations.
+pub fn validate_with_annotations(
+    ir: &CadIr,
+    annotations: &crate::annotations::Annotations,
+    losses: Vec<LossNote>,
+) -> ValidationReport {
+    let (mut report, all_ids) = validate_with_ids(ir, losses);
+    check_annotations(ir, annotations, &all_ids, &mut report.findings);
+    report
+}
+
 /// Validate a neutral product model together with its decode-time source sidecar.
 pub fn validate_with_source_fidelity(
     ir: &CadIr,

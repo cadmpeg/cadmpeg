@@ -2342,7 +2342,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
 }
 
 #[test]
-fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
+fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
     let archive = ArchiveVersion::V5;
     let object = object_record(archive, 1, [0; 16]);
     let bytes = minimal_document(
@@ -2362,8 +2362,7 @@ fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
             .data
             .clone()
             .expect("required invariant");
-        let (payloads_detached, findings) = context.reject_duplicate_unknown_candidate();
-        assert!(payloads_detached);
+        let findings = context.reject_duplicate_entity_candidate();
         assert!(findings.contains("identity"));
         assert_eq!(
             context
