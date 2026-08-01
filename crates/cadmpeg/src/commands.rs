@@ -16,12 +16,13 @@ use cadmpeg_ir::{
 };
 
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
-use crate::registry::Registry;
+use crate::registry::{DetectionOutcome, Registry, TargetOptions};
 use crate::{DecodeArgs, ForcedInput, Format};
 
 const CLI_SCHEMA_VERSION: u32 = 5;
 
 fn validate_ir(
+    registry: &Registry,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
     losses: Vec<cadmpeg_ir::LossNote>,
@@ -30,21 +31,7 @@ fn validate_ir(
         Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
         None => validate(ir, losses),
     };
-    if ir.native.namespace("f3d").is_some() {
-        report
-            .findings
-            .extend(cadmpeg_codec_f3d::validate::validate_native(ir));
-    }
-    if ir.native.namespace("fcstd").is_some() {
-        report
-            .findings
-            .extend(cadmpeg_codec_freecad::validate_native(ir));
-    }
-    if ir.native.namespace("sldprt").is_some() {
-        report
-            .findings
-            .extend(cadmpeg_codec_sldprt::validate_native(ir));
-    }
+    report.findings.extend(registry.validate_native(ir));
     report
 }
 
@@ -72,6 +59,8 @@ pub struct ConvertSettings {
     pub reject_lossy: bool,
     /// Explicit Rhino output archive version.
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
+    /// STEP writer options selected by the caller.
+    pub step_options: cadmpeg_step::StepWriteOptions,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -105,10 +94,17 @@ pub fn inspect(
         ),
         Some(ForcedInput::Cadir) => bail!("inspect requires a container input, not cadir"),
         None => {
-            let (codec, confidence) = registry.detect(&prefix).ok_or_else(|| {
-                anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection", path.display())
-            })?;
-            (codec, Some(confidence))
+            match registry.detect(&prefix) {
+                DetectionOutcome::None => return Err(anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection", path.display())),
+                DetectionOutcome::Detected { descriptor, confidence } => (
+                    descriptor.codec.as_deref().expect("detected descriptor has codec"),
+                    Some(confidence),
+                ),
+                DetectionOutcome::Ambiguous { confidence, candidates } => return Err(anyhow!(
+                    "ambiguous {confidence}-confidence input format: {}; pass --input-format",
+                    candidates.iter().map(|candidate| candidate.id).collect::<Vec<_>>().join(", ")
+                )),
+            }
         }
     };
     let mut file = File::open(path)?;
@@ -177,6 +173,7 @@ pub fn decode(
         path,
         force,
         None,
+        cadmpeg_step::StepWriteOptions::default(),
     )?;
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
@@ -207,6 +204,7 @@ pub fn validate_cmd(
         print_decode_report(&mut io::stderr(), report)?;
     }
     let report = validate_ir(
+        registry,
         &loaded.ir,
         loaded.fidelity(),
         losses(loaded.decode_report()),
@@ -246,6 +244,8 @@ pub struct ExportSettings {
     pub reject_lossy: bool,
     /// Explicit Rhino output archive version.
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
+    /// STEP writer options selected by the caller.
+    pub step_options: cadmpeg_step::StepWriteOptions,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -265,6 +265,7 @@ pub fn export(
         allow_empty,
         reject_lossy,
         rhino_version,
+        step_options,
         forced_input,
     } = settings;
     let format = resolve_format(format, out)?;
@@ -316,6 +317,7 @@ pub fn export(
         path,
         force,
         rhino_version,
+        step_options,
     )?;
     write_command_report(
         path,
@@ -357,6 +359,7 @@ pub fn convert(
         return Err(refusal);
     }
     let validation = validate_ir(
+        registry,
         &loaded.ir,
         loaded.fidelity(),
         losses(loaded.decode_report()),
@@ -408,6 +411,7 @@ pub fn convert(
         path,
         settings.force,
         settings.rhino_version,
+        settings.step_options.clone(),
     )?;
     write_command_report(
         path,
@@ -643,20 +647,28 @@ fn export_ir(
     input: &Path,
     force: bool,
     rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
+    step_options: cadmpeg_step::StepWriteOptions,
 ) -> Result<ExportReport> {
     let mut bytes = Vec::new();
     if rhino_version.is_some() && format != Format::Rhino {
         bail!("--rhino-version requires Rhino output");
     }
-    let report = registry
-        .encode_by_id(
-            format.name(),
-            rhino_version,
-            ir,
-            source_fidelity,
-            &mut bytes,
-        )
+    let target_options = match format {
+        Format::Step => TargetOptions::Step(step_options),
+        Format::Rhino => TargetOptions::Rhino(
+            rhino_version.unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
+        ),
+        _ => TargetOptions::Neutral,
+    };
+    let encoder = registry
+        .encoder(format.name(), target_options)
         .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
+    let report = encoder
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir,
+            fidelity: source_fidelity,
+        })?
+        .write_to(&mut bytes)?;
     if let Some(path) = out {
         write_output(input, path, &bytes, force)?;
         if format == Format::Cadir {

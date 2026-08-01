@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{CodecEntry, Confidence, DecodeOptions};
 
 use cadmpeg_ir::{decode_sidecar_path, CadIr, DecodeSidecar, DocumentArtifact, DocumentOrigin};
 
-use crate::registry::Registry;
+use crate::registry::{DetectionOutcome, Registry};
 use crate::ForcedInput;
 
 /// Leading byte window available to content-based codec detection.
@@ -44,9 +44,32 @@ pub fn load_artifact(
             None,
         )),
         Some(ForcedInput::Cadir) => None,
-        None => registry
-            .detect(&prefix)
-            .map(|(codec, confidence)| (codec, Some(confidence))),
+        None => match registry.detect(&prefix) {
+            DetectionOutcome::None => None,
+            DetectionOutcome::Detected {
+                descriptor,
+                confidence,
+            } => Some((
+                descriptor
+                    .codec
+                    .as_deref()
+                    .expect("detected descriptor has codec"),
+                Some(confidence),
+            )),
+            DetectionOutcome::Ambiguous {
+                confidence,
+                candidates,
+            } => {
+                return Err(anyhow!(
+                    "ambiguous {confidence}-confidence input format: {}; pass --input-format",
+                    candidates
+                        .iter()
+                        .map(|candidate| candidate.id)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        },
     };
     if let Some((codec, confidence)) = detected {
         if let Some(confidence) = confidence.filter(|value| *value < Confidence::High) {

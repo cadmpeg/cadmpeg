@@ -182,6 +182,8 @@ enum InputFormat {
     /// IGES `.igs` or `.iges`.
     #[value(alias = "igs")]
     Iges,
+    /// ISO 10303 STEP.
+    Step,
     /// Canonical CADIR JSON.
     Cadir,
 }
@@ -203,6 +205,7 @@ impl InputFormat {
             Self::Creo => ForcedInput::Codec("creo"),
             Self::Rhino => ForcedInput::Codec("rhino"),
             Self::Iges => ForcedInput::Codec("iges"),
+            Self::Step => ForcedInput::Codec("step"),
             Self::Cadir => ForcedInput::Cadir,
         }
     }
@@ -387,13 +390,7 @@ enum Command {
 
 fn main() -> ExitCode {
     let command = Cli::parse().command;
-    let mut registry = Registry::with_builtins();
-    match &command {
-        Command::Export { step, .. } | Command::Convert { step, .. } => {
-            registry.set_step_options(step.options());
-        }
-        _ => {}
-    }
+    let registry = Registry::with_builtins();
     let result = match command {
         Command::Inspect {
             input,
@@ -436,7 +433,7 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
-            step: _,
+            step,
         } => commands::export(
             &registry,
             &input,
@@ -448,6 +445,7 @@ fn main() -> ExitCode {
                 allow_empty,
                 reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
+                step_options: step.options(),
                 forced_input: input_args.forced(),
             },
             &decode,
@@ -466,7 +464,7 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
-            step: _,
+            step,
         } => commands::convert(
             &registry,
             &input,
@@ -479,6 +477,7 @@ fn main() -> ExitCode {
                 allow_empty,
                 reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
+                step_options: step.options(),
                 forced_input: input_args.forced(),
             },
             &decode,
