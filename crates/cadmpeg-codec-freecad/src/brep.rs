@@ -839,7 +839,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
                     let power = cursor.i32("binary location power")?;
                     let powered =
                         transform_power(locations[referenced - 1].transform, i64::from(power))?;
-                    transform = multiply_transform(powered, transform);
+                    transform = powered.compose(transform);
                     factors.push(LocationFactor {
                         location: referenced,
                         power: i64::from(power),
@@ -2148,7 +2148,7 @@ fn parse_locations(
                     }
                     let power = cursor.integer("location factor power")?;
                     let powered = transform_power(locations[referenced - 1].transform, power)?;
-                    transform = multiply_transform(powered, transform);
+                    transform = powered.compose(transform);
                     factors.push(LocationFactor {
                         location: referenced,
                         power,
@@ -2316,20 +2316,6 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
     })
 }
 
-fn multiply_transform(left: Transform, right: Transform) -> Transform {
-    let mut result = Transform {
-        rows: [[0.0; 4]; 4],
-    };
-    for row in 0..4 {
-        for column in 0..4 {
-            result.rows[row][column] = (0..4)
-                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
-                .sum();
-        }
-    }
-    result
-}
-
 fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecError> {
     let mut base = if power < 0 {
         invert_affine(transform)?
@@ -2340,11 +2326,11 @@ fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecE
     let mut result = Transform::identity();
     while exponent > 0 {
         if exponent & 1 == 1 {
-            result = multiply_transform(result, base);
+            result = result.compose(base);
         }
         exponent >>= 1;
         if exponent > 0 {
-            base = multiply_transform(base, base);
+            base = base.compose(base);
         }
     }
     Ok(result)

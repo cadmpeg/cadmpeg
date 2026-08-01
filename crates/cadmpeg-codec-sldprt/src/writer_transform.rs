@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -111,7 +111,7 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
 
     for point in &mut ir.model.points {
         if let Some(transform) = point_transforms.get(point.id.0.as_str()) {
-            point.position = transform_point(*transform, point.position);
+            point.position = transform.apply_point(point.position);
         }
     }
     for surface in &mut ir.model.surfaces {
@@ -150,10 +150,10 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             };
             mesh.vertices
                 .iter_mut()
-                .for_each(|point| *point = transform_point(transform, *point));
+                .for_each(|point| *point = transform.apply_point(*point));
             mesh.normals
                 .iter_mut()
-                .for_each(|normal| *normal = transform_vector(transform, *normal));
+                .for_each(|normal| *normal = transform.apply_vector(*normal));
         }
     }
     ir.model
@@ -230,37 +230,6 @@ fn check_rigid(transform: Transform) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn transform_point(transform: Transform, point: Point3) -> Point3 {
-    Point3::new(
-        transform.rows[0][0] * point.x
-            + transform.rows[0][1] * point.y
-            + transform.rows[0][2] * point.z
-            + transform.rows[0][3],
-        transform.rows[1][0] * point.x
-            + transform.rows[1][1] * point.y
-            + transform.rows[1][2] * point.z
-            + transform.rows[1][3],
-        transform.rows[2][0] * point.x
-            + transform.rows[2][1] * point.y
-            + transform.rows[2][2] * point.z
-            + transform.rows[2][3],
-    )
-}
-
-fn transform_vector(transform: Transform, vector: Vector3) -> Vector3 {
-    Vector3::new(
-        transform.rows[0][0] * vector.x
-            + transform.rows[0][1] * vector.y
-            + transform.rows[0][2] * vector.z,
-        transform.rows[1][0] * vector.x
-            + transform.rows[1][1] * vector.y
-            + transform.rows[1][2] * vector.z,
-        transform.rows[2][0] * vector.x
-            + transform.rows[2][1] * vector.y
-            + transform.rows[2][2] * vector.z,
-    )
-}
-
 fn transform_surface(
     geometry: &mut SurfaceGeometry,
     transform: Transform,
@@ -271,9 +240,9 @@ fn transform_surface(
             normal,
             u_axis,
         } => {
-            *origin = transform_point(transform, *origin);
-            *normal = transform_vector(transform, *normal);
-            *u_axis = transform_vector(transform, *u_axis);
+            *origin = transform.apply_point(*origin);
+            *normal = transform.apply_vector(*normal);
+            *u_axis = transform.apply_vector(*u_axis);
         }
         SurfaceGeometry::Cylinder {
             origin,
@@ -287,9 +256,9 @@ fn transform_surface(
             ref_direction,
             ..
         } => {
-            *origin = transform_point(transform, *origin);
-            *axis = transform_vector(transform, *axis);
-            *ref_direction = transform_vector(transform, *ref_direction);
+            *origin = transform.apply_point(*origin);
+            *axis = transform.apply_vector(*axis);
+            *ref_direction = transform.apply_vector(*ref_direction);
         }
         SurfaceGeometry::Sphere {
             center,
@@ -297,9 +266,9 @@ fn transform_surface(
             ref_direction,
             ..
         } => {
-            *center = transform_point(transform, *center);
-            *axis = transform_vector(transform, *axis);
-            *ref_direction = transform_vector(transform, *ref_direction);
+            *center = transform.apply_point(*center);
+            *axis = transform.apply_vector(*axis);
+            *ref_direction = transform.apply_vector(*ref_direction);
         }
         SurfaceGeometry::Torus {
             center,
@@ -307,17 +276,17 @@ fn transform_surface(
             ref_direction,
             ..
         } => {
-            *center = transform_point(transform, *center);
-            *axis = transform_vector(transform, *axis);
-            *ref_direction = transform_vector(transform, *ref_direction);
+            *center = transform.apply_point(*center);
+            *axis = transform.apply_vector(*axis);
+            *ref_direction = transform.apply_vector(*ref_direction);
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs
             .control_points
             .iter_mut()
-            .for_each(|point| *point = transform_point(transform, *point)),
+            .for_each(|point| *point = transform.apply_point(*point)),
         SurfaceGeometry::Polygonal { vertices, .. } => vertices
             .iter_mut()
-            .for_each(|point| *point = transform_point(transform, *point)),
+            .for_each(|point| *point = transform.apply_point(*point)),
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "SLDPRT cannot transform a non-explicit surface".into(),
@@ -325,7 +294,7 @@ fn transform_surface(
         }
         SurfaceGeometry::Transformed {
             transform: carrier, ..
-        } => *carrier = multiply(transform, *carrier),
+        } => *carrier = transform.compose(*carrier),
     }
     Ok(())
 }
@@ -333,12 +302,12 @@ fn transform_surface(
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
     match geometry {
         CurveGeometry::Line { origin, direction } => {
-            *origin = transform_point(transform, *origin);
-            *direction = transform_vector(transform, *direction);
+            *origin = transform.apply_point(*origin);
+            *direction = transform.apply_vector(*direction);
         }
         CurveGeometry::Circle { center, axis, .. } => {
-            *center = transform_point(transform, *center);
-            *axis = transform_vector(transform, *axis);
+            *center = transform.apply_point(*center);
+            *axis = transform.apply_vector(*axis);
         }
         CurveGeometry::Ellipse {
             center,
@@ -346,26 +315,26 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             major_direction,
             ..
         } => {
-            *center = transform_point(transform, *center);
-            *axis = transform_vector(transform, *axis);
-            *major_direction = transform_vector(transform, *major_direction);
+            *center = transform.apply_point(*center);
+            *axis = transform.apply_vector(*axis);
+            *major_direction = transform.apply_vector(*major_direction);
         }
         CurveGeometry::Nurbs(nurbs) => nurbs
             .control_points
             .iter_mut()
-            .for_each(|point| *point = transform_point(transform, *point)),
+            .for_each(|point| *point = transform.apply_point(*point)),
         CurveGeometry::Polyline { points, .. } => points
             .iter_mut()
-            .for_each(|point| *point = transform_point(transform, *point)),
+            .for_each(|point| *point = transform.apply_point(*point)),
         CurveGeometry::Parabola {
             vertex,
             axis,
             major_direction,
             ..
         } => {
-            *vertex = transform_point(transform, *vertex);
-            *axis = transform_vector(transform, *axis);
-            *major_direction = transform_vector(transform, *major_direction);
+            *vertex = transform.apply_point(*vertex);
+            *axis = transform.apply_vector(*axis);
+            *major_direction = transform.apply_vector(*major_direction);
         }
         CurveGeometry::Hyperbola {
             center,
@@ -373,17 +342,17 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             major_direction,
             ..
         } => {
-            *center = transform_point(transform, *center);
-            *axis = transform_vector(transform, *axis);
-            *major_direction = transform_vector(transform, *major_direction);
+            *center = transform.apply_point(*center);
+            *axis = transform.apply_vector(*axis);
+            *major_direction = transform.apply_vector(*major_direction);
         }
         CurveGeometry::Degenerate { point } => {
-            *point = transform_point(transform, *point);
+            *point = transform.apply_point(*point);
         }
         CurveGeometry::Composite { .. } => {}
         CurveGeometry::Transformed {
             transform: carrier, ..
-        } => *carrier = multiply(transform, *carrier),
+        } => *carrier = transform.compose(*carrier),
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "cannot bake a transform into a non-explicit curve".into(),
@@ -391,18 +360,6 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         }
     }
     Ok(())
-}
-
-fn multiply(left: Transform, right: Transform) -> Transform {
-    let mut rows = [[0.0; 4]; 4];
-    for (row, values) in rows.iter_mut().enumerate() {
-        for (column, value) in values.iter_mut().enumerate() {
-            *value = (0..4)
-                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
-                .sum();
-        }
-    }
-    Transform { rows }
 }
 
 fn dot(left: Vector3, right: Vector3) -> f64 {

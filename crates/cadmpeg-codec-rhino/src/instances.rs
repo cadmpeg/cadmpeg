@@ -4,7 +4,6 @@
 use std::collections::HashSet;
 use std::ops::Range;
 
-use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{
@@ -772,60 +771,6 @@ pub(crate) fn scale_translation(mut transform: Transform, scale: f64) -> Option<
     Some(transform)
 }
 
-/// Composes transforms as `parent * child`.
-pub(crate) fn compose(parent: Transform, child: Transform) -> Transform {
-    let mut rows = [[0.0; 4]; 4];
-    for (row_index, row) in rows.iter_mut().enumerate() {
-        for (column_index, value) in row.iter_mut().enumerate() {
-            *value = (0..4)
-                .map(|inner| parent.rows[row_index][inner] * child.rows[inner][column_index])
-                .sum();
-        }
-    }
-    Transform { rows }
-}
-
-/// Applies an affine transform to a point.
-pub(crate) fn point(transform: Transform, value: Point3) -> Point3 {
-    Point3::new(
-        transform.rows[0][0] * value.x
-            + transform.rows[0][1] * value.y
-            + transform.rows[0][2] * value.z
-            + transform.rows[0][3],
-        transform.rows[1][0] * value.x
-            + transform.rows[1][1] * value.y
-            + transform.rows[1][2] * value.z
-            + transform.rows[1][3],
-        transform.rows[2][0] * value.x
-            + transform.rows[2][1] * value.y
-            + transform.rows[2][2] * value.z
-            + transform.rows[2][3],
-    )
-}
-
-/// Applies the inverse-transpose linear transform and normalizes the result.
-pub(crate) fn normal(transform: Transform, value: Vector3) -> Option<Vector3> {
-    let determinant = determinant3(&transform.rows);
-    if determinant == 0.0 || !determinant.is_finite() {
-        return None;
-    }
-    let m = transform.rows;
-    let x = ((m[1][1] * m[2][2] - m[1][2] * m[2][1]) * value.x
-        + (m[1][2] * m[2][0] - m[1][0] * m[2][2]) * value.y
-        + (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * value.z)
-        / determinant;
-    let y = ((m[0][2] * m[2][1] - m[0][1] * m[2][2]) * value.x
-        + (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * value.y
-        + (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * value.z)
-        / determinant;
-    let z = ((m[0][1] * m[1][2] - m[0][2] * m[1][1]) * value.x
-        + (m[0][2] * m[1][0] - m[0][0] * m[1][2]) * value.y
-        + (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * value.z)
-        / determinant;
-    let length = (x * x + y * y + z * z).sqrt();
-    (length.is_finite() && length > 0.0).then(|| Vector3::new(x / length, y / length, z / length))
-}
-
 /// Returns whether a class UUID denotes an instance reference.
 pub(crate) fn is_reference_class(class_uuid: Uuid) -> bool {
     class_uuid == INSTANCE_REFERENCE_UUID
@@ -833,7 +778,7 @@ pub(crate) fn is_reference_class(class_uuid: Uuid) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{anonymous, compose, normal, parse_reference, point, scale_translation};
+    use super::{anonymous, parse_reference, scale_translation};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::transform::Transform;
 
@@ -846,7 +791,9 @@ mod tests {
         let mut child = Transform::identity();
         child.rows[0][0] = 2.0;
         assert_eq!(
-            point(compose(parent, child), Point3::new(1.0, 0.0, 0.0)),
+            parent
+                .compose(child)
+                .apply_point(Point3::new(1.0, 0.0, 0.0)),
             Point3::new(12.0, 0.0, 0.0)
         );
     }
@@ -908,7 +855,7 @@ mod tests {
             ],
         };
         assert_eq!(
-            normal(transform, Vector3::new(1.0, 0.0, 1.0)),
+            transform.apply_normal(Vector3::new(1.0, 0.0, 1.0)),
             Some(Vector3::new(
                 0.242_535_625_036_332_97,
                 0.0,
