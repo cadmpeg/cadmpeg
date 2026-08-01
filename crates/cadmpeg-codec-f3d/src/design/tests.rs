@@ -3526,6 +3526,11 @@ fn work_point_direct_record_carries_model_space_position() {
         bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
     }
     bytes.extend_from_slice(&2u32.to_le_bytes());
+    for target in [56u32, 57] {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+    }
     bytes.resize(point_at + 208, 0);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"259");
@@ -3539,27 +3544,110 @@ fn work_point_direct_record_carries_model_space_position() {
     };
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("WorkPoint scope");
-    assert_eq!(
-        exact_work_point_position(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &HashMap::new()
-        ),
-        Some(([1.25, -2.5, 3.75], position_at as u64))
-    );
+    let frame = exact_work_point_position(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.reference_type, 7);
+    assert_eq!(frame.input_record_indices, [56, 57]);
     bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
     bytes[point_at + 94..point_at + 98].copy_from_slice(&1u32.to_le_bytes());
     bytes.drain(point_at + 197..point_at + 208);
-    assert_eq!(
-        exact_work_point_position(
-            &bytes,
-            &IndexedRecordOffsets::build(&bytes),
-            &scope,
-            &HashMap::new()
-        ),
-        Some(([1.25, -2.5, 3.75], position_at as u64))
-    );
+    let frame = exact_work_point_position(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.reference_type, 1);
+    assert_eq!(frame.input_record_indices, [56]);
+}
+
+#[test]
+fn work_point_reference_type_fixes_the_counted_input_arity() {
+    // A `refType` of `18` takes two inputs; every other rule takes one. A count
+    // that contradicts the rule means the version being read has desynchronized
+    // the members, so no coordinate is named.
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"427");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "WorkPoint");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+
+    let point_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 27]);
+    let position_at = bytes.len();
+    for value in [4.0, 5.0, 6.0] {
+        bytes.extend_from_slice(&f64::to_le_bytes(value));
+    }
+    bytes.extend_from_slice(&18u32.to_le_bytes());
+    for _ in 0..3 {
+        bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
+    }
+    let count_at = bytes.len();
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for target in [56u32, 57] {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    bytes.resize(point_at + 208, 0);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 12,
+        class_tag: "427".into(),
+        byte_offset: 0,
+    };
+    let records = IndexedRecordOffsets::build(&bytes);
+    let scope = parse_parameter_scope(&bytes, &records, &header).expect("WorkPoint scope");
+    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(frame.reference_type, 18);
+    assert_eq!(frame.input_record_indices, [56, 57]);
+
+    bytes[count_at..count_at + 4].copy_from_slice(&1u32.to_le_bytes());
+    let records = IndexedRecordOffsets::build(&bytes);
+    assert!(exact_work_point_position(&bytes, &records, &scope, &HashMap::new()).is_none());
+
+    // A rule above the values the shipped range check admitted still names a
+    // coordinate when its input arity agrees.
+    bytes[position_at + 24..position_at + 28].copy_from_slice(&64u32.to_le_bytes());
+    let records = IndexedRecordOffsets::build(&bytes);
+    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(frame.position, [4.0, 5.0, 6.0]);
+    assert_eq!(frame.reference_type, 64);
+    assert_eq!(frame.input_record_indices, [56]);
 }
 
 #[test]
@@ -5777,6 +5865,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -6622,6 +6712,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -7048,6 +7140,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -12646,6 +12740,8 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -12797,6 +12893,8 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -12983,6 +13081,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: Some(DesignSketchProfileOperand {
             scope_reference_ordinal: 0,
             record_index: 100,
@@ -13697,6 +13797,8 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -14535,6 +14637,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -14939,6 +15043,8 @@ fn parameter_expressions_project_feature_dependencies() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -15059,6 +15165,8 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -15922,6 +16030,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -16093,6 +16203,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -16592,6 +16704,8 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         base_flange_profile: None,

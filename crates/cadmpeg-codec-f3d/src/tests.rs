@@ -10472,6 +10472,8 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: Some(profile),
         sweep_profile: None,
         circular_pattern_construction: None,

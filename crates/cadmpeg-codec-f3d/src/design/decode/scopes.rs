@@ -107,11 +107,11 @@ pub fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some((position, offset)) =
-                exact_work_point_position(bytes, &records, &scope, &stream_types)
-            {
-                scope.work_point_position = Some(position);
-                scope.work_point_position_offset = Some(offset);
+            if let Some(frame) = exact_work_point_position(bytes, &records, &scope, &stream_types) {
+                scope.work_point_position = Some(frame.position);
+                scope.work_point_position_offset = Some(frame.position_offset);
+                scope.work_point_reference_type = Some(frame.reference_type);
+                scope.work_point_input_record_indices = frame.input_record_indices;
             }
             scope.solid_primitive = exact_solid_primitive(bytes, &records, &scope);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
@@ -2154,28 +2154,79 @@ fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
 /// record of this class carries the `point3d` member sequence below.
 const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 
-/// Offsets of `point3d` and of the byte past the class level, for one record
-/// version of the point-data class.
-fn point_data_level(bytes: &[u8], start: usize, end: usize, version: u32) -> Option<(usize, u32)> {
+/// The base class level of a point-data record, read under one record version.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct PointDataLevel {
+    /// Byte offset of `point3d`'s first coordinate.
+    position_at: usize,
+    /// Construction rule that produced the point.
+    reference_type: u32,
+    /// Record indices of the counted reference run that closes the level.
+    input_record_indices: Vec<u32>,
+}
+
+/// Read the base class level of the point-data class at `start` under one
+/// record version.
+///
+/// The level closes with a counted reference run whose arity `reference_type`
+/// fixes: `7` and `18` take two references and every other rule takes one. A
+/// version whose member sequence has desynchronized reads a `reference_type`
+/// and a count that do not agree, so the arity settles the frame and bounds the
+/// cursor at the same time.
+fn point_data_level(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    version: u32,
+) -> Option<PointDataLevel> {
+    let body = bytes.get(..end)?;
     let mut cursor = payload_prologue(bytes, start, end)?;
     if version >= 2 {
         cursor = cursor.checked_add(4)?;
     }
     cursor = cursor.checked_add(16)?;
     if version >= 1 {
-        take_reference(bytes.get(..end)?, &mut cursor)?;
+        take_reference(body, &mut cursor)?;
     }
     let position_at = cursor;
     cursor = cursor.checked_add(24)?;
-    let reference_type = u32_at(bytes, cursor)?;
+    let reference_type = u32_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
     if version >= 3 {
         cursor = cursor.checked_add(24)?;
     }
-    if cursor > end {
+    let arity = if matches!(reference_type, 7 | 18) {
+        2
+    } else {
+        1
+    };
+    if u32_at(body, cursor)? != arity {
         return None;
     }
-    Some((position_at, reference_type))
+    cursor = cursor.checked_add(4)?;
+    let mut input_record_indices = Vec::with_capacity(arity as usize);
+    for _ in 0..arity {
+        let reference = take_reference(body, &mut cursor)?;
+        input_record_indices.push(u32::try_from(reference.target?).ok()?);
+    }
+    Some(PointDataLevel {
+        position_at,
+        reference_type,
+        input_record_indices,
+    })
+}
+
+/// The base class level of the point-data record a `WorkPoint` scope selects.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct WorkPointFrame {
+    /// Model-space coordinate.
+    pub(crate) position: [f64; 3],
+    /// Byte offset of the coordinate's first f64.
+    pub(crate) position_offset: u64,
+    /// Construction rule that produced the point.
+    pub(crate) reference_type: u32,
+    /// Record indices of the counted reference run that closes the level.
+    pub(crate) input_record_indices: Vec<u32>,
 }
 
 /// The coordinate of a `WorkPoint`'s point-data record.
@@ -2192,7 +2243,7 @@ pub(crate) fn exact_work_point_position(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<([f64; 3], u64)> {
+) -> Option<WorkPointFrame> {
     if scope.kind != "WorkPoint" {
         return None;
     }
@@ -2220,37 +2271,38 @@ pub(crate) fn exact_work_point_position(
             else {
                 continue;
             };
-            // `refType` names a construction rule; a value outside that set
-            // means the version being read has desynchronized the members.
-            let mut offsets = stored
+            let mut levels = stored
                 .map_or_else(|| (0..=3).collect::<Vec<_>>(), |(_, version)| vec![version])
                 .into_iter()
                 .filter_map(|version| point_data_level(bytes, payload_at, paired, version))
-                .filter(|(_, reference_type)| matches!(reference_type, 1..=20))
-                .map(|(position_at, _)| position_at)
                 .collect::<Vec<_>>();
-            // Agreement is over the set of offsets the fitting versions name, so
-            // the duplicates are removed by value and not only where adjacent.
-            offsets.sort_unstable();
-            offsets.dedup();
-            let [position_at] = offsets.as_slice() else {
+            // Agreement is over the levels the fitting versions name, so the
+            // duplicates are removed by value and not only where adjacent.
+            levels.sort_unstable();
+            levels.dedup();
+            let [level] = levels.as_slice() else {
                 continue;
             };
-            let Some(position) = f64s_at(bytes, *position_at, 3) else {
+            let Some(position) = f64s_at(bytes, level.position_at, 3) else {
                 continue;
             };
             let Ok(position): Result<[f64; 3], _> = position.try_into() else {
                 continue;
             };
             if position.iter().all(|value| value.is_finite()) {
-                candidates.push((position, *position_at as u64));
+                candidates.push(WorkPointFrame {
+                    position,
+                    position_offset: level.position_at as u64,
+                    reference_type: level.reference_type,
+                    input_record_indices: level.input_record_indices.clone(),
+                });
             }
         }
     }
-    let [candidate] = candidates.as_slice() else {
+    if candidates.len() != 1 {
         return None;
-    };
-    Some(*candidate)
+    }
+    candidates.pop()
 }
 
 pub(crate) fn exact_combine_operation(
@@ -2689,6 +2741,8 @@ pub(crate) fn parse_parameter_scope(
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -3146,8 +3200,8 @@ mod tests {
 
     /// A `WorkPoint` scope record, its paired header, and one point-data record
     /// frame: the indexed header, the payload prologue with an optional property
-    /// block, the class-level members of `version`, an empty base-level reference
-    /// list, and the second header that closes the frame.
+    /// block, the class-level members of `version`, a base-level run of `inputs`
+    /// references, and the second header that closes the frame.
     fn work_point_stream(
         class_tag: &str,
         version: u32,
@@ -3155,7 +3209,7 @@ mod tests {
         pick_point: Option<u64>,
         position: [f64; 3],
         reference_type: u32,
-        trailer: u32,
+        inputs: u32,
     ) -> (Vec<u8>, DesignParameterScope, usize) {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -3220,7 +3274,12 @@ mod tests {
                 bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
             }
         }
-        bytes.extend_from_slice(&trailer.to_le_bytes());
+        bytes.extend_from_slice(&inputs.to_le_bytes());
+        for input in 0..inputs {
+            bytes.push(1);
+            bytes.extend_from_slice(&u64::from(70 + input).to_le_bytes());
+            bytes.extend_from_slice(&[0, 0]);
+        }
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"259");
         bytes.extend_from_slice(&55u32.to_le_bytes());
@@ -3239,33 +3298,36 @@ mod tests {
     #[test]
     fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
         let (bytes, scope, position_at) =
-            work_point_stream("282", 3, true, Some(9), [1.25, -2.5, 3.75], 20, 0);
+            work_point_stream("282", 3, true, Some(9), [1.25, -2.5, 3.75], 20, 1);
 
-        assert_eq!(
-            exact_work_point_position(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &HashMap::new()
-            ),
-            Some(([1.25, -2.5, 3.75], position_at as u64))
-        );
+        let frame = exact_work_point_position(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
+        assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+        assert_eq!(frame.position_offset, position_at as u64);
+        assert_eq!(frame.input_record_indices, [70]);
     }
 
     #[test]
     fn work_point_position_reads_every_class_version_that_stores_one() {
         for version in 0..=3 {
             let (bytes, scope, position_at) =
-                work_point_stream("282", version, false, None, [4.0, 5.0, 6.0], 5, 0);
+                work_point_stream("282", version, false, None, [4.0, 5.0, 6.0], 5, 1);
 
+            let frame = exact_work_point_position(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &HashMap::new(),
+            )
+            .unwrap_or_else(|| panic!("class version {version}"));
+            assert_eq!(frame.position, [4.0, 5.0, 6.0], "class version {version}");
             assert_eq!(
-                exact_work_point_position(
-                    &bytes,
-                    &IndexedRecordOffsets::build(&bytes),
-                    &scope,
-                    &HashMap::new()
-                ),
-                Some(([4.0, 5.0, 6.0], position_at as u64)),
+                frame.position_offset, position_at as u64,
                 "class version {version}"
             );
         }
@@ -3274,17 +3336,17 @@ mod tests {
     #[test]
     fn work_point_reads_the_class_version_its_type_table_stores() {
         let (bytes, scope, position_at) =
-            work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 0);
+            work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
         let records = IndexedRecordOffsets::build(&bytes);
-        assert_eq!(
-            exact_work_point_position(
-                &bytes,
-                &records,
-                &scope,
-                &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))])
-            ),
-            Some(([4.0, 5.0, 6.0], position_at as u64))
-        );
+        let frame = exact_work_point_position(
+            &bytes,
+            &records,
+            &scope,
+            &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
+        )
+        .expect("work point frame");
+        assert_eq!(frame.position, [4.0, 5.0, 6.0]);
+        assert_eq!(frame.position_offset, position_at as u64);
         // The stored version drives the read: a version that describes a
         // different member sequence does not yield this frame's coordinate.
         assert_ne!(
@@ -3293,8 +3355,9 @@ mod tests {
                 &records,
                 &scope,
                 &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 0))])
-            ),
-            Some(([4.0, 5.0, 6.0], position_at as u64))
+            )
+            .map(|frame| frame.position_offset),
+            Some(position_at as u64)
         );
         // An unregistered entity falls back to the agreement sweep.
         assert_eq!(
@@ -3315,17 +3378,19 @@ mod tests {
         // coordinate is the same wherever the type table names the class.
         for class_tag in ["282", "316", "364", "409", "424", "460", "468"] {
             let (bytes, scope, position_at) =
-                work_point_stream(class_tag, 2, false, None, [7.5, 8.5, 9.5], 5, 0);
+                work_point_stream(class_tag, 2, false, None, [7.5, 8.5, 9.5], 5, 1);
             let records = IndexedRecordOffsets::build(&bytes);
 
+            let frame = exact_work_point_position(
+                &bytes,
+                &records,
+                &scope,
+                &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
+            )
+            .unwrap_or_else(|| panic!("class tag {class_tag}"));
+            assert_eq!(frame.position, [7.5, 8.5, 9.5], "class tag {class_tag}");
             assert_eq!(
-                exact_work_point_position(
-                    &bytes,
-                    &records,
-                    &scope,
-                    &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))])
-                ),
-                Some(([7.5, 8.5, 9.5], position_at as u64)),
+                frame.position_offset, position_at as u64,
                 "class tag {class_tag}"
             );
         }
@@ -3335,7 +3400,7 @@ mod tests {
     fn work_point_rejects_a_registered_entity_of_another_type() {
         // The tag says `282`, but the type table names a different class for
         // this entity, so the record is not point data whatever its tag reads.
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 0);
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
         let records = IndexedRecordOffsets::build(&bytes);
 
         assert_eq!(
@@ -3350,8 +3415,10 @@ mod tests {
     }
 
     #[test]
-    fn work_point_rejects_a_record_whose_reference_type_is_not_a_construction_rule() {
-        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 4096, 0);
+    fn work_point_rejects_an_input_run_the_reference_type_does_not_name() {
+        // `18` takes two base-level inputs. A frame that stores one has been
+        // read under the wrong member sequence and names no coordinate.
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 1);
 
         assert_eq!(
             exact_work_point_position(
@@ -3362,5 +3429,18 @@ mod tests {
             ),
             None
         );
+
+        let (bytes, scope, position_at) =
+            work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
+        let frame = exact_work_point_position(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
+        assert_eq!(frame.position_offset, position_at as u64);
+        assert_eq!(frame.reference_type, 18);
+        assert_eq!(frame.input_record_indices, [70, 71]);
     }
 }

@@ -1548,6 +1548,13 @@ pub struct DesignParameterScope {
     /// Byte offset of the `WorkPoint` position's first f64 coordinate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_point_position_offset: Option<u64>,
+    /// `refType` construction rule carried by the `WorkPoint` point-data record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_point_reference_type: Option<u32>,
+    /// Record indices of the counted reference run closing the `WorkPoint`
+    /// point-data record's base class level.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub work_point_input_record_indices: Vec<u32>,
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_profile: Option<DesignSketchProfileOperand>,
