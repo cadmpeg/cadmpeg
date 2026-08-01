@@ -15660,6 +15660,7 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     assert_eq!(text.base_id, Some(305));
     assert_eq!(text.text, "path text");
     assert_eq!(text.font_family, "Arial");
+    assert_eq!(text.font_weight, 400);
     // The height is the field after the font family, in centimetres; the width
     // factor is the field before it.
     assert_eq!(text.height, 10.0);
@@ -15847,7 +15848,9 @@ fn txt_tag_sketch_text_record_at(
     for reference in run {
         push_padded_reference(&mut bytes, *reference);
     }
-    bytes.extend_from_slice(&[0; 15]);
+    let mut member_run = [0; 15];
+    member_run[3..7].copy_from_slice(&400i32.to_le_bytes());
+    bytes.extend_from_slice(&member_run);
     bytes.extend_from_slice(&[0; 30]);
     push_padded_reference(&mut bytes, 201);
     bytes
@@ -15880,6 +15883,7 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     assert_eq!(text.base_id, None);
     assert_eq!(text.text, "sketch text");
     assert_eq!(text.font_family, "Arial");
+    assert_eq!(text.font_weight, 400);
     assert_eq!(text.height, 5.0);
     // The form stores no width factor, and the anchor is the field pair the
     // other form omits.
@@ -16002,6 +16006,7 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
         geometry: SketchGeometry::Text {
             text: "A".into(),
             font_family: "Arial".into(),
+            font_weight: 400,
             height: Length(10.0),
             width_factor: Some(0.8),
             anchor: None,

@@ -211,6 +211,7 @@ pub fn project_sketch_design(
             geometry: SketchGeometry::Text {
                 text: text.text.clone(),
                 font_family: text.font_family.clone(),
+                font_weight: text.font_weight,
                 height: Length(text.height),
                 // The record's `0` does not scale glyph advance to zero, so it
                 // is not a neutral horizontal scale of zero; only a positive

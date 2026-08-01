@@ -165,15 +165,94 @@ fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecErro
     Ok(entries)
 }
 
+/// Descriptor and decompressed bytes of one named stream.
+struct MeshStream {
+    descriptor: Vec<(String, u64)>,
+    bytes: Vec<u8>,
+}
+
+/// Read the integer-valued `MessagePack` descriptor map of one kind-4 chunk.
+fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
+    fn integer(bytes: &[u8], at: &mut usize) -> Result<u64, CodecError> {
+        let tag = *bytes
+            .get(*at)
+            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
+        *at += 1;
+        let width = match tag {
+            0x00..=0x7f => return Ok(u64::from(tag)),
+            0xcc => 1,
+            0xcd => 2,
+            0xce => 4,
+            0xcf => 8,
+            _ => {
+                return Err(malformed(
+                    "paramesh stream descriptor value is not an integer",
+                ))
+            }
+        };
+        let raw = bytes
+            .get(*at..*at + width)
+            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
+        *at += width;
+        Ok(raw
+            .iter()
+            .fold(0, |value, byte| (value << 8) | u64::from(*byte)))
+    }
+
+    let mut at = 0usize;
+    let tag = *bytes
+        .get(at)
+        .ok_or_else(|| malformed("paramesh stream descriptor is empty"))?;
+    at += 1;
+    let count = match tag {
+        0x80..=0x8f => usize::from(tag & 0x0f),
+        _ => {
+            return Err(malformed(
+                "paramesh stream descriptor is not a MessagePack map",
+            ))
+        }
+    };
+    let mut entries = Vec::with_capacity(count);
+    for _ in 0..count {
+        let tag = *bytes
+            .get(at)
+            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
+        at += 1;
+        let key_count = match tag {
+            0xa0..=0xbf => usize::from(tag & 0x1f),
+            _ => return Err(malformed("paramesh stream descriptor key is not a string")),
+        };
+        let raw = bytes
+            .get(at..at + key_count)
+            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
+        at += key_count;
+        let key = std::str::from_utf8(raw)
+            .map_err(|_| malformed("paramesh stream descriptor key is not UTF-8"))?
+            .to_owned();
+        if entries.iter().any(|(existing, _)| existing == &key) {
+            return Err(malformed("paramesh stream descriptor repeats a key"));
+        }
+        entries.push((key, integer(bytes, &mut at)?));
+    }
+    if at != bytes.len() {
+        return Err(malformed("paramesh stream descriptor has trailing bytes"));
+    }
+    Ok(entries)
+}
+
 /// Inflate one kind-4 chunk body: the descriptor map, the uncompressed byte
 /// count, the two LZMA1 property bytes, and the raw LZMA1 stream.
-fn inflate_stream(body: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn inflate_stream(body: &[u8]) -> Result<MeshStream, CodecError> {
     let descriptor_count = usize::from(
         u16_at(body, 0).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?,
     );
     let at = descriptor_count
         .checked_add(2)
         .ok_or_else(|| malformed("paramesh stream chunk is out of range"))?;
+    let descriptor = stream_descriptor(
+        body.get(2..at)
+            .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?,
+    )?;
     let declared =
         u32_at(body, at).ok_or_else(|| malformed("paramesh stream chunk is truncated"))?;
     if declared > MAX_STREAM_BYTES {
@@ -217,7 +296,36 @@ fn inflate_stream(body: &[u8]) -> Result<Vec<u8>, CodecError> {
             "paramesh stream does not decompress to its declared byte count",
         ));
     }
-    Ok(out)
+    Ok(MeshStream {
+        descriptor,
+        bytes: out,
+    })
+}
+
+/// Require the implemented element layout before interpreting stream bytes.
+fn require_layout(
+    stream: &MeshStream,
+    components: Option<u64>,
+    component_type: u64,
+    delta_coded: bool,
+) -> Result<(), CodecError> {
+    let value = |key: &str| {
+        stream
+            .descriptor
+            .iter()
+            .find_map(|(name, value)| (name == key).then_some(*value))
+    };
+    if value("D") != components
+        || value("T") != Some(component_type)
+        || (value("d") == Some(1)) != delta_coded
+        || value("d").is_some_and(|value| value != 1)
+        || value("U").is_some()
+    {
+        return Err(malformed(
+            "paramesh stream descriptor does not match its implemented layout",
+        ));
+    }
+    Ok(())
 }
 
 /// One f32 coordinate triple per vertex.
@@ -342,13 +450,14 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
             .position(|(entry, _)| entry == name)
             .and_then(|position| streams.get(position))
     };
-    let vertices = decode_vertices(
-        named("v").ok_or_else(|| malformed("paramesh container has no vertex stream"))?,
-    )?;
-    let triangles = decode_triangles(
-        named("t").ok_or_else(|| malformed("paramesh container has no corner stream"))?,
-        vertices.len(),
-    )?;
+    let vertex_stream =
+        named("v").ok_or_else(|| malformed("paramesh container has no vertex stream"))?;
+    require_layout(vertex_stream, Some(3), 3, false)?;
+    let vertices = decode_vertices(&vertex_stream.bytes)?;
+    let corner_stream =
+        named("t").ok_or_else(|| malformed("paramesh container has no corner stream"))?;
+    require_layout(corner_stream, None, 1, true)?;
+    let triangles = decode_triangles(&corner_stream.bytes, vertices.len())?;
     Ok(MeshContainer {
         fusion_uuid,
         vertices,
@@ -362,14 +471,13 @@ mod tests {
 
     /// One kind-4 chunk: the descriptor map, the uncompressed byte count, the
     /// two LZMA1 property bytes, and the raw LZMA1 stream.
-    fn stream_chunk(payload: &[u8]) -> Vec<u8> {
+    fn stream_chunk(descriptor: &[u8], payload: &[u8]) -> Vec<u8> {
         let mut compressed = Vec::new();
         lzma_rs::lzma_compress(&mut std::io::Cursor::new(payload), &mut compressed)
             .expect("compress stream");
         let mut body = Vec::new();
-        // An empty descriptor map.
-        body.extend_from_slice(&1u16.to_le_bytes());
-        body.push(0x80);
+        body.extend_from_slice(&(descriptor.len() as u16).to_le_bytes());
+        body.extend_from_slice(descriptor);
         body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         body.push(LZMA_PROPERTIES);
         body.push(LZMA_DICTIONARY_LOG);
@@ -413,8 +521,14 @@ mod tests {
             .iter()
             .flat_map(|value| value.to_le_bytes())
             .collect::<Vec<_>>();
-        bytes.extend_from_slice(&stream_chunk(&vertex_stream));
-        bytes.extend_from_slice(&stream_chunk(&corner_stream));
+        bytes.extend_from_slice(&stream_chunk(
+            &[0x82, 0xa1, b'D', 3, 0xa1, b'T', 3],
+            &vertex_stream,
+        ));
+        bytes.extend_from_slice(&stream_chunk(
+            &[0x82, 0xa1, b'T', 1, 0xa1, b'd', 1],
+            &corner_stream,
+        ));
         bytes
     }
 
@@ -457,6 +571,34 @@ mod tests {
             &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0],
             &[1, 9, 1, 7],
         );
+        assert!(decode_mesh_container(&container).is_err());
+    }
+
+    /// Stream bytes are not interpreted under a component type that the
+    /// implemented decoder does not support.
+    #[test]
+    fn container_refuses_a_vertex_descriptor_with_the_wrong_component_type() {
+        let mut container = container(GUID, &[0.0, 0.0, 0.0], &[0, 0]);
+        let descriptor = [0x82, 0xa1, b'D', 3, 0xa1, b'T', 3];
+        let at = container
+            .windows(descriptor.len())
+            .position(|window| window == descriptor)
+            .expect("vertex descriptor");
+        container[at + 6] = 1;
+        assert!(decode_mesh_container(&container).is_err());
+    }
+
+    /// Corner bytes are not treated as deltas unless their descriptor says
+    /// that they are delta-coded.
+    #[test]
+    fn container_refuses_a_corner_descriptor_without_delta_coding() {
+        let mut container = container(GUID, &[0.0, 0.0, 0.0], &[0, 0]);
+        let descriptor = [0x82, 0xa1, b'T', 1, 0xa1, b'd', 1];
+        let at = container
+            .windows(descriptor.len())
+            .position(|window| window == descriptor)
+            .expect("corner descriptor");
+        container[at + 6] = 0;
         assert!(decode_mesh_container(&container).is_err());
     }
 

@@ -243,6 +243,8 @@ pub enum SketchGeometry {
         text: String,
         /// Source font-family name.
         font_family: String,
+        /// Numeric font weight from the source text style.
+        font_weight: i32,
         /// Nominal character height.
         height: Length,
         /// Horizontal scale relative to the nominal font width, absent when the

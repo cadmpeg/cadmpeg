@@ -521,6 +521,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SketchGeometry::Text {
                 text,
                 font_family,
+                font_weight,
                 height,
                 width_factor,
                 anchor,
@@ -528,6 +529,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             } => {
                 if text.is_empty()
                     || font_family.is_empty()
+                    || !matches!(font_weight, 400 | 500 | 750)
                     || nonpositive(height.0)
                     || width_factor.is_some_and(nonpositive)
                     || anchor.is_some_and(|anchor| !finite2(anchor))

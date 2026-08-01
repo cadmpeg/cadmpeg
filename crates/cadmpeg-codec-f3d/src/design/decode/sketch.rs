@@ -1768,6 +1768,7 @@ struct SketchTextTail {
     first_reference: Option<u32>,
     second_reference: Option<u32>,
     text: String,
+    font_weight: i32,
     anchor: Option<Point2>,
     rotation: Option<f64>,
     owner_reference: u32,
@@ -1895,6 +1896,8 @@ fn decode_sketch_text_tail(
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
     // Vertical alignment enum, one flag byte, and the font weight.
     u32_at(payload, cursor)?;
+    let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
+    matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
     // The class tail opens with the text-type enum, which gates the placement
     // transform: frame text stores a 4x4 transform, path text stores none. One
@@ -1916,6 +1919,7 @@ fn decode_sketch_text_tail(
         first_reference: reference_index(&first_reference),
         second_reference: reference_index(&second_reference),
         text,
+        font_weight,
         anchor: placement.map(|(anchor, _)| anchor),
         rotation: placement.map(|(_, rotation)| rotation),
         owner_reference: reference_index(&owner)?,
@@ -1960,6 +1964,8 @@ fn decode_txt_tag_sketch_text_tail(
     for _ in 0..references {
         take_reference(payload, &mut cursor)?;
     }
+    let font_weight = u32_at(payload, cursor.checked_add(3)?)? as i32;
+    matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
     let owner = take_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(())?;
@@ -1967,6 +1973,7 @@ fn decode_txt_tag_sketch_text_tail(
         first_reference: None,
         second_reference: None,
         text,
+        font_weight,
         anchor: Some(anchor),
         // This form writes no placement transform, so it stores no rotation.
         rotation: None,
@@ -2018,6 +2025,7 @@ pub(crate) fn decode_sketch_text_record(
         base_id: head.base_id,
         text: tail.text,
         font_family: head.font_family,
+        font_weight: tail.font_weight,
         height: head.height,
         width_factor: head.width_factor,
         color: head.color,

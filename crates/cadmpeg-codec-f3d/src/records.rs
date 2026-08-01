@@ -3353,6 +3353,8 @@ pub struct SketchText {
     pub text: String,
     /// Font-family name.
     pub font_family: String,
+    /// Numeric font weight stored by the sketch-text class.
+    pub font_weight: i32,
     /// Nominal text height in millimetres.
     pub height: f64,
     /// Horizontal width factor stored ahead of the font-family name, absent in
