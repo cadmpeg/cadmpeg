@@ -1276,7 +1276,7 @@ fn multiply_projected_sketch_relation_records(
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
 /// frames but yields no geometry, so the caller falls back to metadata.
-fn active_body_streams(scan: &ContainerScan) -> Vec<BodyStream<'_>> {
+fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
     let block_streams = scan.blocks.iter().flat_map(|block| {
         block.ps_streams.iter().filter_map(move |payload| {
             let header = crate::parasolid::stream_header(payload)?;
@@ -2690,8 +2690,8 @@ fn preserve_source_image(
         id: UnknownId("sldprt:file:source-image#0".into()),
         offset: 0,
         byte_len: scan.source_image.len() as u64,
-        sha256: sha256_hex(&scan.source_image),
-        data: Some(scan.source_image.clone()),
+        sha256: sha256_hex(scan.source_image),
+        data: Some(scan.source_image.to_vec()),
         links: Vec::new(),
     });
 }
