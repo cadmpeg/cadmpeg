@@ -218,6 +218,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
                     id: id.clone(),
                     name,
                     asset_guid: None,
+                    library_id: None,
                     visual_guid: None,
                     physical_token: None,
                     schema: Some("step_surface_style".into()),

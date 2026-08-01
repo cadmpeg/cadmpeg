@@ -64,6 +64,7 @@ fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Col
             id,
             name,
             asset_guid: None,
+            library_id: None,
             visual_guid: None,
             physical_token: None,
             schema: Some("IGES color".into()),

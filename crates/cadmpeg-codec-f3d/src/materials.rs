@@ -26,6 +26,16 @@ use crate::container::{role, ContainerScan};
 
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
+/// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
+/// library. A stored library identifier is a library GUID or a library path;
+/// the null GUID names neither.
+const NO_ASSET_LIB_ID: &str = "00000000-0000-0000-0000-000000000000";
+
+/// The library identifier an `InstanceProperties` record stores, when it names
+/// a library.
+fn library_id(asset_lib_id: &str) -> Option<String> {
+    (!asset_lib_id.is_empty() && asset_lib_id != NO_ASSET_LIB_ID).then(|| asset_lib_id.to_owned())
+}
 
 /// Compare a serialized Protein visual token with a Design visual GUID.
 ///
@@ -51,7 +61,12 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
         })?;
     let name = appearance.name.as_deref().unwrap_or("Prism-001");
     let mut logical = RECORD_MARKER.to_vec();
-    for value in [schema, guid, name, "00000000-0000-0000-0000-000000000000"] {
+    for value in [
+        schema,
+        guid,
+        name,
+        appearance.library_id.as_deref().unwrap_or(NO_ASSET_LIB_ID),
+    ] {
         push_lp(&mut logical, value)?;
     }
     let value_block = logical.len();
@@ -425,6 +440,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
                 id: AppearanceId(format!("f3d:design:appearance#{}", assignment.visual_guid)),
                 name: assignment.visual_preset.clone(),
                 asset_guid: Some(assignment.visual_guid.clone()),
+                library_id: None,
                 visual_guid: Some(assignment.visual_guid.clone()),
                 physical_token: assignment.physical_token.clone(),
                 schema: None,
@@ -537,6 +553,7 @@ fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) ->
                 id: AppearanceId(format!("f3d:design:appearance#{}", record.guid)),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
+                library_id: library_id(&record.asset_lib_id),
                 visual_guid: (!is_physical_schema(&record.schema)).then(|| record.guid.clone()),
                 physical_token: None,
                 schema: Some(record.schema.clone()),
@@ -1418,7 +1435,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     let schema = take_lp_utf8(record, &mut position)?;
     let guid = take_lp_utf8(record, &mut position)?;
     let base = take_lp_utf8(record, &mut position)?;
-    take_lp_utf8(record, &mut position)?;
+    let asset_lib_id = take_lp_utf8(record, &mut position)?;
     let color = match schema.as_str() {
         "GenericSchema" => fixed_rgba(
             record,
@@ -1458,6 +1475,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
         id: AppearanceId(format!("f3d:design:appearance#{guid}")),
         name: Some(base),
         asset_guid: Some(guid.clone()),
+        library_id: library_id(&asset_lib_id),
         visual_guid: (!matches!(
             schema.as_str(),
             "PhysMatSchema"
@@ -1548,6 +1566,7 @@ mod tests {
             schema: "TestSchema".into(),
             guid: String::new(),
             base: String::new(),
+            asset_lib_id: String::new(),
             properties: std::collections::BTreeMap::from([(
                 "test_Depth".to_owned(),
                 crate::protein::DecodedProperty {
@@ -1608,6 +1627,7 @@ mod tests {
             schema: schema.to_owned(),
             guid: "11111111-2222-3333-4444-555555555555".to_owned(),
             base: "Prism-001".to_owned(),
+            asset_lib_id: String::new(),
             properties: std::collections::BTreeMap::from([(
                 "surface_albedo".to_owned(),
                 crate::protein::DecodedProperty {

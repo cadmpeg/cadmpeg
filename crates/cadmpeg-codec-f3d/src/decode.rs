@@ -3995,6 +3995,7 @@ mod tests {
             id: AppearanceId("f3d:appearance#material".into()),
             name: None,
             asset_guid: None,
+            library_id: None,
             textures: Vec::new(),
             visual_guid: None,
             physical_token: None,

@@ -74,6 +74,9 @@ pub(crate) struct DecodedRecord {
     pub(crate) schema: String,
     pub(crate) guid: String,
     pub(crate) base: String,
+    /// Library holding the preset this asset instantiates: a GUID for a shipped
+    /// library, a path for a user library.
+    pub(crate) asset_lib_id: String,
     pub(crate) properties: BTreeMap<String, DecodedProperty>,
 }
 
@@ -276,10 +279,11 @@ fn decode_record(
     let Some(base) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
-    // The fourth header string is byte-degenerate with `AssetLibID`, the first
-    // member of `CommonSchema` in serialization order; both are empty in every
-    // record, so `instance_property_serializes` drops the member here.
-    let Some(_) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
+    // The fourth header string is `AssetLibID`, the first member of
+    // `CommonSchema` in serialization order. It is carried in the record header
+    // rather than in the value block, so `instance_property_serializes` drops
+    // the member there.
+    let Some(asset_lib_id) = take_lp_utf8_capped(record, &mut at, 1_048_576) else {
         return Ok(None);
     };
     let properties = property_closure(&schema, schemas, &mut BTreeSet::new())?;
@@ -317,13 +321,14 @@ fn decode_record(
         schema,
         guid,
         base,
+        asset_lib_id,
         properties: values,
     }))
 }
 
 /// Narrow the inherited member set to the members a record actually serializes.
 ///
-/// Two four-byte slots the closure lists do not appear in the value block.
+/// Two slots the closure lists do not appear in the value block.
 /// `AssetLibID` is consumed as the fourth record header string. The second slot
 /// belongs to `TextureMap2dSchema`: of `texture_MapChannel`,
 /// `texture_MapChannel_ID_Advanced`, `texture_MapChannel_UVWSource_Advanced` and

@@ -416,16 +416,6 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A neutral canvas needs these three states to show the image correctly.
 
-### MA-06. External material-library payloads
-
-**Question.** What are the appearance properties behind each material-library preset phrase?
-
-**Known.** `f3d.md` §8.2 "Material records store a" states that library display names are not in the file. They resolve through the external material library. The preset phrase is the key.
-
-**Need.** Without the library, a preset phrase gives no concrete appearance. The neutral model then has no material.
-
-**Note.** This item needs a file outside the `.f3d` container. We cannot close it from the container alone.
-
 ### MA-07. Precedence of library colour records
 
 **Question.** What is the precedence of the `color-adesk-attrib` record and the `material-adesk-attrib` record against direct colours and appearance assignments? What do the twelve bytes and the eight bytes of a per-face assignment entry hold?

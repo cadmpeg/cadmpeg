@@ -1521,6 +1521,7 @@ fn appearance_asset_and_binding_round_trip() {
         id: AppearanceId("synthetic:test:appearance#prism-001".into()),
         name: Some("Prism-001".into()),
         asset_guid: Some("visual-guid".into()),
+        library_id: None,
         visual_guid: Some("visual-guid".into()),
         physical_token: Some("physical-token".into()),
         schema: Some("GenericSchema".into()),
