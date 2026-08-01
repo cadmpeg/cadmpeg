@@ -68,8 +68,6 @@
 //! carrier bytes needed for passthrough remain available as
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
-#![allow(clippy::disallowed_methods)]
-
 mod act;
 pub mod asm_header;
 pub mod brep;

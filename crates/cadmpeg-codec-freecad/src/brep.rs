@@ -669,12 +669,6 @@ fn census_surface(
 }
 
 fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
-    const MAX_TEXT_BREP_BYTES: usize = 256 * 1024 * 1024;
-    if bytes.len() > MAX_TEXT_BREP_BYTES {
-        return Err(CodecError::Malformed(
-            "text B-rep size limit exceeded".into(),
-        ));
-    }
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let topology_version = if text.contains("CASCADE Topology V1, (c) Matra-Datavision") {
@@ -773,12 +767,6 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
 }
 
 fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
-    const MAX_BINARY_BREP_BYTES: usize = 256 * 1024 * 1024;
-    if bytes.len() > MAX_BINARY_BREP_BYTES {
-        return Err(CodecError::Malformed(
-            "binary B-rep exceeds the 256 MiB parser limit".into(),
-        ));
-    }
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
