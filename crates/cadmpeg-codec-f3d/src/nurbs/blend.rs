@@ -3,8 +3,8 @@
 
 use crate::nurbs::core::{
     decode_curve_block, decode_curve_cache_at, decode_owned_curve_cache_at,
-    decode_owned_curve_cache_resolving_refs, decode_owned_surface_cache_at,
-    decode_owned_surface_cache_resolving_refs, decode_surface_block,
+    decode_owned_curve_cache_resolving_refs_at, decode_owned_surface_cache_at,
+    decode_owned_surface_cache_resolving_refs_at, decode_surface_block,
 };
 use crate::nurbs::pcurve::decode_pcurve_block_with_end;
 use crate::nurbs::proc_curve::{
@@ -227,7 +227,7 @@ pub(crate) fn decode_rolling_ball_surface(
         let scope = subtype_span(bytes, *position, int_width)?;
         let surface = reference_context
             .and_then(|(active_bytes, tables)| {
-                decode_owned_surface_cache_resolving_refs(scope, active_bytes, tables)
+                decode_owned_surface_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
             })
             .or_else(|| decode_owned_surface_cache_at(scope, int_width))?;
         *position += scope.len();
@@ -283,7 +283,7 @@ pub(crate) fn decode_rolling_ball_curve(
         let scope = subtype_span(bytes, *position, int_width)?;
         let curve = reference_context
             .and_then(|(active_bytes, tables)| {
-                decode_owned_curve_cache_resolving_refs(scope, active_bytes, tables)
+                decode_owned_curve_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
             })
             .or_else(|| decode_owned_curve_cache_at(scope, int_width))
             .or_else(|| decode_par_int_cur_isoline(scope, int_width, reference_context))?;

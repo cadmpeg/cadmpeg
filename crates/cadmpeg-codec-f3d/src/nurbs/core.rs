@@ -351,22 +351,25 @@ pub(crate) fn decode_owned_surface_cache_at(
         .find_map(|pos| decode_surface_block(scope, pos, int_width).map(|decoded| decoded.surface))
 }
 
-/// [`decode_owned_surface_cache_at`], following subtype-table references.
-pub(crate) fn decode_owned_surface_cache_resolving_refs(
+/// [`decode_owned_surface_cache_at`], following subtype-table references at the
+/// stream's integer width. Every caller reaches a scope through a walk that
+/// already read the width, and the subtype table indexes different offsets at
+/// each width, so probing the other one walks the reference graph a second time
+/// against a table built for a stream this is not.
+pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
     scope: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
+    int_width: usize,
 ) -> Option<NurbsSurface> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
-            scope,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            decode_owned_surface_cache_at,
-            int_width,
-        )
-    })
+    decode_cache_resolving_refs(
+        scope,
+        active_bytes,
+        tables,
+        &mut Vec::new(),
+        decode_owned_surface_cache_at,
+        int_width,
+    )
 }
 
 /// Decode a surface cache from a carrier record, following the ASM subtype
@@ -413,22 +416,22 @@ pub(crate) fn decode_owned_curve_cache_at(scope: &[u8], int_width: usize) -> Opt
         .find_map(|pos| decode_curve_block(scope, pos, int_width).map(|decoded| decoded.curve))
 }
 
-/// [`decode_owned_curve_cache_at`], following subtype-table references.
-pub(crate) fn decode_owned_curve_cache_resolving_refs(
+/// [`decode_owned_curve_cache_at`], following subtype-table references at the
+/// stream's integer width.
+pub(crate) fn decode_owned_curve_cache_resolving_refs_at(
     scope: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
+    int_width: usize,
 ) -> Option<NurbsCurve> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
-            scope,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            decode_owned_curve_cache_at,
-            int_width,
-        )
-    })
+    decode_cache_resolving_refs(
+        scope,
+        active_bytes,
+        tables,
+        &mut Vec::new(),
+        decode_owned_curve_cache_at,
+        int_width,
+    )
 }
 
 /// Decode a curve cache from a carrier record, resolving nested ASM subtype

@@ -5,8 +5,8 @@ use crate::nurbs::blend::{
     decode_optional_rolling_ball_surface, decode_rolling_ball_side, decode_surface_ranges,
 };
 use crate::nurbs::core::{
-    decode_curve_block, decode_curve_cache_resolving_refs, decode_surface_block,
-    decode_surface_cache_resolving_refs,
+    decode_curve_block, decode_owned_curve_cache_resolving_refs_at,
+    decode_owned_surface_cache_resolving_refs_at, decode_surface_block,
 };
 use crate::nurbs::pcurve::{decode_pcurve_block_with_end, NurbsPcurve};
 use crate::nurbs::proc_surface::{
@@ -929,7 +929,12 @@ pub(crate) fn decode_embedded_base_curve_resolving_refs(
                 if bytes.get(reference) == Some(&0x0f) {
                     // Inline subtype scope: resolve its solved curve cache.
                     let scope = subtype_span(bytes, reference, int_width)?;
-                    let curve = decode_curve_cache_resolving_refs(scope, active_bytes, tables)?;
+                    let curve = decode_owned_curve_cache_resolving_refs_at(
+                        scope,
+                        active_bytes,
+                        tables,
+                        int_width,
+                    )?;
                     *position = reference + scope.len();
                     return Some(curve);
                 }
@@ -944,7 +949,14 @@ pub(crate) fn decode_embedded_base_curve_resolving_refs(
                 .for_width(int_width)
                 .get(index)
                 .and_then(|target| subtype_span(active_bytes, *target, int_width))
-                .and_then(|target| decode_curve_cache_resolving_refs(target, active_bytes, tables))
+                .and_then(|target| {
+                    decode_owned_curve_cache_resolving_refs_at(
+                        target,
+                        active_bytes,
+                        tables,
+                        int_width,
+                    )
+                })
         }
         _ => {
             *position = saved;
@@ -2248,7 +2260,12 @@ pub(crate) fn decode_optional_embedded_surface_with_bounds(
                 .get(index)
                 .and_then(|target| subtype_span(active_bytes, *target, int_width))
                 .and_then(|target| {
-                    decode_surface_cache_resolving_refs(target, active_bytes, tables)
+                    decode_owned_surface_cache_resolving_refs_at(
+                        target,
+                        active_bytes,
+                        tables,
+                        int_width,
+                    )
                 })
                 .map(SurfaceGeometry::Nurbs);
             let mut bounds = [None; 4];
@@ -2281,7 +2298,12 @@ pub(crate) fn decode_optional_embedded_surface_with_bounds(
         }
         if bytes.get(*position) == Some(&0x0f) {
             let scope = subtype_span(bytes, *position, int_width)?;
-            let surface = decode_surface_cache_resolving_refs(scope, active_bytes, tables)?;
+            let surface = decode_owned_surface_cache_resolving_refs_at(
+                scope,
+                active_bytes,
+                tables,
+                int_width,
+            )?;
             *position += scope.len();
             let mut bounds = [None; 4];
             for bound in &mut bounds {
