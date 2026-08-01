@@ -1658,6 +1658,63 @@ fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 #[test]
+fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(17.,23.,13.));
+#2=CARTESIAN_POINT('',(21.8769469654,17.9785073637,13.));
+#3=CARTESIAN_POINT('',(21.8769469654,28.0214926363,13.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#4,$);
+#6=CIRCLE('',#5,7.);
+#7=TRIMMED_CURVE('',#6,(#2),(#3),.T.,.CARTESIAN.);
+#8=COMPOSITE_CURVE_SEGMENT(.DISCONTINUOUS.,.T.,#7);
+#9=COMPOSITE_CURVE('',(#8),.U.);
+#10=GEOMETRIC_SET('NONE',(#9));
+#11=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#10),#12);
+#12=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    let composite = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "step:data:curve#9")
+        .expect("composite curve");
+    let source = composite
+        .source_object
+        .as_ref()
+        .expect("geometric-set owner");
+    assert_eq!(source.format, "step");
+    assert_eq!(source.object_id, "#9");
+    assert_eq!(source.name, None);
+
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,1.,0.));
+#3=CARTESIAN_POINT('',(2.,0.,0.));
+#4=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#2,#3),.UNSPECIFIED.,.F.,.U.,(3,3),(0.,2.),.UNSPECIFIED.);
+#5=TRIMMED_CURVE('',#4,(#1),(#3),.T.,.CARTESIAN.);
+#6=COMPOSITE_CURVE_SEGMENT(.DISCONTINUOUS.,.T.,#5);
+#7=COMPOSITE_CURVE('',(#6),.U.);
+#8=GEOMETRIC_SET('NONE',(#7));
+#9=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#8),#10);
+#10=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    assert_eq!(result.ir.model.curves.len(), 3);
+    assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn excessive_nurbs_degree_is_rejected_before_knot_allocation() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
