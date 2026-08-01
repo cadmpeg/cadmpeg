@@ -1677,11 +1677,11 @@ pub struct DesignEdgeFlangeOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted extent discriminator.
+    /// Uninterpreted extent discriminator (DR-09).
     pub extent_code: u32,
-    /// Uninterpreted height-datum discriminator.
+    /// Uninterpreted height-datum discriminator (DR-09).
     pub height_datum_code: u32,
-    /// Uninterpreted bend-position discriminator.
+    /// Uninterpreted bend-position discriminator (DR-09).
     pub bend_position_code: u32,
 }
 

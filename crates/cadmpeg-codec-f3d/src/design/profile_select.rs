@@ -429,6 +429,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     .map(|group| {
                         resolved_spatial_extrude_profile_selection(
                             group,
+                            members,
                             spatial_sketch,
                             resolution.spatial_entities,
                             resolution,
@@ -881,7 +882,8 @@ fn transition_profile_selection(
 }
 
 fn resolved_spatial_extrude_profile_selection(
-    _group: &DesignExtrudeSelectionGroup,
+    group: &DesignExtrudeSelectionGroup,
+    members: &[DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::SpatialSketch,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     resolution: ExtrudeProfileResolution<'_>,
@@ -896,7 +898,54 @@ fn resolved_spatial_extrude_profile_selection(
         previous_history_state_id?,
         resolution.linear_tolerance,
     )
-    .or_else(|| (sketch.profiles.len() == 1).then_some(0))
+    .or_else(|| {
+        let mut group_members = members
+            .iter()
+            .filter(|member| {
+                native_stream(&member.id) == native_stream(&group.id)
+                    && member.group_record_index == group.record_index
+            })
+            .collect::<Vec<_>>();
+        group_members.sort_by_key(|member| member.group_member_ordinal);
+        if group_members.len() != group.members.len()
+            || group_members
+                .iter()
+                .zip(&group.members)
+                .any(|(member, record_index)| member.record_index != *record_index)
+        {
+            return None;
+        }
+        let mut selected = None;
+        for member in group_members {
+            let SketchRelationOperand::Curve {
+                primary_id,
+                secondary_id,
+                ..
+            } = member.resolved_geometry.as_ref()?
+            else {
+                return None;
+            };
+            let entity =
+                crate::ids::neutral_spatial_sketch_curve_id(&sketch.id, *primary_id, *secondary_id);
+            let matches = sketch
+                .profiles
+                .iter()
+                .enumerate()
+                .filter(|(_, profile)| profile.boundary.iter().any(|use_| use_.entity == entity))
+                .map(|(index, _)| u32::try_from(index).ok())
+                .collect::<Option<Vec<_>>>()?;
+            let [profile] = matches.as_slice() else {
+                return None;
+            };
+            if selected
+                .replace(*profile)
+                .is_some_and(|selected| selected != *profile)
+            {
+                return None;
+            }
+        }
+        selected
+    })
 }
 
 fn transition_spatial_profile_selection(

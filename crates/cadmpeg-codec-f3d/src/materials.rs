@@ -265,7 +265,13 @@ fn patch_instance_colors(
         let Some(edit) = edits.get(&guid) else {
             continue;
         };
-        let delta = generic_connection_delta(record, position);
+        let delta = if schema == "GenericSchema" {
+            generic_connection_delta(record, position).ok_or_else(|| {
+                CodecError::Malformed("Protein GenericSchema connection list is malformed".into())
+            })?
+        } else {
+            0
+        };
         if let Some(color) = edit.color {
             let relative = match schema.as_str() {
                 "GenericSchema" => position + 112 + delta,
@@ -1439,7 +1445,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     let color = match schema.as_str() {
         "GenericSchema" => fixed_rgba(
             record,
-            position + 112 + generic_connection_delta(record, position),
+            position + 112 + generic_connection_delta(record, position)?,
         ),
         "PrismOpaqueSchema" | "PrismMetalSchema" => fixed_rgba(record, position + 8),
         "PrismTransparentSchema" => fixed_rgba(record, position + 121),
@@ -1451,7 +1457,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     };
     let mut properties = BTreeMap::new();
     if schema == "GenericSchema" {
-        let delta = generic_connection_delta(record, position);
+        let delta = generic_connection_delta(record, position)?;
         fixed_tagged_scalar(
             &mut properties,
             "reflectivity_at_0deg",
@@ -1521,33 +1527,32 @@ fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
     decoded_color(values)
 }
 
-fn generic_connection_delta(record: &[u8], value_block: usize) -> usize {
-    let slot = value_block + 102;
+fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> {
+    let slot = value_block.checked_add(102)?;
     match record.get(slot) {
-        Some(0) => 0,
+        Some(0) => Some(0),
         Some(1) if slot + 6 <= record.len() => {
             let count = u32::from_le_bytes(
                 record[slot + 2..slot + 6]
                     .try_into()
                     .expect("invariant: record[slot+2..slot+6] is a 4-byte slice"),
             ) as usize;
+            if count > 8 {
+                return None;
+            }
             let mut position = slot + 6;
-            for _ in 0..count.min(8) {
-                let Some(length_bytes) = record.get(position..position + 4) else {
-                    return 0;
-                };
+            for _ in 0..count {
+                let length_bytes = record.get(position..position + 4)?;
                 let length = u32::from_le_bytes(length_bytes.try_into().expect(
                     "invariant: length_bytes is a 4-byte slice from bytes.get(range) of length 4",
                 )) as usize;
                 position += 4;
-                if record.get(position..position + length).is_none() {
-                    return 0;
-                }
+                record.get(position..position + length)?;
                 position += length;
             }
-            position.saturating_sub(slot + 1)
+            position.checked_sub(slot + 1)
         }
-        _ => 0,
+        _ => None,
     }
 }
 
@@ -1561,6 +1566,18 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
+        let mut record = vec![0; 120];
+        record[102] = 2;
+        assert_eq!(super::generic_connection_delta(&record, 0), None);
+
+        record[102] = 1;
+        record[104..108].copy_from_slice(&1u32.to_le_bytes());
+        record[108..112].copy_from_slice(&16u32.to_le_bytes());
+        assert_eq!(super::generic_connection_delta(&record, 0), None);
+    }
+
     fn distance_record(unit: u32, value: f64) -> crate::protein::DecodedRecord {
         crate::protein::DecodedRecord {
             schema: "TestSchema".into(),

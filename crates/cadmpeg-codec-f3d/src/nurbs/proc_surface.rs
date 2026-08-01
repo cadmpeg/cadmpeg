@@ -3107,7 +3107,7 @@ pub(crate) struct RevisionSurfaceTail {
     pub(crate) tail_flag: bool,
 }
 
-/// Parse the shared revision-gated surface tail. It opens with an enum
+/// Parse the shared revision-gated surface tail (GC-08). It opens with an enum
 /// selecting the approximation-cache form: `0` stores the solved NURBS surface
 /// followed by its fit tolerance; `2` stores no cache and no fit tolerance, and
 /// instead stores the U parameter interval and the V parameter interval in the

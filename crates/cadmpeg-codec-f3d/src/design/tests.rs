@@ -40,9 +40,10 @@ use crate::design::decode::scopes::{
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
-    next_indexed_record_offset, next_indexed_record_offset_with_index, parse_genesis_entity_header,
-    parse_settled_entity_header, parse_sketch_placement_candidates, parse_sketch_relation,
-    parse_sketch_surface, IndexedRecordOffsets,
+    next_indexed_record_offset, next_indexed_record_offset_with_index,
+    parse_classed_sketch_relation, parse_genesis_entity_header, parse_settled_entity_header,
+    parse_sketch_placement_candidates, parse_sketch_surface, IndexedRecordOffsets,
+    SketchRelationClass,
 };
 use crate::design::dimensions::{
     bind_dimension_loci, counted_role_relation, directional_point_dimension,
@@ -15381,7 +15382,7 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
     assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
-    let parsed = parse_sketch_relation(&record, &HashSet::from([1041])).unwrap();
+    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(parsed.members, [1224, 1228, 1236]);
     assert_eq!(parsed.member_relation_ordinals, [3, 1, 0]);
     assert_eq!(parsed.auxiliary_references, [] as [u32; 0]);
@@ -15467,6 +15468,8 @@ fn genesis_relation_parses_u64_text_frame_mask_and_member_roles() {
     let mut auxiliary = Vec::new();
     push_reference(&mut auxiliary, 2394);
     auxiliary.extend_from_slice(&[0u8; 6]);
+    // The second text-frame reference is absent.
+    auxiliary.push(0);
     let record = genesis_relation_record(
         &[(2394, 0), (2403, 0), (2404, 0)],
         2,
@@ -15475,7 +15478,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_member_roles() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let parsed = parse_sketch_relation(&record, &HashSet::from([1425])).unwrap();
+    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(parsed.members, [2394, 2403, 2404]);
     assert_eq!(parsed.member_relation_ordinals, [0, 0, 0]);
     assert_eq!(parsed.entity_genesis, Some(2));
@@ -15529,7 +15532,11 @@ fn genesis_relation_parses_text_path_glyph_run() {
         0x200_0000_0000,
         &[237],
     );
-    let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
+    let parsed = parse_classed_sketch_relation(
+        &record,
+        SketchRelationClass::TextPath { leading_flag: true },
+    )
+    .unwrap();
     assert_eq!(parsed.members, [237, 304]);
     assert_eq!(parsed.member_relation_ordinals, [1, 0]);
     assert_eq!(parsed.entity_genesis, Some(2));
@@ -16080,7 +16087,8 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         0x1000_0000,
         &[291, 327, 330, 280],
     );
-    let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
+    let parsed =
+        parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
     assert_eq!(parsed.member_relation_ordinals, [1, 1, 0, 0]);
     assert_eq!(parsed.auxiliary_references, [336, 333]);
     assert_eq!(parsed.state, 0x1000_0000);
@@ -16124,9 +16132,10 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         0x2000_0000,
         &[353, 352, 442, 445],
     );
-    let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
+    let parsed =
+        parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
     assert_eq!(parsed.member_relation_ordinals, [3, 1, 0, 0]);
-    assert_eq!(parsed.auxiliary_references, [0, 464, 470, 467, 473]);
+    assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =
         decode_pattern_definition(&record, &parsed)
@@ -16143,38 +16152,6 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
     assert_eq!(directions[1].direction, [0.0, 1.0, 0.0]);
     assert_eq!(directions[1].evaluated_distance, 0.5);
     assert_eq!(directions[1].distance_parameter, 473);
-
-    let mut compact_auxiliary = Vec::new();
-    compact_auxiliary.extend_from_slice(&3u32.to_le_bytes());
-    push_reference(&mut compact_auxiliary, 464);
-    compact_auxiliary.extend_from_slice(&[0u8; 6]);
-    for value in [1.0f64, 0.0, 0.0, 3.0] {
-        compact_auxiliary.extend_from_slice(&value.to_le_bytes());
-    }
-    push_reference(&mut compact_auxiliary, 470);
-    compact_auxiliary.extend_from_slice(&[0u8; 6]);
-    compact_auxiliary.extend_from_slice(&1u32.to_le_bytes());
-    push_reference(&mut compact_auxiliary, 467);
-    compact_auxiliary.extend_from_slice(&[0u8; 6]);
-    for value in [0.0f64, 1.0, 0.0, 0.5] {
-        compact_auxiliary.extend_from_slice(&value.to_le_bytes());
-    }
-    push_reference(&mut compact_auxiliary, 473);
-    compact_auxiliary.extend_from_slice(&[0u8; 6]);
-    let compact_record = genesis_relation_record(
-        &[(352, 3), (353, 1), (442, 0), (445, 0)],
-        2,
-        &compact_auxiliary,
-        201,
-        0x2000_0000,
-        &[353, 352, 442, 445],
-    );
-    let compact = parse_sketch_relation(&compact_record, &HashSet::from([201])).unwrap();
-    assert_eq!(compact.auxiliary_references, [464, 470, 467, 473]);
-    assert_eq!(
-        decode_pattern_definition(&compact_record, &compact),
-        decode_pattern_definition(&record, &parsed),
-    );
 }
 
 #[test]

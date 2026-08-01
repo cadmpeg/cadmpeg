@@ -369,7 +369,6 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
 
 /// Byte offsets of payload tokens with `tag` inside one framed record.
 #[cfg(test)]
-#[allow(dead_code)]
 pub(crate) fn payload_token_offsets(
     bytes: &[u8],
     record: &Record,

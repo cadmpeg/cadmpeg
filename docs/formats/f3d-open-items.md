@@ -461,6 +461,14 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** Without the rule we cannot write a `0m cg` record for a vertex, only retain one.
 
+### TS-03. `e`-record scalar
+
+**Question.** What geometric or topological quantity does the scalar after an `e` record's half-edge root hold?
+
+**Known.** `f3d.md` §1.1.1 "Each `e half_edge scalar`" gives the field position and its finite-value invariant. The scalar is present on smooth and creased edges. It is usually near one, but it also takes exact binary fractions and other positive values. Crease membership is stored independently by the `ec` records, so the scalar is not the edge's crease flag. The decoder retains the complete `.tsm` entry but does not transfer this scalar to the neutral subdivision cage.
+
+**Need.** We must know the quantity and its endpoint convention before the decoder can assign it to `SubdEdge.sharpness`, `sector_coefficients`, or a new neutral field. Assigning it to sharpness without that distinction would mark smooth edges as sharp.
+
 ## 6. Mesh geometry
 
 ### PM-01. `.paramesh` undecoded streams and container fields

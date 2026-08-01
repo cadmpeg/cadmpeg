@@ -27,8 +27,8 @@ struct HalfEdge {
 
 /// Decode every active-asset T-spline control cage in archive order.
 ///
-/// A cage whose program is internally inconsistent degrades to a
-/// warning-severity loss note instead of failing the document decode; its
+/// A cage whose program is internally inconsistent degrades to an
+/// error-severity loss note instead of failing the document decode; its
 /// entry bytes remain retained in the container, and the count-gated Form
 /// join simply leaves the affected Form on native retention.
 pub(crate) fn decode(
@@ -49,11 +49,25 @@ pub(crate) fn decode(
                 .is_none_or(|prefix| entry.name.starts_with(prefix))
     }) {
         match parse(&entry.name, scan.entry_bytes(&entry.name)?) {
-            Ok(cage) => cages.push(cage),
+            Ok(parsed) => {
+                if parsed.unknown_records != 0 {
+                    losses.push(cadmpeg_ir::report::LossNote {
+                        code: cadmpeg_ir::report::LossCode::RecordNotTyped,
+                        category: cadmpeg_ir::report::LossCategory::Geometry,
+                        severity: cadmpeg_ir::report::Severity::Warning,
+                        message: format!(
+                            "{} T-spline record(s) were retained without typed semantics.",
+                            parsed.unknown_records
+                        ),
+                        provenance: None,
+                    });
+                }
+                cages.push(parsed.surface);
+            }
             Err(error) => losses.push(cadmpeg_ir::report::LossNote {
                 code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
                 category: cadmpeg_ir::report::LossCategory::Geometry,
-                severity: cadmpeg_ir::report::Severity::Warning,
+                severity: cadmpeg_ir::report::Severity::Error,
                 message: format!("T-spline control cage not decoded: {error}"),
                 provenance: None,
             }),
@@ -109,7 +123,13 @@ fn require_end<'a>(
     Ok(())
 }
 
-fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
+#[derive(Debug)]
+struct ParsedCage {
+    surface: SubdSurface,
+    unknown_records: usize,
+}
+
+fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| malformed(name, format!("payload is not UTF-8: {error}")))?;
     if text.lines().next() != Some("#TS0200") {
@@ -129,6 +149,7 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
     let mut grip_points: Vec<Option<Point3>> = Vec::new();
     let mut in_grip_map = false;
     let mut declarations = BTreeSet::new();
+    let mut unknown_records = 0usize;
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let mut fields = line.split_ascii_whitespace();
         match fields.next() {
@@ -171,6 +192,8 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
                 None => edge_roots.push(None),
                 root => {
                     edge_roots.push(Some(parse_usize(name, root, "edge root")?));
+                    // TS-03: the scalar's target quantity is not established;
+                    // `ec` records independently define crease membership.
                     parse_f64(name, fields.next(), "edge scalar")?;
                     require_end(name, fields, "edge")?;
                 }
@@ -229,6 +252,7 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
                     grip_vertices.push(None);
                     require_end(name, fields, "secondary grip map")?;
                 }
+                // TS-01 and TS-02 track the unresolved wedge partition and count.
                 Some("cg") if in_grip_map => {}
                 _ => return Err(malformed(name, "unknown odd-grip-map record")),
             },
@@ -247,7 +271,7 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
                     grip_points.push(Some(point));
                 }
             },
-            _ => {}
+            _ => unknown_records += 1,
         }
     }
 
@@ -415,21 +439,24 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
         .map_or(name, |(_, base)| base)
         .strip_suffix(".tsm")
         .unwrap_or(name);
-    Ok(SubdSurface {
-        id: SubdId(format!("f3d:tspline:subd#{source_key}")),
-        scheme: SubdScheme::CatmullClark,
-        vertices,
-        edges,
-        faces,
-        source_object: Some(SourceObjectAssociation {
-            format: "f3d".into(),
-            object_id: name.into(),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
-            instance_path: Vec::new(),
-        }),
+    Ok(ParsedCage {
+        surface: SubdSurface {
+            id: SubdId(format!("f3d:tspline:subd#{source_key}")),
+            scheme: SubdScheme::CatmullClark,
+            vertices,
+            edges,
+            faces,
+            source_object: Some(SourceObjectAssociation {
+                format: "f3d".into(),
+                object_id: name.into(),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        },
+        unknown_records,
     })
 }
 
@@ -458,7 +485,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
         let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
-        assert_quad(&cage);
+        assert_quad(&cage.surface);
     }
 
     #[test]
@@ -468,7 +495,19 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
         let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
-        assert_quad(&cage);
+        assert_quad(&cage.surface);
+    }
+
+    #[test]
+    fn counts_records_without_typed_semantics() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             vendor-extension 1 2 3\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+        );
+        let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
+        assert_eq!(cage.unknown_records, 1);
+        assert_quad(&cage.surface);
     }
 
     /// A bare topology token is a deleted slot: it consumes an index and
@@ -481,7 +520,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n0g\n"
         );
         let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
-        assert_quad(&cage);
+        assert_quad(&cage.surface);
     }
 
     /// Deleted slots renumber the IR: a leading deleted vertex and edge slot
@@ -509,7 +548,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g\n0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
         let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("shifted quad cage");
-        assert_quad(&cage);
+        assert_quad(&cage.surface);
     }
 
     /// A populated half-edge may not name a deleted slot.

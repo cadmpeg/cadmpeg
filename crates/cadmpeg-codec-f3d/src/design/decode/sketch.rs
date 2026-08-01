@@ -737,6 +737,29 @@ pub fn stream_types_by_entity<'a>(
         .collect()
 }
 
+/// Type GUID and record version keyed by the three-digit dynamic class tag.
+/// A tag is `256` plus its zero-based position in the segment-local type table.
+fn stream_types_by_class_tag<'a>(
+    types: &'a [DesignType],
+    bulk_entry_name: &str,
+) -> HashMap<u32, (&'a str, u32)> {
+    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
+        return HashMap::new();
+    };
+    let meta_scope = ids::native_scope(&format!("{prefix}MetaStream.dat"));
+    types
+        .iter()
+        .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
+        .enumerate()
+        .filter_map(|(ordinal, design_type)| {
+            Some((
+                u32::try_from(ordinal).ok()?.checked_add(256)?,
+                (design_type.type_guid.as_str(), design_type.version),
+            ))
+        })
+        .collect()
+}
+
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
 /// zero bytes, an optional slot, and the UTF-16LE entity id whose numeric
 /// suffix equals the header's entity suffix.
@@ -1207,7 +1230,6 @@ fn decode_headers_for_indices(
 pub fn decode_sketch_relations(
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
-    entities: &[DesignEntityHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
     // A record carries no class identity of its own: its class tag selects an
@@ -1219,15 +1241,8 @@ pub fn decode_sketch_relations(
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let stream_types = stream_types_by_entity(&types, &entry.name);
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
-        let owners = entities
-            .iter()
-            .filter(|entity| {
-                native_stream(&entity.id) == Some(scope.as_str()) && entity.in_sketch_module()
-            })
-            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
-            .collect::<std::collections::HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
         for record in records
             .iter()
@@ -1240,13 +1255,13 @@ pub fn decode_sketch_relations(
             let Some(payload) = bytes.get(at..record_end) else {
                 continue;
             };
-            let class = stream_types
-                .get(&u64::from(record.record_index))
+            let class = record
+                .class_tag
+                .parse::<u32>()
+                .ok()
+                .and_then(|class_tag| stream_types.get(&class_tag))
                 .and_then(|(type_guid, version)| SketchRelationClass::of(type_guid, *version));
-            let parsed = match class {
-                Some(class) => parse_classed_sketch_relation(payload, class),
-                None => parse_sketch_relation(payload, &owners),
-            };
+            let parsed = class.and_then(|class| parse_classed_sketch_relation(payload, class));
             let Some(parsed) = parsed else {
                 continue;
             };
@@ -1563,7 +1578,7 @@ pub(crate) fn read_property_block(
 /// UTF-16 content, and an owning-sketch reference.
 pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
-    // A record carries no version of its own: its entity id selects an entry in
+    // A record carries no version of its own: its class tag selects an entry in
     // its segment's own type table, and that entry's version fixes the member
     // sequence the record was written under.
     let types = decode_types(scan)?;
@@ -1572,7 +1587,7 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let stream_types = stream_types_by_entity(&types, &entry.name);
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let bytes = scan.entry_bytes(&entry.name)?;
         // A stream can retain a superseded copy of a record beside the copy its
         // index names, and both parse. The record index is the entity, so the
@@ -1593,7 +1608,11 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
             let Some(record_index) = u32_at(bytes, after_tag) else {
                 break;
             };
-            let Some((_, class_version)) = stream_types.get(&u64::from(record_index)).copied()
+            let Some((_, class_version)) = class_tag
+                .parse::<u32>()
+                .ok()
+                .and_then(|class_tag| stream_types.get(&class_tag))
+                .copied()
             else {
                 at += 1;
                 continue;
@@ -3151,56 +3170,24 @@ fn parse_relation_class_members(
     Some(members)
 }
 
-/// Parse one sketch-relation record body ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
-///
-/// The payload is `u8 1`, a u32 count and that many `(reference, u32 relation
-/// ordinal)` pairs, the property-block presence byte and its block, the
-/// `ParentNode` reference naming the owning sketch, a u64 constraint mask, a
-/// u32 count and that many bare references, and one zero byte. At class version
-/// 0 the leading byte is zero, the pair list is absent, and the mask is a u32.
-/// Both reference runs hold the same members; only the second is in semantic
-/// order. Pattern and text classes carry extra class members between the
-/// property block and `ParentNode`, which are retained as the auxiliary run.
-///
-/// The class of the record is not known here, so the class members are walked
-/// reference to reference and `ParentNode` is taken to be the first reference
-/// naming an owning sketch. That walk desynchronizes on a class member whose
-/// bytes fit a reference, so it is the fallback for a record whose segment's
-/// type table does not register its entity; a record whose class is named is
-/// parsed by [`parse_classed_sketch_relation`].
-pub(crate) fn parse_sketch_relation(
-    payload: &[u8],
-    owners: &std::collections::HashSet<u32>,
-) -> Option<ParsedSketchRelation> {
-    parse_relation(payload, RelationFraming::Walked(owners))
-}
-
 /// Parse one sketch-relation record body whose class is known
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
 ///
-/// The grammar is the one [`parse_sketch_relation`] documents, with `class`
-/// fixing the members between the property block and `ParentNode` exactly, so
-/// no scan is involved, `ParentNode` is read where the class puts it, and the
-/// owning sketches need not be known to find it.
+/// The payload is `u8 1`, a u32 count and that many `(reference, u32 relation
+/// ordinal)` pairs, the property-block presence byte and its block, the
+/// class-defined members, the `ParentNode` reference naming the owning sketch,
+/// a u64 constraint mask, a u32 count and that many bare references, and one
+/// zero byte. At class version 0 the leading byte is zero, the pair list is
+/// absent, and the mask is a u32. Both reference runs hold the same members;
+/// only the second is in semantic order.
 pub(crate) fn parse_classed_sketch_relation(
     payload: &[u8],
     class: SketchRelationClass,
 ) -> Option<ParsedSketchRelation> {
-    parse_relation(payload, RelationFraming::Classed(class))
+    parse_relation(payload, class)
 }
 
-/// How the members between the property block and `ParentNode` are framed.
-#[derive(Clone, Copy)]
-enum RelationFraming<'a> {
-    /// The record's class is not known, so the run is walked reference to
-    /// reference and `ParentNode` is the first reference naming one of these
-    /// owning sketches.
-    Walked(&'a std::collections::HashSet<u32>),
-    /// The record's class is known and fixes the run exactly.
-    Classed(SketchRelationClass),
-}
-
-fn parse_relation(payload: &[u8], framing: RelationFraming) -> Option<ParsedSketchRelation> {
+fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSketchRelation> {
     // The record header is the LP-ASCII class tag, the u64 entity id, and the
     // LP-ASCII record name; the member payload follows it.
     let (_, start) = lp_ascii_filtered(payload, 15, 0..=256, u8::is_ascii_graphic)?;
@@ -3239,62 +3226,17 @@ fn parse_relation(payload: &[u8], framing: RelationFraming) -> Option<ParsedSket
         .map(|(_, value)| value);
     let mut auxiliary_references = Vec::new();
     let mut auxiliary_reference_offsets = Vec::new();
-    let mut text_glyph_transforms = None;
-    let mut rectangular_clause_ordinal = None;
-    let (owner_reference, owner_reference_offset, state_offset) = match framing {
-        RelationFraming::Classed(class) => {
-            // The class fixes its own members, so `ParentNode` is read where the
-            // class puts it rather than searched for.
-            let class_members = parse_relation_class_members(
-                payload,
-                &mut cursor,
-                class,
-                &mut auxiliary_references,
-                &mut auxiliary_reference_offsets,
-            )?;
-            rectangular_clause_ordinal = class_members.rectangular_clause_ordinal;
-            text_glyph_transforms = class_members.text_glyph_transforms;
-            let (reference, offset) = take_relation_reference(payload, &mut cursor)?;
-            (reference, offset, cursor)
-        }
-        RelationFraming::Walked(owners) => {
-            // A text-path relation follows the `EntityGenesis` block with a `0x01`
-            // flag, the marked text-entity reference and its zero padding, a u32
-            // character count, and per-character blocks of `u32 16` and sixteen f64
-            // values. Parse the run structurally so the f64 payload's bytes are not
-            // misread as auxiliary references; the owning sketch reference follows
-            // the last block directly.
-            if payload.get(cursor) == Some(&1) && payload.get(cursor + 1) == Some(&1) {
-                if let Some((text_reference, transforms, after)) =
-                    parse_text_glyph_run(payload, cursor + 1)
-                {
-                    if marked_u32(payload, after)
-                        .is_some_and(|(reference, _)| owners.contains(&reference))
-                    {
-                        auxiliary_references.push(text_reference);
-                        auxiliary_reference_offsets.push(cursor + 2);
-                        text_glyph_transforms = Some(transforms);
-                        cursor = after;
-                    }
-                }
-            }
-            // Pattern and text classes place their own members between the property
-            // block and `ParentNode`. Without the class their widths are unknown, so
-            // the run is walked reference to reference and `ParentNode` is taken to
-            // be the first reference that names an owning sketch.
-            loop {
-                cursor = next_reference_marker(payload, cursor)?;
-                let mut probe = cursor;
-                let (reference, offset) = take_relation_reference(payload, &mut probe)?;
-                if owners.contains(&reference) {
-                    break (reference, offset, probe);
-                }
-                auxiliary_references.push(reference);
-                auxiliary_reference_offsets.push(offset);
-                cursor = probe;
-            }
-        }
-    };
+    let class_members = parse_relation_class_members(
+        payload,
+        &mut cursor,
+        class,
+        &mut auxiliary_references,
+        &mut auxiliary_reference_offsets,
+    )?;
+    let rectangular_clause_ordinal = class_members.rectangular_clause_ordinal;
+    let text_glyph_transforms = class_members.text_glyph_transforms;
+    let (owner_reference, owner_reference_offset) = take_relation_reference(payload, &mut cursor)?;
+    let state_offset = cursor;
     // The constraint mask follows `ParentNode` directly. It is a u64 in the
     // paired-run form and a u32 at class version 0.
     let (state, mut cursor) = if paired_run {
@@ -3440,19 +3382,6 @@ fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
     (bytes.get(position) == Some(&1)).then_some((u32_at(bytes, position + 1)?, position + 5))
 }
 
-fn next_reference_marker(bytes: &[u8], mut position: usize) -> Option<usize> {
-    while position + 5 <= bytes.len() {
-        if bytes.get(position) == Some(&1) {
-            let reference = u32_at(bytes, position + 1)?;
-            if reference <= 10_000_000 {
-                return Some(position);
-            }
-        }
-        position += 1;
-    }
-    None
-}
-
 struct SketchReferenceList {
     record_reference: Option<u32>,
     record_reference_offset: usize,
@@ -3502,12 +3431,8 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 
 #[cfg(test)]
 mod relation_class_tests {
-    use super::{
-        decode_pattern_definition, parse_classed_sketch_relation, parse_sketch_relation,
-        SketchRelationClass,
-    };
+    use super::{decode_pattern_definition, parse_classed_sketch_relation, SketchRelationClass};
     use crate::records::{SketchPatternDefinition, SketchPatternDirection};
-    use std::collections::HashSet;
 
     /// One present reference: the presence byte, the u64 target, and the
     /// `cross_document` and same-segment flags.
@@ -3754,7 +3679,6 @@ mod relation_class_tests {
             0x2000_0000,
             &[300, 301],
         );
-        let owners = HashSet::from([201]);
         let parsed =
             parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
                 .expect("the classed parse reads the record");
@@ -3783,10 +3707,6 @@ mod relation_class_tests {
                 ],
             })
         );
-        // The three leading flags and the seed count read as a reference whose
-        // u64 target overflows a record index, so the walk cannot reach the
-        // record at all.
-        assert!(parse_sketch_relation(&record, &owners).is_none());
     }
 
     #[test]

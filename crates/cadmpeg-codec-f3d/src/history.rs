@@ -170,7 +170,8 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
     }
     bind_snapshot_revision_ids(&mut states);
     bind_historical_entity_versions(&mut states);
-    bind_complete_record_tables(&mut states, bytes, width);
+    let record_table_binding_budget_exceeded =
+        bind_complete_record_tables(&mut states, bytes, width);
     if states.is_empty() {
         return None;
     }
@@ -184,6 +185,7 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
         byte_offset: offset as u64,
         stream_size,
         history_entry_count,
+        record_table_binding_budget_exceeded,
         states,
     })
 }
@@ -321,15 +323,15 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
 /// historical transitions stay unbound.
 const COMPLETE_TABLE_BUDGET: usize = 4_000_000;
 
-fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width: usize) {
+fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width: usize) -> bool {
     let Some(start) = crate::asm_header::record_stream_start(bytes) else {
-        return;
+        return false;
     };
     let Ok(framed) = crate::sab::frame(bytes, start, bytes.len(), width) else {
-        return;
+        return false;
     };
     if states.len().saturating_mul(framed.len()) > COMPLETE_TABLE_BUDGET {
-        return;
+        return true;
     }
     let Some(active_count) = states
         .iter()
@@ -338,13 +340,13 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
         .min()
         .and_then(|count| usize::try_from(count).ok())
     else {
-        return;
+        return false;
     };
     let Some(active_records) = framed.get(..active_count) else {
-        return;
+        return false;
     };
     let Some(archive) = historical_record_archive(states, active_records, bytes, width) else {
-        return;
+        return false;
     };
     let topology = states
         .iter()
@@ -366,6 +368,7 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
             state.entity_versions.clear();
         }
     }
+    false
 }
 
 struct HistoricalRecordArchive {
@@ -4515,12 +4518,13 @@ fn decode_history_records(
                     index: record.index as u64,
                     byte_offset: record.offset as u64,
                     name: record.name,
+                    framing_error: None,
                     entity_references,
                     raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
                 }
             })
             .collect(),
-        Err(_) => {
+        Err(error) => {
             vec![AsmHistoryRecord {
                 id: format!("f3d:{stream}:asm-history-record#{start:010}"),
                 parent: state_id.to_string(),
@@ -4528,6 +4532,7 @@ fn decode_history_records(
                 index: 0,
                 byte_offset: start as u64,
                 name: "opaque_history_payload".into(),
+                framing_error: Some(error.to_string()),
                 entity_references: Vec::new(),
                 raw_bytes: bytes[start..limit].to_vec(),
             }]
@@ -4556,6 +4561,19 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn opaque_history_span_retains_the_precise_framing_error() {
+        let records = super::decode_history_records(&[0x33], 0, None, "stream", "state", 8);
+        let [record] = records.as_slice() else {
+            panic!("one opaque record");
+        };
+        assert_eq!(record.name, "opaque_history_payload");
+        assert!(record
+            .framing_error
+            .as_deref()
+            .is_some_and(|error| error.contains("byte 0") && error.contains("0x33")));
+    }
+
     use super::*;
 
     #[test]
@@ -4680,6 +4698,7 @@ mod tests {
             byte_offset: 0,
             stream_size: None,
             history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
             states: vec![state],
         }];
 
@@ -4724,6 +4743,7 @@ mod tests {
             byte_offset: 0,
             stream_size: None,
             history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
             states: vec![state(id, current, Some(2)), state(id, 2, None)],
         };
         let histories = [history("first", 7), history("second", 9)];
@@ -5115,6 +5135,7 @@ mod tests {
             byte_offset: 0,
             stream_size: None,
             history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
             states: vec![state(3, 2), state(2, 1)],
         };
         let states = index(std::slice::from_ref(&history));
@@ -5222,6 +5243,7 @@ mod tests {
             byte_offset: 0,
             stream_size: None,
             history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
             states: vec![state(2, active.clone()), state(3, active)],
         };
         let preceding = AsmHistoricalTopology {
@@ -5671,6 +5693,7 @@ mod tests {
             byte_offset: 0,
             stream_size: None,
             history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
             states: vec![
                 state(
                     3,
@@ -5735,6 +5758,7 @@ mod tests {
             byte_offset: 0,
             stream_size: None,
             history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
             states: vec![state(
                 3,
                 AsmHistoricalTopology {
@@ -5764,6 +5788,7 @@ mod tests {
             byte_offset: 0,
             stream_size: None,
             history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
             states: vec![state(
                 7,
                 AsmHistoricalTopology {
@@ -5808,6 +5833,7 @@ mod tests {
             byte_offset: 0,
             stream_size: None,
             history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
             states: vec![AsmDeltaState {
                 id: "state-3".into(),
                 parent: "history".into(),
@@ -6073,6 +6099,7 @@ mod tests {
                     index,
                     byte_offset: index,
                     name: "edge".into(),
+                    framing_error: None,
                     entity_references: Vec::new(),
                     raw_bytes: vec![0x11],
                 })
@@ -6138,6 +6165,7 @@ mod tests {
                 index: 0,
                 byte_offset: 0,
                 name: "edge".into(),
+                framing_error: None,
                 entity_references: vec![2],
                 raw_bytes: archived_bytes.clone(),
             }],
@@ -6236,6 +6264,7 @@ mod tests {
                 index: revision_id as u64 - 3,
                 byte_offset: 0,
                 name: "edge".into(),
+                framing_error: None,
                 entity_references: Vec::new(),
                 raw_bytes: vec![0x11],
             })

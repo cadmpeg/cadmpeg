@@ -5640,9 +5640,12 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("an inconsistent cage must not fail the document decode");
     assert!(result.ir.model.subds.is_empty());
-    assert!(result.report.losses.iter().any(|loss| loss.severity
-        == cadmpeg_ir::report::Severity::Warning
-        && loss.message.contains("T-spline control cage not decoded")));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
+            && loss.message.contains("T-spline control cage not decoded")));
 }
 
 fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32) {
@@ -9480,19 +9483,34 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_types = vec![DesignType {
-        id: "generated:sketch-object#0".into(),
-        byte_offset: 0,
-        module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
-        entity_ids: vec![277],
-        entity_id_offsets: Vec::new(),
-        type_guid: "22222222-3333-4444-5555-666666666666".into(),
-        type_guid_offset: 0,
-        base_type_guid: None,
-        base_type_guid_offset: None,
-        version: 1,
-        version_offset: 0,
-    }];
+    native.design_types = vec![
+        DesignType {
+            id: "generated:sketch-object#0".into(),
+            byte_offset: 0,
+            module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
+            entity_ids: vec![277],
+            entity_id_offsets: Vec::new(),
+            type_guid: "22222222-3333-4444-5555-666666666666".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 1,
+            version_offset: 0,
+        },
+        DesignType {
+            id: "generated:sketch-relation-type#0".into(),
+            byte_offset: 1,
+            module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
+            entity_ids: Vec::new(),
+            entity_id_offsets: Vec::new(),
+            type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 1,
+            version_offset: 0,
+        },
+    ];
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "generated:sketch-header#0".into(),
         byte_offset: 0,
@@ -9589,13 +9607,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     native.sketch_relations = vec![SketchRelation {
         id: "generated:sketch-relation#0".into(),
         record_index: 33,
-        class_tag: "350".into(),
+        class_tag: "257".into(),
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 277,
         owner_entity_id: String::new(),
         owner_reference_offset: 0,
-        auxiliary_references: vec![900],
+        auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
         members: vec![100, 600],
         resolved_members: Vec::new(),
@@ -9710,7 +9728,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     assert_eq!(native.sketch_relations.len(), 1);
     assert_eq!(native.sketch_relations[0].members, [100, 600]);
-    assert_eq!(native.sketch_relations[0].auxiliary_references, [900]);
+    assert!(native.sketch_relations[0].auxiliary_references.is_empty());
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
     assert_eq!(native.sketch_relations[0].owner_entity_id, "0_277");
     assert_eq!(native.sketch_relations[0].state, 0x11);
@@ -11364,6 +11382,13 @@ fn generated_design_metastream() -> Vec<u8> {
             "Dimension",
             &[270, 271],
         ),
+        (
+            "60403D47-0C49-49B0-BDE8-1679608164A2",
+            base,
+            1,
+            "MSketch",
+            &[],
+        ),
     ])
 }
 
@@ -11467,14 +11492,12 @@ fn generated_design_bulkstream() -> Vec<u8> {
         out.extend_from_slice(&[0u8; 6]);
     }
     for (class_tag, record_index, members) in
-        [("350", 33u32, [100u32, 200u32]), ("351", 44, [300, 400])]
+        [("259", 33u32, [100u32, 200u32]), ("259", 44, [300, 400])]
     {
         // A relation is `u8 1`, the counted `(reference, relation ordinal)`
         // pairs, the property-block presence byte, `ParentNode`, the u64
-        // mask, the counted return run, and one zero byte. Record 44 carries
-        // one auxiliary reference before `ParentNode`, which shifts its tail.
-        let auxiliary = usize::from(record_index == 44) * 11;
-        let mut relation = vec![0u8; 101 + auxiliary];
+        // mask, the counted return run, and one zero byte.
+        let mut relation = vec![0u8; 101];
         relation[0..4].copy_from_slice(&3u32.to_le_bytes());
         relation[4..7].copy_from_slice(class_tag.as_bytes());
         relation[7..11].copy_from_slice(&record_index.to_le_bytes());
@@ -11486,15 +11509,12 @@ fn generated_design_bulkstream() -> Vec<u8> {
         }
         reference(&mut relation, 24, members[0]);
         reference(&mut relation, 39, members[1]);
-        if record_index == 44 {
-            reference(&mut relation, 55, 0);
-        }
-        reference(&mut relation, 55 + auxiliary, 277);
+        reference(&mut relation, 55, 277);
         let state = if record_index == 33 { 0x10u64 } else { 0x04 };
-        relation[66 + auxiliary..74 + auxiliary].copy_from_slice(&state.to_le_bytes());
-        relation[74 + auxiliary..78 + auxiliary].copy_from_slice(&2u32.to_le_bytes());
-        reference(&mut relation, 78 + auxiliary, members[1]);
-        reference(&mut relation, 89 + auxiliary, members[0]);
+        relation[66..74].copy_from_slice(&state.to_le_bytes());
+        relation[74..78].copy_from_slice(&2u32.to_le_bytes());
+        reference(&mut relation, 78, members[1]);
+        reference(&mut relation, 89, members[0]);
         out.extend_from_slice(&relation);
     }
     for (record_index, persistent_id, coordinates) in [
@@ -22673,7 +22693,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_types.len(), 3);
+    assert_eq!(f3d_native(&result.ir).design_types.len(), 4);
     let sketch = f3d_native(&result.ir)
         .design_types
         .iter()
@@ -22717,7 +22737,7 @@ fn decode_transfers_generated_protein_appearance() {
         .find(|record| record.record_index == 33)
         .cloned()
         .expect("record 33");
-    assert_eq!(record_33.class_tag, "350");
+    assert_eq!(record_33.class_tag, "259");
     assert_eq!(f3d_native(&result.ir).sketch_relations.len(), 2);
     assert_eq!(
         f3d_native(&result.ir).sketch_relations[0].members,
@@ -22739,10 +22759,9 @@ fn decode_transfers_generated_protein_appearance() {
         f3d_native(&result.ir).sketch_relations[0].unknown_constraint_bits,
         0
     );
-    assert_eq!(
-        f3d_native(&result.ir).sketch_relations[1].auxiliary_references,
-        [0]
-    );
+    assert!(f3d_native(&result.ir).sketch_relations[1]
+        .auxiliary_references
+        .is_empty());
     assert_eq!(
         f3d_native(&result.ir).sketch_relations[0].raw_bytes.len(),
         101

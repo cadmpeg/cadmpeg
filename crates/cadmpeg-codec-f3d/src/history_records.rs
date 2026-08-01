@@ -16,6 +16,10 @@ pub(crate) struct AsmHistory {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(alias = "high_water_mark")]
     pub history_entry_count: Option<i64>,
+    /// True when historical topology binding was not attempted because its
+    /// state-by-record work estimate exceeded the decoder safety budget.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub record_table_binding_budget_exceeded: bool,
     pub states: Vec<AsmDeltaState>,
 }
 
@@ -232,6 +236,9 @@ pub(crate) struct AsmHistoryRecord {
     #[serde(default)]
     pub byte_offset: u64,
     pub name: String,
+    /// Framing failure that forced this span to remain opaque.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub framing_error: Option<String>,
     /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entity_references: Vec<i64>,

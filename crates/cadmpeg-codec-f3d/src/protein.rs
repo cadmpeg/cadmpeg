@@ -326,7 +326,8 @@ fn decode_record(
     }))
 }
 
-/// Narrow the inherited member set to the members a record actually serializes.
+/// Narrow the inherited member set to the members a record actually serializes
+/// (MA-08).
 ///
 /// Two slots the closure lists do not appear in the value block.
 /// `AssetLibID` is consumed as the fourth record header string. The second slot

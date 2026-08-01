@@ -637,6 +637,39 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
 
 fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: &F3dNative) {
     let gaps = design_projection_gaps(ir, native);
+    let history_budget_skips = native
+        .asm_histories
+        .iter()
+        .filter(|history| history.record_table_binding_budget_exceeded)
+        .count();
+    if history_budget_skips != 0 {
+        report.losses.push(LossNote {
+            code: LossCode::FeatureHistoryRetained,
+            category: LossCategory::Other,
+            severity: Severity::Error,
+            message: format!(
+                "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
+            ),
+            provenance: None,
+        });
+    }
+    for error in native
+        .asm_histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .flat_map(|state| &state.records)
+        .filter_map(|record| record.framing_error.as_deref())
+    {
+        report.losses.push(LossNote {
+            code: LossCode::RecordNotTyped,
+            category: LossCategory::Other,
+            severity: Severity::Error,
+            message: format!(
+                "An ASM history span remains opaque because record framing failed: {error}."
+            ),
+            provenance: None,
+        });
+    }
     if gaps.unresolved_body_bindings != 0 {
         report.losses.push(LossNote {
             code: LossCode::ReferenceGraphNotClosed,
@@ -1038,7 +1071,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 crate::design::decode::sketch::decode_sketch_relations(
                     &scan,
                     &native.design_record_headers,
-                    &native.design_entity_headers,
                 )?
             };
             native.sketch_relations = sketch_relations;
@@ -1447,7 +1479,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         crate::design::decode::sketch::decode_sketch_relations(
             &scan,
             &native.design_record_headers,
-            &native.design_entity_headers,
         )?
     };
     native.sketch_relations = sketch_relations;
