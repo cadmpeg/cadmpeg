@@ -1108,9 +1108,21 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         .filter(|edges| !edges.is_empty())
         .collect::<Vec<_>>();
     let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
-    let reference = (shared_edge_sets.len() >= 2)
-        .then(|| unique_edge_set_intersection(&shared_edge_sets))
-        .flatten();
+    let reference_candidates =
+        (shared_edge_sets.len() >= 2).then(|| edge_set_intersection(&shared_edge_sets));
+    // A disjoint adjacent-face reference set names no edge that every reference
+    // shares, so it identifies an unresolved edge-bearing operand: no other
+    // proof can select an edge outside the operand's own references.
+    if reference_candidates
+        .as_deref()
+        .is_some_and(<[i64]>::is_empty)
+    {
+        return None;
+    }
+    let reference = match reference_candidates.as_deref() {
+        Some(&[edge]) => Some(edge),
+        _ => None,
+    };
     let incidence = (!references_unavailable)
         .then(|| corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false))
         .flatten();
@@ -1200,18 +1212,24 @@ fn corroborated_edge_set_intersection(
     (candidates.len() == 1).then_some(candidates[0])
 }
 
-fn unique_edge_set_intersection(edge_sets: &[&[i64]]) -> Option<i64> {
+/// Edges every reference set shares, ascending and without repeats. An empty
+/// result from a nonempty input is a disjoint reference set, which the caller
+/// separates from a set that shares more than one edge.
+fn edge_set_intersection(edge_sets: &[&[i64]]) -> Vec<i64> {
     let mut sets = edge_sets.iter();
-    let mut candidates = sets.next()?.to_vec();
+    let Some(first) = sets.next() else {
+        return Vec::new();
+    };
+    let mut candidates = first.to_vec();
     candidates.sort_unstable();
     candidates.dedup();
     for edge_set in sets {
         candidates.retain(|candidate| edge_set.contains(candidate));
         if candidates.is_empty() {
-            return None;
+            break;
         }
     }
-    (candidates.len() == 1).then_some(candidates[0])
+    candidates
 }
 
 fn corroborated_edge_intersection(
