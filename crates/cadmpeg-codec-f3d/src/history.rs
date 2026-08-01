@@ -359,6 +359,12 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
             state.topology = Some(topology);
         }
         bind_historical_transitions(states);
+        // Version tables are the reconstruction workspace for the sparse
+        // transitions. Keeping every cumulative table after the transitions
+        // exist makes history memory quadratic in states × active entities.
+        for state in states {
+            state.entity_versions.clear();
+        }
     }
 }
 
