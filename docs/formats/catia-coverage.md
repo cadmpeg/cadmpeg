@@ -52,8 +52,9 @@ current scores require those matrices and representative fixtures.
   bound to every decoded face. A singular `EC 03 R G B A` packet transfers as
   one body appearance. A population of `EC` packets transfers positionally to
   standard faces only when its cardinality and every RGBA value equal the
-  governing FBB face-row population. Appearance assets are deduplicated by
-  RGBA value. A singular `EC` packet accompanying an `EB` packet retains its
+  governing FBB face-row population; that population supersedes an accompanying
+  `EB` binding. Appearance assets are deduplicated by RGBA value. A singular
+  `EC` packet accompanying an `EB` packet retains its
   color asset and remains an unresolved binding until the `FeatureForColor`
   face incidence is known. Coverage counts decoded packets, unresolved
   packets, emitted assets, and emitted bindings independently.
