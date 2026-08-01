@@ -19,6 +19,12 @@ use crate::objects::{
 };
 use crate::wire::Uuid;
 
+/// Maximum input accepted by the Rhino container scanner.
+///
+/// This codec-local cap bounds the addressable offset space indexed by the
+/// chunk walker independently of the platform input limit.
+pub(crate) const INPUT_CAP: u64 = 256 * 1024 * 1024;
+
 /// Maximum direct table records retained or described in one document.
 ///
 /// Bounds record-descriptor amplification from an attacker-controlled table body independently of the
@@ -150,9 +156,15 @@ impl Scan<'_> {
     }
 }
 
-/// Borrows the session root bytes after the shared input budget admitted them.
-fn acquire(root: View<'_>) -> &[u8] {
-    root.window()
+/// Borrow the session root bytes, enforcing the codec-local input ceiling.
+fn acquire(root: View<'_>) -> Result<&[u8], CodecError> {
+    let data = root.window();
+    if data.len() as u64 > INPUT_CAP {
+        return Err(CodecError::Malformed(format!(
+            "input exceeds Rhino size cap of {INPUT_CAP} bytes"
+        )));
+    }
+    Ok(data)
 }
 
 fn framing_error(error: FramingError) -> CodecError {
@@ -697,7 +709,7 @@ pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
 pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
-    let data = acquire(root);
+    let data = acquire(root)?;
     let header = parse_header(data).map_err(framing_error)?;
     if header_only(header.archive_version) {
         return Ok(ContainerSummary {
@@ -719,7 +731,7 @@ pub(crate) fn decode(
     root: View<'_>,
     container_only: bool,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
-    let data = acquire(root);
+    let data = acquire(root)?;
     let header = parse_header(data).map_err(framing_error)?;
     if header_only(header.archive_version) {
         return Err(CodecError::NotImplemented(format!(
