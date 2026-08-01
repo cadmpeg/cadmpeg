@@ -879,7 +879,14 @@ fn model_brep_candidates(
         }
     }
     if candidates.is_empty() {
-        if let Some(fallback) = container::select_fallback_brep(scan) {
+        let legacy = if bindings.is_empty() {
+            container::legacy_design_model_breps(scan)
+        } else {
+            None
+        };
+        if let Some(legacy) = legacy {
+            candidates.extend_from_slice(legacy);
+        } else if let Some(fallback) = container::select_fallback_brep(scan) {
             candidates.push((*fallback).clone());
         } else if !scan.breps.is_empty() {
             return Err(CodecError::Malformed(

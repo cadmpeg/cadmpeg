@@ -7,8 +7,9 @@
 //! history boundaries. Model geometry is selected from Design body-to-blob
 //! bindings by [`crate::decode`]. [`select_history_brep`] independently locates
 //! the stream whose header declares a history partition. When Design bindings
-//! are absent, [`select_fallback_brep`] supplies an explicit compatibility
-//! fallback without asserting that one extension is the document model.
+//! are absent, [`legacy_design_model_breps`] and [`select_fallback_brep`]
+//! supply explicit compatibility fallbacks without asserting that one
+//! extension is the document model.
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
@@ -461,6 +462,25 @@ pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepF
         [only] => Some(only),
         _ => None,
     }
+}
+
+/// Return the complete BREP set for the legacy `Design1` segment layout.
+///
+/// That layout predates body-to-blob bindings: its model is distributed across
+/// the archive's BREP entries, in archive order. Both design streams must be
+/// present so an unrelated path component named `Design1` cannot select this
+/// fallback.
+pub fn legacy_design_model_breps<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s [BrepFacts]> {
+    let has = |leaf: &str| {
+        scan.entries.iter().any(|entry| {
+            entry
+                .name
+                .strip_suffix(leaf)
+                .is_some_and(|parent| parent.ends_with("/Design1"))
+        })
+    };
+    (has("/BulkStream.dat") && has("/MetaStream.dat") && !scan.breps.is_empty())
+        .then_some(scan.breps.as_slice())
 }
 
 fn asm_magic_label(bytes: &[u8]) -> String {
