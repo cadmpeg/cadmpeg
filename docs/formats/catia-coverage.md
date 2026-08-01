@@ -53,10 +53,10 @@ current scores require those matrices and representative fixtures.
   one body appearance. A population of `EC` packets transfers positionally to
   standard faces only when its cardinality and every RGBA value equal the
   governing FBB face-row population. Appearance assets are deduplicated by
-  RGBA value. An `EC` packet accompanying an `EB` packet retains its color
-  asset and remains an unresolved binding until the `FeatureForColor` face
-  incidence is known. Coverage counts decoded packets, unresolved packets,
-  emitted assets, and emitted bindings independently.
+  RGBA value. A singular `EC` packet accompanying an `EB` packet retains its
+  color asset and remains an unresolved binding until the `FeatureForColor`
+  face incidence is known. Coverage counts decoded packets, unresolved
+  packets, emitted assets, and emitted bindings independently.
 - Structurally complete object graphs retain design objects, ordered fields,
   exact field classes, definition-bound values, and inter-object reference
   occurrences. Each graph retains its exact outer `Data` declaration and
