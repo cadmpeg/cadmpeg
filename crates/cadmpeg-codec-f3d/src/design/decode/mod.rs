@@ -8,6 +8,7 @@ pub mod dimension_frames;
 pub mod mesh;
 pub mod operands;
 pub mod parameters;
+pub mod patch;
 pub mod scopes;
 pub mod sketch;
 pub mod units;

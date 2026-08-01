@@ -2591,6 +2591,11 @@ pub(crate) fn parse_parameter_scope(
     } else {
         None
     };
+    let surface_patch_boundaries = if kind == "SurfacePatch" {
+        super::patch::surface_patch_boundaries(bytes, records, reference_members)
+    } else {
+        Vec::new()
+    };
     let base_flange_operation = if kind == "BaseFlange" {
         exact_base_flange_operation(bytes, start, paired_at, reference_members)
     } else {
@@ -2722,6 +2727,7 @@ pub(crate) fn parse_parameter_scope(
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation,
+        surface_patch_boundaries,
         base_flange_operation,
         edge_flange_operation,
         hem_operation,

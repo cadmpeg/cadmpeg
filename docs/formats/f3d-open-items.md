@@ -201,9 +201,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the values of `PatchContinuity` and `PatchFlip` mean?
 
-**Known.** `f3d.md` §8.1 "A surface-patch boundary-settings record's" gives the member order and the types. `PatchContinuity` and `PatchFlip` are u32 and `PatchScale` is an f64.
+**Known.** `f3d.md` §8.1 "A surface-patch boundary-settings record's" gives the member order, the offsets, and the types. The decoder reads `IsSeedSel`, `PatchContinuity`, `PatchFlip`, `PatchScale`, and the `rPatchModelRef` record index onto the owning scope; every stored value is retained. `PatchScale` is `-1.0` and `PatchContinuity` is `0` in every record. `PatchFlip` takes `0` and `2`, `IsSeedSel` takes `0` and `1`, and all four of their combinations occur.
 
-**Need.** We must know the value sets to rebuild the patch in a neutral model. **Blocked on specimens:** `PatchContinuity` carries one value and `PatchFlip` two in the records available. Settling it needs one patch per continuity setting on a single boundary component, and one pair of patches that differ only in the boundary side.
+**Need.** Each retained value needs a neutral meaning before it can drive a neutral patch. `PatchContinuity` carries one value, so no mapping from it to a neutral continuity is decidable in either direction, and the neutral patch leaves continuity absent. `PatchFlip` carries two values whose difference is not decidable from the records either, because no pair of patches differs only in the boundary side.
 
 ### DR-15. Recipe fields for ambiguous edge operands
 

@@ -1475,6 +1475,10 @@ pub struct DesignParameterScope {
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_operation: Option<DesignBaseFlangeOperation>,
+    /// Per-boundary-component settings carried by a `SurfacePatch` scope, in
+    /// scope reference order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_patch_boundaries: Vec<DesignSurfacePatchBoundary>,
     /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edge_flange_operation: Option<DesignEdgeFlangeOperation>,
@@ -1599,6 +1603,26 @@ pub struct DesignSurfaceStitchOperation {
     pub tolerance_record_index: u32,
     /// Indexed operation-settings record identity.
     pub settings_record_index: u32,
+}
+
+/// Settings a `SurfacePatch` scope carries for one boundary component.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignSurfacePatchBoundary {
+    /// Position of the settings record in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Indexed settings-record identity.
+    pub record_index: u32,
+    /// Source `IsSeedSel` flag.
+    pub is_seed_selection: bool,
+    /// Source `PatchContinuity` ordinal. Retained without a neutral meaning.
+    pub continuity: u32,
+    /// Source `PatchFlip` ordinal. Retained without a neutral meaning.
+    pub flip: u32,
+    /// Source `PatchScale` value.
+    pub scale: f64,
+    /// Indexed record the `rPatchModelRef` reference names: this boundary
+    /// component's model reference.
+    pub model_reference: u32,
 }
 
 /// Fixed construction carried by a planar sheet-metal `BaseFlange` scope.
