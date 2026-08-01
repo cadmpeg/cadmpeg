@@ -4852,7 +4852,8 @@ fn regeneration_references(
             references.extend(seeds.iter().filter_map(|seed| match seed {
                 crate::features::PatternSeed::Feature(feature) => Some(feature),
                 crate::features::PatternSeed::Faces(_)
-                | crate::features::PatternSeed::Bodies(_) => None,
+                | crate::features::PatternSeed::Bodies(_)
+                | crate::features::PatternSeed::Occurrences(_) => None,
             }));
         }
         _ => {}
