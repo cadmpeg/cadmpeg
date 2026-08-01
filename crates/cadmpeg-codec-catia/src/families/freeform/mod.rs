@@ -169,9 +169,12 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
         .then(|| freeform_surface_carriers(&scan.data));
     let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves(&scan.data);
     let b2_nurbs_curve_count = b2_nurbs_curves.len();
+    let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves(&scan.data);
+    let a5_nurbs_curve_count = a5_nurbs_curves.len();
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
         && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
         && b2_nurbs_curves.is_empty()
+        && a5_nurbs_curves.is_empty()
     {
         return None;
     }
@@ -238,6 +241,25 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
             )),
         });
     }
+    for curve in a5_nurbs_curves {
+        let id = CurveId(format!("catia:a5:nurbs-curve#{}", ir.model.curves.len()));
+        annotate(
+            &mut annotations,
+            &id,
+            "consolidated_a5_13_16",
+            curve.pos as u64,
+            format!("header_token:{:08x}", curve.header_token),
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Nurbs(curve.geometry),
+            source_object: Some(cgm_source_key(
+                "a5-nurbs-curve-frame",
+                format!("{:010}", curve.pos),
+            )),
+        });
+    }
     let mut losses = if topology_transferred && b5_complete {
         vec![LossNote {
             code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
@@ -273,6 +295,10 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
     coverage.insert(
         "decoded_b2_nurbs_curve_count".to_string(),
         b2_nurbs_curve_count,
+    );
+    coverage.insert(
+        "decoded_a5_nurbs_curve_count".to_string(),
+        a5_nurbs_curve_count,
     );
     if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
         coverage.insert(

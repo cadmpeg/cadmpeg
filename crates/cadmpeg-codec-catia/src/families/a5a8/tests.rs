@@ -537,3 +537,67 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
             .is_empty()
     );
 }
+
+fn a5_nurbs_curve_stream() -> Vec<u8> {
+    let knots = [-2.220_264_955_47_f64, 0.0, 2.220_264_955_47];
+    let points = [
+        [25.024_609_677_8, 20.779_735_044_5, 13.0],
+        [24.316_927_644_1, 21.223_788_035_6, 13.0],
+        [23.708_153_935, 21.667_841_026_7, 13.0],
+        [23.236_619_670_7, 22.111_894_017_8, 13.0],
+        [22.763_380_329_3, 23.0, 13.0],
+        [23.236_619_670_7, 23.888_105_982_2, 13.0],
+        [23.708_153_935, 24.332_158_973_3, 13.0],
+        [24.316_927_644_1, 24.776_211_964_4, 13.0],
+        [25.024_609_677_8, 25.220_264_955_5, 13.0],
+    ];
+    let mut payload = vec![0x15, 0x0d, 0x0c];
+    for knot in knots {
+        payload.extend_from_slice(&knot.to_le_bytes());
+    }
+    payload.push(0x01);
+    for point in points {
+        for coordinate in point {
+            payload.extend_from_slice(&f64::to_le_bytes(coordinate));
+        }
+    }
+    payload.extend_from_slice(&[0x05, 0x09]);
+    for value in [0.0, knots[2], 1.0, 0.0] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x00, 0x07]);
+    assert_eq!(payload.len(), 280);
+    let mut record = vec![0xa5, 0x13, 0x16];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.push(0x0d);
+    record.extend(payload);
+    record
+}
+
+#[test]
+fn a5_nurbs_curve_parser_expands_the_degree_five_knot_multiplicities() {
+    let curves = crate::families::a5a8::records::a5_nurbs_curves(&a5_nurbs_curve_stream());
+    let [curve] = curves.as_slice() else {
+        panic!("one degree-five curve");
+    };
+    assert_eq!(curve.geometry.degree, 5);
+    assert_eq!(curve.geometry.control_points.len(), 9);
+    assert_eq!(curve.geometry.knots.len(), 15);
+    assert_eq!(curve.geometry.knots[..6], [-2.220_264_955_47; 6]);
+    assert_eq!(curve.geometry.knots[6..9], [0.0; 3]);
+    assert_eq!(curve.geometry.knots[9..], [2.220_264_955_47; 6]);
+    assert!(curve.geometry.weights.is_none());
+}
+
+#[test]
+fn a5_nurbs_curve_parser_rejects_broken_frame_invariants() {
+    let valid = a5_nurbs_curve_stream();
+    for offset in [8, 9, 10, 27, 35, 252, 253, 254, 262, 270, 278, 286, 287] {
+        let mut broken = valid.clone();
+        broken[offset] ^= 1;
+        assert!(
+            crate::families::a5a8::records::a5_nurbs_curves(&broken).is_empty(),
+            "offset {offset}"
+        );
+    }
+}
