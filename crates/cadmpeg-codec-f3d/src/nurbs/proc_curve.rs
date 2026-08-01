@@ -1141,17 +1141,11 @@ fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<Embedded
             SilhouetteKind::Taper { draft_factor: 0.0 },
         ),
     ];
-    let (marker, name, mut silhouette) = names.into_iter().find_map(|(name, silhouette)| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|marker| (marker, name, silhouette))
-    })?;
+    let candidates: Vec<&[u8]> = names.iter().map(|(name, _)| *name).collect();
+    let (marker, name) = find_owned_subtype_marker(bytes, &candidates, int_width)?;
+    let mut silhouette = names
+        .iter()
+        .find_map(|(candidate, silhouette)| (*candidate == name).then(|| silhouette.clone()))?;
     let mut position = marker + name.len() + 3;
     let surfaces = [
         decode_embedded_surface(bytes, &mut position, int_width)?,
@@ -1264,17 +1258,11 @@ fn decode_embedded_surface_curve(
         (b"skin_int_cur".as_slice(), SurfaceCurveFamily::Skin),
         (b"d5c2_cur".as_slice(), SurfaceCurveFamily::Skin),
     ];
-    let (marker, name, family) = names.into_iter().find_map(|(name, family)| {
-        bytes
-            .windows(name.len() + 3)
-            .position(|window| {
-                window[0] == 0x0f
-                    && matches!(window[1], 0x0d | 0x0e)
-                    && usize::from(window[2]) == name.len()
-                    && &window[3..] == name
-            })
-            .map(|marker| (marker, name, family))
-    })?;
+    let candidates: Vec<&[u8]> = names.iter().map(|(name, _)| *name).collect();
+    let (marker, name) = find_owned_subtype_marker(bytes, &candidates, int_width)?;
+    let family = names
+        .iter()
+        .find_map(|(candidate, family)| (*candidate == name).then(|| family.clone()))?;
     let position = marker + name.len() + 3;
     decode_context_first_surface_curve(bytes, position, int_width, family.clone()).or_else(|| {
         decode_cache_first_surface_curve(
