@@ -14,6 +14,7 @@
 //! also absorbs the semantic-stream preparation so the decode geometry path reads its
 //! semantic bytes from here rather than recomputing them.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -22,40 +23,15 @@ use crate::intersection::{self, CurveScan};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{self, BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
 
-/// The delta-extended semantic bytes per stream: the topology-merged view plus each
-/// unpaired delta stream's procedural residual, with paired delta streams folded into
-/// their partition and then cleared. This is the byte view the decode geometry path's
-/// scanners read.
-pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
-    let mut semantic = topology_streams(scan);
-    let pairs = paired_delta_streams(scan);
-    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    for (delta, stream) in scan.streams.iter().enumerate() {
-        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            semantic[delta]
-                .extend_from_slice(&crate::deltas::procedural_residual(&stream.inflated));
-        }
-    }
-    for (partition, deltas) in pairs {
-        for delta in deltas {
-            semantic[partition].extend_from_slice(&crate::deltas::procedural_residual(
-                &scan.streams[delta].inflated,
-            ));
-            semantic[delta].clear();
-        }
-    }
-    semantic
-}
-
 /// The topology-merged bytes per stream: each stream's inflated bytes with delta
 /// full-record merges applied. Unpaired delta streams that carry records or tombstones
 /// are merged against an empty partition; paired delta streams are merged into their
 /// partition and then cleared.
-pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
+pub(crate) fn topology_streams(scan: &Scan) -> Vec<Cow<'_, [u8]>> {
     let mut semantic = scan
         .streams
         .iter()
-        .map(|stream| stream.inflated.clone())
+        .map(|stream| Cow::Borrowed(stream.inflated.as_slice()))
         .collect::<Vec<_>>();
     let pairs = paired_delta_streams(scan);
     let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
@@ -63,15 +39,18 @@ pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
         if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
             let census = crate::deltas::walk(&stream.inflated);
             if !census.records.is_empty() || !census.tombstones.is_empty() {
-                semantic[delta] = crate::deltas::merge_full_records(&[], &stream.inflated);
+                semantic[delta] =
+                    Cow::Owned(crate::deltas::merge_full_records(&[], &stream.inflated));
             }
         }
     }
     for (partition, deltas) in pairs {
         for delta in deltas {
-            semantic[partition] =
-                crate::deltas::merge_full_records(&semantic[partition], &semantic[delta]);
-            semantic[delta].clear();
+            semantic[partition] = Cow::Owned(crate::deltas::merge_full_records(
+                &semantic[partition],
+                &semantic[delta],
+            ));
+            semantic[delta] = Cow::Borrowed(&[]);
         }
     }
     semantic
@@ -172,6 +151,7 @@ impl StreamView {
     /// from the delta-extended semantic bytes, and `intersections` via the
     /// auxiliary-replacement scan when this stream has paired delta streams.
     fn parse_semantic(
+        graph: Graph,
         topology_bytes: &[u8],
         semantic_bytes: &[u8],
         scan: &Scan,
@@ -191,7 +171,7 @@ impl StreamView {
             intersection::scan(semantic_bytes)
         };
         StreamView {
-            graph: Graph::parse(topology_bytes),
+            graph,
             offset_surfaces: topology::offset_surfaces(semantic_bytes),
             blend_surfaces: topology::blend_surfaces(semantic_bytes),
             trimmed_curves: topology::trimmed_curves(semantic_bytes),
@@ -224,51 +204,74 @@ impl StreamParses {
 /// Every expensive per-stream Parasolid parse, once per distinct byte view, indexed by
 /// stream ordinal. Also owns the prepared semantic stream bytes the decode geometry
 /// path's NURBS and candidate scanners still read directly.
-pub(crate) struct ParsedStreams {
+pub(crate) struct ParsedStreams<'a> {
     per_stream: Vec<StreamParses>,
-    semantic_streams: Vec<Vec<u8>>,
+    semantic_streams: Vec<Cow<'a, [u8]>>,
 }
 
-impl ParsedStreams {
+impl<'a> ParsedStreams<'a> {
     /// Prepare the semantic and topology byte views, then parse every family once per
     /// byte view. Non-Parasolid streams get empty views. A stream's raw and semantic
     /// views share one parse when the topology-merged and delta-extended byte views
     /// both equal `stream.inflated` and the stream has no auxiliary-replacement deltas.
-    pub(crate) fn parse(scan: &Scan) -> Self {
-        let semantic_streams = semantic_streams(scan);
+    pub(crate) fn parse(scan: &'a Scan) -> Self {
         let topology_streams = topology_streams(scan);
         let delta_pairs = paired_delta_streams(scan);
+        let paired_deltas = delta_pairs
+            .values()
+            .flatten()
+            .copied()
+            .collect::<BTreeSet<_>>();
 
-        let per_stream = scan
-            .streams
-            .iter()
-            .enumerate()
-            .map(|(si, stream)| {
-                if !stream.kind.is_parasolid() {
-                    let empty = Rc::new(StreamView::empty());
-                    return StreamParses {
-                        raw: empty.clone(),
-                        semantic: empty,
-                    };
+        let mut per_stream = Vec::with_capacity(scan.streams.len());
+        let mut semantic_streams = Vec::with_capacity(scan.streams.len());
+        for (si, (stream, mut semantic_bytes)) in
+            scan.streams.iter().zip(topology_streams).enumerate()
+        {
+            if !stream.kind.is_parasolid() {
+                let empty = Rc::new(StreamView::empty());
+                per_stream.push(StreamParses {
+                    raw: empty.clone(),
+                    semantic: empty,
+                });
+                semantic_streams.push(semantic_bytes);
+                continue;
+            }
+
+            let raw = Rc::new(StreamView::parse_uniform(&stream.inflated));
+            let paired = delta_pairs.get(&si);
+            let topology_matches_raw = semantic_bytes.as_ref() == stream.inflated;
+            let mut residual = Vec::new();
+            if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&si) {
+                residual.extend_from_slice(&crate::deltas::procedural_residual(&stream.inflated));
+            }
+            if let Some(deltas) = paired {
+                for delta in deltas {
+                    residual.extend_from_slice(&crate::deltas::procedural_residual(
+                        &scan.streams[*delta].inflated,
+                    ));
                 }
-                let raw = Rc::new(StreamView::parse_uniform(&stream.inflated));
-                let paired = delta_pairs.get(&si);
-                let identical = paired.is_none()
-                    && topology_streams[si] == stream.inflated
-                    && semantic_streams[si] == stream.inflated;
-                let semantic = if identical {
-                    Rc::clone(&raw)
-                } else {
-                    Rc::new(StreamView::parse_semantic(
-                        &topology_streams[si],
-                        &semantic_streams[si],
-                        scan,
-                        paired,
-                    ))
-                };
-                StreamParses { raw, semantic }
-            })
-            .collect();
+            }
+            let identical = paired.is_none() && topology_matches_raw && residual.is_empty();
+            let semantic = if identical {
+                Rc::clone(&raw)
+            } else {
+                let graph = Graph::parse(&semantic_bytes);
+                let topology_for_auxiliary = paired.map(|_| semantic_bytes.clone());
+                semantic_bytes.to_mut().extend_from_slice(&residual);
+                Rc::new(StreamView::parse_semantic(
+                    graph,
+                    topology_for_auxiliary
+                        .as_deref()
+                        .unwrap_or(semantic_bytes.as_ref()),
+                    &semantic_bytes,
+                    scan,
+                    paired,
+                ))
+            };
+            per_stream.push(StreamParses { raw, semantic });
+            semantic_streams.push(semantic_bytes);
+        }
 
         ParsedStreams {
             per_stream,
@@ -315,6 +318,40 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    #[test]
+    fn unchanged_stream_views_borrow_the_inflated_bytes() {
+        let scan = crate::decode::Scan {
+            container: crate::container::Container {
+                data: Vec::new(),
+                version: 0,
+                file_tag: 0,
+                footer_offset: 0,
+                entries: Vec::new(),
+            },
+            streams: vec![crate::parasolid::Stream {
+                file_offset: 0,
+                consumed: 3,
+                inflated: vec![1, 2, 3],
+                kind: StreamKind::Partition,
+                schema: Some("schema".into()),
+            }],
+        };
+
+        let topology = topology_streams(&scan);
+        let parsed = ParsedStreams::parse(&scan);
+
+        assert!(matches!(topology[0], Cow::Borrowed(_)));
+        assert!(matches!(parsed.semantic_streams[0], Cow::Borrowed(_)));
+        assert!(std::ptr::eq(
+            topology[0].as_ptr(),
+            scan.streams[0].inflated.as_ptr()
+        ));
+        assert!(std::ptr::eq(
+            parsed.semantic_streams[0].as_ptr(),
+            scan.streams[0].inflated.as_ptr()
+        ));
+    }
 
     #[test]
     fn segment_order_pairs_delta_across_intervening_non_history_stream() {
