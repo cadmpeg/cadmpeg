@@ -4788,6 +4788,21 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
+fn f3d_with_deflated_smbh(smbh: &[u8]) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        deflated,
+    )
+    .unwrap();
+    zip.write_all(smbh).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
 fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32) {
     let central = archive
         .windows(4)
@@ -4809,14 +4824,17 @@ fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32)
 
 #[test]
 fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
-    let mut archive = f3d_with_smbh(&synthetic_geometry_smbh());
+    let mut archive = f3d_with_deflated_smbh(&synthetic_geometry_smbh());
     let target = b"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX);
 
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect_err("oversized inflated entry must be rejected");
-    assert!(error.to_string().contains("inflated bytes"));
+    assert!(
+        matches!(error, cadmpeg_codec_core::CodecError::ResourceLimit(_)),
+        "{error:?}"
+    );
 }
 
 #[test]

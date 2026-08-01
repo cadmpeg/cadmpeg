@@ -260,6 +260,31 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
+        if let ExpandSpec::Exact(size) = spec {
+            let per_expand = self.per_expand_allowance();
+            if size > per_expand {
+                return Err(self.fuse(
+                    ResourceFailure::BudgetExceeded,
+                    LimitScope::PerExpand,
+                    size,
+                    "begin_expand",
+                    Some(source.location()),
+                ));
+            }
+            if size
+                > self
+                    .decompression_allowance()
+                    .saturating_sub(self.budget.decompressed_used())
+            {
+                return Err(self.fuse(
+                    ResourceFailure::BudgetExceeded,
+                    LimitScope::Global,
+                    size,
+                    "begin_expand",
+                    Some(source.location()),
+                ));
+            }
+        }
         let mut buffer: Vec<u8> = Vec::new();
         let reserve = match spec {
             ExpandSpec::Exact(size) => size.min(RESERVE_CLAMP),
