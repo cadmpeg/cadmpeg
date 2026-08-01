@@ -15,9 +15,6 @@ use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
-    if matches!(attribute.target, AttributeTarget::Document) {
-        return None;
-    }
     let family = attribute.values.iter().position(
         |value| matches!(value, AttributeValue::String(name) if name == "sketch_attrib_def"),
     )?;
