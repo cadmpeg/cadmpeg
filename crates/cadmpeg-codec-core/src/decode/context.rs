@@ -193,6 +193,28 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_retained(bytes, operation, location)
     }
 
+    /// Copies bytes into session-retained storage after charging and reserving safely.
+    pub fn copy_retained(
+        &self,
+        bytes: &[u8],
+        operation: &'static str,
+        location: Option<SourceLocation>,
+    ) -> Result<Vec<u8>, CodecError> {
+        self.charge_retained(bytes.len() as u64, operation, location)?;
+        let mut copy = Vec::new();
+        copy.try_reserve_exact(bytes.len()).map_err(|_| {
+            self.fuse(
+                ResourceFailure::AllocationFailed,
+                LimitScope::Global,
+                bytes.len() as u64,
+                operation,
+                location,
+            )
+        })?;
+        copy.extend_from_slice(bytes);
+        Ok(copy)
+    }
+
     /// Charges admitted entities.
     pub fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_entities(count, operation)

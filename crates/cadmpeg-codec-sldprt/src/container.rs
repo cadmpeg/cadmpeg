@@ -10,8 +10,9 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
+use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::le::u32_at as u32_le;
-use cadmpeg_codec_core::{ContainerEntry, ContainerSummary};
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
 /// Marker shared by block, cache-cell, and directory frames.
@@ -306,23 +307,7 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
         let compound_streams = crate::compound::streams(bytes)
             .unwrap_or_default()
             .into_iter()
-            .map(|stream| {
-                let located_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes);
-                let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
-                let ps_streams = located_streams
-                    .into_iter()
-                    .map(|(_, payload)| payload)
-                    .collect();
-                CompoundStream {
-                    path: stream.path,
-                    directory_id: stream.directory_id,
-                    start_sector: stream.start_sector,
-                    payload: stream.bytes,
-                    decoded_payload: stream.decoded_bytes,
-                    ps_streams,
-                    ps_stream_offsets,
-                }
-            })
+            .map(compound_stream)
             .collect();
         return ContainerScan {
             source_image: bytes.to_vec(),
@@ -368,6 +353,44 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
         cache_cells,
         compound_streams: Vec::new(),
     }
+}
+
+fn compound_stream(stream: crate::compound::Stream) -> CompoundStream {
+    let located_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes);
+    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
+    let ps_streams = located_streams
+        .into_iter()
+        .map(|(_, payload)| payload)
+        .collect();
+    CompoundStream {
+        path: stream.path,
+        directory_id: stream.directory_id,
+        start_sector: stream.start_sector,
+        payload: stream.bytes,
+        decoded_payload: stream.decoded_bytes,
+        ps_streams,
+        ps_stream_offsets,
+    }
+}
+
+/// Scans an in-memory image while routing CFB expansion through the decode budget.
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan, CodecError> {
+    if !root.window().starts_with(&COMPOUND_FILE_MAGIC) {
+        return Ok(scan_bytes(root.window()));
+    }
+    let compound_streams = crate::compound::streams_budgeted(ctx, root)?
+        .unwrap_or_default()
+        .into_iter()
+        .map(compound_stream)
+        .collect();
+    Ok(ContainerScan {
+        source_image: root.window().to_vec(),
+        version: 0,
+        blocks: Vec::new(),
+        directory: Vec::new(),
+        cache_cells: Vec::new(),
+        compound_streams,
+    })
 }
 
 /// A block plus the preamble length needed to advance past it.
