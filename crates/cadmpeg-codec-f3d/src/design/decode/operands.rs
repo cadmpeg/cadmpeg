@@ -25,8 +25,8 @@ use crate::records::{
     DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference,
     PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
+use cadmpeg_codec_core::le::{f64_at, u32_at, u64_at as read_u64};
+use cadmpeg_codec_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Decode edge-recipe operand frames named by edge-selecting feature scopes.

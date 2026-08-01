@@ -15,9 +15,9 @@
 use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_ir::be::u32_at as u32_be;
-use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
-use cadmpeg_ir::le::u32_at as u32_le;
+use cadmpeg_codec_core::be::u32_at as u32_be;
+use cadmpeg_codec_core::le::u32_at as u32_le;
+use cadmpeg_codec_core::{ContainerEntry, ContainerSummary};
 
 use crate::variant::Variant;
 

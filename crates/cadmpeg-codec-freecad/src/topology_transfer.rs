@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,

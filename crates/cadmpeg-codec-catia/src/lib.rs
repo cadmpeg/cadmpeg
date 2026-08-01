@@ -76,8 +76,9 @@ pub(crate) fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Opt
         .filter(|count| *count <= MAX_NURBS_SURFACE_CONTROL_POINTS)
 }
 
-use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
 
 /// The CATIA V5 `.CATPart` codec.
 #[derive(Debug, Default, Clone, Copy)]

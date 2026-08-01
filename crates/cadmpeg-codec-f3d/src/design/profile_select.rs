@@ -18,7 +18,7 @@ use crate::records::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignParameterScope,
     DesignRecordHeader, DesignSketchPlacement, SketchCurveIdentity, SketchRelationOperand,
 };
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 

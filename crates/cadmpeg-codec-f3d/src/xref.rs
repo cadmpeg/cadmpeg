@@ -10,13 +10,12 @@
 
 use serde::Deserialize;
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::le::u32_at;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
     ComponentReference, ExternalDocumentReference, ExternalResolution, Occurrence,
 };
-
-use cadmpeg_ir::le::u32_at;
 
 use crate::bytes::{lp_ascii_strict, take_reference};
 use crate::container::role;

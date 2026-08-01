@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
+use cadmpeg_codec_core::{ContainerEntry, ContainerSummary};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,

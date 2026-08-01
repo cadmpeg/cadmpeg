@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, SeekFrom};
 use std::path::{Component, Path};
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use flate2::{Decompress, FlushDecompress};
 use zip::CompressionMethod;
 

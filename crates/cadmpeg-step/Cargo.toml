@@ -14,6 +14,7 @@ keywords = ["cad", "step", "iso-10303", "ap214", "brep"]
 categories = ["encoding", "graphics"]
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir = { workspace = true }
 thiserror = { workspace = true }
 encoding_rs = { workspace = true }

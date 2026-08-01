@@ -35,11 +35,16 @@ jobs:
           set -euo pipefail
 
           crates=(
+            cadmpeg-codec-core
+            cadmpeg-container
             cadmpeg-ir
             cadmpeg-codec-catia
             cadmpeg-codec-creo
             cadmpeg-codec-f3d
+            cadmpeg-codec-freecad
+            cadmpeg-codec-iges
             cadmpeg-codec-nx
+            cadmpeg-codec-rhino
             cadmpeg-codec-sldprt
             cadmpeg-step
             cadmpeg

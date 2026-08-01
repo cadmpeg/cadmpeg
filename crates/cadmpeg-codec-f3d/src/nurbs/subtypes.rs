@@ -3,7 +3,7 @@
 
 use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::Record;
-use cadmpeg_ir::le::int_at as read_int;
+use cadmpeg_codec_core::le::int_at as read_int;
 
 /// The construction `bytes` is, under its modern name: the first subtype
 /// definition `bytes` owns other than `ref`, canonicalized.

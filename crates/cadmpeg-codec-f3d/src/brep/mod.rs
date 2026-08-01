@@ -222,10 +222,10 @@ impl Brep {
     pub fn retain_body_keys(
         &mut self,
         selected_keys: &HashSet<u64>,
-    ) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    ) -> Result<(), cadmpeg_codec_core::CodecError> {
         let annotations = std::mem::take(&mut self.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_ir::codec::CodecError::Malformed(format!("BREP serialization failed: {error}"))
+            cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
@@ -262,7 +262,7 @@ impl Brep {
         }
         retain_root_entities(&mut value, &reachable);
         let mut retained: Self = value.deserialize_into().map_err(|error| {
-            cadmpeg_ir::codec::CodecError::Malformed(format!(
+            cadmpeg_codec_core::CodecError::Malformed(format!(
                 "retained BREP graph is invalid: {error}"
             ))
         })?;
@@ -279,10 +279,10 @@ impl Brep {
 
     /// Qualify every entity owned by this graph so several BREP blobs can
     /// coexist in one document model without record-index collisions.
-    pub fn qualify_ids(&mut self, namespace: &str) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    pub fn qualify_ids(&mut self, namespace: &str) -> Result<(), cadmpeg_codec_core::CodecError> {
         let annotations = std::mem::take(&mut self.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_ir::codec::CodecError::Malformed(format!("BREP serialization failed: {error}"))
+            cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
@@ -298,7 +298,7 @@ impl Brep {
             .collect::<HashMap<_, _>>();
         remap_owned_ids(&mut value, &replacements);
         let mut qualified: Self = value.deserialize_into().map_err(|error| {
-            cadmpeg_ir::codec::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
+            cadmpeg_codec_core::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
         })?;
         qualified.annotation_records = annotations
             .into_iter()

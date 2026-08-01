@@ -5,12 +5,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_codec_core::le::u32_at as u32_le;
 use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
     SurfaceGeometry,
 };
-use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::math::{Point2, Point3};
 
 use crate::nurbs::expand_knots;

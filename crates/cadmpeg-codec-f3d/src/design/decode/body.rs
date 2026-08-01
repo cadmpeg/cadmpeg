@@ -10,8 +10,8 @@ use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
     DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
 };
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
+use cadmpeg_codec_core::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use std::collections::HashMap;
 

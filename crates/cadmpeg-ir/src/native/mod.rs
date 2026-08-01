@@ -41,7 +41,7 @@ pub enum NativeConvertError {
     MissingRetainedSourceRecord(String),
 }
 
-impl From<NativeConvertError> for crate::codec::CodecError {
+impl From<NativeConvertError> for cadmpeg_codec_core::CodecError {
     fn from(error: NativeConvertError) -> Self {
         Self::Malformed(error.to_string())
     }

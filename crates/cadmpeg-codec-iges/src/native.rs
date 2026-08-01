@@ -7,7 +7,7 @@ use crate::entities::geometry::{resolve_transform, Affine};
 use crate::global::Global;
 use crate::graph::ReferenceEdge;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
 use std::collections::BTreeMap;

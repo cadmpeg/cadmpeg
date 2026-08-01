@@ -4,7 +4,8 @@
 use std::collections::HashSet;
 use std::io::{Seek, SeekFrom, Write};
 
-use cadmpeg_ir::codec::{CodecError, WriteSeek};
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::WriteSeek;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;

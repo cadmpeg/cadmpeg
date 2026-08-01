@@ -5,7 +5,7 @@
 #![no_main]
 
 use cadmpeg_codec_nx::{container, parasolid};
-use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

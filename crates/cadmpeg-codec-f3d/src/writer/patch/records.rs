@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::records::{
     ActEntity, ActRootComponent, DesignMaterialAssignment, LostEdgeReference, SketchCurveGeometry,
 };
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::Point3;
 
 use super::edits::{

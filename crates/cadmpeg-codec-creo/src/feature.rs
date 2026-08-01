@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::cursor::bounded_len;
+use cadmpeg_codec_core::cursor::bounded_len;
 
 use crate::psb;
 use crate::scalar;

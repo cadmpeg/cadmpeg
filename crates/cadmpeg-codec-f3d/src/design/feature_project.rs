@@ -24,8 +24,8 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignSketchPlacement, DesignSolidPrimitive,
 };
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{u32_at, u64_at as read_u64};
+use cadmpeg_codec_core::le::{u32_at, u64_at as read_u64};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 

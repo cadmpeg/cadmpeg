@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use zip::write::SimpleFileOptions;
 

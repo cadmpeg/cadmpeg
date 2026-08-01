@@ -15,10 +15,9 @@ mod parameter;
 mod profile;
 mod reader;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult,
-};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult};
 use std::io::Cursor;
 
 /// Codec for IGES files.

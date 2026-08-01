@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact physical-line and fixed-card framing.
 
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use cadmpeg_ir::codec::Confidence;
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use std::collections::BTreeMap;
 use std::io::Read;
 

@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::units::Units;

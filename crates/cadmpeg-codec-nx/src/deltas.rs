@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::be;
+use cadmpeg_codec_core::be;
 
 /// One complete admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]

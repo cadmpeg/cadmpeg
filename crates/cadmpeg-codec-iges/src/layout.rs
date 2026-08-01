@@ -2,7 +2,8 @@
 //! IGES representation dispatch and unsupported-layout inspection.
 
 use crate::card;
-use cadmpeg_ir::codec::{CodecError, Confidence, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
 use std::io::SeekFrom;
 

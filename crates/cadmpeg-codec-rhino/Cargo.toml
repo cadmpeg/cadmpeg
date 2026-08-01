@@ -18,6 +18,7 @@ default = []
 fuzzing = []
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 flate2.workspace = true
 crc32fast.workspace = true

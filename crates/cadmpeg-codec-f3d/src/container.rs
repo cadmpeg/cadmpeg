@@ -14,8 +14,8 @@
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_codec_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 use zip::CompressionMethod;
 

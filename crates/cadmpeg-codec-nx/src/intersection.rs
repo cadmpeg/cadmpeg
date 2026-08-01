@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::be;
+use cadmpeg_codec_core::be;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 

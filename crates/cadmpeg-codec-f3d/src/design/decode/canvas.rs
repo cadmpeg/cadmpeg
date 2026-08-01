@@ -6,10 +6,10 @@ use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
 use crate::records::{DesignCanvasImage, DesignParameterScope};
+use cadmpeg_codec_core::le::{f32_at, f64_at, u32_at};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
-use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
-use cadmpeg_ir::le::{f32_at, f64_at, u32_at};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 const DESIGN_LENGTH_TO_MM: f64 = 10.0;

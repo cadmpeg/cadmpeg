@@ -3,7 +3,7 @@
 
 use std::cell::Cell;
 
-use crate::codec::{CodecError, ReadSeek};
+use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
 use super::error::{

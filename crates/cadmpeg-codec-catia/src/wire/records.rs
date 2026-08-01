@@ -12,7 +12,7 @@
 
 use std::ops::Range;
 
-use cadmpeg_ir::le::u32_at as u32_le;
+use cadmpeg_codec_core::le::u32_at as u32_le;
 use cadmpeg_ir::math::Point3;
 
 use super::bytes::{compact_int, f64_le};
@@ -297,7 +297,7 @@ pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
-    cadmpeg_ir::le::f32_at(bytes, at).unwrap_or(f32::NAN)
+    cadmpeg_codec_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
 }
 
 fn finite_in_range(v: f32) -> bool {

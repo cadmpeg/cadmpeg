@@ -13,8 +13,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,

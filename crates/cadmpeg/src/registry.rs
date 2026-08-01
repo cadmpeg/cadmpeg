@@ -2,6 +2,7 @@
 //! Built-in native codecs and content-based format detection.
 
 use cadmpeg_codec_catia::CatiaCodec;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_codec_f3d::F3dCodec;
 use cadmpeg_codec_freecad::FcstdCodec;
@@ -9,7 +10,7 @@ use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{CadirEncoder, Codec, CodecError, Confidence, Encoder, WriteSeek};
+use cadmpeg_ir::codec::{CadirEncoder, Codec, Confidence, Encoder, WriteSeek};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::SourceFidelity;

@@ -84,10 +84,9 @@ pub mod topology;
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeResult,
-};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
 
 /// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]

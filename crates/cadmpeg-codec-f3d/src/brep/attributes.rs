@@ -8,8 +8,8 @@ use crate::records::{
     PersistentSubentityTag, SketchCurveLink,
 };
 use crate::sab::{Record, Token};
+use cadmpeg_codec_core::cursor::bounded_len;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};

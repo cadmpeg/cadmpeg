@@ -10,7 +10,7 @@
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use cadmpeg_ir::le::u32_at;
+use cadmpeg_codec_core::le::u32_at;
 
 /// An indexed-record header: `u32 3`, three class-tag digits, `u32 index`.
 const HEADER_LEN: usize = 11;

@@ -8,6 +8,7 @@ use std::io::{Cursor, Write};
 
 use assert_cmd::Command;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::*;
 use tempfile::tempdir;

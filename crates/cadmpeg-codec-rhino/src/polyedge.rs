@@ -4,8 +4,8 @@
 
 use std::ops::Range;
 
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::View;
+use cadmpeg_codec_core::decode::View;
+use cadmpeg_codec_core::CodecError;
 
 use crate::mesh::MeshExpand;
 
@@ -101,11 +101,11 @@ fn req_bool(view: &mut View<'_>) -> Result<bool, FramingError> {
 /// a [`BoundedCount`] over `width`-byte elements under the codec-local
 /// `ITEM_CAP`.
 ///
-/// [`BoundedCount`]: cadmpeg_ir::decode::BoundedCount
+/// [`BoundedCount`]: cadmpeg_codec_core::decode::BoundedCount
 fn counted(
     view: &mut View<'_>,
     width: usize,
-) -> Result<(usize, cadmpeg_ir::decode::BoundedCount), FramingError> {
+) -> Result<(usize, cadmpeg_codec_core::decode::BoundedCount), FramingError> {
     let offset = view.position();
     let value = req_i32(view)?;
     let count = usize::try_from(value).map_err(|_| FramingError::Overflow { offset })?;

@@ -13,8 +13,8 @@ use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::{indexed_record_index, next_indexed_record_offset};
 use crate::ids;
 use crate::paramesh::decode_mesh_container;
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::f64_at;
+use cadmpeg_codec_core::le::f64_at;
+use cadmpeg_codec_core::CodecError;
 
 /// Row-major 4x4 f64 matrix byte length.
 const MATRIX_BYTES: usize = 128;
