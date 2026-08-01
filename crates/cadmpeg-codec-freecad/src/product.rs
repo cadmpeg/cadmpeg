@@ -13,7 +13,7 @@ use cadmpeg_ir::products::{
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-    entries: &BTreeMap<String, Vec<u8>>,
+    entries: &BTreeMap<String, &[u8]>,
 ) -> Result<Vec<ProductNodeRecord>, CodecError> {
     let by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
@@ -495,7 +495,7 @@ fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
 
 fn parse_placement_list(
     properties: &[&PropertyRecord],
-    entries: &BTreeMap<String, Vec<u8>>,
+    entries: &BTreeMap<String, &[u8]>,
 ) -> Result<Vec<[[f64; 4]; 4]>, CodecError> {
     let Some(bytes) = side_bytes(properties, "PlacementList", entries)? else {
         return Ok(Vec::new());
@@ -516,7 +516,7 @@ fn parse_placement_list(
 
 fn parse_vector_list(
     properties: &[&PropertyRecord],
-    entries: &BTreeMap<String, Vec<u8>>,
+    entries: &BTreeMap<String, &[u8]>,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
     let Some(bytes) = side_bytes(properties, "ScaleList", entries)? else {
         return Ok(Vec::new());
@@ -537,7 +537,7 @@ fn parse_vector_list(
 fn side_bytes<'a>(
     properties: &[&PropertyRecord],
     name: &str,
-    entries: &'a BTreeMap<String, Vec<u8>>,
+    entries: &'a BTreeMap<String, &[u8]>,
 ) -> Result<Option<&'a [u8]>, CodecError> {
     let Some(property) = properties.iter().find(|property| property.name == name) else {
         return Ok(None);
@@ -545,16 +545,12 @@ fn side_bytes<'a>(
     let Some(entry) = property.side_entries.first() else {
         return Ok(None);
     };
-    entries
-        .get(entry)
-        .map(Vec::as_slice)
-        .map(Some)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{property_id} references missing {entry}",
-                property_id = property.id
-            ))
-        })
+    entries.get(entry).copied().map(Some).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{property_id} references missing {entry}",
+            property_id = property.id
+        ))
+    })
 }
 
 fn list_layout(bytes: &[u8], components: usize, name: &str) -> Result<(usize, usize), CodecError> {

@@ -31,7 +31,6 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
 
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};
@@ -1118,10 +1117,10 @@ impl Codec for FcstdCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::scan(&mut Cursor::new(root.window())).map(|scan| container::summarize(&scan))
+        container::scan(ctx, root).map(|scan| container::summarize(&scan))
     }
 
     fn decode_impl(
@@ -1133,7 +1132,7 @@ impl Codec for FcstdCodec {
             container_only: ctx.container_only(),
             policy: *ctx.policy(),
         };
-        let scan = container::scan(&mut Cursor::new(root.window()))?;
+        let scan = container::scan(ctx, root)?;
         if !options.container_only
             && (scan.document.schema_version != "4" || scan.document.file_version != "1")
         {
@@ -1189,6 +1188,7 @@ impl Codec for FcstdCodec {
             attributes,
         });
         if let Some((name, bytes)) = thumbnail {
+            ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
@@ -1197,7 +1197,7 @@ impl Codec for FcstdCodec {
                     offset: 0,
                     byte_len: bytes.len() as u64,
                     sha256: sha256_hex(bytes),
-                    data: Some(bytes.clone()),
+                    data: Some(bytes.to_vec()),
                     links: vec![native::native_id("document", "0")],
                 }],
             )?;
@@ -1238,6 +1238,7 @@ impl Codec for FcstdCodec {
                         .filter(|property| property.side_entries.contains(&entry.name))
                         .map(|property| property.id.clone())
                         .collect();
+                    ctx.charge_retained(bytes.len() as u64, "retain FCStd entry", None)?;
                     Ok(native::EntryRecord {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
@@ -1245,7 +1246,7 @@ impl Codec for FcstdCodec {
                         byte_len: bytes.len() as u64,
                         sha256: sha256_hex(bytes),
                         referenced_by,
-                        data: bytes.clone(),
+                        data: bytes.to_vec(),
                     })
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;

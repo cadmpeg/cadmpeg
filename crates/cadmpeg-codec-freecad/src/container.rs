@@ -2,19 +2,14 @@
 //! Bounded `FCStd` archive scanning and physical byte accounting.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Cursor, Read, SeekFrom};
 use std::path::{Component, Path};
 
-use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
-use zip::CompressionMethod;
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_container::{ArchiveSnapshot, EntryRecord};
 
 use crate::native::{ArchiveSpan, DocumentFacts};
 
-const MAX_ARCHIVE_BYTES: usize = 512 * 1024 * 1024;
-const MAX_ENTRIES: usize = 16_384;
-const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
-const MAX_TOTAL_BYTES: u64 = 1024 * 1024 * 1024;
-const MAX_EXPANSION_RATIO: u64 = 1_000;
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
 /// Inspect the first local entry deeply enough to confirm `FCStd` document markers.
@@ -57,7 +52,7 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 /// Fully scanned container used by inspection and decode.
-pub struct Scan {
+pub struct Scan<'a> {
     /// Container summary entries.
     pub entries: Vec<ContainerEntry>,
     /// Persistence metadata.
@@ -65,137 +60,28 @@ pub struct Scan {
     /// Exact physical archive partition.
     pub ledger: Vec<ArchiveSpan>,
     /// Inflated entry data.
-    pub data: BTreeMap<String, Vec<u8>>,
+    pub data: BTreeMap<String, &'a [u8]>,
 }
 
-/// Scan an archive with deterministic resource limits.
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
-    reader.seek(SeekFrom::Start(0))?;
-    let mut source = Vec::new();
-    reader
-        .take((MAX_ARCHIVE_BYTES + 1) as u64)
-        .read_to_end(&mut source)?;
-    if source.len() > MAX_ARCHIVE_BYTES {
-        return Err(CodecError::Malformed("archive size limit exceeded".into()));
-    }
-    let mut archive = zip::ZipArchive::new(Cursor::new(&source))
-        .map_err(|error| CodecError::Malformed(format!("not a readable ZIP: {error}")))?;
-    if archive.len() > MAX_ENTRIES {
-        return Err(CodecError::Malformed(
-            "ZIP entry-count limit exceeded".into(),
-        ));
-    }
-
-    let mut names = BTreeSet::new();
-    let mut entries = Vec::with_capacity(archive.len());
+/// Scan an archive through the session resource budget.
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+    let archive = ArchiveSnapshot::new(root)?;
+    ctx.charge_collection_items(archive.entries().len() as u64, "fcstd ZIP entries")?;
     let mut data = BTreeMap::new();
-    let mut total = 0_u64;
-    let mut raw_entries = Vec::new();
-
-    for index in 0..archive.len() {
-        let mut file = archive
-            .by_index(index)
-            .map_err(|error| CodecError::Malformed(format!("bad ZIP entry {index}: {error}")))?;
-        let name = file.name().to_owned();
+    for file in archive.entries() {
+        let name = file.name.clone();
         validate_name(&name)?;
-        if !names.insert(name.clone()) {
-            return Err(CodecError::Malformed(format!(
-                "duplicate ZIP entry name {name}"
-            )));
-        }
-        if file.encrypted() {
-            return Err(CodecError::Malformed(format!("encrypted ZIP entry {name}")));
-        }
-        if !matches!(
-            file.compression(),
-            CompressionMethod::Stored | CompressionMethod::Deflated
-        ) {
-            return Err(CodecError::NotImplemented(format!(
-                "FCStd ZIP compression {:?} for {name}",
-                file.compression()
-            )));
-        }
-        if file.size() > MAX_ENTRY_BYTES {
-            return Err(CodecError::Malformed(format!(
-                "entry size limit exceeded for {name}"
-            )));
-        }
-        total = total
-            .checked_add(file.size())
-            .ok_or_else(|| CodecError::Malformed("expanded size overflow".into()))?;
-        if total > MAX_TOTAL_BYTES {
-            return Err(CodecError::Malformed(
-                "total expanded-size limit exceeded".into(),
-            ));
-        }
-        if file.compressed_size() > 0 && file.size() / file.compressed_size() > MAX_EXPANSION_RATIO
-        {
-            return Err(CodecError::Malformed(format!(
-                "expansion-ratio limit exceeded for {name}"
-            )));
-        }
-
-        let header_start = file.header_start();
-        let data_start = file
-            .data_start()
-            .ok_or_else(|| CodecError::Malformed(format!("missing data offset for {name}")))?;
-        let data_end = data_start
-            .checked_add(file.compressed_size())
-            .ok_or_else(|| CodecError::Malformed("compressed range overflow".into()))?;
-        let central_start = file.central_header_start();
-        for point in [header_start, data_start, data_end, central_start] {
-            if point > source.len() as u64 {
-                return Err(CodecError::Malformed(format!(
-                    "ZIP offset outside archive for {name}"
-                )));
-            }
-        }
-        raw_entries.push(RawEntry {
-            name: name.clone(),
-            header_start,
-            data_start,
-            data_end,
-            central_start,
-            crc32: file.crc32(),
-            compressed_size: file.compressed_size(),
-            uncompressed_size: file.size(),
-        });
-
-        let declared_size = file.size();
-        let mut bytes = Vec::with_capacity(declared_size as usize);
-        (&mut file)
-            .take(declared_size.saturating_add(1))
-            .read_to_end(&mut bytes)
-            .map_err(|error| CodecError::Malformed(format!("cannot read {name}: {error}")))?;
-        if u64::try_from(bytes.len()).ok() != Some(declared_size) {
-            return Err(CodecError::Malformed(format!(
-                "entry {name} expanded to {} bytes but declares {declared_size}",
-                bytes.len()
-            )));
-        }
-        let mut attributes = BTreeMap::new();
-        attributes.insert("crc32".into(), format!("{:08x}", file.crc32()));
-        attributes.insert("header_offset".into(), header_start.to_string());
-        attributes.insert("data_offset".into(), data_start.to_string());
-        attributes.insert("central_header_offset".into(), central_start.to_string());
-        entries.push(ContainerEntry {
-            role: classify(&name).into(),
-            compression: compression_label(file.compression()).into(),
-            compressed_size: file.compressed_size(),
-            uncompressed_size: file.size(),
-            name: name.clone(),
-            attributes,
-        });
-        data.insert(name, bytes);
+        let view = archive.open(ctx, file)?;
+        data.insert(name, view.window());
     }
 
     let document_bytes = data
         .get("Document.xml")
         .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
     let document = parse_document(document_bytes)?;
-    let ledger = physical_ledger(&source, &raw_entries)?;
+    let ledger = physical_ledger(root.window(), archive.entries())?;
     Ok(Scan {
-        entries,
+        entries: archive.container_entries(classify),
         document,
         ledger,
         data,
@@ -255,14 +141,6 @@ fn classify(name: &str) -> &'static str {
             "brep"
         }
         _ => "auxiliary",
-    }
-}
-
-fn compression_label(method: CompressionMethod) -> &'static str {
-    match method {
-        CompressionMethod::Stored => "stored",
-        CompressionMethod::Deflated => "deflate",
-        _ => "unsupported",
     }
 }
 
@@ -337,18 +215,6 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
 }
 
 #[derive(Debug)]
-struct RawEntry {
-    name: String,
-    header_start: u64,
-    data_start: u64,
-    data_end: u64,
-    central_start: u64,
-    crc32: u32,
-    compressed_size: u64,
-    uncompressed_size: u64,
-}
-
-#[derive(Debug)]
 struct Region {
     start: u64,
     end: u64,
@@ -409,7 +275,7 @@ fn push_region(
     }
 }
 
-fn physical_ledger(bytes: &[u8], entries: &[RawEntry]) -> Result<Vec<ArchiveSpan>, CodecError> {
+fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<ArchiveSpan>, CodecError> {
     let len = bytes.len() as u64;
     let mut regions = Vec::new();
     let mut local_order = entries.iter().collect::<Vec<_>>();
@@ -469,7 +335,7 @@ fn physical_ledger(bytes: &[u8], entries: &[RawEntry]) -> Result<Vec<ArchiveSpan
         push_region(
             &mut regions,
             entry.data_start,
-            entry.data_end,
+            entry.data_end()?,
             "compressed-payload",
             Some(&entry.name),
         );
@@ -477,19 +343,19 @@ fn physical_ledger(bytes: &[u8], entries: &[RawEntry]) -> Result<Vec<ArchiveSpan
         let next = local_order
             .get(index + 1)
             .map_or(central_begin, |next| next.header_start);
-        if entry.data_end > next {
+        if entry.data_end()? > next {
             return Err(CodecError::Malformed(format!(
                 "compressed payload overlaps following ZIP record for {}",
                 entry.name
             )));
         }
-        if entry.data_end < next {
+        if entry.data_end()? < next {
             let flags = u16_at(bytes, entry.header_start + 6)?;
             if flags & 0x0008 != 0 {
                 let descriptor_end = parse_data_descriptor(bytes, entry, next)?;
                 push_region(
                     &mut regions,
-                    entry.data_end,
+                    entry.data_end()?,
                     descriptor_end,
                     "data-descriptor",
                     Some(&entry.name),
@@ -504,7 +370,7 @@ fn physical_ledger(bytes: &[u8], entries: &[RawEntry]) -> Result<Vec<ArchiveSpan
             } else {
                 push_region(
                     &mut regions,
-                    entry.data_end,
+                    entry.data_end()?,
                     next,
                     "archive-padding",
                     Some(&entry.name),
@@ -580,10 +446,10 @@ fn physical_ledger(bytes: &[u8], entries: &[RawEntry]) -> Result<Vec<ArchiveSpan
 
 fn parse_data_descriptor(
     bytes: &[u8],
-    entry: &RawEntry,
+    entry: &EntryRecord,
     record_end: u64,
 ) -> Result<u64, CodecError> {
-    let start = entry.data_end;
+    let start = entry.data_end()?;
     let has_signature = signature_at(bytes, start) == Some(*b"PK\x07\x08");
     let values_start = start + if has_signature { 4 } else { 0 };
     let local_zip64 = u32_at(bytes, entry.header_start + 18)? == u32::MAX

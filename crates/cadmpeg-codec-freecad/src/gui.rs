@@ -28,7 +28,7 @@ pub(crate) struct Graph {
 pub(crate) fn transfer(
     ir: &mut CadIr,
     bytes: &[u8],
-    entries: &BTreeMap<String, Vec<u8>>,
+    entries: &BTreeMap<String, &[u8]>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
@@ -690,7 +690,7 @@ fn transfer_topology_colors(
     provider_name: &str,
     object_id: &str,
     entry_name: &str,
-    entries: &BTreeMap<String, Vec<u8>>,
+    entries: &BTreeMap<String, &[u8]>,
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],

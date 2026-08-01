@@ -1,5 +1,6 @@
 use std::io::{Cursor, Write};
 
+use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
     InnerWireTaper, Length, PathRef, RevolveExtent, ShellJoin, ShellMode, SweepOrientation,
@@ -4886,7 +4887,10 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
         "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
         SimpleFileOptions::default().large_file(true),
     );
-    let scan = crate::container::scan(&mut Cursor::new(bytes)).expect("ZIP64 streaming ZIP");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        .expect("ZIP64 archive fits root policy");
+    let scan = crate::container::scan(&ctx, root).expect("ZIP64 streaming ZIP");
     assert!(scan
         .ledger
         .iter()
@@ -4902,7 +4906,10 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
 #[test]
 fn frames_streaming_data_descriptor_separately_from_padding() {
     let bytes = streaming_archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
-    let scan = crate::container::scan(&mut Cursor::new(bytes)).expect("streaming ZIP");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        .expect("archive fits root policy");
+    let scan = crate::container::scan(&ctx, root).expect("streaming ZIP");
     let descriptors = scan
         .ledger
         .iter()
