@@ -29,6 +29,30 @@ use crate::records::{
     VertexOwnership, WireTopology, XrefDesign, XrefReference,
 };
 
+fn owner_indices<'a>(ids: impl IntoIterator<Item = &'a str>) -> HashMap<String, usize> {
+    ids.into_iter()
+        .enumerate()
+        .map(|(ordinal, id)| (id.to_owned(), ordinal))
+        .collect()
+}
+
+fn group_by_owner<T>(
+    records: Vec<T>,
+    owners: &HashMap<String, usize>,
+    owner_count: usize,
+    owner: impl Fn(&T) -> &str,
+) -> Vec<Vec<T>> {
+    let mut grouped = std::iter::repeat_with(Vec::new)
+        .take(owner_count)
+        .collect::<Vec<_>>();
+    for record in records {
+        if let Some(&ordinal) = owners.get(owner(&record)) {
+            grouped[ordinal].push(record);
+        }
+    }
+    grouped
+}
+
 /// Current schema version for the Autodesk Fusion native namespace.
 pub const F3D_NATIVE_VERSION: u32 = 11;
 
@@ -283,22 +307,57 @@ macro_rules! sort_f3d_arenas {
                 let boards: Vec<crate::history_records::AsmBulletinBoard> = namespace.arena_as("asm_bulletin_boards")?;
                 let changes: Vec<crate::history_records::AsmEntityChange> = namespace.arena_as("asm_entity_changes")?;
                 let records: Vec<crate::history_records::AsmHistoryRecord> = namespace.arena_as("asm_history_records")?;
-                let mut changes_by_parent = HashMap::<String, Vec<_>>::new();
-                for change in changes { changes_by_parent.entry(change.parent.clone()).or_default().push(change); }
-                let mut boards_by_parent = HashMap::<String, Vec<_>>::new();
-                for mut board in boards {
-                    board.changes = changes_by_parent.remove(&board.id).unwrap_or_default();
-                    boards_by_parent.entry(board.parent.clone()).or_default().push(board);
+                let board_indices = owner_indices(boards.iter().map(|board| board.id.as_str()));
+                let changes_by_board = group_by_owner(
+                    changes,
+                    &board_indices,
+                    boards.len(),
+                    |change| &change.parent,
+                );
+                let mut boards = boards
+                    .into_iter()
+                    .zip(changes_by_board)
+                    .map(|(mut board, changes)| {
+                        board.changes = changes;
+                        board
+                    })
+                    .collect::<Vec<_>>();
+
+                let state_indices = owner_indices(states.iter().map(|state| state.id.as_str()));
+                let boards_by_state = group_by_owner(
+                    std::mem::take(&mut boards),
+                    &state_indices,
+                    states.len(),
+                    |board| &board.parent,
+                );
+                let records_by_state = group_by_owner(
+                    records,
+                    &state_indices,
+                    states.len(),
+                    |record| &record.parent,
+                );
+                let states = states
+                    .into_iter()
+                    .zip(boards_by_state)
+                    .zip(records_by_state)
+                    .map(|((mut state, bulletin_boards), records)| {
+                        state.bulletin_boards = bulletin_boards;
+                        state.records = records;
+                        state
+                    })
+                    .collect::<Vec<_>>();
+
+                let history_indices =
+                    owner_indices(native.asm_histories.iter().map(|history| history.id.as_str()));
+                let states_by_history = group_by_owner(
+                    states,
+                    &history_indices,
+                    native.asm_histories.len(),
+                    |state| &state.parent,
+                );
+                for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
+                    history.states = states;
                 }
-                let mut records_by_parent = HashMap::<String, Vec<_>>::new();
-                for record in records { records_by_parent.entry(record.parent.clone()).or_default().push(record); }
-                let mut states_by_parent = HashMap::<String, Vec<_>>::new();
-                for mut state in states {
-                    state.bulletin_boards = boards_by_parent.remove(&state.id).unwrap_or_default();
-                    state.records = records_by_parent.remove(&state.id).unwrap_or_default();
-                    states_by_parent.entry(state.parent.clone()).or_default().push(state);
-                }
-                for history in &mut native.asm_histories { history.states = states_by_parent.remove(&history.id).unwrap_or_default(); }
                 Ok(native)
             }
 
