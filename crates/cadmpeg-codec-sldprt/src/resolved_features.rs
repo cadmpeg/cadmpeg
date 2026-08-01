@@ -34646,6 +34646,20 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     let ([operand] | [_, operand]) = relation.operands.as_slice() else {
                         return None;
                     };
+                    let parameter = relation_parameter(relation)?;
+                    let cadmpeg_ir::features::ParameterValue::Length(value) =
+                        parameter.value.as_ref()?
+                    else {
+                        return None;
+                    };
+                    let radius = match parameter.display {
+                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                        None => return None,
+                    };
+                    if !(radius.is_finite() && radius > 0.0) {
+                        return None;
+                    }
                     let explicit = operand
                         .entity_ref
                         .as_deref()
@@ -34656,6 +34670,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                             relation.feature_ref.as_str(),
                             operand.kind,
                             operand.entity_index,
+                            radius,
                         )
                     });
                     let (marker, encoded_radius) = match (explicit, implicit.flatten()) {
@@ -34672,20 +34687,6 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         return None;
                     }
                     let [u, v] = marker.coordinates_m?;
-                    let parameter = relation_parameter(relation)?;
-                    let cadmpeg_ir::features::ParameterValue::Length(value) =
-                        parameter.value.as_ref()?
-                    else {
-                        return None;
-                    };
-                    let radius = match parameter.display {
-                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
-                        None => return None,
-                    };
-                    if !(radius.is_finite() && radius > 0.0) {
-                        return None;
-                    }
                     if encoded_radius.is_some_and(|encoded| !same_dimension_length(encoded, radius))
                     {
                         return None;
@@ -34732,6 +34733,20 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             let ([operand] | [_, operand]) = relation.operands.as_slice() else {
                 continue;
             };
+            let parameter = relation_parameter(relation);
+            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
+                parameter.and_then(|parameter| parameter.value.as_ref())
+            else {
+                continue;
+            };
+            let radius = match parameter.and_then(|parameter| parameter.display) {
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                None => continue,
+            };
+            if !(radius.is_finite() && radius > 0.0) {
+                continue;
+            }
             let explicit_marker = operand
                 .entity_ref
                 .as_deref()
@@ -34742,6 +34757,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     relation.feature_ref.as_str(),
                     operand.kind,
                     operand.entity_index,
+                    radius,
                 )
             });
             let (marker, encoded_radius) = match (explicit_marker, implicit_marker.flatten()) {
@@ -34757,23 +34773,9 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             ) {
                 continue;
             }
-            let parameter = relation_parameter(relation);
-            let (Some([u, v]), Some(parameter)) = (marker.coordinates_m, parameter) else {
+            let Some([u, v]) = marker.coordinates_m else {
                 continue;
             };
-            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
-                parameter.value.as_ref()
-            else {
-                continue;
-            };
-            let radius = match parameter.display {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
-                None => continue,
-            };
-            if !(radius.is_finite() && radius > 0.0) {
-                continue;
-            }
             if encoded_radius.is_some_and(|encoded| !same_dimension_length(encoded, radius)) {
                 continue;
             }
@@ -35981,8 +35983,12 @@ fn implicit_circle_marker<'a>(
     feature: &str,
     operand_kind: FeatureInputOperandKind,
     index: u16,
+    expected_radius: f64,
 ) -> Option<(&'a SketchInputEntity, f64)> {
-    if operand_kind != FeatureInputOperandKind::Native(0x83fe) {
+    if operand_kind != FeatureInputOperandKind::Native(0x83fe)
+        || !expected_radius.is_finite()
+        || expected_radius <= 0.0
+    {
         return None;
     }
     let relation_index = u32::from(index).checked_add(1)?;
@@ -36014,13 +36020,53 @@ fn implicit_circle_marker<'a>(
             let [cu, cv] = center.coordinates_m?;
             let [ru, rv] = radial.coordinates_m?;
             let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-            (radius.is_finite() && radius > 0.0).then_some((center, radius))
+            same_dimension_length(radius, expected_radius).then_some((center, radius))
         })
         .collect::<Vec<_>>();
     candidates.sort_by_key(|(center, _)| center.id.as_str());
     candidates
         .dedup_by(|left, right| left.0.id == right.0.id && left.1.to_bits() == right.1.to_bits());
     if let [candidate] = candidates.as_slice() {
+        return Some(*candidate);
+    }
+
+    let mut terminal_pairs = Vec::new();
+    for lane in lanes {
+        let feature_markers = lane
+            .sketch_entities
+            .iter()
+            .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+            .filter(|marker| marker.coordinates_m.is_some())
+            .filter(|marker| {
+                matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+            })
+            .collect::<Vec<_>>();
+        for radial in feature_markers
+            .iter()
+            .copied()
+            .filter(|marker| marker.local_id.is_none())
+        {
+            for center in feature_markers
+                .iter()
+                .copied()
+                .filter(|marker| marker.local_id.is_some() && marker.offset < radial.offset)
+            {
+                let [cu, cv] = center.coordinates_m?;
+                let [ru, rv] = radial.coordinates_m?;
+                let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+                if same_dimension_length(radius, expected_radius) {
+                    terminal_pairs.push((center, radius));
+                }
+            }
+        }
+    }
+    terminal_pairs.sort_by_key(|(center, _)| center.id.as_str());
+    terminal_pairs
+        .dedup_by(|left, right| left.0.id == right.0.id && left.1.to_bits() == right.1.to_bits());
+    if let [candidate] = terminal_pairs.as_slice() {
         return Some(*candidate);
     }
 
@@ -36047,7 +36093,7 @@ fn implicit_circle_marker<'a>(
     let [cu, cv] = center.coordinates_m?;
     let [ru, rv] = radial.coordinates_m?;
     let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-    (radius.is_finite() && radius > 0.0).then_some((*center, radius))
+    same_dimension_length(radius, expected_radius).then_some((*center, radius))
 }
 
 /// Project owned native relation bindings into their neutral sketches.
@@ -49844,6 +49890,7 @@ mod profile_join_tests {
             "feature-native",
             FeatureInputOperandKind::Native(0x83fe),
             0,
+            5.0,
         )
         .expect("implicit circle pair");
         assert_eq!(resolved.id, "implicit-center");
@@ -49900,8 +49947,54 @@ mod profile_join_tests {
             "feature-native",
             FeatureInputOperandKind::Native(0x83fe),
             0,
+            5.0,
         )
         .expect("solver-owned implicit circle");
+
+        assert_eq!(resolved.id, "center");
+        assert!((radius - 5.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn implicit_circle_uses_unique_terminal_radial_point() {
+        let mut unrelated = marker("unrelated", Some([0.0, 0.0]));
+        unrelated.offset = 10;
+        unrelated.local_id = Some(1);
+        let mut center = marker("center", Some([0.010, 0.010]));
+        center.offset = 20;
+        center.local_id = Some(2);
+        let mut another = marker("another", Some([0.020, 0.020]));
+        another.offset = 30;
+        another.local_id = Some(3);
+        let mut radial = marker("radial", Some([0.013, 0.014]));
+        radial.offset = 40;
+        radial.local_id = None;
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![unrelated, center, another, radial],
+        };
+        let lanes = [lane];
+
+        let (resolved, radius) = implicit_circle_marker(
+            &lanes,
+            "feature-native",
+            FeatureInputOperandKind::Native(0x83fe),
+            0,
+            5.0,
+        )
+        .expect("unique terminal radial pair");
 
         assert_eq!(resolved.id, "center");
         assert!((radius - 5.0).abs() < 1.0e-12);
