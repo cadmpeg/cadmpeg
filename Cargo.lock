@@ -175,6 +175,7 @@ version = "0.3.0"
 dependencies = [
  "schemars",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 

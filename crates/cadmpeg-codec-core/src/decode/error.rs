@@ -12,6 +12,20 @@ pub enum ResourceDimension {
     InputBytes,
     /// Bytes produced by decompression.
     DecompressedBytes,
+    /// Bytes held by scoped materializations.
+    MaterializedBytes,
+    /// Bytes retained for the decode session outside expansion output.
+    RetainedBytes,
+    /// Admitted semantic or native entities.
+    Entities,
+    /// Admitted items across decoded collections.
+    CollectionItems,
+    /// Active recursive nesting depth.
+    RecursionDepth,
+    /// Algorithm work units.
+    WorkUnits,
+    /// A codec-local resource dimension.
+    Codec(&'static str),
 }
 
 /// Why a resource request failed.

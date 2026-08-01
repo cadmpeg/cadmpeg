@@ -5,6 +5,7 @@
 //! and [`View`] provides bounded navigation within one address space.
 
 mod arena;
+mod budget;
 mod context;
 mod error;
 mod policy;
@@ -16,6 +17,7 @@ mod view;
 mod tests;
 
 pub use arena::DecodeArena;
+pub use budget::{refuse_local_limit, DepthGuard, ScopedReservation, WorkBudget};
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,

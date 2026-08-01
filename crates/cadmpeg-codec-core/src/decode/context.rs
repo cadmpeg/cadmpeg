@@ -6,12 +6,12 @@ use std::cell::Cell;
 use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
+use super::budget::{DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
 use super::error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
-    DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE,
 };
 use super::space::{ByteRange, SpaceId};
 use super::view::View;
@@ -26,10 +26,8 @@ pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     policy: DecodePolicy,
     container_only: bool,
-    input_bytes: u64,
-    decompressed_bytes: Cell<u64>,
+    budget: DecodeBudget,
     next_space: Cell<u32>,
-    fuse: Cell<Option<ResourceLimit>>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -98,10 +96,8 @@ impl<'a> DecodeContext<'a> {
             arena,
             policy: *policy,
             container_only: false,
-            input_bytes: length,
-            decompressed_bytes: Cell::new(0),
+            budget: DecodeBudget::new(*policy, length),
             next_space: Cell::new(1),
-            fuse: Cell::new(None),
         };
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
@@ -122,17 +118,12 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decompression_allowance(&self) -> u64 {
-        let proportional = DECOMPRESSED_TOTAL_BASE
-            .saturating_add(DECOMPRESSED_TOTAL_PER_INPUT_BYTE.saturating_mul(self.input_bytes));
-        self.policy
-            .limits
-            .max_decompressed_bytes_total
-            .min(proportional)
+        self.budget.decompression_allowance()
     }
 
     fn per_expand_allowance(&self) -> u64 {
         let proportional = DECOMPRESSED_PER_EXPAND_BASE.saturating_add(
-            DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE.saturating_mul(self.input_bytes),
+            DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE.saturating_mul(self.budget.input_bytes()),
         );
         self.policy
             .limits
@@ -153,22 +144,8 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
         location: Option<SourceLocation>,
     ) -> Result<(), CodecError> {
-        if let Some(limit) = self.fuse.get() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
-        let allowance = self.decompression_allowance();
-        let used = self.decompressed_bytes.get();
-        if amount > allowance.saturating_sub(used) {
-            return Err(self.fuse(
-                ResourceFailure::BudgetExceeded,
-                scope,
-                amount,
-                operation,
-                location,
-            ));
-        }
-        self.decompressed_bytes.set(used.saturating_add(amount));
-        Ok(())
+        debug_assert_eq!(scope, LimitScope::Global);
+        self.budget.charge_decompressed(amount, operation, location)
     }
 
     /// Records a permanent fuse and returns the resource error to propagate.
@@ -184,21 +161,69 @@ impl<'a> DecodeContext<'a> {
             LimitScope::Global => self.decompression_allowance(),
             LimitScope::PerExpand => self.per_expand_allowance(),
         };
-        let used = self.decompressed_bytes.get();
-        let resource = ResourceLimit {
-            dimension: ResourceDimension::DecompressedBytes,
+        self.budget.refuse(
+            ResourceDimension::DecompressedBytes,
             reason,
             scope,
             limit,
-            used,
-            additional: amount,
-            context: ErrorContext {
-                operation,
-                location,
-            },
-        };
-        self.fuse.set(Some(resource));
-        CodecError::ResourceLimit(resource)
+            self.budget.decompressed_used(),
+            amount,
+            operation,
+            location,
+        )
+    }
+
+    /// Reserves bytes held by a temporary materialization.
+    pub fn reserve_scoped(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+        location: Option<SourceLocation>,
+    ) -> Result<ScopedReservation<'_>, CodecError> {
+        self.budget.reserve_scoped(bytes, operation, location)
+    }
+
+    /// Charges bytes retained for the remainder of this session.
+    pub fn charge_retained(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+        location: Option<SourceLocation>,
+    ) -> Result<(), CodecError> {
+        self.budget.charge_retained(bytes, operation, location)
+    }
+
+    /// Charges admitted entities.
+    pub fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), CodecError> {
+        self.budget.charge_entities(count, operation)
+    }
+
+    /// Charges admitted collection items.
+    pub fn charge_collection_items(
+        &self,
+        count: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.budget.charge_collection_items(count, operation)
+    }
+
+    /// Enters one recursive nesting level until the returned guard is dropped.
+    pub fn enter_nested(
+        &self,
+        operation: &'static str,
+        location: Option<SourceLocation>,
+    ) -> Result<DepthGuard<'_>, CodecError> {
+        self.budget.enter_nested(operation, location)
+    }
+
+    /// Charges session-global algorithm work, fusing on refusal.
+    pub fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), CodecError> {
+        self.budget.charge_work(units, operation)
+    }
+
+    /// Creates a local work slice that also draws from the session allowance.
+    pub fn work_budget(&self, local_limit: u64) -> WorkBudget<'_> {
+        WorkBudget::for_session(local_limit, &self.budget)
     }
 
     // --- decompression ------------------------------------------------------
@@ -210,7 +235,7 @@ impl<'a> DecodeContext<'a> {
         source: View<'_>,
         spec: ExpandSpec,
     ) -> Result<ExpandWriter<'_, 'a>, CodecError> {
-        if let Some(limit) = self.fuse.get() {
+        if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
         let mut buffer: Vec<u8> = Vec::new();
@@ -241,22 +266,43 @@ impl<'a> DecodeContext<'a> {
 
     /// Copies several input extents into one derived view.
     pub fn concat_views(&self, inputs: &[View<'_>]) -> Result<View<'a>, CodecError> {
-        if let Some(limit) = self.fuse.get() {
+        if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
+        let location = inputs.first().copied().map(View::location);
         let total = inputs.iter().try_fold(0usize, |total, view| {
             total.checked_add(view.window().len()).ok_or_else(|| {
-                CodecError::Io(std::io::Error::other("concatenated view is too large"))
+                self.budget.refuse(
+                    ResourceDimension::RetainedBytes,
+                    ResourceFailure::BudgetExceeded,
+                    LimitScope::Global,
+                    self.policy.limits.max_retained_bytes,
+                    total as u64,
+                    view.window().len() as u64,
+                    "concat_views",
+                    location,
+                )
             })
         })?;
+        let reservation = self.reserve_scoped(total as u64, "concat_views", location)?;
         let mut buffer = Vec::new();
         buffer.try_reserve_exact(total).map_err(|_| {
-            CodecError::Io(std::io::Error::other("concatenated view allocation failed"))
+            self.budget.refuse(
+                ResourceDimension::MaterializedBytes,
+                ResourceFailure::AllocationFailed,
+                LimitScope::Global,
+                self.policy.limits.max_materialized_bytes,
+                0,
+                total as u64,
+                "concat_views",
+                location,
+            )
         })?;
         for view in inputs {
             buffer.extend_from_slice(view.window());
         }
         let bytes = self.arena.alloc(buffer.into_boxed_slice());
+        reservation.commit()?;
         let space = self.allocate_space();
         Ok(View::over_space(bytes, space))
     }
@@ -276,7 +322,7 @@ impl<'a> DecodeContext<'a> {
         parent: View<'v>,
         range: ByteRange,
     ) -> Result<View<'v>, CodecError> {
-        if let Some(limit) = self.fuse.get() {
+        if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
         let start = usize::try_from(range.start).ok();
@@ -301,7 +347,7 @@ impl<'a> DecodeContext<'a> {
     /// Closes a decode or inspection session, returning a fused resource error
     /// even when codec code swallowed the charge that caused it.
     pub fn finish_session(self) -> Result<(), CodecError> {
-        if let Some(limit) = self.fuse.get() {
+        if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
         Ok(())

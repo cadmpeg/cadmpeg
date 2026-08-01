@@ -83,3 +83,111 @@ fn concatenation_and_stored_slices_have_distinct_spaces() {
     assert_eq!(slice.window(), &[1, 2]);
     assert_ne!(concat.space(), slice.space());
 }
+
+#[test]
+fn scoped_reservations_release_and_commit_without_double_counting() {
+    let bytes = [0_u8; 1];
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| {
+        limits.max_materialized_bytes = 5;
+        limits.max_retained_bytes = 7;
+    });
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    {
+        let mut reservation = ctx.reserve_scoped(3, "temporary", None).unwrap();
+        reservation.grow(2).unwrap();
+        assert_eq!(reservation.bytes(), 5);
+    }
+    ctx.reserve_scoped(5, "released", None).unwrap();
+    let reservation = ctx.reserve_scoped(2, "retained", None).unwrap();
+    reservation.commit().unwrap();
+    ctx.charge_retained(5, "retained", None).unwrap();
+}
+
+#[test]
+fn every_session_dimension_refuses_and_fuses() {
+    fn assert_dimension(
+        edit: impl FnMut(&mut ResourceLimits),
+        charge: impl FnOnce(&DecodeContext<'_>) -> Result<(), CodecError>,
+        expected: ResourceDimension,
+    ) {
+        let arena = DecodeArena::new();
+        let policy = policy_with(edit);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+        assert!(
+            matches!(charge(&ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == expected)
+        );
+        assert!(matches!(
+            ctx.charge_entities(0, "after_fuse"),
+            Err(CodecError::ResourceLimit(_))
+        ));
+    }
+
+    assert_dimension(
+        |limits| limits.max_materialized_bytes = 1,
+        |ctx| ctx.reserve_scoped(2, "materialize", None).map(drop),
+        ResourceDimension::MaterializedBytes,
+    );
+    assert_dimension(
+        |limits| limits.max_retained_bytes = 1,
+        |ctx| ctx.charge_retained(2, "retain", None),
+        ResourceDimension::RetainedBytes,
+    );
+    assert_dimension(
+        |limits| limits.max_entities = 1,
+        |ctx| ctx.charge_entities(2, "entities"),
+        ResourceDimension::Entities,
+    );
+    assert_dimension(
+        |limits| limits.max_collection_items = 1,
+        |ctx| ctx.charge_collection_items(2, "items"),
+        ResourceDimension::CollectionItems,
+    );
+    assert_dimension(
+        |limits| limits.max_recursion_depth = 0,
+        |ctx| ctx.enter_nested("nested", None).map(drop),
+        ResourceDimension::RecursionDepth,
+    );
+    assert_dimension(
+        |limits| limits.max_work_units = 1,
+        |ctx| ctx.charge_work(2, "work"),
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn depth_is_scoped_and_work_budget_is_sticky() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| {
+        limits.max_recursion_depth = 1;
+        limits.max_work_units = 3;
+    });
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    {
+        let _guard = ctx.enter_nested("first", None).unwrap();
+    }
+    ctx.enter_nested("second", None).unwrap();
+
+    let budget = ctx.work_budget(10);
+    assert!(budget.charge_by(2));
+    let child = budget.child_slice(1);
+    assert!(child.charge());
+    assert!(budget.consume_child(&child));
+    assert_eq!(budget.consumed(), 3);
+    assert!(!budget.charge());
+    assert!(budget.exhausted());
+    assert!(!budget.charge_by(0));
+    assert!(
+        matches!(budget.refuse("solver"), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn local_limit_refusal_uses_codec_dimension() {
+    assert!(matches!(
+        refuse_local_limit("records", 4, 5, None),
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("records")
+                && limit.context.operation == "records"
+    ));
+}
