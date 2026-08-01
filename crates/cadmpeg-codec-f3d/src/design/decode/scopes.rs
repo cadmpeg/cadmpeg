@@ -2121,8 +2121,10 @@ pub(crate) fn exact_joint_origin_frame(
     Some(*candidate)
 }
 
-/// Skip the two-byte payload prologue and the property block it gates.
-fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+/// Skip the payload prologue at `at`: a leading-block presence byte, a property
+/// presence byte, and the property block that byte gates. The leading-block
+/// byte belongs to classes that write one, so this reader only steps over it.
+pub(crate) fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
     let mut cursor = at.checked_add(1)?;
     let present = *bytes.get(cursor)?;
     cursor += 1;
@@ -2741,6 +2743,7 @@ pub(crate) fn parse_parameter_scope(
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,

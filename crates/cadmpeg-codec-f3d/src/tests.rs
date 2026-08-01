@@ -10472,6 +10472,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: Some(profile),
@@ -10499,10 +10500,12 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         members: vec![20],
         lost_edge_references: Vec::new(),
         member_offsets: vec![424],
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 420,
-            identity_record_index: 31,
-            identity_record_offset: 440,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![31],
+            identity_record_offsets: vec![440],
             opaque_index: 1,
             opaque_index_offset: 460,
             opaque_scalar: 0.5,

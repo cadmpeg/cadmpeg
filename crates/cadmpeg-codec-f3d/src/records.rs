@@ -1548,6 +1548,10 @@ pub struct DesignParameterScope {
     /// Byte offset of the `WorkPoint` position's first f64 coordinate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_point_position_offset: Option<u64>,
+    /// Reference members whose records open a construction-operand group the
+    /// group grammar does not close.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unclosed_construction_operand_groups: Vec<u32>,
     /// `refType` construction rule carried by the `WorkPoint` point-data record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_point_reference_type: Option<u32>,
@@ -1874,48 +1878,33 @@ pub struct DesignConstructionOperandGroup {
 
 /// Serialized framing of a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "layout", rename_all = "snake_case")]
-pub enum DesignConstructionOperandGroupFrame {
-    /// Count followed by its member references and identity tail.
-    Counted {
-        /// Byte offset of the member count.
-        member_count_offset: u64,
-        /// Indexed identity-wrapper record.
-        identity_record_index: u32,
-        /// Byte offset of `identity_record_index`.
-        identity_record_offset: u64,
-        /// Opaque repeated nonzero u32.
-        opaque_index: u32,
-        /// Byte offset of the first `opaque_index` copy.
-        opaque_index_offset: u64,
-        /// Opaque finite f64.
-        opaque_scalar: f64,
-        /// Byte offset of `opaque_scalar`.
-        opaque_scalar_offset: u64,
-        /// Boolean tail variant.
-        variant: bool,
-    },
-    /// One member followed by two auxiliary indexed-record references.
-    Direct {
-        /// Byte offset of the member count.
-        member_count_offset: u64,
-        /// First auxiliary record.
-        first_auxiliary_record_index: u32,
-        /// Byte offset of the first auxiliary record.
-        first_auxiliary_record_offset: u64,
-        /// Second auxiliary record.
-        second_auxiliary_record_index: u32,
-        /// Byte offset of the second auxiliary record.
-        second_auxiliary_record_offset: u64,
-        /// Nonzero persistent-selection discriminator.
-        selector: u32,
-        /// Byte offset of the persistent-selection discriminator.
-        selector_offset: u64,
-        /// Opaque bytes after the role through the first tail reference.
-        opaque_payload: Vec<u8>,
-        /// Byte offset of `opaque_payload`.
-        opaque_payload_offset: u64,
-    },
+pub struct DesignConstructionOperandGroupFrame {
+    /// Byte offset of the member count.
+    pub member_count_offset: u64,
+    /// Auxiliary records named by the two optional references that follow the
+    /// member run; an absent reference contributes no entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auxiliary_record_indices: Vec<u32>,
+    /// Byte offsets parallel to `auxiliary_record_indices`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auxiliary_record_offsets: Vec<u64>,
+    /// Indexed identity-wrapper records named by the counted identity run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_record_indices: Vec<u32>,
+    /// Byte offsets parallel to `identity_record_indices`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_record_offsets: Vec<u64>,
+    /// Opaque ordinal: nonzero and below 256, repeated after `opaque_scalar` in
+    /// every container generation but one.
+    pub opaque_index: u32,
+    /// Byte offset of the first `opaque_index` copy.
+    pub opaque_index_offset: u64,
+    /// Opaque nonnegative finite f64.
+    pub opaque_scalar: f64,
+    /// Byte offset of `opaque_scalar`.
+    pub opaque_scalar_offset: u64,
+    /// Boolean tail variant.
+    pub variant: bool,
 }
 
 /// Nested identity chain named by a construction-operand group.

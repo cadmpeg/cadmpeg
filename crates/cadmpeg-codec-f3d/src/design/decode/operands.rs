@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, decode_recipe_references, recipe_record_prefix,
 };
+use crate::design::decode::scopes::payload_prologue;
 use crate::design::decode::sketch::{
     indexed_record_index, next_indexed_record_offset, next_indexed_record_offset_with_index,
 };
@@ -546,9 +547,13 @@ pub fn decode_extrude_selection_groups(
 }
 
 /// Decode counted construction-operand groups named by feature scopes.
+///
+/// A scope reference member whose record opens the group grammar but does not
+/// close it is recorded on the owning scope, so a group the grammar cannot read
+/// is distinguishable from a reference member that is not a group at all.
 pub fn decode_construction_operand_groups(
     scan: &ContainerScan,
-    scopes: &[DesignParameterScope],
+    scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignConstructionOperandGroup>, CodecError> {
     let headers = headers
@@ -556,7 +561,7 @@ pub fn decode_construction_operand_groups(
         .filter_map(|h| Some(((native_stream(&h.id)?, h.record_index), h)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| {
+    for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Coil)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
@@ -593,21 +598,26 @@ pub fn decode_construction_operand_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
             let (Ok(ordinal), Some(header)) =
                 (u32::try_from(ordinal), headers.get(&(stream, record_index)))
             else {
                 continue;
             };
-            if let Some(mut group) = parse_construction_operand_group(bytes, scope, ordinal, header)
-            {
-                group.id = ids::native_design_construction_operand_group_id(
-                    &entry.name,
-                    header.byte_offset,
-                );
-                out.push(group);
+            match parse_construction_operand_group(bytes, scope, ordinal, header) {
+                ConstructionOperandGroupParse::Complete(mut group) => {
+                    group.id = ids::native_design_construction_operand_group_id(
+                        &entry.name,
+                        header.byte_offset,
+                    );
+                    out.push(*group);
+                }
+                ConstructionOperandGroupParse::Unclosed => unclosed.push(record_index),
+                ConstructionOperandGroupParse::NotAGroup => {}
             }
         }
+        scope.unclosed_construction_operand_groups = unclosed;
         if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
@@ -808,63 +818,186 @@ pub fn disambiguate_fixed_fillet_parameters(
     }
 }
 
+/// Outcome of reading a scope reference member as a construction-operand group.
+pub(crate) enum ConstructionOperandGroupParse {
+    /// The record does not open a construction-operand group.
+    NotAGroup,
+    /// The record opens a group the grammar does not close.
+    Unclosed,
+    /// A complete group.
+    Complete(Box<DesignConstructionOperandGroup>),
+}
+
+impl ConstructionOperandGroupParse {
+    /// The group, where the record carried a complete one.
+    #[cfg(test)]
+    pub(crate) fn complete(self) -> Option<DesignConstructionOperandGroup> {
+        match self {
+            Self::Complete(group) => Some(*group),
+            Self::NotAGroup | Self::Unclosed => None,
+        }
+    }
+}
+
+/// Read the construction-operand group at `header`.
+///
+/// The record's members are a leading-block presence byte, the property block
+/// its presence byte gates, the counted member run, two optional references,
+/// the counted identity run, a zero u32 and the u32 role, ten zero bytes, an
+/// ordinal, a duration, and a repeat of the ordinal that one container
+/// generation omits. The tail is a reference to record `N + 2`, a flag block,
+/// a reference to record `N + 1`, a zero byte, the owning scope's reference,
+/// and the same-index paired header. The flag block's last byte is zero; one
+/// container generation prefixes it with a further byte. Neither the repeated
+/// ordinal nor the prefix byte is announced, so the tail settles both: exactly
+/// one of the four readings reaches a paired header carrying this record's own
+/// index.
 pub(crate) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<DesignConstructionOperandGroup> {
-    if let Some(group) =
-        parse_direct_construction_operand_group(bytes, scope, scope_reference_ordinal, header)
-    {
-        return Some(group);
-    }
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let count_at = if bytes.get(start + 11..start + 21)? == [0; 10] {
-        start.checked_add(21)?
-    } else {
-        if bytes.get(start + 11..start + 20)? != [0; 9]
-            || bytes.get(start + 20) != Some(&1)
-            || u32_at(bytes, start + 21)? != 1
-        {
-            return None;
-        }
-        let (property, after_property) =
-            lp_ascii_filtered(bytes, start + 25, 0..=2000, u8::is_ascii_graphic)?;
-        let (property_type, after_property_type) =
-            lp_ascii_filtered(bytes, after_property, 0..=2000, u8::is_ascii_graphic)?;
-        if property != "DcFeatureOperationIdFlag" || property_type != "IntrinsicMetaTypeuint64" {
-            return None;
-        }
-        after_property_type.checked_add(8)?
+) -> ConstructionOperandGroupParse {
+    use ConstructionOperandGroupParse::{Complete, NotAGroup, Unclosed};
+
+    let Ok(start) = usize::try_from(header.byte_offset) else {
+        return NotAGroup;
     };
-    let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
-    let mut position = count_at.checked_add(4)?;
-    // Each member consumes 11 bytes; a count the remaining bytes cannot
+    // The indexed header is the three-digit class tag, the u64 entity id whose
+    // low word is the record index, and the record's own empty name.
+    if bytes.get(start + 11..start + 19) != Some(&[0; 8]) {
+        return NotAGroup;
+    }
+    let Some(mut cursor) = payload_prologue(bytes, start + 19, bytes.len()) else {
+        return NotAGroup;
+    };
+    let member_count_at = cursor;
+    let Some(member_count) = u32_at(bytes, cursor) else {
+        return NotAGroup;
+    };
+    cursor += 4;
+    // A reference is at least one byte, so a count the remaining bytes cannot
     // supply is corrupt and must not reach the allocator.
-    if count == 0 || count > bytes.len().saturating_sub(position) / 11 {
-        return None;
+    if usize::try_from(member_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
+        return NotAGroup;
     }
-    let mut members = Vec::with_capacity(count);
-    let mut member_offsets = Vec::with_capacity(count);
-    for _ in 0..count {
-        if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
-            return None;
+    let mut members = Vec::new();
+    let mut member_offsets = Vec::new();
+    for _ in 0..member_count {
+        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+            return NotAGroup;
+        };
+        members.push(record_index);
+        member_offsets.push(offset);
+    }
+    let mut auxiliary_record_indices = Vec::new();
+    let mut auxiliary_record_offsets = Vec::new();
+    for _ in 0..2 {
+        if bytes.get(cursor) == Some(&0) {
+            cursor += 1;
+            continue;
         }
-        members.push(u32_at(bytes, position + 1)?);
-        member_offsets.push(u64::try_from(position + 1).ok()?);
-        position = position.checked_add(11)?;
+        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+            return NotAGroup;
+        };
+        auxiliary_record_indices.push(record_index);
+        auxiliary_record_offsets.push(offset);
     }
-    if bytes.get(position..position + 2)? != [0; 2]
-        || u32_at(bytes, position + 2)? != 1
-        || bytes.get(position + 6) != Some(&1)
-        || bytes.get(position + 11..position + 17)? != [0; 6]
-        || bytes.get(position + 25..position + 35)? != [0; 10]
-    {
-        return None;
+    let Some(identity_count) = u32_at(bytes, cursor) else {
+        return NotAGroup;
+    };
+    cursor += 4;
+    if usize::try_from(identity_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
+        return NotAGroup;
     }
-    let identity_record_index = u32_at(bytes, position + 7)?;
-    let role = read_u64(bytes, position + 17)?;
+    let mut identity_record_indices = Vec::new();
+    let mut identity_record_offsets = Vec::new();
+    for _ in 0..identity_count {
+        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+            return NotAGroup;
+        };
+        identity_record_indices.push(record_index);
+        identity_record_offsets.push(offset);
+    }
+    // The role occupies the high word of a u64 whose low word is zero.
+    let role_at = cursor;
+    let (Some(0), Some(role)) = (u32_at(bytes, role_at), read_u64(bytes, role_at)) else {
+        return NotAGroup;
+    };
+    cursor += 8;
+    if bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
+        return NotAGroup;
+    }
+    cursor += 10;
+    let opaque_index_at = cursor;
+    let (Some(opaque_index), Some(opaque_scalar)) =
+        (u32_at(bytes, cursor), f64_at(bytes, cursor + 4))
+    else {
+        return NotAGroup;
+    };
+    if opaque_index == 0 || !opaque_scalar.is_finite() {
+        return NotAGroup;
+    }
+    cursor += 12;
+
+    // Past this point the record has opened the group grammar, so a tail that
+    // does not close is a group this reader cannot name.
+    let mut closed = None;
+    for repeats_ordinal in [true, false] {
+        let mut tail = cursor;
+        if repeats_ordinal {
+            if u32_at(bytes, tail) != Some(opaque_index) {
+                continue;
+            }
+            tail += 4;
+        }
+        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+            != header.record_index.checked_add(2)
+        {
+            continue;
+        }
+        for flag_bytes in [2usize, 3] {
+            let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
+                continue;
+            };
+            if flags.last() != Some(&0) {
+                continue;
+            }
+            // The wider block prefixes the narrower one, so the variant flag is
+            // always the byte before the terminating zero.
+            let variant = flags[flag_bytes - 2] != 0;
+            let mut after = tail + flag_bytes;
+            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+                != header.record_index.checked_add(1)
+            {
+                continue;
+            }
+            if bytes.get(after) != Some(&0) {
+                continue;
+            }
+            after += 1;
+            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+                != Some(scope.record_index)
+            {
+                continue;
+            }
+            let Some((paired_class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, after, 3..=3, u8::is_ascii_digit)
+            else {
+                continue;
+            };
+            if u32_at(bytes, after_tag) != Some(header.record_index) {
+                continue;
+            }
+            if closed.replace((variant, after, paired_class_tag)).is_some() {
+                return Unclosed;
+            }
+        }
+    }
+    let Some((variant, paired_at, paired_class_tag)) = closed else {
+        return Unclosed;
+    };
+
     let extrude_role = if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
         match role {
             0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
@@ -875,52 +1008,15 @@ pub(crate) fn parse_construction_operand_group(
     } else {
         None
     };
-    let opaque_index = u32_at(bytes, position + 35)?;
-    let opaque_scalar = f64_at(bytes, position + 39)?;
-    if opaque_index == 0
-        || !opaque_scalar.is_finite()
-        || u32_at(bytes, position + 47)? != opaque_index
-        || bytes.get(position + 51) != Some(&1)
-        || u32_at(bytes, position + 52)? != header.record_index.checked_add(2)?
-        || bytes.get(position + 56..position + 62)? != [0; 6]
-    {
-        return None;
-    }
-    let (variant, paired_at) = if bytes.get(position + 62) == Some(&1)
-        && matches!(bytes.get(position + 63), Some(0 | 1))
-        && bytes.get(position + 64) == Some(&0)
-        && bytes.get(position + 65) == Some(&1)
-        && u32_at(bytes, position + 66)? == header.record_index.checked_add(1)?
-        && bytes.get(position + 70..position + 77)? == [0; 7]
-        && bytes.get(position + 77) == Some(&1)
-        && u32_at(bytes, position + 78)? == scope.record_index
-    {
-        let paired_at = if bytes.get(position + 82..position + 88)? == [0; 6] {
-            position + 88
-        } else if bytes.get(position + 82..position + 85)? == [0; 3] {
-            position + 85
-        } else {
-            return None;
-        };
-        (bytes[position + 63] != 0, paired_at)
-    } else if bytes.get(position + 62..position + 64)? == [0; 2]
-        && bytes.get(position + 64) == Some(&1)
-        && u32_at(bytes, position + 65)? == header.record_index.checked_add(1)?
-        && bytes.get(position + 69..position + 76)? == [0; 7]
-        && bytes.get(position + 76) == Some(&1)
-        && u32_at(bytes, position + 77)? == scope.record_index
-        && bytes.get(position + 81..position + 87)? == [0; 6]
-    {
-        (false, position + 87)
-    } else {
-        return None;
+    let (Ok(member_count_offset), Ok(role_offset), Ok(opaque_index_offset), Ok(paired_byte_offset)) = (
+        u64::try_from(member_count_at),
+        u64::try_from(role_at),
+        u64::try_from(opaque_index_at),
+        u64::try_from(paired_at),
+    ) else {
+        return Unclosed;
     };
-    let (paired_class_tag, after_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_tag)? != header.record_index {
-        return None;
-    }
-    Some(DesignConstructionOperandGroup {
+    Complete(Box::new(DesignConstructionOperandGroup {
         id: String::new(),
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
@@ -930,92 +1026,40 @@ pub(crate) fn parse_construction_operand_group(
         members,
         lost_edge_references: Vec::new(),
         member_offsets,
-        frame: DesignConstructionOperandGroupFrame::Counted {
-            member_count_offset: u64::try_from(count_at).ok()?,
-            identity_record_index,
-            identity_record_offset: u64::try_from(position + 7).ok()?,
+        frame: DesignConstructionOperandGroupFrame {
+            member_count_offset,
+            auxiliary_record_indices,
+            auxiliary_record_offsets,
+            identity_record_indices,
+            identity_record_offsets,
             opaque_index,
-            opaque_index_offset: u64::try_from(position + 35).ok()?,
+            opaque_index_offset,
             opaque_scalar,
-            opaque_scalar_offset: u64::try_from(position + 39).ok()?,
+            opaque_scalar_offset: opaque_index_offset + 4,
             variant,
         },
         role,
         extrude_role,
         extrude_face_role: None,
-        role_offset: u64::try_from(position + 17).ok()?,
+        role_offset,
         paired_class_tag,
-        paired_byte_offset: u64::try_from(paired_at).ok()?,
-    })
+        paired_byte_offset,
+    }))
 }
 
-fn parse_direct_construction_operand_group(
-    bytes: &[u8],
-    scope: &DesignParameterScope,
-    scope_reference_ordinal: u32,
-    header: &DesignRecordHeader,
-) -> Option<DesignConstructionOperandGroup> {
-    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude) {
+/// Take one reference naming a record of the same segment, advancing `at` past
+/// every byte it owns. Returns the record index and the byte offset of the low
+/// word of the target entity id.
+fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
+    let target_at = at.checked_add(1)?;
+    let reference = take_reference(bytes, at)?;
+    if reference.segment.is_some() || reference.link_name.is_some() {
         return None;
     }
-    let start = usize::try_from(header.byte_offset).ok()?;
-    if bytes.get(start + 11..start + 21)? != [0; 10]
-        || u32_at(bytes, start + 21)? != 1
-        || marked_record_reference(bytes, start + 25) != header.record_index.checked_add(9)
-        || marked_record_reference(bytes, start + 36) != header.record_index.checked_add(3)
-        || marked_record_reference(bytes, start + 47) != header.record_index.checked_add(6)
-        || u32_at(bytes, start + 58)? != 1
-        || bytes.get(start + 62) != Some(&1)
-        || bytes.get(start + 67..start + 73)? != [0; 6]
-        || bytes.get(start + 118..start + 120)? != [0; 2]
-        || marked_record_reference(bytes, start + 120) != header.record_index.checked_add(1)
-        || bytes.get(start + 131) != Some(&0)
-        || marked_record_reference(bytes, start + 132) != Some(scope.record_index)
-    {
-        return None;
-    }
-    let selector = u32_at(bytes, start + 63)?;
-    let role = read_u64(bytes, start + 73)?;
-    if selector == 0
-        || role != 0x0000_0011_0000_0000
-        || marked_record_reference(bytes, start + 107) != header.record_index.checked_add(2)
-    {
-        return None;
-    }
-    let paired_at = start.checked_add(143)?;
-    let (paired_class_tag, after_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_tag)? != header.record_index {
-        return None;
-    }
-    Some(DesignConstructionOperandGroup {
-        id: String::new(),
-        scope_record_index: scope.record_index,
-        scope_reference_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        members: vec![header.record_index.checked_add(9)?],
-        lost_edge_references: Vec::new(),
-        member_offsets: vec![u64::try_from(start + 26).ok()?],
-        frame: DesignConstructionOperandGroupFrame::Direct {
-            member_count_offset: u64::try_from(start + 21).ok()?,
-            first_auxiliary_record_index: header.record_index.checked_add(3)?,
-            first_auxiliary_record_offset: u64::try_from(start + 37).ok()?,
-            second_auxiliary_record_index: header.record_index.checked_add(6)?,
-            second_auxiliary_record_offset: u64::try_from(start + 48).ok()?,
-            selector,
-            selector_offset: u64::try_from(start + 63).ok()?,
-            opaque_payload: bytes.get(start + 81..start + 107)?.to_vec(),
-            opaque_payload_offset: u64::try_from(start + 81).ok()?,
-        },
-        role,
-        extrude_role: Some(DesignExtrudeOperandRole::Faces),
-        extrude_face_role: None,
-        role_offset: u64::try_from(start + 73).ok()?,
-        paired_class_tag,
-        paired_byte_offset: u64::try_from(paired_at).ok()?,
-    })
+    Some((
+        u32::try_from(reference.target?).ok()?,
+        u64::try_from(target_at).ok()?,
+    ))
 }
 
 /// Decode the persistent identity frame named by each construction-operand group.
@@ -1040,14 +1084,10 @@ pub fn decode_construction_operand_identities(
         }) else {
             continue;
         };
-        let DesignConstructionOperandGroupFrame::Counted {
-            identity_record_index,
-            ..
-        } = group.frame
-        else {
+        let Some(identity_record_index) = group.frame.identity_record_indices.first() else {
             continue;
         };
-        let Some(wrapper_header) = headers.get(&(stream, identity_record_index)) else {
+        let Some(wrapper_header) = headers.get(&(stream, *identity_record_index)) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;

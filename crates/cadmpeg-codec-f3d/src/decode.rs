@@ -2434,7 +2434,7 @@ fn extend_related_design_records(
     native.design_construction_operand_groups =
         crate::design::decode::operands::decode_construction_operand_groups(
             scan,
-            &native.design_parameter_scopes,
+            &mut native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
     crate::design::decode::scopes::bind_mirror_constructions(
@@ -2471,23 +2471,10 @@ fn extend_related_design_records(
                 let stream = crate::ids::native_stream(&group.id)
                     .unwrap_or(crate::ids::DEFAULT_STREAM)
                     .to_owned();
-                let record_indices = match &group.frame {
-                    crate::records::DesignConstructionOperandGroupFrame::Counted {
-                        identity_record_index,
-                        ..
-                    } => vec![*identity_record_index],
-                    crate::records::DesignConstructionOperandGroupFrame::Direct {
-                        first_auxiliary_record_index,
-                        second_auxiliary_record_index,
-                        ..
-                    } => vec![
-                        group.record_index.saturating_add(1),
-                        group.record_index.saturating_add(2),
-                        *first_auxiliary_record_index,
-                        *second_auxiliary_record_index,
-                    ],
-                };
-                record_indices
+                group
+                    .frame
+                    .identity_record_indices
+                    .clone()
                     .into_iter()
                     .map(move |record_index| (stream.clone(), record_index))
             }),
@@ -3629,6 +3616,7 @@ mod tests {
             joint_origin_reference_offset: None,
             work_point_position: None,
             work_point_position_offset: None,
+            unclosed_construction_operand_groups: Vec::new(),
             work_point_reference_type: None,
             work_point_input_record_indices: Vec::new(),
             extrude_profile: None,
@@ -3791,6 +3779,7 @@ mod tests {
             joint_origin_reference_offset: None,
             work_point_position: None,
             work_point_position_offset: None,
+            unclosed_construction_operand_groups: Vec::new(),
             work_point_reference_type: None,
             work_point_input_record_indices: Vec::new(),
             extrude_profile: None,

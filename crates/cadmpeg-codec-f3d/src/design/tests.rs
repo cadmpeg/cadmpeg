@@ -22,7 +22,7 @@ use crate::design::decode::operands::{
     parse_body_recipe_operand, parse_construction_operand_group,
     parse_construction_operand_identity, parse_edge_operand, parse_entity_selection_operand,
     parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-    parse_sketch_profile, FaceRecipeProgramKind,
+    parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
     bind_parameter_companion_payloads, design_parameter_discriminator, parse_design_parameter,
@@ -4311,10 +4311,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         members: vec![201],
         lost_edge_references: Vec::new(),
         member_offsets: vec![0],
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
-            identity_record_index: 202,
-            identity_record_offset: 0,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![202],
+            identity_record_offsets: vec![0],
             opaque_index: 1,
             opaque_index_offset: 0,
             opaque_scalar: 0.0,
@@ -5865,6 +5867,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -5920,22 +5923,18 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     header(&mut bytes, *b"259", 100);
 
     let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
+        .complete()
         .expect("counted Extrude operand group");
     assert_eq!(group.members, [200, 201]);
     assert_eq!(group.member_offsets, [26, 37]);
     assert_eq!(group.role, 0x0000_0008_0000_0000);
     assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
-    assert!(matches!(
-        group.frame,
-        crate::records::DesignConstructionOperandGroupFrame::Counted {
-            member_count_offset: 21,
-            identity_record_index: 300,
-            opaque_index: 180,
-            opaque_scalar: 0.125,
-            variant: true,
-            ..
-        }
-    ));
+    assert_eq!(group.frame.member_count_offset, 21);
+    assert!(group.frame.auxiliary_record_indices.is_empty());
+    assert_eq!(group.frame.identity_record_indices, [300]);
+    assert_eq!(group.frame.opaque_index, 180);
+    assert_eq!(group.frame.opaque_scalar, 0.125);
+    assert!(group.frame.variant);
     assert_eq!(group.paired_byte_offset, paired_at as u64);
 
     let mut flagged = bytes[..11].to_vec();
@@ -5953,14 +5952,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let flagged_count_at = flagged.len();
     flagged.extend_from_slice(&bytes[21..]);
     let flagged = parse_construction_operand_group(&flagged, &scope, 0, &record)
+        .complete()
         .expect("operation-flagged counted operand group");
-    assert!(matches!(
-        flagged.frame,
-        crate::records::DesignConstructionOperandGroupFrame::Counted {
-            member_count_offset,
-            ..
-        } if member_count_offset == flagged_count_at as u64
-    ));
+    assert_eq!(flagged.frame.member_count_offset, flagged_count_at as u64);
     assert_eq!(flagged.members, [200, 201]);
     assert_eq!(flagged.role, 0x0000_0008_0000_0000);
 
@@ -5968,16 +5962,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     unclassified_bytes[group.role_offset as usize..group.role_offset as usize + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
     let unclassified = parse_construction_operand_group(&unclassified_bytes, &scope, 0, &record)
+        .complete()
         .expect("counted Extrude group with an unclassified role");
     assert_eq!(unclassified.role, 0x0000_0005_0000_0000);
     assert_eq!(unclassified.extrude_role, None);
-
-    bytes.drain(paired_at - 3..paired_at);
-    let compact = parse_construction_operand_group(&bytes, &scope, 0, &record)
-        .expect("compact counted operand group");
-    assert_eq!(compact.members, [200, 201]);
-    assert_eq!(compact.role, 0x0000_0008_0000_0000);
-    assert_eq!(compact.paired_byte_offset, (paired_at - 3) as u64);
 
     let tail_at = 11 + 10 + 4 + 2 * 11;
     let mut flagless = bytes[..tail_at + 62].to_vec();
@@ -5991,13 +5979,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let flagless_paired_at = flagless.len();
     header(&mut flagless, *b"259", 100);
     let flagless = parse_construction_operand_group(&flagless, &scope, 0, &record)
+        .complete()
         .expect("flagless counted operand group");
     assert_eq!(flagless.members, [200, 201]);
     assert_eq!(flagless.role, 0x0000_0008_0000_0000);
-    assert!(matches!(
-        flagless.frame,
-        crate::records::DesignConstructionOperandGroupFrame::Counted { variant: false, .. }
-    ));
+    assert!(!flagless.frame.variant);
     assert_eq!(
         flagless.paired_byte_offset,
         u64::try_from(flagless_paired_at).unwrap()
@@ -6007,55 +5993,68 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     // fail the parse without reaching the allocator.
     let mut bombed = bytes.clone();
     bombed[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
-    assert!(parse_construction_operand_group(&bombed, &scope, 0, &record).is_none());
+    assert!(matches!(
+        parse_construction_operand_group(&bombed, &scope, 0, &record),
+        ConstructionOperandGroupParse::NotAGroup
+    ));
 
-    let mut direct = Vec::new();
-    header(&mut direct, *b"283", 100);
-    direct.extend_from_slice(&[0; 10]);
-    direct.extend_from_slice(&1_u32.to_le_bytes());
-    for record_index in [109_u32, 103, 106] {
-        direct.push(1);
-        direct.extend_from_slice(&record_index.to_le_bytes());
-        direct.extend_from_slice(&[0; 6]);
+    // A record that opens the grammar but whose tail names another record is a
+    // group this reader cannot read, not a reference member that is not a group.
+    let mut truncated = bytes.clone();
+    let tail_at = truncated.len() - 40;
+    truncated[tail_at..].fill(0x5a);
+    assert!(matches!(
+        parse_construction_operand_group(&truncated, &scope, 0, &record),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+
+    // Both optional references after the member run are present and the counted
+    // identity run is empty: the shape a fixed-offset reader cannot reach.
+    let mut auxiliary = Vec::new();
+    header(&mut auxiliary, *b"283", 100);
+    auxiliary.extend_from_slice(&[0; 10]);
+    auxiliary.extend_from_slice(&1u32.to_le_bytes());
+    for record_index in [109u32, 103, 106] {
+        auxiliary.push(1);
+        auxiliary.extend_from_slice(&record_index.to_le_bytes());
+        auxiliary.extend_from_slice(&[0; 6]);
     }
-    direct.extend_from_slice(&1_u32.to_le_bytes());
-    direct.push(1);
-    direct.extend_from_slice(&31_003_u32.to_le_bytes());
-    direct.extend_from_slice(&[0; 6]);
-    direct.extend_from_slice(&0x0000_0011_0000_0000_u64.to_le_bytes());
-    direct.extend_from_slice(&[0x5a; 26]);
-    direct.push(1);
-    direct.extend_from_slice(&102_u32.to_le_bytes());
-    direct.extend_from_slice(&[0; 8]);
-    direct.push(1);
-    direct.extend_from_slice(&101_u32.to_le_bytes());
-    direct.extend_from_slice(&[0; 7]);
-    direct.push(1);
-    direct.extend_from_slice(&scope.record_index.to_le_bytes());
-    direct.extend_from_slice(&[0; 6]);
-    let direct_paired_at = direct.len();
-    header(&mut direct, *b"259", 100);
-    let direct_record = DesignRecordHeader {
+    auxiliary.extend_from_slice(&0u32.to_le_bytes());
+    auxiliary.extend_from_slice(&0x0000_0011_0000_0000u64.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 10]);
+    auxiliary.extend_from_slice(&31_003u32.to_le_bytes());
+    auxiliary.extend_from_slice(&0.25f64.to_le_bytes());
+    auxiliary.extend_from_slice(&31_003u32.to_le_bytes());
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&102u32.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 6]);
+    auxiliary.extend_from_slice(&[0; 2]);
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&101u32.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 7]);
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&scope.record_index.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 6]);
+    let auxiliary_paired_at = auxiliary.len();
+    header(&mut auxiliary, *b"259", 100);
+    let auxiliary_record = DesignRecordHeader {
         class_tag: "283".into(),
         ..record.clone()
     };
-    let direct = parse_construction_operand_group(&direct, &scope, 0, &direct_record)
-        .expect("direct Extrude face group");
-    assert_eq!(direct.members, [109]);
-    assert_eq!(direct.member_offsets, [26]);
-    assert_eq!(direct.role, 0x0000_0011_0000_0000);
-    assert_eq!(direct.extrude_role, Some(DesignExtrudeOperandRole::Faces));
-    assert!(matches!(
-        direct.frame,
-        crate::records::DesignConstructionOperandGroupFrame::Direct {
-            first_auxiliary_record_index: 103,
-            second_auxiliary_record_index: 106,
-            selector: 31_003,
-            ref opaque_payload,
-            ..
-        } if opaque_payload == &[0x5a; 26]
-    ));
-    assert_eq!(direct.paired_byte_offset, direct_paired_at as u64);
+    let auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
+        .complete()
+        .expect("Extrude face group carrying both optional references");
+    assert_eq!(auxiliary.members, [109]);
+    assert_eq!(auxiliary.member_offsets, [26]);
+    assert_eq!(auxiliary.frame.auxiliary_record_indices, [103, 106]);
+    assert_eq!(auxiliary.frame.auxiliary_record_offsets, [37, 48]);
+    assert!(auxiliary.frame.identity_record_indices.is_empty());
+    assert_eq!(auxiliary.role, 0x0000_0011_0000_0000);
+    assert_eq!(
+        auxiliary.extrude_role,
+        Some(DesignExtrudeOperandRole::Faces)
+    );
+    assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
 
     let mut split_scope = scope.clone();
     split_scope.kind = "SplitFace".into();
@@ -6352,10 +6351,12 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         members: vec![200],
         lost_edge_references: Vec::new(),
         member_offsets: vec![1026],
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
-            identity_record_index: 300,
-            identity_record_offset: 1043,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![300],
+            identity_record_offsets: vec![1043],
             opaque_index: 180,
             opaque_index_offset: 1071,
             opaque_scalar: 0.125,
@@ -6452,10 +6453,12 @@ fn nested_entity_selection_member_retains_both_identity_values() {
         members: vec![100],
         lost_edge_references: Vec::new(),
         member_offsets: vec![926],
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            identity_record_index: 200,
-            identity_record_offset: 943,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![200],
+            identity_record_offsets: vec![943],
             opaque_index: 1,
             opaque_index_offset: 971,
             opaque_scalar: 0.0,
@@ -6525,10 +6528,12 @@ fn body_recipe_operand_decodes_counted_reference_table() {
         members: vec![100],
         lost_edge_references: Vec::new(),
         member_offsets: vec![926],
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            identity_record_index: 200,
-            identity_record_offset: 943,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![200],
+            identity_record_offsets: vec![943],
             opaque_index: 1,
             opaque_index_offset: 971,
             opaque_scalar: 0.0,
@@ -6712,6 +6717,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -7140,6 +7146,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -7336,10 +7343,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         members: vec![100],
         lost_edge_references: vec!["f3d:Design/BulkStream.dat:lost-edge#1".into()],
         member_offsets: vec![926],
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
-            identity_record_index: 91,
-            identity_record_offset: 950,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![91],
+            identity_record_offsets: vec![950],
             opaque_index: 1,
             opaque_index_offset: 968,
             opaque_scalar: 0.0,
@@ -8054,10 +8063,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         members: vec![operand.record_index],
         lost_edge_references: Vec::new(),
         member_offsets: vec![924],
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 920,
-            identity_record_index: 91,
-            identity_record_offset: 935,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![91],
+            identity_record_offsets: vec![935],
             opaque_index: 1,
             opaque_index_offset: 954,
             opaque_scalar: 0.0,
@@ -12740,6 +12751,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -12893,6 +12905,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -13081,6 +13094,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: Some(DesignSketchProfileOperand {
@@ -13399,10 +13413,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         members: vec![200],
         lost_edge_references: Vec::new(),
         member_offsets: vec![1026],
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
-            identity_record_index: 300,
-            identity_record_offset: 1044,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![300],
+            identity_record_offsets: vec![1044],
             opaque_index: 180,
             opaque_index_offset: 1072,
             opaque_scalar: 0.125,
@@ -13797,6 +13813,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -13992,10 +14009,12 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
             members: vec![record_index + 100],
             lost_edge_references: Vec::new(),
             member_offsets: vec![1_026 + u64::from(scope_reference_ordinal)],
-            frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+            frame: crate::records::DesignConstructionOperandGroupFrame {
                 member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
-                identity_record_index: record_index + 1,
-                identity_record_offset: 1_050 + u64::from(scope_reference_ordinal),
+                auxiliary_record_indices: Vec::new(),
+                auxiliary_record_offsets: Vec::new(),
+                identity_record_indices: vec![record_index + 1],
+                identity_record_offsets: vec![1_050 + u64::from(scope_reference_ordinal)],
                 opaque_index: 100,
                 opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
                 opaque_scalar: 0.5,
@@ -14637,6 +14656,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -14666,10 +14686,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             .collect(),
         members,
         lost_edge_references: Vec::new(),
-        frame: crate::records::DesignConstructionOperandGroupFrame::Counted {
+        frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021 + u64::from(ordinal) * 200,
-            identity_record_index: 300 + ordinal,
-            identity_record_offset: 1100 + u64::from(ordinal) * 200,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![300 + ordinal],
+            identity_record_offsets: vec![1100 + u64::from(ordinal) * 200],
             opaque_index: 100,
             opaque_index_offset: 1128 + u64::from(ordinal) * 200,
             opaque_scalar: 0.5,
@@ -15043,6 +15065,7 @@ fn parameter_expressions_project_feature_dependencies() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -15165,6 +15188,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -16030,6 +16054,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -16203,6 +16228,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
@@ -16704,6 +16730,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
