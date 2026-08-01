@@ -249,6 +249,14 @@ pub enum SketchGeometry {
         /// source stores none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         width_factor: Option<f64>,
+        /// Point the text is placed and rotated about, in sketch coordinates,
+        /// absent when the source stores no placement.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        anchor: Option<Point2>,
+        /// Rotation about the anchor, counterclockwise from the sketch u axis,
+        /// absent when the source stores no placement.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rotation: Option<Angle>,
     },
     /// Source-native geometry not yet reduced to a neutral family.
     Native {

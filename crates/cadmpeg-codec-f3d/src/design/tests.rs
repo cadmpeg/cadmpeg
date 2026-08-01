@@ -15496,8 +15496,14 @@ fn genesis_relation_parses_text_path_glyph_run() {
 
 /// Build one sketch-text record: `properties` are the property-block keys in
 /// stream order, `slots` says whether each parameter-reference member is
-/// written, and `path` selects path text over frame text with its transform.
-fn sketch_text_record(properties: &[(&str, u64)], slots: [Option<u32>; 2], path: bool) -> Vec<u8> {
+/// written, and `frame` gives the anchor in centimetres and the rotation in
+/// radians of a frame text's placement transform, or `None` for path text,
+/// which stores no transform.
+fn sketch_text_record(
+    properties: &[(&str, u64)],
+    slots: [Option<u32>; 2],
+    frame: Option<(f64, f64, f64)>,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -15540,10 +15546,18 @@ fn sketch_text_record(properties: &[(&str, u64)], slots: [Option<u32>; 2], path:
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.push(0);
     bytes.extend_from_slice(&400i32.to_le_bytes());
-    bytes.extend_from_slice(&u32::from(path).to_le_bytes());
-    bytes.push(u8::from(path));
-    if !path {
-        bytes.extend_from_slice(&[0; 128]);
+    bytes.extend_from_slice(&u32::from(frame.is_none()).to_le_bytes());
+    bytes.push(u8::from(frame.is_none()));
+    if let Some((anchor_u, anchor_v, rotation)) = frame {
+        // A planar rigid placement: the 2x2 rotation basis, the anchor in the
+        // last column, and the identity's third row and column.
+        let (sin, cos) = rotation.sin_cos();
+        for element in [
+            cos, -sin, 0.0, anchor_u, sin, cos, 0.0, anchor_v, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            1.0,
+        ] {
+            bytes.extend_from_slice(&element.to_le_bytes());
+        }
     }
     bytes.extend_from_slice(&[0; 30]);
     push_reference(&mut bytes, 201);
@@ -15570,7 +15584,7 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
             ("txt_tag_base", 305),
         ],
         [Some(307), Some(310)],
-        true,
+        None,
     );
     let text = decode_sketch_text(&bytes).expect("sketch text record");
     assert_eq!(text.record_index, 304);
@@ -15601,7 +15615,7 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
 
 #[test]
 fn sketch_text_record_refuses_a_colour_component_outside_the_unit_range() {
-    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], true);
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
     let mut over = bytes.clone();
     let at = bytes
         .windows(4)
@@ -15619,7 +15633,7 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
     let text = decode_sketch_text(&sketch_text_record(
         &[("textex_tag", 109)],
         [None, None],
-        true,
+        None,
     ))
     .expect("sketch text record");
     assert_eq!(text.entity_genesis, None);
@@ -15632,22 +15646,30 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
 }
 
 #[test]
-fn frame_sketch_text_record_carries_a_placement_transform() {
+fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
+    let rotation = std::f64::consts::FRAC_PI_2;
     let text = decode_sketch_text(&sketch_text_record(
         &[("textex_tag", 109), ("txt_tag_base", 305)],
         [None, None],
-        false,
+        Some((2.175, -0.5, rotation)),
     ))
     .expect("sketch text record");
     assert_eq!(text.base_id, Some(305));
     assert_eq!(text.owner_reference, 201);
+    // The anchor is the transform's last column in centimetres and the
+    // rotation is the angle of its first basis column.
+    assert_eq!(
+        text.anchor,
+        Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
+    );
+    assert!((text.rotation.expect("rotation") - rotation).abs() < 1e-12);
     // Frame text stores 128 more bytes than path text.
     assert_eq!(
         text.raw_bytes.len(),
         sketch_text_record(
             &[("textex_tag", 109), ("txt_tag_base", 305)],
             [None, None],
-            true
+            None
         )
         .len()
             + 128
@@ -15655,8 +15677,33 @@ fn frame_sketch_text_record_carries_a_placement_transform() {
 }
 
 #[test]
+fn path_sketch_text_record_stores_neither_anchor_nor_rotation() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        None,
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.anchor, None);
+    assert_eq!(text.rotation, None);
+}
+
+#[test]
+fn frame_sketch_text_record_refuses_a_transform_that_is_not_a_planar_rotation() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], Some((1.0, 2.0, 0.25)));
+    let at = bytes.len() - 128 - 30 - 11;
+    // A scaled basis, a third row that is not the identity's, and a bottom row
+    // that is not `(0, 0, 0, 1)` each leave the placement.
+    for (element, value) in [(0usize, 2.0f64), (10, 0.5), (15, 2.0)] {
+        let mut broken = bytes.clone();
+        broken[at + element * 8..at + element * 8 + 8].copy_from_slice(&value.to_le_bytes());
+        assert!(decode_sketch_text(&broken).is_none());
+    }
+}
+
+#[test]
 fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
-    let mut bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], true);
+    let mut bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
     bytes.push(0);
     assert!(decode_sketch_text(&bytes).is_none());
 }
@@ -15794,7 +15841,7 @@ fn sketch_text_record_refuses_a_property_block_without_an_identity_key() {
     assert!(decode_sketch_text(&sketch_text_record(
         &[("txt_tag_base", 305)],
         [None, None],
-        true
+        None
     ))
     .is_none());
 }
@@ -15832,6 +15879,8 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
             font_family: "Arial".into(),
             height: Length(10.0),
             width_factor: Some(0.8),
+            anchor: None,
+            rotation: None,
         },
     };
     let mut glyph = [[0.0; 4]; 4];

@@ -754,6 +754,9 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
         && decoded.font_family == text.font_family
         && decoded.height == text.height
         && decoded.width_factor == text.width_factor
+        && decoded.color == text.color
+        && decoded.anchor == text.anchor
+        && decoded.rotation == text.rotation
         && decoded.first_reference == text.first_reference
         && decoded.second_reference == text.second_reference;
     if !header_matches || !fields_match {

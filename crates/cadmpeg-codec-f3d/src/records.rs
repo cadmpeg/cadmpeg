@@ -3320,10 +3320,16 @@ pub struct SketchText {
     /// never absent. `SketchGeometry` carries no display attribute on any
     /// variant, so the colour stays on the native record.
     pub color: Color,
-    /// Text anchor point in the sketch frame in millimetres, present in the
-    /// `txt_tag` identity form.
+    /// Text anchor point in the sketch frame in millimetres. The `txt_tag`
+    /// identity form stores it directly; the `textex_tag` form stores it as the
+    /// last column of its placement transform. Path text stores neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<Point2>,
+    /// Rotation of the text about its anchor in radians, taken from the
+    /// placement transform's 2×2 basis. Only the `textex_tag` identity form
+    /// stores a transform, and path text within it stores none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f64>,
     /// Parameter record driving the height, absent when the record omits the
     /// member or writes it null.
     #[serde(default, skip_serializing_if = "Option::is_none")]

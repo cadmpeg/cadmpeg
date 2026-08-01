@@ -1620,8 +1620,15 @@ enum TextReferenceSlot {
 const TEXT_REFERENCE_SLOTS: [TextReferenceSlot; 2] =
     [TextReferenceSlot::Omitted, TextReferenceSlot::Written];
 
-/// Bytes between the placement transform and the owning-sketch reference.
+/// Bytes between a sketch-text record's last class member and its
+/// owning-sketch reference, in either identity form.
 const SKETCH_TEXT_TRAILING_RUN: usize = 30;
+
+/// How far a placement-transform element may sit from the constant a planar
+/// rigid placement writes there. The transform is composed in floating point,
+/// so its constants arrive rounded; the bound is far tighter than a run of
+/// misframed bytes would meet.
+const TEXT_PLACEMENT_TOLERANCE: f64 = 1e-9;
 
 /// Bytes from the property block to the four f32 RGBA colour components in the
 /// `txt_tag` form: the `0` byte that opens the run and twelve bytes that store
@@ -1676,6 +1683,41 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
     Some(Color { r, g, b, a })
 }
 
+/// Read the row-major 4×4 f64 placement transform a frame-text record stores,
+/// advancing `cursor` past it, and reduce it to the anchor point in millimetres
+/// and the rotation about that point in radians.
+///
+/// The transform is a planar rigid placement: its third row and column are the
+/// identity's, its bottom row is `(0, 0, 0, 1)`, its translation lives in the
+/// last column, and its 2×2 basis is a rotation of unit determinant carrying no
+/// scale or shear. A run failing any of that is not a placement, so the record
+/// is misframed.
+fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<(Point2, f64)> {
+    let elements = f64s_at(payload, *cursor, 16)?;
+    *cursor = cursor.checked_add(128)?;
+    let at = |row: usize, column: usize| elements[row * 4 + column];
+    let constant = |value: f64, expected: f64| (value - expected).abs() <= TEXT_PLACEMENT_TOLERANCE;
+    let planar = [
+        (0, 2, 0.0),
+        (1, 2, 0.0),
+        (2, 0, 0.0),
+        (2, 1, 0.0),
+        (2, 2, 1.0),
+        (2, 3, 0.0),
+        (3, 0, 0.0),
+        (3, 1, 0.0),
+        (3, 2, 0.0),
+        (3, 3, 1.0),
+    ]
+    .into_iter()
+    .all(|(row, column, expected)| constant(at(row, column), expected));
+    let determinant = at(0, 0) * at(1, 1) - at(0, 1) * at(1, 0);
+    (planar && constant(determinant, 1.0)).then_some(())?;
+    let anchor = Point2::new(at(0, 3) * 10.0, at(1, 3) * 10.0);
+    (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
+    Some((anchor, at(1, 0).atan2(at(0, 0))))
+}
+
 /// The record index a reference names, absent when the reference is null.
 fn reference_index(reference: &Reference) -> Option<u32> {
     reference
@@ -1703,6 +1745,8 @@ struct SketchTextTail {
     first_reference: Option<u32>,
     second_reference: Option<u32>,
     text: String,
+    anchor: Option<Point2>,
+    rotation: Option<f64>,
     owner_reference: u32,
 }
 
@@ -1836,19 +1880,24 @@ fn decode_sketch_text_tail(
     u32_at(payload, cursor)?;
     cursor = cursor.checked_add(9)?;
     // The class tail opens with the text-type enum, which gates the placement
-    // transform: frame text stores a 4x4 transform, path text stores none.
-    let transform = match u32_at(payload, cursor)? {
-        0 => 128,
-        1 => 0,
+    // transform: frame text stores a 4x4 transform, path text stores none. One
+    // flag byte separates the enum from the transform slot.
+    let text_type = u32_at(payload, cursor)?;
+    cursor = cursor.checked_add(5)?;
+    let placement = match text_type {
+        0 => Some(read_text_placement(payload, &mut cursor)?),
+        1 => None,
         _ => return None,
     };
-    cursor = cursor.checked_add(5 + transform + SKETCH_TEXT_TRAILING_RUN)?;
+    cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
     let owner = take_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(())?;
     Some(SketchTextTail {
         first_reference: reference_index(&first_reference),
         second_reference: reference_index(&second_reference),
         text,
+        anchor: placement.map(|(anchor, _)| anchor),
+        rotation: placement.map(|(_, rotation)| rotation),
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -1881,6 +1930,10 @@ fn decode_txt_tag_sketch_text_tail(payload: &[u8], mut cursor: usize) -> Option<
         first_reference: None,
         second_reference: None,
         text,
+        // This form writes no transform: its anchor is read in the head and it
+        // stores no rotation.
+        anchor: None,
+        rotation: None,
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -1928,7 +1981,11 @@ pub(crate) fn decode_sketch_text_record(
         height: head.height,
         width_factor: head.width_factor,
         color: head.color,
-        anchor: head.anchor,
+        // The two classes store one anchor in two places: `txt_tag` ahead of
+        // the text string, `textex_tag` in the class tail's placement
+        // transform. Neither writes the other's, so at most one is present.
+        anchor: head.anchor.or(tail.anchor),
+        rotation: tail.rotation,
         first_reference: tail.first_reference,
         second_reference: tail.second_reference,
         raw_bytes: payload.to_vec(),

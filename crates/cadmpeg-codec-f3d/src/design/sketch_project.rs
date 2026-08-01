@@ -211,6 +211,8 @@ pub fn project_sketch_design(
                 // is not a neutral horizontal scale of zero; only a positive
                 // factor carries one.
                 width_factor: text.width_factor.filter(|factor| *factor > 0.0),
+                anchor: text.anchor,
+                rotation: text.rotation.map(cadmpeg_ir::features::Angle),
             },
         })
     }));

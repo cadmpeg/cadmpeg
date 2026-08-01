@@ -523,11 +523,15 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 font_family,
                 height,
                 width_factor,
+                anchor,
+                rotation,
             } => {
                 if text.is_empty()
                     || font_family.is_empty()
                     || nonpositive(height.0)
                     || width_factor.is_some_and(nonpositive)
+                    || anchor.is_some_and(|anchor| !finite2(anchor))
+                    || rotation.is_some_and(|rotation| !rotation.0.is_finite())
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }
