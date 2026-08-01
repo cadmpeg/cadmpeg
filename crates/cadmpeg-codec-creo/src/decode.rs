@@ -18,10 +18,12 @@ use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
-    ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleForm,
-    HoleKind, Length, ParameterId, ParameterValue, PatternForm, PatternKind, ProfileRef,
-    RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
+    ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, GeneratedEdgeRef,
+    GeneratedFaceRef, HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef,
+    PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RevolveExtent, SurfaceBoundary, SurfaceContinuity, Termination,
+    ThickenSide, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -109,6 +111,46 @@ fn unique_feature_definition_for_transform<'a>(
     matches.next().is_none().then_some(definition)
 }
 
+fn unique_owned_transformed_definition<'a>(
+    definitions: &'a [crate::feature::FeatureDefinition],
+    transforms: &[crate::placement::FeatureSectionTransform],
+    feature_id: u32,
+) -> Option<&'a crate::feature::FeatureDefinition> {
+    let definition = unique_owned_feature_definition(definitions, feature_id)?;
+    let section = definition.section_3d.as_ref()?;
+    let transform = unique_feature_section_transform(transforms, definition.id, section.offset)?;
+    (transform.feature_id == Some(feature_id)).then_some(definition)
+}
+
+fn unique_feature_profile_definition<'a>(
+    definitions: &'a [crate::feature::FeatureDefinition],
+    transforms: &[crate::placement::FeatureSectionTransform],
+    feature_id: u32,
+) -> Option<&'a crate::feature::FeatureDefinition> {
+    let feature_transforms = transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    match feature_transforms.as_slice() {
+        [transform] => unique_feature_definition_for_transform(definitions, transform),
+        [] => unique_owned_feature_definition(definitions, feature_id),
+        _ => None,
+    }
+}
+
+fn unique_feature_profile_ref(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<ProfileRef> {
+    unique_feature_profile_definition(
+        &scan.features.definitions,
+        &scan.features.section_transforms,
+        feature_id,
+    )
+    .map(|definition| section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition)))
+}
+
 fn unique_feature_datum_plane(
     datums: &[crate::datum::DatumPlane],
     feature_id: u32,
@@ -176,6 +218,7 @@ struct CreoFeatureParameterFrame {
 struct CreoFeatureOutline {
     phase: &'static str,
     local_values: Vec<Option<f64>>,
+    local_value_bodies: Vec<Vec<u8>>,
     offset: usize,
 }
 
@@ -213,6 +256,7 @@ enum CreoSketchSavedEntity {
         references: Vec<u32>,
         attributes: Vec<[u8; 5]>,
         endpoints: [[Option<f64>; 3]; 2],
+        body: Vec<u8>,
         offset: usize,
     },
     Arc {
@@ -221,24 +265,39 @@ enum CreoSketchSavedEntity {
         radius: Option<f64>,
         endpoints: [[Option<f64>; 3]; 2],
         parameters: [Option<f64>; 2],
+        body: Vec<u8>,
         offset: usize,
     },
     Circle {
         entity_id: u32,
         center: [Option<f64>; 3],
         radius: Option<f64>,
+        body: Vec<u8>,
+        offset: usize,
+    },
+    Conic {
+        entity_id: u32,
+        endpoints: [[Option<f64>; 3]; 2],
+        parameters: [Option<f64>; 2],
+        coefficients: [Option<f64>; 2],
+        local_system: Option<[f64; 12]>,
+        body: Vec<u8>,
         offset: usize,
     },
     Spline {
         entity_id: Option<u32>,
         declared_point_count: Option<u32>,
         interpolation_points: Vec<[f64; 3]>,
+        interpolation_points_body: Vec<u8>,
         endpoint_tangents: Option<[[f64; 3]; 2]>,
+        endpoint_tangents_body: Option<Vec<u8>>,
         parameters: Option<Vec<f64>>,
+        parameters_body: Option<Vec<u8>>,
         offset: usize,
     },
     Dummy {
         entity_id: Option<u32>,
+        body: Vec<u8>,
         offset: usize,
     },
 }
@@ -248,7 +307,12 @@ struct CreoSketchVariable {
     variable_type: u32,
     key: u32,
     value: Option<f64>,
+    value_body: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolved_value: Option<f64>,
     guess: Option<f64>,
+    guess_body: Vec<u8>,
+    guess_dimension_driven: bool,
     known: Option<u32>,
     homogeneity: Option<u32>,
     uvar_id: Option<u32>,
@@ -267,6 +331,60 @@ struct CreoSketchSegment {
     vertical_horizontal_constraint: Option<u32>,
     radius_dimension_id: Option<u32>,
     secondary_radius_dimension_id: Option<u32>,
+    body: Vec<u8>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchCircleSegment {
+    external_id: u32,
+    center_id: u32,
+    radius_dimension_id: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchPointSegment {
+    external_id: u32,
+    point_id: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchCenteredLineSegment {
+    external_id: u32,
+    center_id: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchReferenceLineSegment {
+    external_id: u32,
+    point_ids: [Option<u32>; 2],
+    directions: [Option<u32>; 3],
+    vertical_horizontal_constraint: Option<u32>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchBoundedCurveSegment {
+    external_id: u32,
+    point_ids: [u32; 2],
+    center_id: Option<u32>,
+    directions: [Option<u32>; 3],
+    arc_orientation: Option<u32>,
+    vertical_horizontal_constraint: Option<u32>,
+    radius_dimension_id: Option<u32>,
+    secondary_radius_dimension_id: Option<u32>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchConicSegment {
+    external_id: u32,
+    center_id: u32,
+    first_coefficient_ref: u32,
+    second_coefficient_ref: u32,
     offset: usize,
 }
 
@@ -281,6 +399,7 @@ struct CreoSketchOpaqueSegment {
     vertical_horizontal_constraint: Option<u32>,
     radius_dimension_id: Option<u32>,
     secondary_radius_dimension_id: Option<u32>,
+    body: Vec<u8>,
     offset: usize,
 }
 
@@ -289,11 +408,13 @@ struct CreoSketchDimension {
     external_id: u32,
     dimension_type: u32,
     value: Option<f64>,
+    value_body: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     unresolved_value_token: Option<Vec<u8>>,
     unit: &'static str,
     direction_byte: u8,
     auxiliary_value: Option<f64>,
+    auxiliary_body: Vec<u8>,
     offset: usize,
 }
 
@@ -354,12 +475,29 @@ struct CreoCurveExpressionLine {
 
 #[derive(Serialize)]
 struct CreoCurveExpressionAssignment {
-    name: String,
-    declared_unit: Option<String>,
+    target: crate::curve::CurveExpressionTarget,
     expression: String,
     dependencies: Vec<String>,
     value: Option<crate::curve::CurveExpressionValue>,
     activation: &'static str,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoCurveExpressionSolveBlock {
+    equations: Vec<CreoCurveExpressionEquation>,
+    assignments: Vec<CreoCurveExpressionAssignment>,
+    variables: Vec<String>,
+    solutions: Vec<Option<crate::curve::CurveExpressionValue>>,
+    offset: usize,
+    for_offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoCurveExpressionEquation {
+    left: String,
+    right: String,
+    dependencies: Vec<String>,
     offset: usize,
 }
 
@@ -659,6 +797,7 @@ fn affected_kind(kind: crate::feature::AffectedIdKind) -> &'static str {
         crate::feature::AffectedIdKind::StrongParents => "strong_parents",
         crate::feature::AffectedIdKind::Parents => "parents",
         crate::feature::AffectedIdKind::Contours => "contours",
+        crate::feature::AffectedIdKind::Quilts => "quilts",
     }
 }
 
@@ -848,31 +987,61 @@ fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
     }
 }
 
+const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
+    crate::surface::SurfaceKind::Plane,
+    crate::surface::SurfaceKind::Cylinder,
+    crate::surface::SurfaceKind::Cone,
+    crate::surface::SurfaceKind::TorusOrSphere,
+    crate::surface::SurfaceKind::Spline,
+    crate::surface::SurfaceKind::Fillet,
+    crate::surface::SurfaceKind::Extrusion,
+];
+
 #[derive(Default)]
 struct SurfaceTransferCoverage {
     unique_rows: usize,
     transferred_rows: usize,
+    retained_unknown_rows: usize,
     ambiguous_rows: usize,
     by_family: BTreeMap<&'static str, (usize, usize)>,
+    unknown_by_family: BTreeMap<&'static str, usize>,
 }
 
 #[derive(Default)]
 struct CurveTransferCoverage {
     unique_rows: usize,
     transferred_rows: usize,
+    retained_unknown_rows: usize,
     ambiguous_rows: usize,
     by_type: BTreeMap<u8, (usize, usize)>,
+    unknown_by_type: BTreeMap<u8, usize>,
+}
+
+#[derive(Default)]
+struct SketchSegmentTransferCoverage {
+    decoded_rows: usize,
+    resolved_geometry: usize,
+    missing_rows: usize,
+    by_family: BTreeMap<&'static str, (usize, usize)>,
 }
 
 #[derive(Default)]
 struct DesignConstraintTransferCoverage {
     transferred: usize,
     native: usize,
+    active: usize,
+    active_native: usize,
+    native_by_kind: BTreeMap<u32, usize>,
+    active_native_by_kind: BTreeMap<u32, usize>,
 }
 
 impl DesignConstraintTransferCoverage {
     fn typed(&self) -> usize {
         self.transferred.saturating_sub(self.native)
+    }
+
+    fn active_typed(&self) -> usize {
+        self.active.saturating_sub(self.active_native)
     }
 }
 
@@ -888,16 +1057,51 @@ fn design_constraint_transfer_coverage(
             DesignConstraintTransferCoverage::default(),
             |mut coverage, constraint| {
                 coverage.transferred += 1;
-                if matches!(
-                    &constraint.definition,
+                let native_kind_text = match &constraint.definition {
                     SketchConstraintDefinition::Native { native_kind, .. }
-                        if native_kind.starts_with(native_kind_prefix)
-                ) {
+                        if native_kind.starts_with(native_kind_prefix) =>
+                    {
+                        Some(native_kind.as_str())
+                    }
+                    _ => None,
+                };
+                let native_kind = native_kind_text
+                    .and_then(|kind| kind.strip_prefix(native_kind_prefix))
+                    .and_then(|kind| kind.parse().ok());
+                if native_kind_text.is_some() {
                     coverage.native += 1;
+                }
+                if let Some(native_kind) = native_kind {
+                    *coverage.native_by_kind.entry(native_kind).or_default() += 1;
+                    if constraint.active == Some(true) {
+                        *coverage
+                            .active_native_by_kind
+                            .entry(native_kind)
+                            .or_default() += 1;
+                    }
+                }
+                if constraint.active == Some(true) {
+                    coverage.active += 1;
+                    if native_kind_text.is_some() {
+                        coverage.active_native += 1;
+                    }
                 }
                 coverage
             },
         )
+}
+
+fn constraint_kind_breakdown(coverage: &BTreeMap<String, usize>, prefix: &str) -> String {
+    coverage
+        .iter()
+        .filter_map(|(key, count)| {
+            let kind = key
+                .strip_prefix(prefix)?
+                .strip_suffix("_constraint_count")?;
+            (*count != 0).then_some(format!("type {kind}={count}"))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn curve_transfer_coverage(
@@ -919,6 +1123,20 @@ fn curve_transfer_coverage(
                 .ok()
         })
         .collect::<BTreeSet<_>>();
+    let unknown_ids = curves
+        .iter()
+        .filter(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+        .filter_map(|curve| {
+            curve
+                .source_object
+                .as_ref()
+                .filter(|source| source.format == "creo")?
+                .object_id
+                .strip_prefix("VisibGeom:")?
+                .parse::<u32>()
+                .ok()
+        })
+        .collect::<BTreeSet<_>>();
     let mut coverage = CurveTransferCoverage {
         unique_rows: unique_rows.len(),
         ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
@@ -926,10 +1144,13 @@ fn curve_transfer_coverage(
     };
     for row in unique_rows {
         let transferred = usize::from(transferred_ids.contains(&row.id));
+        let retained_unknown = usize::from(unknown_ids.contains(&row.id));
         coverage.transferred_rows += transferred;
+        coverage.retained_unknown_rows += retained_unknown;
         let type_coverage = coverage.by_type.entry(row.type_byte).or_default();
         type_coverage.0 += 1;
         type_coverage.1 += transferred;
+        *coverage.unknown_by_type.entry(row.type_byte).or_default() += retained_unknown;
     }
     coverage
 }
@@ -968,31 +1189,41 @@ fn surface_transfer_coverage(
             Some((id, kinds))
         })
         .collect::<Vec<_>>();
+    let unknown_ids = surfaces
+        .iter()
+        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+        .filter_map(|surface| {
+            surface
+                .source_object
+                .as_ref()
+                .filter(|source| source.format == "creo")?
+                .object_id
+                .strip_prefix("VisibGeom:")?
+                .parse::<u32>()
+                .ok()
+        })
+        .collect::<BTreeSet<_>>();
     let mut coverage = SurfaceTransferCoverage {
         unique_rows: unique_rows.len(),
         ambiguous_rows: rows.len().saturating_sub(unique_rows.len()),
         ..SurfaceTransferCoverage::default()
     };
-    for kind in [
-        crate::surface::SurfaceKind::Plane,
-        crate::surface::SurfaceKind::Cylinder,
-        crate::surface::SurfaceKind::Cone,
-        crate::surface::SurfaceKind::TorusOrSphere,
-        crate::surface::SurfaceKind::Spline,
-        crate::surface::SurfaceKind::Fillet,
-        crate::surface::SurfaceKind::Extrusion,
-    ] {
+    for kind in SURFACE_KINDS {
         coverage.by_family.insert(surface_family(kind), (0, 0));
+        coverage.unknown_by_family.insert(surface_family(kind), 0);
     }
     for row in unique_rows {
         let is_transferred = transferred
             .iter()
             .any(|(id, kinds)| *id == row.id && kinds.contains(&row.kind));
+        let retained_unknown = unknown_ids.contains(&row.id);
         coverage.transferred_rows += usize::from(is_transferred);
+        coverage.retained_unknown_rows += usize::from(retained_unknown);
         let family = surface_family(row.kind);
         let family_coverage = coverage.by_family.entry(family).or_default();
         family_coverage.0 += 1;
         family_coverage.1 += usize::from(is_transferred);
+        *coverage.unknown_by_family.entry(family).or_default() += usize::from(retained_unknown);
     }
     coverage
 }
@@ -1030,6 +1261,15 @@ fn surface_named_parameter_record(
         scalar_tokens,
         opaque,
     ) = match &parameter.value {
+        crate::surface::SurfaceNamedValue::Empty => (
+            "empty",
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
         crate::surface::SurfaceNamedValue::CompactInt(value) => (
             "compact_int",
             vec![*value],
@@ -1277,26 +1517,29 @@ fn curve_expression_parameter_order(
 
 fn curve_expression_parameter_names(
     assignments: &[crate::curve::CurveExpressionAssignment],
-) -> Vec<String> {
+) -> Vec<Option<String>> {
     let counts = assignments
         .iter()
         .fold(BTreeMap::new(), |mut counts, assignment| {
-            *counts
-                .entry(crate::curve::expression_identifier_key(&assignment.name))
-                .or_insert(0usize) += 1;
+            if let Some((name, _)) = assignment.parameter_target() {
+                *counts
+                    .entry(crate::curve::expression_identifier_key(name))
+                    .or_insert(0usize) += 1;
+            }
             counts
         });
     let mut occurrences = BTreeMap::new();
     assignments
         .iter()
         .map(|assignment| {
-            let key = crate::curve::expression_identifier_key(&assignment.name);
+            let (name, _) = assignment.parameter_target()?;
+            let key = crate::curve::expression_identifier_key(name);
             if counts[&key] == 1 {
-                return assignment.name.clone();
+                return Some(name.to_owned());
             }
             let occurrence = occurrences.entry(key).or_insert(0usize);
             *occurrence += 1;
-            format!("{}#{occurrence}", assignment.name)
+            Some(format!("{name}#{occurrence}"))
         })
         .collect()
 }
@@ -1314,7 +1557,7 @@ fn transfer_curve_expression_features(
         .map(|feature| feature.ordinal)
         .max()
         .map_or(0, |value| value + 1);
-    let mut transferred_assignment_count = 0;
+    let mut transferred_parameter_count = 0;
     for (expression_ordinal, record) in scan
         .curves
         .expressions
@@ -1332,8 +1575,11 @@ fn transfer_curve_expression_features(
             if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
                 continue;
             }
+            let Some((name, _)) = assignment.parameter_target() else {
+                continue;
+            };
             assignment_indices_by_name
-                .entry(crate::curve::expression_identifier_key(&assignment.name))
+                .entry(crate::curve::expression_identifier_key(name))
                 .and_modify(|index| *index = None)
                 .or_insert(Some(assignment_ordinal));
         }
@@ -1344,7 +1590,12 @@ fn transfer_curve_expression_features(
         let (parameter_ordinals, cyclic_edges) =
             curve_expression_parameter_order(record, &unique_assignment_indices);
         let parameter_names = curve_expression_parameter_names(&record.assignments);
-        let mut emitted_assignment_indices = (0..record.assignments.len()).collect::<Vec<_>>();
+        let mut emitted_assignment_indices = record
+            .assignments
+            .iter()
+            .enumerate()
+            .filter_map(|(index, assignment)| assignment.parameter_target().map(|_| index))
+            .collect::<Vec<_>>();
         emitted_assignment_indices.sort_by_key(|index| parameter_ordinals[*index]);
         let emitted_ordinals = emitted_assignment_indices
             .into_iter()
@@ -1353,6 +1604,9 @@ fn transfer_curve_expression_features(
             .collect::<BTreeMap<_, _>>();
         let mut source_content = Vec::with_capacity(emitted_ordinals.len());
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+            let Some((assignment_name, declared_unit)) = assignment.parameter_target() else {
+                continue;
+            };
             let Some(&ordinal) = emitted_ordinals.get(&assignment_ordinal) else {
                 continue;
             };
@@ -1437,8 +1691,8 @@ fn transfer_curve_expression_features(
                 "activation".to_string(),
                 assignment.activation.token().to_string(),
             );
-            if let Some(unit) = &assignment.declared_unit {
-                properties.insert("declared_unit".to_string(), unit.clone());
+            if let Some(unit) = declared_unit {
+                properties.insert("declared_unit".to_string(), unit.to_owned());
             }
             if let Some(crate::curve::CurveExpressionValue::Quantity(quantity)) = &assignment.value
             {
@@ -1458,8 +1712,11 @@ fn transfer_curve_expression_features(
                     ),
                 );
             }
-            if parameter_names[assignment_ordinal] != assignment.name {
-                properties.insert("source_name".to_string(), assignment.name.clone());
+            let parameter_name = parameter_names[assignment_ordinal]
+                .as_ref()
+                .expect("emitted parameter assignment has a parameter name");
+            if parameter_name != assignment_name {
+                properties.insert("source_name".to_string(), assignment_name.to_owned());
             }
             if !intrinsic_dependencies.is_empty() {
                 properties.insert(
@@ -1501,7 +1758,7 @@ fn transfer_curve_expression_features(
                 id: parameter_id.clone(),
                 owner: Some(feature_id.clone()),
                 ordinal,
-                name: parameter_names[assignment_ordinal].clone(),
+                name: parameter_name.clone(),
                 expression: assignment.expression.clone(),
                 display: None,
                 value: assignment.value.as_ref().and_then(|value| match value {
@@ -1524,7 +1781,7 @@ fn transfer_curve_expression_features(
                 pmi: None,
                 native_ref: Some(curve_expression_record_id(record)),
             });
-            transferred_assignment_count += 1;
+            transferred_parameter_count += 1;
             source_content.push(FeatureSourceContent::Parameter(parameter_id.clone()));
         }
         annotate(
@@ -1618,7 +1875,7 @@ fn transfer_curve_expression_features(
             native_ref: Some(curve_expression_record_id(record)),
         });
     }
-    transferred_assignment_count
+    transferred_parameter_count
 }
 
 fn feature_definition_has_sketch_design(definition: &crate::feature::FeatureDefinition) -> bool {
@@ -1666,7 +1923,7 @@ fn sketch_table_headers(
             table.entity_ref,
             None,
             Vec::new(),
-            table.rows.len() + table.opaque_rows.len(),
+            table.retained_row_count(),
             table.offset,
         );
     }
@@ -1910,6 +2167,12 @@ fn section_line_geometry(
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
     let start = points.get(&segment.point_ids[0])?;
     let end = points.get(&segment.point_ids[1])?;
+    let scale = start
+        .iter()
+        .chain(end)
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    (((end[0] - start[0]) / scale).hypot((end[1] - start[1]) / scale) > 1e-12).then_some(())?;
     Some(SketchGeometry::Line {
         start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
         end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
@@ -1958,43 +2221,36 @@ fn section_arc_geometry(
     })
 }
 
-fn section_opaque_circle_geometry(
+fn section_circle_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     radii: &BTreeMap<u32, f64>,
-    segment: &crate::feature::FeatureOpaqueSegment,
+    segment: &crate::feature::FeatureCircleSegment,
 ) -> Option<SketchGeometry> {
-    (segment.kind == 10).then_some(())?;
-    let center = points.get(&segment.center_id?)?;
-    let radius = *radii.get(&segment.radius_ref?)?;
+    let center = points.get(&segment.center_id)?;
+    let radius = *radii.get(&segment.radius_ref)?;
     Some(SketchGeometry::Circle {
         center: Point2::new(center[0], center[1]),
         radius: Length(radius),
     })
 }
 
-fn section_opaque_point_geometry(
+fn section_point_row_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureOpaqueSegment,
+    segment: &crate::feature::FeaturePointSegment,
 ) -> Option<SketchGeometry> {
-    (segment.kind == 1).then_some(())?;
-    let point = points.get(&segment.center_id?)?;
+    let point = points.get(&segment.point_id)?;
     Some(SketchGeometry::Point {
         position: Point2::new(point[0], point[1]),
     })
 }
 
-fn section_opaque_centered_line_geometry(
+fn section_centered_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureOpaqueSegment,
+    segment: &crate::feature::FeatureCenteredLineSegment,
 ) -> Option<SketchGeometry> {
-    (segment.kind == 47
-        && segment.directions == [Some(0); 3]
-        && segment.point_ids == [None, Some(1)]
-        && segment.center_id == Some(2))
-    .then_some(())?;
     let start = points.get(&0)?;
     let end = points.get(&1)?;
-    let center = points.get(&2)?;
+    let center = points.get(&segment.center_id)?;
     let scale = start
         .iter()
         .chain(end)
@@ -2008,6 +2264,62 @@ fn section_opaque_centered_line_geometry(
     Some(SketchGeometry::Line {
         start: Point2::new(start[0], start[1]),
         end: Point2::new(end[0], end[1]),
+    })
+}
+
+fn section_reference_line_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureReferenceLineSegment,
+) -> Option<SketchGeometry> {
+    let [Some(start_id), Some(end_id)] = segment.point_ids else {
+        return None;
+    };
+    let start = points.get(&start_id)?;
+    let end = points.get(&end_id)?;
+    let scale = start
+        .iter()
+        .chain(end)
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let direction = [end[0] - start[0], end[1] - start[1]];
+    (direction[0].hypot(direction[1]) > 1e-12 * scale).then_some(())?;
+    Some(SketchGeometry::ReferenceLine {
+        origin: Point2::new(start[0], start[1]),
+        direction: Point2::new(direction[0], direction[1]),
+    })
+}
+
+fn resolved_section_reference_line_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureReferenceLineSegment,
+) -> Option<SketchGeometry> {
+    if let Some(geometry) = section_reference_line_geometry(points, segment) {
+        return Some(geometry);
+    }
+    let [Some(start_id), Some(end_id)] = segment.point_ids else {
+        return None;
+    };
+    let fixed_coordinate = section_line_entity_fixed_coordinate(definition, segment.external_id)?;
+    let [Some(first), Some(second)] =
+        [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate])
+    else {
+        return None;
+    };
+    let scale = first.abs().max(second.abs()).max(1.0);
+    ((first - second).abs() <= 1e-9 * scale).then(|| {
+        if fixed_coordinate == 0 {
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(first, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            }
+        } else {
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(0.0, first),
+                direction: Point2::new(1.0, 0.0),
+            }
+        }
     })
 }
 
@@ -2026,7 +2338,6 @@ fn saved_section_line_geometry(
 ) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
     let order_table = definition.order_table.as_ref()?;
-    let saved_section = definition.saved_section.as_ref()?;
     let internal_id = order_table
         .internal_id(segment.external_id)
         .or_else(|| {
@@ -2045,7 +2356,7 @@ fn saved_section_line_geometry(
                 .find_map(|candidate| order_table.internal_id(candidate.external_id))?;
             let internal_id = previous.checked_add(1)?;
             (next == internal_id.checked_add(1)?
-                && saved_section.entities.iter().any(|entity| {
+                && semantic_saved_section_entities(definition).any(|entity| {
                     matches!(entity, crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id)
                 }))
             .then_some(internal_id)
@@ -2082,9 +2393,7 @@ fn saved_section_line_geometry(
                 })
                 .map(|candidate| candidate.external_id)
                 .collect::<Vec<_>>();
-            let saved_ids = saved_section
-                .entities
-                .iter()
+            let saved_ids = semantic_saved_section_entities(definition)
                 .filter_map(|entity| match entity {
                     crate::feature::FeatureSavedEntity::Line(line)
                         if !ordered_internal_ids.contains(&line.entity_id) =>
@@ -2105,15 +2414,12 @@ fn saved_section_line_geometry(
     unique_saved_section_internal_ids(definition)
         .contains(&internal_id)
         .then_some(())?;
-    let line = saved_section
-        .entities
-        .iter()
-        .find_map(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id => {
-                Some(line)
-            }
-            _ => None,
-        })?;
+    let line = semantic_saved_section_entities(definition).find_map(|entity| match entity {
+        crate::feature::FeatureSavedEntity::Line(line) if line.entity_id == internal_id => {
+            Some(line)
+        }
+        _ => None,
+    })?;
     let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints else {
         return None;
     };
@@ -2136,17 +2442,10 @@ fn saved_section_arc_record<'a>(
     unique_saved_section_internal_ids(definition)
         .contains(&internal_id)
         .then_some(())?;
-    definition
-        .saved_section
-        .as_ref()?
-        .entities
-        .iter()
-        .find_map(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Arc(arc) if arc.entity_id == internal_id => {
-                Some(arc)
-            }
-            _ => None,
-        })
+    semantic_saved_section_entities(definition).find_map(|entity| match entity {
+        crate::feature::FeatureSavedEntity::Arc(arc) if arc.entity_id == internal_id => Some(arc),
+        _ => None,
+    })
 }
 
 fn saved_section_arc_carrier(
@@ -2242,6 +2541,56 @@ fn saved_section_arc_geometry(
     })
 }
 
+fn saved_section_segment_point_coordinates(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<Vec<(u32, [f64; 2])>> {
+    match segment.kind {
+        crate::feature::FeatureSegmentKind::Line => {
+            let geometry = saved_section_line_geometry(definition, segment)?;
+            let [start, end] = saved_geometry_endpoints(&geometry)?;
+            Some(vec![
+                (segment.point_ids[0], start),
+                (segment.point_ids[1], end),
+            ])
+        }
+        crate::feature::FeatureSegmentKind::Arc => {
+            let SketchGeometry::Arc { center, .. } =
+                saved_section_arc_geometry(definition, segment)?
+            else {
+                unreachable!();
+            };
+            let arc = saved_section_arc_record(definition, segment)?;
+            let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+                arc.endpoints
+            else {
+                return None;
+            };
+            Some(vec![
+                (segment.point_ids[0], [first_u, first_v]),
+                (segment.point_ids[1], [second_u, second_v]),
+                (segment.center_id?, [center.u, center.v]),
+            ])
+        }
+        crate::feature::FeatureSegmentKind::Point => None,
+    }
+}
+
+fn saved_section_circle_values(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureCircleSegment,
+) -> Option<([f64; 2], f64)> {
+    let segments = definition.segments.as_ref()?;
+    (segments.is_complete() && segments.external_id_count(segment.external_id) == 1)
+        .then_some(())?;
+    let entity = section_saved_entity(definition, segment.external_id)?;
+    let (_, geometry, _) = saved_section_entity_geometry(entity)?;
+    let SketchGeometry::Circle { center, radius } = geometry else {
+        return None;
+    };
+    Some(([center.u, center.v], radius.0))
+}
+
 fn saved_section_entity_geometry(
     entity: &crate::feature::FeatureSavedEntity,
 ) -> Option<(u32, SketchGeometry, usize)> {
@@ -2315,8 +2664,124 @@ fn saved_section_entity_geometry(
                 circle.offset,
             ))
         }
+        crate::feature::FeatureSavedEntity::Conic(conic) => {
+            let (Some(frame), [Some(first_radius), Some(second_radius)]) =
+                (conic.local_system, conic.coefficients)
+            else {
+                return None;
+            };
+            let first_axis = [frame[0], frame[1]];
+            let second_axis = [frame[3], frame[4]];
+            let first_length = first_axis[0].hypot(first_axis[1]);
+            let second_length = second_axis[0].hypot(second_axis[1]);
+            let scale = first_length.max(second_length).max(1.0);
+            if !frame.into_iter().all(f64::is_finite)
+                || first_radius <= 1e-12
+                || second_radius <= 1e-12
+                || (first_length - 1.0).abs() > 1e-9 * scale
+                || (second_length - 1.0).abs() > 1e-9 * scale
+                || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs() > 1e-9
+                || (first_axis[0] * second_axis[1] - first_axis[1] * second_axis[0] - 1.0).abs()
+                    > 1e-9
+                || frame[2].abs() > 1e-9
+                || frame[5].abs() > 1e-9
+                || frame[6].abs() > 1e-9
+                || frame[7].abs() > 1e-9
+                || (frame[8] - 1.0).abs() > 1e-9
+                || frame[11].abs() > 1e-9
+            {
+                return None;
+            }
+            let (major_axis, major_radius, minor_radius, parameter_shift) =
+                if first_radius >= second_radius {
+                    (first_axis, first_radius, second_radius, 0.0)
+                } else {
+                    (
+                        second_axis,
+                        second_radius,
+                        first_radius,
+                        -std::f64::consts::FRAC_PI_2,
+                    )
+                };
+            let coincident_endpoints = conic.endpoints.iter().flatten().all(Option::is_some)
+                && conic.endpoints[0]
+                    .into_iter()
+                    .zip(conic.endpoints[1])
+                    .all(|(first, second)| {
+                        let (Some(first), Some(second)) = (first, second) else {
+                            return false;
+                        };
+                        let scale = first.abs().max(second.abs()).max(1.0);
+                        (first - second).abs() <= 1e-9 * scale
+                    });
+            let (start_angle, end_angle) = match conic.parameters {
+                [Some(start), Some(end)]
+                    if start.is_finite()
+                        && end.is_finite()
+                        && (end - start - std::f64::consts::TAU).abs() <= 1e-9 =>
+                {
+                    (None, None)
+                }
+                [Some(start), Some(end)] if start.is_finite() && end > start => (
+                    Some(Angle(start + parameter_shift)),
+                    Some(Angle(end + parameter_shift)),
+                ),
+                [Some(start), None]
+                    if start.is_finite() && start.abs() <= 1e-9 && coincident_endpoints =>
+                {
+                    (None, None)
+                }
+                _ => return None,
+            };
+            Some((
+                conic.entity_id,
+                SketchGeometry::Ellipse {
+                    center: Point2::new(frame[9], frame[10]),
+                    major_angle: Angle(major_axis[1].atan2(major_axis[0])),
+                    major_radius: Length(major_radius),
+                    minor_radius: Length(minor_radius),
+                    start_angle,
+                    end_angle,
+                },
+                conic.offset,
+            ))
+        }
         crate::feature::FeatureSavedEntity::Spline(_)
         | crate::feature::FeatureSavedEntity::Dummy(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod saved_conic_geometry_tests {
+    use super::*;
+
+    #[test]
+    fn coincident_endpoint_conic_materializes_as_a_full_ellipse() {
+        let entity = crate::feature::FeatureSavedEntity::Conic(crate::feature::FeatureSavedConic {
+            entity_id: 2,
+            endpoints: [[Some(0.0), Some(1.0), Some(0.0)]; 2],
+            parameters: [Some(0.0), None],
+            coefficients: [Some(35.0), Some(27.0)],
+            local_system: Some([
+                0.8, -0.6, 0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 1.0, 128.0, 75.0, 0.0,
+            ]),
+            body: Vec::new(),
+            offset: 40,
+        });
+
+        let Some((
+            2,
+            SketchGeometry::Ellipse {
+                start_angle,
+                end_angle,
+                ..
+            },
+            40,
+        )) = saved_section_entity_geometry(&entity)
+        else {
+            panic!("full ellipse");
+        };
+        assert_eq!((start_angle, end_angle), (None, None));
     }
 }
 
@@ -2386,10 +2851,7 @@ fn saved_section_missing_line_geometry(
         return None;
     };
 
-    let saved = definition.saved_section.as_ref()?;
-    let geometries = saved
-        .entities
-        .iter()
+    let geometries = semantic_saved_section_entities(definition)
         .filter_map(saved_section_entity_geometry)
         .filter(|(internal_id, _, _)| order.rows.iter().any(|row| row.internal_id == *internal_id))
         .collect::<Vec<_>>();
@@ -2627,20 +3089,49 @@ fn resolved_section_segment_geometry_with_missing_line(
     }
 }
 
-pub(crate) fn resolved_section_points(
+pub(crate) fn resolved_section_coordinates(
     definition: &crate::feature::FeatureDefinition,
-) -> BTreeMap<u32, [f64; 2]> {
-    let Some(variables) = &definition.variables else {
-        return BTreeMap::new();
+) -> BTreeMap<u32, [Option<f64>; 2]> {
+    let (points, ambiguous_point_ids) = match &definition.variables {
+        Some(variables) if variables.is_complete() => variables.reconciled_points(),
+        Some(_) => return BTreeMap::new(),
+        None => (BTreeMap::new(), BTreeSet::new()),
     };
-    if !variables.is_complete() {
-        return BTreeMap::new();
-    }
-    let (points, ambiguous_point_ids) = variables.reconciled_points();
     let mut segment_counts = BTreeMap::new();
     for segment in definition.segments.iter().flat_map(|table| &table.rows) {
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
     }
+    let mut saved_segment_points = definition
+        .segments
+        .iter()
+        .filter(|table| table.is_complete())
+        .flat_map(|table| {
+            table
+                .rows
+                .iter()
+                .filter(|segment| table.external_id_count(segment.external_id) == 1)
+        })
+        .filter(|segment| {
+            segment
+                .point_ids
+                .iter()
+                .all(|point_id| !ambiguous_point_ids.contains(point_id))
+        })
+        .filter_map(|segment| saved_section_segment_point_coordinates(definition, segment))
+        .flatten()
+        .collect::<Vec<_>>();
+    saved_segment_points.extend(
+        definition
+            .segments
+            .iter()
+            .filter(|table| table.is_complete())
+            .flat_map(|table| &table.circle_rows)
+            .filter_map(|segment| {
+                (!ambiguous_point_ids.contains(&segment.center_id)).then_some(())?;
+                let (center, _) = saved_section_circle_values(definition, segment)?;
+                Some((segment.center_id, center))
+            }),
+    );
     let segments = definition
         .segments
         .iter()
@@ -2767,11 +3258,6 @@ pub(crate) fn resolved_section_points(
             let delta = match relation.sign {
                 1 => magnitude,
                 0xf6 => -magnitude,
-                0 => match segment.directions[0] {
-                    Some(1) => magnitude,
-                    None => -magnitude,
-                    _ => return None,
-                },
                 _ => return None,
             };
             Some((first, second, coordinate, delta))
@@ -2807,6 +3293,13 @@ pub(crate) fn resolved_section_points(
                     point_id, coordinate, value,
                 ));
             }
+        }
+    }
+    for &(point_id, coordinates) in &saved_segment_points {
+        for (coordinate, value) in coordinates.into_iter().enumerate() {
+            equations.push(SectionCoordinateEquation::point_value(
+                point_id, coordinate, value,
+            ));
         }
     }
     for segment in &segments {
@@ -2886,6 +3379,15 @@ pub(crate) fn resolved_section_points(
     solve_section_coordinate_equations(&equations, &stored_coordinates)
 }
 
+pub(crate) fn resolved_section_points(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<u32, [f64; 2]> {
+    resolved_section_coordinates(definition)
+        .into_iter()
+        .filter_map(|(point, [u, v])| Some((point, [u?, v?])))
+        .collect()
+}
+
 type SectionCoordinateVariable = (u32, usize);
 
 #[derive(Default)]
@@ -2938,7 +3440,7 @@ impl SectionCoordinateEquation {
 fn solve_section_coordinate_equations(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
-) -> BTreeMap<u32, [f64; 2]> {
+) -> BTreeMap<u32, [Option<f64>; 2]> {
     let variables = equations
         .iter()
         .flat_map(|equation| equation.terms.keys().copied())
@@ -3023,9 +3525,6 @@ fn solve_section_coordinate_equations(
         points.entry(point).or_insert([None; 2])[coordinate] = Some(value);
     }
     points
-        .into_iter()
-        .filter_map(|(point, [u, v])| Some((point, [u?, v?])))
-        .collect()
 }
 
 struct SectionLinearRow {
@@ -3200,6 +3699,15 @@ fn section_line_direct_fixed_coordinates(
         })
         .into_iter()
         .collect::<BTreeSet<_>>();
+    coordinates.extend(
+        unique_reference_line_segment(definition, entity_id)
+            .and_then(|segment| segment.vertical_horizontal)
+            .and_then(|selector| match selector {
+                0 => Some(0),
+                1 => Some(1),
+                _ => None,
+            }),
+    );
     coordinates.extend(
         active_complete_section_skamps(definition).filter_map(|skamp| {
             match (skamp.kind, skamp.items.as_slice()) {
@@ -3408,17 +3916,11 @@ fn unique_decoded_section_segment(
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSegment> {
     let segments = definition.segments.as_ref()?;
-    let mut matches = segments
+    let segment = segments
         .rows
         .iter()
-        .filter(|segment| segment.external_id == external_id);
-    let segment = matches.next()?;
-    (matches.next().is_none()
-        && !segments
-            .opaque_rows
-            .iter()
-            .any(|row| row.external_id == external_id))
-    .then_some(segment)
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
 fn section_segment_rows(
@@ -3453,6 +3955,14 @@ fn section_skamp_selected_point_id(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<u32> {
+    if let Some(segment) = unique_centered_line_segment(definition, item.entity_id) {
+        return match item.sense {
+            2 => Some(0),
+            3 => Some(1),
+            4 => Some(segment.center_id),
+            _ => None,
+        };
+    }
     let segment = unique_section_skamp_segment(definition, item.entity_id)?;
     match item.sense {
         2 => Some(segment.point_ids[0]),
@@ -3493,6 +4003,10 @@ fn saved_section_point(
         (crate::feature::FeatureSavedEntity::Arc(arc), 3) => arc.endpoints[1],
         (crate::feature::FeatureSavedEntity::Arc(arc), 4) => arc.center,
         (crate::feature::FeatureSavedEntity::Circle(circle), 4) => circle.center,
+        (crate::feature::FeatureSavedEntity::Conic(conic), 4) => {
+            let frame = conic.local_system?;
+            [Some(frame[9]), Some(frame[10]), Some(frame[11])]
+        }
         _ => return None,
     };
     let [Some(u), Some(v), _] = coordinates else {
@@ -3505,6 +4019,19 @@ pub(crate) fn resolved_section_radii(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, f64> {
     let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
+    for segment in definition
+        .segments
+        .iter()
+        .filter(|table| table.is_complete())
+        .flat_map(|table| &table.circle_rows)
+    {
+        if let Some((_, radius)) = saved_section_circle_values(definition, segment) {
+            candidates
+                .entry(segment.radius_ref)
+                .or_default()
+                .push(radius);
+        }
+    }
     for row in definition
         .variables
         .iter()
@@ -3559,16 +4086,13 @@ pub(crate) fn resolved_section_radii(
         for circle in definition
             .segments
             .iter()
-            .flat_map(|segments| &segments.opaque_rows)
+            .flat_map(|segments| &segments.circle_rows)
             .filter(|segment| {
-                segment.kind == 10
-                    && unique_opaque_section_segment(definition, segment.external_id, 10)
-                        .is_some_and(|candidate| candidate == *segment)
+                unique_circle_segment(definition, segment.external_id)
+                    .is_some_and(|candidate| candidate == *segment)
             })
         {
-            let Some(radius_id) = circle.radius_ref else {
-                continue;
-            };
+            let radius_id = circle.radius_ref;
             let Some(dimension) = dimensions
                 .rows
                 .get(usize::try_from(radius_id).unwrap_or(usize::MAX))
@@ -3695,7 +4219,8 @@ fn section_relation_length_dimension<'a>(
 ) -> Option<&'a crate::feature::FeatureDimension> {
     let dimension = definition
         .dimensions
-        .as_ref()?
+        .as_ref()
+        .filter(|table| feature_dimension_table_complete(table))?
         .rows
         .get(usize::try_from(relation.dimension_id).ok()?)?;
     (dimension.value_unit == crate::feature::DimensionUnit::Millimeters).then_some(dimension)
@@ -3711,8 +4236,8 @@ fn section_skamp_radius_source(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SectionRadiusSource> {
-    if let Some(circle) = unique_opaque_section_segment(definition, item.entity_id, 10) {
-        return circle.radius_ref.map(SectionRadiusSource::Reference);
+    if let Some(circle) = unique_circle_segment(definition, item.entity_id) {
+        return Some(SectionRadiusSource::Reference(circle.radius_ref));
     }
     if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
         return (segment.kind == crate::feature::FeatureSegmentKind::Arc)
@@ -3750,7 +4275,6 @@ fn section_arc_carrier(
 #[derive(Clone)]
 struct SectionIntersectionCarrier {
     geometry: SketchGeometry,
-    line_is_bounded: bool,
 }
 
 fn section_axis_line_carrier_with_points(
@@ -3758,37 +4282,103 @@ fn section_axis_line_carrier_with_points(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    let fixed_coordinate = match segment.directions {
+        [Some(0), _, _] => 0,
+        [_, Some(0), _] => 1,
+        _ => return None,
+    };
+    section_fixed_coordinate_line_carrier(variable_points, segment, fixed_coordinate)
+}
+
+fn section_fixed_coordinate_line_carrier(
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::FeatureSegment,
+    fixed_coordinate: usize,
+) -> Option<SketchGeometry> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Line && fixed_coordinate < 2)
+        .then_some(())?;
     let endpoint = |id| variable_points.get(&id);
     let [first, second] = segment.point_ids.map(endpoint);
     let (Some(first), Some(second)) = (first, second) else {
         return None;
     };
-    let scale = first[0]
-        .into_iter()
-        .chain(first[1])
-        .chain(second[0])
-        .chain(second[1])
-        .map(f64::abs)
-        .fold(1.0, f64::max);
-    if segment.directions[0] == Some(0) {
-        let (Some(first_u), Some(second_u)) = (first[0], second[0]) else {
-            return None;
-        };
-        ((first_u - second_u).abs() <= 1e-9 * scale).then(|| SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(first_u, -scale),
-            end: cadmpeg_ir::math::Point2::new(first_u, scale),
-        })
-    } else if segment.directions[1] == Some(0) {
-        let (Some(first_v), Some(second_v)) = (first[1], second[1]) else {
-            return None;
-        };
-        ((first_v - second_v).abs() <= 1e-9 * scale).then(|| SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(-scale, first_v),
-            end: cadmpeg_ir::math::Point2::new(scale, first_v),
-        })
+    let (Some(first), Some(second)) = (first[fixed_coordinate], second[fixed_coordinate]) else {
+        return None;
+    };
+    let scale = first.abs().max(second.abs()).max(1.0);
+    ((first - second).abs() <= 1e-9 * scale).then(|| {
+        if fixed_coordinate == 0 {
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(first, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            }
+        } else {
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(0.0, first),
+                direction: Point2::new(1.0, 0.0),
+            }
+        }
+    })
+}
+
+fn section_proven_axis_line_carrier(
+    definition: &crate::feature::FeatureDefinition,
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
+        Some(geometry)
     } else {
-        None
+        section_fixed_coordinate_line_carrier(
+            variable_points,
+            segment,
+            section_line_entity_fixed_coordinate(definition, segment.external_id)?,
+        )
     }
+}
+
+fn section_axis_reference_line_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    if !section_degenerate_axis_line(definition, segment) {
+        return section_proven_axis_line_carrier(definition, variable_points, segment);
+    }
+    let fixed_coordinate = usize::try_from(segment.vertical_horizontal?).ok()?;
+    let values = segment
+        .point_ids
+        .iter()
+        .filter_map(|point| {
+            variable_points
+                .get(point)?
+                .get(fixed_coordinate)
+                .copied()
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    let expected_value_count = if segment.point_ids[0] == segment.point_ids[1] {
+        1
+    } else {
+        2
+    };
+    (values.len() == expected_value_count).then_some(())?;
+    let value = *values.first()?;
+    let scale = values
+        .iter()
+        .copied()
+        .map(f64::abs)
+        .fold(value.abs().max(1.0), f64::max);
+    values
+        .iter()
+        .all(|candidate| (*candidate - value).abs() <= 1e-9 * scale)
+        .then_some(())?;
+    let (origin, direction) = if fixed_coordinate == 0 {
+        (Point2::new(value, 0.0), Point2::new(0.0, 1.0))
+    } else {
+        (Point2::new(0.0, value), Point2::new(1.0, 0.0))
+    };
+    Some(SketchGeometry::ReferenceLine { origin, direction })
 }
 
 fn section_segment_intersection_carrier_with_missing_line(
@@ -3805,16 +4395,10 @@ fn section_segment_intersection_carrier_with_missing_line(
         segment,
         missing_line,
     ) {
-        return Some(SectionIntersectionCarrier {
-            line_is_bounded: matches!(geometry, SketchGeometry::Line { .. }),
-            geometry,
-        });
+        return Some(SectionIntersectionCarrier { geometry });
     }
-    if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
-        return Some(SectionIntersectionCarrier {
-            geometry,
-            line_is_bounded: false,
-        });
+    if let Some(geometry) = section_proven_axis_line_carrier(definition, variable_points, segment) {
+        return Some(SectionIntersectionCarrier { geometry });
     }
     let ([center_u, center_v], radius) = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
@@ -3825,7 +4409,6 @@ fn section_segment_intersection_carrier_with_missing_line(
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::TAU),
         },
-        line_is_bounded: false,
     })
 }
 
@@ -3879,47 +4462,54 @@ fn trim_segment_id(
     }
 }
 
+fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
+    match geometry {
+        SketchGeometry::Line { start, end } => {
+            Some((*start, Point2::new(end.u - start.u, end.v - start.v)))
+        }
+        SketchGeometry::ReferenceLine { origin, direction } => Some((*origin, *direction)),
+        _ => None,
+    }
+}
+
 fn intersect_section_lines(first: &SketchGeometry, second: &SketchGeometry) -> Option<[f64; 2]> {
-    let (
-        SketchGeometry::Line {
-            start: first_start,
-            end: first_end,
-        },
-        SketchGeometry::Line {
-            start: second_start,
-            end: second_end,
-        },
-    ) = (first, second)
-    else {
-        return None;
-    };
-    let denominator = (first_start.u - first_end.u).mul_add(
-        second_start.v - second_end.v,
-        -(first_start.v - first_end.v) * (second_start.u - second_end.u),
+    let (first_origin, first_direction) = section_line_origin_direction(first)?;
+    let (second_origin, second_direction) = section_line_origin_direction(second)?;
+    let first_end = Point2::new(
+        first_origin.u + first_direction.u,
+        first_origin.v + first_direction.v,
     );
-    let scale = (first_start.u - first_end.u)
+    let second_end = Point2::new(
+        second_origin.u + second_direction.u,
+        second_origin.v + second_direction.v,
+    );
+    let denominator = (first_origin.u - first_end.u).mul_add(
+        second_origin.v - second_end.v,
+        -(first_origin.v - first_end.v) * (second_origin.u - second_end.u),
+    );
+    let scale = (first_origin.u - first_end.u)
         .abs()
-        .max((first_start.v - first_end.v).abs())
-        .max((second_start.u - second_end.u).abs())
-        .max((second_start.v - second_end.v).abs())
+        .max((first_origin.v - first_end.v).abs())
+        .max((second_origin.u - second_end.u).abs())
+        .max((second_origin.v - second_end.v).abs())
         .max(1.0);
     if denominator.abs() <= 1e-12 * scale * scale {
         return None;
     }
-    let first_cross = first_start
+    let first_cross = first_origin
         .u
-        .mul_add(first_end.v, -(first_start.v * first_end.u));
-    let second_cross = second_start
+        .mul_add(first_end.v, -(first_origin.v * first_end.u));
+    let second_cross = second_origin
         .u
-        .mul_add(second_end.v, -(second_start.v * second_end.u));
+        .mul_add(second_end.v, -(second_origin.v * second_end.u));
     Some([
         first_cross.mul_add(
-            second_start.u - second_end.u,
-            -(first_start.u - first_end.u) * second_cross,
+            second_origin.u - second_end.u,
+            -(first_origin.u - first_end.u) * second_cross,
         ) / denominator,
         first_cross.mul_add(
-            second_start.v - second_end.v,
-            -(first_start.v - first_end.v) * second_cross,
+            second_origin.v - second_end.v,
+            -(first_origin.v - first_end.v) * second_cross,
         ) / denominator,
     ])
 }
@@ -4042,11 +4632,11 @@ fn intersect_section_carriers(
     first: &SectionIntersectionCarrier,
     second: &SectionIntersectionCarrier,
 ) -> Option<[f64; 2]> {
-    let line_arc_is_bounded = match (&first.geometry, &second.geometry) {
-        (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. }) => first.line_is_bounded,
-        (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. }) => second.line_is_bounded,
-        _ => false,
-    };
+    let line_arc_is_bounded = matches!(
+        (&first.geometry, &second.geometry),
+        (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. })
+            | (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. })
+    );
     intersect_section_lines(&first.geometry, &second.geometry)
         .or_else(|| {
             line_arc_is_bounded
@@ -4552,7 +5142,6 @@ fn generated_arc_cylinder_extent(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let feature_id = definition.owner_feature_id?;
     definition.segments.as_ref()?.is_complete().then_some(())?;
-    let mut frames = Vec::new();
     let mut surface_ids = BTreeSet::new();
     for entry in scan
         .features
@@ -4577,13 +5166,126 @@ fn generated_arc_cylinder_extent(
         else {
             continue;
         };
-        let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
-            .positional_cylinder_frame?;
         surface_ids.insert(row.id).then_some(())?;
-        frames.push(frame);
     }
+    let frames =
+        unique_available_positional_cylinder_frames(&surface_ids, &scan.surfaces.parameters)?;
     (!frames.is_empty()).then_some(())?;
     agreed_generated_cylinder_extent(transform, &frames)
+}
+
+fn ordered_parallel_cap_extent(
+    start: PlaneEquation,
+    end: PlaneEquation,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let start = canonical_plane(start)?;
+    let end = canonical_plane(end)?;
+    start
+        .normal
+        .into_iter()
+        .zip(end.normal)
+        .all(|(left, right)| (left - right).abs() <= 1e-10)
+        .then_some(())?;
+    let signed_length = dot(
+        std::array::from_fn(|axis| end.origin[axis] - start.origin[axis]),
+        start.normal,
+    );
+    let scale = start
+        .origin
+        .into_iter()
+        .chain(end.origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    (signed_length.abs() > 1e-9 * scale).then_some(())?;
+    Some((
+        ExtrudeExtent::OneSided {
+            side: blind_extrude_side(signed_length.abs()),
+        },
+        start
+            .normal
+            .map(|component| component * signed_length.signum()),
+    ))
+}
+
+fn generated_cap_plane_extent(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let tables = scan
+        .features
+        .entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    table
+        .entries
+        .iter()
+        .map(|entry| entry.entity_id)
+        .eq(table.entry_ids.iter().copied())
+        .then_some(())?;
+    let mut start_id = None;
+    let mut end_id = None;
+    let mut side_count = 0_usize;
+    for entry in &table.entries {
+        match (entry.class_id, entry.source_entity_id) {
+            (204, None) if start_id.replace(entry.entity_id).is_none() => {}
+            (203, None) if end_id.replace(entry.entity_id).is_none() => {}
+            (200, Some(_)) => side_count += 1,
+            _ => return None,
+        }
+    }
+    (side_count > 0
+        && table.surface_ids.contains(&start_id?)
+        && table.surface_ids.contains(&end_id?))
+    .then_some(())?;
+    let plane = |surface_id: u32| {
+        let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
+        (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let [Surface {
+            geometry: SurfaceGeometry::Plane { origin, normal, .. },
+            ..
+        }] = surfaces.as_slice()
+        else {
+            return None;
+        };
+        Some(PlaneEquation {
+            origin: [origin.x, origin.y, origin.z],
+            normal: [normal.x, normal.y, normal.z],
+        })
+    };
+    ordered_parallel_cap_extent(plane(start_id?)?, plane(end_id?)?)
+}
+
+fn unique_available_positional_cylinder_frames(
+    surface_ids: &BTreeSet<u32>,
+    parameters: &[crate::surface::SurfaceParameterRecord],
+) -> Option<Vec<crate::surface::PositionalCylinderFrame>> {
+    let mut frames = Vec::new();
+    for surface_id in surface_ids {
+        let mut matching = parameters
+            .iter()
+            .filter(|record| record.surface_id == *surface_id);
+        let first = matching.next();
+        if matching.next().is_some() {
+            return None;
+        }
+        if let Some(frame) = first.and_then(|record| record.positional_cylinder_frame) {
+            frames.push(frame);
+        }
+    }
+    Some(frames)
 }
 
 fn agreed_generated_cylinder_extent(
@@ -4622,6 +5324,591 @@ fn agreed_generated_cylinder_extent(
             side: ExtrudeSide {
                 termination: Termination::Blind {
                     length: Length(length),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        direction,
+    ))
+}
+
+struct ExtrusionCarrierSpan {
+    starts: Vec<[f64; 3]>,
+    vector: [f64; 3],
+}
+
+fn blind_extrusion_from_carriers(
+    carriers: &[ExtrusionCarrierSpan],
+    planes: &[([f64; 3], [f64; 3])],
+    transform: Option<&crate::placement::FeatureSectionTransform>,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let first = carriers.first()?;
+    let first_start = *first.starts.first()?;
+    let direction = normalized(first.vector)?;
+    let length = first.vector.into_iter().fold(0.0_f64, f64::hypot);
+    (length.is_finite() && length > 0.0).then_some(())?;
+    let coordinate_scale = carriers
+        .iter()
+        .flat_map(|carrier| carrier.starts.iter().flatten().copied())
+        .chain(planes.iter().flat_map(|(origin, _)| *origin))
+        .chain(transform.into_iter().flat_map(|transform| transform.origin))
+        .map(f64::abs)
+        .fold(length.max(1.0), f64::max);
+    let tolerance = 1e-9 * coordinate_scale;
+    let vector_tolerance = 1e-9 * length.max(1.0);
+    let start_station = dot(first_start, direction);
+    let end_station = start_station + length;
+    let mut has_opposed_carrier = false;
+    carriers
+        .iter()
+        .all(|carrier| {
+            if carrier.starts.is_empty() {
+                return false;
+            }
+            let same_direction = carrier
+                .vector
+                .into_iter()
+                .zip(first.vector)
+                .all(|(candidate, reference)| (candidate - reference).abs() <= vector_tolerance);
+            let opposite_direction = carrier
+                .vector
+                .into_iter()
+                .zip(first.vector)
+                .all(|(candidate, reference)| (candidate + reference).abs() <= vector_tolerance);
+            has_opposed_carrier |= opposite_direction;
+            (same_direction
+                && carrier
+                    .starts
+                    .iter()
+                    .all(|start| (dot(*start, direction) - start_station).abs() <= tolerance))
+                || (opposite_direction
+                    && carrier
+                        .starts
+                        .iter()
+                        .all(|start| (dot(*start, direction) - end_station).abs() <= tolerance))
+        })
+        .then_some(())?;
+    let cap_stations = planes
+        .iter()
+        .map(|(origin, normal)| {
+            let normal = normalized(*normal)?;
+            let alignment = dot(normal, direction).abs();
+            if alignment >= 1.0 - 1e-10 {
+                Some(Some(dot(*origin, direction)))
+            } else if alignment <= 1e-10 {
+                Some(None)
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let mut unique_stations = Vec::new();
+    for station in cap_stations {
+        if unique_stations
+            .iter()
+            .all(|existing| (station - existing).abs() > tolerance)
+        {
+            unique_stations.push(station);
+        }
+    }
+    let reverse = if has_opposed_carrier {
+        if let Some(transform) = transform {
+            let transform_station = dot(transform.origin, direction);
+            if (transform_station - start_station).abs() <= tolerance {
+                false
+            } else if (transform_station - end_station).abs() <= tolerance {
+                true
+            } else {
+                return None;
+            }
+        } else {
+            let [terminal_station] = unique_stations.as_slice() else {
+                return None;
+            };
+            if (*terminal_station - end_station).abs() <= tolerance {
+                false
+            } else if (*terminal_station - start_station).abs() <= tolerance {
+                true
+            } else {
+                return None;
+            }
+        }
+    } else {
+        false
+    };
+    let (direction, start_station, end_station) = if reverse {
+        (
+            direction.map(|component| -component),
+            -end_station,
+            -start_station,
+        )
+    } else {
+        (direction, start_station, end_station)
+    };
+    if let Some(transform) = transform {
+        let normal = normalized(transform.normal)?;
+        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10
+            && (dot(transform.origin, direction) - start_station).abs() <= tolerance)
+            .then_some(())?;
+    }
+    let unique_stations = unique_stations
+        .into_iter()
+        .map(|station| if reverse { -station } else { station })
+        .collect::<Vec<_>>();
+    let cap_matches = |cap: f64| {
+        (cap - start_station).abs() <= tolerance || (cap - end_station).abs() <= tolerance
+    };
+    match unique_stations.as_slice() {
+        [] => {}
+        [cap] if cap_matches(*cap) => {}
+        [first_cap, second_cap]
+            if cap_matches(*first_cap)
+                && cap_matches(*second_cap)
+                && ((first_cap - second_cap).abs() - length).abs() <= tolerance => {}
+        _ => return None,
+    }
+    Some((
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(length),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        direction,
+    ))
+}
+
+fn generated_bounded_cylinder_extent(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    transform: Option<&crate::placement::FeatureSectionTransform>,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!rows.is_empty()
+        && rows.iter().all(|row| {
+            matches!(
+                row.kind,
+                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Cylinder
+            )
+        }))
+    .then_some(())?;
+
+    let mut frames = Vec::new();
+    let mut planes = Vec::new();
+    for row in rows {
+        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        match row.kind {
+            crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
+                [] => {}
+                [Surface {
+                    geometry: SurfaceGeometry::Plane { origin, normal, .. },
+                    ..
+                }] => planes.push((
+                    [origin.x, origin.y, origin.z],
+                    [normal.x, normal.y, normal.z],
+                )),
+                _ => return None,
+            },
+            crate::surface::SurfaceKind::Cylinder => {
+                let [Surface {
+                    geometry: SurfaceGeometry::Cylinder { origin, axis, .. },
+                    ..
+                }] = surfaces.as_slice()
+                else {
+                    return None;
+                };
+                let parameters =
+                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?;
+                let frame = parameters.positional_cylinder_frame?;
+                let transferred_origin = [origin.x, origin.y, origin.z];
+                let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
+                let frame_axis = normalized(frame.axis)?;
+                let scale = transferred_origin
+                    .into_iter()
+                    .chain(frame.origin)
+                    .map(f64::abs)
+                    .fold(1.0, f64::max);
+                (transferred_origin
+                    .into_iter()
+                    .zip(frame.origin)
+                    .all(|(left, right)| (left - right).abs() <= 1e-9 * scale)
+                    && transferred_axis
+                        .into_iter()
+                        .zip(frame_axis)
+                        .all(|(left, right)| (left - right).abs() <= 1e-10))
+                .then_some(())?;
+                frames.push(frame);
+            }
+            _ => unreachable!("surface family checked above"),
+        }
+    }
+    let carriers = frames
+        .into_iter()
+        .map(|frame| bounded_cylinder_span(frame, &planes))
+        .collect::<Option<Vec<_>>>()?;
+    blind_extrusion_from_carriers(&carriers, &planes, transform)
+}
+
+fn bounded_cylinder_span(
+    frame: crate::surface::PositionalCylinderFrame,
+    planes: &[([f64; 3], [f64; 3])],
+) -> Option<ExtrusionCarrierSpan> {
+    let axis = normalized(frame.axis)?;
+    let vector = match frame.length {
+        Some(length) => {
+            (length.is_finite() && length > 0.0).then_some(())?;
+            axis.map(|component| component * length)
+        }
+        None => {
+            let scale = planes
+                .iter()
+                .flat_map(|(origin, _)| *origin)
+                .chain(frame.origin)
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+            let tolerance = 1e-9 * scale;
+            let start_station = dot(frame.origin, axis);
+            let mut terminal_offsets = Vec::new();
+            for (origin, normal) in planes {
+                let normal = normalized(*normal)?;
+                let alignment = dot(normal, axis).abs();
+                if alignment >= 1.0 - 1e-10 {
+                    let offset = dot(*origin, axis) - start_station;
+                    if offset.abs() > tolerance
+                        && terminal_offsets
+                            .iter()
+                            .all(|existing| (offset - existing).abs() > tolerance)
+                    {
+                        terminal_offsets.push(offset);
+                    }
+                } else if alignment > 1e-10 {
+                    return None;
+                }
+            }
+            let [offset] = terminal_offsets.as_slice() else {
+                return None;
+            };
+            axis.map(|component| component * offset)
+        }
+    };
+    Some(ExtrusionCarrierSpan {
+        starts: vec![frame.origin],
+        vector,
+    })
+}
+
+fn nurbs_translation_candidate(
+    nurbs: &NurbsSurface,
+    along_v: bool,
+) -> Option<ExtrusionCarrierSpan> {
+    let (degree, count, knots, periodic) = if along_v {
+        (
+            nurbs.v_degree,
+            nurbs.v_count,
+            nurbs.v_knots.as_slice(),
+            nurbs.v_periodic,
+        )
+    } else {
+        (
+            nurbs.u_degree,
+            nurbs.u_count,
+            nurbs.u_knots.as_slice(),
+            nurbs.u_periodic,
+        )
+    };
+    let [first, second, third, fourth] = knots else {
+        return None;
+    };
+    (degree == 1
+        && count == 2
+        && !periodic
+        && first.is_finite()
+        && fourth.is_finite()
+        && first == second
+        && third == fourth
+        && first < third)
+        .then_some(())?;
+    let u_count = usize::try_from(nurbs.u_count).ok()?;
+    let v_count = usize::try_from(nurbs.v_count).ok()?;
+    (u_count.checked_mul(v_count)? == nurbs.control_points.len()
+        && nurbs
+            .weights
+            .as_ref()
+            .is_none_or(|weights| weights.len() == nurbs.control_points.len()))
+    .then_some(())?;
+    let pair_count = if along_v { u_count } else { v_count };
+    let mut starts = Vec::with_capacity(pair_count);
+    let mut vector: Option<[f64; 3]> = None;
+    for index in 0..pair_count {
+        let (start_index, end_index) = if along_v {
+            (index * v_count, index * v_count + 1)
+        } else {
+            (index, v_count + index)
+        };
+        let start = *nurbs.control_points.get(start_index)?;
+        let end = *nurbs.control_points.get(end_index)?;
+        let start = [start.x, start.y, start.z];
+        let end = [end.x, end.y, end.z];
+        start
+            .into_iter()
+            .chain(end)
+            .all(f64::is_finite)
+            .then_some(())?;
+        if let Some(weights) = &nurbs.weights {
+            let start_weight = *weights.get(start_index)?;
+            let end_weight = *weights.get(end_index)?;
+            (start_weight.is_finite()
+                && end_weight.is_finite()
+                && (start_weight - end_weight).abs()
+                    <= 1e-10 * start_weight.abs().max(end_weight.abs()).max(1.0))
+            .then_some(())?;
+        }
+        let candidate = std::array::from_fn(|axis| end[axis] - start[axis]);
+        if let Some(reference) = vector {
+            let scale = reference
+                .into_iter()
+                .chain(candidate)
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+            candidate
+                .into_iter()
+                .zip(reference)
+                .all(|(left, right)| (left - right).abs() <= 1e-9 * scale)
+                .then_some(())?;
+        } else {
+            vector = Some(candidate);
+        }
+        starts.push(start);
+    }
+    Some(ExtrusionCarrierSpan {
+        starts,
+        vector: vector?,
+    })
+}
+
+fn nurbs_translation_span(nurbs: &NurbsSurface) -> Option<ExtrusionCarrierSpan> {
+    let mut candidates = [true, false]
+        .into_iter()
+        .filter_map(|along_v| nurbs_translation_candidate(nurbs, along_v));
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+fn generated_nurbs_translation_extent(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    transform: Option<&crate::placement::FeatureSectionTransform>,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!rows.is_empty()
+        && rows.iter().all(|row| {
+            matches!(
+                row.kind,
+                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Extrusion
+            )
+        }))
+    .then_some(())?;
+    let mut carriers = Vec::new();
+    let mut planes = Vec::new();
+    for row in rows {
+        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        match row.kind {
+            crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
+                [] => {}
+                [Surface {
+                    geometry: SurfaceGeometry::Plane { origin, normal, .. },
+                    ..
+                }] => planes.push((
+                    [origin.x, origin.y, origin.z],
+                    [normal.x, normal.y, normal.z],
+                )),
+                _ => return None,
+            },
+            crate::surface::SurfaceKind::Extrusion => match surfaces.as_slice() {
+                [] => {}
+                [Surface {
+                    geometry: SurfaceGeometry::Nurbs(nurbs),
+                    ..
+                }] => carriers.push(nurbs_translation_span(nurbs)?),
+                _ => return None,
+            },
+            _ => unreachable!("surface family checked above"),
+        }
+    }
+    blind_extrusion_from_carriers(&carriers, &planes, transform)
+}
+
+struct RectilinearPlaneStation {
+    coordinate: f64,
+    reversed: bool,
+}
+
+struct RectilinearPlaneFamily {
+    normal: [f64; 3],
+    stations: Vec<RectilinearPlaneStation>,
+}
+
+fn generated_rectilinear_plane_extent(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    op: BooleanOp,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (rows.len() >= 4
+        && rows
+            .iter()
+            .all(|row| row.kind == crate::surface::SurfaceKind::Plane))
+    .then_some(())?;
+
+    let mut planes = Vec::with_capacity(rows.len());
+    for row in rows {
+        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let [Surface {
+            geometry: SurfaceGeometry::Plane { origin, normal, .. },
+            ..
+        }] = surfaces.as_slice()
+        else {
+            return None;
+        };
+        let plane = canonical_plane(PlaneEquation {
+            origin: [origin.x, origin.y, origin.z],
+            normal: [normal.x, normal.y, normal.z],
+        })?;
+        planes.push((plane, row.reversed));
+    }
+
+    let coordinate_scale = planes
+        .iter()
+        .flat_map(|(plane, _)| plane.origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let station_tolerance = 1e-9 * coordinate_scale;
+    let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
+    for (plane, reversed) in planes {
+        let station = dot(plane.origin, plane.normal);
+        if let Some(family) = families.iter_mut().find(|family| {
+            family
+                .normal
+                .iter()
+                .zip(plane.normal)
+                .all(|(left, right)| (left - right).abs() <= 1e-10)
+        }) {
+            if let Some(known) = family
+                .stations
+                .iter()
+                .find(|known| (station - known.coordinate).abs() <= station_tolerance)
+            {
+                (known.reversed == reversed).then_some(())?;
+            } else {
+                family.stations.push(RectilinearPlaneStation {
+                    coordinate: station,
+                    reversed,
+                });
+            }
+        } else {
+            families
+                .iter()
+                .all(|family| dot(family.normal, plane.normal).abs() <= 1e-10)
+                .then_some(())?;
+            families.push(RectilinearPlaneFamily {
+                normal: plane.normal,
+                stations: vec![RectilinearPlaneStation {
+                    coordinate: station,
+                    reversed,
+                }],
+            });
+        }
+    }
+    (families.len() >= 2
+        && families
+            .iter()
+            .filter(|family| family.stations.len() >= 2)
+            .count()
+            >= 2)
+        .then_some(())?;
+
+    let start_reversed = match op {
+        BooleanOp::Join | BooleanOp::NewBody => true,
+        BooleanOp::Cut => false,
+        BooleanOp::Unresolved | BooleanOp::Intersect => return None,
+    };
+    let candidates = families
+        .iter()
+        .filter_map(|family| {
+            let [first, second] = family.stations.as_slice() else {
+                return None;
+            };
+            (first.reversed != second.reversed).then_some(())?;
+            let (start, end) = if first.reversed == start_reversed {
+                (first.coordinate, second.coordinate)
+            } else {
+                (second.coordinate, first.coordinate)
+            };
+            let signed_length = end - start;
+            (signed_length.abs() > station_tolerance).then_some((
+                family.normal.map(|component| component * signed_length),
+                signed_length.abs(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let [(vector, length)] = candidates.as_slice() else {
+        return None;
+    };
+    let direction = normalized(*vector)?;
+    Some((
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(*length),
                 },
                 draft: None,
                 offset: None,
@@ -4838,6 +6125,18 @@ fn placed_section_geometry_curve(
             let direction = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(CurveGeometry::Line {
                 origin: Point3::new(start[0], start[1], start[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
+        }
+        SketchGeometry::ReferenceLine { origin, direction } => {
+            let origin = section_point_in_model(transform, [origin.u, origin.v]);
+            let direction = normalized([
+                direction.u * transform.u_axis[0] + direction.v * transform.v_axis[0],
+                direction.u * transform.u_axis[1] + direction.v * transform.v_axis[1],
+                direction.u * transform.u_axis[2] + direction.v * transform.v_axis[2],
+            ])?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
             })
         }
@@ -5248,57 +6547,54 @@ fn placed_tabulated_cylinder_directrix(
             first_offset: f64,
             reflect_sweep: bool,
         },
-        OffsetSelectedPlanar,
+        SelectedPlanar,
     }
     if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
         return None;
     }
-    let direction = parameters.extrusion_direction(0x2c)?;
-    (direction.iter().map(|value| value * value).sum::<f64>() > 0.0).then_some(())?;
     let points = replay
         .control_points
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>()?;
-    let (values, layout) = (|| {
-        let frame = parameters.tabulated_cylinder_frame?;
-        let values = frame.values.to_vec();
-        let heads = frame.prefixes;
-        let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
-        let zero_offset_layout = matches!(heads.as_slice(), [_, 0x42, _, _, 0x18, _]);
-        if offset_planar_layout {
-            Some((
-                values,
-                FrameLayout::SignedPlanar {
-                    first_offset: 30.0,
-                    reflect_sweep: false,
-                },
-            ))
-        } else if zero_offset_layout {
-            Some((
-                values,
-                FrameLayout::SignedPlanar {
-                    first_offset: 0.0,
-                    reflect_sweep: false,
-                },
-            ))
-        } else if matches!(heads.as_slice(), [_, 0x2d, _, _, 0x2d, _]) {
-            Some((values, FrameLayout::OffsetSelectedPlanar))
-        } else {
-            None
-        }
-    })()
-    .or_else(|| {
-        let [_, frame] = parameters.scalar_frames.as_slice() else {
-            return None;
-        };
-        let values = frame
-            .slots
-            .iter()
-            .map(|slot| slot.value)
-            .collect::<Option<Vec<_>>>()?;
-        Some((values, FrameLayout::LegacyReflected))
-    })?;
+    let (values, layout) = parameters
+        .tabulated_cylinder_frame
+        .map(|frame| {
+            let values = frame.values.to_vec();
+            let heads = frame.prefixes;
+            let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
+            let zero_offset_layout = matches!(heads.as_slice(), [_, 0x42, _, _, 0x18, _]);
+            if offset_planar_layout {
+                (
+                    values,
+                    FrameLayout::SignedPlanar {
+                        first_offset: 30.0,
+                        reflect_sweep: false,
+                    },
+                )
+            } else if zero_offset_layout {
+                (
+                    values,
+                    FrameLayout::SignedPlanar {
+                        first_offset: 0.0,
+                        reflect_sweep: false,
+                    },
+                )
+            } else {
+                (values, FrameLayout::SelectedPlanar)
+            }
+        })
+        .or_else(|| {
+            let [_, frame] = parameters.scalar_frames.as_slice() else {
+                return None;
+            };
+            let values = frame
+                .slots
+                .iter()
+                .map(|slot| slot.value)
+                .collect::<Option<Vec<_>>>()?;
+            Some((values, FrameLayout::LegacyReflected))
+        })?;
     let [a0, a1, a2, b0, b1, b2] = values.as_slice() else {
         return None;
     };
@@ -5329,7 +6625,7 @@ fn placed_tabulated_cylinder_directrix(
             if coordinate == 0 { first_offset } else { 0.0 },
         )
         .is_some(),
-        FrameLayout::OffsetSelectedPlanar => {
+        FrameLayout::SelectedPlanar => {
             let offsets: &[f64] = if coordinate == 0 {
                 &[0.0, 30.0]
             } else {
@@ -5379,7 +6675,7 @@ fn placed_tabulated_cylinder_directrix(
             )),
             reflect_sweep,
         ),
-        FrameLayout::OffsetSelectedPlanar => {
+        FrameLayout::SelectedPlanar => {
             let candidates = [(0.0, false), (30.0, true)]
                 .into_iter()
                 .filter_map(|(first_offset, reflect_sweep)| {
@@ -5480,11 +6776,8 @@ fn transfer_saved_spline_curves(
         else {
             continue;
         };
-        for spline in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(|entity| match entity {
+        for spline in
+            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
@@ -5752,11 +7045,8 @@ fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        for (internal_id, section_geometry, offset) in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(saved_section_entity_geometry)
+        for (internal_id, section_geometry, offset) in
+            semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
         {
             let Some(external_id) = order_table.external_id(internal_id) else {
                 continue;
@@ -5809,10 +7099,7 @@ fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        let splines = definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
+        let splines = semantic_saved_section_entities(definition)
             .filter_map(|entity| match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
@@ -8035,17 +9322,48 @@ fn unique_feature_revolution_extent_kind(
     kinds.all(|candidate| candidate == kind).then_some(kind)
 }
 
-fn line_orientation_definition(
+fn section_segment_verhor_definition(
     segment: &crate::feature::FeatureSegment,
+    sketch: &SketchId,
     entity: SketchEntityId,
 ) -> Option<SketchConstraintDefinition> {
-    if segment.kind != crate::feature::FeatureSegmentKind::Line {
-        return None;
+    let verhor = segment.vertical_horizontal?;
+    match (segment.kind, verhor) {
+        (crate::feature::FeatureSegmentKind::Line, 0) => {
+            Some(SketchConstraintDefinition::Vertical { entity })
+        }
+        (crate::feature::FeatureSegmentKind::Line, 1) => {
+            Some(SketchConstraintDefinition::Horizontal { entity })
+        }
+        _ => Some(native_section_segment_verhor_definition(
+            sketch,
+            entity,
+            segment.external_id,
+            verhor,
+        )),
     }
-    match segment.vertical_horizontal {
-        Some(0) => Some(SketchConstraintDefinition::Vertical { entity }),
-        Some(1) => Some(SketchConstraintDefinition::Horizontal { entity }),
-        _ => None,
+}
+
+fn native_section_segment_verhor_definition(
+    sketch: &SketchId,
+    entity: SketchEntityId,
+    external_id: u32,
+    verhor: u32,
+) -> SketchConstraintDefinition {
+    SketchConstraintDefinition::Native {
+        native_kind: "creo:segtab:verhor".to_string(),
+        native_state: None,
+        native_flags: None,
+        native_properties: BTreeMap::from([("verhor".to_string(), verhor.to_string())]),
+        entities: vec![entity],
+        parameter: None,
+        operands: vec![SketchNativeOperand {
+            native_kind: "segtab_ptr".to_string(),
+            native_field: Some("ext_id".to_string()),
+            native_role: None,
+            object_index: external_id,
+            native_ref: Some(sketch_native_ref(sketch)),
+        }],
     }
 }
 
@@ -8100,6 +9418,10 @@ fn reconcile_constraint_entity_references(
         SketchConstraintDefinition::Concentric { first, second }
         | SketchConstraintDefinition::Coradial { first, second }
         | SketchConstraintDefinition::Collinear { first, second }
+        | SketchConstraintDefinition::ProjectedCopy {
+            source: first,
+            result: second,
+        }
         | SketchConstraintDefinition::Parallel { first, second }
         | SketchConstraintDefinition::Perpendicular { first, second }
         | SketchConstraintDefinition::Tangent { first, second }
@@ -8113,7 +9435,9 @@ fn reconcile_constraint_entity_references(
         | SketchConstraintDefinition::Radius { entity, .. }
         | SketchConstraintDefinition::Diameter { entity, .. } => emitted.contains(entity),
         SketchConstraintDefinition::HorizontalPoints { first, second }
-        | SketchConstraintDefinition::VerticalPoints { first, second } => {
+        | SketchConstraintDefinition::VerticalPoints { first, second }
+        | SketchConstraintDefinition::HorizontalLoci { first, second }
+        | SketchConstraintDefinition::VerticalLoci { first, second } => {
             locus_emitted(first) && locus_emitted(second)
         }
         SketchConstraintDefinition::ArcAngle { entity, .. }
@@ -8205,6 +9529,16 @@ fn joined_relation_incidence(
     definition: &crate::feature::FeatureDefinition,
     relation_id: u32,
 ) -> Option<&crate::feature::FeatureSkamp> {
+    joined_relation_incidence_link(definition, relation_id).map(|(_, incidence)| incidence)
+}
+
+fn joined_relation_incidence_link(
+    definition: &crate::feature::FeatureDefinition,
+    relation_id: u32,
+) -> Option<(
+    &crate::feature::FeatureRelationTriple,
+    &crate::feature::FeatureSkamp,
+)> {
     let Some(relations) = &definition.relations else {
         return None;
     };
@@ -8213,13 +9547,13 @@ fn joined_relation_incidence(
     {
         return None;
     }
-    let incidence_ids = relations
+    let joins = relations
         .triples
         .iter()
         .filter(|triple| triple.relation_id == Some(relation_id))
-        .filter_map(|triple| triple.skamp_id)
+        .filter_map(|triple| triple.skamp_id.map(|incidence_id| (triple, incidence_id)))
         .collect::<Vec<_>>();
-    let [incidence_id] = incidence_ids.as_slice() else {
+    let [(join, incidence_id)] = joins.as_slice() else {
         return None;
     };
     let incidences = relations
@@ -8230,7 +9564,7 @@ fn joined_relation_incidence(
     let [incidence] = incidences.as_slice() else {
         return None;
     };
-    Some(*incidence)
+    Some((*join, *incidence))
 }
 
 fn relation_incidence(
@@ -8249,32 +9583,24 @@ fn relation_incidence_entities(
     let Some(incidence) = relation_incidence(definition, relation_id) else {
         return Vec::new();
     };
-    let known = section_entity_external_ids(definition);
     incidence
         .items
         .iter()
-        .map(|item| {
-            known
-                .contains(&item.entity_id)
-                .then(|| sketch_entity_id(sketch, item.entity_id))
-        })
-        .collect::<Option<Vec<_>>>()
-        .unwrap_or_default()
+        .map(|item| sketch_entity_id(sketch, item.entity_id))
+        .collect()
 }
 
-fn relation_incidence_known_entities(
+fn joined_relation_incidence_entities(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
     relation_id: u32,
 ) -> Vec<SketchEntityId> {
-    let Some(incidence) = relation_incidence(definition, relation_id) else {
+    let Some(incidence) = joined_relation_incidence(definition, relation_id) else {
         return Vec::new();
     };
-    let known = section_entity_external_ids(definition);
     incidence
         .items
         .iter()
-        .filter(|item| known.contains(&item.entity_id))
         .map(|item| sketch_entity_id(sketch, item.entity_id))
         .collect()
 }
@@ -8325,54 +9651,169 @@ fn section_angular_entities(
         .then(|| [first, second].map(|external_id| sketch_entity_id(sketch, external_id)))
 }
 
-fn section_circle_size_constraints(
+fn native_section_segment_radius_definition(
+    sketch: &SketchId,
+    entity: SketchEntityId,
+    external_id: u32,
+    field: &str,
+    dimension_ordinal: u32,
+) -> SketchConstraintDefinition {
+    SketchConstraintDefinition::Native {
+        native_kind: format!("creo:segtab:{field}"),
+        native_state: None,
+        native_flags: None,
+        native_properties: BTreeMap::from([(
+            "dimension_ordinal".to_string(),
+            dimension_ordinal.to_string(),
+        )]),
+        entities: vec![entity],
+        parameter: None,
+        operands: vec![
+            SketchNativeOperand {
+                native_kind: "segtab_ptr".to_string(),
+                native_field: Some("ext_id".to_string()),
+                native_role: None,
+                object_index: external_id,
+                native_ref: Some(sketch_native_ref(sketch)),
+            },
+            SketchNativeOperand {
+                native_kind: "dimension_ordinal".to_string(),
+                native_field: Some(field.to_string()),
+                native_role: None,
+                object_index: dimension_ordinal,
+                native_ref: Some(sketch_native_ref(sketch)),
+            },
+        ],
+    }
+}
+
+fn section_segment_radius_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    let Some(dimensions) = definition.dimensions.as_ref() else {
-        return Vec::new();
-    };
-    definition
+    let unique_segment_ids = unique_section_segment_external_ids(definition);
+    let typed = definition
         .segments
         .iter()
-        .flat_map(|segments| &segments.opaque_rows)
-        .filter(|segment| segment.kind == 10)
-        .filter(|segment| {
-            unique_opaque_section_segment(definition, segment.external_id, 10)
-                .is_some_and(|candidate| candidate == *segment)
-        })
-        .filter_map(|segment| Some((segment, usize::try_from(segment.radius_ref?).ok()?)))
-        .filter_map(|(circle, ordinal)| {
-            let (dimension, parameter) =
-                resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?;
-            let kind = match dimension.dimension_type {
-                3 => "radius",
-                4 => "diameter",
-                _ => return None,
+        .flat_map(|table| &table.rows)
+        .flat_map(|segment| {
+            let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+            [
+                ("radius", segment.radius_ref),
+                ("radius2", segment.radius2_ref),
+            ]
+            .into_iter()
+            .filter_map(move |(field, ordinal)| {
+                Some((
+                    suffix.clone(),
+                    segment.external_id,
+                    field,
+                    ordinal?,
+                    segment.offset,
+                    None,
+                ))
+            })
+        });
+    let opaque = definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.opaque_rows)
+        .flat_map(|segment| {
+            let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
+            [
+                ("radius", segment.radius_ref),
+                ("radius2", segment.radius2_ref),
+            ]
+            .into_iter()
+            .filter_map(move |(field, ordinal)| {
+                Some((
+                    suffix.clone(),
+                    segment.external_id,
+                    field,
+                    ordinal?,
+                    segment.offset,
+                    None,
+                ))
+            })
+        });
+    let circles = definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.circle_rows)
+        .map(|segment| {
+            let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                segment.external_id.to_string()
+            } else {
+                format!("circle:offset:{}", segment.offset)
             };
-            Some((
-                SketchConstraint {
-                    id: sketch_constraint_id(sketch, format_args!("{kind}:{}", circle.external_id)),
-                    sketch: sketch.clone(),
-                    definition: circular_dimension_constraint(
-                        sketch_entity_id(sketch, circle.external_id),
-                        parameter,
-                        dimension.dimension_type,
+            let parameter = usize::try_from(segment.radius_ref)
+                .ok()
+                .and_then(|ordinal| {
+                    resolved_feature_dimension_parameter(
+                        sketch,
+                        definition.dimensions.as_ref()?,
+                        ordinal,
+                    )
+                });
+            (
+                suffix,
+                segment.external_id,
+                "radius",
+                segment.radius_ref,
+                segment.offset,
+                parameter,
+            )
+        });
+    typed
+        .chain(circles)
+        .chain(opaque)
+        .map(
+            |(suffix, external_id, field, ordinal, offset, typed_circle)| {
+                let entity = sketch_entity_id(sketch, &suffix);
+                let (definition, kind) = match typed_circle {
+                    Some((dimension, parameter)) if matches!(dimension.dimension_type, 3 | 4) => (
+                        circular_dimension_constraint(entity, parameter, dimension.dimension_type),
+                        if dimension.dimension_type == 4 {
+                            "diameter"
+                        } else {
+                            "radius"
+                        },
                     ),
-                    name: None,
-                    driving: None,
-                    active: None,
-                    virtual_space: None,
-                    visible: None,
-                    orientation: None,
-                    label_distance: None,
-                    label_position: None,
-                    metadata: None,
-                    native_ref: Some(sketch_native_ref(sketch)),
-                },
-                dimension.offset,
-            ))
-        })
+                    _ => (
+                        native_section_segment_radius_definition(
+                            sketch,
+                            entity,
+                            external_id,
+                            field,
+                            ordinal,
+                        ),
+                        if field == "radius2" {
+                            "segtab-radius2"
+                        } else {
+                            "segtab-radius"
+                        },
+                    ),
+                };
+                (
+                    SketchConstraint {
+                        id: sketch_constraint_id(sketch, format_args!("{kind}:{suffix}")),
+                        sketch: sketch.clone(),
+                        definition,
+                        name: None,
+                        driving: None,
+                        active: None,
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(sketch_native_ref(sketch)),
+                    },
+                    offset,
+                )
+            },
+        )
         .collect()
 }
 
@@ -8416,9 +9857,10 @@ fn section_dimension_constraints(
                 )
             });
             let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
-            let joined_incidence = unique_relation_id
-                .then(|| joined_relation_incidence(definition, relation.relation_id))
+            let joined_incidence_link = unique_relation_id
+                .then(|| joined_relation_incidence_link(definition, relation.relation_id))
                 .flatten();
+            let joined_incidence = joined_incidence_link.map(|(_, incidence)| incidence);
             let typed = (|| {
                 unique_relation_id.then_some(())?;
                 let (dimension, _) = dimension.as_ref()?;
@@ -8439,10 +9881,54 @@ fn section_dimension_constraints(
                         parameter,
                     });
                 }
+                if relation.relation_type == 0
+                    && matches!(relation.sign, 0 | 1 | 0xf6)
+                    && dimension.value_unit == crate::feature::DimensionUnit::SchemaDefined
+                    && dimension.value == Some(0.0)
+                {
+                    let vectors = relation.operand_vectors?;
+                    if section_linear_distance_vectors(vectors) {
+                        let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
+                            return None;
+                        };
+                        let incidence = joined_incidence?;
+                        let [item] = incidence.items.as_slice() else {
+                            return None;
+                        };
+                        if !section_skamp_active(incidence.status) {
+                            return None;
+                        }
+                        let expected_coordinate = match incidence.kind {
+                            1 => 1,
+                            2 => 0,
+                            _ => return None,
+                        };
+                        if item.sense != 0 {
+                            return None;
+                        }
+                        let measured = unique_section_skamp_segment(definition, item.entity_id)?;
+                        if measured.kind == crate::feature::FeatureSegmentKind::Line
+                            && (measured.point_ids == [first_id, second_id]
+                                || measured.point_ids == [second_id, first_id])
+                            && measured.vertical_horizontal == Some(expected_coordinate)
+                            && known_entities.contains(&measured.external_id)
+                        {
+                            let entity = sketch_entity_id(sketch, measured.external_id);
+                            return Some(if incidence.kind == 1 {
+                                SketchConstraintDefinition::Horizontal { entity }
+                            } else {
+                                SketchConstraintDefinition::Vertical { entity }
+                            });
+                        }
+                    }
+                }
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }
-                if relation.relation_type == 5 && relation.sign == 1 {
+                if relation.relation_type == 5
+                    && relation.sign == 1
+                    && matches!(dimension.dimension_type, 3 | 4)
+                {
                     let vectors = relation.operand_vectors?;
                     let [Some(first_point), Some(0), Some(second_point), Some(0)] = vectors[0]
                     else {
@@ -8478,6 +9964,7 @@ fn section_dimension_constraints(
                 }
                 if relation.relation_type == 14
                     && relation.sign == 1
+                    && matches!(dimension.dimension_type, 3 | 4)
                     && relation.operand_vectors?[1] == [Some(0); 4]
                     && relation.operand_vectors?[2] == [Some(15), Some(0), Some(0), Some(0)]
                 {
@@ -8487,19 +9974,23 @@ fn section_dimension_constraints(
                     };
                     let matching = segments
                         .iter()
-                        .filter(|segment| {
-                            segment.kind == crate::feature::FeatureSegmentKind::Arc
-                                && segment.radius_ref == Some(radius_id)
-                        })
+                        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+                        .map(|segment| (segment.external_id, segment.radius_ref))
+                        .chain(
+                            definition
+                                .segments
+                                .iter()
+                                .flat_map(|table| &table.circle_rows)
+                                .map(|segment| (segment.external_id, Some(segment.radius_ref))),
+                        )
+                        .filter(|(_, radius_ref)| *radius_ref == Some(radius_id))
                         .collect::<Vec<_>>();
-                    let [segment] = matching.as_slice() else {
+                    let [(external_id, _)] = matching.as_slice() else {
                         return None;
                     };
-                    known_entities
-                        .contains(&segment.external_id)
-                        .then_some(())?;
+                    known_entities.contains(external_id).then_some(())?;
                     return Some(circular_dimension_constraint(
-                        sketch_entity_id(sketch, segment.external_id),
+                        sketch_entity_id(sketch, *external_id),
                         parameter,
                         dimension.dimension_type,
                     ));
@@ -8518,36 +10009,41 @@ fn section_dimension_constraints(
                                 })
                                 .collect::<Vec<_>>();
                             if let [measured] = matching.as_slice() {
-                                known_entities
-                                    .contains(&measured.external_id)
-                                    .then_some(())?;
-                                let entity = sketch_entity_id(sketch, measured.external_id);
-                                let [first, second] = if measured.point_ids == [first_id, second_id]
-                                {
-                                    [SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]
-                                } else {
-                                    [SketchLocus::End(entity.clone()), SketchLocus::Start(entity)]
-                                };
-                                match section_line_fixed_coordinate(definition, measured) {
-                                    Some(0) => {
-                                        return Some(
-                                            SketchConstraintDefinition::VerticalDistance {
-                                                first,
-                                                second,
-                                                parameter,
-                                            },
-                                        );
+                                if known_entities.contains(&measured.external_id) {
+                                    let entity = sketch_entity_id(sketch, measured.external_id);
+                                    let [first, second] =
+                                        if measured.point_ids == [first_id, second_id] {
+                                            [
+                                                SketchLocus::Start(entity.clone()),
+                                                SketchLocus::End(entity),
+                                            ]
+                                        } else {
+                                            [
+                                                SketchLocus::End(entity.clone()),
+                                                SketchLocus::Start(entity),
+                                            ]
+                                        };
+                                    match section_line_fixed_coordinate(definition, measured) {
+                                        Some(0) => {
+                                            return Some(
+                                                SketchConstraintDefinition::VerticalDistance {
+                                                    first,
+                                                    second,
+                                                    parameter,
+                                                },
+                                            );
+                                        }
+                                        Some(1) => {
+                                            return Some(
+                                                SketchConstraintDefinition::HorizontalDistance {
+                                                    first,
+                                                    second,
+                                                    parameter,
+                                                },
+                                            );
+                                        }
+                                        _ => {}
                                     }
-                                    Some(1) => {
-                                        return Some(
-                                            SketchConstraintDefinition::HorizontalDistance {
-                                                first,
-                                                second,
-                                                parameter,
-                                            },
-                                        );
-                                    }
-                                    _ => {}
                                 }
                             }
                             let points = resolved_section_points(definition);
@@ -8564,22 +10060,24 @@ fn section_dimension_constraints(
                                 let same_v =
                                     (first_point[1] - second_point[1]).abs() <= 1e-9 * scale;
                                 if same_u != same_v {
-                                    let first = section_point_locus(definition, sketch, first_id)?;
-                                    let second =
-                                        section_point_locus(definition, sketch, second_id)?;
-                                    return Some(if same_u {
-                                        SketchConstraintDefinition::VerticalDistance {
-                                            first,
-                                            second,
-                                            parameter,
-                                        }
-                                    } else {
-                                        SketchConstraintDefinition::HorizontalDistance {
-                                            first,
-                                            second,
-                                            parameter,
-                                        }
-                                    });
+                                    if let (Some(first), Some(second)) = (
+                                        section_point_locus(definition, sketch, first_id),
+                                        section_point_locus(definition, sketch, second_id),
+                                    ) {
+                                        return Some(if same_u {
+                                            SketchConstraintDefinition::VerticalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            }
+                                        } else {
+                                            SketchConstraintDefinition::HorizontalDistance {
+                                                first,
+                                                second,
+                                                parameter,
+                                            }
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -8628,7 +10126,7 @@ fn section_dimension_constraints(
                 })
             })();
             let incidence_entities = if unique_relation_id {
-                relation_incidence_known_entities(definition, sketch, relation.relation_id)
+                joined_relation_incidence_entities(definition, sketch, relation.relation_id)
             } else {
                 Vec::new()
             };
@@ -8636,16 +10134,75 @@ fn section_dimension_constraints(
             let constraint_definition =
                 typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
                     native_kind: format!("creo:relation:{}", relation.relation_type),
-                    native_state: None,
+                    native_state: Some(u64::from(relation.used)),
+                    native_flags: None,
+                    native_properties: {
+                        let mut properties = BTreeMap::from([
+                            (
+                                "dimension_id".to_string(),
+                                relation.dimension_id.to_string(),
+                            ),
+                            ("sign".to_string(), relation.sign.to_string()),
+                        ]);
+                        if !unique_relation_id {
+                            properties.insert(
+                                "relation_id".to_string(),
+                                relation.relation_id.to_string(),
+                            );
+                        }
+                        properties
+                    },
                     entities: incidence_entities,
                     parameter,
-                    operands: vec![SketchNativeOperand {
-                        native_kind: "relat_ptr".to_string(),
-                        native_field: None,
-                        native_role: None,
-                        object_index: relation.relation_id,
-                        native_ref: Some(sketch_native_ref(sketch)),
-                    }],
+                    operands: {
+                        let native_ref = sketch_native_ref(sketch);
+                        let mut operands = Vec::new();
+                        if unique_relation_id {
+                            operands.push(SketchNativeOperand {
+                                native_kind: "relat_ptr".to_string(),
+                                native_field: None,
+                                native_role: None,
+                                object_index: relation.relation_id,
+                                native_ref: Some(native_ref.clone()),
+                            });
+                        }
+                        if let Some(incidence) = joined_incidence {
+                            operands.push(SketchNativeOperand {
+                                native_kind: "skamp_ptr".to_string(),
+                                native_field: Some("triples_ptr.skamp_id".to_string()),
+                                native_role: None,
+                                object_index: incidence.id,
+                                native_ref: Some(native_ref.clone()),
+                            });
+                        }
+                        if let Some(equation_id) =
+                            joined_incidence_link.and_then(|(join, _)| join.equation_id)
+                        {
+                            operands.push(SketchNativeOperand {
+                                native_kind: "triples_ptr".to_string(),
+                                native_field: Some("equation_id".to_string()),
+                                native_role: None,
+                                object_index: equation_id,
+                                native_ref: Some(native_ref.clone()),
+                            });
+                        }
+                        if let Some(vectors) = relation.operand_vectors {
+                            for (vector, values) in ["a", "b", "c"].into_iter().zip(vectors) {
+                                operands.extend(values.into_iter().enumerate().filter_map(
+                                    |(slot, value)| {
+                                        value.map(|object_index| SketchNativeOperand {
+                                            native_kind: "relat_ptr".to_string(),
+                                            native_field: Some(format!("{vector}[{slot}]")),
+                                            native_role: None,
+                                            object_index,
+                                            native_ref: Some(native_ref.clone()),
+                                        })
+                                    },
+                                ));
+                            }
+                        }
+                        operands
+                    },
                 });
             (
                 SketchConstraint {
@@ -8728,26 +10285,64 @@ fn section_point_locus(
         .map(|(_, locus)| locus)
 }
 
-fn unique_opaque_section_segment(
+fn unique_circle_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
-    kind: u32,
-) -> Option<&crate::feature::FeatureOpaqueSegment> {
-    let mut matches = definition.segments.iter().flat_map(|segments| {
-        segments
-            .opaque_rows
-            .iter()
-            .filter(|segment| segment.external_id == external_id)
-    });
-    let segment = matches.next()?;
-    (segment.kind == kind
-        && matches.next().is_none()
-        && !definition
-            .segments
-            .iter()
-            .flat_map(|segments| &segments.rows)
-            .any(|segment| segment.external_id == external_id))
-    .then_some(segment)
+) -> Option<&crate::feature::FeatureCircleSegment> {
+    let segments = definition.segments.as_ref()?;
+    let segment = segments
+        .circle_rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
+}
+
+fn unique_point_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeaturePointSegment> {
+    let segments = definition.segments.as_ref()?;
+    let segment = segments
+        .point_rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
+}
+
+fn unique_centered_line_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureCenteredLineSegment> {
+    let segments = definition.segments.as_ref()?;
+    let segment = segments
+        .centered_line_rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
+}
+
+fn unique_reference_line_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureReferenceLineSegment> {
+    let segments = definition.segments.as_ref()?;
+    let segment = segments
+        .reference_line_rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
+}
+
+fn unique_bounded_curve_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureBoundedCurveSegment> {
+    let segments = definition.segments.as_ref()?;
+    let segment = segments
+        .bounded_curve_rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)?;
+    (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
 fn section_skamp_locus(
@@ -8756,6 +10351,9 @@ fn section_skamp_locus(
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
     let entity = sketch_entity_id(sketch, item.entity_id);
+    if let Some(family) = solver_only_section_entity_family(definition, item.entity_id) {
+        return section_entity_family_locus(family, entity, item.sense);
+    }
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return match (segment.kind, item.sense) {
             (_, 0) => Some(SketchLocus::Entity(entity)),
@@ -8767,10 +10365,15 @@ fn section_skamp_locus(
             _ => None,
         };
     }
-    if unique_opaque_section_segment(definition, item.entity_id, 1).is_some() {
-        return matches!(item.sense, 0 | 4).then_some(SketchLocus::Entity(entity));
+    if let Some(segment) = unique_reference_line_segment(definition, item.entity_id) {
+        return match item.sense {
+            0 => Some(SketchLocus::Entity(entity)),
+            2 if segment.point_ids[0].is_some() => Some(SketchLocus::Start(entity)),
+            3 if segment.point_ids[1].is_some() => Some(SketchLocus::End(entity)),
+            _ => None,
+        };
     }
-    if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
+    if unique_bounded_curve_segment(definition, item.entity_id).is_some() {
         return match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
             2 => Some(SketchLocus::Start(entity)),
@@ -8778,18 +10381,22 @@ fn section_skamp_locus(
             _ => None,
         };
     }
-    if let Some(circle) = unique_opaque_section_segment(definition, item.entity_id, 10) {
+    if unique_point_segment(definition, item.entity_id).is_some() {
+        return matches!(item.sense, 0 | 4).then_some(SketchLocus::Entity(entity));
+    }
+    if unique_centered_line_segment(definition, item.entity_id).is_some() {
         return match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
-            4 if section_opaque_circle_geometry(
-                &resolved_section_points(definition),
-                &resolved_section_radii(definition),
-                circle,
-            )
-            .is_some() =>
-            {
-                Some(SketchLocus::Center(entity))
-            }
+            2 => Some(SketchLocus::Start(entity)),
+            3 => Some(SketchLocus::End(entity)),
+            4 => Some(SketchLocus::Center(entity)),
+            _ => None,
+        };
+    }
+    if unique_circle_segment(definition, item.entity_id).is_some() {
+        return match item.sense {
+            0 => Some(SketchLocus::Entity(entity)),
+            4 => Some(SketchLocus::Center(entity)),
             _ => None,
         };
     }
@@ -8803,6 +10410,42 @@ fn section_skamp_locus(
                 .map(|segment| segment.external_id)
                 .chain(
                     segments
+                        .circle_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
+                        .point_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
+                        .centered_line_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
+                        .reference_line_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
+                        .bounded_curve_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
+                        .conic_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    segments
                         .opaque_rows
                         .iter()
                         .map(|segment| segment.external_id),
@@ -8810,7 +10453,7 @@ fn section_skamp_locus(
         })
         .any(|external_id| external_id == item.entity_id)
     {
-        return None;
+        return section_incidence_curve_locus(definition, entity, item);
     }
     let saved = section_saved_entity(definition, item.entity_id)?;
     match (saved, item.sense) {
@@ -8821,9 +10464,55 @@ fn section_skamp_locus(
         (crate::feature::FeatureSavedEntity::Arc(_), 3) => Some(SketchLocus::Start(entity)),
         (
             crate::feature::FeatureSavedEntity::Arc(_)
-            | crate::feature::FeatureSavedEntity::Circle(_),
+            | crate::feature::FeatureSavedEntity::Circle(_)
+            | crate::feature::FeatureSavedEntity::Conic(_),
             4,
         ) => Some(SketchLocus::Center(entity)),
+        _ => None,
+    }
+}
+
+fn section_incidence_curve_locus(
+    definition: &crate::feature::FeatureDefinition,
+    entity: SketchEntityId,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SketchLocus> {
+    section_entity_family_locus(
+        unique_section_incidence_curve_family(definition, item.entity_id)?,
+        entity,
+        item.sense,
+    )
+}
+
+fn section_entity_family_locus(
+    family: SectionEntityIncidenceFamily,
+    entity: SketchEntityId,
+    sense: u32,
+) -> Option<SketchLocus> {
+    match (family, sense) {
+        (SectionEntityIncidenceFamily::Point, 0) => Some(SketchLocus::Entity(entity)),
+        (
+            SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::Line
+            | SectionEntityIncidenceFamily::Arc,
+            0,
+        ) => Some(SketchLocus::Entity(entity)),
+        (
+            SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::Line
+            | SectionEntityIncidenceFamily::Arc,
+            2,
+        ) => Some(SketchLocus::Start(entity)),
+        (
+            SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::Line
+            | SectionEntityIncidenceFamily::Arc,
+            3,
+        ) => Some(SketchLocus::End(entity)),
+        (SectionEntityIncidenceFamily::Arc | SectionEntityIncidenceFamily::Circular, 4) => {
+            Some(SketchLocus::Center(entity))
+        }
+        (SectionEntityIncidenceFamily::Circular, 0) => Some(SketchLocus::Entity(entity)),
         _ => None,
     }
 }
@@ -8836,6 +10525,74 @@ fn section_skamp_endpoint(
     matches!(item.sense, 2 | 3)
         .then(|| section_skamp_locus(definition, sketch, item))
         .flatten()
+}
+
+fn section_skamp_shared_endpoint(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    entity: &crate::feature::FeatureSkampItem,
+    selected: &crate::feature::FeatureSkampItem,
+) -> Option<SketchLocus> {
+    (entity.sense == 0).then_some(())?;
+    let segment = unique_section_skamp_segment(definition, entity.entity_id)?;
+    matches!(
+        segment.kind,
+        crate::feature::FeatureSegmentKind::Line | crate::feature::FeatureSegmentKind::Arc
+    )
+    .then_some(())?;
+    let selected_point = section_skamp_selected_point_id(definition, selected)?;
+    let mut endpoints = segment
+        .point_ids
+        .iter()
+        .enumerate()
+        .filter(|(_, point_id)| **point_id == selected_point);
+    let (endpoint, _) = endpoints.next()?;
+    endpoints.next().is_none().then_some(())?;
+    section_skamp_locus(
+        definition,
+        sketch,
+        &crate::feature::FeatureSkampItem {
+            entity_id: entity.entity_id,
+            sense: if endpoint == 0 { 2 } else { 3 },
+        },
+    )
+}
+
+fn section_skamp_tangent_loci(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    first: &crate::feature::FeatureSkampItem,
+    second: &crate::feature::FeatureSkampItem,
+    active: bool,
+    geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
+) -> Option<[SketchLocus; 2]> {
+    let selected_locus = |item| {
+        if active {
+            section_skamp_endpoint(definition, sketch, item)
+        } else if matches!(item.sense, 2 | 3) {
+            section_skamp_incidence_locus(definition, sketch, item, geometry)
+        } else {
+            None
+        }
+    };
+    if let (Some(first), Some(second)) = (selected_locus(first), selected_locus(second)) {
+        return Some([first, second]);
+    }
+    [(first, second), (second, first)]
+        .into_iter()
+        .find_map(|(entity, selected)| {
+            Some([
+                section_skamp_shared_endpoint(definition, sketch, entity, selected)?,
+                selected_locus(selected)?,
+            ])
+        })
+        .map(|loci| {
+            if first.sense == 0 {
+                loci
+            } else {
+                [loci[1].clone(), loci[0].clone()]
+            }
+        })
 }
 
 fn section_skamp_point_locus(
@@ -8898,17 +10655,27 @@ fn section_skamp_oriented_line(
     if section_skamp_is_line(definition, item) {
         return Some(entity);
     }
-    let line_role_evidence = active_complete_section_skamps(definition).any(|skamp| {
+    if section_skamp_is_point(definition, item)
+        || section_skamp_is_circular(definition, item)
+        || section_saved_entity(definition, item.entity_id)
+            .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Spline(_)))
+    {
+        return None;
+    }
+    if solver_only_section_entities(definition).contains_key(&item.entity_id) {
+        return Some(entity);
+    }
+    let line_role_evidence = complete_section_skamps(definition).any(|skamp| {
         skamp.items.iter().any(|candidate| {
             candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
         }) || match (skamp.kind, skamp.items.as_slice()) {
             (35, [first, second]) => {
                 (first.entity_id == item.entity_id
                     && first.sense == 0
-                    && matches!(second.sense, 2..=4))
+                    && section_skamp_point_locus(definition, sketch, second).is_some())
                     || (second.entity_id == item.entity_id
                         && second.sense == 0
-                        && matches!(first.sense, 2..=4))
+                        && section_skamp_point_locus(definition, sketch, first).is_some())
             }
             _ => false,
         }
@@ -8976,8 +10743,8 @@ fn section_skamp_same_coordinate_sources(
 
 fn section_skamp_same_coordinate_axis(skamp: &crate::feature::FeatureSkamp) -> Option<usize> {
     Some(match (skamp.kind, skamp.flags) {
-        (17, 1) => 0,
-        (17, 2) => 1,
+        (15 | 17, 1) => 0,
+        (15 | 17, 2) => 1,
         (30, _) => 1,
         (31, _) => 0,
         _ => return None,
@@ -8988,7 +10755,15 @@ fn section_skamp_is_line(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
+    if solver_only_section_entity_family(definition, item.entity_id)
+        == Some(SectionEntityIncidenceFamily::Line)
+    {
+        return true;
+    }
+    if unique_centered_line_segment(definition, item.entity_id).is_some() {
+        return true;
+    }
+    if unique_reference_line_segment(definition, item.entity_id).is_some() {
         return true;
     }
     let has_segment = definition
@@ -8997,20 +10772,56 @@ fn section_skamp_is_line(
         .flat_map(|table| &table.rows)
         .any(|segment| segment.external_id == item.entity_id);
     if has_segment {
-        return unique_decoded_section_segment(definition, item.entity_id)
-            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line);
+        return unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+            segment.kind == crate::feature::FeatureSegmentKind::Line
+                || section_degenerate_axis_line(definition, segment)
+        });
     }
     section_saved_entity(definition, item.entity_id)
         .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Line(_)))
+}
+
+fn section_degenerate_axis_line(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> bool {
+    if segment.kind != crate::feature::FeatureSegmentKind::Point
+        || segment.point_ids[0] != segment.point_ids[1]
+    {
+        return false;
+    }
+    let expected_kind = match segment.vertical_horizontal {
+        Some(0) => 2,
+        Some(1) => 1,
+        _ => return false,
+    };
+    let unary_orientation = complete_section_skamps(definition).any(|skamp| {
+        matches!(
+            (skamp.kind, skamp.items.as_slice()),
+            (kind, [item])
+                if kind == expected_kind && item.entity_id == segment.external_id && item.sense == 0
+        )
+    });
+    let symmetry_axis = complete_section_skamps(definition).any(|skamp| {
+        matches!(
+            (skamp.kind, skamp.items.as_slice()),
+            (14, [axis, _, _]) if axis.entity_id == segment.external_id && axis.sense == 0
+        )
+    });
+    unary_orientation && symmetry_axis
 }
 
 fn section_skamp_is_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    unique_opaque_section_segment(definition, item.entity_id, 1).is_some()
-        || unique_decoded_section_segment(definition, item.entity_id)
-            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
+    solver_only_section_entity_family(definition, item.entity_id)
+        == Some(SectionEntityIncidenceFamily::Point)
+        || unique_point_segment(definition, item.entity_id).is_some()
+        || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+            segment.kind == crate::feature::FeatureSegmentKind::Point
+                && !section_degenerate_axis_line(definition, segment)
+        })
 }
 
 fn section_skamp_is_arc(
@@ -9039,9 +10850,23 @@ fn section_skamp_curve_entity(
         return None;
     }
     let is_curve = section_skamp_is_line(definition, item)
+        || unique_bounded_curve_segment(definition, item.entity_id).is_some()
         || section_skamp_is_circular(definition, item)
-        || section_saved_entity(definition, item.entity_id)
-            .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Spline(_)));
+        || matches!(
+            solver_only_section_entity_family(definition, item.entity_id),
+            Some(
+                SectionEntityIncidenceFamily::BoundedCurve
+                    | SectionEntityIncidenceFamily::Arc
+                    | SectionEntityIncidenceFamily::Circular
+            )
+        )
+        || section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+            matches!(
+                entity,
+                crate::feature::FeatureSavedEntity::Conic(_)
+                    | crate::feature::FeatureSavedEntity::Spline(_)
+            )
+        });
     is_curve.then(|| sketch_entity_id(sketch, item.entity_id))
 }
 
@@ -9050,16 +10875,30 @@ fn section_skamp_midpoint(
     sketch: &SketchId,
     first: &crate::feature::FeatureSkampItem,
     second: &crate::feature::FeatureSkampItem,
+    geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::FeatureSkampItem| {
-        (item.sense == 0
-            && (section_skamp_is_line(definition, item) || section_skamp_is_arc(definition, item)))
-        .then(|| sketch_entity_id(sketch, item.entity_id))
+        if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
+            return Some(sketch_entity_id(sketch, item.entity_id));
+        }
+        (item.sense == 0).then_some(())?;
+        if section_skamp_is_arc(definition, item) {
+            return Some(sketch_entity_id(sketch, item.entity_id));
+        }
+        section_skamp_oriented_line(definition, sketch, item, geometry)
     };
-    let point = |item| section_skamp_point_locus(definition, sketch, item);
-    match (target(first), point(second), target(second), point(first)) {
-        (Some(entity), Some(point), None, _) => Some((point, entity)),
-        (None, _, Some(entity), Some(point)) => Some((point, entity)),
+    let point = |item: &crate::feature::FeatureSkampItem| {
+        section_skamp_point_locus(definition, sketch, item).or_else(|| {
+            (item.sense == 0 && section_skamp_is_circular(definition, item))
+                .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
+        })
+    };
+    let candidate = |target, point| Some((point?, target?));
+    match (
+        candidate(target(first), point(second)),
+        candidate(target(second), point(first)),
+    ) {
+        (Some(candidate), None) | (None, Some(candidate)) => Some(candidate),
         _ => None,
     }
 }
@@ -9069,22 +10908,14 @@ fn section_saved_entity(
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSavedEntity> {
     let internal_id = definition.order_table.as_ref()?.internal_id(external_id)?;
-    let mut matches = definition
-        .saved_section
-        .as_ref()?
-        .entities
-        .iter()
-        .filter(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Circle(circle) => circle.entity_id == internal_id,
-            crate::feature::FeatureSavedEntity::Spline(spline) => {
-                spline.entity_id == Some(internal_id)
-            }
-            crate::feature::FeatureSavedEntity::Dummy(dummy) => {
-                dummy.entity_id == Some(internal_id)
-            }
-        });
+    let mut matches = semantic_saved_section_entities(definition).filter(|entity| match entity {
+        crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
+        crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
+        crate::feature::FeatureSavedEntity::Circle(circle) => circle.entity_id == internal_id,
+        crate::feature::FeatureSavedEntity::Conic(conic) => conic.entity_id == internal_id,
+        crate::feature::FeatureSavedEntity::Spline(spline) => spline.entity_id == Some(internal_id),
+        crate::feature::FeatureSavedEntity::Dummy(dummy) => dummy.entity_id == Some(internal_id),
+    });
     let entity = matches.next()?;
     matches.next().is_none().then_some(entity)
 }
@@ -9113,7 +10944,23 @@ fn section_skamp_is_circular(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    if unique_opaque_section_segment(definition, item.entity_id, 10).is_some() {
+    if solver_only_section_entities(definition).contains_key(&item.entity_id) {
+        return solver_only_section_entity_family(definition, item.entity_id).is_some_and(
+            |family| {
+                matches!(
+                    family,
+                    SectionEntityIncidenceFamily::Arc | SectionEntityIncidenceFamily::Circular
+                )
+            },
+        );
+    }
+    if matches!(
+        unique_section_incidence_curve_family(definition, item.entity_id),
+        Some(SectionEntityIncidenceFamily::Arc | SectionEntityIncidenceFamily::Circular)
+    ) {
+        return true;
+    }
+    if unique_circle_segment(definition, item.entity_id).is_some() {
         return true;
     }
     let has_segment = definition
@@ -9139,7 +10986,7 @@ fn section_skamp_active(status: u32) -> bool {
     status & 1 != 0
 }
 
-fn active_complete_section_skamps(
+fn complete_section_skamps(
     definition: &crate::feature::FeatureDefinition,
 ) -> impl Iterator<Item = &crate::feature::FeatureSkamp> {
     definition
@@ -9147,7 +10994,12 @@ fn active_complete_section_skamps(
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
         .flat_map(|relations| &relations.skamps)
-        .filter(|skamp| section_skamp_active(skamp.status))
+}
+
+fn active_complete_section_skamps(
+    definition: &crate::feature::FeatureDefinition,
+) -> impl Iterator<Item = &crate::feature::FeatureSkamp> {
+    complete_section_skamps(definition).filter(|skamp| section_skamp_active(skamp.status))
 }
 
 fn section_skamp_constraints_for_geometry(
@@ -9186,40 +11038,63 @@ fn section_skamp_constraints_for_geometry(
         .iter()
         .filter_map(|skamp| {
             let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
+            let joined_equation_id = if unique_skamp_id
+                && feature_solver_table_complete(
+                    relations.triples_header.as_ref(),
+                    relations.triples.len(),
+                ) {
+                let mut equation_ids = relations
+                    .triples
+                    .iter()
+                    .filter(|triple| triple.skamp_id == Some(skamp.id))
+                    .filter_map(|triple| triple.equation_id);
+                let equation_id = equation_ids.next();
+                equation_id.filter(|_| equation_ids.next().is_none())
+            } else {
+                None
+            };
             let active = section_skamp_active(skamp.status);
             let native_constraint = || {
+                let native_ref = sketch_native_ref(sketch);
                 let entities = skamp
                     .items
                     .iter()
                     .filter(|item| available_entities.contains(&item.entity_id))
                     .map(|item| sketch_entity_id(sketch, item.entity_id))
                     .collect::<Vec<_>>();
+                let mut operands = skamp
+                    .items
+                    .iter()
+                    .map(|item| SketchNativeOperand {
+                        native_kind: "skamp_ptr".to_string(),
+                        native_field: Some("items.entity_id".to_string()),
+                        native_role: Some(item.sense),
+                        object_index: item.entity_id,
+                        native_ref: Some(native_ref.clone()),
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(equation_id) = joined_equation_id {
+                    operands.push(SketchNativeOperand {
+                        native_kind: "triples_ptr".to_string(),
+                        native_field: Some("equation_id".to_string()),
+                        native_role: None,
+                        object_index: equation_id,
+                        native_ref: Some(native_ref),
+                    });
+                }
                 Some(SketchConstraintDefinition::Native {
                     native_kind: format!("creo:skamp:{}", skamp.kind),
-                    native_state: None,
+                    native_state: Some(u64::from(skamp.status)),
+                    native_flags: Some(u64::from(skamp.flags)),
+                    native_properties: if unique_skamp_id {
+                        BTreeMap::new()
+                    } else {
+                        BTreeMap::from([("id".to_string(), skamp.id.to_string())])
+                    },
                     entities,
                     parameter: None,
-                    operands: skamp
-                        .items
-                        .iter()
-                        .map(|item| SketchNativeOperand {
-                            native_kind: format!("sense:{}", item.sense),
-                            native_field: None,
-                            native_role: None,
-                            object_index: item.entity_id,
-                            native_ref: None,
-                        })
-                        .collect(),
+                    operands,
                 })
-            };
-            let tangent_locus = |item| {
-                if active {
-                    section_skamp_endpoint(definition, sketch, item)
-                } else if matches!(item.sense, 2 | 3) {
-                    section_skamp_incidence_locus(definition, sketch, item, geometry)
-                } else {
-                    None
-                }
             };
             let item_geometry = |item: &crate::feature::FeatureSkampItem| {
                 let entity = sketch_entity_id(sketch, item.entity_id);
@@ -9259,9 +11134,12 @@ fn section_skamp_constraints_for_geometry(
                     .then(|| SketchLocus::Center(sketch_entity_id(sketch, item.entity_id)))
                 })
             };
-            let inactive_point_entity = |item: &crate::feature::FeatureSkampItem| {
+            let point_entity = |item: &crate::feature::FeatureSkampItem| {
+                (item.sense == 0).then_some(())?;
+                if section_skamp_is_point(definition, item) {
+                    return Some(sketch_entity_id(sketch, item.entity_id));
+                }
                 (!active
-                    && item.sense == 0
                     && item_geometry(item).is_some_and(|geometry| {
                         matches!(geometry, SketchGeometry::Point { .. })
                             || matches!(
@@ -9273,7 +11151,7 @@ fn section_skamp_constraints_for_geometry(
             };
             let inactive_point_locus = |item: &crate::feature::FeatureSkampItem| {
                 section_skamp_point_locus(definition, sketch, item)
-                    .or_else(|| inactive_point_entity(item).map(SketchLocus::Entity))
+                    .or_else(|| point_entity(item).map(SketchLocus::Entity))
                     .or_else(|| inactive_incidence_locus(item))
             };
             let mut constraint_definition = if unique_skamp_id {
@@ -9306,42 +11184,46 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (3, [first, second]) => {
-                        let directed = [(first, second), (second, first)];
-                        let point_on_curve = directed
-                            .into_iter()
-                            .filter_map(|(curve, point)| {
-                                Some((
-                                    section_skamp_curve_entity(definition, sketch, curve)
-                                        .or_else(|| inactive_curve_entity(curve))?,
-                                    inactive_incidence_locus(point)?,
-                                ))
-                            })
-                            .collect::<Vec<_>>();
-                        if let [(entity, point)] = point_on_curve.as_slice() {
-                            SketchConstraintDefinition::PointOnObject {
-                                point: point.clone(),
-                                entity: entity.clone(),
+                        if let (Some(first), Some(second)) =
+                            (point_entity(first), point_entity(second))
+                        {
+                            SketchConstraintDefinition::CoincidentLoci {
+                                loci: vec![SketchLocus::Entity(first), SketchLocus::Entity(second)],
                             }
                         } else {
-                            let point_coincidence = directed
+                            let directed = [(first, second), (second, first)];
+                            let point_on_curve = directed
                                 .into_iter()
-                                .filter_map(|(point, locus)| {
-                                    (point.sense == 0 && section_skamp_is_point(definition, point))
-                                        .then(|| {
-                                            Some([
-                                                section_skamp_locus(definition, sketch, point)?,
-                                                inactive_incidence_locus(locus)?,
-                                            ])
-                                        })
-                                        .flatten()
+                                .filter_map(|(curve, point)| {
+                                    Some((
+                                        section_skamp_curve_entity(definition, sketch, curve)
+                                            .or_else(|| inactive_curve_entity(curve))?,
+                                        inactive_incidence_locus(point)?,
+                                    ))
                                 })
                                 .collect::<Vec<_>>();
-                            if let [loci] = point_coincidence.as_slice() {
-                                SketchConstraintDefinition::CoincidentLoci {
-                                    loci: loci.to_vec(),
+                            if let [(entity, point)] = point_on_curve.as_slice() {
+                                SketchConstraintDefinition::PointOnObject {
+                                    point: point.clone(),
+                                    entity: entity.clone(),
                                 }
                             } else {
-                                native_constraint()?
+                                let point_coincidence = directed
+                                    .into_iter()
+                                    .filter_map(|(point, locus)| {
+                                        Some([
+                                            SketchLocus::Entity(point_entity(point)?),
+                                            inactive_incidence_locus(locus)?,
+                                        ])
+                                    })
+                                    .collect::<Vec<_>>();
+                                if let [loci] = point_coincidence.as_slice() {
+                                    SketchConstraintDefinition::CoincidentLoci {
+                                        loci: loci.to_vec(),
+                                    }
+                                } else {
+                                    native_constraint()?
+                                }
                             }
                         }
                     }
@@ -9354,29 +11236,32 @@ fn section_skamp_constraints_for_geometry(
                             None => native_constraint()?,
                         }
                     }
-                    (4, [first, second])
-                        if tangent_locus(first).is_some() && tangent_locus(second).is_some() =>
-                    {
-                        SketchConstraintDefinition::TangentLoci {
-                            first: tangent_locus(first)?,
-                            second: tangent_locus(second)?,
+                    (4, [first, second]) => {
+                        if let Some([first, second]) = section_skamp_tangent_loci(
+                            definition, sketch, first, second, active, geometry,
+                        ) {
+                            SketchConstraintDefinition::TangentLoci { first, second }
+                        } else if section_skamp_curve_entity(definition, sketch, first).is_some()
+                            && section_skamp_curve_entity(definition, sketch, second).is_some()
+                        {
+                            SketchConstraintDefinition::Tangent {
+                                first: section_skamp_curve_entity(definition, sketch, first)?,
+                                second: section_skamp_curve_entity(definition, sketch, second)?,
+                            }
+                        } else {
+                            native_constraint()?
                         }
                     }
-                    (4, [first, second])
-                        if section_skamp_curve_entity(definition, sketch, first).is_some()
-                            && section_skamp_curve_entity(definition, sketch, second).is_some() =>
-                    {
-                        SketchConstraintDefinition::Tangent {
-                            first: section_skamp_curve_entity(definition, sketch, first)?,
-                            second: section_skamp_curve_entity(definition, sketch, second)?,
+                    (5, [first, second]) => {
+                        match (
+                            section_skamp_curve_entity(definition, sketch, first),
+                            section_skamp_curve_entity(definition, sketch, second),
+                        ) {
+                            (Some(first), Some(second)) => {
+                                SketchConstraintDefinition::Perpendicular { first, second }
+                            }
+                            _ => native_constraint()?,
                         }
-                    }
-                    (5, [first, second])
-                        if section_skamp_line_pair(definition, sketch, first, second).is_some() =>
-                    {
-                        let [first, second] =
-                            section_skamp_line_pair(definition, sketch, first, second)?;
-                        SketchConstraintDefinition::Perpendicular { first, second }
                     }
                     (6, [first, second])
                         if section_skamp_circular_entity(definition, sketch, first).is_some()
@@ -9427,6 +11312,49 @@ fn section_skamp_constraints_for_geometry(
                             entity: sketch_entity_id(sketch, line.entity_id),
                         }
                     }
+                    (kind @ (10 | 11), [item])
+                        if item.sense == 0 && section_skamp_is_arc(definition, item) =>
+                    {
+                        SketchConstraintDefinition::ArcAngle {
+                            entity: sketch_entity_id(sketch, item.entity_id),
+                            angle: Angle(if kind == 10 {
+                                std::f64::consts::FRAC_PI_2
+                            } else {
+                                std::f64::consts::PI
+                            }),
+                        }
+                    }
+                    (kind @ (12 | 13), [item])
+                        if item.sense == 0 && section_skamp_is_arc(definition, item) =>
+                    {
+                        let entity = sketch_entity_id(sketch, item.entity_id);
+                        let first = SketchLocus::Start(entity.clone());
+                        let second = SketchLocus::End(entity);
+                        if kind == 12 {
+                            SketchConstraintDefinition::HorizontalLoci { first, second }
+                        } else {
+                            SketchConstraintDefinition::VerticalLoci { first, second }
+                        }
+                    }
+                    (37, [source, result])
+                        if source.sense == 0
+                            && result.sense == 0
+                            && source
+                                .entity_id
+                                .checked_add(1)
+                                .is_some_and(|expected| expected == result.entity_id)
+                            && definition
+                                .trim_entities
+                                .iter()
+                                .filter(|table| table.has_unique_external_ids())
+                                .flat_map(|table| &table.rows)
+                                .any(|row| row.external_id == result.entity_id) =>
+                    {
+                        SketchConstraintDefinition::ProjectedCopy {
+                            source: sketch_entity_id(sketch, source.entity_id),
+                            result: sketch_entity_id(sketch, result.entity_id),
+                        }
+                    }
                     (14, [axis, first, second])
                         if axis.sense == 0
                             && section_skamp_is_line(definition, axis)
@@ -9440,20 +11368,17 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (14, [center, first, second])
-                        if (center.sense == 0 && section_skamp_is_point(definition, center)
-                            || inactive_point_entity(center).is_some())
+                        if point_entity(center).is_some()
                             && inactive_point_locus(first).is_some()
                             && inactive_point_locus(second).is_some() =>
                     {
                         SketchConstraintDefinition::PointSymmetric {
                             first: inactive_point_locus(first)?,
                             second: inactive_point_locus(second)?,
-                            center: section_skamp_locus(definition, sketch, center).or_else(
-                                || inactive_point_entity(center).map(SketchLocus::Entity),
-                            )?,
+                            center: SketchLocus::Entity(point_entity(center)?),
                         }
                     }
-                    (17 | 30 | 31, [_, _]) => {
+                    (15 | 17 | 30 | 31, [_, _]) => {
                         if let Some((first, second, axis)) =
                             section_skamp_same_coordinate(definition, sketch, skamp, active)
                         {
@@ -9462,13 +11387,32 @@ fn section_skamp_constraints_for_geometry(
                                 second,
                                 axis,
                             }
+                        } else if !active {
+                            let [first, second] = skamp.items.as_slice() else {
+                                unreachable!();
+                            };
+                            match (
+                                inactive_point_locus(first),
+                                inactive_point_locus(second),
+                                section_skamp_same_coordinate_axis(skamp),
+                            ) {
+                                (Some(first), Some(second), Some(axis)) => {
+                                    SketchConstraintDefinition::SameCoordinate {
+                                        first,
+                                        second,
+                                        axis: [SketchCoordinateAxis::U, SketchCoordinateAxis::V]
+                                            [axis],
+                                    }
+                                }
+                                _ => native_constraint()?,
+                            }
                         } else {
                             native_constraint()?
                         }
                     }
                     (35, [first, second]) => {
                         if let Some((point, entity)) =
-                            section_skamp_midpoint(definition, sketch, first, second)
+                            section_skamp_midpoint(definition, sketch, first, second, geometry)
                         {
                             SketchConstraintDefinition::Midpoint { point, entity }
                         } else {
@@ -9526,16 +11470,31 @@ fn sketch_constraint_loci_compatible(
         };
         geometry.get(entity).is_some_and(|geometry| match locus {
             SketchLocus::Entity(_) => true,
-            SketchLocus::Start(_) | SketchLocus::End(_) => !matches!(
-                geometry,
-                SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
-            ),
-            SketchLocus::Center(_) => matches!(
-                geometry,
-                SketchGeometry::Circle { .. }
-                    | SketchGeometry::Arc { .. }
-                    | SketchGeometry::Ellipse { .. }
-            ),
+            SketchLocus::Start(_) | SketchLocus::End(_) => {
+                !matches!(
+                    geometry,
+                    SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
+                ) && !matches!(
+                        geometry,
+                        SketchGeometry::Native { native_kind }
+                            if !matches!(
+                                native_kind.as_str(),
+                                "bounded_curve" | "line" | "arc" | "spline"
+                            )
+                )
+            }
+            SketchLocus::Center(_) => {
+                matches!(
+                    geometry,
+                    SketchGeometry::Circle { .. }
+                        | SketchGeometry::Arc { .. }
+                        | SketchGeometry::Ellipse { .. }
+                ) || matches!(
+                    geometry,
+                    SketchGeometry::Native { native_kind }
+                        if matches!(native_kind.as_str(), "circle" | "arc")
+                )
+            }
         })
     };
     match definition {
@@ -9548,7 +11507,9 @@ fn sketch_constraint_loci_compatible(
         | SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
-        | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+        | SketchConstraintDefinition::VerticalDistance { first, second, .. }
+        | SketchConstraintDefinition::HorizontalLoci { first, second }
+        | SketchConstraintDefinition::VerticalLoci { first, second } => {
             locus_compatible(first) && locus_compatible(second)
         }
         SketchConstraintDefinition::Midpoint { point, entity }
@@ -9580,10 +11541,7 @@ fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
     ids.extend(
-        definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
+        semantic_saved_section_entities(definition)
             .filter_map(|entity| saved_section_entity_identity(entity).0)
             .filter_map(|internal_id| {
                 saved_section_external_id(
@@ -9608,6 +11566,12 @@ fn section_segment_external_id_counts(
                 .rows
                 .iter()
                 .map(|row| row.external_id)
+                .chain(table.circle_rows.iter().map(|row| row.external_id))
+                .chain(table.point_rows.iter().map(|row| row.external_id))
+                .chain(table.centered_line_rows.iter().map(|row| row.external_id))
+                .chain(table.reference_line_rows.iter().map(|row| row.external_id))
+                .chain(table.bounded_curve_rows.iter().map(|row| row.external_id))
+                .chain(table.conic_rows.iter().map(|row| row.external_id))
                 .chain(table.opaque_rows.iter().map(|row| row.external_id))
                 .fold(BTreeMap::new(), |mut counts, external_id| {
                     *counts.entry(external_id).or_insert(0) += 1;
@@ -9639,6 +11603,7 @@ enum SavedSectionEntityKind {
     Line,
     Arc,
     Circle,
+    Conic,
     Spline,
     Dummy,
 }
@@ -9649,6 +11614,7 @@ impl SavedSectionEntityKind {
             Self::Line => "line",
             Self::Arc => "arc",
             Self::Circle => "circle",
+            Self::Conic => "conic",
             Self::Spline => "spline",
             Self::Dummy => "dummy",
         }
@@ -9671,6 +11637,11 @@ fn saved_section_entity_identity(
             Some(circle.entity_id),
             circle.offset,
             SavedSectionEntityKind::Circle,
+        ),
+        crate::feature::FeatureSavedEntity::Conic(conic) => (
+            Some(conic.entity_id),
+            conic.offset,
+            SavedSectionEntityKind::Conic,
         ),
         crate::feature::FeatureSavedEntity::Spline(spline) => (
             spline.entity_id,
@@ -9748,10 +11719,7 @@ fn unresolved_saved_section_entity(
 fn unique_saved_section_internal_ids(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeSet<u32> {
-    definition
-        .saved_section
-        .iter()
-        .flat_map(|saved| &saved.entities)
+    semantic_saved_section_entities(definition)
         .filter_map(|entity| saved_section_entity_identity(entity).0)
         .fold(BTreeMap::new(), |mut counts, internal_id| {
             *counts.entry(internal_id).or_insert(0usize) += 1;
@@ -9762,15 +11730,46 @@ fn unique_saved_section_internal_ids(
         .collect()
 }
 
+fn saved_section_entity_is_elided_prototype(
+    definition: &crate::feature::FeatureDefinition,
+    entity: &crate::feature::FeatureSavedEntity,
+) -> bool {
+    let Some(internal_id) = saved_section_entity_identity(entity).0 else {
+        return false;
+    };
+    definition
+        .segments
+        .as_ref()
+        .is_some_and(|segments| segments.has_elided_prototype)
+        && definition
+            .order_table
+            .as_ref()
+            .is_some_and(|order| order.has_prototype)
+        && definition.saved_section.as_ref().is_some_and(|saved| {
+            crate::feature::saved_entity_offset(entity) == saved.offset
+                && saved.entities.iter().any(|candidate| {
+                    crate::feature::saved_entity_offset(candidate) > saved.offset
+                        && saved_section_entity_identity(candidate).0 == Some(internal_id)
+                })
+        })
+}
+
+fn semantic_saved_section_entities(
+    definition: &crate::feature::FeatureDefinition,
+) -> impl Iterator<Item = &crate::feature::FeatureSavedEntity> {
+    definition
+        .saved_section
+        .iter()
+        .flat_map(|saved| &saved.entities)
+        .filter(|entity| !saved_section_entity_is_elided_prototype(definition, entity))
+}
+
 fn materialized_saved_section_external_ids(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeSet<u32> {
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
-    definition
-        .saved_section
-        .iter()
-        .flat_map(|saved| &saved.entities)
+    semantic_saved_section_entities(definition)
         .filter_map(|entity| {
             match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => {
@@ -9813,6 +11812,17 @@ fn section_segment_identity_suffix(
         segment.external_id.to_string()
     } else {
         format!("offset:{}", segment.offset)
+    }
+}
+
+fn opaque_section_segment_identity_suffix(
+    unique_external_ids: &BTreeSet<u32>,
+    segment: &crate::feature::FeatureOpaqueSegment,
+) -> String {
+    if unique_external_ids.contains(&segment.external_id) {
+        segment.external_id.to_string()
+    } else {
+        format!("opaque:offset:{}", segment.offset)
     }
 }
 
@@ -10086,6 +12096,27 @@ fn solver_only_section_entities(
                 .rows
                 .iter()
                 .map(|segment| segment.external_id)
+                .chain(table.circle_rows.iter().map(|segment| segment.external_id))
+                .chain(table.point_rows.iter().map(|segment| segment.external_id))
+                .chain(
+                    table
+                        .centered_line_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    table
+                        .reference_line_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(
+                    table
+                        .bounded_curve_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+                .chain(table.conic_rows.iter().map(|segment| segment.external_id))
                 .chain(table.opaque_rows.iter().map(|segment| segment.external_id))
         })
         .collect::<BTreeSet<_>>();
@@ -10112,7 +12143,213 @@ fn solver_only_section_entities(
         )
 }
 
-fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum SectionEntityIncidenceFamily {
+    Point,
+    BoundedCurve,
+    Line,
+    Arc,
+    Circular,
+}
+
+fn section_skamp_has_proven_point_locus(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> bool {
+    if item.sense == 0 {
+        return unique_point_segment(definition, item.entity_id).is_some()
+            || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+                segment.kind == crate::feature::FeatureSegmentKind::Point
+                    && !section_degenerate_axis_line(definition, segment)
+            });
+    }
+    let solver_family = section_incidence_curve_family_evidence(definition, item.entity_id);
+    if solver_family.len() == 1
+        && ((solver_family.contains(&SectionEntityIncidenceFamily::BoundedCurve)
+            || solver_family.contains(&SectionEntityIncidenceFamily::Line)
+            || solver_family.contains(&SectionEntityIncidenceFamily::Arc))
+            && matches!(item.sense, 2 | 3)
+            || (solver_family.contains(&SectionEntityIncidenceFamily::Arc)
+                || solver_family.contains(&SectionEntityIncidenceFamily::Circular))
+                && matches!(item.sense, 2..=4))
+    {
+        return true;
+    }
+    if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
+        return matches!(
+            (segment.kind, item.sense),
+            (crate::feature::FeatureSegmentKind::Line, 2 | 3)
+                | (crate::feature::FeatureSegmentKind::Arc, 2..=4)
+        );
+    }
+    if unique_centered_line_segment(definition, item.entity_id).is_some() {
+        return matches!(item.sense, 2..=4);
+    }
+    if let Some(segment) = unique_reference_line_segment(definition, item.entity_id) {
+        return match item.sense {
+            2 => segment.point_ids[0].is_some(),
+            3 => segment.point_ids[1].is_some(),
+            _ => false,
+        };
+    }
+    if unique_bounded_curve_segment(definition, item.entity_id).is_some() {
+        return matches!(item.sense, 2 | 3);
+    }
+    if unique_circle_segment(definition, item.entity_id).is_some() {
+        return item.sense == 4;
+    }
+    matches!(
+        (section_saved_entity(definition, item.entity_id), item.sense),
+        (Some(crate::feature::FeatureSavedEntity::Line(_)), 2 | 3)
+            | (Some(crate::feature::FeatureSavedEntity::Arc(_)), 2..=4)
+            | (
+                Some(
+                    crate::feature::FeatureSavedEntity::Circle(_)
+                        | crate::feature::FeatureSavedEntity::Conic(_),
+                ),
+                4,
+            )
+    )
+}
+
+fn section_incidence_curve_family_evidence(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> BTreeSet<SectionEntityIncidenceFamily> {
+    let mut evidence = BTreeSet::new();
+    if complete_section_skamps(definition).any(|skamp| {
+        matches!(
+            (skamp.kind, skamp.items.as_slice()),
+            (1 | 2, [item]) if item.sense == 0 && item.entity_id == entity_id
+        )
+    }) {
+        evidence.insert(SectionEntityIncidenceFamily::Line);
+    }
+    for skamp in definition
+        .relations
+        .iter()
+        .filter(|relations| feature_skamp_table_complete(relations))
+        .flat_map(|relations| &relations.skamps)
+        .filter(|skamp| section_skamp_active(skamp.status))
+    {
+        for item in &skamp.items {
+            if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
+                evidence.insert(SectionEntityIncidenceFamily::BoundedCurve);
+            }
+            if item.entity_id == entity_id && item.sense == 4 {
+                evidence.insert(SectionEntityIncidenceFamily::Circular);
+            }
+        }
+        match (skamp.kind, skamp.items.as_slice()) {
+            (5 | 7 | 8, [first, second])
+                if first.sense == 0
+                    && second.sense == 0
+                    && (first.entity_id == entity_id || second.entity_id == entity_id) =>
+            {
+                evidence.insert(SectionEntityIncidenceFamily::Line);
+            }
+            (6, [first, second])
+                if first.sense == 0
+                    && second.sense == 0
+                    && (first.entity_id == entity_id || second.entity_id == entity_id) =>
+            {
+                evidence.insert(SectionEntityIncidenceFamily::Circular);
+            }
+            _ => {}
+        }
+    }
+    normalize_section_incidence_curve_family_evidence(&mut evidence);
+    evidence
+}
+
+fn unique_section_incidence_curve_family(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> Option<SectionEntityIncidenceFamily> {
+    let mut evidence = section_incidence_curve_family_evidence(definition, entity_id).into_iter();
+    let family = evidence.next()?;
+    evidence.next().is_none().then_some(family)
+}
+
+fn normalize_section_incidence_curve_family_evidence(
+    evidence: &mut BTreeSet<SectionEntityIncidenceFamily>,
+) {
+    if evidence.contains(&SectionEntityIncidenceFamily::Line) {
+        evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
+    } else if evidence.contains(&SectionEntityIncidenceFamily::Circular)
+        && evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve)
+    {
+        evidence.remove(&SectionEntityIncidenceFamily::Circular);
+        evidence.insert(SectionEntityIncidenceFamily::Arc);
+    }
+}
+
+fn solver_only_section_entity_family(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> Option<SectionEntityIncidenceFamily> {
+    solver_only_section_entities(definition)
+        .contains_key(&entity_id)
+        .then_some(())?;
+    let mut evidence = section_incidence_curve_family_evidence(definition, entity_id);
+    if complete_section_skamps(definition).any(|skamp| {
+        skamp
+            .items
+            .iter()
+            .any(|item| item.entity_id == entity_id && item.sense == 4)
+    }) {
+        evidence.insert(SectionEntityIncidenceFamily::Circular);
+    }
+    if !evidence.contains(&SectionEntityIncidenceFamily::Line)
+        && complete_section_skamps(definition).any(|skamp| {
+            let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
+                return false;
+            };
+            [(first, second), (second, first)]
+                .into_iter()
+                .any(|(point, target)| {
+                    point.entity_id == entity_id
+                        && point.sense == 0
+                        && target.sense == 4
+                        && unique_centered_line_segment(definition, target.entity_id).is_some()
+                })
+        })
+    {
+        evidence.insert(SectionEntityIncidenceFamily::Point);
+    }
+    for skamp in definition
+        .relations
+        .iter()
+        .filter(|relations| feature_skamp_table_complete(relations))
+        .flat_map(|relations| &relations.skamps)
+        .filter(|skamp| section_skamp_active(skamp.status))
+    {
+        if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
+            if first.entity_id == entity_id
+                && first.sense == 0
+                && section_skamp_has_proven_point_locus(definition, second)
+            {
+                evidence.insert(SectionEntityIncidenceFamily::Point);
+            }
+            if second.entity_id == entity_id
+                && second.sense == 0
+                && section_skamp_has_proven_point_locus(definition, first)
+            {
+                evidence.insert(SectionEntityIncidenceFamily::Point);
+            }
+        }
+    }
+    let mut evidence = evidence.into_iter();
+    let family = evidence.next()?;
+    evidence.next().is_none().then_some(family)
+}
+
+fn transfer_sketches(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> SketchSegmentTransferCoverage {
+    let mut coverage = SketchSegmentTransferCoverage::default();
     for definition in scan
         .features
         .definitions
@@ -10135,7 +12372,40 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .segments
             .as_ref()
             .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
-        let points = resolved_section_points(definition);
+        if let Some(table) = &definition.segments {
+            let decoded_rows = table.retained_row_count();
+            let expected_rows = usize::try_from(table.declared_count)
+                .expect("u32 segment count fits usize")
+                .saturating_sub(usize::from(table.has_elided_prototype));
+            coverage.decoded_rows += decoded_rows;
+            coverage.missing_rows += expected_rows.saturating_sub(decoded_rows);
+            for segment in &table.rows {
+                let family = match segment.kind {
+                    crate::feature::FeatureSegmentKind::Line => "line",
+                    crate::feature::FeatureSegmentKind::Arc => "arc",
+                    crate::feature::FeatureSegmentKind::Point => "point",
+                };
+                coverage.by_family.entry(family).or_default().0 += 1;
+            }
+            for (family, count) in [
+                ("circle", table.circle_rows.len()),
+                ("point", table.point_rows.len()),
+                ("centered_line", table.centered_line_rows.len()),
+                ("reference_line", table.reference_line_rows.len()),
+                ("bounded_curve", table.bounded_curve_rows.len()),
+                ("conic", table.conic_rows.len()),
+                ("opaque", table.opaque_rows.len()),
+            ] {
+                coverage.by_family.entry(family).or_default().0 += count;
+            }
+        }
+        let variable_points = resolved_section_coordinates(definition);
+        let points = variable_points
+            .iter()
+            .filter_map(|(point, [u, v])| {
+                Some((*point, [u.as_ref().copied()?, v.as_ref().copied()?]))
+            })
+            .collect::<BTreeMap<_, _>>();
         let radii = resolved_section_radii(definition);
         let missing_line_geometry = saved_section_missing_line_geometry(definition);
         let solved = definition
@@ -10177,27 +12447,77 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                         .get(&segment.offset)
                         .cloned()
                         .flatten()
-                };
+                }
+                .or_else(|| {
+                    section_axis_reference_line_geometry(definition, &variable_points, segment)
+                });
                 (segment.offset, geometry)
             })
             .collect::<BTreeMap<_, _>>();
         let segment_geometry = |segment: &crate::feature::FeatureSegment| {
+            if section_degenerate_axis_line(definition, segment) {
+                return segment_geometries
+                    .get(&segment.offset)
+                    .cloned()
+                    .flatten()
+                    .or_else(|| {
+                        Some(SketchGeometry::Native {
+                            native_kind: "line".to_string(),
+                        })
+                    });
+            }
             segment_geometries.get(&segment.offset).cloned().flatten()
         };
-        let opaque_geometries = definition
+        let circle_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.opaque_rows)
+            .flat_map(|table| &table.circle_rows)
             .filter_map(|segment| {
                 Some((
                     segment.offset,
-                    section_opaque_point_geometry(&points, segment)
-                        .or_else(|| section_opaque_centered_line_geometry(&points, segment))
-                        .or_else(|| section_opaque_circle_geometry(&points, &radii, segment))?,
+                    section_circle_geometry(&points, &radii, segment)?,
                 ))
             })
             .collect::<BTreeMap<_, _>>();
-        let emitted = segments
+        let point_geometries = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.point_rows)
+            .filter_map(|segment| {
+                Some((
+                    segment.offset,
+                    section_point_row_geometry(&points, segment)?,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let centered_line_geometries = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.centered_line_rows)
+            .filter_map(|segment| {
+                Some((
+                    segment.offset,
+                    section_centered_line_geometry(&points, segment)?,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let reference_line_geometries = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.reference_line_rows)
+            .filter_map(|segment| {
+                Some((
+                    segment.offset,
+                    resolved_section_reference_line_geometry(
+                        definition,
+                        &variable_points,
+                        &points,
+                        segment,
+                    )?,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut emitted = segments
             .iter()
             .filter(|segment| {
                 unique_segment_ids.contains(&segment.external_id)
@@ -10205,13 +12525,117 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             })
             .map(|segment| segment.external_id)
             .collect::<BTreeSet<_>>();
+        emitted.extend(
+            definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.circle_rows)
+                .filter(|segment| {
+                    unique_segment_ids.contains(&segment.external_id)
+                        && circle_geometries.contains_key(&segment.offset)
+                })
+                .map(|segment| segment.external_id),
+        );
         let resolved_segment_offsets = segments
             .iter()
-            .filter(|segment| segment_geometry(segment).is_some())
+            .filter(|segment| {
+                segment_geometries
+                    .get(&segment.offset)
+                    .is_some_and(Option::is_some)
+            })
             .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(definition);
+        coverage.resolved_geometry += resolved_segment_offsets.len();
+        for segment in segments
+            .iter()
+            .filter(|segment| resolved_segment_offsets.contains(&segment.offset))
+        {
+            let family = match segment.kind {
+                crate::feature::FeatureSegmentKind::Line => "line",
+                crate::feature::FeatureSegmentKind::Arc => "arc",
+                crate::feature::FeatureSegmentKind::Point => "point",
+            };
+            coverage.by_family.entry(family).or_default().1 += 1;
+        }
+        let resolved_circles = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.circle_rows)
+            .filter(|segment| {
+                circle_geometries.contains_key(&segment.offset)
+                    || (unique_segment_ids.contains(&segment.external_id)
+                        && materialized_saved_section_external_ids.contains(&segment.external_id))
+            })
+            .count();
+        coverage.resolved_geometry += resolved_circles;
+        coverage.by_family.entry("circle").or_default().1 += resolved_circles;
+        let resolved_points = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.point_rows)
+            .filter(|segment| {
+                point_geometries.contains_key(&segment.offset)
+                    || (unique_segment_ids.contains(&segment.external_id)
+                        && materialized_saved_section_external_ids.contains(&segment.external_id))
+            })
+            .count();
+        coverage.resolved_geometry += resolved_points;
+        coverage.by_family.entry("point").or_default().1 += resolved_points;
+        let resolved_centered_lines = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.centered_line_rows)
+            .filter(|segment| {
+                centered_line_geometries.contains_key(&segment.offset)
+                    || (unique_segment_ids.contains(&segment.external_id)
+                        && materialized_saved_section_external_ids.contains(&segment.external_id))
+            })
+            .count();
+        coverage.resolved_geometry += resolved_centered_lines;
+        coverage.by_family.entry("centered_line").or_default().1 += resolved_centered_lines;
+        let resolved_reference_lines = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.reference_line_rows)
+            .filter(|segment| reference_line_geometries.contains_key(&segment.offset))
+            .count();
+        coverage.resolved_geometry += resolved_reference_lines;
+        coverage.by_family.entry("reference_line").or_default().1 += resolved_reference_lines;
+        let resolved_bounded_curves = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.bounded_curve_rows)
+            .filter(|segment| {
+                unique_segment_ids.contains(&segment.external_id)
+                    && materialized_saved_section_external_ids.contains(&segment.external_id)
+            })
+            .count();
+        coverage.resolved_geometry += resolved_bounded_curves;
+        coverage.by_family.entry("bounded_curve").or_default().1 += resolved_bounded_curves;
+        let resolved_conics = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.conic_rows)
+            .filter(|segment| {
+                unique_segment_ids.contains(&segment.external_id)
+                    && materialized_saved_section_external_ids.contains(&segment.external_id)
+            })
+            .count();
+        coverage.resolved_geometry += resolved_conics;
+        coverage.by_family.entry("conic").or_default().1 += resolved_conics;
+        let resolved_opaque = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.opaque_rows)
+            .filter(|segment| {
+                unique_segment_ids.contains(&segment.external_id)
+                    && materialized_saved_section_external_ids.contains(&segment.external_id)
+            })
+            .count();
+        coverage.resolved_geometry += resolved_opaque;
+        coverage.by_family.entry("opaque").or_default().1 += resolved_opaque;
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let generated_profile_geometries = segments
             .iter()
@@ -10236,12 +12660,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.opaque_rows)
-                    .filter(|segment| {
-                        segment.kind == 10 && unique_segment_ids.contains(&segment.external_id)
-                    })
+                    .flat_map(|table| &table.circle_rows)
+                    .filter(|segment| unique_segment_ids.contains(&segment.external_id))
                     .filter_map(|segment| {
-                        let geometry = opaque_geometries.get(&segment.offset)?.clone();
+                        let geometry = circle_geometries.get(&segment.offset)?.clone();
                         let expected_kinds = section_generated_profile_surface_kinds(&geometry)?;
                         section_entity_is_generated_profile(
                             complete_segment_table,
@@ -10280,14 +12702,25 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     &id.0,
                     "FeatDefs",
                     segment.offset as u64,
-                    match segment.kind {
-                        crate::feature::FeatureSegmentKind::Line => "solved_section_line",
-                        crate::feature::FeatureSegmentKind::Arc => "solved_section_arc",
-                        crate::feature::FeatureSegmentKind::Point => "solved_section_point",
+                    match (&geometry, segment.kind) {
+                        (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+                            "section_degenerate_axis_line"
+                        }
+                        (SketchGeometry::ReferenceLine { .. }, _) => {
+                            "solved_section_axis_reference_line"
+                        }
+                        (_, crate::feature::FeatureSegmentKind::Line) => "solved_section_line",
+                        (_, crate::feature::FeatureSegmentKind::Arc) => "solved_section_arc",
+                        (_, crate::feature::FeatureSegmentKind::Point) => "solved_section_point",
                     },
-                    Exactness::Derived,
+                    if matches!(&geometry, SketchGeometry::Native { .. }) {
+                        Exactness::ByteExact
+                    } else {
+                        Exactness::Derived
+                    },
                 );
-                let construction = !unique_segment_ids.contains(&segment.external_id)
+                let construction = matches!(geometry, SketchGeometry::ReferenceLine { .. })
+                    || !unique_segment_ids.contains(&segment.external_id)
                     || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
                 Some(SketchEntity {
                     id,
@@ -10295,12 +12728,22 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     construction,
                     native_ref: Some(sketch_native_ref(&sketch_id)),
                     geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
-                    endpoint_refs: match segment.kind {
-                        crate::feature::FeatureSegmentKind::Arc => {
+                    endpoint_refs: match (&geometry, segment.kind) {
+                        (SketchGeometry::Native { native_kind }, _) if native_kind == "line" => {
+                            vec![segment.point_ids[0]]
+                        }
+                        (SketchGeometry::ReferenceLine { .. }, _)
+                            if section_degenerate_axis_line(definition, segment) =>
+                        {
+                            vec![segment.point_ids[0]]
+                        }
+                        (_, crate::feature::FeatureSegmentKind::Arc) => {
                             vec![segment.point_ids[1], segment.point_ids[0]]
                         }
-                        crate::feature::FeatureSegmentKind::Line => segment.point_ids.to_vec(),
-                        crate::feature::FeatureSegmentKind::Point => vec![segment.point_ids[0]],
+                        (_, crate::feature::FeatureSegmentKind::Line) => segment.point_ids.to_vec(),
+                        (_, crate::feature::FeatureSegmentKind::Point) => {
+                            vec![segment.point_ids[0]]
+                        }
                     }
                     .into_iter()
                     .map(|point| sketch_point_ref(&sketch_id, point))
@@ -10311,7 +12754,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .collect::<Vec<_>>();
         for segment in segments
             .iter()
-            .filter(|segment| !resolved_segment_offsets.contains(&segment.offset))
+            .filter(|segment| segment_geometry(segment).is_none())
         {
             let id = sketch_entity_id(
                 &sketch_id,
@@ -10354,7 +12797,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         for segment in definition
             .segments
             .iter()
-            .flat_map(|table| &table.opaque_rows)
+            .flat_map(|table| &table.circle_rows)
         {
             let unique_external_id = unique_segment_ids.contains(&segment.external_id);
             if unique_external_id
@@ -10365,55 +12808,319 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             let suffix = if unique_external_id {
                 segment.external_id.to_string()
             } else {
-                format!("opaque:offset:{}", segment.offset)
+                format!("circle:offset:{}", segment.offset)
             };
-            let id = sketch_entity_id(&sketch_id, suffix);
-            let geometry = if matches!(segment.kind, 1 | 10 | 47) {
-                opaque_geometries
-                    .get(&segment.offset)
-                    .cloned()
-                    .unwrap_or_else(|| SketchGeometry::Native {
-                        native_kind: match segment.kind {
-                            1 => "point",
-                            10 => "circle",
-                            47 => "line",
-                            _ => unreachable!(),
-                        }
-                        .to_string(),
-                    })
-            } else {
-                SketchGeometry::Native {
-                    native_kind: format!("segment_type:{}", segment.kind),
-                }
-            };
-            let solved_geometry = matches!(
-                &geometry,
-                SketchGeometry::Point { .. }
-                    | SketchGeometry::Circle { .. }
-                    | SketchGeometry::Line { .. }
-            );
-            let construction = !unique_external_id || !profile_entities.contains(&id);
+            let id = sketch_entity_id(&sketch_id, &suffix);
+            let geometry = circle_geometries
+                .get(&segment.offset)
+                .cloned()
+                .unwrap_or_else(|| SketchGeometry::Native {
+                    native_kind: "circle".to_string(),
+                });
+            let solved_geometry = matches!(geometry, SketchGeometry::Circle { .. });
             annotate(
                 annotations,
                 &id.0,
                 "FeatDefs",
                 segment.offset as u64,
                 if solved_geometry {
-                    if segment.kind == 1 {
-                        "solved_section_point"
-                    } else if segment.kind == 47 {
-                        "solved_section_line"
-                    } else {
-                        "solved_section_circle"
-                    }
+                    "solved_section_circle"
                 } else {
-                    "opaque_section_segment"
+                    "unresolved_section_circle"
                 },
                 if solved_geometry {
                     Exactness::Derived
                 } else {
                     Exactness::ByteExact
                 },
+            );
+            let construction = !unique_external_id || !profile_entities.contains(&id);
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
+                endpoint_refs: Vec::new(),
+                geometry,
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.point_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("point:offset:{}", segment.offset)
+            };
+            let id = sketch_entity_id(&sketch_id, &suffix);
+            let geometry = point_geometries
+                .get(&segment.offset)
+                .cloned()
+                .unwrap_or_else(|| SketchGeometry::Native {
+                    native_kind: "point".to_string(),
+                });
+            let solved_geometry = matches!(geometry, SketchGeometry::Point { .. });
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                if solved_geometry {
+                    "solved_section_point"
+                } else {
+                    "unresolved_section_point"
+                },
+                if solved_geometry {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
+                },
+            );
+            let construction = !unique_external_id || !profile_entities.contains(&id);
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: None,
+                endpoint_refs: vec![sketch_point_ref(&sketch_id, segment.point_id)],
+                geometry,
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.centered_line_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("centered_line:offset:{}", segment.offset)
+            };
+            let id = sketch_entity_id(&sketch_id, &suffix);
+            let geometry = centered_line_geometries
+                .get(&segment.offset)
+                .cloned()
+                .unwrap_or_else(|| SketchGeometry::Native {
+                    native_kind: "line".to_string(),
+                });
+            let solved_geometry = matches!(geometry, SketchGeometry::Line { .. });
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                if solved_geometry {
+                    "solved_section_centered_line"
+                } else {
+                    "unresolved_section_centered_line"
+                },
+                if solved_geometry {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
+                },
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
+                endpoint_refs: [0, 1]
+                    .into_iter()
+                    .map(|point| sketch_point_ref(&sketch_id, point))
+                    .collect(),
+                geometry,
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.reference_line_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("reference_line:offset:{}", segment.offset)
+            };
+            let id = sketch_entity_id(&sketch_id, &suffix);
+            let geometry = reference_line_geometries
+                .get(&segment.offset)
+                .cloned()
+                .unwrap_or_else(|| SketchGeometry::Native {
+                    native_kind: "reference_line".to_string(),
+                });
+            let solved_geometry = matches!(geometry, SketchGeometry::ReferenceLine { .. });
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                if solved_geometry {
+                    "solved_section_reference_line"
+                } else {
+                    "unresolved_section_reference_line"
+                },
+                if solved_geometry {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
+                },
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
+                endpoint_refs: segment
+                    .point_ids
+                    .into_iter()
+                    .flatten()
+                    .map(|point| sketch_point_ref(&sketch_id, point))
+                    .collect(),
+                geometry,
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.bounded_curve_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("bounded_curve:offset:{}", segment.offset)
+            };
+            let id = sketch_entity_id(&sketch_id, &suffix);
+            let construction = !unique_external_id || !profile_entities.contains(&id);
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                "unresolved_section_bounded_curve",
+                Exactness::ByteExact,
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: None,
+                endpoint_refs: segment
+                    .point_ids
+                    .into_iter()
+                    .map(|point| sketch_point_ref(&sketch_id, point))
+                    .collect(),
+                geometry: SketchGeometry::Native {
+                    native_kind: "bounded_curve".to_string(),
+                },
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.conic_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("conic:offset:{}", segment.offset)
+            };
+            let id = sketch_entity_id(&sketch_id, suffix);
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                "unresolved_section_conic",
+                Exactness::ByteExact,
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Native {
+                    native_kind: "conic".to_string(),
+                },
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.opaque_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
+            let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
+            let id = sketch_entity_id(&sketch_id, suffix);
+            let geometry = if unique_external_id {
+                let native_kind =
+                    match unique_section_incidence_curve_family(definition, segment.external_id) {
+                        Some(SectionEntityIncidenceFamily::BoundedCurve) => {
+                            "bounded_curve".to_string()
+                        }
+                        Some(SectionEntityIncidenceFamily::Line) => "line".to_string(),
+                        Some(SectionEntityIncidenceFamily::Arc) => "arc".to_string(),
+                        Some(SectionEntityIncidenceFamily::Circular) => "circle".to_string(),
+                        _ => format!("segment_type:{}", segment.kind),
+                    };
+                SketchGeometry::Native { native_kind }
+            } else {
+                SketchGeometry::Native {
+                    native_kind: format!("segment_type:{}", segment.kind),
+                }
+            };
+            let construction = !unique_external_id || !profile_entities.contains(&id);
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                "opaque_section_segment",
+                Exactness::ByteExact,
             );
             entities.push(SketchEntity {
                 id,
@@ -10436,11 +13143,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         }
         let mut saved_section_geometries = Vec::new();
         let mut generated_saved_geometries = Vec::new();
-        for (internal_id, geometry, offset) in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(saved_section_entity_geometry)
+        for (internal_id, geometry, offset) in
+            semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
         {
             let unique_internal_id = unique_saved_ids.contains(&internal_id);
             let external_id = if unique_internal_id {
@@ -10467,18 +13171,17 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             if entities.iter().any(|entity| entity.id == entity_id) {
                 continue;
             }
-            let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry) else {
-                continue;
-            };
             let generated = external_id.is_some_and(|external_id| {
-                section_entity_is_generated_profile(
-                    complete_segment_table,
-                    definition.owner_feature_id,
-                    external_id,
-                    expected_kinds,
-                    &scan.features.entity_tables,
-                    &scan.surfaces.rows,
-                )
+                section_generated_profile_surface_kinds(&geometry).is_some_and(|expected_kinds| {
+                    section_entity_is_generated_profile(
+                        complete_segment_table,
+                        definition.owner_feature_id,
+                        external_id,
+                        expected_kinds,
+                        &scan.features.entity_tables,
+                        &scan.surfaces.rows,
+                    )
+                })
             });
             let curve_id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
             annotate(
@@ -10506,11 +13209,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             });
             saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
         }
-        for spline in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(|entity| match entity {
+        for spline in
+            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
@@ -10595,11 +13295,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 generated_saved_geometries.push((external_id, geometry));
             }
         }
-        for saved in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-        {
+        for saved in semantic_saved_section_entities(definition) {
             let (entity, offset) = unresolved_saved_section_entity(
                 definition,
                 &sketch_id,
@@ -10630,6 +13326,15 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     .get(&segment.offset)
                     .cloned()
                     .flatten()
+                    .or_else(|| {
+                        segment_geometries
+                            .get(&segment.offset)
+                            .cloned()
+                            .flatten()
+                            .filter(|geometry| {
+                                matches!(geometry, SketchGeometry::ReferenceLine { .. })
+                            })
+                    })
                 else {
                     continue;
                 };
@@ -10670,10 +13375,9 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             for segment in definition
                 .segments
                 .iter()
-                .flat_map(|segments| &segments.opaque_rows)
-                .filter(|segment| matches!(segment.kind, 10 | 47))
+                .flat_map(|segments| &segments.circle_rows)
             {
-                let Some(section_geometry) = opaque_geometries.get(&segment.offset).cloned() else {
+                let Some(section_geometry) = circle_geometries.get(&segment.offset).cloned() else {
                     continue;
                 };
                 let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry)
@@ -10683,7 +13387,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 let suffix = if unique_segment_ids.contains(&segment.external_id) {
                     segment.external_id.to_string()
                 } else {
-                    format!("opaque:offset:{}", segment.offset)
+                    format!("circle:offset:{}", segment.offset)
                 };
                 let id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
                 if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -10694,11 +13398,54 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     &id,
                     "FeatDefs",
                     segment.offset as u64,
-                    if segment.kind == 47 {
-                        "placed_section_line"
-                    } else {
-                        "placed_section_circle"
-                    },
+                    "placed_section_circle",
+                    Exactness::Derived,
+                );
+                ir.model.curves.push(Curve {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: "creo".to_string(),
+                        object_id: format!(
+                            "FeatDefs:section#{}:{suffix}",
+                            sketch_identity_scope(&sketch_id)
+                        ),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                });
+            }
+            for segment in definition
+                .segments
+                .iter()
+                .flat_map(|segments| &segments.centered_line_rows)
+            {
+                let Some(section_geometry) = centered_line_geometries.get(&segment.offset).cloned()
+                else {
+                    continue;
+                };
+                let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry)
+                else {
+                    continue;
+                };
+                let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                    segment.external_id.to_string()
+                } else {
+                    format!("centered_line:offset:{}", segment.offset)
+                };
+                let id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
+                if ir.model.curves.iter().any(|existing| existing.id == id) {
+                    continue;
+                }
+                annotate(
+                    annotations,
+                    &id,
+                    "FeatDefs",
+                    segment.offset as u64,
+                    "placed_section_line",
                     Exactness::Derived,
                 );
                 ir.model.curves.push(Curve {
@@ -10779,7 +13526,15 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 geometry_ref: None,
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Native {
-                    native_kind: "solver_only_section_entity".to_string(),
+                    native_kind: match solver_only_section_entity_family(definition, external_id) {
+                        Some(SectionEntityIncidenceFamily::Point) => "point",
+                        Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                        Some(SectionEntityIncidenceFamily::Line) => "line",
+                        Some(SectionEntityIncidenceFamily::Arc) => "arc",
+                        Some(SectionEntityIncidenceFamily::Circular) => "circle",
+                        None => "solver_only_section_entity",
+                    }
+                    .to_string(),
                 },
             });
         }
@@ -10791,12 +13546,115 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .iter()
             .map(|entity| (entity.id.clone(), entity.geometry.clone()))
             .collect::<BTreeMap<_, _>>();
-        let mut constraints = segments
+        let verhor_definitions = segments
             .iter()
             .filter_map(|segment| {
                 let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
                 let entity = sketch_entity_id(&sketch_id, &suffix);
-                let mut constraint_definition = line_orientation_definition(segment, entity)?;
+                Some((
+                    suffix,
+                    section_segment_verhor_definition(segment, &sketch_id, entity)?,
+                    segment.offset,
+                ))
+            })
+            .chain(
+                definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| &table.centered_line_rows)
+                    .map(|segment| {
+                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                            segment.external_id.to_string()
+                        } else {
+                            format!("centered_line:offset:{}", segment.offset)
+                        };
+                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        (
+                            suffix,
+                            native_section_segment_verhor_definition(
+                                &sketch_id,
+                                entity,
+                                segment.external_id,
+                                0,
+                            ),
+                            segment.offset,
+                        )
+                    }),
+            )
+            .chain(
+                definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| &table.bounded_curve_rows)
+                    .filter_map(|segment| {
+                        let verhor = segment.vertical_horizontal?;
+                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                            segment.external_id.to_string()
+                        } else {
+                            format!("bounded_curve:offset:{}", segment.offset)
+                        };
+                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        Some((
+                            suffix,
+                            native_section_segment_verhor_definition(
+                                &sketch_id,
+                                entity,
+                                segment.external_id,
+                                verhor,
+                            ),
+                            segment.offset,
+                        ))
+                    }),
+            )
+            .chain(
+                definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| &table.reference_line_rows)
+                    .filter_map(|segment| {
+                        let verhor = segment.vertical_horizontal?;
+                        let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                            segment.external_id.to_string()
+                        } else {
+                            format!("reference_line:offset:{}", segment.offset)
+                        };
+                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        Some((
+                            suffix,
+                            native_section_segment_verhor_definition(
+                                &sketch_id,
+                                entity,
+                                segment.external_id,
+                                verhor,
+                            ),
+                            segment.offset,
+                        ))
+                    }),
+            )
+            .chain(
+                definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| &table.opaque_rows)
+                    .filter_map(|segment| {
+                        let verhor = segment.vertical_horizontal?;
+                        let suffix =
+                            opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
+                        let entity = sketch_entity_id(&sketch_id, &suffix);
+                        Some((
+                            suffix,
+                            native_section_segment_verhor_definition(
+                                &sketch_id,
+                                entity,
+                                segment.external_id,
+                                verhor,
+                            ),
+                            segment.offset,
+                        ))
+                    }),
+            );
+        let mut constraints = verhor_definitions
+            .filter_map(|(suffix, mut constraint_definition, offset)| {
                 reconcile_constraint_entity_references(
                     &mut constraint_definition,
                     &emitted_entity_ids,
@@ -10807,8 +13665,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     annotations,
                     &id.0,
                     "FeatDefs",
-                    segment.offset as u64,
-                    "section_line_orientation_constraint",
+                    offset as u64,
+                    "section_verhor_constraint",
                     Exactness::ByteExact,
                 );
                 Some(SketchConstraint {
@@ -10845,7 +13703,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             );
             constraints.push(constraint);
         }
-        for (mut constraint, offset) in section_circle_size_constraints(definition, &sketch_id) {
+        for (mut constraint, offset) in section_segment_radius_constraints(definition, &sketch_id) {
             if !reconcile_constraint_entity_references(
                 &mut constraint.definition,
                 &emitted_entity_ids,
@@ -10857,7 +13715,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 &constraint.id.0,
                 "FeatDefs",
                 offset as u64,
-                "section_circle_size_constraint",
+                "section_segment_radius_constraint",
                 Exactness::ByteExact,
             );
             constraints.push(constraint);
@@ -10955,6 +13813,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             });
         }
     }
+    coverage
 }
 
 fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
@@ -11263,16 +14122,12 @@ fn transfer_resolved_revolution_surfaces(
                     feature_id,
                     &scan.features.entity_tables,
                     order,
-                    definition
-                        .saved_section
-                        .iter()
-                        .flat_map(|saved| &saved.entities)
-                        .filter_map(|entity| match entity {
-                            crate::feature::FeatureSavedEntity::Spline(spline) => {
-                                order.external_id(spline.entity_id?)
-                            }
-                            _ => None,
-                        }),
+                    semantic_saved_section_entities(definition).filter_map(|entity| match entity {
+                        crate::feature::FeatureSavedEntity::Spline(spline) => {
+                            order.external_id(spline.entity_id?)
+                        }
+                        _ => None,
+                    }),
                     crate::surface::SurfaceKind::Spline,
                 )
             });
@@ -11349,11 +14204,9 @@ fn transfer_resolved_revolution_surfaces(
             transferred += 1;
         }
         if let Some(order) = definition.order_table.as_ref() {
-            for (internal_id, section_geometry, offset) in definition
-                .saved_section
-                .iter()
-                .flat_map(|saved| &saved.entities)
-                .filter_map(saved_section_entity_geometry)
+            for (internal_id, section_geometry, offset) in
+                semantic_saved_section_entities(definition)
+                    .filter_map(saved_section_entity_geometry)
             {
                 let Some(external_id) = order.external_id(internal_id) else {
                     continue;
@@ -11400,11 +14253,8 @@ fn transfer_resolved_revolution_surfaces(
                 transferred += 1;
             }
         }
-        for spline in definition
-            .saved_section
-            .iter()
-            .flat_map(|saved| &saved.entities)
-            .filter_map(|entity| match entity {
+        for spline in
+            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
                 crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
@@ -11713,11 +14563,22 @@ fn feature_dimension_display(dimension_type: u32) -> Option<DimensionDisplay> {
 }
 
 fn feature_relation_table_complete(table: &crate::feature::FeatureRelationTable) -> bool {
-    table
-        .declared_count
-        .checked_sub(2)
-        .and_then(|count| usize::try_from(count).ok())
-        == Some(table.rows.len())
+    feature_relation_table_expected_rows(table) == Some(table.rows.len())
+}
+
+fn feature_relation_table_expected_rows(
+    table: &crate::feature::FeatureRelationTable,
+) -> Option<usize> {
+    match table.declared_count {
+        0 => None,
+        1 => Some(0),
+        count => usize::try_from(count - 2).ok(),
+    }
+}
+
+fn feature_relation_table_missing_rows(table: &crate::feature::FeatureRelationTable) -> usize {
+    feature_relation_table_expected_rows(table)
+        .map_or(0, |expected| expected.saturating_sub(table.rows.len()))
 }
 
 fn feature_solver_table_complete(
@@ -11726,6 +14587,17 @@ fn feature_solver_table_complete(
 ) -> bool {
     header.map_or(row_count == 0, |header| {
         usize::try_from(header.declared_count).ok() == Some(row_count)
+    })
+}
+
+fn feature_solver_table_missing_rows(
+    header: Option<&crate::feature::FeatureSolverTableHeader>,
+    row_count: usize,
+) -> usize {
+    header.map_or(0, |header| {
+        usize::try_from(header.declared_count)
+            .unwrap_or(usize::MAX)
+            .saturating_sub(row_count)
     })
 }
 
@@ -12036,6 +14908,72 @@ fn evaluated_sweep_body_kind(ir: &CadIr, family: &str, feature_id: u32) -> Optio
         .map(|body| body.kind)
 }
 
+fn new_sheet_output_surface_id(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+) -> Option<u32> {
+    let owned = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let unique_table = |class_id| {
+        let mut matches = owned
+            .iter()
+            .copied()
+            .filter(|table| table.table_class_id == class_id);
+        let table = matches.next()?;
+        matches.next().is_none().then_some(table)
+    };
+    let [owner] = unique_table(67)?.entries.as_slice() else {
+        return None;
+    };
+    let [output] = unique_table(100)?.entries.as_slice() else {
+        return None;
+    };
+    let generated = unique_table(29)?;
+    (owner.class_id == 200
+        && owner.source_entity_id == Some(feature_id)
+        && output.entity_id == owner.entity_id
+        && generated.surface_ids.contains(&output.class_id)
+        && generated
+            .entries
+            .iter()
+            .any(|entry| entry.entity_id == output.class_id && entry.class_id == 200))
+    .then_some(())?;
+    let mut surfaces = surface_rows
+        .iter()
+        .filter(|row| row.id == output.class_id && row.feature_id == feature_id);
+    let surface = surfaces.next()?;
+    surfaces.next().is_none().then_some(surface.id)
+}
+
+fn sweep_output_kind(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    family: &str,
+    feature_id: u32,
+) -> Option<BodyKind> {
+    evaluated_sweep_body_kind(ir, family, feature_id).or_else(|| {
+        (feature_schema_class(scan, feature_id) == Some(942)).then_some(())?;
+        new_sheet_output_surface_id(
+            feature_id,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        )
+        .map(|_| BodyKind::Sheet)
+        .or_else(|| {
+            current_feature_operation(&scan.features.operations, feature_id)
+                .filter(|operation| operation.kind == "Surface")
+                .map(|_| BodyKind::Sheet)
+        })
+    })
+}
+
+fn sweep_solid(output_kind: Option<BodyKind>) -> Option<bool> {
+    output_kind.map(|kind| kind == BodyKind::Solid)
+}
+
 fn feature_field_text(value: &crate::feature::FeatureFieldValue) -> Option<String> {
     match value {
         crate::feature::FeatureFieldValue::Empty => Some("empty".to_string()),
@@ -12117,6 +15055,7 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
             crate::feature::AffectedIdKind::StrongParents => "strong_parent_feature_ids",
             crate::feature::AffectedIdKind::Parents => "parent_feature_ids",
             crate::feature::AffectedIdKind::Contours => "contour_ids",
+            crate::feature::AffectedIdKind::Quilts => "affected_quilt_ids",
         };
         insert_feature_parameter(
             &mut parameters,
@@ -12173,6 +15112,48 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
             }
             .to_string(),
         );
+    }
+    for affected in scan
+        .features
+        .surface_merge_replay_affected_ids
+        .iter()
+        .filter(|record| record.feature_id == feature_id)
+    {
+        for (name, ids) in [
+            (
+                "surface_merge_replay_affected_geometry_ids",
+                &affected.geometry_ids,
+            ),
+            ("surface_merge_replay_affected_edge_ids", &affected.edge_ids),
+            (
+                "surface_merge_replay_affected_quilt_ids",
+                &affected.quilt_ids,
+            ),
+        ] {
+            insert_feature_parameter(
+                &mut parameters,
+                name,
+                ids.iter().map(u32::to_string).collect::<Vec<_>>().join(","),
+            );
+        }
+        for (name, extent) in [
+            (
+                "surface_merge_replay_geometry_extent",
+                affected.geometry_extent,
+            ),
+            ("surface_merge_replay_edge_extent", affected.edge_extent),
+            ("surface_merge_replay_quilt_extent", affected.quilt_extent),
+        ] {
+            insert_feature_parameter(
+                &mut parameters,
+                name,
+                match extent {
+                    crate::feature::ReplayExtentSource::Explicit => "explicit",
+                    crate::feature::ReplayExtentSource::Inherited => "inherited",
+                }
+                .to_string(),
+            );
+        }
     }
     for direction in scan
         .features
@@ -12392,24 +15373,93 @@ fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<
     properties
 }
 
-fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<IrFeatureId> {
-    agreed_feature_parent_ids(&scan.features.affected_ids, feature_id)
+fn feature_dependencies(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
+) -> Vec<IrFeatureId> {
+    native_feature_dependency_ids(
+        &scan.features.affected_ids,
+        &scan.features.operations,
+        &scan.features.entity_tables,
+        &scan.features.surface_merge_replay_affected_ids,
+        &scan.surfaces.rows,
+        feature_id,
+        prototype_dependencies
+            .get(&feature_id)
+            .map_or(&[], Vec::as_slice),
+    )
+    .into_iter()
+    .filter_map(|dependency| {
+        let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
+        ir.model
+            .features
+            .iter()
+            .any(|feature| feature.id == id)
+            .then_some(id)
+    })
+    .collect()
+}
+
+fn native_feature_dependency_ids(
+    affected_ids: &[crate::feature::FeatureAffectedIds],
+    operations: &[crate::feature::FeatureOperation],
+    entity_tables: &[crate::feature::FeatureEntityTable],
+    surface_merge_replay_affected_ids: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    surface_rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+    prototype_dependencies: &[u32],
+) -> Vec<u32> {
+    agreed_feature_parent_ids(affected_ids, feature_id)
         .into_iter()
-        .chain(current_feature_recipe_parent(
-            &scan.features.operations,
+        .chain(current_feature_recipe_parent(operations, feature_id))
+        .chain(prototype_dependencies.iter().copied())
+        .chain(surface_merge_entity_dependencies(
+            affected_ids,
+            surface_merge_replay_affected_ids,
+            entity_tables,
             feature_id,
         ))
-        .chain(feature_entity_dependencies(
-            &scan.features.entity_tables,
+        .chain(feature_entity_dependencies(entity_tables, feature_id))
+        .chain(feature_output_surface_dependencies(
+            entity_tables,
+            surface_rows,
             feature_id,
         ))
-        .filter_map(|dependency| {
-            let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
-            ir.model
-                .features
-                .iter()
-                .any(|feature| feature.id == id)
-                .then_some(id)
+        .chain(surface_transition_dependencies(
+            feature_id,
+            entity_tables,
+            surface_rows,
+        ))
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
+}
+
+fn feature_output_surface_dependencies(
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+) -> Vec<u32> {
+    let owned_entities = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 67)
+        .flat_map(|table| &table.entries)
+        .filter(|entry| entry.class_id == 200 && entry.source_entity_id == Some(feature_id))
+        .map(|entry| entry.entity_id)
+        .collect::<BTreeSet<_>>();
+    tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .flat_map(|table| &table.entries)
+        .filter(|entry| owned_entities.contains(&entry.entity_id))
+        .filter_map(|entry| {
+            let row = crate::surface::unique_surface_row(surface_rows, entry.class_id)?;
+            (row.feature_id != feature_id).then_some(row.feature_id)
         })
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {
@@ -12423,7 +15473,32 @@ fn feature_entity_dependencies(
     tables: &[crate::feature::FeatureEntityTable],
     feature_id: u32,
 ) -> Vec<u32> {
-    let producers = tables
+    let producers = feature_entity_producers(tables);
+    tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .flat_map(|table| table.entries.iter())
+        .filter_map(|entry| {
+            let owners = producers.get(&entry.entity_id)?;
+            let mut owners = owners.iter().copied();
+            let owner = owners.next()?;
+            if owners.next().is_some() {
+                return None;
+            }
+            (owner != feature_id).then_some(owner)
+        })
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
+}
+
+fn feature_entity_producers(
+    tables: &[crate::feature::FeatureEntityTable],
+) -> BTreeMap<u32, BTreeSet<u32>> {
+    tables
         .iter()
         .filter_map(|table| table.feature_id.map(|owner| (owner, table)))
         .flat_map(|(owner, table)| {
@@ -12439,19 +15514,60 @@ fn feature_entity_dependencies(
                 owners.entry(entity).or_default().insert(owner);
                 owners
             },
-        );
-    tables
+        )
+}
+
+fn agreed_surface_merge_replay_quilt_ids(
+    records: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    feature_id: u32,
+) -> Option<&[u32]> {
+    let mut matches = records
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
-        .flat_map(|table| table.entries.iter())
-        .filter_map(|entry| {
-            let owners = producers.get(&entry.entity_id)?;
+        .filter(|record| record.feature_id == feature_id);
+    let ids = matches.next()?.quilt_ids.as_slice();
+    matches
+        .all(|record| record.quilt_ids.as_slice() == ids)
+        .then_some(ids)
+}
+
+fn surface_merge_quilt_ids<'a>(
+    affected_ids: &'a [crate::feature::FeatureAffectedIds],
+    replay: &'a [crate::feature::FeatureSurfaceMergeAffectedIds],
+    feature_id: u32,
+) -> Option<&'a [u32]> {
+    if let Some(ids) = agreed_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Quilts,
+    ) {
+        return (!ids.is_empty()).then_some(ids);
+    }
+    if has_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Quilts,
+    ) {
+        return None;
+    }
+    agreed_surface_merge_replay_quilt_ids(replay, feature_id).filter(|ids| !ids.is_empty())
+}
+
+fn surface_merge_entity_dependencies(
+    affected_ids: &[crate::feature::FeatureAffectedIds],
+    replay: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    tables: &[crate::feature::FeatureEntityTable],
+    feature_id: u32,
+) -> Vec<u32> {
+    let Some(ids) = surface_merge_quilt_ids(affected_ids, replay, feature_id) else {
+        return Vec::new();
+    };
+    let producers = feature_entity_producers(tables);
+    ids.iter()
+        .filter_map(|entity_id| {
+            let owners = producers.get(entity_id)?;
             let mut owners = owners.iter().copied();
             let owner = owners.next()?;
-            if owners.next().is_some() {
-                return None;
-            }
-            (owner != feature_id).then_some(owner)
+            (owners.next().is_none() && owner != feature_id).then_some(owner)
         })
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {
@@ -12510,6 +15626,43 @@ fn agreed_feature_parent_ids(
     ids
 }
 
+fn surface_prototype_feature_dependencies(scan: &ContainerScan) -> BTreeMap<u32, Vec<u32>> {
+    let mut dependencies = BTreeMap::new();
+    for (prototype, row, _) in unique_surface_prototype_associations(scan) {
+        let mut fields = prototype
+            .parameters
+            .iter()
+            .filter(|field| field.name == "parent_feats");
+        let Some(field) = fields.next() else {
+            continue;
+        };
+        if fields.next().is_some() {
+            continue;
+        }
+        let crate::surface::SurfaceNamedValue::CompactIntArray(consumers) = &field.value else {
+            continue;
+        };
+        add_surface_prototype_feature_dependencies(&mut dependencies, row.feature_id, consumers);
+    }
+    dependencies
+}
+
+fn add_surface_prototype_feature_dependencies(
+    dependencies: &mut BTreeMap<u32, Vec<u32>>,
+    producer: u32,
+    consumers: &[u32],
+) {
+    for &consumer in consumers {
+        if consumer == 0 || consumer == producer {
+            continue;
+        }
+        let producers = dependencies.entry(consumer).or_default();
+        if !producers.contains(&producer) {
+            producers.push(producer);
+        }
+    }
+}
+
 fn agreed_feature_replay_geometry_ids(
     records: &[crate::feature::FeatureReplayAffectedIds],
     feature_id: u32,
@@ -12536,7 +15689,11 @@ fn agreed_feature_replay_edge_ids(
         .then_some(ids)
 }
 
-fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
+fn reconcile_feature_links(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
+) {
     let emitted = ir
         .model
         .features
@@ -12552,22 +15709,21 @@ fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
         else {
             continue;
         };
-        let native_dependencies =
-            agreed_feature_parent_ids(&scan.features.affected_ids, feature_id)
-                .into_iter()
-                .chain(current_feature_recipe_parent(
-                    &scan.features.operations,
-                    feature_id,
-                ))
-                .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
-                .filter(|dependency| emitted.contains(dependency))
-                .filter(|dependency| *dependency != feature.id)
-                .fold(Vec::new(), |mut dependencies, dependency| {
-                    if !dependencies.contains(&dependency) {
-                        dependencies.push(dependency);
-                    }
-                    dependencies
-                });
+        let native_dependencies = native_feature_dependency_ids(
+            &scan.features.affected_ids,
+            &scan.features.operations,
+            &scan.features.entity_tables,
+            &scan.features.surface_merge_replay_affected_ids,
+            &scan.surfaces.rows,
+            feature_id,
+            prototype_dependencies
+                .get(&feature_id)
+                .map_or(&[], Vec::as_slice),
+        )
+        .into_iter()
+        .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
+        .filter(|dependency| emitted.contains(dependency))
+        .filter(|dependency| *dependency != feature.id);
         feature.dependencies = reconciled_dependencies(
             &feature.id,
             &feature.dependencies,
@@ -12657,6 +15813,121 @@ fn resolved_revolution_axis(
     Some(*axis)
 }
 
+fn full_turn_revolution_carrier_axis(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    extent: Option<&RevolveExtent>,
+) -> Option<RevolutionAxis> {
+    let Some(RevolveExtent::OneSided {
+        termination: Termination::Angle {
+            angle: Angle(angle),
+        },
+    }) = extent
+    else {
+        return None;
+    };
+    if (angle.abs() - std::f64::consts::TAU).abs() > 1e-12 {
+        return None;
+    }
+
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!rows.is_empty()).then_some(())?;
+    let mut axes = Vec::new();
+    let mut plane_normals = Vec::new();
+    let mut sphere_centers = Vec::new();
+    for row in rows {
+        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
+            .then_some(())?;
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let [surface] = surfaces.as_slice() else {
+            return None;
+        };
+        match surface.geometry {
+            SurfaceGeometry::Cylinder { origin, axis, .. }
+            | SurfaceGeometry::Cone { origin, axis, .. } => {
+                axes.push((origin, axis));
+            }
+            SurfaceGeometry::Torus { center, axis, .. } => {
+                axes.push((center, axis));
+            }
+            SurfaceGeometry::Plane { normal, .. } => plane_normals.push(normal),
+            SurfaceGeometry::Sphere { center, .. } => sphere_centers.push(center),
+            _ => return None,
+        }
+    }
+    let [(first_origin, first_direction), rest @ ..] = axes.as_slice() else {
+        return None;
+    };
+    let mut direction = normalized([first_direction.x, first_direction.y, first_direction.z])?;
+    if direction
+        .iter()
+        .find(|component| component.abs() > 1e-12)
+        .is_some_and(|component| component.is_sign_negative())
+    {
+        direction = direction.map(|component| -component);
+    }
+    let first_origin = [first_origin.x, first_origin.y, first_origin.z];
+    let axial = dot(first_origin, direction);
+    let origin: [f64; 3] = std::array::from_fn(|axis| first_origin[axis] - axial * direction[axis]);
+    let scale = first_origin
+        .into_iter()
+        .chain(
+            rest.iter()
+                .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
+        )
+        .chain(
+            sphere_centers
+                .iter()
+                .flat_map(|center| [center.x, center.y, center.z]),
+        )
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    for (candidate_origin, candidate_direction) in rest {
+        let candidate_direction = normalized([
+            candidate_direction.x,
+            candidate_direction.y,
+            candidate_direction.z,
+        ])?;
+        ((dot(direction, candidate_direction).abs() - 1.0).abs() <= 1e-10).then_some(())?;
+        let displacement = [
+            candidate_origin.x - origin[0],
+            candidate_origin.y - origin[1],
+            candidate_origin.z - origin[2],
+        ];
+        let radial = cross(displacement, direction);
+        (dot(radial, radial).sqrt() <= 1e-9 * scale).then_some(())?;
+    }
+    for normal in plane_normals {
+        let normal = normalized([normal.x, normal.y, normal.z])?;
+        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10).then_some(())?;
+    }
+    for center in sphere_centers {
+        let displacement = [
+            center.x - origin[0],
+            center.y - origin[1],
+            center.z - origin[2],
+        ];
+        let radial = cross(displacement, direction);
+        (dot(radial, radial).sqrt() <= 1e-9 * scale).then_some(())?;
+    }
+    Some(RevolutionAxis {
+        origin: Point3::new(origin[0], origin[1], origin[2]),
+        direction: Vector3::new(direction[0], direction[1], direction[2]),
+    })
+}
+
 fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
     let sketch_id = SketchId(native_ref.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1));
     let Some(sketch) = ir
@@ -12672,6 +15943,78 @@ fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
     } else {
         ProfileRef::Sketch(sketch_id)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GeometryGeneratorFeature {
+    feature_id: u32,
+    offset: usize,
+    surface_ids: Vec<u32>,
+    curve_ids: Vec<u32>,
+}
+
+fn geometry_generator_features(scan: &ContainerScan) -> Vec<GeometryGeneratorFeature> {
+    let operation_feature_ids = scan
+        .features
+        .operations
+        .iter()
+        .map(|operation| operation.feature_id)
+        .collect::<BTreeSet<_>>();
+    let row_feature_ids = scan
+        .features
+        .rows
+        .iter()
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    let datum_feature_ids = scan
+        .planes
+        .datums
+        .iter()
+        .map(|datum| datum.feature_id)
+        .collect::<BTreeSet<_>>();
+    let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
+    for row in &scan.surfaces.rows {
+        if row.feature_id == 0 {
+            continue;
+        }
+        let generator =
+            generators
+                .entry(row.feature_id)
+                .or_insert_with(|| GeometryGeneratorFeature {
+                    feature_id: row.feature_id,
+                    offset: row.offset,
+                    surface_ids: Vec::new(),
+                    curve_ids: Vec::new(),
+                });
+        generator.offset = generator.offset.min(row.offset);
+        generator.surface_ids.push(row.id);
+    }
+    for row in &scan.curves.topology_rows {
+        if row.feature_id == 0 {
+            continue;
+        }
+        let generator =
+            generators
+                .entry(row.feature_id)
+                .or_insert_with(|| GeometryGeneratorFeature {
+                    feature_id: row.feature_id,
+                    offset: row.offset,
+                    surface_ids: Vec::new(),
+                    curve_ids: Vec::new(),
+                });
+        generator.offset = generator.offset.min(row.offset);
+        generator.curve_ids.push(row.id);
+    }
+    let mut generators = generators
+        .into_values()
+        .filter(|generator| {
+            !operation_feature_ids.contains(&generator.feature_id)
+                && !row_feature_ids.contains(&generator.feature_id)
+                && !datum_feature_ids.contains(&generator.feature_id)
+        })
+        .collect::<Vec<_>>();
+    generators.sort_by_key(|generator| generator.offset);
+    generators
 }
 
 fn feature_edge_selection(
@@ -12721,9 +16064,43 @@ fn feature_edge_selection(
             .all(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
     {
         Some(EdgeSelection::Resolved { edges, native })
+    } else if let Some(edges) = generated_curve_edge_refs(
+        ids,
+        &scan.curves.topology_rows,
+        &ir.model
+            .features
+            .iter()
+            .map(|feature| feature.id.clone())
+            .collect(),
+    ) {
+        Some(EdgeSelection::Generated { edges, native })
     } else {
         Some(EdgeSelection::Native(native))
     }
+}
+
+fn generated_curve_edge_refs(
+    curve_ids: &[u32],
+    rows: &[crate::curve::CurveTopologyRow],
+    available_features: &BTreeSet<IrFeatureId>,
+) -> Option<Vec<GeneratedEdgeRef>> {
+    let unique_rows = crate::topology::uniquely_identified_rows(rows)
+        .into_iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
+    curve_ids
+        .iter()
+        .map(|curve_id| {
+            let row = unique_rows.get(curve_id)?;
+            let feature = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
+            available_features
+                .contains(&feature)
+                .then_some(GeneratedEdgeRef {
+                    feature,
+                    local_id: format!("curve#{curve_id}"),
+                })
+        })
+        .collect()
 }
 
 fn parallel_support_radius(planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>) -> Option<f64> {
@@ -12982,7 +16359,33 @@ fn unique_surface_parameter_record<'a>(
     records.next().is_none().then_some(record)
 }
 
-fn prototype_envelope_round_radius(
+fn unique_section_torus_minor_radius(
+    scan: &ContainerScan,
+    row: &crate::surface::SurfaceRow,
+) -> Option<f64> {
+    let section = scan.framing.sections.iter().find(|section| {
+        row.offset >= section.offset && row.offset < section.offset.saturating_add(section.length)
+    })?;
+    let mut prototypes = scan.surfaces.prototype_records.iter().filter(|prototype| {
+        prototype.family == crate::surface::SurfacePrototypeFamily::Torus
+            && prototype.offset >= section.offset
+            && prototype.offset < section.offset.saturating_add(section.length)
+    });
+    let prototype = prototypes.next()?;
+    prototypes.next().is_none().then_some(())?;
+    prototype_scalar(prototype, "radius2").filter(|radius| radius.is_finite() && *radius > 0.0)
+}
+
+fn replayed_torus_minor_radius(
+    scan: &ContainerScan,
+    row: &crate::surface::SurfaceRow,
+    record: &crate::surface::SurfaceParameterRecord,
+) -> Option<f64> {
+    let prototype_minor_radius = unique_section_torus_minor_radius(scan, row)?;
+    record.type26_replayed_minor_radius(row.type_byte, prototype_minor_radius)
+}
+
+fn prototype_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Option<f64> {
@@ -13019,9 +16422,11 @@ fn prototype_envelope_round_radius(
                 return false;
             };
             record.torus_radius_overrides(row.type_byte).is_none()
-                && (record
-                    .torus_outline_frame(row.type_byte)
-                    .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius2))
+                && (replayed_torus_minor_radius(scan, row, record)
+                    .is_some_and(|radius| radius.to_bits() == radius2.to_bits())
+                    || record
+                        .torus_outline_frame(row.type_byte)
+                        .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius2))
                     || record
                         .type26_five_coordinate_envelope(row.type_byte)
                         .is_some_and(|envelope| {
@@ -13066,29 +16471,18 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         {
             return None;
         }
-        return prototype_envelope_round_radius(scan, &generated_rows);
+        return prototype_round_radius(scan, &generated_rows);
     }
-    let generated_row_count = scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| row.feature_id == feature_id)
-        .count();
-    let cylinder_radii = cylinder_rows
-        .iter()
-        .filter_map(|row| {
-            let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-            ir.model
+    let cylinder_radii = round_placed_cylinder_radii(scan, ir, feature_id);
+    if cylinder_radii.len() == cylinder_rows.len()
+        && cylinder_rows.len()
+            == scan
                 .surfaces
+                .rows
                 .iter()
-                .find(|surface| surface.id == id)
-                .and_then(|surface| match surface.geometry {
-                    SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
-                    _ => None,
-                })
-        })
-        .collect::<Vec<_>>();
-    if cylinder_rows.len() == generated_row_count && cylinder_radii.len() == cylinder_rows.len() {
+                .filter(|row| row.feature_id == feature_id)
+                .count()
+    {
         return unique_positive_length(&cylinder_radii);
     }
     let named_ids = agreed_feature_affected_ids(
@@ -13130,6 +16524,27 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
     (support_planes.len() == support_ids.len()).then(|| parallel_support_radius(support_planes))?
 }
 
+fn round_placed_cylinder_radii(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<f64> {
+    scan.surfaces
+        .rows
+        .iter()
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+        .filter_map(|row| {
+            let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+            ir.model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == id)
+                .and_then(|surface| match surface.geometry {
+                    SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
+                    _ => None,
+                })
+        })
+        .collect()
+}
+
 fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>> {
     let generated_rows = scan
         .surfaces
@@ -13137,27 +16552,30 @@ fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>>
         .iter()
         .filter(|row| row.feature_id == feature_id)
         .collect::<Vec<_>>();
-    let first_kind = generated_rows.first()?.kind;
-    if generated_rows.iter().any(|row| row.kind != first_kind) {
-        return None;
-    }
-    match first_kind {
-        crate::surface::SurfaceKind::Cylinder => generated_rows
-            .iter()
-            .map(|row| {
-                unique_surface_parameter_record(scan, row)?.type24_round_radius(row.type_byte)
-            })
-            .collect(),
-        crate::surface::SurfaceKind::TorusOrSphere => generated_rows
-            .iter()
-            .map(|row| {
-                unique_surface_parameter_record(scan, row)?
+    (!generated_rows.is_empty()).then_some(())?;
+    let radii = round_observed_radii(scan, feature_id);
+    (radii.len() == generated_rows.len()).then_some(radii)
+}
+
+fn round_observed_radii(scan: &ContainerScan, feature_id: u32) -> Vec<f64> {
+    scan.surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .filter_map(|row| {
+            let parameters = unique_surface_parameter_record(scan, row)?;
+            match row.kind {
+                crate::surface::SurfaceKind::Cylinder => {
+                    parameters.type24_round_radius(row.type_byte)
+                }
+                crate::surface::SurfaceKind::TorusOrSphere => parameters
                     .torus_radius_overrides(row.type_byte)
                     .map(|overrides| overrides.radius2)
-            })
-            .collect(),
-        _ => None,
-    }
+                    .or_else(|| replayed_torus_minor_radius(scan, row, parameters)),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 fn differing_positive_lengths(values: &[f64]) -> bool {
@@ -13198,6 +16616,405 @@ fn unique_positive_length(values: &[f64]) -> Option<f64> {
         .then_some(value)
 }
 
+fn equal_distance_chamfer_setback(
+    cones: &[ConeEquation],
+    support_planes: &[PlaneEquation],
+) -> Option<f64> {
+    (!cones.is_empty() && !support_planes.is_empty()).then_some(())?;
+    let setbacks = cones
+        .iter()
+        .map(|cone| {
+            let axis = normalized(cone.axis)?;
+            (circular_cone(*cone)
+                && cone.radius.abs() <= 1e-12
+                && (cone.half_angle - std::f64::consts::FRAC_PI_4).abs() <= 1e-10)
+                .then_some(())?;
+            support_planes
+                .iter()
+                .filter_map(|plane| {
+                    let normal = normalized(plane.normal)?;
+                    let denominator = dot(axis, normal);
+                    (denominator.abs() >= 1.0 - 1e-10).then_some(())?;
+                    let displacement = [
+                        plane.origin[0] - cone.origin[0],
+                        plane.origin[1] - cone.origin[1],
+                        plane.origin[2] - cone.origin[2],
+                    ];
+                    let setback = dot(displacement, normal) / denominator;
+                    (setback.is_finite() && setback > 1e-12).then_some(setback)
+                })
+                .min_by(f64::total_cmp)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    unique_positive_length(&setbacks)
+}
+
+fn chamfer_constant_distance(scan: &ContainerScan, feature_id: u32) -> Option<f64> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!rows.is_empty()
+        && rows
+            .iter()
+            .all(|row| row.kind == crate::surface::SurfaceKind::Cone))
+    .then_some(())?;
+    let prototype_frames = unique_surface_prototype_associations(scan)
+        .into_iter()
+        .filter(|(_, row, _)| row.feature_id == feature_id)
+        .filter_map(|(prototype, row, _)| {
+            Some((row.offset, crate::surface::prototype_cone_frame(prototype)?))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let cones =
+        rows.iter()
+            .map(|row| {
+                let frame = prototype_frames.get(&row.offset).copied().or_else(|| {
+                    unique_surface_parameter_record(scan, row)?.positional_cone_frame
+                })?;
+                Some(ConeEquation {
+                    origin: frame.apex,
+                    axis: frame.axis,
+                    ref_direction: frame.ref_direction,
+                    radius: 0.0,
+                    ratio: 1.0,
+                    half_angle: frame.half_angle,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+    let named_ids = agreed_feature_affected_ids(
+        &scan.features.affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    );
+    let named_present = has_feature_affected_ids(
+        &scan.features.affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    );
+    let replay_ids =
+        agreed_feature_replay_geometry_ids(&scan.features.replay_affected_ids, feature_id);
+    let affected_ids = match (named_ids, replay_ids) {
+        (Some(ids), _) => ids,
+        (None, Some(ids)) if !named_present => ids,
+        _ => return None,
+    };
+    let planes = placed_planes(scan);
+    let support_planes = affected_ids
+        .iter()
+        .filter_map(|id| planes.get(id).copied())
+        .collect::<Vec<_>>();
+    equal_distance_chamfer_setback(&cones, &support_planes)
+}
+
+fn filled_surface_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> IrFeatureDefinition {
+    let boundary = unique_owned_transformed_definition(
+        &scan.features.definitions,
+        &scan.features.section_transforms,
+        feature_id,
+    )
+    .map(|definition| model_sketch_id(scan, definition))
+    .filter(|sketch| {
+        ir.model
+            .sketches
+            .iter()
+            .any(|candidate| candidate.id == *sketch)
+    })
+    .map_or(
+        SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+        |sketch| SurfaceBoundary::Path(PathRef::Sketch(sketch)),
+    );
+    IrFeatureDefinition::FilledSurface {
+        boundary,
+        support_faces: FaceSelection::Faces(Vec::new()),
+        continuity: Some(SurfaceContinuity::Contact),
+        merge_result: Some(false),
+    }
+}
+
+fn knit_class_100_operand_entity_ids(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+) -> Option<Vec<u32>> {
+    let producers = feature_entity_producers(tables);
+    let ids = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .flat_map(|table| table.entries.iter().map(|entry| entry.entity_id))
+        .collect::<Vec<_>>();
+    if ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
+        return None;
+    }
+    ids.iter()
+        .all(|entity_id| {
+            let Some(owners) = producers.get(entity_id) else {
+                return false;
+            };
+            owners.len() == 1 && !owners.contains(&feature_id)
+        })
+        .then_some(ids)
+}
+
+fn knit_operand_entity_ids(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<(Vec<u32>, &'static str)> {
+    if let Some(ids) = surface_merge_quilt_ids(
+        &scan.features.affected_ids,
+        &scan.features.surface_merge_replay_affected_ids,
+        feature_id,
+    ) {
+        let ids = ids.to_vec();
+        if ids.iter().collect::<BTreeSet<_>>().len() == ids.len() {
+            return Some((ids, "surface_merge_quilts"));
+        }
+        return None;
+    }
+    knit_class_100_operand_entity_ids(feature_id, &scan.features.entity_tables)
+        .map(|ids| (ids, "surface_merge_entities"))
+}
+
+fn knit_surface_feature_definition(scan: &ContainerScan, feature_id: u32) -> IrFeatureDefinition {
+    let faces = knit_operand_entity_ids(scan, feature_id).map_or(
+        FaceSelection::Unresolved,
+        |(ids, namespace)| {
+            FaceSelection::Native(format!(
+                "creo:allfeatur:{namespace}#{feature_id}:{}",
+                ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+            ))
+        },
+    );
+    IrFeatureDefinition::KnitSurface {
+        faces,
+        merge_entities: Some(true),
+        create_solid: Some(false),
+        gap_tolerance: None,
+    }
+}
+
+fn feature_surface_transitions(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+) -> Option<Vec<(u32, u32)>> {
+    let owned = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let outputs = owned
+        .iter()
+        .flat_map(|table| {
+            table
+                .entries
+                .iter()
+                .filter(|entry| entry.class_id == 210)
+                .map(move |entry| (*table, entry))
+        })
+        .collect::<Vec<_>>();
+    if outputs.is_empty() {
+        return None;
+    }
+    let predecessors = owned
+        .iter()
+        .flat_map(|table| table.entries.iter())
+        .filter(|entry| entry.class_id == 214 && entry.related_entity_id.is_some())
+        .count();
+    if predecessors != outputs.len() {
+        return None;
+    }
+
+    let mut output_ids = BTreeSet::new();
+    let mut intermediate_ids = BTreeSet::new();
+    let mut source_ids = BTreeSet::new();
+    let mut transitions = Vec::with_capacity(outputs.len());
+    for (output_table, output) in outputs {
+        let intermediate_id = output.related_entity_id?;
+        if output.related_entity_state != Some(0)
+            || !output_table.surface_ids.contains(&output.entity_id)
+            || crate::surface::unique_surface_row(surface_rows, output.entity_id)
+                .is_none_or(|row| row.feature_id != feature_id)
+            || !output_ids.insert(output.entity_id)
+            || !intermediate_ids.insert(intermediate_id)
+        {
+            return None;
+        }
+        let mut matches = output_table.entries.iter().filter(|predecessor| {
+            predecessor.entity_id == intermediate_id
+                && predecessor.related_entity_state == Some(0)
+                && output_table
+                    .non_surface_entity_ids
+                    .contains(&predecessor.entity_id)
+                && crate::surface::unique_surface_row(surface_rows, predecessor.entity_id).is_none()
+        });
+        let predecessor = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        let source_id = predecessor.related_entity_id?;
+        if crate::surface::unique_surface_row(surface_rows, source_id)
+            .is_none_or(|row| row.feature_id == feature_id)
+            || !source_ids.insert(source_id)
+        {
+            return None;
+        }
+        transitions.push((source_id, output.entity_id));
+    }
+    output_ids.is_disjoint(&source_ids).then_some(transitions)
+}
+
+fn surface_transition_dependencies(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+) -> Vec<u32> {
+    feature_surface_transitions(feature_id, tables, surface_rows)
+        .into_iter()
+        .flatten()
+        .filter_map(|(source_id, _)| {
+            crate::surface::unique_surface_row(surface_rows, source_id).map(|row| row.feature_id)
+        })
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
+}
+
+fn thicken_plane_offset(
+    transitions: &[(u32, u32)],
+    planes: &BTreeMap<u32, PlaneEquation>,
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<(f64, ThickenSide)> {
+    let mut offsets = Vec::new();
+    for &(source_id, output_id) in transitions {
+        let (Some(source), Some(output)) = (planes.get(&source_id), planes.get(&output_id)) else {
+            continue;
+        };
+        let source_row = crate::surface::unique_surface_row(rows, source_id)?;
+        let output_row = crate::surface::unique_surface_row(rows, output_id)?;
+        (source_row.reversed != output_row.reversed).then_some(())?;
+        let source_normal = normalized(source.normal)?.map(|component| {
+            if source_row.reversed {
+                -component
+            } else {
+                component
+            }
+        });
+        let output_normal = normalized(output.normal)?;
+        if dot(source_normal, output_normal).abs() < 1.0 - 1e-9 {
+            return None;
+        }
+        let displacement = std::array::from_fn(|index| output.origin[index] - source.origin[index]);
+        offsets.push(dot(displacement, source_normal));
+    }
+    let magnitude = unique_positive_length(
+        &offsets
+            .iter()
+            .map(|offset| offset.abs())
+            .collect::<Vec<_>>(),
+    )?;
+    let tolerance = 1e-9 * magnitude.max(1.0);
+    let side = if offsets
+        .iter()
+        .all(|offset| (*offset - magnitude).abs() <= tolerance)
+    {
+        ThickenSide::Forward
+    } else if offsets
+        .iter()
+        .all(|offset| (*offset + magnitude).abs() <= tolerance)
+    {
+        ThickenSide::Reverse
+    } else {
+        return None;
+    };
+    Some((magnitude, side))
+}
+
+fn generated_surface_face_refs(
+    source_ids: &[u32],
+    rows: &[crate::surface::SurfaceRow],
+    available_features: &BTreeSet<IrFeatureId>,
+) -> Option<Vec<GeneratedFaceRef>> {
+    source_ids
+        .iter()
+        .map(|surface_id| {
+            let row = crate::surface::unique_surface_row(rows, *surface_id)?;
+            let feature = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
+            available_features
+                .contains(&feature)
+                .then_some(GeneratedFaceRef {
+                    feature,
+                    local_id: format!("surface#{surface_id}"),
+                })
+        })
+        .collect()
+}
+
+fn thicken_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> IrFeatureDefinition {
+    let transitions = feature_surface_transitions(
+        feature_id,
+        &scan.features.entity_tables,
+        &scan.surfaces.rows,
+    );
+    let faces = transitions
+        .as_ref()
+        .map_or(FaceSelection::Unresolved, |transitions| {
+            let source_ids = transitions
+                .iter()
+                .map(|(source_id, _)| *source_id)
+                .collect::<Vec<_>>();
+            let available_features = ir
+                .model
+                .features
+                .iter()
+                .map(|feature| feature.id.clone())
+                .collect::<BTreeSet<_>>();
+            let native = format!(
+                "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
+                source_ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let faces = source_ids
+                .iter()
+                .map(|surface_id| FaceId(format!("creo:visibgeom:face#{surface_id}")))
+                .collect::<Vec<_>>();
+            if faces
+                .iter()
+                .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
+            {
+                FaceSelection::Resolved { faces, native }
+            } else if let Some(faces) =
+                generated_surface_face_refs(&source_ids, &scan.surfaces.rows, &available_features)
+            {
+                FaceSelection::Generated { faces, native }
+            } else {
+                FaceSelection::Native(native)
+            }
+        });
+    let offset = transitions.as_deref().and_then(|transitions| {
+        thicken_plane_offset(transitions, &placed_planes(scan), &scan.surfaces.rows)
+    });
+    IrFeatureDefinition::Thicken {
+        faces,
+        thickness: offset.map(|(magnitude, _)| Length(magnitude)),
+        side: offset.map(|(_, side)| side),
+    }
+}
+
 fn schema_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -13205,6 +17022,15 @@ fn schema_feature_definition(
     schema_class: u32,
     kind: &str,
 ) -> IrFeatureDefinition {
+    if numbered_feature_name_has_family(kind, "Fill") {
+        return filled_surface_feature_definition(scan, ir, feature_id);
+    }
+    if numbered_feature_name_has_family(kind, "Thicken") {
+        return thicken_feature_definition(scan, ir, feature_id);
+    }
+    if numbered_feature_name_has_family(kind, "Merge") {
+        return knit_surface_feature_definition(scan, feature_id);
+    }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return definition;
     }
@@ -13230,14 +17056,21 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 911 {
-        let unresolved_form = stepped_hole_form(
+        let stepped_form = stepped_hole_form(
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         );
-        let stepped_dimensions = (unresolved_form == Some(HoleForm::Counterbore))
+        let stepped_dimensions = (stepped_form == Some(HoleForm::Counterbore))
             .then(|| counterbore_dimensions(scan, ir, feature_id))
             .flatten();
+        let stepped_directed = (stepped_form == Some(HoleForm::Counterbore))
+            .then(|| counterbore_directed_placement(scan, ir, feature_id))
+            .flatten();
+        let stepped_axis = (stepped_form == Some(HoleForm::Counterbore)
+            && stepped_directed.is_none())
+        .then(|| counterbore_axis_placement(scan, ir, feature_id))
+        .flatten();
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -13261,13 +17094,27 @@ fn schema_feature_definition(
         };
         let (face, position, direction, diameter, extent, bottom) = solved.map_or_else(
             || {
-                placement.map_or(
-                    (None, None, None, None, None, None),
-                    |(entry_surface_id, direction, extent)| {
+                stepped_directed.map_or_else(
+                    || {
+                        placement.map_or(
+                            (None, None, None, None, None, None),
+                            |(entry_surface_id, direction, extent)| {
+                                (
+                                    Some(face_selection(entry_surface_id)),
+                                    None,
+                                    Some(Vector3::new(direction[0], direction[1], direction[2])),
+                                    None,
+                                    Some(extent),
+                                    None,
+                                )
+                            },
+                        )
+                    },
+                    |(entry_surface_id, position, direction, extent)| {
                         (
                             Some(face_selection(entry_surface_id)),
-                            None,
-                            Some(Vector3::new(direction[0], direction[1], direction[2])),
+                            Some(position),
+                            Some(direction),
                             None,
                             Some(extent),
                             None,
@@ -13299,18 +17146,22 @@ fn schema_feature_definition(
             face,
             position,
             direction,
-            placements: Vec::new(),
-            kind: if simple_form {
-                HoleKind::Simple
-            } else {
-                HoleKind::Unresolved {
-                    form: unresolved_form,
-                    counterbore_diameter: stepped_dimensions
-                        .map(|(_, diameter, _)| Length(diameter)),
-                    counterbore_depth: stepped_dimensions.map(|(_, _, depth)| Length(depth)),
+            placements: stepped_axis.into_iter().collect(),
+            kind: match (simple_form, stepped_form, stepped_dimensions) {
+                (true, None, None) => HoleKind::Simple,
+                (false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
+                    HoleKind::Counterbore {
+                        diameter: Length(diameter),
+                        depth: Length(depth),
+                    }
+                }
+                (_, form, dimensions) => HoleKind::Unresolved {
+                    form,
+                    counterbore_diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
+                    counterbore_depth: dimensions.map(|(_, _, depth)| Length(depth)),
                     countersink_diameter: None,
                     countersink_angle: None,
-                }
+                },
             },
             exit_kind: None,
             diameter: diameter
@@ -13323,12 +17174,11 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 913 {
+        let mut observed_radii = round_observed_radii(scan, feature_id);
+        observed_radii.extend(round_placed_cylinder_radii(scan, ir, feature_id));
         let radius = round_constant_radius(scan, ir, feature_id).map_or_else(
             || RadiusSpec::Unresolved {
-                form: round_direct_radii(scan, feature_id)
-                    .as_deref()
-                    .is_some_and(differing_positive_lengths)
-                    .then_some(RadiusForm::Variable),
+                form: differing_positive_lengths(&observed_radii).then_some(RadiusForm::Variable),
             },
             |radius| RadiusSpec::Constant {
                 radius: Length(radius),
@@ -13348,7 +17198,12 @@ fn schema_feature_definition(
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: feature_edge_selection(scan, ir, feature_id)
                     .unwrap_or(EdgeSelection::Unresolved),
-                spec: ChamferSpec::Unresolved { form: None },
+                spec: chamfer_constant_distance(scan, feature_id).map_or_else(
+                    || ChamferSpec::Unresolved { form: None },
+                    |distance| ChamferSpec::Distance {
+                        distance: Length(distance),
+                    },
+                ),
             }],
             flip_direction: false,
         };
@@ -13365,30 +17220,33 @@ fn schema_feature_definition(
     if schema_class == 917
         && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
-        let sweep = circular_sweep_geometry(scan, feature_id);
-        if let (Some(definition), Some(sweep)) = (
-            unique_owned_feature_definition(&scan.features.definitions, feature_id),
-            sweep,
-        ) {
-            if sweep
-                .section_definition_id
-                .is_none_or(|definition_id| definition_id == definition.id)
-            {
-                let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
-                let profile =
-                    section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition));
-                return circular_sweep_feature_definition(
-                    profile,
-                    &sweep,
-                    section_sweep_boolean_operation(
-                        feature_recipe_effect(scan, feature_id),
-                        kind,
-                        output_kind.is_some(),
-                        preceding_features_establish_body(ir),
-                    ),
-                    (output_kind == Some(BodyKind::Solid)).then_some(true),
+        if let Some(sweep) = circular_sweep_geometry(scan, feature_id) {
+            let definition =
+                unique_owned_feature_definition(&scan.features.definitions, feature_id).filter(
+                    |definition| {
+                        sweep
+                            .section_definition_id
+                            .is_none_or(|definition_id| definition_id == definition.id)
+                    },
                 );
-            }
+            let profile = definition.map_or_else(
+                || ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
+                |definition| {
+                    section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
+                },
+            );
+            let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+            return circular_sweep_feature_definition(
+                profile,
+                &sweep,
+                section_sweep_boolean_operation(
+                    feature_recipe_effect(scan, feature_id),
+                    kind,
+                    output_kind.is_some(),
+                    preceding_features_establish_body(ir),
+                ),
+                sweep_solid(output_kind),
+            );
         }
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
@@ -13399,31 +17257,28 @@ fn schema_feature_definition(
             .iter()
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        let (definition, transform) = match transforms.as_slice() {
-            [transform] => (
-                unique_feature_definition_for_transform(&scan.features.definitions, transform),
-                Some(*transform),
-            ),
-            [] => (
-                unique_owned_feature_definition(&scan.features.definitions, feature_id),
-                None,
-            ),
-            _ => (None, None),
+        let definition = unique_feature_profile_definition(
+            &scan.features.definitions,
+            &scan.features.section_transforms,
+            feature_id,
+        );
+        let profile = unique_feature_profile_ref(scan, ir, feature_id);
+        let transform = match transforms.as_slice() {
+            [transform] => Some(*transform),
+            _ => None,
         };
-        let profile = definition.map(|definition| {
-            section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
-        });
         let axis = definition
             .zip(transform)
-            .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform));
-        let output_kind = evaluated_sweep_body_kind(ir, "revolution", feature_id);
+            .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform))
+            .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent.as_ref()));
+        let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
         return IrFeatureDefinition::Revolve {
             construction: RevolutionConstruction {
                 profile,
                 axis,
                 extent,
                 axis_reference: None,
-                solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
+                solid: sweep_solid(output_kind),
                 face_maker_class: None,
                 fuse_order: None,
                 allow_multi_profile_faces: None,
@@ -13454,35 +17309,55 @@ fn schema_feature_definition(
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
-        let construction = if let ([transform], Some(profile), Some(definition)) =
-            (transforms.as_slice(), profile.clone(), definition)
-        {
-            generated_arc_cylinder_extent(scan, definition, transform)
-                .or_else(|| {
+        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+        let op = section_sweep_boolean_operation(
+            feature_recipe_effect(scan, feature_id),
+            kind,
+            output_kind.is_some(),
+            preceding_features_establish_body(ir),
+        );
+        let unique_transform = match transforms.as_slice() {
+            [] => Some(None),
+            [transform] => Some(Some(*transform)),
+            _ => None,
+        };
+        let extent_and_direction =
+            if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
+                generated_arc_cylinder_extent(scan, definition, transform).or_else(|| {
                     extrusion_extent_and_direction(
                         transform.origin,
                         transform.normal,
                         feature_plane_equations(scan, feature_id),
                     )
                 })
-                .map(|(extent, direction)| {
-                    (
-                        profile,
-                        Some(Vector3::new(direction[0], direction[1], direction[2])),
-                        extent,
-                    )
+            } else {
+                None
+            }
+            .or_else(|| generated_cap_plane_extent(scan, ir, feature_id))
+            .or_else(|| {
+                unique_transform.and_then(|transform| {
+                    generated_bounded_cylinder_extent(scan, ir, feature_id, transform)
                 })
-        } else {
-            None
-        };
-        let (profile, direction, extent) = construction.unwrap_or((
-            profile.unwrap_or_else(|| {
-                ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}"))
-            }),
-            None,
-            unresolved_extrude_extent(),
-        ));
-        let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
+            })
+            .or_else(|| {
+                unique_transform.and_then(|transform| {
+                    generated_nurbs_translation_extent(scan, ir, feature_id, transform)
+                })
+            })
+            .or_else(|| {
+                (transforms.is_empty())
+                    .then_some(())
+                    .and_then(|()| generated_rectilinear_plane_extent(scan, ir, feature_id, op))
+            });
+        let construction = extent_and_direction.map(|(extent, direction)| {
+            (
+                Some(Vector3::new(direction[0], direction[1], direction[2])),
+                extent,
+            )
+        });
+        let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
+        let profile = profile
+            .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
         return IrFeatureDefinition::Extrude {
             profile,
             direction: direction.map_or(
@@ -13491,14 +17366,9 @@ fn schema_feature_definition(
             ),
             start: cadmpeg_ir::features::ExtrudeStart::default(),
             extent,
-            op: section_sweep_boolean_operation(
-                feature_recipe_effect(scan, feature_id),
-                kind,
-                output_kind.is_some(),
-                preceding_features_establish_body(ir),
-            ),
+            op,
             direction_source: None,
-            solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
+            solid: sweep_solid(output_kind),
             face_maker: None,
             inner_wire_taper: None,
             length_along_profile_normal: None,
@@ -13517,31 +17387,140 @@ fn schema_feature_definition(
         {
             return IrFeatureDefinition::DatumPlaneUnresolved;
         }
-        let placed = placed_planes(scan);
-        let planes = scan
+        let plane_ids = scan
             .surfaces
             .rows
             .iter()
             .filter(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
             })
-            .filter_map(|row| placed.get(&row.id))
+            .map(|row| row.id)
+            .collect::<BTreeSet<_>>();
+        let plane_ids = plane_ids.into_iter().collect::<Vec<_>>();
+        if plane_ids.len() > 1 {
+            return IrFeatureDefinition::DatumPlaneUnresolved;
+        }
+        if let [surface_id] = plane_ids.as_slice() {
+            if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
+                return IrFeatureDefinition::DatumPlaneUnresolved;
+            }
+            if let Some(plane) = placed_planes(scan).get(surface_id) {
+                let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+                return IrFeatureDefinition::DatumPlane {
+                    origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                    normal,
+                    u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+                };
+            }
+            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let planes = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == surface_id)
+                .filter_map(|surface| match surface.geometry {
+                    SurfaceGeometry::Plane {
+                        origin,
+                        normal,
+                        u_axis,
+                    } => Some((origin, normal, u_axis)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if let [(origin, normal, u_axis)] = planes.as_slice() {
+                return IrFeatureDefinition::DatumPlane {
+                    origin: *origin,
+                    normal: *normal,
+                    u_axis: *u_axis,
+                };
+            }
+            return IrFeatureDefinition::DatumPlaneUnresolved;
+        }
+        let definitions = scan
+            .features
+            .definitions
+            .iter()
+            .filter(|definition| definition.owner_feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        if let [plane] = planes.as_slice() {
-            let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
-            return IrFeatureDefinition::DatumPlane {
-                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                normal,
-                u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
-            };
+        if let [definition] = definitions.as_slice() {
+            if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+                let raw_normal: [f64; 3] = values[6..9].try_into().expect("three values");
+                let raw_u_axis: [f64; 3] = values[0..3].try_into().expect("three values");
+                if let (Some(normal), Some(u_axis)) =
+                    (normalized(raw_normal), normalized(raw_u_axis))
+                {
+                    if dot(normal, u_axis).abs() <= 1e-12 {
+                        let origin: [f64; 3] = values[9..12].try_into().expect("three values");
+                        return IrFeatureDefinition::DatumPlane {
+                            origin: Point3::new(origin[0], origin[1], origin[2]),
+                            normal: Vector3::new(normal[0], normal[1], normal[2]),
+                            u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                        };
+                    }
+                }
+            }
         }
         return IrFeatureDefinition::DatumPlaneUnresolved;
     }
     if schema_class == 946 {
-        return unresolved_surface_merge_feature_definition();
+        return knit_surface_feature_definition(scan, feature_id);
+    }
+    if schema_class == 979 && kind == "PRT_CSYS_DEF" {
+        let definitions = scan
+            .features
+            .definitions
+            .iter()
+            .filter(|definition| definition.owner_feature_id == Some(feature_id))
+            .collect::<Vec<_>>();
+        if let [definition] = definitions.as_slice() {
+            if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+                let x_axis = normalized(values[0..3].try_into().expect("three values"));
+                let y_axis = normalized(values[3..6].try_into().expect("three values"));
+                let z_axis = normalized(values[6..9].try_into().expect("three values"));
+                let origin: [f64; 3] = values[9..12].try_into().expect("three values");
+                if let (Some(x_axis), Some(y_axis), Some(z_axis)) = (x_axis, y_axis, z_axis) {
+                    let right_handed = dot(cross(x_axis, y_axis), z_axis) >= 1.0 - 1e-12;
+                    let orthogonal = dot(x_axis, y_axis).abs() <= 1e-12
+                        && dot(x_axis, z_axis).abs() <= 1e-12
+                        && dot(y_axis, z_axis).abs() <= 1e-12;
+                    if origin.into_iter().all(f64::is_finite) && orthogonal && right_handed {
+                        return IrFeatureDefinition::DatumCoordinateSystem {
+                            origin: Point3::new(origin[0], origin[1], origin[2]),
+                            x_axis: Vector3::new(x_axis[0], x_axis[1], x_axis[2]),
+                            y_axis: Vector3::new(y_axis[0], y_axis[1], y_axis[2]),
+                            z_axis: Vector3::new(z_axis[0], z_axis[1], z_axis[2]),
+                        };
+                    }
+                }
+            }
+        }
+        return IrFeatureDefinition::DatumCoordinateSystemUnresolved;
     }
     if numbered_feature_name_has_family(kind, "Extrude") {
-        return unresolved_extrude_feature_definition(feature_id);
+        return extrude_feature_definition_with_profile(
+            scan,
+            ir,
+            feature_id,
+            BooleanOp::Unresolved,
+        );
+    }
+    if schema_class == 942
+        && class_942_boundary_surface_entity_graph(
+            feature_id,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        )
+    {
+        return IrFeatureDefinition::BoundarySurfaceUnresolved;
+    }
+    if schema_operation_kind(schema_class).is_none() {
+        if let Some(definition) = named_or_referenced_feature_definition(scan, ir, feature_id, kind)
+        {
+            return definition;
+        }
+        if let Some(definition) = unbounded_feature_plane_definition(scan, ir, feature_id) {
+            return definition;
+        }
     }
     IrFeatureDefinition::Native {
         kind: kind.to_string(),
@@ -13564,6 +17543,51 @@ fn datum_plane_feature_definition(datum: &crate::datum::DatumPlane) -> IrFeature
             datum.normal[2],
         )),
     }
+}
+
+fn unbounded_feature_plane_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<IrFeatureDefinition> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+        })
+        .collect::<Vec<_>>();
+    let [row] = rows.as_slice() else {
+        return None;
+    };
+    (row.boundary_type == 1
+        && row.next_surface == 0
+        && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(*row))
+    .then_some(())?;
+    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id == id)
+        .collect::<Vec<_>>();
+    let [surface] = surfaces.as_slice() else {
+        return None;
+    };
+    let SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = surface.geometry
+    else {
+        return None;
+    };
+    Some(IrFeatureDefinition::DatumPlane {
+        origin,
+        normal,
+        u_axis,
+    })
 }
 
 fn numbered_feature_name_has_family(name: &str, family: &str) -> bool {
@@ -13631,17 +17655,92 @@ fn section_sweep_boolean_operation(
     }
 }
 
+fn class_942_boundary_surface_entity_graph(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    surface_rows: &[crate::surface::SurfaceRow],
+) -> bool {
+    let mut generated_surfaces = surface_rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id);
+    let Some(surface) = generated_surfaces.next() else {
+        return false;
+    };
+    if generated_surfaces.next().is_some() || surface.kind != crate::surface::SurfaceKind::Extrusion
+    {
+        return false;
+    }
+    let owned = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let unique_table = |class_id| {
+        let mut matches = owned
+            .iter()
+            .copied()
+            .filter(|table| table.table_class_id == class_id);
+        let table = matches.next()?;
+        matches.next().is_none().then_some(table)
+    };
+    let Some(generated) = unique_table(29) else {
+        return false;
+    };
+    let Some(topology) = unique_table(94) else {
+        return false;
+    };
+    let Some(owner) = unique_table(67) else {
+        return false;
+    };
+    let Some(output) = unique_table(100) else {
+        return false;
+    };
+    let [owner_entry] = owner.entries.as_slice() else {
+        return false;
+    };
+    matches!(
+        generated.entries.as_slice(),
+        [entry]
+            if entry.class_id == 200
+                && entry.entity_id == surface.id
+                && entry.source_entity_id == Some(0)
+                && generated.surface_ids.as_slice() == [surface.id]
+    ) && topology
+        .entries
+        .iter()
+        .map(|entry| entry.class_id)
+        .eq([221, 222, 220, 220])
+        && owner_entry.class_id == 200
+        && owner_entry.source_entity_id == Some(feature_id)
+        && matches!(
+            output.entries.as_slice(),
+            [entry]
+                if entry.entity_id == owner_entry.entity_id
+                    && entry.class_id == surface.id
+        )
+}
+
 fn named_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
+    if numbered_feature_name_has_family(kind, "Fill") {
+        return Some(filled_surface_feature_definition(scan, ir, feature_id));
+    }
+    if numbered_feature_name_has_family(kind, "Thicken") {
+        return Some(thicken_feature_definition(scan, ir, feature_id));
+    }
+    if numbered_feature_name_has_family(kind, "Merge") {
+        return Some(knit_surface_feature_definition(scan, feature_id));
+    }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
     }
     if matches!(kind, "Protrusion" | "Cut") {
-        return Some(unresolved_extrude_feature_definition_with_op(
+        return Some(extrude_feature_definition_with_profile(
+            scan,
+            ir,
             feature_id,
             section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
@@ -13651,11 +17750,18 @@ fn named_feature_definition(
             ),
         ));
     }
-    if let Some(role) = match kind {
+    let tree_node_role = match kind {
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
         "Cross Section" | "Querschnitt" => Some(FeatureTreeNodeRole::CrossSections),
+        "Body" | "Körper" if feature_reference_name(scan, feature_id).is_none() => {
+            Some(FeatureTreeNodeRole::SolidBodies)
+        }
+        "Surface" if feature_reference_name(scan, feature_id).is_none() => {
+            Some(FeatureTreeNodeRole::SurfaceBodies)
+        }
         _ => None,
-    } {
+    };
+    if let Some(role) = tree_node_role {
         return Some(IrFeatureDefinition::TreeNode {
             role,
             children: Vec::new(),
@@ -13671,22 +17777,20 @@ fn named_feature_definition(
         });
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
-        return Some(unresolved_extrude_feature_definition(feature_id));
+        return Some(extrude_feature_definition_with_profile(
+            scan,
+            ir,
+            feature_id,
+            BooleanOp::Unresolved,
+        ));
     }
-    if kind == "Revolve" {
-        return Some(IrFeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
-                profile: None,
-                axis: None,
-                extent: None,
-                axis_reference: None,
-                solid: None,
-                face_maker_class: None,
-                fuse_order: None,
-                allow_multi_profile_faces: None,
-            },
-            op: BooleanOp::Unresolved,
-        });
+    if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
+        return Some(revolve_feature_definition_with_profile(
+            scan,
+            ir,
+            feature_id,
+            BooleanOp::Unresolved,
+        ));
     }
     let schema_class = match kind {
         "Datum Plane" | "Bezugsebene" => 923,
@@ -13705,26 +17809,76 @@ fn named_feature_definition(
     ))
 }
 
-fn unresolved_extrude_feature_definition(feature_id: u32) -> IrFeatureDefinition {
-    unresolved_extrude_feature_definition_with_op(feature_id, BooleanOp::Unresolved)
+fn named_or_referenced_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    kind: &str,
+) -> Option<IrFeatureDefinition> {
+    named_feature_definition(scan, ir, feature_id, kind).or_else(|| {
+        feature_reference_name(scan, feature_id)
+            .filter(|reference_name| *reference_name != kind)
+            .and_then(|reference_name| {
+                named_feature_definition(scan, ir, feature_id, reference_name)
+            })
+    })
 }
 
-fn unresolved_extrude_feature_definition_with_op(
-    feature_id: u32,
+fn extrude_feature_definition(
+    profile: ProfileRef,
     op: BooleanOp,
+    solid: Option<bool>,
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
-        profile: ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")),
+        profile,
         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: unresolved_extrude_extent(),
         op,
         direction_source: None,
-        solid: None,
+        solid,
         face_maker: None,
         inner_wire_taper: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
+    }
+}
+
+fn extrude_feature_definition_with_profile(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    op: BooleanOp,
+) -> IrFeatureDefinition {
+    let profile = unique_feature_profile_ref(scan, ir, feature_id)
+        .unwrap_or_else(|| ProfileRef::Unresolved(format!("creo:model:feature#{feature_id}")));
+    let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+    let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
+        BooleanOp::NewBody
+    } else {
+        op
+    };
+    extrude_feature_definition(profile, op, sweep_solid(output_kind))
+}
+
+fn revolve_feature_definition_with_profile(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    op: BooleanOp,
+) -> IrFeatureDefinition {
+    IrFeatureDefinition::Revolve {
+        construction: RevolutionConstruction {
+            profile: unique_feature_profile_ref(scan, ir, feature_id),
+            axis: None,
+            extent: None,
+            axis_reference: None,
+            solid: None,
+            face_maker_class: None,
+            fuse_order: None,
+            allow_multi_profile_faces: None,
+        },
+        op,
     }
 }
 
@@ -13750,23 +17904,14 @@ fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition>
         });
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(unresolved_surface_merge_feature_definition());
+        return Some(IrFeatureDefinition::KnitSurface {
+            faces: FaceSelection::Unresolved,
+            merge_entities: Some(true),
+            create_solid: Some(false),
+            gap_tolerance: None,
+        });
     }
-    numbered_feature_name_has_family(kind, "Fill").then_some(IrFeatureDefinition::FilledSurface {
-        boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
-        support_faces: FaceSelection::Unresolved,
-        continuity: None,
-        merge_result: None,
-    })
-}
-
-fn unresolved_surface_merge_feature_definition() -> IrFeatureDefinition {
-    IrFeatureDefinition::KnitSurface {
-        faces: FaceSelection::Unresolved,
-        merge_entities: None,
-        create_solid: None,
-        gap_tolerance: None,
-    }
+    None
 }
 
 fn retain_native_feature_parameters(
@@ -14194,6 +18339,30 @@ fn counterbore_patch_geometries(
     feature_id: u32,
 ) -> Option<Vec<(u32, SurfaceGeometry)>> {
     let (bore_diameter, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
+    let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
+    let existing_geometries = ir
+        .model
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            let id = surface
+                .id
+                .0
+                .strip_prefix("creo:visibgeom:surface#")?
+                .parse::<u32>()
+                .ok()?;
+            Some((id, surface.geometry.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    counterbore_source_patch_geometries(
+        &cylinder_sources,
+        &existing_geometries,
+        bore_diameter,
+        counterbore_diameter,
+    )
+}
+
+fn counterbore_cylinder_sources(scan: &ContainerScan, feature_id: u32) -> Option<Vec<Vec<u32>>> {
     let tables = scan
         .features
         .entity_tables
@@ -14217,11 +18386,22 @@ fn counterbore_patch_geometries(
                 .push(entry.entity_id);
         }
     }
-    let cylinder_sources = cylinders_by_source
-        .values()
-        .filter(|ids| ids.len() == 2)
-        .cloned()
-        .collect::<Vec<_>>();
+    Some(
+        cylinders_by_source
+            .values()
+            .filter(|ids| ids.len() == 2)
+            .cloned()
+            .collect(),
+    )
+}
+
+fn counterbore_axis_placement(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    let (_, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
+    let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
     let existing_geometries = ir
         .model
         .surfaces
@@ -14236,12 +18416,209 @@ fn counterbore_patch_geometries(
             Some((id, surface.geometry.clone()))
         })
         .collect::<BTreeMap<_, _>>();
-    counterbore_source_patch_geometries(
+    counterbore_axis_placement_from_sources(
         &cylinder_sources,
         &existing_geometries,
-        bore_diameter,
         counterbore_diameter,
     )
+}
+
+fn counterbore_axis_placement_from_sources(
+    cylinder_sources: &[Vec<u32>],
+    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    counterbore_diameter: f64,
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    let carriers = cylinder_sources
+        .iter()
+        .filter_map(|ids| {
+            complete_cylinder_source_carrier(ids, existing_geometries, 0.5 * counterbore_diameter)
+        })
+        .collect::<Vec<_>>();
+    let [carrier] = carriers.as_slice() else {
+        return None;
+    };
+    let SurfaceGeometry::Cylinder { origin, axis, .. } = carrier else {
+        unreachable!("cylinder carrier helper returns a cylinder")
+    };
+    Some(cadmpeg_ir::features::HolePlacement::Axis {
+        origin: *origin,
+        axis: *axis,
+    })
+}
+
+fn counterbore_directed_placement(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<(u32, Point3, Vector3, Termination)> {
+    let (bore_diameter, counterbore_diameter, counterbore_depth) =
+        counterbore_dimensions(scan, ir, feature_id)?;
+    let sources = counterbore_cylinder_sources(scan, feature_id)?;
+    let [first, second] = sources.as_slice() else {
+        return None;
+    };
+    let boundary = |ids: &[u32], radius: f64| {
+        counterbore_source_boundary_circle(scan, ir, feature_id, ids, radius)
+    };
+    let bore_radius = 0.5 * bore_diameter;
+    let counterbore_radius = 0.5 * counterbore_diameter;
+    let ((Some(counterbore), None, None, Some(bore)) | (None, Some(bore), Some(counterbore), None)) = (
+        boundary(first, counterbore_radius),
+        boundary(first, bore_radius),
+        boundary(second, counterbore_radius),
+        boundary(second, bore_radius),
+    ) else {
+        return None;
+    };
+    counterbore_directed_span(counterbore, bore, counterbore_depth)
+}
+
+fn counterbore_directed_span(
+    counterbore: (u32, Point3, [f64; 3]),
+    bore: (u32, Point3, [f64; 3]),
+    counterbore_depth: f64,
+) -> Option<(u32, Point3, Vector3, Termination)> {
+    let delta = [
+        bore.1.x - counterbore.1.x,
+        bore.1.y - counterbore.1.y,
+        bore.1.z - counterbore.1.z,
+    ];
+    let length = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let scale = [
+        counterbore.1.x,
+        counterbore.1.y,
+        counterbore.1.z,
+        bore.1.x,
+        bore.1.y,
+        bore.1.z,
+        counterbore_depth,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0, f64::max);
+    (length.is_finite() && length > 1e-12 * scale && counterbore_depth <= length + 1e-9 * scale)
+        .then_some(())?;
+    let direction = delta.map(|value| value / length);
+    [counterbore.2, bore.2]
+        .iter()
+        .all(|axis| {
+            let alignment = direction
+                .iter()
+                .zip(axis)
+                .map(|(left, right)| left * right)
+                .sum::<f64>()
+                .abs();
+            (alignment - 1.0).abs() <= 1e-9
+        })
+        .then_some(())?;
+    Some((
+        counterbore.0,
+        counterbore.1,
+        Vector3::new(direction[0], direction[1], direction[2]),
+        Termination::Blind {
+            length: Length(length),
+        },
+    ))
+}
+
+fn counterbore_source_boundary_circle(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    cylinder_ids: &[u32],
+    radius: f64,
+) -> Option<(u32, Point3, [f64; 3])> {
+    let rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
+    let boundary_for = |cylinder_id| {
+        let boundaries = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+            .into_iter()
+            .filter_map(|edge| {
+                (edge.feature_id == feature_id && edge.type_byte == 0).then_some(())?;
+                let other = match edge.faces {
+                    [left, right] if left == cylinder_id => right,
+                    [left, right] if right == cylinder_id => left,
+                    _ => return None,
+                };
+                let plane = rows.get(&other)?;
+                (plane.kind == crate::surface::SurfaceKind::Plane).then_some(())?;
+                let curve = ir.model.curves.iter().find(|curve| {
+                    curve.id == CurveId(format!("creo:visibgeom:curve#{}", edge.id))
+                })?;
+                let CurveGeometry::Circle {
+                    center,
+                    axis,
+                    radius: candidate,
+                    ..
+                } = &curve.geometry
+                else {
+                    return None;
+                };
+                ((*candidate - radius).abs() <= 1e-9).then_some(())?;
+                let axis = normalized([axis.x, axis.y, axis.z])?;
+                let surface = ir.model.surfaces.iter().find(|surface| {
+                    surface.id == SurfaceId(format!("creo:visibgeom:surface#{other}"))
+                })?;
+                let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry else {
+                    return None;
+                };
+                let normal = normalized([normal.x, normal.y, normal.z])?;
+                let alignment = axis
+                    .iter()
+                    .zip(normal)
+                    .map(|(left, right)| left * right)
+                    .sum::<f64>()
+                    .abs();
+                let distance = [
+                    center.x - origin.x,
+                    center.y - origin.y,
+                    center.z - origin.z,
+                ]
+                .iter()
+                .zip(normal)
+                .map(|(delta, normal)| delta * normal)
+                .sum::<f64>()
+                .abs();
+                let scale = [
+                    center.x, center.y, center.z, origin.x, origin.y, origin.z, radius,
+                ]
+                .into_iter()
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+                ((alignment - 1.0).abs() <= 1e-9 && distance <= 1e-9 * scale).then_some(())?;
+                Some((other, *center, axis))
+            })
+            .collect::<Vec<_>>();
+        let [boundary] = boundaries.as_slice() else {
+            return None;
+        };
+        Some(*boundary)
+    };
+    let boundaries = cylinder_ids
+        .iter()
+        .copied()
+        .map(boundary_for)
+        .collect::<Option<Vec<_>>>()?;
+    let first = *boundaries.first()?;
+    boundaries
+        .iter()
+        .all(|candidate| {
+            candidate.0 == first.0
+                && candidate.1 == first.1
+                && candidate
+                    .2
+                    .iter()
+                    .zip(first.2)
+                    .map(|(left, right)| left * right)
+                    .sum::<f64>()
+                    .abs()
+                    >= 1.0 - 1e-9
+        })
+        .then_some(first)
 }
 
 fn counterbore_source_patch_geometries(
@@ -14254,26 +18631,14 @@ fn counterbore_source_patch_geometries(
         return None;
     };
     let counterbore_radius = 0.5 * counterbore_diameter;
-    let source_carrier = |ids: &[u32]| {
-        let carriers = ids
-            .iter()
-            .filter_map(|id| existing_geometries.get(id))
-            .filter(|geometry| {
-                matches!(geometry, SurfaceGeometry::Cylinder { radius, .. } if (*radius - counterbore_radius).abs() <= 1e-9)
-            })
-            .collect::<Vec<_>>();
-        let first = (*carriers.first()?).clone();
-        carriers
-            .iter()
-            .all(|candidate| **candidate == first)
-            .then_some(first)
+    let (counterbore_source, bore_source, carrier) = match (
+        observed_cylinder_source_carrier(first_source, existing_geometries, counterbore_radius),
+        observed_cylinder_source_carrier(second_source, existing_geometries, counterbore_radius),
+    ) {
+        (Some(carrier), None) => (first_source, second_source, carrier),
+        (None, Some(carrier)) => (second_source, first_source, carrier),
+        _ => return None,
     };
-    let (counterbore_source, bore_source, carrier) =
-        match (source_carrier(first_source), source_carrier(second_source)) {
-            (Some(carrier), None) => (first_source, second_source, carrier),
-            (None, Some(carrier)) => (second_source, first_source, carrier),
-            _ => return None,
-        };
     let SurfaceGeometry::Cylinder {
         origin,
         axis,
@@ -14300,6 +18665,42 @@ fn counterbore_source_patch_geometries(
             )
             .collect(),
     )
+}
+
+fn complete_cylinder_source_carrier(
+    ids: &[u32],
+    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    radius: f64,
+) -> Option<SurfaceGeometry> {
+    let carriers = ids
+        .iter()
+        .map(|id| existing_geometries.get(id))
+        .collect::<Option<Vec<_>>>()?;
+    let first = (*carriers.first()?).clone();
+    (matches!(&first, SurfaceGeometry::Cylinder { radius: candidate, .. }
+        if (*candidate - radius).abs() <= 1e-9)
+        && carriers.iter().all(|candidate| **candidate == first))
+    .then_some(first)
+}
+
+fn observed_cylinder_source_carrier(
+    ids: &[u32],
+    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    radius: f64,
+) -> Option<SurfaceGeometry> {
+    let carriers = ids
+        .iter()
+        .filter_map(|id| existing_geometries.get(id))
+        .filter(|geometry| {
+            matches!(geometry, SurfaceGeometry::Cylinder { radius: candidate, .. }
+                if (*candidate - radius).abs() <= 1e-9)
+        })
+        .collect::<Vec<_>>();
+    let first = (*carriers.first()?).clone();
+    carriers
+        .iter()
+        .all(|candidate| **candidate == first)
+        .then_some(first)
 }
 
 fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
@@ -16092,28 +20493,6 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         &scan.planes.local_systems,
     )
     .into_iter()
-    .filter(|outline| {
-        let axis = outline
-            .normal
-            .iter()
-            .position(|component| component.abs() > 1e-9);
-        scan.planes.envelopes.iter().any(|envelope| {
-            envelope.surface_id == outline.surface_id
-                && envelope.offset == outline.offset
-                && axis.is_some_and(|axis| {
-                    outline
-                        .normal
-                        .iter()
-                        .enumerate()
-                        .all(|(candidate, component)| candidate == axis || component.abs() <= 1e-9)
-                        && envelope
-                            .corner_coordinate_equal
-                            .iter()
-                            .enumerate()
-                            .all(|(candidate, equal)| candidate == axis || *equal != Some(true))
-                })
-        })
-    })
     .fold(
         BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new(),
         |mut outlines, outline| {
@@ -16377,6 +20756,282 @@ fn placed_plane_surfaces(scan: &ContainerScan) -> BTreeMap<u32, (PlaneEquation, 
             agreed_plane_surface(&candidates).map(|surface| (id, surface))
         })
         .collect()
+}
+
+fn topology_bound_plane(points: impl IntoIterator<Item = [f64; 3]>) -> Option<PlaneEquation> {
+    let mut points = points.into_iter().collect::<Vec<_>>();
+    points.sort_by(|left, right| {
+        left.iter()
+            .zip(right)
+            .find_map(|(left, right)| {
+                let ordering = left.total_cmp(right);
+                (ordering != std::cmp::Ordering::Equal).then_some(ordering)
+            })
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    points.dedup_by(|left, right| model_points_agree(*left, *right));
+    let origin = *points.first()?;
+    let scale = points
+        .iter()
+        .flatten()
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let mut normal = None;
+    'candidate: for first in 1..points.len() {
+        for second in first + 1..points.len() {
+            let first_direction = std::array::from_fn(|axis| points[first][axis] - origin[axis]);
+            let second_direction = std::array::from_fn(|axis| points[second][axis] - origin[axis]);
+            let Some(candidate) = normalized(cross(first_direction, second_direction)) else {
+                continue;
+            };
+            normal = Some(candidate);
+            break 'candidate;
+        }
+    }
+    let mut normal = normal?;
+    let leading = normal.iter().find(|coordinate| coordinate.abs() > 1e-12)?;
+    if *leading < 0.0 {
+        normal = normal.map(|coordinate| -coordinate);
+    }
+    points
+        .iter()
+        .all(|point| {
+            let displacement = std::array::from_fn(|axis| point[axis] - origin[axis]);
+            dot(displacement, normal).abs() <= 1e-9 * scale
+        })
+        .then_some(PlaneEquation { origin, normal })
+}
+
+fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
+    let (origin, normal) = match geometry {
+        CurveGeometry::Circle { center, axis, .. }
+        | CurveGeometry::Ellipse { center, axis, .. } => (
+            [center.x, center.y, center.z],
+            normalized([axis.x, axis.y, axis.z])?,
+        ),
+        _ => return None,
+    };
+    Some(PlaneEquation { origin, normal })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BoundaryLine {
+    origin: [f64; 3],
+    direction: [f64; 3],
+}
+
+fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
+    let CurveGeometry::Line { origin, direction } = geometry else {
+        return None;
+    };
+    Some(BoundaryLine {
+        origin: [origin.x, origin.y, origin.z],
+        direction: normalized([direction.x, direction.y, direction.z])?,
+    })
+}
+
+fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation> {
+    let mut candidate = None;
+    'pairs: for first in 0..lines.len() {
+        for second in first + 1..lines.len() {
+            let direction_cross = cross(lines[first].direction, lines[second].direction);
+            let displacement =
+                std::array::from_fn(|axis| lines[second].origin[axis] - lines[first].origin[axis]);
+            let normal = normalized(direction_cross)
+                .or_else(|| normalized(cross(lines[first].direction, displacement)));
+            if let Some(normal) = normal {
+                candidate = Some(PlaneEquation {
+                    origin: lines[first].origin,
+                    normal,
+                });
+                break 'pairs;
+            }
+        }
+    }
+    let candidate = candidate?;
+    let canonical = agreed_plane(&[candidate])?;
+    lines
+        .iter()
+        .all(|line| {
+            point_on_carrier(line.origin, CarrierEquation::Plane(canonical))
+                && dot(line.direction, canonical.normal).abs() <= 1e-9
+        })
+        .then_some(canonical)
+}
+
+fn agreed_topology_bound_plane(
+    points: impl IntoIterator<Item = [f64; 3]>,
+    curve_planes: impl IntoIterator<Item = PlaneEquation>,
+    lines: impl IntoIterator<Item = BoundaryLine>,
+) -> Option<PlaneEquation> {
+    let points = points.into_iter().collect::<Vec<_>>();
+    let lines = lines.into_iter().collect::<Vec<_>>();
+    let candidates = topology_bound_plane(points.iter().copied())
+        .into_iter()
+        .chain(curve_planes)
+        .chain(topology_bound_line_plane(&lines))
+        .collect::<Vec<_>>();
+    let plane = agreed_plane(&candidates)?;
+    let points_agree = points
+        .iter()
+        .all(|point| point_on_carrier(*point, CarrierEquation::Plane(plane)));
+    let lines_agree = lines.iter().all(|line| {
+        point_on_carrier(line.origin, CarrierEquation::Plane(plane))
+            && dot(line.direction, plane.normal).abs() <= 1e-9
+    });
+    (points_agree && lines_agree).then_some(plane)
+}
+
+fn transfer_topology_bound_planes(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let carriers = placed_carriers(scan, ir);
+    let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
+    let vertex_faces =
+        crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
+    let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows);
+    let unique_curve_ids = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+        .into_iter()
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>();
+    let mut transferred = 0;
+    for row in unique_rows
+        .into_iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)
+    {
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        let points = solved_vertices
+            .iter()
+            .filter_map(|(vertex_id, point)| {
+                vertex_faces
+                    .get(vertex_id)
+                    .is_some_and(|faces| faces.contains(&row.id))
+                    .then_some(*point)
+            })
+            .collect::<Vec<_>>();
+        let boundary_curves = scan
+            .topology
+            .loops
+            .iter()
+            .filter(|lp| lp.face_id == row.id)
+            .flat_map(|lp| lp.half_edges.iter())
+            .filter_map(|half_edge| {
+                unique_curve_ids
+                    .contains(&half_edge.curve_id)
+                    .then_some(())?;
+                let id = CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
+                let curve = ir.model.curves.iter().find(|curve| curve.id == id)?;
+                Some(&curve.geometry)
+            })
+            .collect::<Vec<_>>();
+        let curve_planes = boundary_curves
+            .iter()
+            .filter_map(|geometry| analytic_curve_plane(geometry));
+        let lines = boundary_curves
+            .iter()
+            .filter_map(|geometry| analytic_boundary_line(geometry));
+        let Some(plane) = agreed_topology_bound_plane(points, curve_planes, lines) else {
+            continue;
+        };
+        let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "plane_topology_boundary",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                normal,
+                u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
+fn retain_unresolved_visible_carriers(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "unresolved_visible_surface_carrier",
+            Exactness::Unknown,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Unknown {
+                record: geometry_section_record(scan, row.offset),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
+    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "unresolved_visible_curve_carrier",
+            Exactness::Unknown,
+        );
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Unknown {
+                record: geometry_section_record(scan, row.offset),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
 }
 
 fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEquation> {
@@ -17058,23 +21713,244 @@ fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f6
         .collect()
 }
 
-fn linear_pcurve_is_straight(surface: &SurfaceGeometry, endpoints: [[f64; 2]; 2]) -> bool {
+fn linear_pcurve_carrier(
+    surface: &SurfaceGeometry,
+    endpoints: [[f64; 2]; 2],
+) -> Option<CurveGeometry> {
+    let scaled_vector = |vector: Vector3, scale: f64| {
+        Vector3::new(vector.x * scale, vector.y * scale, vector.z * scale)
+    };
+    let offset_point = |point: Point3, vector: Vector3, scale: f64| {
+        Point3::new(
+            point.x + vector.x * scale,
+            point.y + vector.y * scale,
+            point.z + vector.z * scale,
+        )
+    };
+    let [start, end] = endpoints;
+    if start == end {
+        return None;
+    }
     match surface {
-        SurfaceGeometry::Plane { .. } => true,
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-            endpoints[0][0] == endpoints[1][0]
+        SurfaceGeometry::Plane { .. } => {
+            let [first, second] = endpoints.map(|uv| {
+                cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
+                    .map(|point| [point.x, point.y, point.z])
+            });
+            let [first, second] = [first?, second?];
+            let direction = normalized(std::array::from_fn(|axis| second[axis] - first[axis]))?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(first[0], first[1], first[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
         }
-        _ => false,
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } if start[0] == end[0] => {
+            let transverse = cross(
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+            );
+            let reference = [ref_direction.x, ref_direction.y, ref_direction.z];
+            let radial: [f64; 3] = std::array::from_fn(|coordinate| {
+                start[0].cos() * reference[coordinate] + start[0].sin() * transverse[coordinate]
+            });
+            let point = [
+                origin.x + radius * radial[0] + start[1] * axis.x,
+                origin.y + radius * radial[1] + start[1] * axis.y,
+                origin.z + radius * radial[2] + start[1] * axis.z,
+            ];
+            let direction = normalized([axis.x, axis.y, axis.z])?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(point[0], point[1], point[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } if start[1] == end[1] && radius.is_finite() && *radius > 0.0 => {
+            Some(CurveGeometry::Circle {
+                center: offset_point(*origin, *axis, start[1]),
+                axis: *axis,
+                ref_direction: *ref_direction,
+                radius: *radius,
+            })
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            ratio,
+            half_angle,
+            ..
+        } if start[0] == end[0] => {
+            let [first, second] = endpoints.map(|uv| {
+                cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
+                    .map(|point| [point.x, point.y, point.z])
+            });
+            let [first, second] = [first?, second?];
+            let direction = normalized(std::array::from_fn(|axis| second[axis] - first[axis]))?;
+            (ratio.is_finite() && *ratio > 0.0 && half_angle.is_finite()).then_some(())?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(first[0], first[1], first[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } if start[1] == end[1] && ratio.is_finite() && *ratio > 0.0 => {
+            let local_radius = radius + start[1] * half_angle.tan();
+            let first_radius = local_radius.abs();
+            let second_radius = (local_radius * ratio).abs();
+            if !first_radius.is_finite() || !second_radius.is_finite() {
+                return None;
+            }
+            let center = offset_point(*origin, *axis, start[1]);
+            if (first_radius - second_radius).abs()
+                <= 1e-12 * first_radius.max(second_radius).max(1.0)
+            {
+                (first_radius > 0.0).then_some(CurveGeometry::Circle {
+                    center,
+                    axis: *axis,
+                    ref_direction: scaled_vector(*ref_direction, local_radius.signum()),
+                    radius: first_radius,
+                })
+            } else {
+                let transverse = cross(
+                    [axis.x, axis.y, axis.z],
+                    [ref_direction.x, ref_direction.y, ref_direction.z],
+                );
+                let transverse = Vector3::new(transverse[0], transverse[1], transverse[2]);
+                let (major_direction, major_radius, minor_radius) = if first_radius > second_radius
+                {
+                    (
+                        scaled_vector(*ref_direction, local_radius.signum()),
+                        first_radius,
+                        second_radius,
+                    )
+                } else {
+                    (
+                        scaled_vector(transverse, (local_radius * ratio).signum()),
+                        second_radius,
+                        first_radius,
+                    )
+                };
+                (minor_radius > 0.0).then_some(CurveGeometry::Ellipse {
+                    center,
+                    axis: *axis,
+                    major_direction,
+                    major_radius,
+                    minor_radius,
+                })
+            }
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } if start[1] == end[1] && radius.is_finite() && *radius > 0.0 => {
+            let ring = radius * start[1].cos();
+            (ring.abs() > 0.0).then_some(CurveGeometry::Circle {
+                center: offset_point(*center, *axis, radius * start[1].sin()),
+                axis: *axis,
+                ref_direction: scaled_vector(*ref_direction, ring.signum()),
+                radius: ring.abs(),
+            })
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } if start[0] == end[0] && radius.is_finite() && *radius > 0.0 => {
+            let transverse = cross(
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+            );
+            let radial = Vector3::new(
+                start[0].cos() * ref_direction.x + start[0].sin() * transverse[0],
+                start[0].cos() * ref_direction.y + start[0].sin() * transverse[1],
+                start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
+            );
+            let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
+            Some(CurveGeometry::Circle {
+                center: *center,
+                axis: Vector3::new(normal[0], normal[1], normal[2]),
+                ref_direction: radial,
+                radius: *radius,
+            })
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if start[1] == end[1]
+            && major_radius.is_finite()
+            && minor_radius.is_finite()
+            && *minor_radius > 0.0 =>
+        {
+            let ring = major_radius + minor_radius * start[1].cos();
+            (ring.abs() > 0.0).then_some(CurveGeometry::Circle {
+                center: offset_point(*center, *axis, minor_radius * start[1].sin()),
+                axis: *axis,
+                ref_direction: scaled_vector(*ref_direction, ring.signum()),
+                radius: ring.abs(),
+            })
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if start[0] == end[0]
+            && major_radius.is_finite()
+            && minor_radius.is_finite()
+            && *minor_radius > 0.0 =>
+        {
+            let transverse = cross(
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+            );
+            let radial = Vector3::new(
+                start[0].cos() * ref_direction.x + start[0].sin() * transverse[0],
+                start[0].cos() * ref_direction.y + start[0].sin() * transverse[1],
+                start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
+            );
+            let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
+            Some(CurveGeometry::Circle {
+                center: offset_point(*center, radial, *major_radius),
+                axis: Vector3::new(normal[0], normal[1], normal[2]),
+                ref_direction: radial,
+                radius: *minor_radius,
+            })
+        }
+        _ => None,
     }
 }
 
-fn transfer_straight_pcurve_lines(
+fn transfer_analytic_pcurve_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> BTreeSet<CurveId> {
     let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
-    let mut offsets = BTreeMap::<u32, Vec<usize>>::new();
+    let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
+    let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
     for (curve_id, faces, endpoint_sets, offset) in scan
         .curves
         .pcurves
@@ -17102,34 +21978,48 @@ fn transfer_straight_pcurve_lines(
             }) else {
                 continue;
             };
-            if !linear_pcurve_is_straight(&surface.geometry, endpoints) {
-                continue;
+            if endpoints.iter().all(|uv| {
+                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]).is_some()
+            }) {
+                *evaluable_path_counts.entry(curve_id).or_default() += 1;
             }
-            let [Some(first), Some(second)] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1])
-                    .map(|point| [point.x, point.y, point.z])
-            }) else {
-                continue;
-            };
-            if !model_points_agree(first, second) {
-                offsets.entry(curve_id).or_default().push(offset);
+            if let Some(carrier) = linear_pcurve_carrier(&surface.geometry, endpoints) {
+                candidates
+                    .entry(curve_id)
+                    .or_default()
+                    .push((carrier, offset));
             }
         }
     }
     let mut transferred = BTreeSet::new();
-    for (curve_id, offsets) in offsets {
+    for (curve_id, candidates) in candidates {
+        if evaluable_path_counts.get(&curve_id).copied() != Some(candidates.len()) {
+            continue;
+        }
         let Some(points) = reconciled_endpoints.get(&curve_id).copied() else {
             continue;
         };
-        let delta = std::array::from_fn(|axis| points[1][axis] - points[0][axis]);
-        let Some(direction) = normalized(delta) else {
+        let Some((geometry, offset)) = candidates.first() else {
             continue;
         };
-        let geometry = CurveGeometry::Line {
-            origin: Point3::new(points[0][0], points[0][1], points[0][2]),
-            direction: Vector3::new(direction[0], direction[1], direction[2]),
-        };
-        let offset = offsets.into_iter().min().unwrap_or(0);
+        if !curve_contains_points(geometry, points)
+            || !candidates.iter().all(|(candidate, _)| {
+                curve_contains_points(candidate, points)
+                    && [0.0, 0.25, 0.5, 0.75, 1.0].into_iter().all(|parameter| {
+                        let point = cadmpeg_ir::eval::curve_point(candidate, parameter);
+                        point.is_some_and(|point| {
+                            curve_contains_points(geometry, [[point.x, point.y, point.z]; 2])
+                        })
+                    })
+            })
+        {
+            continue;
+        }
+        let offset = candidates
+            .iter()
+            .map(|(_, offset)| *offset)
+            .min()
+            .unwrap_or(*offset);
         let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
@@ -17139,12 +22029,12 @@ fn transfer_straight_pcurve_lines(
             &id,
             "VisibGeom",
             offset as u64,
-            "straight_pcurve_line",
+            "analytic_pcurve_carrier",
             Exactness::Derived,
         );
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry,
+            geometry: geometry.clone(),
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
                 object_id: format!("VisibGeom:{curve_id}"),
@@ -18609,10 +23499,16 @@ fn transfer_native_brep(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     derived_intersection_curves: &BTreeSet<CurveId>,
-    straight_pcurve_lines: &BTreeSet<CurveId>,
+    analytic_pcurve_carriers: &BTreeSet<CurveId>,
 ) -> (usize, usize) {
-    let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
+    let planes = carriers
+        .iter()
+        .filter_map(|(id, carrier)| match carrier {
+            CarrierEquation::Plane(plane) => Some((*id, *plane)),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
     let face_orientations = native_face_orientations(scan, ir);
     let half_edges = scan
         .topology
@@ -18793,7 +23689,7 @@ fn transfer_native_brep(
                     .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
             });
         let derived_line = (derived_intersection_curves.contains(&curve)
-            || straight_pcurve_lines.contains(&curve))
+            || analytic_pcurve_carriers.contains(&curve))
             && ir.model.curves.iter().any(|candidate| {
                 candidate.id == curve && matches!(candidate.geometry, CurveGeometry::Line { .. })
             });
@@ -21849,6 +26745,655 @@ fn resolve_curve_candidates(
     Some(candidate.clone())
 }
 
+fn fc14_held_coordinate(
+    coordinates: &[crate::curve::FcCurveCoordinates],
+    curve_id: u32,
+) -> Option<f64> {
+    let mut records = coordinates
+        .iter()
+        .filter(|record| record.curve_id == curve_id && record.subtype == 0x14);
+    let record = records.next()?;
+    records.next().is_none().then_some(())?;
+    let tokens = record
+        .tokens
+        .iter()
+        .filter(|token| token.raw.first() == Some(&0x2d))
+        .collect::<Vec<_>>();
+    (tokens.len() >= 4).then_some(())?;
+    let first = tokens[0];
+    (first.value_mm.is_finite()
+        && tokens
+            .iter()
+            .all(|token| token.raw == first.raw && token.value_mm == first.value_mm))
+    .then_some(first.value_mm)
+}
+
+fn select_fc14_axis_coordinate_candidate(
+    candidates: Vec<(CurveGeometry, &'static str)>,
+    held_coordinate: f64,
+) -> Option<(CurveGeometry, &'static str)> {
+    let matching =
+        candidates
+            .into_iter()
+            .filter(|(geometry, tag)| {
+                if *tag != "coaxial_cone_cylinder_secant_circle" {
+                    return false;
+                }
+                let CurveGeometry::Circle { center, axis, .. } = geometry else {
+                    return false;
+                };
+                let axis = [axis.x, axis.y, axis.z];
+                let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
+                    ((value.abs() - 1.0).abs() <= 1e-10).then_some(index)
+                }) else {
+                    return false;
+                };
+                if axis
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| index != axis_index && value.abs() > 1e-10)
+                {
+                    return false;
+                }
+                let center = [center.x, center.y, center.z];
+                let scale = center[axis_index].abs().max(held_coordinate.abs()).max(1.0);
+                (center[axis_index] - held_coordinate).abs() <= 1e-9 * scale
+            })
+            .collect::<Vec<_>>();
+    let [candidate] = matching.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+#[derive(Clone)]
+struct NurbsSurfaceBoundary {
+    curve: NurbsCurve,
+    control_indices: Vec<usize>,
+    transverse_periodic: bool,
+}
+
+fn nurbs_surface_boundaries(nurbs: &NurbsSurface) -> Option<[NurbsSurfaceBoundary; 4]> {
+    let u_count = usize::try_from(nurbs.u_count).ok()?;
+    let v_count = usize::try_from(nurbs.v_count).ok()?;
+    let pole_count = u_count.checked_mul(v_count)?;
+    (u_count >= 2
+        && v_count >= 2
+        && nurbs.control_points.len() == pole_count
+        && nurbs
+            .control_points
+            .iter()
+            .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        && nurbs.weights.as_ref().is_none_or(|weights| {
+            weights.len() == pole_count
+                && weights
+                    .iter()
+                    .all(|weight| weight.is_finite() && *weight > 0.0)
+        }))
+    .then_some(())?;
+    let boundaries = [
+        (false, (0..v_count).collect::<Vec<_>>()),
+        (
+            false,
+            ((u_count - 1) * v_count..u_count * v_count).collect(),
+        ),
+        (true, (0..u_count).map(|u| u * v_count).collect()),
+        (
+            true,
+            (0..u_count).map(|u| u * v_count + v_count - 1).collect(),
+        ),
+    ];
+    Some(boundaries.map(|(along_u, control_indices)| {
+        let (degree, knots, periodic, transverse_periodic) = if along_u {
+            (
+                nurbs.u_degree,
+                nurbs.u_knots.clone(),
+                nurbs.u_periodic,
+                nurbs.v_periodic,
+            )
+        } else {
+            (
+                nurbs.v_degree,
+                nurbs.v_knots.clone(),
+                nurbs.v_periodic,
+                nurbs.u_periodic,
+            )
+        };
+        NurbsSurfaceBoundary {
+            curve: NurbsCurve {
+                degree,
+                knots,
+                control_points: control_indices
+                    .iter()
+                    .map(|index| nurbs.control_points[*index])
+                    .collect(),
+                weights: nurbs.weights.as_ref().map(|weights| {
+                    control_indices
+                        .iter()
+                        .map(|index| weights[*index])
+                        .collect()
+                }),
+                periodic,
+            },
+            control_indices,
+            transverse_periodic,
+        }
+    }))
+}
+
+fn point_tolerance<'a>(points: impl Iterator<Item = &'a Point3>) -> Option<f64> {
+    let points = points.collect::<Vec<_>>();
+    let anchor = **points.first()?;
+    let extent = points
+        .iter()
+        .flat_map(|point| [point.x - anchor.x, point.y - anchor.y, point.z - anchor.z])
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let coordinate_scale = points
+        .iter()
+        .flat_map(|point| [point.x, point.y, point.z])
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    Some((1e-9 * extent).max(32.0 * f64::EPSILON * coordinate_scale))
+}
+
+fn nurbs_plane_boundary_curve(nurbs: &NurbsSurface, plane: PlaneEquation) -> Option<CurveGeometry> {
+    let boundaries = nurbs_surface_boundaries(nurbs)?;
+    let normal = normalized(plane.normal)?;
+    let tolerance = point_tolerance(nurbs.control_points.iter())?
+        .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
+    let signed_distances = nurbs
+        .control_points
+        .iter()
+        .map(|point| {
+            dot(
+                normal,
+                [
+                    point.x - plane.origin[0],
+                    point.y - plane.origin[1],
+                    point.z - plane.origin[2],
+                ],
+            )
+        })
+        .collect::<Vec<_>>();
+    signed_distances
+        .iter()
+        .all(|distance| distance.is_finite())
+        .then_some(())?;
+    let candidates = boundaries
+        .into_iter()
+        .filter(|boundary| {
+            !boundary.transverse_periodic
+                && boundary
+                    .control_indices
+                    .iter()
+                    .all(|index| signed_distances[*index].abs() <= tolerance)
+                && {
+                    let outside = signed_distances
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| !boundary.control_indices.contains(index))
+                        .map(|(_, distance)| *distance)
+                        .collect::<Vec<_>>();
+                    !outside.is_empty()
+                        && (outside.iter().all(|distance| *distance > tolerance)
+                            || outside.iter().all(|distance| *distance < -tolerance))
+                }
+        })
+        .collect::<Vec<_>>();
+    let [boundary] = candidates.as_slice() else {
+        return None;
+    };
+    Some(CurveGeometry::Nurbs(boundary.curve.clone()))
+}
+
+fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
+    (left - right).abs() <= tolerance
+}
+
+fn normalized_knot_vector(knots: &[f64]) -> Option<Vec<f64>> {
+    let (&minimum, &maximum) = knots.first().zip(knots.last())?;
+    let span = maximum - minimum;
+    (span.is_finite() && span > 0.0)
+        .then(|| knots.iter().map(|knot| (knot - minimum) / span).collect())
+}
+
+fn nurbs_curves_match(
+    left: &NurbsCurve,
+    right: &NurbsCurve,
+    reversed: bool,
+    point_tolerance: f64,
+) -> bool {
+    if left.degree != right.degree
+        || left.periodic != right.periodic
+        || left.control_points.len() != right.control_points.len()
+        || left.knots.len() != right.knots.len()
+        || left.weights.is_some() != right.weights.is_some()
+    {
+        return false;
+    }
+    let right_points = if reversed {
+        right.control_points.iter().rev().collect::<Vec<_>>()
+    } else {
+        right.control_points.iter().collect()
+    };
+    if !left
+        .control_points
+        .iter()
+        .zip(right_points)
+        .all(|(left, right)| {
+            dot(
+                [left.x - right.x, left.y - right.y, left.z - right.z],
+                [left.x - right.x, left.y - right.y, left.z - right.z],
+            )
+            .sqrt()
+                <= point_tolerance
+        })
+    {
+        return false;
+    }
+    let Some(left_knots) = normalized_knot_vector(&left.knots) else {
+        return false;
+    };
+    let Some(right_knots) = normalized_knot_vector(&right.knots) else {
+        return false;
+    };
+    let knots_match = if reversed {
+        left_knots
+            .iter()
+            .zip(right_knots.iter().rev())
+            .all(|(left, right)| scalar_near(*left, 1.0 - right, 1e-12))
+    } else {
+        left_knots
+            .iter()
+            .zip(&right_knots)
+            .all(|(left, right)| scalar_near(*left, *right, 1e-12))
+    };
+    if !knots_match {
+        return false;
+    }
+    match (&left.weights, &right.weights) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            let right = if reversed {
+                right.iter().rev().collect::<Vec<_>>()
+            } else {
+                right.iter().collect()
+            };
+            let Some(scale) = left
+                .first()
+                .zip(right.first())
+                .map(|(left, right)| left / **right)
+            else {
+                return false;
+            };
+            scale.is_finite()
+                && scale > 0.0
+                && left.iter().zip(right).all(|(left, right)| {
+                    scalar_near(
+                        *left,
+                        scale * right,
+                        1e-12 * left.abs().max((scale * right).abs()).max(1.0),
+                    )
+                })
+        }
+        _ => false,
+    }
+}
+
+fn generator_separates_control_nets(
+    first: &NurbsSurface,
+    first_boundary: &NurbsSurfaceBoundary,
+    second: &NurbsSurface,
+    second_boundary: &NurbsSurfaceBoundary,
+) -> bool {
+    let [origin, end] = first_boundary.curve.control_points.as_slice() else {
+        return false;
+    };
+    let generator = [end.x - origin.x, end.y - origin.y, end.z - origin.z];
+    let Some(generator) = normalized(generator) else {
+        return false;
+    };
+    let seed = if generator[0].abs() < 0.8 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let Some(first_axis) = normalized(cross(generator, seed)) else {
+        return false;
+    };
+    let second_axis = cross(generator, first_axis);
+    let first_outside = first
+        .control_points
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !first_boundary.control_indices.contains(index))
+        .map(|(_, point)| point)
+        .collect::<Vec<_>>();
+    let second_outside = second
+        .control_points
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !second_boundary.control_indices.contains(index))
+        .map(|(_, point)| point)
+        .collect::<Vec<_>>();
+    if first_outside.is_empty() || second_outside.is_empty() {
+        return false;
+    }
+    let offset = |point: &Point3| [point.x - origin.x, point.y - origin.y, point.z - origin.z];
+    let mut boundary_angles = first_outside
+        .iter()
+        .chain(&second_outside)
+        .flat_map(|point| {
+            let offset = offset(point);
+            let angle = dot(second_axis, offset).atan2(dot(first_axis, offset));
+            [
+                (angle + std::f64::consts::FRAC_PI_2).rem_euclid(std::f64::consts::TAU),
+                (angle - std::f64::consts::FRAC_PI_2).rem_euclid(std::f64::consts::TAU),
+            ]
+        })
+        .collect::<Vec<_>>();
+    boundary_angles.sort_by(f64::total_cmp);
+    let tolerance = point_tolerance(first.control_points.iter().chain(&second.control_points))
+        .unwrap_or(f64::INFINITY);
+    (0..boundary_angles.len()).any(|index| {
+        let start = boundary_angles[index];
+        let end = if index + 1 == boundary_angles.len() {
+            boundary_angles[0] + std::f64::consts::TAU
+        } else {
+            boundary_angles[index + 1]
+        };
+        let angle = f64::midpoint(start, end);
+        let normal = [
+            angle.cos() * first_axis[0] + angle.sin() * second_axis[0],
+            angle.cos() * first_axis[1] + angle.sin() * second_axis[1],
+            angle.cos() * first_axis[2] + angle.sin() * second_axis[2],
+        ];
+        let first_distances = first_outside
+            .iter()
+            .map(|point| dot(normal, offset(point)))
+            .collect::<Vec<_>>();
+        let second_distances = second_outside
+            .iter()
+            .map(|point| dot(normal, offset(point)))
+            .collect::<Vec<_>>();
+        (first_distances.iter().all(|distance| *distance > tolerance)
+            && second_distances
+                .iter()
+                .all(|distance| *distance < -tolerance))
+            || (first_distances
+                .iter()
+                .all(|distance| *distance < -tolerance)
+                && second_distances
+                    .iter()
+                    .all(|distance| *distance > tolerance))
+    })
+}
+
+fn shared_extrusion_generator_curve(
+    first: &NurbsSurface,
+    second: &NurbsSurface,
+) -> Option<CurveGeometry> {
+    let first_boundaries = nurbs_surface_boundaries(first)?;
+    let second_boundaries = nurbs_surface_boundaries(second)?;
+    let tolerance = point_tolerance(first.control_points.iter().chain(&second.control_points))?;
+    let candidates = first_boundaries
+        .iter()
+        .flat_map(|first_boundary| {
+            second_boundaries
+                .iter()
+                .filter(|second_boundary| {
+                    first_boundary.curve.degree == 1
+                        && !first_boundary.curve.periodic
+                        && !first_boundary.transverse_periodic
+                        && !second_boundary.transverse_periodic
+                        && first_boundary.curve.control_points.len() == 2
+                        && [false, true].into_iter().any(|reversed| {
+                            nurbs_curves_match(
+                                &first_boundary.curve,
+                                &second_boundary.curve,
+                                reversed,
+                                tolerance,
+                            )
+                        })
+                        && generator_separates_control_nets(
+                            first,
+                            first_boundary,
+                            second,
+                            second_boundary,
+                        )
+                })
+                .map(|_| first_boundary.curve.clone())
+        })
+        .collect::<Vec<_>>();
+    let [curve] = candidates.as_slice() else {
+        return None;
+    };
+    Some(CurveGeometry::Nurbs(curve.clone()))
+}
+
+fn cubic_unit_interval_roots(
+    cubic: f64,
+    quadratic: f64,
+    linear: f64,
+    constant: f64,
+    value_tolerance: f64,
+) -> Vec<f64> {
+    let scale = cubic
+        .abs()
+        .max(quadratic.abs())
+        .max(linear.abs())
+        .max(constant.abs());
+    if scale <= value_tolerance {
+        return Vec::new();
+    }
+    let parameter_tolerance = 1e-11;
+    let evaluate = |parameter: f64| {
+        ((cubic * parameter + quadratic) * parameter + linear) * parameter + constant
+    };
+    if cubic.abs() <= 1e-14 * scale {
+        let mut roots = quadratic_real_roots(quadratic, linear, constant)
+            .into_iter()
+            .filter(|root| {
+                *root >= -parameter_tolerance
+                    && *root <= 1.0 + parameter_tolerance
+                    && evaluate(*root).abs() <= value_tolerance
+            })
+            .map(|root| root.clamp(0.0, 1.0))
+            .collect::<Vec<_>>();
+        roots.sort_by(f64::total_cmp);
+        roots.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
+        return roots;
+    }
+    let mut stations = vec![0.0, 1.0];
+    stations.extend(
+        quadratic_real_roots(3.0 * cubic, 2.0 * quadratic, linear)
+            .into_iter()
+            .filter(|root| *root > parameter_tolerance && *root < 1.0 - parameter_tolerance),
+    );
+    stations.sort_by(f64::total_cmp);
+    stations.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
+    let mut roots = stations
+        .iter()
+        .copied()
+        .filter(|station| evaluate(*station).abs() <= value_tolerance)
+        .collect::<Vec<_>>();
+    for interval in stations.windows(2) {
+        let [mut left, mut right] = *interval else {
+            continue;
+        };
+        let mut left_value = evaluate(left);
+        let right_value = evaluate(right);
+        if left_value.abs() <= value_tolerance
+            || right_value.abs() <= value_tolerance
+            || left_value.is_sign_positive() == right_value.is_sign_positive()
+        {
+            continue;
+        }
+        for _ in 0..64 {
+            let middle = f64::midpoint(left, right);
+            let middle_value = evaluate(middle);
+            if middle_value == 0.0 {
+                left = middle;
+                right = middle;
+                break;
+            }
+            if left_value.is_sign_positive() == middle_value.is_sign_positive() {
+                left = middle;
+                left_value = middle_value;
+            } else {
+                right = middle;
+            }
+        }
+        roots.push(f64::midpoint(left, right));
+    }
+    roots.sort_by(f64::total_cmp);
+    roots.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
+    roots
+}
+
+fn cubic_extrusion_plane_generator_curve(
+    nurbs: &NurbsSurface,
+    plane: PlaneEquation,
+) -> Option<CurveGeometry> {
+    let boundaries = nurbs_surface_boundaries(nurbs)?;
+    (nurbs.u_degree == 3
+        && nurbs.v_degree == 1
+        && nurbs.u_count == 4
+        && nurbs.v_count == 2
+        && !nurbs.u_periodic
+        && !nurbs.v_periodic)
+        .then_some(())?;
+    let u_knots = normalized_knot_vector(&nurbs.u_knots)?;
+    let v_knots = normalized_knot_vector(&nurbs.v_knots)?;
+    (u_knots.len() == 8
+        && u_knots
+            .iter()
+            .zip([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+            .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12))
+        && v_knots.len() == 4
+        && v_knots
+            .iter()
+            .zip([0.0, 0.0, 1.0, 1.0])
+            .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12)))
+    .then_some(())?;
+    let weights = nurbs
+        .weights
+        .clone()
+        .unwrap_or_else(|| vec![1.0; nurbs.control_points.len()]);
+    (0..4)
+        .all(|u| scalar_near(weights[2 * u], weights[2 * u + 1], 1e-12 * weights[2 * u]))
+        .then_some(())?;
+    let generator = [
+        nurbs.control_points[1].x - nurbs.control_points[0].x,
+        nurbs.control_points[1].y - nurbs.control_points[0].y,
+        nurbs.control_points[1].z - nurbs.control_points[0].z,
+    ];
+    normalized(generator)?;
+    let normal = normalized(plane.normal)?;
+    let tolerance = point_tolerance(nurbs.control_points.iter())?
+        .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
+    let structural_tolerance = 64.0
+        * f64::EPSILON
+        * nurbs
+            .control_points
+            .iter()
+            .flat_map(|point| [point.x, point.y, point.z])
+            .chain(plane.origin)
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+    (generator.iter().copied().all(f64::is_finite)
+        && dot(normal, generator).abs() <= structural_tolerance
+        && (0..4).all(|u| {
+            let current = [
+                nurbs.control_points[2 * u + 1].x - nurbs.control_points[2 * u].x,
+                nurbs.control_points[2 * u + 1].y - nurbs.control_points[2 * u].y,
+                nurbs.control_points[2 * u + 1].z - nurbs.control_points[2 * u].z,
+            ];
+            dot(
+                [
+                    current[0] - generator[0],
+                    current[1] - generator[1],
+                    current[2] - generator[2],
+                ],
+                [
+                    current[0] - generator[0],
+                    current[1] - generator[1],
+                    current[2] - generator[2],
+                ],
+            )
+            .sqrt()
+                <= structural_tolerance
+        }))
+    .then_some(())?;
+    let signed = (0..4)
+        .map(|u| {
+            let point = nurbs.control_points[2 * u];
+            weights[2 * u]
+                * dot(
+                    normal,
+                    [
+                        point.x - plane.origin[0],
+                        point.y - plane.origin[1],
+                        point.z - plane.origin[2],
+                    ],
+                )
+        })
+        .collect::<Vec<_>>();
+    let cubic = -signed[0] + 3.0 * signed[1] - 3.0 * signed[2] + signed[3];
+    let quadratic = 3.0 * signed[0] - 6.0 * signed[1] + 3.0 * signed[2];
+    let linear = -3.0 * signed[0] + 3.0 * signed[1];
+    let weight_scale = weights.iter().copied().fold(1.0, f64::max);
+    let roots = cubic_unit_interval_roots(
+        cubic,
+        quadratic,
+        linear,
+        signed[0],
+        tolerance * weight_scale,
+    );
+    let [parameter] = roots.as_slice() else {
+        return None;
+    };
+    let parameter = *parameter;
+    let bernstein = [
+        (1.0 - parameter).powi(3),
+        3.0 * parameter * (1.0 - parameter).powi(2),
+        3.0 * parameter.powi(2) * (1.0 - parameter),
+        parameter.powi(3),
+    ];
+    let evaluated = |v| {
+        let weight = (0..4)
+            .map(|u| bernstein[u] * weights[2 * u + v])
+            .sum::<f64>();
+        let coordinate = |coordinate: fn(&Point3) -> f64| {
+            (0..4)
+                .map(|u| {
+                    bernstein[u] * weights[2 * u + v] * coordinate(&nurbs.control_points[2 * u + v])
+                })
+                .sum::<f64>()
+                / weight
+        };
+        (
+            Point3::new(
+                coordinate(|point| point.x),
+                coordinate(|point| point.y),
+                coordinate(|point| point.z),
+            ),
+            weight,
+        )
+    };
+    let first = evaluated(0);
+    let second = evaluated(1);
+    let curve = &boundaries[0].curve;
+    Some(CurveGeometry::Nurbs(NurbsCurve {
+        degree: curve.degree,
+        knots: curve.knots.clone(),
+        control_points: vec![first.0, second.0],
+        weights: nurbs.weights.as_ref().map(|_| vec![first.1, second.1]),
+        periodic: curve.periodic,
+    }))
+}
+
 fn analytic_curve_branches(
     geometry: &CurveGeometry,
     tag: &'static str,
@@ -21910,10 +27455,13 @@ fn transfer_carrier_intersection_curves(
                 resolve_curve_candidates(analytic_curve_branches(&geometry, tag), points)
             })
             .or_else(|| {
-                resolve_curve_candidates(
-                    multi_component_intersection_candidates(first, second),
-                    points,
-                )
+                let candidates = multi_component_intersection_candidates(first, second);
+                if points.is_some() {
+                    resolve_curve_candidates(candidates, points)
+                } else {
+                    let held = fc14_held_coordinate(&scan.curves.fc_coordinates, row.id)?;
+                    select_fc14_axis_coordinate_candidate(candidates, held)
+                }
             });
         let Some((geometry, tag)) = resolved else {
             continue;
@@ -21946,6 +27494,136 @@ fn transfer_carrier_intersection_curves(
         transferred.insert(id);
     }
     transferred
+}
+
+struct TransferredNurbsBoundaryCurves {
+    ids: BTreeSet<CurveId>,
+    extrusion_plane_count: usize,
+    extrusion_plane_section_generator_count: usize,
+    shared_extrusion_generator_count: usize,
+}
+
+#[derive(Clone, Copy)]
+enum NurbsBoundaryKind {
+    ExtrusionPlane,
+    ExtrusionPlaneSectionGenerator,
+    SharedExtrusionGenerator,
+}
+
+fn transfer_nurbs_boundary_curves(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> TransferredNurbsBoundaryCurves {
+    let mut result = TransferredNurbsBoundaryCurves {
+        ids: BTreeSet::new(),
+        extrusion_plane_count: 0,
+        extrusion_plane_section_generator_count: 0,
+        shared_extrusion_generator_count: 0,
+    };
+    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+        let Some(first) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[0])
+        else {
+            continue;
+        };
+        let Some(second) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[1])
+        else {
+            continue;
+        };
+        let geometry = |surface_id| {
+            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            ir.model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == id)
+                .map(|surface| &surface.geometry)
+        };
+        let Some(first_geometry) = geometry(first.id) else {
+            continue;
+        };
+        let Some(second_geometry) = geometry(second.id) else {
+            continue;
+        };
+        let resolved = match (first.kind, second.kind, first_geometry, second_geometry) {
+            (
+                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Plane,
+                SurfaceGeometry::Nurbs(nurbs),
+                SurfaceGeometry::Plane { origin, normal, .. },
+            )
+            | (
+                crate::surface::SurfaceKind::Plane,
+                crate::surface::SurfaceKind::Extrusion,
+                SurfaceGeometry::Plane { origin, normal, .. },
+                SurfaceGeometry::Nurbs(nurbs),
+            ) => {
+                let plane = PlaneEquation {
+                    origin: [origin.x, origin.y, origin.z],
+                    normal: [normal.x, normal.y, normal.z],
+                };
+                nurbs_plane_boundary_curve(nurbs, plane)
+                    .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlane))
+                    .or_else(|| {
+                        cubic_extrusion_plane_generator_curve(nurbs, plane).map(|geometry| {
+                            (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator)
+                        })
+                    })
+            }
+            (
+                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Extrusion,
+                SurfaceGeometry::Nurbs(first),
+                SurfaceGeometry::Nurbs(second),
+            ) => shared_extrusion_generator_curve(first, second)
+                .map(|geometry| (geometry, NurbsBoundaryKind::SharedExtrusionGenerator)),
+            _ => None,
+        };
+        let Some((geometry, kind)) = resolved else {
+            continue;
+        };
+        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        if ir.model.curves.iter().any(|curve| curve.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            match kind {
+                NurbsBoundaryKind::ExtrusionPlane => "extrusion_plane_nurbs_boundary",
+                NurbsBoundaryKind::ExtrusionPlaneSectionGenerator => {
+                    "extrusion_plane_nurbs_section_generator"
+                }
+                NurbsBoundaryKind::SharedExtrusionGenerator => "shared_extrusion_nurbs_generator",
+            },
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry,
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        result.ids.insert(id);
+        match kind {
+            NurbsBoundaryKind::ExtrusionPlane => result.extrusion_plane_count += 1,
+            NurbsBoundaryKind::ExtrusionPlaneSectionGenerator => {
+                result.extrusion_plane_section_generator_count += 1;
+            }
+            NurbsBoundaryKind::SharedExtrusionGenerator => {
+                result.shared_extrusion_generator_count += 1;
+            }
+        }
+    }
+    result
 }
 
 fn rowless_round_cylinder_pairs(
@@ -22339,8 +28017,7 @@ fn transfer_positional_cylinders(
         else {
             continue;
         };
-        let reference_cap_frame = || {
-            let envelope = record.type24_scalar_frame_round_envelope(row.type_byte)?;
+        let reference_bound_frame = || {
             let entity_ids = scan
                 .features
                 .entity_tables
@@ -22354,15 +28031,31 @@ fn transfer_positional_cylinders(
                 .iter()
                 .filter(|circle| entity_ids.contains(&circle.entity_id))
                 .collect::<Vec<_>>();
+            let generated_cylinder_count = scan
+                .surfaces
+                .rows
+                .iter()
+                .filter(|candidate| {
+                    candidate.feature_id == row.feature_id
+                        && candidate.kind == crate::surface::SurfaceKind::Cylinder
+                })
+                .count();
+            if generated_cylinder_count == 1 {
+                if let Some(frame) = reference_circle_pair_cylinder_frame(&circles) {
+                    return Some((frame, "reference_circle_pair_cylinder_frame"));
+                }
+            }
+            let envelope = record.type24_scalar_frame_round_envelope(row.type_byte)?;
             reference_cap_bound_round_frame(envelope, &circles)
+                .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
         };
         let (frame, mechanism) = match record.positional_cylinder_frame {
             Some(frame) => (frame, "positional_cylinder_frame"),
             None => {
-                let Some(frame) = reference_cap_frame() else {
+                let Some(frame) = reference_bound_frame() else {
                     continue;
                 };
-                (frame, "round_reference_cap_cylinder_frame")
+                frame
             }
         };
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
@@ -22402,6 +28095,57 @@ fn transfer_positional_cylinders(
         transferred += 1;
     }
     transferred
+}
+
+fn reference_circle_pair_cylinder_frame(
+    circles: &[&crate::reference::ReferenceCircle],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let [first, second] = circles else {
+        return None;
+    };
+    (first.radius.is_finite()
+        && first.radius > 0.0
+        && first.center_stored
+        && second.center_stored
+        && second.radius.is_finite())
+    .then_some(())?;
+    let radius = first.radius;
+    let radius_scale = radius.max(second.radius).max(1.0);
+    ((second.radius - radius).abs() <= 1e-9 * radius_scale).then_some(())?;
+    let scale = first
+        .center
+        .iter()
+        .chain(&second.center)
+        .map(|value| value.abs())
+        .fold(radius_scale, f64::max);
+    let first_axis = normalized(first.axis)?;
+    let second_axis = normalized(second.axis)?;
+    ((dot(first_axis, second_axis).abs() - 1.0).abs() <= 1e-9).then_some(())?;
+    let displacement: [f64; 3] =
+        std::array::from_fn(|index| second.center[index] - first.center[index]);
+    let length = dot(displacement, displacement).sqrt();
+    (length.is_finite() && length > 1e-9 * scale).then_some(())?;
+    let center_direction = displacement.map(|value| value / length);
+    ((dot(center_direction, first_axis).abs() - 1.0).abs() <= 1e-9
+        && (dot(center_direction, second_axis).abs() - 1.0).abs() <= 1e-9)
+        .then_some(())?;
+    let validated_radial = |circle: &crate::reference::ReferenceCircle, axis| {
+        let vector: [f64; 3] =
+            std::array::from_fn(|index| circle.start[index] - circle.center[index]);
+        let length = dot(vector, vector).sqrt();
+        ((length - radius).abs() <= 1e-9 * radius_scale
+            && dot(axis, vector).abs() <= 1e-9 * radius_scale)
+            .then_some((vector, length))
+    };
+    let (radial, radial_length) = validated_radial(first, first_axis)?;
+    validated_radial(second, second_axis)?;
+    Some(crate::surface::PositionalCylinderFrame {
+        origin: first.center,
+        axis: first_axis,
+        ref_direction: radial.map(|value| value / radial_length),
+        radius,
+        length: Some(length),
+    })
 }
 
 fn reference_cap_bound_round_frame(
@@ -22780,6 +28524,83 @@ fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     Ok((ir, annotations.build(), unknowns, coverage))
+}
+
+fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
+    matches!(
+        selection,
+        FaceSelection::Unresolved
+            | FaceSelection::HistoricalPartial { .. }
+            | FaceSelection::Native(_)
+    )
+}
+
+fn edge_selection_has_unresolved_operands(selection: &EdgeSelection) -> bool {
+    matches!(
+        selection,
+        EdgeSelection::Unresolved
+            | EdgeSelection::HistoricalPartial { .. }
+            | EdgeSelection::Native(_)
+    )
+}
+
+fn path_has_unresolved_operands(path: &PathRef) -> bool {
+    matches!(
+        path,
+        PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. }
+    )
+}
+
+fn surface_boundary_has_unresolved_operands(boundary: &SurfaceBoundary) -> bool {
+    match boundary {
+        SurfaceBoundary::Edges(edges) => edge_selection_has_unresolved_operands(edges),
+        SurfaceBoundary::Path(path) => path_has_unresolved_operands(path),
+    }
+}
+
+fn pattern_kind_has_unresolved_operands(pattern: &PatternKind) -> bool {
+    match pattern {
+        PatternKind::Unresolved { .. } => true,
+        PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
+            direction.is_none()
+        }
+        PatternKind::CurveDriven { path, .. } => {
+            path.as_ref().is_none_or(path_has_unresolved_operands)
+        }
+        PatternKind::Scale { center, .. } => {
+            matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
+        }
+        PatternKind::Composite { stages } => {
+            stages.is_empty()
+                || stages
+                    .iter()
+                    .any(|stage| pattern_kind_has_unresolved_operands(&stage.pattern))
+        }
+        PatternKind::Circular { .. }
+        | PatternKind::CircularAngles { .. }
+        | PatternKind::Mirror { .. } => false,
+    }
+}
+
+fn termination_has_unresolved_operands(termination: &Termination) -> bool {
+    match termination {
+        Termination::Unresolved => true,
+        Termination::ToFace { face, .. }
+        | Termination::OffsetFromFace { face, .. }
+        | Termination::ToShape { target: face } => face_selection_has_unresolved_operands(face),
+        Termination::ToVertex { vertex } => {
+            matches!(
+                vertex,
+                VertexSelection::Unresolved | VertexSelection::Native(_)
+            )
+        }
+        Termination::Blind { .. }
+        | Termination::ThroughAll
+        | Termination::ThroughNext
+        | Termination::ToFirst
+        | Termination::ToLast
+        | Termination::Angle { .. } => false,
+    }
 }
 
 /// Build source metadata, preserved geometry records, and transferred entities.
@@ -23232,7 +29053,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
-    transfer_sketches(scan, &mut ir, &mut annotations);
+    let sketch_segment_coverage = transfer_sketches(scan, &mut ir, &mut annotations);
     let feature_revolution_surface_count =
         transfer_resolved_revolution_surfaces(scan, &mut ir, &mut annotations);
     let feature_revolution_vertex_orbit_curve_count =
@@ -23252,16 +29073,26 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
     let rowless_round_cylinder_count =
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
-    let straight_pcurve_lines = transfer_straight_pcurve_lines(scan, &mut ir, &mut annotations);
-    let straight_pcurve_line_count = straight_pcurve_lines.len();
-    let derived_intersection_curves =
+    let analytic_pcurve_carriers =
+        transfer_analytic_pcurve_carriers(scan, &mut ir, &mut annotations);
+    let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
+    let mut derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
+    let nurbs_boundary_curves = transfer_nurbs_boundary_curves(scan, &mut ir, &mut annotations);
+    let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
+    let extrusion_plane_section_generator_curve_count =
+        nurbs_boundary_curves.extrusion_plane_section_generator_count;
+    let shared_extrusion_generator_curve_count =
+        nurbs_boundary_curves.shared_extrusion_generator_count;
+    derived_intersection_curves.extend(nurbs_boundary_curves.ids);
+    let topology_bound_plane_count =
+        transfer_topology_bound_planes(scan, &mut ir, &mut annotations);
     let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
         scan,
         &mut ir,
         &mut annotations,
         &derived_intersection_curves,
-        &straight_pcurve_lines,
+        &analytic_pcurve_carriers,
     );
     let feature_revolution_brep_count =
         transfer_resolved_revolution_breps(scan, &mut ir, &mut annotations);
@@ -23269,6 +29100,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         transfer_resolved_circular_extrusion_breps(scan, &mut ir, &mut annotations);
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
+    retain_unresolved_visible_carriers(scan, &mut ir, &mut annotations);
     let transferred_part_product = transfer_part_product(scan, &mut ir, &mut annotations);
     let decoded_feature_skamp_count = scan
         .features
@@ -23276,6 +29108,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| relations.skamps.len())
+        .sum::<usize>();
+    let missing_feature_skamp_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| {
+            feature_solver_table_missing_rows(
+                relations.skamp_header.as_ref(),
+                relations.skamps.len(),
+            )
+        })
         .sum::<usize>();
     let skamp_constraint_coverage =
         design_constraint_transfer_coverage(&ir.model.sketch_constraints, ":skamp:", "creo:skamp:");
@@ -23285,6 +29129,39 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
         .map(|relations| relations.rows.len())
+        .sum::<usize>();
+    let missing_feature_relation_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(feature_relation_table_missing_rows)
+        .sum::<usize>();
+    let malformed_feature_relation_table_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .filter(|relations| feature_relation_table_expected_rows(relations).is_none())
+        .count();
+    let decoded_feature_relation_triple_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| relations.triples.len())
+        .sum::<usize>();
+    let missing_feature_relation_triple_row_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| {
+            feature_solver_table_missing_rows(
+                relations.triples_header.as_ref(),
+                relations.triples.len(),
+            )
+        })
         .sum::<usize>();
     let relation_constraint_coverage = design_constraint_transfer_coverage(
         &ir.model.sketch_constraints,
@@ -23307,6 +29184,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             surface_coverage.transferred_rows,
         );
         coverage.insert(
+            "retained_unknown_visible_surface_row_count".to_string(),
+            surface_coverage.retained_unknown_rows,
+        );
+        coverage.insert(
             "untransferred_visible_surface_row_count".to_string(),
             surface_coverage
                 .unique_rows
@@ -23322,6 +29203,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 format!("transferred_visible_{family}_surface_row_count"),
                 *transferred,
             );
+            coverage.insert(
+                format!("untransferred_visible_{family}_surface_row_count"),
+                rows.saturating_sub(*transferred),
+            );
+            coverage.insert(
+                format!("retained_unknown_visible_{family}_surface_row_count"),
+                surface_coverage
+                    .unknown_by_family
+                    .get(family)
+                    .copied()
+                    .unwrap_or_default(),
+            );
         }
         coverage.insert(
             "unique_visible_curve_row_count".to_string(),
@@ -23330,6 +29223,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "transferred_visible_curve_row_count".to_string(),
             curve_coverage.transferred_rows,
+        );
+        coverage.insert(
+            "retained_unknown_visible_curve_row_count".to_string(),
+            curve_coverage.retained_unknown_rows,
         );
         coverage.insert(
             "untransferred_visible_curve_row_count".to_string(),
@@ -23349,6 +29246,14 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             coverage.insert(
                 format!("transferred_visible_curve_type_{type_byte:02x}_row_count"),
                 *transferred,
+            );
+            coverage.insert(
+                format!("retained_unknown_visible_curve_type_{type_byte:02x}_row_count"),
+                curve_coverage
+                    .unknown_by_type
+                    .get(type_byte)
+                    .copied()
+                    .unwrap_or_default(),
             );
         }
         coverage.insert(
@@ -23388,8 +29293,24 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             native_topological_edge_count,
         );
         coverage.insert(
-            "transferred_straight_pcurve_line_count".to_string(),
-            straight_pcurve_line_count,
+            "transferred_analytic_pcurve_carrier_count".to_string(),
+            analytic_pcurve_carrier_count,
+        );
+        coverage.insert(
+            "transferred_extrusion_plane_boundary_curve_count".to_string(),
+            extrusion_plane_boundary_curve_count,
+        );
+        coverage.insert(
+            "transferred_extrusion_plane_section_generator_curve_count".to_string(),
+            extrusion_plane_section_generator_curve_count,
+        );
+        coverage.insert(
+            "transferred_shared_extrusion_generator_curve_count".to_string(),
+            shared_extrusion_generator_curve_count,
+        );
+        coverage.insert(
+            "transferred_topology_bound_plane_surface_count".to_string(),
+            topology_bound_plane_count,
         );
         coverage.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -23452,8 +29373,41 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             usize::from(transferred_part_product),
         );
         coverage.insert(
+            "decoded_feature_segment_row_count".to_string(),
+            sketch_segment_coverage.decoded_rows,
+        );
+        coverage.insert(
+            "resolved_feature_segment_geometry_count".to_string(),
+            sketch_segment_coverage.resolved_geometry,
+        );
+        coverage.insert(
+            "unresolved_feature_segment_geometry_count".to_string(),
+            sketch_segment_coverage
+                .decoded_rows
+                .saturating_sub(sketch_segment_coverage.resolved_geometry),
+        );
+        for (family, (decoded, resolved)) in &sketch_segment_coverage.by_family {
+            coverage.insert(format!("decoded_feature_{family}_segment_count"), *decoded);
+            coverage.insert(
+                format!("resolved_feature_{family}_segment_geometry_count"),
+                *resolved,
+            );
+            coverage.insert(
+                format!("unresolved_feature_{family}_segment_geometry_count"),
+                decoded.saturating_sub(*resolved),
+            );
+        }
+        coverage.insert(
+            "missing_feature_segment_row_count".to_string(),
+            sketch_segment_coverage.missing_rows,
+        );
+        coverage.insert(
             "decoded_feature_skamp_count".to_string(),
             decoded_feature_skamp_count,
+        );
+        coverage.insert(
+            "missing_feature_skamp_row_count".to_string(),
+            missing_feature_skamp_row_count,
         );
         coverage.insert(
             "transferred_feature_skamp_constraint_count".to_string(),
@@ -23468,8 +29422,48 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             skamp_constraint_coverage.typed(),
         );
         coverage.insert(
+            "active_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active,
+        );
+        coverage.insert(
+            "active_native_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active_native,
+        );
+        coverage.insert(
+            "active_typed_feature_skamp_constraint_count".to_string(),
+            skamp_constraint_coverage.active_typed(),
+        );
+        for (kind, count) in &skamp_constraint_coverage.native_by_kind {
+            coverage.insert(
+                format!("transferred_native_feature_skamp_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+        for (kind, count) in &skamp_constraint_coverage.active_native_by_kind {
+            coverage.insert(
+                format!("active_native_feature_skamp_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+        coverage.insert(
             "decoded_feature_relation_count".to_string(),
             decoded_feature_relation_count,
+        );
+        coverage.insert(
+            "missing_feature_relation_row_count".to_string(),
+            missing_feature_relation_row_count,
+        );
+        coverage.insert(
+            "malformed_feature_relation_table_count".to_string(),
+            malformed_feature_relation_table_count,
+        );
+        coverage.insert(
+            "decoded_feature_relation_triple_count".to_string(),
+            decoded_feature_relation_triple_count,
+        );
+        coverage.insert(
+            "missing_feature_relation_triple_row_count".to_string(),
+            missing_feature_relation_triple_row_count,
         );
         coverage.insert(
             "transferred_feature_relation_constraint_count".to_string(),
@@ -23483,7 +29477,32 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             "transferred_typed_feature_relation_constraint_count".to_string(),
             relation_constraint_coverage.typed(),
         );
+        coverage.insert(
+            "active_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active,
+        );
+        coverage.insert(
+            "active_native_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active_native,
+        );
+        coverage.insert(
+            "active_typed_feature_relation_constraint_count".to_string(),
+            relation_constraint_coverage.active_typed(),
+        );
+        for (kind, count) in &relation_constraint_coverage.native_by_kind {
+            coverage.insert(
+                format!("transferred_native_feature_relation_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
+        for (kind, count) in &relation_constraint_coverage.active_native_by_kind {
+            coverage.insert(
+                format!("active_native_feature_relation_type_{kind}_constraint_count"),
+                *count,
+            );
+        }
     }
+    let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     let operation_feature_ids = scan
         .features
         .operations
@@ -23528,6 +29547,44 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             native_ref: None,
         });
     }
+    let row_feature_ids = scan
+        .features
+        .rows
+        .iter()
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    let mut geometry_generator_feature_count = 0;
+    for generator in geometry_generator_features(scan) {
+        let feature_id = generator.feature_id;
+        let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
+        if ir.model.features.iter().any(|feature| feature.id == id) {
+            continue;
+        }
+        annotate(
+            &mut annotations,
+            &id,
+            "VisibGeom",
+            generator.offset as u64,
+            "geometry_generator_feature",
+            Exactness::ByteExact,
+        );
+        ir.model.features.push(Feature {
+            id,
+            ordinal: ir.model.features.len() as u64,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: feature_output_bodies(scan, &ir, feature_id),
+            definition: IrFeatureDefinition::StoredGeometry,
+            native_ref: None,
+        });
+        geometry_generator_feature_count += 1;
+    }
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
@@ -23557,7 +29614,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                     })
                     .or_else(|| {
                         current_operation.and_then(|operation| {
-                            named_feature_definition(
+                            named_or_referenced_feature_definition(
                                 scan,
                                 &ir,
                                 operation.feature_id,
@@ -23565,6 +29622,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                             )
                         })
                     })
+                    .or_else(|| unbounded_feature_plane_definition(scan, &ir, operation.feature_id))
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: current_operation
                             .map_or("Native Feature", |operation| operation.kind.as_str())
@@ -23584,7 +29642,12 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             },
         );
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
-        let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
+        let dependencies = feature_dependencies(
+            scan,
+            &ir,
+            operation.feature_id,
+            &prototype_feature_dependencies,
+        );
         let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
             .and_then(|parent_feature_id| {
                 let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
@@ -23676,12 +29739,6 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             native_ref,
         });
     }
-    let row_feature_ids = scan
-        .features
-        .rows
-        .iter()
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
     for feature_id in row_feature_ids {
         let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
         if ir.model.features.iter().any(|feature| feature.id == id) {
@@ -23716,13 +29773,13 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
             || {
-                named_feature_definition(scan, &ir, feature_id, kind).unwrap_or_else(|| {
-                    IrFeatureDefinition::Native {
+                named_feature_definition(scan, &ir, feature_id, kind)
+                    .or_else(|| unbounded_feature_plane_definition(scan, &ir, feature_id))
+                    .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: kind.to_string(),
                         parameters: parameters.clone(),
                         properties: BTreeMap::new(),
-                    }
-                })
+                    })
             },
             |schema_class| schema_feature_definition(scan, &ir, feature_id, schema_class, kind),
         );
@@ -23757,7 +29814,12 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             ),
             suppressed: Some(false),
             parent: None,
-            dependencies: feature_dependencies(scan, &ir, feature_id),
+            dependencies: feature_dependencies(
+                scan,
+                &ir,
+                feature_id,
+                &prototype_feature_dependencies,
+            ),
             source_properties,
             source_tag: None,
             source_text: None,
@@ -23768,10 +29830,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         });
     }
     link_feature_sketch_history(scan, &mut ir);
-    reconcile_feature_links(scan, &mut ir);
+    reconcile_feature_links(scan, &mut ir, &prototype_feature_dependencies);
     let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(scan, &mut ir, &mut annotations);
-    let transferred_curve_expression_assignment_count =
+    let transferred_curve_expression_parameter_count =
         transfer_curve_expression_features(scan, &mut ir, &mut annotations, &dimension_parameters);
     {
         let active_expressions = scan
@@ -23783,10 +29845,86 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             .clone()
             .map(|record| record.assignments.len())
             .sum::<usize>();
+        let decoded_curve_expression_table_cell_assignment_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.assignments)
+            .filter(|assignment| {
+                matches!(
+                    &assignment.target,
+                    crate::curve::CurveExpressionTarget::TableCell { .. }
+                )
+            })
+            .count();
+        let decoded_curve_expression_scoped_symbol_assignment_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.assignments)
+            .filter(|assignment| {
+                matches!(
+                    &assignment.target,
+                    crate::curve::CurveExpressionTarget::ScopedSymbol { .. }
+                )
+            })
+            .count();
+        let decoded_curve_expression_system_symbol_assignment_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.assignments)
+            .filter(|assignment| {
+                matches!(
+                    &assignment.target,
+                    crate::curve::CurveExpressionTarget::SystemSymbol { .. }
+                )
+            })
+            .count();
+        let decoded_curve_expression_function_write_assignment_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.assignments)
+            .filter(|assignment| {
+                matches!(
+                    &assignment.target,
+                    crate::curve::CurveExpressionTarget::FunctionWrite { .. }
+                )
+            })
+            .count();
         let evaluated_curve_expression_assignment_count = active_expressions
             .clone()
             .flat_map(|record| &record.assignments)
             .filter(|assignment| assignment.value.is_some())
+            .count();
+        let decoded_curve_expression_solve_block_count = active_expressions
+            .clone()
+            .map(|record| record.solve_blocks.len())
+            .sum::<usize>();
+        let decoded_curve_expression_simultaneous_equation_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .map(|block| block.equations.len())
+            .sum::<usize>();
+        let decoded_curve_expression_solve_assignment_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .map(|block| block.assignments.len())
+            .sum::<usize>();
+        let decoded_curve_expression_solve_variable_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .map(|block| block.variables.len())
+            .sum::<usize>();
+        let evaluated_curve_expression_solve_block_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .filter(|block| {
+                !block.solutions.is_empty() && block.solutions.iter().all(Option::is_some)
+            })
+            .count();
+        let evaluated_curve_expression_solve_variable_count = active_expressions
+            .clone()
+            .flat_map(|record| &record.solve_blocks)
+            .flat_map(|block| &block.solutions)
+            .filter(|solution| solution.is_some())
+            .count();
+        let unresolved_curve_expression_solve_control_count = active_expressions
+            .clone()
+            .filter(|record| record.unresolved_solve_control)
             .count();
         let prohibited_curve_expression_record_count = active_expressions
             .clone()
@@ -23809,11 +29947,55 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         );
         coverage.insert(
             "transferred_curve_expression_parameter_count".to_string(),
-            transferred_curve_expression_assignment_count,
+            transferred_curve_expression_parameter_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_table_cell_assignment_count".to_string(),
+            decoded_curve_expression_table_cell_assignment_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_scoped_symbol_assignment_count".to_string(),
+            decoded_curve_expression_scoped_symbol_assignment_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_system_symbol_assignment_count".to_string(),
+            decoded_curve_expression_system_symbol_assignment_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_function_write_assignment_count".to_string(),
+            decoded_curve_expression_function_write_assignment_count,
         );
         coverage.insert(
             "evaluated_active_curve_expression_assignment_count".to_string(),
             evaluated_curve_expression_assignment_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_solve_block_count".to_string(),
+            decoded_curve_expression_solve_block_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_simultaneous_equation_count".to_string(),
+            decoded_curve_expression_simultaneous_equation_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_solve_assignment_count".to_string(),
+            decoded_curve_expression_solve_assignment_count,
+        );
+        coverage.insert(
+            "decoded_active_curve_expression_solve_variable_count".to_string(),
+            decoded_curve_expression_solve_variable_count,
+        );
+        coverage.insert(
+            "evaluated_active_curve_expression_solve_block_count".to_string(),
+            evaluated_curve_expression_solve_block_count,
+        );
+        coverage.insert(
+            "evaluated_active_curve_expression_solve_variable_count".to_string(),
+            evaluated_curve_expression_solve_variable_count,
+        );
+        coverage.insert(
+            "unresolved_active_curve_expression_solve_control_count".to_string(),
+            unresolved_curve_expression_solve_control_count,
         );
         coverage.insert(
             "prohibited_active_curve_expression_record_count".to_string(),
@@ -23862,6 +30044,10 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         coverage.insert(
             "resolved_feature_dimension_value_count".to_string(),
             resolved_dimension_count,
+        );
+        coverage.insert(
+            "unresolved_feature_dimension_value_count".to_string(),
+            decoded_dimension_count.saturating_sub(resolved_dimension_count),
         );
     }
     close_sketch_constraint_parameter_references(&mut ir);
@@ -24432,6 +30618,23 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             );
         },
     )?;
+    let feature_loop_history_entries = feature_loop_history_entry_records(scan);
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "feature_loop_history_entries",
+        &feature_loop_history_entries,
+        |annotations, entry| {
+            annotate(
+                annotations,
+                &entry.id,
+                &entry.source_section,
+                entry.offset as u64,
+                "feature_loop_history_entry",
+                Exactness::ByteExact,
+            );
+        },
+    )?;
     let feature_affected_ids = feature_affected_id_records(scan);
     emit_arena(
         &mut ir,
@@ -24462,6 +30665,23 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 &record.source_section,
                 record.offset as u64,
                 "feature_replay_affected_ids",
+                Exactness::ByteExact,
+            );
+        },
+    )?;
+    let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(scan);
+    emit_arena(
+        &mut ir,
+        &mut annotations,
+        "surface_merge_replay_affected_ids",
+        &surface_merge_replay_affected_ids,
+        |annotations, record| {
+            annotate(
+                annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "surface_merge_replay_affected_ids",
                 Exactness::ByteExact,
             );
         },
@@ -24653,12 +30873,777 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         );
         store_arena(&mut ir, "configuration", &[family_table])?;
     }
+    let native_feature_count = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| matches!(feature.definition, IrFeatureDefinition::Native { .. }))
+        .count();
+    let mut unresolved_datum_plane_feature_count = 0;
+    let mut unresolved_datum_coordinate_system_feature_count = 0;
+    let mut unresolved_boundary_surface_feature_count = 0;
+    let mut extrude_feature_count = 0;
+    let mut incomplete_extrude_feature_count = 0;
+    let mut unresolved_extrude_profile_feature_count = 0;
+    let mut native_extrude_profile_feature_count = 0;
+    let mut incomplete_extrude_start_feature_count = 0;
+    let mut incomplete_extrude_termination_feature_count = 0;
+    let mut unresolved_extrude_boolean_operation_feature_count = 0;
+    let mut revolve_feature_count = 0;
+    let mut incomplete_revolve_feature_count = 0;
+    let mut unresolved_revolve_profile_feature_count = 0;
+    let mut native_revolve_profile_feature_count = 0;
+    let mut unresolved_revolve_axis_feature_count = 0;
+    let mut incomplete_revolve_extent_feature_count = 0;
+    let mut unresolved_revolve_boolean_operation_feature_count = 0;
+    let mut hole_feature_count = 0;
+    let mut incomplete_hole_feature_count = 0;
+    let mut unresolved_hole_location_feature_count = 0;
+    let mut unresolved_hole_profile_feature_count = 0;
+    let mut native_hole_profile_feature_count = 0;
+    let mut unresolved_hole_face_selection_feature_count = 0;
+    let mut native_hole_face_selection_feature_count = 0;
+    let mut unresolved_hole_direction_feature_count = 0;
+    let mut unresolved_hole_kind_feature_count = 0;
+    let mut unresolved_hole_diameter_feature_count = 0;
+    let mut incomplete_hole_termination_feature_count = 0;
+    let mut fillet_feature_count = 0;
+    let mut incomplete_fillet_feature_count = 0;
+    let mut unresolved_fillet_edge_selection_feature_count = 0;
+    let mut native_fillet_edge_selection_feature_count = 0;
+    let mut unresolved_fillet_radius_feature_count = 0;
+    let mut unresolved_fillet_radius_without_generated_surface_feature_count = 0;
+    let mut unresolved_fillet_radius_with_generated_surface_feature_count = 0;
+    let mut variable_radius_fillet_feature_count = 0;
+    let mut chamfer_feature_count = 0;
+    let mut incomplete_chamfer_feature_count = 0;
+    let mut unresolved_chamfer_edge_selection_feature_count = 0;
+    let mut native_chamfer_edge_selection_feature_count = 0;
+    let mut unresolved_chamfer_spec_feature_count = 0;
+    let mut draft_feature_count = 0;
+    let mut incomplete_draft_feature_count = 0;
+    let mut explicitly_unresolved_draft_feature_count = 0;
+    let mut unresolved_draft_face_selection_feature_count = 0;
+    let mut native_draft_face_selection_feature_count = 0;
+    let mut unresolved_draft_neutral_plane_feature_count = 0;
+    let mut native_draft_neutral_plane_feature_count = 0;
+    let mut unresolved_draft_direction_feature_count = 0;
+    let mut unresolved_draft_angle_feature_count = 0;
+    let mut unresolved_draft_outward_feature_count = 0;
+    let mut filled_surface_feature_count = 0;
+    let mut incomplete_filled_surface_feature_count = 0;
+    let mut unresolved_filled_surface_boundary_feature_count = 0;
+    let mut unresolved_filled_surface_support_feature_count = 0;
+    let mut unresolved_filled_surface_continuity_feature_count = 0;
+    let mut unresolved_filled_surface_merge_feature_count = 0;
+    let mut knit_surface_feature_count = 0;
+    let mut incomplete_knit_surface_feature_count = 0;
+    let mut unresolved_knit_surface_faces_feature_count = 0;
+    let mut native_knit_surface_faces_feature_count = 0;
+    let mut unresolved_knit_surface_merge_feature_count = 0;
+    let mut unresolved_knit_surface_solid_feature_count = 0;
+    let mut thicken_feature_count = 0;
+    let mut incomplete_thicken_feature_count = 0;
+    let mut unresolved_thicken_faces_feature_count = 0;
+    let mut unresolved_thicken_thickness_feature_count = 0;
+    let mut unresolved_thicken_side_feature_count = 0;
+    let mut pattern_feature_count = 0;
+    let mut incomplete_pattern_feature_count = 0;
+    let mut unresolved_pattern_seed_feature_count = 0;
+    let mut unresolved_pattern_transform_feature_count = 0;
+    let mut native_axis_helix_feature_count = 0;
+    for feature in &ir.model.features {
+        match &feature.definition {
+            IrFeatureDefinition::DatumPlaneUnresolved => {
+                unresolved_datum_plane_feature_count += 1;
+            }
+            IrFeatureDefinition::DatumCoordinateSystemUnresolved => {
+                unresolved_datum_coordinate_system_feature_count += 1;
+            }
+            IrFeatureDefinition::BoundarySurfaceUnresolved => {
+                unresolved_boundary_surface_feature_count += 1;
+            }
+            IrFeatureDefinition::Extrude {
+                profile,
+                start,
+                extent,
+                op,
+                ..
+            } => {
+                extrude_feature_count += 1;
+                let unresolved_profile = matches!(profile, ProfileRef::Unresolved(_));
+                let native_profile = matches!(profile, ProfileRef::Native(_));
+                let incomplete_start = matches!(
+                    start,
+                    ExtrudeStart::FromFace { face, .. }
+                        if face_selection_has_unresolved_operands(face)
+                );
+                let incomplete_termination = match extent {
+                    ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                        termination_has_unresolved_operands(&side.termination)
+                    }
+                    ExtrudeExtent::TwoSided { first, second } => {
+                        termination_has_unresolved_operands(&first.termination)
+                            || termination_has_unresolved_operands(&second.termination)
+                    }
+                };
+                let unresolved_op = *op == BooleanOp::Unresolved;
+                unresolved_extrude_profile_feature_count += usize::from(unresolved_profile);
+                native_extrude_profile_feature_count += usize::from(native_profile);
+                incomplete_extrude_start_feature_count += usize::from(incomplete_start);
+                incomplete_extrude_termination_feature_count += usize::from(incomplete_termination);
+                unresolved_extrude_boolean_operation_feature_count += usize::from(unresolved_op);
+                incomplete_extrude_feature_count += usize::from(
+                    unresolved_profile
+                        || native_profile
+                        || incomplete_start
+                        || incomplete_termination
+                        || unresolved_op,
+                );
+            }
+            IrFeatureDefinition::Revolve { construction, op } => {
+                revolve_feature_count += 1;
+                let unresolved_profile = construction
+                    .profile
+                    .as_ref()
+                    .is_none_or(|profile| matches!(profile, ProfileRef::Unresolved(_)));
+                let native_profile = matches!(construction.profile, Some(ProfileRef::Native(_)));
+                let unresolved_axis = construction.axis.is_none();
+                let incomplete_extent =
+                    construction
+                        .extent
+                        .as_ref()
+                        .is_none_or(|extent| match extent {
+                            RevolveExtent::OneSided { termination }
+                            | RevolveExtent::Symmetric { termination } => {
+                                termination_has_unresolved_operands(termination)
+                            }
+                            RevolveExtent::TwoSided { first, second } => {
+                                termination_has_unresolved_operands(first)
+                                    || termination_has_unresolved_operands(second)
+                            }
+                        });
+                let unresolved_op = *op == BooleanOp::Unresolved;
+                unresolved_revolve_profile_feature_count += usize::from(unresolved_profile);
+                native_revolve_profile_feature_count += usize::from(native_profile);
+                unresolved_revolve_axis_feature_count += usize::from(unresolved_axis);
+                incomplete_revolve_extent_feature_count += usize::from(incomplete_extent);
+                unresolved_revolve_boolean_operation_feature_count += usize::from(unresolved_op);
+                incomplete_revolve_feature_count += usize::from(
+                    unresolved_profile
+                        || native_profile
+                        || unresolved_axis
+                        || incomplete_extent
+                        || unresolved_op,
+                );
+            }
+            IrFeatureDefinition::Hole {
+                profile,
+                face,
+                position,
+                direction,
+                placements,
+                kind,
+                exit_kind,
+                diameter,
+                extent,
+                ..
+            } => {
+                hole_feature_count += 1;
+                let unresolved_location =
+                    profile.is_none() && position.is_none() && placements.is_empty();
+                let unresolved_profile = matches!(profile, Some(ProfileRef::Unresolved(_)));
+                let native_profile = matches!(profile, Some(ProfileRef::Native(_)));
+                let unresolved_face = matches!(
+                    face,
+                    Some(FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. })
+                );
+                let native_face = matches!(face, Some(FaceSelection::Native(_)));
+                let unresolved_direction = direction.is_none()
+                    && !placements.iter().any(|placement| {
+                        matches!(
+                            placement,
+                            cadmpeg_ir::features::HolePlacement::Directed { .. }
+                        )
+                    });
+                let unresolved_kind = matches!(kind, HoleKind::Unresolved { .. })
+                    || matches!(exit_kind, Some(HoleKind::Unresolved { .. }));
+                let unresolved_diameter = diameter.is_none();
+                let incomplete_termination = extent
+                    .as_ref()
+                    .is_none_or(termination_has_unresolved_operands);
+                unresolved_hole_location_feature_count += usize::from(unresolved_location);
+                unresolved_hole_profile_feature_count += usize::from(unresolved_profile);
+                native_hole_profile_feature_count += usize::from(native_profile);
+                unresolved_hole_face_selection_feature_count += usize::from(unresolved_face);
+                native_hole_face_selection_feature_count += usize::from(native_face);
+                unresolved_hole_direction_feature_count += usize::from(unresolved_direction);
+                unresolved_hole_kind_feature_count += usize::from(unresolved_kind);
+                unresolved_hole_diameter_feature_count += usize::from(unresolved_diameter);
+                incomplete_hole_termination_feature_count += usize::from(incomplete_termination);
+                incomplete_hole_feature_count += usize::from(
+                    unresolved_location
+                        || unresolved_profile
+                        || native_profile
+                        || unresolved_face
+                        || native_face
+                        || unresolved_direction
+                        || unresolved_kind
+                        || unresolved_diameter
+                        || incomplete_termination,
+                );
+            }
+            IrFeatureDefinition::Fillet { groups } => {
+                fillet_feature_count += 1;
+                let unresolved_edges = groups.is_empty()
+                    || groups.iter().any(|group| {
+                        matches!(
+                            &group.edges,
+                            EdgeSelection::Unresolved | EdgeSelection::HistoricalPartial { .. }
+                        )
+                    });
+                let native_edges = groups
+                    .iter()
+                    .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
+                let unresolved_radius = groups.is_empty()
+                    || groups
+                        .iter()
+                        .any(|group| matches!(&group.radius, RadiusSpec::Unresolved { .. }));
+                let variable_radius = groups.iter().any(|group| {
+                    matches!(
+                        &group.radius,
+                        RadiusSpec::Unresolved {
+                            form: Some(RadiusForm::Variable)
+                        }
+                    )
+                });
+                let has_generated_surface = feature
+                    .id
+                    .as_str()
+                    .strip_prefix("creo:model:feature#")
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .is_some_and(|feature_id| {
+                        scan.surfaces
+                            .rows
+                            .iter()
+                            .any(|row| row.feature_id == feature_id)
+                    });
+                unresolved_fillet_edge_selection_feature_count += usize::from(unresolved_edges);
+                native_fillet_edge_selection_feature_count += usize::from(native_edges);
+                unresolved_fillet_radius_feature_count += usize::from(unresolved_radius);
+                unresolved_fillet_radius_without_generated_surface_feature_count +=
+                    usize::from(unresolved_radius && !has_generated_surface);
+                unresolved_fillet_radius_with_generated_surface_feature_count +=
+                    usize::from(unresolved_radius && has_generated_surface);
+                variable_radius_fillet_feature_count += usize::from(variable_radius);
+                incomplete_fillet_feature_count +=
+                    usize::from(unresolved_edges || native_edges || unresolved_radius);
+            }
+            IrFeatureDefinition::Chamfer { groups, .. } => {
+                chamfer_feature_count += 1;
+                let unresolved_edges = groups.is_empty()
+                    || groups.iter().any(|group| {
+                        matches!(
+                            &group.edges,
+                            EdgeSelection::Unresolved | EdgeSelection::HistoricalPartial { .. }
+                        )
+                    });
+                let native_edges = groups
+                    .iter()
+                    .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
+                let unresolved_spec = groups.is_empty()
+                    || groups
+                        .iter()
+                        .any(|group| matches!(&group.spec, ChamferSpec::Unresolved { .. }));
+                unresolved_chamfer_edge_selection_feature_count += usize::from(unresolved_edges);
+                native_chamfer_edge_selection_feature_count += usize::from(native_edges);
+                unresolved_chamfer_spec_feature_count += usize::from(unresolved_spec);
+                incomplete_chamfer_feature_count +=
+                    usize::from(unresolved_edges || native_edges || unresolved_spec);
+            }
+            IrFeatureDefinition::Draft {
+                faces,
+                neutral_plane,
+                pull_direction,
+                angle,
+                outward,
+            } => {
+                draft_feature_count += 1;
+                let unresolved_faces = matches!(
+                    faces,
+                    FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                );
+                let native_faces = matches!(faces, FaceSelection::Native(_));
+                let unresolved_neutral_plane = matches!(
+                    neutral_plane,
+                    FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                );
+                let native_neutral_plane = matches!(neutral_plane, FaceSelection::Native(_));
+                let unresolved_direction = pull_direction.is_none();
+                let unresolved_angle = angle.is_none();
+                let unresolved_outward = outward.is_none();
+                unresolved_draft_face_selection_feature_count += usize::from(unresolved_faces);
+                native_draft_face_selection_feature_count += usize::from(native_faces);
+                unresolved_draft_neutral_plane_feature_count +=
+                    usize::from(unresolved_neutral_plane);
+                native_draft_neutral_plane_feature_count += usize::from(native_neutral_plane);
+                unresolved_draft_direction_feature_count += usize::from(unresolved_direction);
+                unresolved_draft_angle_feature_count += usize::from(unresolved_angle);
+                unresolved_draft_outward_feature_count += usize::from(unresolved_outward);
+                incomplete_draft_feature_count += usize::from(
+                    unresolved_faces
+                        || native_faces
+                        || unresolved_neutral_plane
+                        || native_neutral_plane
+                        || unresolved_direction
+                        || unresolved_angle
+                        || unresolved_outward,
+                );
+            }
+            IrFeatureDefinition::DraftUnresolved => {
+                draft_feature_count += 1;
+                incomplete_draft_feature_count += 1;
+                explicitly_unresolved_draft_feature_count += 1;
+            }
+            IrFeatureDefinition::FilledSurface {
+                boundary,
+                support_faces,
+                continuity,
+                merge_result,
+            } => {
+                filled_surface_feature_count += 1;
+                let unresolved_boundary = surface_boundary_has_unresolved_operands(boundary);
+                let unresolved_support = face_selection_has_unresolved_operands(support_faces);
+                let unresolved_continuity = continuity.is_none();
+                let unresolved_merge = merge_result.is_none();
+                unresolved_filled_surface_boundary_feature_count +=
+                    usize::from(unresolved_boundary);
+                unresolved_filled_surface_support_feature_count += usize::from(unresolved_support);
+                unresolved_filled_surface_continuity_feature_count +=
+                    usize::from(unresolved_continuity);
+                unresolved_filled_surface_merge_feature_count += usize::from(unresolved_merge);
+                incomplete_filled_surface_feature_count += usize::from(
+                    unresolved_boundary
+                        || unresolved_support
+                        || unresolved_continuity
+                        || unresolved_merge,
+                );
+            }
+            IrFeatureDefinition::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                ..
+            } => {
+                knit_surface_feature_count += 1;
+                let unresolved_faces = matches!(
+                    faces,
+                    FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
+                );
+                let native_faces = matches!(faces, FaceSelection::Native(_));
+                let unresolved_merge = merge_entities.is_none();
+                let unresolved_solid = create_solid.is_none();
+                unresolved_knit_surface_faces_feature_count += usize::from(unresolved_faces);
+                native_knit_surface_faces_feature_count += usize::from(native_faces);
+                unresolved_knit_surface_merge_feature_count += usize::from(unresolved_merge);
+                unresolved_knit_surface_solid_feature_count += usize::from(unresolved_solid);
+                incomplete_knit_surface_feature_count += usize::from(
+                    unresolved_faces || native_faces || unresolved_merge || unresolved_solid,
+                );
+            }
+            IrFeatureDefinition::Thicken {
+                faces,
+                thickness,
+                side,
+            } => {
+                thicken_feature_count += 1;
+                let unresolved_faces = face_selection_has_unresolved_operands(faces);
+                let unresolved_thickness = thickness.is_none();
+                let unresolved_side = side.is_none();
+                unresolved_thicken_faces_feature_count += usize::from(unresolved_faces);
+                unresolved_thicken_thickness_feature_count += usize::from(unresolved_thickness);
+                unresolved_thicken_side_feature_count += usize::from(unresolved_side);
+                incomplete_thicken_feature_count +=
+                    usize::from(unresolved_faces || unresolved_thickness || unresolved_side);
+            }
+            IrFeatureDefinition::Pattern { seeds, pattern } => {
+                pattern_feature_count += 1;
+                let unresolved_seeds = seeds.is_empty()
+                    || seeds.iter().any(|seed| match seed {
+                        cadmpeg_ir::features::PatternSeed::Feature(_) => false,
+                        cadmpeg_ir::features::PatternSeed::Faces(faces) => {
+                            face_selection_has_unresolved_operands(faces)
+                        }
+                        cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
+                            matches!(
+                                bodies,
+                                cadmpeg_ir::features::BodySelection::Unresolved
+                                    | cadmpeg_ir::features::BodySelection::Native(_)
+                            )
+                        }
+                    });
+                let unresolved_transform = pattern_kind_has_unresolved_operands(pattern);
+                unresolved_pattern_seed_feature_count += usize::from(unresolved_seeds);
+                unresolved_pattern_transform_feature_count += usize::from(unresolved_transform);
+                incomplete_pattern_feature_count +=
+                    usize::from(unresolved_seeds || unresolved_transform);
+            }
+            IrFeatureDefinition::HelixNativeAxis { .. } => {
+                native_axis_helix_feature_count += 1;
+            }
+            _ => {}
+        }
+    }
+    let explicitly_unresolved_feature_count = unresolved_datum_plane_feature_count
+        + unresolved_datum_coordinate_system_feature_count
+        + unresolved_boundary_surface_feature_count
+        + explicitly_unresolved_draft_feature_count;
+    let incomplete_recognized_feature_count = incomplete_hole_feature_count
+        + incomplete_fillet_feature_count
+        + incomplete_chamfer_feature_count
+        + incomplete_draft_feature_count;
+    let incomplete_sweep_feature_count =
+        incomplete_extrude_feature_count + incomplete_revolve_feature_count;
+    let incomplete_surface_operation_feature_count = incomplete_filled_surface_feature_count
+        + incomplete_knit_surface_feature_count
+        + incomplete_thicken_feature_count;
+    let incomplete_other_construction_feature_count =
+        incomplete_pattern_feature_count + native_axis_helix_feature_count;
+    coverage.insert(
+        "transferred_feature_count".to_string(),
+        ir.model.features.len(),
+    );
+    coverage.insert(
+        "transferred_typed_feature_count".to_string(),
+        ir.model.features.len() - native_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_feature_count".to_string(),
+        native_feature_count,
+    );
+    coverage.insert(
+        "transferred_geometry_generator_feature_count".to_string(),
+        geometry_generator_feature_count,
+    );
+    coverage.insert(
+        "transferred_explicitly_unresolved_feature_count".to_string(),
+        explicitly_unresolved_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_datum_plane_feature_count".to_string(),
+        unresolved_datum_plane_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_datum_coordinate_system_feature_count".to_string(),
+        unresolved_datum_coordinate_system_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_boundary_surface_feature_count".to_string(),
+        unresolved_boundary_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_extrude_feature_count".to_string(),
+        extrude_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_extrude_feature_count".to_string(),
+        incomplete_extrude_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_extrude_profile_feature_count".to_string(),
+        unresolved_extrude_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_extrude_profile_feature_count".to_string(),
+        native_extrude_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_extrude_start_feature_count".to_string(),
+        incomplete_extrude_start_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_extrude_termination_feature_count".to_string(),
+        incomplete_extrude_termination_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_extrude_boolean_operation_feature_count".to_string(),
+        unresolved_extrude_boolean_operation_feature_count,
+    );
+    coverage.insert(
+        "transferred_revolve_feature_count".to_string(),
+        revolve_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_revolve_feature_count".to_string(),
+        incomplete_revolve_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_revolve_profile_feature_count".to_string(),
+        unresolved_revolve_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_revolve_profile_feature_count".to_string(),
+        native_revolve_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_revolve_axis_feature_count".to_string(),
+        unresolved_revolve_axis_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_revolve_extent_feature_count".to_string(),
+        incomplete_revolve_extent_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_revolve_boolean_operation_feature_count".to_string(),
+        unresolved_revolve_boolean_operation_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_sweep_feature_count".to_string(),
+        incomplete_sweep_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_recognized_feature_count".to_string(),
+        incomplete_recognized_feature_count,
+    );
+    coverage.insert(
+        "transferred_hole_feature_count".to_string(),
+        hole_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_hole_feature_count".to_string(),
+        incomplete_hole_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_location_feature_count".to_string(),
+        unresolved_hole_location_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_profile_feature_count".to_string(),
+        unresolved_hole_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_hole_profile_feature_count".to_string(),
+        native_hole_profile_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_face_selection_feature_count".to_string(),
+        unresolved_hole_face_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_hole_face_selection_feature_count".to_string(),
+        native_hole_face_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_direction_feature_count".to_string(),
+        unresolved_hole_direction_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_kind_feature_count".to_string(),
+        unresolved_hole_kind_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_hole_diameter_feature_count".to_string(),
+        unresolved_hole_diameter_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_hole_termination_feature_count".to_string(),
+        incomplete_hole_termination_feature_count,
+    );
+    coverage.insert(
+        "transferred_fillet_feature_count".to_string(),
+        fillet_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_fillet_feature_count".to_string(),
+        incomplete_fillet_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_fillet_edge_selection_feature_count".to_string(),
+        unresolved_fillet_edge_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_fillet_edge_selection_feature_count".to_string(),
+        native_fillet_edge_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_fillet_radius_feature_count".to_string(),
+        unresolved_fillet_radius_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_fillet_radius_without_generated_surface_feature_count".to_string(),
+        unresolved_fillet_radius_without_generated_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_fillet_radius_with_generated_surface_feature_count".to_string(),
+        unresolved_fillet_radius_with_generated_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_variable_radius_fillet_feature_count".to_string(),
+        variable_radius_fillet_feature_count,
+    );
+    coverage.insert(
+        "transferred_chamfer_feature_count".to_string(),
+        chamfer_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_chamfer_feature_count".to_string(),
+        incomplete_chamfer_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_chamfer_edge_selection_feature_count".to_string(),
+        unresolved_chamfer_edge_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_chamfer_edge_selection_feature_count".to_string(),
+        native_chamfer_edge_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_chamfer_spec_feature_count".to_string(),
+        unresolved_chamfer_spec_feature_count,
+    );
+    coverage.insert(
+        "transferred_draft_feature_count".to_string(),
+        draft_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_draft_feature_count".to_string(),
+        incomplete_draft_feature_count,
+    );
+    coverage.insert(
+        "transferred_explicitly_unresolved_draft_feature_count".to_string(),
+        explicitly_unresolved_draft_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_face_selection_feature_count".to_string(),
+        unresolved_draft_face_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_draft_face_selection_feature_count".to_string(),
+        native_draft_face_selection_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_neutral_plane_feature_count".to_string(),
+        unresolved_draft_neutral_plane_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_draft_neutral_plane_feature_count".to_string(),
+        native_draft_neutral_plane_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_direction_feature_count".to_string(),
+        unresolved_draft_direction_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_angle_feature_count".to_string(),
+        unresolved_draft_angle_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_draft_outward_feature_count".to_string(),
+        unresolved_draft_outward_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_surface_operation_feature_count".to_string(),
+        incomplete_surface_operation_feature_count,
+    );
+    coverage.insert(
+        "transferred_filled_surface_feature_count".to_string(),
+        filled_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_filled_surface_feature_count".to_string(),
+        incomplete_filled_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_filled_surface_boundary_feature_count".to_string(),
+        unresolved_filled_surface_boundary_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_filled_surface_support_feature_count".to_string(),
+        unresolved_filled_surface_support_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_filled_surface_continuity_feature_count".to_string(),
+        unresolved_filled_surface_continuity_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_filled_surface_merge_feature_count".to_string(),
+        unresolved_filled_surface_merge_feature_count,
+    );
+    coverage.insert(
+        "transferred_knit_surface_feature_count".to_string(),
+        knit_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_knit_surface_feature_count".to_string(),
+        incomplete_knit_surface_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_knit_surface_faces_feature_count".to_string(),
+        unresolved_knit_surface_faces_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_knit_surface_faces_feature_count".to_string(),
+        native_knit_surface_faces_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_knit_surface_merge_feature_count".to_string(),
+        unresolved_knit_surface_merge_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_knit_surface_solid_feature_count".to_string(),
+        unresolved_knit_surface_solid_feature_count,
+    );
+    coverage.insert(
+        "transferred_thicken_feature_count".to_string(),
+        thicken_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_thicken_feature_count".to_string(),
+        incomplete_thicken_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_thicken_faces_feature_count".to_string(),
+        unresolved_thicken_faces_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_thicken_thickness_feature_count".to_string(),
+        unresolved_thicken_thickness_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_thicken_side_feature_count".to_string(),
+        unresolved_thicken_side_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_other_construction_feature_count".to_string(),
+        incomplete_other_construction_feature_count,
+    );
+    coverage.insert(
+        "transferred_pattern_feature_count".to_string(),
+        pattern_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_pattern_feature_count".to_string(),
+        incomplete_pattern_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_pattern_seed_feature_count".to_string(),
+        unresolved_pattern_seed_feature_count,
+    );
+    coverage.insert(
+        "transferred_unresolved_pattern_transform_feature_count".to_string(),
+        unresolved_pattern_transform_feature_count,
+    );
+    coverage.insert(
+        "transferred_native_axis_helix_feature_count".to_string(),
+        native_axis_helix_feature_count,
+    );
     Ok((ir, annotations.build(), unknowns, coverage))
 }
 
 #[derive(Default)]
 struct TorusParameterCoverage {
     radius_overrides: usize,
+    replayed_minor_radii: usize,
     outline_extents: usize,
     five_coordinate_envelopes: usize,
     split_coordinate_envelopes: usize,
@@ -24673,6 +31658,10 @@ fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
         radius_overrides: rows
             .clone()
             .filter(|(record, row)| record.torus_radius_overrides(row.type_byte).is_some())
+            .count(),
+        replayed_minor_radii: rows
+            .clone()
+            .filter(|(record, row)| replayed_torus_minor_radius(scan, row, record).is_some())
             .count(),
         outline_extents: rows
             .clone()
@@ -24766,6 +31755,10 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     coverage.insert(
         "decoded_torus_radius_override_count".to_string(),
         torus_coverage.radius_overrides,
+    );
+    coverage.insert(
+        "decoded_type26_replayed_minor_radius_count".to_string(),
+        torus_coverage.replayed_minor_radii,
     );
     coverage.insert(
         "decoded_torus_outline_extent_count".to_string(),
@@ -24886,6 +31879,21 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             },
         );
     }
+    let configuration_driver_table_reference_count =
+        usize::from(scan.framing.family_table.is_some_and(|table| {
+            matches!(
+                table.pointer,
+                crate::container::FamilyTablePointer::Entity(_)
+            )
+        }));
+    coverage.insert(
+        "decoded_configuration_driver_table_reference_count".to_string(),
+        configuration_driver_table_reference_count,
+    );
+    coverage.insert(
+        "transferred_configuration_driver_table_count".to_string(),
+        0,
+    );
     coverage.insert(
         "decoded_pcurve_count".to_string(),
         scan.curves.pcurves.len(),
@@ -24961,12 +31969,20 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         scan.features.geometry_tables.len(),
     );
     coverage.insert(
+        "decoded_feature_loop_history_entry_count".to_string(),
+        scan.features.loop_history_entries.len(),
+    );
+    coverage.insert(
         "decoded_feature_affected_id_array_count".to_string(),
         scan.features.affected_ids.len(),
     );
     coverage.insert(
         "decoded_feature_replay_affected_id_count".to_string(),
         scan.features.replay_affected_ids.len(),
+    );
+    coverage.insert(
+        "decoded_surface_merge_replay_affected_id_count".to_string(),
+        scan.features.surface_merge_replay_affected_ids.len(),
     );
     coverage.insert(
         "decoded_feature_loop_restore_direction_count".to_string(),
@@ -25021,12 +32037,171 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .sum::<usize>(),
     );
     coverage.insert(
-        "decoded_feature_segment_count".to_string(),
+        "decoded_feature_solver_variable_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.variables.as_ref())
+            .map(|variables| variables.rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "missing_feature_solver_variable_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.variables.as_ref())
+            .map(|variables| {
+                usize::try_from(variables.declared_count)
+                    .expect("u32 variable count fits usize")
+                    .saturating_sub(variables.rows.len())
+            })
+            .sum::<usize>(),
+    );
+    let (
+        decoded_dimension_driven_variable_count,
+        decoded_dimension_driven_coordinate_variable_count,
+    ) = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.variables.as_ref())
+        .flat_map(|variables| &variables.rows)
+        .filter(|row| row.dimension_driven)
+        .fold((0usize, 0usize), |(all, coordinates), row| {
+            (
+                all + 1,
+                coordinates + usize::from(matches!(row.variable_type, 1 | 2)),
+            )
+        });
+    let decoded_dimension_driven_guess_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.variables.as_ref())
+        .flat_map(|variables| &variables.rows)
+        .filter(|row| row.guess_dimension_driven)
+        .count();
+    let resolved_dimension_driven_coordinate_variable_count = scan
+        .features
+        .definitions
+        .iter()
+        .map(|definition| {
+            let resolved = resolved_section_coordinates(definition);
+            definition
+                .variables
+                .iter()
+                .flat_map(|variables| &variables.rows)
+                .filter(|row| {
+                    row.dimension_driven
+                        && matches!(row.variable_type, 1 | 2)
+                        && resolved.get(&row.key).is_some_and(|coordinates| {
+                            coordinates[usize::from(row.variable_type == 2)].is_some()
+                        })
+                })
+                .count()
+        })
+        .sum::<usize>();
+    coverage.insert(
+        "decoded_feature_dimension_driven_variable_count".to_string(),
+        decoded_dimension_driven_variable_count,
+    );
+    coverage.insert(
+        "decoded_feature_dimension_driven_coordinate_variable_count".to_string(),
+        decoded_dimension_driven_coordinate_variable_count,
+    );
+    coverage.insert(
+        "decoded_feature_dimension_driven_other_variable_count".to_string(),
+        decoded_dimension_driven_variable_count
+            .saturating_sub(decoded_dimension_driven_coordinate_variable_count),
+    );
+    coverage.insert(
+        "decoded_feature_dimension_driven_guess_count".to_string(),
+        decoded_dimension_driven_guess_count,
+    );
+    coverage.insert(
+        "resolved_feature_dimension_driven_variable_count".to_string(),
+        resolved_dimension_driven_coordinate_variable_count,
+    );
+    coverage.insert(
+        "resolved_feature_dimension_driven_coordinate_variable_count".to_string(),
+        resolved_dimension_driven_coordinate_variable_count,
+    );
+    coverage.insert(
+        "resolved_feature_dimension_driven_other_variable_count".to_string(),
+        0,
+    );
+    coverage.insert(
+        "unresolved_feature_dimension_driven_variable_count".to_string(),
+        decoded_dimension_driven_variable_count
+            .saturating_sub(resolved_dimension_driven_coordinate_variable_count),
+    );
+    coverage.insert(
+        "unresolved_feature_dimension_driven_coordinate_variable_count".to_string(),
+        decoded_dimension_driven_coordinate_variable_count
+            .saturating_sub(resolved_dimension_driven_coordinate_variable_count),
+    );
+    coverage.insert(
+        "unresolved_feature_dimension_driven_other_variable_count".to_string(),
+        decoded_dimension_driven_variable_count
+            .saturating_sub(decoded_dimension_driven_coordinate_variable_count),
+    );
+    coverage.insert(
+        "unresolved_feature_dimension_driven_guess_count".to_string(),
+        decoded_dimension_driven_guess_count,
+    );
+    coverage.insert(
+        "decoded_feature_circle_segment_count".to_string(),
         scan.features
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.rows.len())
+            .map(|segments| segments.circle_rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_point_segment_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.point_rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_centered_line_segment_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.centered_line_rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_reference_line_segment_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.reference_line_rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_bounded_curve_segment_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.bounded_curve_rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_conic_segment_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.conic_rows.len())
             .sum::<usize>(),
     );
     coverage.insert(
@@ -25091,6 +32266,16 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .filter_map(|definition| definition.saved_section.as_ref())
             .map(|saved| saved.entities.len())
             .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_saved_conic_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| definition.saved_section.as_ref())
+            .flat_map(|saved| &saved.entities)
+            .filter(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Conic(_)))
+            .count(),
     );
     coverage.insert(
         "decoded_feature_entity_count".to_string(),
@@ -25205,6 +32390,7 @@ fn build_report(
     let positional_cylinder_count = count("transferred_positional_cylinder_count");
     let paired_envelope_sphere_count = count("transferred_paired_envelope_sphere_count");
     let positional_torus_count = count("transferred_positional_torus_count");
+    let topology_bound_plane_count = count("transferred_topology_bound_plane_surface_count");
     let mut losses = Vec::new();
 
     if container_only {
@@ -25239,8 +32425,8 @@ fn build_report(
              Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
              plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional \
              surface-of-extrusion planes, \
-             topology-bound `fc 05` \
-             cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
+             topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a \
+             resolved axis-normal cap plane, four-entry two-cap and blind \
              circular-sweep cylinders, \
              four-entry simple-hole cylinders with complete cap outlines, radius-anchored \
              class-911 counterbore and bore patches, and compact simple-hole cylinders with \
@@ -25291,6 +32477,20 @@ fn build_report(
             message: format!(
                 "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
                  VisibGeom local-system support frames."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && topology_bound_plane_count != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {topology_bound_plane_count} model-space plane carrier(s) from \
+                 circle, ellipse, or line boundary carriers or three or more non-collinear \
+                 solved boundary vertices of the same native face."
             ),
             provenance: None,
         });
@@ -25470,14 +32670,62 @@ fn build_report(
         });
     }
 
-    let straight_pcurve_line_count = count("transferred_straight_pcurve_line_count");
-    if !container_only && straight_pcurve_line_count != 0 {
+    let analytic_pcurve_carrier_count = count("transferred_analytic_pcurve_carrier_count");
+    if !container_only && analytic_pcurve_carrier_count != 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::CarrierSummary,
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {straight_pcurve_line_count} exact line carrier(s) by mapping native linear pcurves through placed planar, cylindrical, or conical face charts."
+                "Transferred {analytic_pcurve_carrier_count} exact analytic carrier(s) by mapping native linear pcurves through placed planar, cylindrical, conical, spherical, or toroidal face charts."
+            ),
+            provenance: None,
+        });
+    }
+
+    let extrusion_plane_boundary_curve_count =
+        count("transferred_extrusion_plane_boundary_curve_count");
+    if !container_only && extrusion_plane_boundary_curve_count != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {extrusion_plane_boundary_curve_count} exact NURBS boundary \
+                 carrier(s) where one tabulated-extrusion boundary lies in an adjacent plane \
+                 and every other control point lies strictly on one side."
+            ),
+            provenance: None,
+        });
+    }
+
+    let extrusion_plane_section_generator_curve_count =
+        count("transferred_extrusion_plane_section_generator_curve_count");
+    if !container_only && extrusion_plane_section_generator_curve_count != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {extrusion_plane_section_generator_curve_count} exact NURBS \
+                 generator carrier(s) where an adjacent plane contains the sweep direction and \
+                 the cubic directrix has exactly one plane intersection."
+            ),
+            provenance: None,
+        });
+    }
+
+    let shared_extrusion_generator_curve_count =
+        count("transferred_shared_extrusion_generator_curve_count");
+    if !container_only && shared_extrusion_generator_curve_count != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::CarrierSummary,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {shared_extrusion_generator_curve_count} exact shared NURBS \
+                 generator carrier(s) whose two tabulated-extrusion control nets meet on the \
+                 same linear boundary and lie strictly on opposite sides of a plane through it."
             ),
             provenance: None,
         });
@@ -25485,6 +32733,7 @@ fn build_report(
 
     let torus_coverage = torus_parameter_coverage(scan);
     if torus_coverage.radius_overrides != 0
+        || torus_coverage.replayed_minor_radii != 0
         || torus_coverage.outline_extents != 0
         || torus_coverage.five_coordinate_envelopes != 0
         || torus_coverage.split_coordinate_envelopes != 0
@@ -25494,11 +32743,13 @@ fn build_report(
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Retained {} tagged type-26 radius override(s), {} terminal outline extent(s), \
-                 {} five-coordinate envelope(s), and {} split-coordinate envelope(s). These \
-                 row-local fields remain byte-exact native data. Placement-complete paired sphere \
-                 envelopes additionally transfer as analytic carriers.",
+                "Retained {} tagged type-26 radius override(s), {} prototype-minor-radius \
+                 replay(s), {} terminal outline extent(s), {} five-coordinate envelope(s), and \
+                 {} split-coordinate envelope(s). These row-local fields remain byte-exact native \
+                 data. Placement-complete paired sphere envelopes additionally transfer as \
+                 analytic carriers.",
                 torus_coverage.radius_overrides,
+                torus_coverage.replayed_minor_radii,
                 torus_coverage.outline_extents,
                 torus_coverage.five_coordinate_envelopes,
                 torus_coverage.split_coordinate_envelopes,
@@ -25542,13 +32793,20 @@ fn build_report(
         }
         None => ", configuration presence",
     };
-    let prohibited_curve_expression_record_count = scan
+    let unevaluated_curve_expression_record_count = scan
         .curves
         .expressions
         .iter()
-        .filter(|record| !record.backup && !record.prohibited_constructs.is_empty())
+        .filter(|record| {
+            !record.backup
+                && (!record.prohibited_constructs.is_empty()
+                    || record.solve_blocks.iter().any(|block| {
+                        block.solutions.is_empty() || block.solutions.iter().any(Option::is_none)
+                    })
+                    || record.unresolved_solve_control)
+        })
         .count();
-    let curve_expression_transfer = if prohibited_curve_expression_record_count == 0 {
+    let curve_expression_transfer = if unevaluated_curve_expression_record_count == 0 {
         "Curve-equation assignments transfer with their source, dependencies, and closed numeric \
          and string operator and deterministic function values."
             .to_string()
@@ -25556,9 +32814,10 @@ fn build_report(
         format!(
             "Admitted curve-equation assignments transfer with their source, dependencies, and \
              closed numeric and string operator and deterministic function values. \
-             {prohibited_curve_expression_record_count} active curve-equation record(s) containing \
-             prohibited datum-curve constructs retain source and dependencies without values or \
-             derived curves."
+             {unevaluated_curve_expression_record_count} active curve-equation record(s) \
+             containing prohibited datum-curve constructs or unresolved simultaneous-solve \
+             control retain \
+             source and dependencies without solve-dependent assignment values or derived curves."
         )
     };
 
@@ -25582,13 +32841,23 @@ fn build_report(
     // but could not be transferred, resolved, or evaluated.
     let untransferred_surface_rows = count("untransferred_visible_surface_row_count");
     if untransferred_surface_rows != 0 {
+        let unresolved_families = SURFACE_KINDS
+            .into_iter()
+            .filter_map(|kind| {
+                let family = surface_family(kind);
+                let count = count(&format!("untransferred_visible_{family}_surface_row_count"));
+                (count != 0).then_some(format!("{family}={count}"))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
                 "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
-                 transferred as carriers and remain structural namespace records."
+                 transferred as carriers and remain structural namespace records \
+                 ({unresolved_families})."
             ),
             provenance: None,
         });
@@ -25632,6 +32901,332 @@ fn build_report(
             provenance: None,
         });
     }
+    let missing_segment_rows = count("missing_feature_segment_row_count");
+    if missing_segment_rows != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_segment_rows} declared section segment row(s) did not decode and remain \
+                 unavailable to the defining sketch."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_relation_rows = count("missing_feature_relation_row_count");
+    if missing_relation_rows != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_relation_rows} declared section relation row(s) did not decode; the \
+                 affected complete-table solver identities remain unavailable."
+            ),
+            provenance: None,
+        });
+    }
+    let malformed_relation_tables = count("malformed_feature_relation_table_count");
+    if malformed_relation_tables != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{malformed_relation_tables} section relation table(s) use the invalid zero \
+                 allocation count."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_skamp_rows = count("missing_feature_skamp_row_count");
+    if missing_skamp_rows != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_skamp_rows} declared section incidence row(s) did not decode; the \
+                 affected complete-table solver identities remain unavailable."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_triple_rows = count("missing_feature_relation_triple_row_count");
+    if missing_triple_rows != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_triple_rows} declared section relation-incidence join row(s) did not \
+                 decode; the affected complete-table solver identities remain unavailable."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_segment_geometry = count("unresolved_feature_segment_geometry_count");
+    if unresolved_segment_geometry != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_segment_geometry} decoded section segment(s) retain source-native \
+                 geometry because their exact neutral construction remains unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let active_native_skamps = count("active_native_feature_skamp_constraint_count");
+    if active_native_skamps != 0 {
+        let kinds = constraint_kind_breakdown(&coverage, "active_native_feature_skamp_type_");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{active_native_skamps} active section incidence constraint(s) retain native \
+                 operands because their neutral semantics or referenced geometry remain unresolved \
+                 ({kinds})."
+            ),
+            provenance: None,
+        });
+    }
+    let active_native_relations = count("active_native_feature_relation_constraint_count");
+    if active_native_relations != 0 {
+        let kinds = constraint_kind_breakdown(&coverage, "active_native_feature_relation_type_");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{active_native_relations} active section dimension relation(s) retain native \
+                 operands because their neutral semantics, incidence join, or referenced geometry \
+                 remain unresolved ({kinds})."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_sweeps = count("transferred_incomplete_sweep_feature_count");
+    if incomplete_sweeps != 0 {
+        let families = [
+            (
+                "extrude",
+                count("transferred_incomplete_extrude_feature_count"),
+            ),
+            (
+                "revolve",
+                count("transferred_incomplete_revolve_feature_count"),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_sweeps} profile sweep history feature(s) retain incomplete required \
+                 construction operands ({families})."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_surface_operations =
+        count("transferred_incomplete_surface_operation_feature_count");
+    if incomplete_surface_operations != 0 {
+        let families = [
+            (
+                "fill",
+                count("transferred_incomplete_filled_surface_feature_count"),
+            ),
+            (
+                "knit",
+                count("transferred_incomplete_knit_surface_feature_count"),
+            ),
+            (
+                "thicken",
+                count("transferred_incomplete_thicken_feature_count"),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_surface_operations} surface construction history feature(s) retain \
+                 incomplete required operands ({families})."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_other_constructions =
+        count("transferred_incomplete_other_construction_feature_count");
+    if incomplete_other_constructions != 0 {
+        let families = [
+            (
+                "pattern",
+                count("transferred_incomplete_pattern_feature_count"),
+            ),
+            (
+                "native-axis helix",
+                count("transferred_native_axis_helix_feature_count"),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_other_constructions} construction history feature(s) retain \
+                 unresolved neutral operands ({families})."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_recognized_features = count("transferred_incomplete_recognized_feature_count");
+    if incomplete_recognized_features != 0 {
+        let families = [
+            ("hole", count("transferred_incomplete_hole_feature_count")),
+            (
+                "fillet",
+                count("transferred_incomplete_fillet_feature_count"),
+            ),
+            (
+                "chamfer",
+                count("transferred_incomplete_chamfer_feature_count"),
+            ),
+            ("draft", count("transferred_incomplete_draft_feature_count")),
+        ]
+        .into_iter()
+        .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_recognized_features} recognized non-sweep history feature(s) retain \
+                 incomplete required construction operands ({families})."
+            ),
+            provenance: None,
+        });
+    }
+    let explicitly_unresolved_features = count("transferred_explicitly_unresolved_feature_count");
+    let native_features = count("transferred_native_feature_count");
+    if native_features != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{native_features} history feature definition(s) retain only source-native \
+                 semantics."
+            ),
+            provenance: None,
+        });
+    }
+    if explicitly_unresolved_features != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{explicitly_unresolved_features} typed history feature definition(s) retain an \
+                 explicitly unresolved model-space construction."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_dimension_driven_variables =
+        count("unresolved_feature_dimension_driven_variable_count");
+    if unresolved_dimension_driven_variables != 0 {
+        let unresolved_coordinate_variables =
+            count("unresolved_feature_dimension_driven_coordinate_variable_count");
+        let other_variables = count("unresolved_feature_dimension_driven_other_variable_count");
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_dimension_driven_variables} dimension-driven section solver \
+                 variable(s) retain unresolved exact values: {unresolved_coordinate_variables} \
+                 coordinate variable(s) lack a complete dimension equation and {other_variables} \
+                 variable(s) have a non-coordinate family whose dimension semantics are \
+                 unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_dimension_driven_guesses =
+        count("unresolved_feature_dimension_driven_guess_count");
+    if unresolved_dimension_driven_guesses != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_dimension_driven_guesses} section solver variable pre-solve \
+                 estimate(s) use a dimension-driven sentinel whose dimension join is unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let missing_solver_variables = count("missing_feature_solver_variable_count");
+    if missing_solver_variables != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_solver_variables} declared section solver variable row(s) did not \
+                 decode; stored and equation-derived coordinates are withheld for the incomplete \
+                 table."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_dimension_values = count("unresolved_feature_dimension_value_count");
+    if unresolved_dimension_values != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_dimension_values} section dimension(s) retain source-native value \
+                 tokens because their exact scalar encodings remain unresolved."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_configuration_driver_tables =
+        count("decoded_configuration_driver_table_reference_count")
+            .saturating_sub(count("transferred_configuration_driver_table_count"));
+    if unresolved_configuration_driver_tables != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_configuration_driver_tables} referenced configuration driver \
+                 table(s) retain unresolved traversal and row semantics."
+            ),
+            provenance: None,
+        });
+    }
     let prohibited_records = count("prohibited_active_curve_expression_record_count");
     if prohibited_records != 0 {
         losses.push(LossNote {
@@ -25642,6 +33237,35 @@ fn build_report(
                 "{prohibited_records} active curve-equation record(s) containing prohibited \
                  datum-curve constructs were not evaluated; source and dependencies were \
                  retained without values or derived curves."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_solve_blocks = count("decoded_active_curve_expression_solve_block_count")
+        .saturating_sub(count("evaluated_active_curve_expression_solve_block_count"));
+    if unresolved_solve_blocks != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_solve_blocks} active curve-equation simultaneous-solve block(s) \
+                 retain their ordered equations and unknowns without solved values or derived \
+                 curves."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_solve_controls = count("unresolved_active_curve_expression_solve_control_count");
+    if unresolved_solve_controls != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::FeatureHistoryRetained,
+            category: LossCategory::Attribute,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_solve_controls} active curve-equation record(s) retain malformed or \
+                 incomplete simultaneous-solve control without sequentially interpreting its \
+                 bounded source lines."
             ),
             provenance: None,
         });

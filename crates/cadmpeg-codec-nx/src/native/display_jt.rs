@@ -3828,6 +3828,9 @@ mod tests {
             version: 6,
             file_tag: 0,
             footer_offset: 0,
+            header_entry_count: 0,
+            footer_entry_count: 0,
+            footer_fingerprint: [0; 4],
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Footer,
@@ -3921,6 +3924,9 @@ mod tests {
             version: 6,
             file_tag: 0,
             footer_offset: 0,
+            header_entry_count: 0,
+            footer_entry_count: 0,
+            footer_fingerprint: [0; 4],
             entries: Vec::new(),
         };
         let segment = DisplayJtSegment {
@@ -4005,6 +4011,9 @@ mod tests {
             version: 6,
             file_tag: 0,
             footer_offset: 0,
+            header_entry_count: 0,
+            footer_entry_count: 0,
+            footer_fingerprint: [0; 4],
             entries: Vec::new(),
         };
         let scene = DisplayJtSegment {
@@ -4752,6 +4761,9 @@ mod tests {
             version: 1,
             file_tag: 0,
             footer_offset: 0,
+            header_entry_count: 0,
+            footer_entry_count: 0,
+            footer_fingerprint: [0; 4],
             entries: Vec::new(),
         };
         let elements = [DisplayJtShapeLodElement {

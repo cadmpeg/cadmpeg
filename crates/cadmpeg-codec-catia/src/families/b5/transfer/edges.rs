@@ -129,14 +129,21 @@ pub(super) fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option
 }
 
 pub(super) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
-    const PARAMETER_TOLERANCE: f64 = 1e-9;
+    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-10;
 
-    if !parameters.into_iter().all(f64::is_finite)
+    let domain_span = domain[1] - domain[0];
+    if !domain.into_iter().all(f64::is_finite)
+        || !domain_span.is_finite()
+        || domain_span <= 0.0
+        || !parameters.into_iter().all(f64::is_finite)
         || parameters[0] == parameters[1]
-        || parameters.iter().any(|parameter| {
-            *parameter < domain[0] - PARAMETER_TOLERANCE
-                || *parameter > domain[1] + PARAMETER_TOLERANCE
-        })
+    {
+        return None;
+    }
+    let tolerance = RELATIVE_PARAMETER_TOLERANCE * domain_span;
+    if parameters
+        .iter()
+        .any(|parameter| *parameter < domain[0] - tolerance || *parameter > domain[1] + tolerance)
     {
         return None;
     }

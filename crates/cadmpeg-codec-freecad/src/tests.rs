@@ -1410,7 +1410,7 @@ fn transfers_part_ruled_surface_and_section_intersection() {
     assert!(matches!(
         feature("Section").definition,
         cadmpeg_ir::features::FeatureDefinition::SectionShape {
-            approximate: true,
+            approximate: Some(true),
             ..
         }
     ));
@@ -2947,6 +2947,7 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
         kind,
         cadmpeg_ir::features::HoleKind::Counterdrill {
             diameter: cadmpeg_ir::features::Length(12.0),
+            entry_diameter: None,
             depth: cadmpeg_ir::features::Length(2.0),
             angle: cadmpeg_ir::features::Angle(angle),
         } if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1e-12
@@ -5954,3 +5955,6 @@ fn inspects_and_closes_physical_ledger() {
         );
     }
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

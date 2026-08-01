@@ -19,7 +19,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use super::graph::{loop_chain_senses, B5Graph, B5Surface};
+use super::graph::{
+    loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph, B5OffsetSurface,
+    B5SupportedSurface, B5Surface,
+};
 
 mod edges;
 mod faces;
@@ -36,6 +39,7 @@ use faces::{orient_loop_members, ownership_plan};
 use pcurves::{
     cylinder_helix, isocurve_endpoint_parameters, lifted_curve_geometry, neutral_pcurve_point,
     nurbs_isocurve, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
+    sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
 use vertices::transfer_vertex_tolerances;
 
@@ -54,6 +58,7 @@ struct RevolutionPlan {
 
 #[allow(clippy::large_enum_variant)]
 enum SurfaceProcedure {
+    Extrusion(Box<ResolvedExtrusionSurface>),
     Revolution(RevolutionPlan),
     RollingBall {
         carrier_object_id: u32,
@@ -91,6 +96,7 @@ struct OwnershipPlan {
 struct OrientedLoop {
     member_order: Vec<usize>,
     reversed: Vec<bool>,
+    pcurve_reversed: Vec<bool>,
 }
 
 /// Cross-pass id tables and resolved geometry plans shared between the emit
@@ -151,7 +157,7 @@ pub(crate) fn transfer(
                         || graph.implicit_pcurves.get(pcurve) == Some(&loop_.surface))
                         && graph.edge_vertices.contains_key(edge)
                 })
-                && loop_chain_senses(loop_, &graph.edge_vertices).is_some()
+                && loop_chain_closes(loop_, &graph.edge_vertices)
         });
         graph.faces.retain(|face| {
             graph.surfaces.contains_key(&face.surface)
@@ -192,7 +198,7 @@ fn transfer_complete(
     };
     vertices::emit_vertices(ir, annotations, graph, &plan);
     let surface_ids = surfaces::emit_surfaces(ir, annotations, graph, &mut plan);
-    let pcurve_ids = pcurves::emit_pcurves(ir, annotations, graph, &plan);
+    let pcurve_uses = pcurves::emit_pcurves(ir, annotations, graph, &plan);
     let edge_id_map = edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids);
     faces::emit_faces(
         ir,
@@ -200,10 +206,76 @@ fn transfer_complete(
         graph,
         &plan,
         &surface_ids,
-        &pcurve_ids,
+        &pcurve_uses,
         &edge_id_map,
     );
     true
+}
+
+fn referenced_surface_ids(
+    roots: impl IntoIterator<Item = u32>,
+    offsets: &BTreeMap<u32, B5OffsetSurface>,
+    supported: &BTreeMap<u32, B5SupportedSurface>,
+    extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
+    aliases: &BTreeMap<u32, u32>,
+) -> HashSet<u32> {
+    let mut referenced = roots.into_iter().collect::<HashSet<_>>();
+    let mut pending = referenced.iter().copied().collect::<Vec<_>>();
+    while let Some(surface_id) = pending.pop() {
+        let Some(construction_id) = super::graph::canonical_surface_id(aliases, surface_id) else {
+            continue;
+        };
+        let dependencies = offsets
+            .get(&construction_id)
+            .map(|offset| vec![offset.source_surface, offset.carrier_surface])
+            .or_else(|| {
+                supported.get(&construction_id).map(|construction| {
+                    let mut dependencies = construction.support_surfaces.to_vec();
+                    dependencies.push(construction.carrier_surface);
+                    dependencies
+                })
+            })
+            .or_else(|| {
+                extrusions.get(&construction_id).map(|extrusion| {
+                    extrusion
+                        .directrix
+                        .supports()
+                        .into_iter()
+                        .map(|(support, _, _)| support)
+                        .collect()
+                })
+            })
+            .unwrap_or_default();
+        for dependency in dependencies {
+            if referenced.insert(dependency) {
+                pending.push(dependency);
+            }
+        }
+    }
+    referenced
+}
+
+fn native_pcurve_parameter_range(
+    pcurve: &super::graph::B5Pcurve,
+    knots: &[f64],
+) -> Option<[f64; 2]> {
+    let degree = usize::try_from(pcurve.degree).ok()?;
+    let spline_domain = knots
+        .get(degree)
+        .copied()
+        .zip(
+            knots
+                .len()
+                .checked_sub(degree + 1)
+                .and_then(|index| knots.get(index))
+                .copied(),
+        )
+        .map(|(start, end)| [start, end])
+        .filter(|range| range[0].is_finite() && range[0] < range[1])?;
+    match pcurve.parameter_range {
+        Some(range) => bounded_occurrence_range(range, spline_domain),
+        None => Some(spline_domain),
+    }
 }
 
 /// Resolve the whole graph into the cross-pass [`TransferPlan`]. Returns `None`
@@ -218,17 +290,13 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
 
     let ownership = ownership_plan(graph)?;
 
-    let mut referenced_surfaces: HashSet<u32> =
-        graph.faces.iter().map(|face| face.surface).collect();
-    let mut pending_surfaces: Vec<u32> = referenced_surfaces.iter().copied().collect();
-    while let Some(surface_id) = pending_surfaces.pop() {
-        let Some(offset) = graph.offset_surfaces.get(&surface_id) else {
-            continue;
-        };
-        if referenced_surfaces.insert(offset.source_surface) {
-            pending_surfaces.push(offset.source_surface);
-        }
-    }
+    let referenced_surfaces = referenced_surface_ids(
+        graph.faces.iter().map(|face| face.surface),
+        &graph.offset_surfaces,
+        &graph.supported_surfaces,
+        &graph.extrusion_surfaces,
+        &graph.surface_aliases,
+    );
     let mut surface_plan = BTreeMap::new();
     for surface_id in referenced_surfaces {
         let surface = graph.surfaces.get(&surface_id)?;
@@ -257,16 +325,75 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         {
             return None;
         }
-        let senses = loop_chain_senses(loop_, &graph.edge_vertices)?;
-        loop_senses.insert(loop_.object_id, senses);
+        if !loop_chain_closes(loop_, &graph.edge_vertices) {
+            return None;
+        }
+        loop_senses.insert(loop_.object_id, loop_.edge_senses());
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
             let Some(pcurve) = graph.pcurves.get(&pcurve_id) else {
-                if graph
+                if let Some(opaque) = graph
                     .opaque_pcurves
                     .get(&pcurve_id)
-                    .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                    || graph.implicit_pcurves.get(&pcurve_id) == Some(&loop_.surface)
+                    .filter(|pcurve| pcurve.surface == loop_.surface)
                 {
+                    if let Some((pcurve_geometry, parameter_range, geometry)) = opaque
+                        .sphere_great_circle
+                        .as_ref()
+                        .and_then(|pcurve| {
+                            let (pcurve_geometry, parameter_range) =
+                                sphere_great_circle_pcurve(pcurve)?;
+                            let geometry = sphere_great_circle_geometry(
+                                pcurve,
+                                graph.surfaces.get(&loop_.surface)?,
+                            )?;
+                            Some((pcurve_geometry, parameter_range, geometry))
+                        })
+                        .filter(|(_, _, geometry)| {
+                            let endpoints = graph.edge_vertices[&edge_id];
+                            let Some(points) = endpoints
+                                .map(|vertex| b5_vertex_point(graph, vertex))
+                                .into_iter()
+                                .collect::<Option<Vec<_>>>()
+                            else {
+                                return false;
+                            };
+                            circle_contains_points(geometry, &points)
+                        })
+                    {
+                        pcurve_plan.entry(pcurve_id).or_insert((
+                            pcurve_geometry,
+                            false,
+                            parameter_range,
+                        ));
+                        let support_range = edge_pcurve_parameters(graph, edge_id, pcurve_id)
+                            .and_then(|parameters| {
+                                bounded_occurrence_range(parameters, parameter_range)
+                            })
+                            .unwrap_or(parameter_range);
+                        let supports = edge_support_plan.entry(edge_id).or_default();
+                        if !supports.iter().any(|(surface, pcurve, range)| {
+                            *surface == loop_.surface
+                                && *pcurve == pcurve_id
+                                && *range == support_range
+                        }) {
+                            supports.push((loop_.surface, pcurve_id, support_range));
+                        }
+                        merge_curve_plan(
+                            &mut edge_curve_plan,
+                            &mut conflicting_edge_curves,
+                            edge_id,
+                            CurvePlan {
+                                geometry,
+                                parameter_range: None,
+                                edge_tolerance: None,
+                                cache_fit_tolerance: None,
+                            },
+                        );
+                    }
+                    edge_ids.insert(edge_id);
+                    continue;
+                }
+                if graph.implicit_pcurves.get(&pcurve_id) == Some(&loop_.surface) {
                     edge_ids.insert(edge_id);
                     continue;
                 }
@@ -276,19 +403,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                 return None;
             }
             let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
-            let degree = usize::try_from(pcurve.degree).ok()?;
-            let parameter_range = knots
-                .get(degree)
-                .copied()
-                .zip(
-                    knots
-                        .len()
-                        .checked_sub(degree + 1)
-                        .and_then(|index| knots.get(index))
-                        .copied(),
-                )
-                .map(|(start, end)| [start, end])
-                .filter(|range| range[0].is_finite() && range[0] < range[1])?;
+            let parameter_range = native_pcurve_parameter_range(pcurve, &knots)?;
             let surface = graph.surfaces.get(&loop_.surface)?;
             let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
             let geometry = PcurveGeometry::Nurbs {
@@ -506,6 +621,80 @@ pub(crate) fn resolved_surface_geometry(
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
 }
 
+#[derive(Clone, PartialEq)]
+/// One object-stream pcurve lowered with its exact resolved support carrier.
+pub(crate) struct ResolvedObjectStreamPcurve {
+    /// Persistent identity of the pcurve's support surface.
+    pub(crate) surface_object_id: u32,
+    /// Exact neutral support construction.
+    pub(crate) carrier: ResolvedPcurveSurface,
+    /// Exact neutral parameter-space curve.
+    pub(crate) geometry: PcurveGeometry,
+    /// Native pcurve parameter interval.
+    pub(crate) parameter_range: [f64; 2],
+}
+
+/// Exact neutral carrier for an identity-bound object-stream pcurve.
+#[derive(Clone, PartialEq)]
+pub(crate) enum ResolvedPcurveSurface {
+    /// Direct neutral surface geometry.
+    Geometry(SurfaceGeometry),
+    /// Procedural rolling-ball carrier.
+    RollingBall {
+        /// Persistent result-carrier identity.
+        carrier_object_id: u32,
+        /// Exact rolling-ball definition.
+        definition: Box<ProceduralSurfaceDefinition>,
+    },
+}
+
+/// Lower one resolved object-stream surface to an exact neutral carrier.
+pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPcurveSurface> {
+    surfaces::neutral_analytic_surface(surface)
+        .map(ResolvedPcurveSurface::Geometry)
+        .or_else(|| match surface {
+            B5Surface::RollingBall {
+                carrier_object_id,
+                definition,
+            } => Some(ResolvedPcurveSurface::RollingBall {
+                carrier_object_id: *carrier_object_id,
+                definition: Box::new(definition.clone()),
+            }),
+            _ => None,
+        })
+}
+
+/// Lower one decoded degree-5 UV jet through its resolved native chart.
+#[must_use]
+pub(crate) fn resolved_object_stream_pcurve(
+    pcurve: &crate::families::a5a8::records::A8Pcurve,
+    surface: &B5Surface,
+) -> Option<ResolvedObjectStreamPcurve> {
+    let carrier = resolved_surface_carrier(surface)?;
+    let (knots, control_points) = crate::nurbs::quintic_jet_bspline(
+        pcurve.degree,
+        &pcurve.knots,
+        &pcurve.points,
+        &pcurve.first_derivatives,
+        &pcurve.second_derivatives,
+    )?;
+    Some(ResolvedObjectStreamPcurve {
+        surface_object_id: pcurve.support_id,
+        carrier,
+        geometry: PcurveGeometry::Nurbs {
+            degree: pcurve.degree,
+            knots,
+            control_points: control_points
+                .into_iter()
+                .map(|point| pcurves::neutral_pcurve_point(point, surface))
+                .collect(),
+            weights: None,
+            periodic: false,
+        },
+        parameter_range: pcurve.range,
+    })
+}
+
 pub(crate) fn resolved_surface_procedural_definition(
     graph: &B5Graph,
     surface_id: u32,
@@ -517,7 +706,7 @@ pub(crate) fn resolved_surface_procedural_definition(
             carrier_object_id,
             definition,
         } => Some((carrier_object_id, definition)),
-        SurfaceProcedure::Revolution(_) => None,
+        SurfaceProcedure::Extrusion(_) | SurfaceProcedure::Revolution(_) => None,
     }
 }
 
@@ -532,6 +721,42 @@ pub(crate) struct ResolvedExtrusionSupport {
     pub(crate) pcurve: PcurveGeometry,
     /// Native interval used by this support occurrence.
     pub(crate) pcurve_parameter_range: [f64; 2],
+    /// Exact model-space lift when the support chart admits one.
+    pub(crate) curve: Option<CurveGeometry>,
+}
+
+/// Exact neutral construction of one extrusion directrix.
+#[derive(Clone, PartialEq)]
+pub(crate) enum ResolvedExtrusionDirectrix {
+    /// Intersection of two support surfaces.
+    Intersection {
+        /// Ordered exact support sides.
+        supports: Box<[ResolvedExtrusionSupport; 2]>,
+        /// Positive fit tolerance of the retained sampled cache.
+        cache_fit_tolerance: f64,
+    },
+    /// One pcurve lifted through its exact support surface.
+    SurfaceCurve {
+        /// Exact support side.
+        support: ResolvedExtrusionSupport,
+        /// Exact model-space curve lifted through the support.
+        curve: CurveGeometry,
+    },
+    /// Fixed-direction offset of a one-support source curve.
+    Offset {
+        /// Persistent source-curve wrapper identity.
+        source_object_id: u32,
+        /// Exact source support side.
+        support: ResolvedExtrusionSupport,
+        /// Exact model-space source curve lifted through the support.
+        source_curve: CurveGeometry,
+        /// Increasing source-curve interval.
+        source_parameter_range: [f64; 2],
+        /// Signed offset distance.
+        distance: f64,
+        /// Unit direction defining the positive offset side.
+        direction: Vector3,
+    },
 }
 
 /// Exact two-support directrix and extrusion chart resolved from B5 objects.
@@ -543,12 +768,22 @@ pub(crate) struct ResolvedExtrusionSurface {
     pub(crate) directrix_object_id: u32,
     /// Solved directrix interval shared by the support mappings.
     pub(crate) directrix_parameter_range: [f64; 2],
-    /// Fit tolerance of the retained sampled directrix cache.
-    pub(crate) cache_fit_tolerance: f64,
     /// Unit world-space extrusion direction.
     pub(crate) direction: Vector3,
-    /// Ordered exact support sides.
-    pub(crate) supports: [ResolvedExtrusionSupport; 2],
+    /// Ordered native U and V chart bounds.
+    pub(crate) parameter_bounds: [[f64; 2]; 2],
+    /// Exact directrix construction.
+    pub(crate) directrix: ResolvedExtrusionDirectrix,
+}
+
+impl ResolvedExtrusionSurface {
+    pub(crate) fn supports(&self) -> Vec<&ResolvedExtrusionSupport> {
+        match &self.directrix {
+            ResolvedExtrusionDirectrix::Intersection { supports, .. } => supports.iter().collect(),
+            ResolvedExtrusionDirectrix::SurfaceCurve { support, .. }
+            | ResolvedExtrusionDirectrix::Offset { support, .. } => vec![support],
+        }
+    }
 }
 
 /// Exact support construction of a resolved offset surface.
@@ -571,67 +806,172 @@ pub(crate) struct ResolvedOffsetSurface {
     pub(crate) support: ResolvedOffsetSupport,
     /// Signed offset distance.
     pub(crate) distance: f64,
+    /// Ordered native U and V chart bounds.
+    pub(crate) parameter_bounds: [[f64; 2]; 2],
 }
 
 pub(crate) fn resolved_extrusion_surface(
     graph: &B5Graph,
     surface_id: u32,
 ) -> Option<ResolvedExtrusionSurface> {
-    let extrusion = graph.extrusion_surfaces.get(&surface_id)?;
-    let supports: [ResolvedExtrusionSupport; 2] = extrusion
-        .directrix
-        .supports
-        .each_ref()
-        .map(
-            |&(surface_object_id, pcurve_object_id, pcurve_parameter_range)| {
-                let source_surface = graph.surfaces.get(&surface_object_id)?;
-                let surface = resolved_surface_geometry(graph, surface_object_id)?;
-                let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-                let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
-                let degree = usize::try_from(pcurve.degree).ok()?;
-                let domain = [
-                    *knots.get(degree)?,
-                    *knots.get(knots.len().checked_sub(degree + 1)?)?,
-                ];
-                bounded_occurrence_range(pcurve_parameter_range, domain)?;
-                Some(ResolvedExtrusionSupport {
-                    surface_object_id,
-                    surface,
-                    pcurve: PcurveGeometry::Nurbs {
-                        degree: pcurve.degree,
-                        knots,
-                        control_points: pcurve
-                            .control_points
-                            .iter()
-                            .map(|point| neutral_pcurve_point(*point, source_surface))
-                            .collect(),
-                        weights: pcurve.weights.clone(),
-                        periodic: false,
-                    },
-                    pcurve_parameter_range,
-                })
-            },
-        )
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
-    (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
+    let construction_id = graph.canonical_surface_id(surface_id)?;
+    let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
+    let resolve_support =
+        |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (u32, u32, [f64; 2])| {
+            let source_surface = graph.surfaces.get(&surface_object_id)?;
+            let surface = resolved_surface_geometry(graph, surface_object_id)?;
+            let pcurve = graph.pcurves.get(&pcurve_object_id)?;
+            let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
+            let degree = usize::try_from(pcurve.degree).ok()?;
+            let domain = [
+                *knots.get(degree)?,
+                *knots.get(knots.len().checked_sub(degree + 1)?)?,
+            ];
+            bounded_occurrence_range(pcurve_parameter_range, domain)?;
+            let pcurve_geometry = PcurveGeometry::Nurbs {
+                degree: pcurve.degree,
+                knots,
+                control_points: pcurve
+                    .control_points
+                    .iter()
+                    .map(|point| neutral_pcurve_point(*point, source_surface))
+                    .collect(),
+                weights: pcurve.weights.clone(),
+                periodic: false,
+            };
+            let curve = lifted_curve_geometry(pcurve, source_surface);
+            Some(ResolvedExtrusionSupport {
+                surface_object_id,
+                surface,
+                pcurve: pcurve_geometry,
+                pcurve_parameter_range,
+                curve,
+            })
+        };
+    let directrix = match &extrusion.directrix {
+        B5ExtrusionDirectrix::Intersection {
+            supports,
+            cache_fit_tolerance,
+            ..
+        } => {
+            let supports: [ResolvedExtrusionSupport; 2] = supports
+                .map(resolve_support)
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
+            ResolvedExtrusionDirectrix::Intersection {
+                supports: Box::new(supports),
+                cache_fit_tolerance: *cache_fit_tolerance,
+            }
+        }
+        B5ExtrusionDirectrix::SurfaceCurve { support, .. } => {
+            let support = resolve_support(*support)?;
+            let curve = curve_on_parameter_range(
+                support.curve.clone()?,
+                support.pcurve_parameter_range,
+                extrusion.parameter_bounds[1],
+            )?;
+            ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
+        }
+        B5ExtrusionDirectrix::Offset {
+            source,
+            source_parameter_range,
+            distance,
+            direction,
+            ..
+        } => {
+            let B5ExtrusionDirectrix::SurfaceCurve {
+                object_id, support, ..
+            } = source.as_ref()
+            else {
+                return None;
+            };
+            let support = resolve_support(*support)?;
+            let source_curve = curve_on_parameter_range(
+                support.curve.clone()?,
+                *source_parameter_range,
+                extrusion.parameter_bounds[1],
+            )?;
+            ResolvedExtrusionDirectrix::Offset {
+                source_object_id: *object_id,
+                support,
+                source_curve,
+                source_parameter_range: extrusion.parameter_bounds[1],
+                distance: *distance,
+                direction: vector(*direction),
+            }
+        }
+    };
     Some(ResolvedExtrusionSurface {
-        surface_object_id: extrusion.object_id,
-        directrix_object_id: extrusion.directrix.object_id,
-        directrix_parameter_range: extrusion.directrix.parameter_range,
-        cache_fit_tolerance: extrusion.directrix.cache_fit_tolerance,
+        surface_object_id: surface_id,
+        directrix_object_id: extrusion.directrix.object_id(),
+        directrix_parameter_range: extrusion.parameter_bounds[1],
         direction: vector(extrusion.direction),
-        supports,
+        parameter_bounds: extrusion.parameter_bounds,
+        directrix,
     })
+}
+
+fn curve_on_parameter_range(
+    curve: CurveGeometry,
+    source: [f64; 2],
+    target: [f64; 2],
+) -> Option<CurveGeometry> {
+    if parameter_range_contains(source, target) {
+        return Some(curve);
+    }
+    let source_span = source[1] - source[0];
+    let target_span = target[1] - target[0];
+    if !source_span.is_finite()
+        || source_span <= 0.0
+        || !target_span.is_finite()
+        || target_span <= 0.0
+    {
+        return None;
+    }
+    let target_per_source = target_span / source_span;
+    let source_per_target = source_span / target_span;
+    match curve {
+        CurveGeometry::Nurbs(mut curve) => {
+            for knot in &mut curve.knots {
+                *knot = target[0] + (*knot - source[0]) * target_per_source;
+            }
+            Some(CurveGeometry::Nurbs(curve))
+        }
+        CurveGeometry::Line { origin, direction } => Some(CurveGeometry::Line {
+            origin: Point3::new(
+                origin.x + (source[0] - target[0] * source_per_target) * direction.x,
+                origin.y + (source[0] - target[0] * source_per_target) * direction.y,
+                origin.z + (source[0] - target[0] * source_per_target) * direction.z,
+            ),
+            direction: Vector3::new(
+                direction.x * source_per_target,
+                direction.y * source_per_target,
+                direction.z * source_per_target,
+            ),
+        }),
+        _ => None,
+    }
+}
+
+fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
+    let scale = domain
+        .into_iter()
+        .chain(active)
+        .map(f64::abs)
+        .fold(1.0f64, f64::max);
+    let tolerance = 64.0 * f64::EPSILON * scale;
+    domain[0] <= active[0] + tolerance && active[1] <= domain[1] + tolerance
 }
 
 pub(crate) fn resolved_offset_surface(
     graph: &B5Graph,
     surface_id: u32,
 ) -> Option<ResolvedOffsetSurface> {
-    let offset = graph.offset_surfaces.get(&surface_id)?;
+    let construction_id = graph.canonical_surface_id(surface_id)?;
+    let offset = graph.offset_surfaces.get(&construction_id)?;
     let support = resolved_surface_geometry(graph, offset.source_surface)
         .map(ResolvedOffsetSupport::Geometry)
         .or_else(|| {
@@ -644,6 +984,7 @@ pub(crate) fn resolved_offset_surface(
         support_object_id: offset.source_surface,
         support,
         distance: offset.distance,
+        parameter_bounds: offset.parameter_bounds,
     })
 }
 
@@ -706,18 +1047,39 @@ fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
         .sqrt()
 }
 
+fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool {
+    let CurveGeometry::Circle {
+        center,
+        axis,
+        radius,
+        ..
+    } = geometry
+    else {
+        return false;
+    };
+    let center = [center.x, center.y, center.z];
+    let axis = [axis.x, axis.y, axis.z];
+    points.iter().all(|point| {
+        let offset = subtract(*point, center);
+        (length(offset) - radius).abs() <= POINT_TOLERANCE
+            && dot(offset, axis).abs() <= POINT_TOLERANCE
+    })
+}
+
 // `unit` normalizes by per-component division, a bit-level-distinct form from
 // the parse graph's reciprocal-multiply (`graph::unit`). The two must NOT be
 // unified: the affected profiles depend on the exact rounding of each form.
 fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
-    let length = length(value);
-    (length > f64::EPSILON).then(|| [value[0] / length, value[1] / length, value[2] / length])
+    let length = value[0].hypot(value[1]).hypot(value[2]);
+    (length.is_finite() && length != 0.0)
+        .then(|| [value[0] / length, value[1] / length, value[2] / length])
 }
 #[cfg(test)]
 mod tests {
     use super::super::graph::{
-        loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
-        B5Surface,
+        loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
+        B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
+        B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
     };
     use super::edges::{
         b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
@@ -728,10 +1090,21 @@ mod tests {
     use super::pcurves::{
         cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
         neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
+        sphere_great_circle_geometry, sphere_great_circle_pcurve,
     };
+    use super::unit;
+
+    #[test]
+    fn unit_preserves_tiny_finite_direction() {
+        assert_eq!(unit([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
+        assert_eq!(unit([0.0, 0.0, 0.0]), None);
+    }
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
-    use super::{transfer, CurvePlan, SurfacePlan};
+    use super::{
+        build_plan, curve_on_parameter_range, native_pcurve_parameter_range,
+        referenced_surface_ids, transfer, CurvePlan, SurfacePlan,
+    };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
@@ -743,6 +1116,172 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn affine_curve_ranges_reparameterize_without_changing_geometry() {
+        let nurbs = NurbsCurve {
+            degree: 1,
+            knots: vec![10.0, 10.0, 20.0, 20.0],
+            control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+            weights: None,
+            periodic: false,
+        };
+        let CurveGeometry::Nurbs(translated) = curve_on_parameter_range(
+            CurveGeometry::Nurbs(nurbs.clone()),
+            [10.0, 20.0],
+            [0.0, 10.0],
+        )
+        .expect("equal-span NURBS translation") else {
+            unreachable!();
+        };
+        assert_eq!(translated.knots, [0.0, 0.0, 10.0, 10.0]);
+        assert_eq!(translated.control_points, nurbs.control_points);
+
+        let line = CurveGeometry::Line {
+            origin: Point3::new(10.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert_eq!(
+            curve_on_parameter_range(line, [10.0, 20.0], [0.0, 10.0]),
+            Some(CurveGeometry::Line {
+                origin: Point3::new(20.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+        );
+        assert_eq!(
+            curve_on_parameter_range(
+                CurveGeometry::Nurbs(nurbs.clone()),
+                [10.0, 20.0],
+                [12.0, 18.0],
+            ),
+            Some(CurveGeometry::Nurbs(nurbs.clone()))
+        );
+        let CurveGeometry::Nurbs(scaled) =
+            curve_on_parameter_range(CurveGeometry::Nurbs(nurbs), [10.0, 20.0], [0.0, 2.0])
+                .expect("positive affine NURBS mapping")
+        else {
+            unreachable!();
+        };
+        assert_eq!(scaled.knots, [0.0, 0.0, 2.0, 2.0]);
+        assert_eq!(
+            curve_on_parameter_range(
+                CurveGeometry::Line {
+                    origin: Point3::new(10.0, 0.0, 0.0),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                },
+                [10.0, 20.0],
+                [0.0, 2.0],
+            ),
+            Some(CurveGeometry::Line {
+                origin: Point3::new(20.0, 0.0, 0.0),
+                direction: Vector3::new(5.0, 0.0, 0.0),
+            })
+        );
+    }
+
+    #[test]
+    fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {
+        let mut pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 10.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+            weights: None,
+            parameter_range: Some([2.0, 8.0]),
+            class_21_suffix_scalar: None,
+            lifted_endpoints: None,
+        };
+        let knots = vec![0.0, 0.0, 10.0, 10.0];
+        assert_eq!(
+            native_pcurve_parameter_range(&pcurve, &knots),
+            Some([2.0, 8.0])
+        );
+        pcurve.parameter_range = None;
+        assert_eq!(
+            native_pcurve_parameter_range(&pcurve, &knots),
+            Some([0.0, 10.0])
+        );
+        pcurve.parameter_range = Some([-1.0, 8.0]);
+        assert_eq!(native_pcurve_parameter_range(&pcurve, &knots), None);
+    }
+
+    fn test_loop_metadata(edge_count: usize) -> B5LoopMetadata {
+        B5LoopMetadata {
+            framing_controls: [0x05, 0x05],
+            edge_controls: vec![[1, 1, 1]; edge_count],
+            extension: None,
+        }
+    }
+
+    #[test]
+    fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
+        let offsets = BTreeMap::from([(
+            30,
+            B5OffsetSurface {
+                object_id: 30,
+                carrier_surface: 31,
+                source_surface: 50,
+                distance: 1.0,
+                carrier_kind: 2,
+                parameter_bounds: [[0.0, 1.0], [0.0, 1.0]],
+            },
+        )]);
+        let supported = BTreeMap::from([(
+            10,
+            B5SupportedSurface {
+                object_id: 10,
+                carrier_surface: 20,
+                support_surfaces: [30, 40],
+                support_pcurves: [60, 70],
+                parameters: B5SupportedSurfaceParameters::Radius {
+                    controls: [1; 6],
+                    construction_radius: 2.0,
+                },
+            },
+        )]);
+        let extrusions = BTreeMap::from([(
+            50,
+            B5ExtrusionSurface {
+                object_id: 50,
+                direction: [0.0, 0.0, 1.0],
+                parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
+                directrix: B5ExtrusionDirectrix::Intersection {
+                    object_id: 80,
+                    supports: [(90, 91, [0.0, 1.0]), (100, 101, [0.0, 1.0])],
+                    parameter_range: [0.0, 1.0],
+                    cache_fit_tolerance: 1e-6,
+                },
+            },
+        )]);
+
+        assert_eq!(
+            referenced_surface_ids([10], &offsets, &supported, &extrusions, &BTreeMap::new(),),
+            HashSet::from([10, 20, 30, 31, 40, 50, 90, 100])
+        );
+    }
+
+    #[test]
+    fn surface_closure_follows_aliases_to_native_constructions() {
+        let offsets = BTreeMap::from([(
+            20,
+            B5OffsetSurface {
+                object_id: 20,
+                carrier_surface: 30,
+                source_surface: 40,
+                distance: 2.0,
+                carrier_kind: 2,
+                parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
+            },
+        )]);
+        let aliases = BTreeMap::from([(10, 11), (11, 20)]);
+
+        assert_eq!(
+            referenced_surface_ids([10], &offsets, &BTreeMap::new(), &BTreeMap::new(), &aliases,),
+            HashSet::from([10, 30, 40])
+        );
+    }
 
     #[test]
     fn occurrence_interval_orders_and_bounds_native_stations() {
@@ -758,25 +1297,14 @@ mod tests {
             bounded_occurrence_range([8.0, 2.0], [0.0, 10.0]),
             Some([8.0, 2.0])
         );
-    }
 
-    #[test]
-    fn closed_one_edge_loop_uses_native_edge_direction() {
-        let loop_ = B5Loop {
-            object_id: 1,
-            pcurves: vec![2],
-            edges: vec![3],
-            surface: 4,
-        };
-
+        let tiny = 1e-200_f64;
         assert_eq!(
-            loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 0])])),
-            Some(vec![false])
+            bounded_occurrence_range([0.0, tiny], [0.0, tiny]),
+            Some([0.0, tiny])
         );
-        assert_eq!(
-            loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 1])])),
-            None
-        );
+        assert!(bounded_occurrence_range([0.0, 2.0 * tiny], [0.0, tiny]).is_none());
+        assert!(bounded_occurrence_range([0.0, tiny], [tiny, 0.0]).is_none());
     }
 
     #[test]
@@ -784,11 +1312,13 @@ mod tests {
         let mut graph = B5Graph {
             complete: false,
             faces: Vec::new(),
+            face_records: BTreeMap::new(),
             loops: BTreeMap::new(),
             pcurves: BTreeMap::new(),
             opaque_pcurves: BTreeMap::new(),
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
@@ -812,6 +1342,8 @@ mod tests {
                     },
                 ),
             ]),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
             vertex_points: Vec::new(),
             logical_vertex_points: vec![[0.0, 0.0, 0.0]],
             logical_vertex_refs: vec![50],
@@ -827,20 +1359,23 @@ mod tests {
     }
 
     #[test]
-    fn repeated_source_pcurve_has_independently_trimmed_occurrence_carriers() {
-        let graph = B5Graph {
+    fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
+        let mut graph = B5Graph {
             complete: true,
             faces: vec![B5Face {
                 object_id: 1,
                 surface: 10,
                 loops: vec![2],
+                terminal_control: None,
             }],
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(
                 2,
                 B5Loop {
                     object_id: 2,
                     pcurves: vec![20, 20, 20],
                     edges: vec![30, 31, 32],
+                    metadata: test_loop_metadata(3),
                     surface: 10,
                 },
             )]),
@@ -854,6 +1389,8 @@ mod tests {
                     multiplicities: vec![2, 2],
                     control_points: vec![[0.0, 0.0], [1.0, 0.0]],
                     weights: None,
+                    parameter_range: None,
+                    class_21_suffix_scalar: None,
                     lifted_endpoints: None,
                 },
             )]),
@@ -865,8 +1402,11 @@ mod tests {
                     origin: [0.0, 0.0, 0.0],
                     direction_u: [1.0, 0.0, 0.0],
                     direction_v: [0.0, 1.0, 0.0],
+                    u_range: [-1.0, 1.0],
+                    v_range: [-1.0, 1.0],
                 },
             )]),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
@@ -899,6 +1439,8 @@ mod tests {
                     },
                 ),
             ]),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
             vertex_points: Vec::new(),
             logical_vertex_points: vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]],
             logical_vertex_refs: vec![50, 51, 52],
@@ -911,6 +1453,12 @@ mod tests {
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
+        graph
+            .loops
+            .get_mut(&2)
+            .expect("required loop")
+            .metadata
+            .edge_controls[1][2] = -1;
         let mut ir = CadIr::empty(Units::default());
 
         assert!(transfer(
@@ -955,6 +1503,14 @@ mod tests {
                 "catia:b5:pcurve#20@2",
                 "catia:b5:pcurve#20@1",
             ]
+        );
+        assert_eq!(
+            ir.model
+                .coedges
+                .iter()
+                .map(|coedge| coedge.pcurves[0].parameter_range)
+                .collect::<Vec<_>>(),
+            [None, Some([1.0, 0.5]), None]
         );
     }
 
@@ -1140,6 +1696,16 @@ mod tests {
             [0.0, 1.0],
         )
         .is_none());
+        let mut wide_profile = profile;
+        wide_profile.control_points = vec![Point3::new(1.0, 0.0, 0.0); 123];
+        assert!(revolve_nurbs(
+            &wide_profile,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [0.0, 4096.0 * std::f64::consts::FRAC_PI_2],
+            [0.0, 1.0],
+        )
+        .is_none());
     }
 
     #[test]
@@ -1150,13 +1716,16 @@ mod tests {
                 object_id: 1,
                 surface: 10,
                 loops: vec![2],
+                terminal_control: None,
             }],
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(
                 2,
                 B5Loop {
                     object_id: 2,
                     pcurves: vec![4],
                     edges: vec![3],
+                    metadata: test_loop_metadata(1),
                     surface: 10,
                 },
             )]),
@@ -1164,10 +1733,13 @@ mod tests {
             opaque_pcurves: BTreeMap::new(),
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::new(),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
             vertex_points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
             logical_vertex_points: Vec::new(),
             logical_vertex_refs: Vec::new(),
@@ -1190,6 +1762,7 @@ mod tests {
             object_id: 5,
             surface: 10,
             loops: vec![2],
+            terminal_control: None,
         });
         assert!(ownership_plan(&graph).is_none());
         graph.faces.pop();
@@ -1198,6 +1771,7 @@ mod tests {
             object_id: 5,
             surface: 10,
             loops: vec![6],
+            terminal_control: None,
         });
         graph.loops.insert(
             6,
@@ -1205,6 +1779,7 @@ mod tests {
                 object_id: 6,
                 pcurves: vec![8],
                 edges: vec![7],
+                metadata: test_loop_metadata(1),
                 surface: 10,
             },
         );
@@ -1251,21 +1826,26 @@ mod tests {
         let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
             object_id,
             pcurves: vec![0; edges.len()],
+            metadata: test_loop_metadata(edges.len()),
             edges,
             surface: 10,
         };
         let mut graph = B5Graph {
             complete: true,
             faces: Vec::new(),
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(1, loop_(1, vec![3])), (2, loop_(2, vec![4, 5, 3]))]),
             pcurves: BTreeMap::new(),
             opaque_pcurves: BTreeMap::new(),
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::new(),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
             vertex_points: Vec::new(),
             logical_vertex_points: Vec::new(),
             logical_vertex_refs: Vec::new(),
@@ -1274,6 +1854,12 @@ mod tests {
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
+        graph
+            .loops
+            .get_mut(&2)
+            .expect("required loop")
+            .metadata
+            .edge_controls[1][2] = -1;
         let orientation = orient_loop_members(
             &graph,
             BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
@@ -1283,6 +1869,8 @@ mod tests {
         assert_eq!(orientation[&2].member_order, vec![2, 1, 0]);
         assert_eq!(orientation[&1].reversed, vec![false]);
         assert_eq!(orientation[&2].reversed, vec![true; 3]);
+        assert_eq!(orientation[&1].pcurve_reversed, vec![false]);
+        assert_eq!(orientation[&2].pcurve_reversed, vec![true, false, true]);
 
         graph.loops = BTreeMap::from([
             (1, loop_(1, vec![1, 3])),
@@ -1305,12 +1893,14 @@ mod tests {
         let graph = B5Graph {
             complete: true,
             faces: Vec::new(),
+            face_records: BTreeMap::new(),
             loops: BTreeMap::from([(
                 1,
                 B5Loop {
                     object_id: 1,
                     pcurves: vec![2],
                     edges: vec![3],
+                    metadata: test_loop_metadata(1),
                     surface: 4,
                 },
             )]),
@@ -1318,6 +1908,7 @@ mod tests {
             opaque_pcurves: BTreeMap::new(),
             implicit_pcurves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             extrusion_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
@@ -1341,6 +1932,8 @@ mod tests {
                     },
                 ),
             ]),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
             vertex_points: Vec::new(),
             logical_vertex_points: vec![[0.25, 0.0, 1e-4], [0.75, 0.0, 0.0]],
             logical_vertex_refs: vec![10, 11],
@@ -1382,16 +1975,31 @@ mod tests {
     }
 
     #[test]
-    fn cylinder_pcurve_arc_length_normalizes_to_neutral_angle() {
+    fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {
         let surface = B5Surface::Cylinder {
             origin: [0.0, 0.0, 0.0],
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
-            radius: 2.0,
+            radius: 6.0,
+            u_range: [1.0, 1.0 + 6.0 * std::f64::consts::PI],
+            v_range: [-1.0, 1.0],
+            angular_scale: 3.0,
+            chart_origin: 1.0,
         };
-        let point = neutral_pcurve_point([std::f64::consts::PI, 3.0], &surface);
-        assert_eq!(point.u, std::f64::consts::FRAC_PI_2);
+        let point = neutral_pcurve_point([3.0 * std::f64::consts::PI, 3.0], &surface);
+        assert_eq!(point.u, std::f64::consts::PI);
         assert_eq!(point.v, 3.0);
+        let lifted = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            6.0,
+            3.0,
+            [3.0 * std::f64::consts::PI, 3.0],
+        );
+        assert!((lifted[0] + 6.0).abs() < 1e-12);
+        assert!(lifted[1].abs() < 1e-12);
+        assert_eq!(lifted[2], 3.0);
     }
 
     #[test]
@@ -1399,13 +2007,14 @@ mod tests {
         let profile = B5Profile::Line {
             point: [2.0, 0.0, 0.0],
             direction: [0.0, 0.0, 1.0],
+            parameter_range: [-1.0, 1.0],
         };
         let (surface, plan) = revolution_surface(
             Some(&profile),
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
             1.0,
-            Some([[-1.0, 1.0], [0.0, std::f64::consts::PI]]),
+            [[-1.0, 1.0], [0.0, std::f64::consts::PI]],
         )
         .expect("exact revolution cache");
         assert_eq!(plan.parameter_interval, [-1.0, 1.0]);
@@ -1419,6 +2028,14 @@ mod tests {
         assert!(evaluated.x.abs() < 1e-12);
         assert!((evaluated.y - 2.0).abs() < 1e-12);
         assert!((evaluated.z - 0.5).abs() < 1e-12);
+        assert!(revolution_surface(
+            Some(&profile),
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            1.0,
+            [[-0.5, 1.0], [0.0, std::f64::consts::PI]],
+        )
+        .is_none());
     }
 
     #[test]
@@ -1431,12 +2048,16 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 2.0], [3.0, 2.0]],
             weights: None,
+            parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let plane = B5Surface::Plane {
             origin: [1.0, 2.0, 3.0],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
             panic!("plane lift must be NURBS");
@@ -1449,6 +2070,10 @@ mod tests {
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
+            u_range: [0.0, 4.0 * std::f64::consts::PI],
+            v_range: [-1.0, 1.0],
+            angular_scale: 2.0,
+            chart_origin: 0.0,
         };
         assert!(matches!(
             lifted_curve_geometry(&pcurve, &cylinder),
@@ -1465,6 +2090,103 @@ mod tests {
     }
 
     #[test]
+    fn analytic_isocurves_accept_finite_nonzero_scales() {
+        let scale = 1e-200;
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [0.5 * scale, 0.0]],
+            weights: None,
+            parameter_range: None,
+            class_21_suffix_scalar: None,
+            lifted_endpoints: None,
+        };
+        let cylinder = B5Surface::Cylinder {
+            origin: [0.0; 3],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: scale,
+            u_range: [0.0, std::f64::consts::TAU * scale],
+            v_range: [-scale, scale],
+            angular_scale: scale,
+            chart_origin: 0.0,
+        };
+        let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
+        let edge_start = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            scale,
+            scale,
+            pcurve.control_points[0],
+        );
+        let edge_end = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            scale,
+            scale,
+            pcurve.control_points[1],
+        );
+        assert!(oriented_circle_plan(
+            &pcurve,
+            &cylinder,
+            &geometry,
+            [0.0, 1.0],
+            edge_start,
+            edge_end,
+        )
+        .is_some());
+
+        let cone = B5Surface::Cone {
+            apex: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            half_angle: std::f64::consts::FRAC_PI_6,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
+            slant_range: [0.0, scale],
+            angular_scale: 1.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
+        };
+        let cone_pcurve = B5Pcurve {
+            control_points: vec![[0.0, scale], [0.5, scale]],
+            ..pcurve.clone()
+        };
+        assert!(matches!(
+            lifted_curve_geometry(&cone_pcurve, &cone),
+            Some(CurveGeometry::Circle { radius, .. }) if radius == scale * 0.5
+        ));
+
+        let torus = B5Surface::Torus {
+            center: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            major_radius: scale,
+            minor_radius: scale,
+            major_angular_range: [0.0, std::f64::consts::TAU],
+            major_angular_domain: [0.0, std::f64::consts::TAU],
+            minor_angular_range: [0.0, std::f64::consts::TAU],
+            minor_angular_domain: [0.0, std::f64::consts::TAU],
+            major_scale: 1.0,
+            minor_scale: 1.0,
+        };
+        let torus_pcurve = B5Pcurve {
+            control_points: vec![[0.0, 0.0], [0.5, 0.0]],
+            ..pcurve
+        };
+        assert!(matches!(
+            lifted_curve_geometry(&torus_pcurve, &torus),
+            Some(CurveGeometry::Circle { radius, .. }) if radius == 2.0 * scale
+        ));
+    }
+
+    #[test]
     fn affine_plane_lift_preserves_pcurve_weights() {
         let pcurve = B5Pcurve {
             object_id: 1,
@@ -1474,12 +2196,16 @@ mod tests {
             multiplicities: vec![3, 3],
             control_points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
             weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let plane = B5Surface::Plane {
             origin: [0.0, 0.0, 2.0],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
         };
         let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
             panic!("expected lifted rational curve");
@@ -1553,6 +2279,8 @@ mod tests {
             multiplicities: vec![3, 3],
             control_points: vec![[4.0, 2.0], [4.0, 6.0], [4.0, 10.0]],
             weights: Some(vec![1.0, 2.0, 1.0]),
+            parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -1611,6 +2339,18 @@ mod tests {
         assert_eq!(tolerant.cache_fit_tolerance, None);
         assert!(oriented_line_plan(&line, [1.01, 2.0, 5.0], [1.0, 2.0, 9.0]).is_none());
         assert!(oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 5.0]).is_none());
+
+        let tiny_direction = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1e-200, 0.0, 0.0),
+        };
+        let tiny = oriented_line_plan(&tiny_direction, [2.0, 0.0, 0.0], [3.0, 0.0, 0.0])
+            .expect("finite nonzero line direction");
+        assert!(matches!(
+            tiny.geometry,
+            CurveGeometry::Line { direction, .. }
+                if direction == Vector3::new(1.0, 0.0, 0.0)
+        ));
     }
 
     #[test]
@@ -1620,6 +2360,10 @@ mod tests {
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
+            u_range: [0.0, 4.0 * std::f64::consts::PI],
+            v_range: [-1.0, 1.0],
+            angular_scale: 2.0,
+            chart_origin: 0.0,
         };
         let pcurve = B5Pcurve {
             object_id: 1,
@@ -1629,6 +2373,8 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[11.0, 3.0], [13.0, 3.0]],
             weights: None,
+            parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
@@ -1637,12 +2383,14 @@ mod tests {
             [1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
             2.0,
+            2.0,
             pcurve.control_points[0],
         );
         let edge_end = cylinder_point(
             [0.0; 3],
             [1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
+            2.0,
             2.0,
             pcurve.control_points[1],
         );
@@ -1656,6 +2404,32 @@ mod tests {
         )
         .expect("seam-crossing circle range");
         assert_eq!(forward.parameter_range, Some([5.5, 6.5]));
+
+        let tiny_sweep = 1e-14;
+        let tiny_pcurve = B5Pcurve {
+            control_points: vec![[0.0, 3.0], [2.0 * tiny_sweep, 3.0]],
+            ..pcurve.clone()
+        };
+        let tiny_geometry =
+            lifted_curve_geometry(&tiny_pcurve, &cylinder).expect("tiny cylinder latitude");
+        let tiny_end = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            2.0,
+            2.0,
+            tiny_pcurve.control_points[1],
+        );
+        let tiny = oriented_circle_plan(
+            &tiny_pcurve,
+            &cylinder,
+            &tiny_geometry,
+            [0.0, 1.0],
+            [2.0, 0.0, 3.0],
+            tiny_end,
+        )
+        .expect("tiny circle sweep");
+        assert_eq!(tiny.parameter_range, Some([0.0, tiny_sweep]));
 
         let reversed_pcurve = B5Pcurve {
             control_points: pcurve.control_points.iter().copied().rev().collect(),
@@ -1685,8 +2459,14 @@ mod tests {
         };
         let turnback_geometry =
             lifted_curve_geometry(&turnback, &cylinder).expect("turnback latitude locus");
-        let turnback_end =
-            cylinder_point([0.0; 3], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, [2.0, 3.0]);
+        let turnback_end = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            2.0,
+            2.0,
+            [2.0, 3.0],
+        );
         assert!(oriented_circle_plan(
             &turnback,
             &cylinder,
@@ -1704,9 +2484,11 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             half_angle,
-            angular_offset: 0.0,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
             slant_range: [-4.0, 0.0],
             angular_scale: 2.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
         };
         let cone_pcurve = B5Pcurve {
             control_points: vec![[0.0, -4.0], [2.0, -4.0]],
@@ -1794,9 +2576,11 @@ mod tests {
             direction_y: [0.0, 1.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             half_angle,
-            angular_offset: 0.0,
+            pre_angular_range_scalar: 0.0,
+            angular_range: [0.0, std::f64::consts::TAU],
             slant_range: [2.0, 8.0],
             angular_scale: 3.0,
+            angular_domain: [0.0, std::f64::consts::TAU],
         };
         let pcurve = B5Pcurve {
             object_id: 1,
@@ -1806,6 +2590,8 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 4.0], [3.0 * std::f64::consts::PI, 4.0]],
             weights: None,
+            parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -1818,6 +2604,15 @@ mod tests {
                 Point2::new(0.0, 2.0 * half_angle.cos()),
                 Point2::new(std::f64::consts::PI, 2.0 * half_angle.cos()),
             ]
+        );
+        let mut opposite_handed = cone.clone();
+        let B5Surface::Cone { axis, .. } = &mut opposite_handed else {
+            unreachable!();
+        };
+        *axis = [0.0, 0.0, -1.0];
+        assert_eq!(
+            neutral_pcurve_point([3.0 * std::f64::consts::PI, 4.0], &opposite_handed),
+            Point2::new(-std::f64::consts::PI, 2.0 * half_angle.cos())
         );
         let Some(CurveGeometry::Circle {
             center,
@@ -1834,6 +2629,190 @@ mod tests {
     }
 
     #[test]
+    fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
+        let sphere = B5Surface::Sphere {
+            center: [1.0, 2.0, 3.0],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 5.0,
+            azimuth_range: [0.0, std::f64::consts::TAU],
+            latitude_range: [-1.0, 1.0],
+            construction_radius: 8.0,
+            chart_origin: 0.0,
+        };
+        let pcurve = B5SphereGreatCirclePcurve {
+            chart_bounds: [[0.0, 8.0], [0.0, std::f64::consts::TAU * 8.0]],
+            chart_shift: 0.0,
+            chart_scale: 8.0,
+            slope: -1.0,
+            phase: -std::f64::consts::FRAC_PI_2,
+        };
+        let Some(CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        }) = sphere_great_circle_geometry(&pcurve, &sphere)
+        else {
+            panic!("expected great circle");
+        };
+        assert_eq!(center, Point3::new(1.0, 2.0, 3.0));
+        assert!((radius - 5.0).abs() < 1e-12);
+        assert!((axis.x * axis.x + axis.y * axis.y + axis.z * axis.z - 1.0).abs() < 1e-12);
+        assert!(
+            (axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z).abs()
+                < 1e-12
+        );
+        assert!((axis.y + std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
+        assert!((axis.z - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
+
+        let (geometry, range) =
+            sphere_great_circle_pcurve(&pcurve).expect("exact parameter-space curve");
+        assert_eq!(range, [0.0, 8.0]);
+        let uv = cadmpeg_ir::eval::pcurve_uv(&geometry, 8.0).expect("chart endpoint");
+        assert_eq!(uv.u, 1.0);
+        assert!((uv.v - (-(1.0 + std::f64::consts::FRAC_PI_2).cos()).atan()).abs() < 1e-12);
+
+        let tiny = 1e-200;
+        let mut tiny_sphere = sphere;
+        let B5Surface::Sphere {
+            construction_radius,
+            radius,
+            ..
+        } = &mut tiny_sphere
+        else {
+            unreachable!()
+        };
+        *construction_radius = tiny;
+        *radius = tiny;
+        let tiny_pcurve = B5SphereGreatCirclePcurve {
+            chart_bounds: [[0.0, tiny], [0.0, std::f64::consts::TAU * tiny]],
+            chart_shift: 0.0,
+            chart_scale: tiny,
+            slope: -1.0,
+            phase: 0.0,
+        };
+        assert!(sphere_great_circle_geometry(&tiny_pcurve, &tiny_sphere).is_some());
+        let (geometry, range) =
+            sphere_great_circle_pcurve(&tiny_pcurve).expect("tiny parameter-space curve");
+        assert_eq!(range, [0.0, tiny]);
+        let uv = cadmpeg_ir::eval::pcurve_uv(&geometry, tiny).expect("tiny chart endpoint");
+        assert_eq!(uv.u, 1.0);
+    }
+
+    #[test]
+    fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
+        let chart_scale = 8.0;
+        let parameter_range = [0.0, 4.0 * std::f64::consts::PI];
+        let graph = B5Graph {
+            complete: true,
+            faces: vec![B5Face {
+                object_id: 1,
+                surface: 2,
+                loops: vec![3],
+                terminal_control: None,
+            }],
+            face_records: BTreeMap::new(),
+            loops: BTreeMap::from([(
+                3,
+                B5Loop {
+                    object_id: 3,
+                    pcurves: vec![4, 4, 4],
+                    edges: vec![5, 6, 7],
+                    metadata: test_loop_metadata(3),
+                    surface: 2,
+                },
+            )]),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::from([(
+                4,
+                B5OpaquePcurve {
+                    object_id: 4,
+                    surface: 2,
+                    class: 0x1d,
+                    payload: Vec::new(),
+                    sphere_great_circle: Some(B5SphereGreatCirclePcurve {
+                        chart_bounds: [parameter_range, [0.0, std::f64::consts::TAU * chart_scale]],
+                        chart_shift: 0.0,
+                        chart_scale,
+                        slope: 0.0,
+                        phase: 0.0,
+                    }),
+                },
+            )]),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::from([(
+                2,
+                B5Surface::Sphere {
+                    center: [0.0, 0.0, 0.0],
+                    direction_x: [1.0, 0.0, 0.0],
+                    direction_y: [0.0, 1.0, 0.0],
+                    axis: [0.0, 0.0, 1.0],
+                    radius: 5.0,
+                    azimuth_range: [0.0, std::f64::consts::TAU],
+                    latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
+                    construction_radius: chart_scale,
+                    chart_origin: 0.0,
+                },
+            )]),
+            surface_aliases: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
+            vertex_points: vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]],
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::from([(5, [0, 1]), (6, [1, 2]), (7, [2, 0])]),
+            edge_parameter_incidences: BTreeMap::new(),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+        let payload = UnknownId("catia:test-payload".to_string());
+
+        assert!(ownership_plan(&graph).is_some());
+        assert!(loop_chain_closes(&graph.loops[&3], &graph.edge_vertices));
+        let senses = graph.loops[&3].edge_senses();
+        assert!(orient_loop_members(&graph, BTreeMap::from([(3, senses)])).is_some());
+        let plan = build_plan(&graph, &payload).expect("complete owned graph");
+
+        assert_eq!(
+            plan.pcurve_plan.get(&4),
+            Some(&(
+                PcurveGeometry::SphericalGreatCircle {
+                    azimuth_origin: 0.0,
+                    azimuth_rate: chart_scale.recip(),
+                    plane_phase: 0.0,
+                    plane_slope: 0.0,
+                },
+                false,
+                parameter_range,
+            ))
+        );
+        assert_eq!(
+            plan.edge_support_plan.get(&5),
+            Some(&vec![(2, 4, parameter_range)])
+        );
+        assert!(plan.exact_support_edges.contains(&5));
+
+        let mut ir = CadIr::empty(Units::default());
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &payload,
+        ));
+        assert_eq!(ir.model.pcurves.len(), 1);
+        assert!(matches!(
+            ir.model.pcurves[0].geometry,
+            PcurveGeometry::SphericalGreatCircle { .. }
+        ));
+    }
+
+    #[test]
     fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         let torus = B5Surface::Torus {
             center: [0.0, 0.0, 0.0],
@@ -1842,6 +2821,10 @@ mod tests {
             axis: [0.0, 0.0, 1.0],
             major_radius: 5.0,
             minor_radius: 2.0,
+            major_angular_range: [0.0, std::f64::consts::TAU],
+            major_angular_domain: [0.0, std::f64::consts::TAU],
+            minor_angular_range: [0.0, std::f64::consts::TAU],
+            minor_angular_domain: [0.0, std::f64::consts::TAU],
             major_scale: 5.0,
             minor_scale: 2.0,
         };
@@ -1853,6 +2836,8 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 0.0], [0.0, 4.0 * std::f64::consts::PI]],
             weights: None,
+            parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         assert_eq!(
@@ -1926,6 +2911,8 @@ mod tests {
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 3.0], [4.0, 7.0]],
             weights: None,
+            parameter_range: None,
+            class_21_suffix_scalar: None,
             lifted_endpoints: None,
         };
         let cylinder = B5Surface::Cylinder {
@@ -1933,6 +2920,10 @@ mod tests {
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
+            u_range: [0.0, 4.0 * std::f64::consts::PI],
+            v_range: [-1.0, 1.0],
+            angular_scale: 2.0,
+            chart_origin: 0.0,
         };
         let end = [2.0 * 2.0_f64.cos(), 2.0 * 2.0_f64.sin(), 7.0];
         let Some(plan) = cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], [2.0, 0.0, 3.0], end)
@@ -1983,6 +2974,29 @@ mod tests {
         };
         assert_eq!(angle_range, [0.0, 1.0]);
         assert_eq!(center.z, 4.0);
+        assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
+
+        let tiny = 1e-14;
+        let tiny_pcurve = B5Pcurve {
+            control_points: vec![[0.0, 0.0], [2.0 * tiny, 2.0 * tiny]],
+            ..pcurve
+        };
+        let tiny_end = [2.0 * tiny.cos(), 2.0 * tiny.sin(), 2.0 * tiny];
+        let tiny_plan = cylinder_helix(
+            &tiny_pcurve,
+            &cylinder,
+            [0.0, 1.0],
+            [2.0, 0.0, 0.0],
+            tiny_end,
+        )
+        .expect("tiny helix sweep");
+        let ProceduralCurveDefinition::Helix {
+            angle_range, pitch, ..
+        } = tiny_plan.definition
+        else {
+            unreachable!();
+        };
+        assert_eq!(angle_range, [0.0, tiny]);
         assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
     }
 }

@@ -1295,6 +1295,8 @@ fn parse_constraints(
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: constraint_kind(type_code).into(),
                 native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities: resolved.iter().map(locus_entity).cloned().collect(),
                 parameter,
                 operands: operands
@@ -2830,7 +2832,7 @@ fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
     Some(FeatureDefinition::SectionShape {
         first: operand("Base")?,
         second: operand("Tool")?,
-        approximate: bool_property(properties, "Approximation").unwrap_or(false),
+        approximate: Some(bool_property(properties, "Approximation").unwrap_or(false)),
     })
 }
 
@@ -3381,6 +3383,7 @@ fn hole_definition(
         },
         3 => HoleKind::Counterdrill {
             diameter: Length(positive("HoleCutDiameter")?),
+            entry_diameter: None,
             depth: Length(positive("HoleCutDepth")?),
             angle: cut_angle()?,
         },

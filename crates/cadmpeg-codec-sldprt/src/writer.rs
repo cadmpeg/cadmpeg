@@ -39,6 +39,7 @@ pub(crate) fn write_semantic_with_records(
         .transpose()?;
     let retained_partition = retained_partition(ir, retained_records);
     let mut normalized = ir.clone();
+    drop_synthesized_configuration_snapshot(&mut normalized);
     sort_arenas(&mut normalized);
     let validation = cadmpeg_ir::validate::validate(&normalized, Vec::new());
     if !validation.is_ok() {
@@ -261,6 +262,34 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
             '<' => output.push_str("&lt;"),
             '>' => output.push_str("&gt;"),
             _ => output.push(character),
+        }
+    }
+}
+
+/// Drop the design-state snapshot the decoder fabricates on the active
+/// configuration when the native records carry none.
+///
+/// That snapshot mirrors model-level features and parameters so a reader sees a
+/// populated configuration, but nothing in the file encodes it: with no
+/// feature-input lane there is no way to write it back. Leaving it in place
+/// makes the write path reason about configuration-local design state that does
+/// not exist, which surfaces as dangling feature-state references once a caller
+/// edits the model, and as phantom native-edit conflicts once a caller edits a
+/// parameter. The decoder re-fabricates it on read-back, so dropping it here
+/// costs nothing observable.
+fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
+    let Some(id) = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_snapshot_synthesized")
+            .cloned()
+    }) else {
+        return;
+    };
+    for configuration in &mut ir.model.configurations {
+        if configuration.id.0 == id {
+            configuration.feature_states.clear();
+            configuration.parameter_values.clear();
         }
     }
 }

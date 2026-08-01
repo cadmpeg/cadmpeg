@@ -583,6 +583,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
+            ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
+                surfaces.extend(supports.iter().map(|surface| surface.0.as_str()));
+            }
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
                 for side in context.sides.iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {

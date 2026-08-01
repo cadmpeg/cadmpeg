@@ -47,6 +47,8 @@ pub struct Facts {
     /// Cluster-key chain bodies ([spec §6]); consulted when `bodies` binds no face.
     pub cluster_bodies: Vec<BodyRecord>,
     pub face_colors: Vec<FaceColor>,
+    /// Per-face producing-feature identities carried by Parasolid attributes.
+    pub face_atoms: Vec<super::attrib::FaceAtom>,
 }
 
 #[derive(Debug, Clone)]
@@ -220,6 +222,7 @@ pub fn scan(body: &[u8]) -> Facts {
         bodies: bodies(&entities),
         cluster_bodies: cluster_chain_bodies(&entities),
         face_colors: face_colors.into_values().collect(),
+        face_atoms: super::attrib::scan(body),
     }
 }
 
@@ -1916,11 +1919,16 @@ fn disc20_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let Some(disc_1c) = follows(disc_1e, 0x001c) else {
         return Vec::new();
     };
-    let Some(disc_18) = follows(disc_1c, 0x0018) else {
-        return Vec::new();
-    };
-    let Some(shell) = follows(disc_18, 0x0016) else {
-        return Vec::new();
+    let (shell, direct_shell) = if let Some(disc_18) = follows(disc_1c, 0x0018) {
+        let Some(shell) = follows(disc_18, 0x0016) else {
+            return Vec::new();
+        };
+        (shell, false)
+    } else {
+        let Some(shell) = follows(disc_1c, 0x0016).filter(|shell| shell.flo() == 1) else {
+            return Vec::new();
+        };
+        (shell, true)
     };
     let Some(disc_14) = follows(shell, 0x0014) else {
         return Vec::new();
@@ -1931,11 +1939,23 @@ fn disc20_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let Some(disc_10) = follows(disc_12, 0x0010) else {
         return Vec::new();
     };
-    if follows(disc_10, 0x000e).is_none()
-        || !by_attr
+    let count = |disc: u16, flo: u8| {
+        by_attr
             .values()
-            .any(|record| record.disc == 0x0022 && record.flo() == 4)
-    {
+            .filter(|record| record.disc == disc && record.flo() == flo)
+            .count()
+    };
+    let complete = if direct_shell {
+        let faces = count(0x0004, 1);
+        disc_10.refs.get(2).is_none_or(|attr| *attr <= 1)
+            && faces > 0
+            && faces == count(0x000e, 2)
+            && faces == count(0x001a, 1)
+            && faces == count(0x0022, 4)
+    } else {
+        follows(disc_10, 0x000e).is_some() && count(0x0022, 4) > 0
+    };
+    if !complete {
         return Vec::new();
     }
     let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
@@ -3020,6 +3040,39 @@ mod tests {
         assert_eq!(body.attr, 10);
         assert_eq!(body.regions[0].shells[0].attr, 14);
         assert!(body.refs.contains(&20) && body.refs.contains(&21));
+    }
+
+    #[test]
+    fn disc20_root_lattice_accepts_the_direct_disc16_shell_branch() {
+        let mut records = vec![
+            flo2(10, 0x20, [3, 1, 11, 1, 1, 1]),
+            flo2(11, 0x1e, [3, 10, 12, 1, 1, 1]),
+            flo2(12, 0x1c, [3, 11, 13, 1, 1, 1]),
+            record(13, 0x16, [3, 12, 14, 1, 1, 1]),
+            flo2(14, 0x14, [3, 13, 15, 1, 1, 1]),
+            flo2(15, 0x12, [3, 14, 16, 1, 1, 1]),
+            flo2(16, 0x10, [3, 15, 1, 1, 1, 1]),
+        ];
+        for index in 0..2 {
+            records.extend([
+                record(20 + index, 0x04, [1; 6]),
+                flo2(30 + index, 0x0e, [1; 6]),
+                record(40 + index, 0x1a, [1; 6]),
+                flo4(50 + index, 0x22, [1; 6]),
+            ]);
+        }
+        let by_attr = records
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+
+        let bodies = disc20_root_body(&by_attr);
+        let [body] = bodies.as_slice() else {
+            panic!("one direct-disc16 disc20-root body");
+        };
+        assert_eq!(body.attr, 10);
+        assert_eq!(body.regions[0].shells[0].attr, 13);
+        assert!(body.refs.contains(&20) && body.refs.contains(&51));
     }
 
     #[test]

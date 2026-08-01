@@ -42,6 +42,16 @@ pub struct NurbsSurface {
     pub v_periodic: bool,
 }
 
+/// Fixed parameter axis used to extract an isoparametric surface curve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceParameterAxis {
+    /// Hold the surface U parameter constant and vary V.
+    U,
+    /// Hold the surface V parameter constant and vary U.
+    V,
+}
+
 /// A NURBS curve knot/pole payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct NurbsCurve {
@@ -2688,6 +2698,15 @@ pub struct IntcurveSupportContext {
     pub discontinuities: [Vec<f64>; 3],
 }
 
+/// Complete neutral parameterization of one topology-bounded intersection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TolerantIntersectionParameterization {
+    /// Coincident support charts in support order.
+    pub pcurves: [PcurveGeometry; 2],
+    /// Common finite solved-curve interval.
+    pub parameter_range: [f64; 2],
+}
+
 /// Cache-first shared-context fields absent from the context-first layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
 pub struct CacheFirstCurveForm {
@@ -2921,6 +2940,18 @@ pub enum ProceduralCurveDefinition {
         context: IntcurveSupportContext,
         /// Native boolean following the discontinuity arrays.
         discontinuity_flag: bool,
+    },
+    /// Tolerance-bounded intersection relation selected by topology endpoints.
+    TolerantIntersection {
+        /// Two distinct adjacent face surfaces.
+        supports: [SurfaceId; 2],
+        /// Ordered model-space endpoint witnesses.
+        endpoints: [Point3; 2],
+        /// Maximum model-space deviation admitted by the source edge.
+        tolerance: f64,
+        /// Atomic neutral parameterization established by validated support charts.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameterization: Option<TolerantIntersectionParameterization>,
     },
     /// Intersection constrained by a third ordered support surface.
     ThreeSurfaceIntersection {
@@ -3188,6 +3219,17 @@ pub enum PcurveGeometry {
         #[serde(default)]
         periodic: bool,
     },
+    /// Great-circle locus in a sphere's azimuth/latitude parameter chart.
+    SphericalGreatCircle {
+        /// Azimuth at source parameter zero.
+        azimuth_origin: f64,
+        /// Azimuth change per source parameter unit.
+        azimuth_rate: f64,
+        /// Azimuth of the great-circle plane's maximum signed latitude.
+        plane_phase: f64,
+        /// Signed coefficient in `tan(latitude) = plane_slope·cos(azimuth-plane_phase)`.
+        plane_slope: f64,
+    },
     /// Full circle in parameter space.
     Circle {
         /// Circle center.
@@ -3212,6 +3254,15 @@ pub enum PcurveGeometry {
         /// Semi-minor radius.
         minor_radius: f64,
     },
+    /// General first-order harmonic curve in parameter space.
+    Harmonic {
+        /// Constant coefficient.
+        center: Point2,
+        /// Coefficient multiplying `cos(t)`.
+        cosine: Point2,
+        /// Coefficient multiplying `sin(t)`.
+        sine: Point2,
+    },
     /// Parabola in parameter space.
     Parabola {
         /// Parabola vertex.
@@ -3235,6 +3286,15 @@ pub enum PcurveGeometry {
         major_radius: f64,
         /// Semi-conjugate radius.
         minor_radius: f64,
+    },
+    /// General first-order hyperbolic curve in parameter space.
+    Hyperbolic {
+        /// Constant coefficient.
+        center: Point2,
+        /// Coefficient multiplying `cosh(t)`.
+        cosine: Point2,
+        /// Coefficient multiplying `sinh(t)`.
+        sine: Point2,
     },
     /// A free-form NURBS curve in parameter space (control points are (u, v)).
     Nurbs {

@@ -204,7 +204,7 @@ fn decode_curve(stream: &[u8], p: usize, kind: u8) -> Option<(CurveGeometry, usi
     None
 }
 
-/// Decode a graph-owned analytic surface at its resolved logical-field shift.
+/// Decode a graph-owned analytic surface at its resolved payload shift.
 pub(crate) fn decode_surface_record(
     record: &[u8],
     kind: u8,
@@ -221,7 +221,7 @@ pub(crate) fn decode_surface_record(
     }
 }
 
-/// Decode a graph-owned analytic curve at its resolved logical-field shift.
+/// Decode a graph-owned analytic curve at its resolved payload shift.
 pub(crate) fn decode_curve_record(record: &[u8], kind: u8, shift: usize) -> Option<CurveGeometry> {
     let b = shift;
     match kind {

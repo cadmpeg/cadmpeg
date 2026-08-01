@@ -1,31 +1,125 @@
-# Rhino 3DM open items
+# Rhino 3DM Open Items
 
-This file contains only payload semantics that are outside the settled built-in
-format model.
+This document lists the parts of the Rhino 3DM format that we do not know. The specification `rhino_3dm.md` gives the parts that we know.
 
-## Third-party plug-ins
+Each item has these parts:
 
-- Payload layouts for class UUIDs registered by third-party plug-ins.
-- Payload layouts for third-party class userdata, including plug-in-specific
-  anonymous chunks, dictionaries, and application records.
-- Meaning of plug-in-defined attribute or layer extensions whose item payload
-  is not one of the built-in items defined by the main format specification.
+- **Question** — what we must find.
+- **Known** — what the specification gives now.
+- **Need** — why we must find the answer.
+- **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
+- **Note** — a defect in the item or in the specification.
 
-## Future extensions
+Each item has an identifier. Use the identifier in commit messages and in code comments.
 
-- Payload semantics for future class UUIDs not in the built-in registry.
-- Payload semantics for future attribute or layer item IDs whose widths and
-  layouts are not defined by the corresponding built-in version gate.
-- Payload semantics for future major payload versions.
-- Semantics of future minor-version suffixes after the last settled field when
-  their bounded layout is not defined.
+This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## Out-of-scope legacy geometry
+## 1. Third-party plug-ins
 
-- V1 geometry payload layouts.
-- V2 geometry payload layouts.
+### PP-01. Plug-in class payloads
 
-V1 flat-chunk framing, V2 and later table framing, checksums, strings,
-userdata framing, attributes, settings, layers, object identity, and all
-settled V3 through V8 built-in payloads are defined in
-`docs/formats/rhino_3dm.md` and are not open items.
+**Question.** What payload grammar and semantics does each class UUID that a third-party plug-in registers select?
+
+**Known.** `rhino_3dm.md:447` through `rhino_3dm.md:471` define the class wrapper, class UUID, bounded class-data payload, and checksum boundary. `rhino_3dm.md:2621` through `rhino_3dm.md:2632` define the opaque-record identity for a class that the built-in registry does not define.
+
+**Need.** We must know the grammar and semantics to decode the class payload as typed geometry, topology, presentation, or document data.
+
+### PP-02. Plug-in userdata payloads
+
+**Question.** What payload grammar and semantics does each third-party userdata class UUID and item UUID pair select?
+
+**Known.** `rhino_3dm.md:609` through `rhino_3dm.md:632` define the userdata header, application identity, version fields, anonymous payload boundary, and legacy archive-version rule.
+
+**Need.** We must know the grammar and semantics to decode the bounded userdata payload as typed data.
+
+### PP-03. Plug-in dictionary entries
+
+**Question.** What value grammar and semantics does each plug-in-defined dictionary entry select?
+
+**Known.** `rhino_3dm.md:354` through `rhino_3dm.md:357` define the dictionary chunk typecodes. `rhino_3dm.md:609` through `rhino_3dm.md:632` define the containing userdata boundary and identity.
+
+**Need.** We must know the value grammar and semantics to decode a plug-in dictionary without treating its entries as one opaque record.
+
+### PP-04. Plug-in application records
+
+**Question.** What payload grammar and semantics does each plug-in-defined application record select?
+
+**Known.** `rhino_3dm.md:422` through `rhino_3dm.md:445` define bounded table records and user tables. `rhino_3dm.md:2621` through `rhino_3dm.md:2632` define the identity and byte boundary of a remaining opaque record.
+
+**Need.** We must know the grammar and semantics to transfer the application record as typed document data.
+
+### PP-05. Plug-in object-attribute items
+
+**Question.** What width, payload grammar, and semantics does each plug-in-defined object-attribute item ID select?
+
+**Known.** `rhino_3dm.md:889` through `rhino_3dm.md:964` define the payload and version gate for each built-in object-attribute item ID through 41. The item stream has no general length field for an unknown item.
+
+**Need.** We must know the width and grammar to find the next item boundary and to transfer the item as typed object state.
+
+### PP-06. Plug-in layer-extension items
+
+**Question.** What width, payload grammar, and semantics does each plug-in-defined layer-extension item ID select?
+
+**Known.** `rhino_3dm.md:782` through `rhino_3dm.md:809` define the stream terminator, payload, and version gate for each built-in layer-extension item ID through 36. The item stream has no general length field for an unknown item.
+
+**Need.** We must know the width and grammar to find the next item boundary and to transfer the item as typed layer state.
+
+## 2. Later built-in versions
+
+### FV-01. Unregistered built-in classes
+
+**Question.** What payload grammar and semantics does each later built-in class UUID select?
+
+**Known.** `rhino_3dm.md:447` through `rhino_3dm.md:471` define a class wrapper independently of the class-data grammar. `rhino_3dm.md:2621` through `rhino_3dm.md:2632` require a complete unregistered class record to remain one named opaque record.
+
+**Need.** We must know the grammar and semantics to add the class to the built-in registry and to transfer its typed data.
+
+### FV-02. Later object-attribute items
+
+**Question.** What width, payload grammar, version gate, and semantics does each later built-in object-attribute item ID select?
+
+**Known.** `rhino_3dm.md:889` through `rhino_3dm.md:964` define item IDs 1 through 41 and their introduction gates. The tagged stream has no general length field for a later item.
+
+**Need.** We must know the width and grammar to find the next item boundary and to extend the built-in object-attribute model.
+
+### FV-03. Later layer-extension items
+
+**Question.** What width, payload grammar, version gate, and semantics does each later built-in layer-extension item ID select?
+
+**Known.** `rhino_3dm.md:782` through `rhino_3dm.md:809` define item IDs 28 through 36 and their introduction gates. The extension stream has no general length field for a later item.
+
+**Need.** We must know the width and grammar to find the next item boundary and to extend the built-in layer model.
+
+### FV-04. Later major payload versions
+
+**Question.** What complete payload grammar and semantics does each built-in major version that `rhino_3dm.md` does not define select?
+
+**Known.** `rhino_3dm.md:236` through `rhino_3dm.md:252` define packed and anonymous payload-version fields. Each containing long or anonymous chunk supplies the complete payload boundary.
+
+**Need.** We must know the grammar and semantics to decode the new major version as typed data.
+
+### FV-05. Later minor-version suffixes
+
+**Question.** What field grammar and semantics does each later built-in minor-version suffix select?
+
+**Known.** `rhino_3dm.md:236` through `rhino_3dm.md:252` define packed and anonymous minor-version fields. A bounded payload fixes the end of the suffix but does not give its field boundaries.
+
+**Need.** We must know the field grammar and semantics to decode the suffix and to distinguish it from malformed trailing bytes.
+
+## 3. Legacy geometry
+
+### LG-01. V1 geometry payloads
+
+**Question.** What grammar and semantics does each V1 geometry payload use?
+
+**Known.** `rhino_3dm.md:9` through `rhino_3dm.md:25` define V1 as a flat chunk stream. `rhino_3dm.md:189` through `rhino_3dm.md:203` define the V1 geometry checksum rule. The specification does not define the geometry fields inside these chunks.
+
+**Need.** We must know the payload grammar and semantics to decode V1 geometry as typed neutral geometry.
+
+### LG-02. V2 geometry payloads
+
+**Question.** What grammar and semantics does each V2 geometry payload use?
+
+**Known.** `rhino_3dm.md:9` through `rhino_3dm.md:25` define V2 as a table sequence with four-byte chunk values. `rhino_3dm.md:182` through `rhino_3dm.md:188` define its CRC32 rule. The specification does not define the geometry fields inside these records.
+
+**Need.** We must know the payload grammar and semantics to decode V2 geometry as typed neutral geometry.

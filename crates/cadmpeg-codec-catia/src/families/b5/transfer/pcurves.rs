@@ -7,19 +7,84 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, ProceduralCurveDefinition,
+    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurveDefinition,
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use super::super::graph::{evaluate_pcurve, B5Graph, B5Pcurve, B5Surface};
+use super::super::graph::{
+    evaluate_pcurve, B5Graph, B5Pcurve, B5SphereGreatCirclePcurve, B5Surface,
+};
 use super::super::vecmath::{add, cross, scale};
 use super::edges::{edge_pcurve_parameters, ordered_subrange};
 use super::{
-    annotate, distance, dot, expand_knots, length, point3, subtract, vector, CurvePlan, HelixPlan,
+    annotate, distance, dot, expand_knots, point3, subtract, unit, vector, CurvePlan, HelixPlan,
     TransferPlan, POINT_TOLERANCE,
 };
+
+pub(super) fn sphere_great_circle_geometry(
+    pcurve: &B5SphereGreatCirclePcurve,
+    surface: &B5Surface,
+) -> Option<CurveGeometry> {
+    let B5Surface::Sphere {
+        center,
+        direction_x,
+        direction_y,
+        axis: sphere_axis,
+        radius,
+        construction_radius,
+        ..
+    } = surface
+    else {
+        return None;
+    };
+    if pcurve.chart_scale != *construction_radius {
+        return None;
+    }
+    let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
+    let plane_axis = unit(add(
+        scale(*sphere_axis, 1.0),
+        add(
+            scale(*direction_x, -pcurve.slope * phase.cos()),
+            scale(*direction_y, -pcurve.slope * phase.sin()),
+        ),
+    ))?;
+    let ref_direction = add(
+        scale(*direction_x, -phase.sin()),
+        scale(*direction_y, phase.cos()),
+    );
+    Some(CurveGeometry::Circle {
+        center: point3(*center),
+        axis: vector(plane_axis),
+        ref_direction: vector(ref_direction),
+        radius: *radius,
+    })
+}
+
+pub(super) fn sphere_great_circle_pcurve(
+    pcurve: &B5SphereGreatCirclePcurve,
+) -> Option<(PcurveGeometry, [f64; 2])> {
+    let parameter_range = pcurve.chart_bounds[0];
+    let azimuth_rate = pcurve.chart_scale.recip();
+    let plane_phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
+    (pcurve.chart_scale.is_finite()
+        && pcurve.chart_scale > 0.0
+        && parameter_range.into_iter().all(f64::is_finite)
+        && parameter_range[0] < parameter_range[1]
+        && azimuth_rate.is_finite()
+        && plane_phase.is_finite()
+        && pcurve.slope.is_finite())
+    .then_some((
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin: 0.0,
+            azimuth_rate,
+            plane_phase,
+            plane_slope: pcurve.slope,
+        },
+        parameter_range,
+    ))
+}
 
 pub(super) fn oriented_line_plan(
     geometry: &CurveGeometry,
@@ -31,8 +96,8 @@ pub(super) fn oriented_line_plan(
     };
     let origin = [origin.x, origin.y, origin.z];
     let mut direction = [direction.x, direction.y, direction.z];
-    let direction_length = length(direction);
-    if !direction_length.is_finite() || direction_length <= f64::EPSILON {
+    let direction_length = direction[0].hypot(direction[1]).hypot(direction[2]);
+    if !direction_length.is_finite() || direction_length == 0.0 {
         return None;
     }
     direction = scale(direction, 1.0 / direction_length);
@@ -70,7 +135,7 @@ pub(super) fn oriented_circle_plan(
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
     let (dimension, scale) = isoparametric_angle_coordinate(pcurve, surface)?;
-    if !scale.is_finite() || scale.abs() <= f64::EPSILON {
+    if !scale.is_finite() || scale == 0.0 {
         return None;
     }
     if let Some(weights) = &pcurve.weights {
@@ -88,7 +153,7 @@ pub(super) fn oriented_circle_plan(
     };
     let angles = [start_uv[dimension] / scale, end_uv[dimension] / scale];
     let delta = angles[1] - angles[0];
-    if !delta.is_finite() || delta.abs() <= 1e-12 || delta.abs() > std::f64::consts::TAU + 1e-9 {
+    if !delta.is_finite() || delta == 0.0 || delta.abs() > std::f64::consts::TAU + 1e-9 {
         return None;
     }
     let direction = delta.signum();
@@ -109,7 +174,7 @@ pub(super) fn oriented_circle_plan(
     else {
         return None;
     };
-    if !radius.is_finite() || radius.abs() <= f64::EPSILON {
+    if !radius.is_finite() || *radius == 0.0 {
         return None;
     }
     let mut axis = *axis;
@@ -155,10 +220,10 @@ pub(super) fn isoparametric_angle_coordinate(
     surface: &B5Surface,
 ) -> Option<(usize, f64)> {
     match surface {
-        B5Surface::Cylinder { radius, .. }
+        B5Surface::Cylinder { angular_scale, .. }
             if constant_coordinate(&pcurve.control_points, 1).is_some() =>
         {
-            Some((0, *radius))
+            Some((0, *angular_scale))
         }
         B5Surface::Cone { angular_scale, .. }
             if constant_coordinate(&pcurve.control_points, 1).is_some() =>
@@ -280,14 +345,19 @@ pub(super) fn isocurve_endpoint_parameters(
 
 pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
     match surface {
-        B5Surface::Cylinder { radius, .. } => Point2::new(point[0] / radius, point[1]),
+        B5Surface::Cylinder { angular_scale, .. } => {
+            Point2::new(point[0] / angular_scale, point[1])
+        }
         B5Surface::Cone {
+            direction_x,
+            direction_y,
+            axis,
             half_angle,
             slant_range,
             angular_scale,
             ..
         } => Point2::new(
-            point[0] / angular_scale,
+            dot(cross(*direction_x, *direction_y), *axis).signum() * point[0] / angular_scale,
             (point[1] - slant_range[0]) * half_angle.cos(),
         ),
         B5Surface::Torus {
@@ -307,11 +377,13 @@ pub(super) fn lifted_curve_geometry(
     match surface {
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
-        | B5Surface::RollingBall { .. } => None,
+        | B5Surface::RollingBall { .. }
+        | B5Surface::Sphere { .. } => None,
         B5Surface::Plane {
             origin,
             direction_u,
             direction_v,
+            ..
         } => Some(CurveGeometry::Nurbs(NurbsCurve {
             degree: pcurve.degree,
             knots,
@@ -333,9 +405,18 @@ pub(super) fn lifted_curve_geometry(
             reference_x,
             axis,
             radius,
+            angular_scale,
+            ..
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
             let first = pcurve.control_points.first()?;
-            let line_origin = cylinder_point(*origin, *reference_x, *axis, *radius, *first);
+            let line_origin = cylinder_point(
+                *origin,
+                *reference_x,
+                *axis,
+                *radius,
+                *angular_scale,
+                *first,
+            );
             Some(CurveGeometry::Line {
                 origin: point3(line_origin),
                 direction: vector(*axis),
@@ -373,6 +454,7 @@ pub(super) fn lifted_curve_geometry(
             minor_radius,
             major_scale,
             minor_scale,
+            ..
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
             let u = pcurve.control_points.first()?[0];
             let angle = u / major_scale;
@@ -399,7 +481,7 @@ pub(super) fn lifted_curve_geometry(
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             let angle = v / minor_scale;
             let signed_radius = major_radius + minor_radius * angle.cos();
-            (signed_radius.abs() > f64::EPSILON).then_some(())?;
+            (signed_radius.is_finite() && signed_radius != 0.0).then_some(())?;
             Some(CurveGeometry::Circle {
                 center: point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
                 axis: vector(*axis),
@@ -415,12 +497,13 @@ pub(super) fn lifted_curve_geometry(
             ..
         } => {
             let slant = constant_coordinate(&pcurve.control_points, 1)?;
-            (slant.abs() > f64::EPSILON).then_some(())?;
+            let radius = slant * half_angle.sin();
+            (radius.is_finite() && radius != 0.0).then_some(())?;
             Some(CurveGeometry::Circle {
                 center: point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
                 axis: vector(*axis),
                 ref_direction: vector(*direction_x),
-                radius: slant * half_angle.sin(),
+                radius,
             })
         }
         B5Surface::Cylinder {
@@ -428,6 +511,7 @@ pub(super) fn lifted_curve_geometry(
             reference_x,
             axis,
             radius,
+            ..
         } => {
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             Some(CurveGeometry::Circle {
@@ -456,7 +540,7 @@ pub(super) fn constant_coordinate(points: &[[f64; 2]], dimension: usize) -> Opti
     let value = points.first()?[dimension];
     points
         .iter()
-        .all(|point| (point[dimension] - value).abs() <= 1e-12 * (1.0 + value.abs()))
+        .all(|point| point[dimension] == value)
         .then_some(value)
 }
 
@@ -465,10 +549,11 @@ pub(super) fn cylinder_point(
     reference_x: [f64; 3],
     axis: [f64; 3],
     radius: f64,
+    angular_scale: f64,
     uv: [f64; 2],
 ) -> [f64; 3] {
     let reference_y = cross(axis, reference_x);
-    let angle = uv[0] / radius;
+    let angle = uv[0] / angular_scale;
     add(
         origin,
         add(
@@ -498,6 +583,8 @@ pub(super) fn cylinder_helix(
         reference_x,
         axis,
         radius,
+        angular_scale,
+        ..
     } = surface
     else {
         return None;
@@ -510,21 +597,20 @@ pub(super) fn cylinder_helix(
         return None;
     };
     let mut endpoints = [first, second];
-    let lifted = endpoints.map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, uv));
+    let lifted = endpoints
+        .map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, *angular_scale, uv));
     let forward_error = distance(lifted[0], edge_start).max(distance(lifted[1], edge_end));
     let reverse_error = distance(lifted[1], edge_start).max(distance(lifted[0], edge_end));
-    if (forward_error - reverse_error).abs() <= 1e-12
-        || forward_error.min(reverse_error) > POINT_TOLERANCE
-    {
+    if forward_error == reverse_error || forward_error.min(reverse_error) > POINT_TOLERANCE {
         return None;
     }
     if reverse_error < forward_error {
         endpoints.swap(0, 1);
     }
-    let angles = [endpoints[0][0] / radius, endpoints[1][0] / radius];
+    let angles = endpoints.map(|point| point[0] / angular_scale);
     let delta_angle = angles[1] - angles[0];
     let delta_height = endpoints[1][1] - endpoints[0][1];
-    if delta_angle.abs() <= 1e-12 || delta_height.abs() <= 1e-12 {
+    if delta_angle == 0.0 || delta_height == 0.0 {
         return None;
     }
     let reference_y = cross(*axis, *reference_x);
@@ -563,13 +649,14 @@ pub(super) fn cylinder_helix(
 }
 
 /// Emit distinct pcurve occurrences grouped by native parameter range,
-/// returning the map from `(loop_id, member_index)` to emitted [`PcurveId`].
+/// returning each emitted carrier and its forward interval by
+/// `(loop_id, member_index)`.
 pub(super) fn emit_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-) -> HashMap<(u32, usize), PcurveId> {
+) -> HashMap<(u32, usize), (PcurveId, [f64; 2])> {
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
     for loop_ in graph.loops.values() {
@@ -594,7 +681,7 @@ pub(super) fn emit_pcurves(
                 .push((loop_.object_id, index));
         }
     }
-    let mut pcurve_ids = HashMap::new();
+    let mut pcurve_uses = HashMap::new();
     for (object_id, ranges) in occurrence_groups {
         let (geometry, cylinder_reparameterized, _) = &pcurve_plan[&object_id];
         let range_count = ranges.len();
@@ -614,19 +701,27 @@ pub(super) fn emit_pcurves(
             if *cylinder_reparameterized {
                 annotations.derived(&id, "geometry.control_points");
             }
-            annotations.derived(&id, "parameter_range");
+            let parameter_range = range_bits.map(f64::from_bits);
+            if graph
+                .pcurves
+                .get(&object_id)
+                .and_then(|pcurve| pcurve.parameter_range)
+                != Some(parameter_range)
+            {
+                annotations.derived(&id, "parameter_range");
+            }
             for occurrence in occurrences {
-                pcurve_ids.insert(occurrence, id.clone());
+                pcurve_uses.insert(occurrence, (id.clone(), parameter_range));
             }
             ir.model.pcurves.push(Pcurve {
                 id,
                 geometry: geometry.clone(),
                 wrapper_reversed: None,
-                parameter_range: Some(range_bits.map(f64::from_bits)),
+                parameter_range: Some(parameter_range),
                 fit_tolerance: None,
                 native_tail_flags: None,
             });
         }
     }
-    pcurve_ids
+    pcurve_uses
 }

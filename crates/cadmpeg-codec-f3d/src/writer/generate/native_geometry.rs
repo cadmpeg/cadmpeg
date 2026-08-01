@@ -5253,6 +5253,7 @@ pub(crate) fn native_procedural_curve(
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. }
@@ -6062,8 +6063,11 @@ fn native_pcurve_geometry(
         }
         PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Hyperbolic { .. }
         | PcurveGeometry::PolarHarmonic { .. }
-        | PcurveGeometry::PolarNurbs { .. } => Err(CodecError::NotImplemented(
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
         PcurveGeometry::Nurbs {

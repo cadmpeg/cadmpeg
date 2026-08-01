@@ -21,6 +21,8 @@ use cadmpeg_ir::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+mod attrib;
+mod blend;
 mod entity;
 mod intersection;
 mod spline;
@@ -122,7 +124,7 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
                 && (values[7] * values[7] + values[8] * values[8] - 1.0).abs() <= 1.0e-9
         }
         tag::SPHERE => values[3] > 0.0,
-        tag::TORUS => values[6] > 0.0 && values[7] > 0.0,
+        tag::TORUS => values[6].abs() > f64::EPSILON && values[7] > 0.0,
         _ => false,
     }
 }
@@ -136,6 +138,8 @@ pub(crate) struct Carrier {
     pub end: usize,
     pub geometry: CarrierGeometry,
     pub frame: Option<(Point3, Vector3, Vector3)>,
+    /// Whether neutral radius normalization reverses the surface parameter frame.
+    pub orientation_reversed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +154,10 @@ pub(crate) struct CarrierIndex {
     surfaces: HashMap<u16, Carrier>,
     /// Swept/spun surface constructions, resolved to a patch at face binding.
     sweeps: HashMap<u16, sweep::SweepCarrier>,
+    /// Constant-radius rolling-ball constructions, resolved at face binding.
+    blends: HashMap<u16, blend::BlendCarrier>,
+    /// Zero-offset surface pairs referenced by rolling-ball constructions.
+    blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
     /// Curve attrs whose geometry is a derived cache, not an exact carrier.
     derived_curves: HashSet<u16>,
 }
@@ -179,6 +187,16 @@ impl CarrierIndex {
         self.sweeps.get(&attr)
     }
 
+    /// Constant-radius rolling-ball construction carried by `attr`.
+    pub(crate) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
+        self.blends.get(&attr)
+    }
+
+    /// Zero-offset surface pair carried by `attr`.
+    pub(crate) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
+        self.blend_support_pairs.get(&attr)
+    }
+
     /// Whether a curve attr holds a derived solved cache rather than an
     /// exact carrier.
     pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
@@ -199,6 +217,12 @@ impl CarrierIndex {
         }
         for (attr, carrier) in other.sweeps {
             self.sweeps.entry(attr).or_insert(carrier);
+        }
+        for (attr, carrier) in other.blends {
+            self.blends.entry(attr).or_insert(carrier);
+        }
+        for (attr, carrier) in other.blend_support_pairs {
+            self.blend_support_pairs.entry(attr).or_insert(carrier);
         }
     }
 }
@@ -252,6 +276,7 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
         end,
         geometry,
         frame,
+        orientation_reversed: tt == tag::TORUS && vals[6].is_sign_negative(),
     })
 }
 
@@ -339,7 +364,7 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
                 center: scale_point(&v[0..3]),
                 axis: unit(&v[3..6]),
                 ref_direction: unit(&v[8..11]),
-                major_radius: v[6] * LEN_TO_MM,
+                major_radius: v[6].abs() * LEN_TO_MM,
                 minor_radius: v[7] * LEN_TO_MM,
             }));
         }
@@ -375,6 +400,7 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         out.insert(carrier);
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
+    (out.blends, out.blend_support_pairs) = blend::scan(body);
     for (attr, carrier) in intersection::scan_intersection_carriers(body) {
         debug_assert_eq!(attr, carrier.attr);
         if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
@@ -459,6 +485,25 @@ mod tests {
     }
 
     #[test]
+    fn merge_retains_zero_offset_blend_support_pairs() {
+        let mut base = CarrierIndex::default();
+        let mut delta = CarrierIndex::default();
+        delta.blend_support_pairs.insert(
+            9,
+            blend::SupportPairCarrier {
+                supports: [11, 12],
+                intersection: 13,
+            },
+        );
+
+        base.merge_missing(delta);
+
+        let pair = base.blend_support_pair(9).expect("support pair");
+        assert_eq!(pair.supports, [11, 12]);
+        assert_eq!(pair.intersection, 13);
+    }
+
+    #[test]
     fn parses_verified_cone_layout() {
         let root_half = std::f64::consts::FRAC_1_SQRT_2;
         let bytes = compact_carrier(
@@ -513,6 +558,7 @@ mod tests {
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
         assert!((major_radius - 2.2).abs() < 1e-12);
         assert!((minor_radius - 0.2).abs() < 1e-12);
+        assert!(!carrier.orientation_reversed);
     }
 
     #[test]
@@ -563,6 +609,29 @@ mod tests {
         };
         assert!((major_radius - 2.2).abs() < 1e-12);
         assert!((minor_radius - 4.4).abs() < 1e-12);
+    }
+
+    #[test]
+    fn normalizes_negative_torus_major_radius_and_marks_orientation_reversal() {
+        let bytes = compact_carrier(
+            tag::TORUS,
+            8,
+            &[
+                0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, -0.0022, 0.0044, -1.0, 0.0, 0.0,
+            ],
+        );
+        let carrier = parse_carrier(&bytes, 0).expect("signed-major torus");
+        let CarrierGeometry::Surface(SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        }) = carrier.geometry
+        else {
+            panic!("expected torus");
+        };
+        assert!((major_radius - 2.2).abs() < 1e-12);
+        assert!((minor_radius - 4.4).abs() < 1e-12);
+        assert!(carrier.orientation_reversed);
     }
 
     #[test]

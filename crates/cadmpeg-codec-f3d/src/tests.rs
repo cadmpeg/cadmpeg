@@ -23734,3 +23734,6 @@ fn colliding_body_keys_bind_the_smallest_body() {
     );
     assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

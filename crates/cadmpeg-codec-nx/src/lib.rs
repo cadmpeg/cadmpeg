@@ -55,9 +55,10 @@
 //!
 //! Ordered feature-operation records, body dependencies, Boolean operations,
 //! sketch record lanes, and numeric expressions transfer from the NX object
-//! model. Operation suppression remains unresolved instead of being asserted
-//! active. Embedded JT coordinates and triangle connectivity transfer as canonical
-//! tessellations. Complete design history, assembly occurrence placement, material
+//! model. Current-body writers and their complete earlier dependency closure
+//! transfer as active; other operation suppression remains unresolved. Embedded
+//! JT coordinates and triangle connectivity transfer as canonical tessellations.
+//! Complete design history, assembly occurrence placement, material
 //! and appearance assignment, class-specific entity attribute fields, and `.prt`
 //! writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules
@@ -144,7 +145,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         };
         entries.push(ContainerEntry {
             name: entry.name.clone(),
-            role: "stream".to_string(),
+            role: entry.content().label().to_string(),
             compression: "none".to_string(),
             compressed_size: compressed,
             uncompressed_size: uncompressed,
@@ -195,6 +196,54 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                 }
             } else if stream.kind == parasolid::StreamKind::Deltas {
                 let census = deltas::walk(&stream.inflated);
+                if census.transmit_header.is_some() {
+                    attributes.insert(
+                        "records.delta.transmit_headers".to_string(),
+                        "1".to_string(),
+                    );
+                }
+                if !census.body_revisions.is_empty() {
+                    attributes.insert(
+                        "records.delta.body_revisions".to_string(),
+                        census.body_revisions.len().to_string(),
+                    );
+                }
+                if !census.term_use_numeric_tails.is_empty() {
+                    attributes.insert(
+                        "records.delta.term_use_numeric_tails".to_string(),
+                        census.term_use_numeric_tails.len().to_string(),
+                    );
+                }
+                if !census.tagged_reference_lanes.is_empty() {
+                    attributes.insert(
+                        "records.delta.tagged_reference_lanes".to_string(),
+                        census.tagged_reference_lanes.len().to_string(),
+                    );
+                }
+                if !census.reference_type_maps.is_empty() {
+                    attributes.insert(
+                        "records.delta.reference_type_maps".to_string(),
+                        census.reference_type_maps.len().to_string(),
+                    );
+                }
+                if !census.reference_state_packets.is_empty() {
+                    attributes.insert(
+                        "records.delta.reference_state_packets".to_string(),
+                        census.reference_state_packets.len().to_string(),
+                    );
+                }
+                if !census.reference_marker_packets.is_empty() {
+                    attributes.insert(
+                        "records.delta.reference_marker_packets".to_string(),
+                        census.reference_marker_packets.len().to_string(),
+                    );
+                }
+                if !census.inline_schema_declarations.is_empty() {
+                    attributes.insert(
+                        "records.delta.inline_schema_declarations".to_string(),
+                        census.inline_schema_declarations.len().to_string(),
+                    );
+                }
                 for (family, count) in census.full_counts {
                     attributes.insert(
                         format!("records.delta.full.{}", family.to_ascii_lowercase()),

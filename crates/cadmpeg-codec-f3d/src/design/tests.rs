@@ -9333,6 +9333,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintDefinition::Native {
             ref native_kind,
             native_state: Some(0x8000_0040),
+            native_flags: None,
             ref entities,
             ref operands,
             ..
@@ -11155,6 +11156,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         [cadmpeg_ir::sketches::SketchConstraint {
             definition: SketchConstraintDefinition::Native {
                 native_state: Some(0),
+                native_flags: None,
                 operands,
                 ..
             },
@@ -11828,9 +11830,11 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             definition: SketchConstraintDefinition::Native {
                 native_kind,
                 native_state: None,
+                native_flags: None,
                 entities,
                 parameter: Some(actual_parameter),
                 operands,
+                ..
             },
             native_ref: Some(native_ref),
             ..

@@ -1183,6 +1183,20 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
             scale_point(x_axis);
             scale_point(y_axis);
         }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            scale_point(center);
+            scale_point(cosine);
+            scale_point(sine);
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -1213,6 +1227,10 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
             for value in axial_control_points {
                 *value *= scale;
             }
+        }
+        PcurveGeometry::SphericalGreatCircle { plane_slope, .. } => {
+            debug_assert_eq!(scale.abs(), 1.0);
+            *plane_slope *= scale;
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_v(basis, scale);
@@ -1249,6 +1267,20 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
             scale_point(x_axis);
             scale_point(y_axis);
         }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            scale_point(center);
+            scale_point(cosine);
+            scale_point(sine);
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -1281,6 +1313,17 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
             for point in radial_control_points {
                 point.v = -point.v;
             }
+        }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            ..
+        } => {
+            debug_assert_eq!(scale, -1.0);
+            *azimuth_origin = -*azimuth_origin;
+            *azimuth_rate = -*azimuth_rate;
+            *plane_phase = -*plane_phase;
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_u(basis, scale);

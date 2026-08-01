@@ -34,7 +34,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
 }
 
 #[test]
-fn identifies_linear_pcurves_that_are_exact_model_lines() {
+fn maps_linear_pcurves_to_exact_analytic_carriers() {
     let plane = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -61,19 +61,52 @@ fn identifies_linear_pcurves_that_are_exact_model_lines() {
         radius: 2.0,
     };
 
-    assert!(linear_pcurve_is_straight(&plane, [[1.0, 2.0], [3.0, 4.0]]));
-    assert!(linear_pcurve_is_straight(
-        &cylinder,
-        [[1.0, 2.0], [1.0, 4.0]]
+    assert!(matches!(
+        linear_pcurve_carrier(&plane, [[1.0, 2.0], [3.0, 4.0]]),
+        Some(CurveGeometry::Line { .. })
     ));
-    assert!(linear_pcurve_is_straight(&cone, [[1.0, 2.0], [1.0, 4.0]]));
-    assert!(!linear_pcurve_is_straight(
-        &cylinder,
-        [[1.0, 2.0], [2.0, 4.0]]
+    assert!(matches!(
+        linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [1.0, 4.0]]),
+        Some(CurveGeometry::Line { .. })
     ));
-    assert!(!linear_pcurve_is_straight(
-        &sphere,
-        [[1.0, 2.0], [1.0, 4.0]]
+    assert!(matches!(
+        linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 2.0]]),
+        Some(CurveGeometry::Circle { radius, .. }) if radius == 2.0
+    ));
+    assert!(matches!(
+        linear_pcurve_carrier(&cone, [[1.0, 2.0], [1.0, 4.0]]),
+        Some(CurveGeometry::Line { .. })
+    ));
+    assert!(matches!(
+        linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]),
+        Some(CurveGeometry::Ellipse { major_radius, minor_radius, .. })
+            if major_radius > minor_radius
+    ));
+    assert!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 4.0]]).is_none());
+    assert!(matches!(
+        linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]),
+        Some(CurveGeometry::Circle { radius, .. }) if radius == 2.0
+    ));
+    assert!(matches!(
+        linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]),
+        Some(CurveGeometry::Circle { radius, .. })
+            if (radius - 2.0 * 0.25_f64.cos()).abs() <= 1e-12
+    ));
+
+    let torus = SurfaceGeometry::Torus {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 3.0,
+        minor_radius: 1.0,
+    };
+    assert!(matches!(
+        linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]),
+        Some(CurveGeometry::Circle { radius, .. }) if radius == 1.0
+    ));
+    assert!(matches!(
+        linear_pcurve_carrier(&torus, [[0.5, 0.0], [1.0, 0.0]]),
+        Some(CurveGeometry::Circle { radius, .. }) if radius == 4.0
     ));
 }
 

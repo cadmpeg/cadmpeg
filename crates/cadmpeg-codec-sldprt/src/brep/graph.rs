@@ -11,11 +11,12 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::eval::nurbs_curve_point;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -23,6 +24,8 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
+use super::attrib;
+use super::blend::BlendSupportRef;
 use super::entity;
 use super::sweep::{self, SweepKind};
 use super::topology::{self, Record};
@@ -54,6 +57,8 @@ pub struct Brep {
     pub points: Vec<Point>,
     /// Analytic, NURBS, or opaque support surfaces.
     pub surfaces: Vec<Surface>,
+    /// Exact procedural constructions behind emitted support surfaces.
+    pub procedural_surfaces: Vec<ProceduralSurface>,
     /// Analytic, NURBS, or opaque support curves.
     pub curves: Vec<Curve>,
     /// Pcurves derived for supported analytic and NURBS-boundary cases.
@@ -63,6 +68,8 @@ pub struct Brep {
     pub unknowns: Vec<UnknownRecord>,
     /// Per-face RGB colors resolved from native entity records.
     pub face_colors: Vec<entity::FaceColor>,
+    /// Per-face producing-feature identities resolved from Parasolid attributes.
+    pub face_atoms: Vec<attrib::FaceAtom>,
     /// Loss accounting for this decode.
     pub stats: Stats,
 }
@@ -143,11 +150,31 @@ impl Brep {
             .for_each(|point| point.id.0 = qualify(&point.id.0));
         for surface in &mut self.surfaces {
             surface.id.0 = qualify(&surface.id.0);
-            if let SurfaceGeometry::Unknown {
-                record: Some(record),
-            } = &mut surface.geometry
+            match &mut surface.geometry {
+                SurfaceGeometry::Procedural { construction } => {
+                    construction.0 = qualify(&construction.0);
+                }
+                SurfaceGeometry::Unknown {
+                    record: Some(record),
+                } => {
+                    record.0 = qualify(&record.0);
+                }
+                _ => {}
+            }
+        }
+        for procedural in &mut self.procedural_surfaces {
+            procedural.id.0 = qualify(&procedural.id.0);
+            procedural.surface.0 = qualify(&procedural.surface.0);
+            if let ProceduralSurfaceDefinition::Blend {
+                supports, spine, ..
+            } = &mut procedural.definition
             {
-                record.0 = qualify(&record.0);
+                for support in supports.iter_mut().flatten() {
+                    support.surface.0 = qualify(&support.surface.0);
+                }
+                if let Some(spine) = spine {
+                    spine.0 = qualify(&spine.0);
+                }
             }
         }
         for curve in &mut self.curves {
@@ -171,6 +198,11 @@ impl Brep {
         }
         for color in &mut self.face_colors {
             if let Some(target) = &mut color.target {
+                *target = qualify(target);
+            }
+        }
+        for atom in &mut self.face_atoms {
+            if let Some(target) = &mut atom.target {
                 *target = qualify(target);
             }
         }
@@ -426,6 +458,14 @@ fn sense_of(marker: u8) -> Sense {
     }
 }
 
+fn surface_sense(marker: u8, orientation_reversed: bool) -> Sense {
+    match (sense_of(marker), orientation_reversed) {
+        (Sense::Forward, true) => Sense::Reversed,
+        (Sense::Reversed, true) => Sense::Forward,
+        (sense, false) => sense,
+    }
+}
+
 /// Decode one parsed Parasolid stream into B-rep arenas.
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
@@ -462,6 +502,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                     facts.cluster_bodies = scanned_facts.cluster_bodies;
                 }
                 facts.face_colors.append(&mut scanned_facts.face_colors);
+                facts.face_atoms.append(&mut scanned_facts.face_atoms);
                 facts.entity_count += scanned_facts.entity_count;
             } else {
                 tables = scanned_tables;
@@ -472,6 +513,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             carriers.merge_missing(scan_carriers(body));
             tables.merge_deltas(scanned_tables);
             facts.face_colors.append(&mut scanned_facts.face_colors);
+            facts.face_atoms.append(&mut scanned_facts.face_atoms);
             facts.entity_count += scanned_facts.entity_count;
         }
     }
@@ -496,6 +538,7 @@ fn decode_graph(
 
     let mut out = Brep {
         face_colors: entity_facts.face_colors,
+        face_atoms: entity_facts.face_atoms,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             ..Stats::default()
@@ -667,7 +710,7 @@ fn decode_graph(
                                 .offset;
                             annotations
                                 .note(id_curve(curve_attr), source_stream, offset as u64)
-                                .tag("00_26");
+                                .tag("surface_intersection");
                             annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
                     }
@@ -858,6 +901,26 @@ fn decode_graph(
     if !body_records.is_empty() {
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
+    let mut surface_ids_by_carrier = HashMap::<u16, u16>::new();
+    let mut face_edges_by_surface_carrier = HashMap::<u16, Vec<(u16, HashSet<u16>)>>::new();
+    for face in &faces {
+        surface_ids_by_carrier
+            .entry(face.surface_attr)
+            .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
+            .or_insert(face.bridge_attr);
+        let edges = face
+            .loops
+            .iter()
+            .flat_map(|(_, ring)| ring)
+            .filter_map(|coedge| t.coedges.get(coedge))
+            .filter_map(|coedge| coedge.refs.get(6).copied())
+            .filter(|edge| *edge != 0)
+            .collect();
+        face_edges_by_surface_carrier
+            .entry(face.surface_attr)
+            .or_default()
+            .push((face.bridge_attr, edges));
+    }
     for f in &faces {
         let loops: Vec<LoopId> = f
             .loops
@@ -870,8 +933,10 @@ fn decode_graph(
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
+        let mut surface_orientation_reversed = false;
         match carriers.surface(f.surface_attr).map(|c| (c, &c.geometry)) {
             Some((c, CarrierGeometry::Surface(geo))) => {
+                surface_orientation_reversed = c.orientation_reversed;
                 annotations
                     .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
                     .tag("compact_surface");
@@ -887,7 +952,93 @@ fn decode_graph(
                 });
             }
             _ => {
-                if let Some((geometry, offset, tag, derived)) =
+                let resolved_blend = carriers.blend(f.surface_attr).and_then(|blend| {
+                    let face_edges: HashSet<u16> = f
+                        .loops
+                        .iter()
+                        .flat_map(|(_, ring)| ring)
+                        .filter_map(|coedge| t.coedges.get(coedge))
+                        .filter_map(|coedge| coedge.refs.get(6).copied())
+                        .filter(|edge| *edge != 0)
+                        .collect();
+                    let [Some(first), Some(second)] = blend.supports.map(|support| {
+                        let bridge = match support {
+                            BlendSupportRef::Surface(attr) => {
+                                surface_ids_by_carrier.get(&attr).copied()
+                            }
+                            BlendSupportRef::Pair(attr) => {
+                                let pair = carriers.blend_support_pair(attr)?;
+                                carriers.curve(pair.intersection)?;
+                                let mut adjacent = pair.supports.iter().filter_map(|candidate| {
+                                    face_edges_by_surface_carrier
+                                        .get(candidate)?
+                                        .iter()
+                                        .filter(|(_, edges)| !face_edges.is_disjoint(edges))
+                                        .map(|(bridge, _)| *bridge)
+                                        .min()
+                                });
+                                let bridge = adjacent.next()?;
+                                if adjacent.next().is_some() {
+                                    return None;
+                                }
+                                Some(bridge)
+                            }
+                        }?;
+                        Some(SurfaceId(id_surf(bridge)))
+                    }) else {
+                        return None;
+                    };
+                    Some((blend, first, second))
+                });
+                if let Some((blend, first, second)) = resolved_blend {
+                    let spine = carriers.curve(blend.spine).map(|carrier| {
+                        if emitted_curves.insert(blend.spine) {
+                            emit_curve(&mut out, carrier);
+                            annotations
+                                .note(id_curve(blend.spine), source_stream, carrier.offset as u64)
+                                .tag("blend_spine");
+                        }
+                        CurveId(id_curve(blend.spine))
+                    });
+                    let procedural_id = ProceduralSurfaceId(format!(
+                        "sldprt:brep:blend-construction#{}",
+                        f.bridge_attr
+                    ));
+                    out.procedural_surfaces.push(ProceduralSurface {
+                        id: procedural_id.clone(),
+                        surface: SurfaceId(id_surf(f.bridge_attr)),
+                        definition: ProceduralSurfaceDefinition::Blend {
+                            supports: [
+                                Some(BlendSupport {
+                                    surface: first,
+                                    reversed: blend.reversed[0],
+                                }),
+                                Some(BlendSupport {
+                                    surface: second,
+                                    reversed: blend.reversed[1],
+                                }),
+                            ],
+                            spine,
+                            radius: BlendRadiusLaw::Constant {
+                                signed_radius: blend.signed_radius,
+                            },
+                            cross_section: BlendCrossSection::Circular,
+                            native: None,
+                        },
+                        cache_fit_tolerance: None,
+                        record_bounds: None,
+                    });
+                    annotations
+                        .note(id_surf(f.bridge_attr), source_stream, blend.offset as u64)
+                        .tag("00_38");
+                    out.surfaces.push(Surface {
+                        id: SurfaceId(id_surf(f.bridge_attr)),
+                        source_object: None,
+                        geometry: SurfaceGeometry::Procedural {
+                            construction: procedural_id,
+                        },
+                    });
+                } else if let Some((geometry, offset, tag, derived)) =
                     resolve_sweep_surface(carriers, t, f)
                 {
                     annotations
@@ -929,7 +1080,7 @@ fn decode_graph(
                     .unwrap_or(0)
             )),
             surface: SurfaceId(id_surf(f.bridge_attr)),
-            sense: sense_of(f.marker),
+            sense: surface_sense(f.marker, surface_orientation_reversed),
             loops,
             name: None,
             color: t
@@ -962,6 +1113,13 @@ fn decode_graph(
             .map(|face| id_face(face.bridge_attr))
             .filter(|face| emitted_faces.contains(face.as_str()));
     }
+    for atom in &mut out.face_atoms {
+        atom.target =
+            Some(id_face(atom.face_attr)).filter(|face| emitted_faces.contains(face.as_str()));
+    }
+    let mut bound_faces = HashSet::new();
+    out.face_atoms
+        .retain(|atom| atom.target.is_some() && bound_faces.insert(atom.face_attr));
     solve_face_orientation(&mut out);
     synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
     synthesize_sphere_seams(&mut out, &mut annotations, source_stream);
@@ -1152,6 +1310,38 @@ fn decode_graph(
 }
 
 fn prune_rejected_topology(out: &mut Brep) {
+    let kept_loops = out
+        .faces
+        .iter()
+        .flat_map(|face| &face.loops)
+        .cloned()
+        .collect::<HashSet<_>>();
+    out.loops.retain(|loop_| kept_loops.contains(&loop_.id));
+
+    let kept_coedges = out
+        .loops
+        .iter()
+        .flat_map(|loop_| &loop_.coedges)
+        .cloned()
+        .collect::<HashSet<_>>();
+    out.coedges
+        .retain(|coedge| kept_coedges.contains(&coedge.id));
+    for coedge in &mut out.coedges {
+        if !kept_coedges.contains(&coedge.radial_next) {
+            coedge.radial_next = coedge.id.clone();
+        }
+    }
+
+    let kept_pcurves = out
+        .coedges
+        .iter()
+        .flat_map(|coedge| &coedge.pcurves)
+        .map(|use_| &use_.pcurve)
+        .cloned()
+        .collect::<HashSet<_>>();
+    out.pcurves
+        .retain(|pcurve| kept_pcurves.contains(&pcurve.id));
+
     let kept_edges = out
         .coedges
         .iter()
@@ -1175,11 +1365,18 @@ fn prune_rejected_topology(out: &mut Brep) {
         .collect::<HashSet<_>>();
     out.points.retain(|point| kept_points.contains(&point.id));
 
-    let kept_curves = out
+    let mut kept_curves = out
         .edges
         .iter()
         .filter_map(|edge| edge.curve.clone())
         .collect::<HashSet<_>>();
+    kept_curves.extend(out.procedural_surfaces.iter().filter_map(|surface| {
+        if let ProceduralSurfaceDefinition::Blend { spine, .. } = &surface.definition {
+            spine.clone()
+        } else {
+            None
+        }
+    }));
     out.curves.retain(|curve| kept_curves.contains(&curve.id));
     out.stats.unknown_curve_edges = out
         .edges
@@ -3098,6 +3295,16 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn normalized_surface_parameter_reversal_toggles_face_sense() {
+        use cadmpeg_ir::topology::Sense;
+
+        assert_eq!(super::surface_sense(0x2b, false), Sense::Forward);
+        assert_eq!(super::surface_sense(0x2d, false), Sense::Reversed);
+        assert_eq!(super::surface_sense(0x2b, true), Sense::Reversed);
+        assert_eq!(super::surface_sense(0x2d, true), Sense::Forward);
+    }
+
+    #[test]
     fn shared_edge_coedge_parity_orients_connected_faces() {
         use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
         use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
@@ -3161,6 +3368,44 @@ mod tests {
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);
+    }
+
+    #[test]
+    fn topology_pruning_retains_a_procedural_blend_spine() {
+        use cadmpeg_ir::geometry::{
+            BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
+            ProceduralSurfaceDefinition,
+        };
+        use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+
+        let spine = CurveId("spine".into());
+        let mut brep = super::Brep {
+            curves: vec![Curve {
+                id: spine.clone(),
+                geometry: CurveGeometry::Line {
+                    origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            }],
+            procedural_surfaces: vec![ProceduralSurface {
+                id: ProceduralSurfaceId("blend".into()),
+                surface: SurfaceId("surface".into()),
+                definition: ProceduralSurfaceDefinition::Blend {
+                    supports: [None, None],
+                    spine: Some(spine.clone()),
+                    radius: BlendRadiusLaw::Constant { signed_radius: 0.5 },
+                    cross_section: BlendCrossSection::Circular,
+                    native: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            }],
+            ..Default::default()
+        };
+
+        super::prune_rejected_topology(&mut brep);
+        assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
     }
 
     #[test]
