@@ -287,7 +287,7 @@ mod width_tests {
         decode_rolling_ball_surface, DecodedRollingBallCurve,
     };
     use crate::nurbs::core::{
-        decode_curve_cache, decode_surface_cache, decode_surface_cache_resolving_refs,
+        decode_curve_cache, decode_surface_cache, decode_surface_cache_resolving_refs_at,
     };
     use crate::nurbs::proc_curve::{
         compound_patch_layout, decode_helix_definition, decode_procedural_curve_resolving_refs,
@@ -1164,10 +1164,11 @@ mod width_tests {
         record.extend_from_slice(b"ref");
         push_int(&mut record, 0x04, 0, 4);
         record.push(0x10);
-        let surface = decode_surface_cache_resolving_refs(
+        let surface = decode_surface_cache_resolving_refs_at(
             &record,
             &active,
             &SubtypeTables::from_stream(&active),
+            4,
         )
         .expect("resolved width-4 ref");
         assert_eq!((surface.u_count, surface.v_count), (2, 2));
@@ -1183,10 +1184,11 @@ mod width_tests {
             let mut record = vec![0x0f];
             push_int(&mut record, 0x04, 0, int_width);
             record.push(0x10);
-            let surface = decode_surface_cache_resolving_refs(
+            let surface = decode_surface_cache_resolving_refs_at(
                 &record,
                 &active,
                 &SubtypeTables::from_stream(&active),
+                int_width,
             )
             .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
             assert_eq!((surface.u_count, surface.v_count), (2, 2));

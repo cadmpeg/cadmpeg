@@ -2967,7 +2967,16 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     bytes
 }
 
-fn synthetic_geometry_with_sketch_link_smbh(tuple: &str) -> Vec<u8> {
+/// One `sketch_attrib_def` payload form: the form selector the third header
+/// integer carries and the members that follow it.
+enum SketchLinkForm<'a> {
+    /// Form `3`: the members as one tagged ASCII field.
+    Tagged(&'a str),
+    /// Form `2` or `0`: the members as integers.
+    Integers(i64, &'a [i64]),
+}
+
+fn synthetic_geometry_with_sketch_link_smbh(form: SketchLinkForm<'_>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -2987,10 +2996,21 @@ fn synthetic_geometry_with_sketch_link_smbh(tuple: &str) -> Vec<u8> {
     t_ident(&mut attribute, "attrib");
     t_ref(&mut attribute, -1);
     push_u8_string(&mut attribute, "sketch_attrib_def");
-    for value in [1, 1, 3] {
+    let (selector, members) = match form {
+        SketchLinkForm::Tagged(_) => (3, &[][..]),
+        SketchLinkForm::Integers(selector, members) => (selector, members),
+    };
+    for value in [1, 1, selector] {
         t_long(&mut attribute, value);
     }
-    push_u8_string(&mut attribute, tuple);
+    match form {
+        SketchLinkForm::Tagged(tuple) => push_u8_string(&mut attribute, tuple),
+        SketchLinkForm::Integers(..) => {
+            for value in members {
+                t_long(&mut attribute, *value);
+            }
+        }
+    }
     t_end(&mut attribute);
     bytes.splice(delta..delta, attribute);
     bytes
@@ -22835,7 +22855,9 @@ fn generated_f3d_rewrites_creation_timestamp() {
 
 #[test]
 fn decode_transfers_generated_sketch_curve_link() {
-    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh("113 0 1 0 2 3"));
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
+        SketchLinkForm::Tagged("113 0 1 0 2 3"),
+    ));
     let result = F3dCodec
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
@@ -22856,9 +22878,9 @@ fn decode_transfers_generated_sketch_curve_link() {
     assert_eq!((link.role, link.closure), (2, 3));
 }
 
-/// The one sketch-curve link a synthetic archive carries for `tuple`.
-fn decoded_sketch_link(tuple: &str) -> Option<crate::records::SketchCurveLink> {
-    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(tuple));
+/// The one sketch-curve link a synthetic archive carries under `form`.
+fn decoded_sketch_link(form: SketchLinkForm<'_>) -> Option<crate::records::SketchCurveLink> {
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(form));
     let result = F3dCodec
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
@@ -22867,15 +22889,40 @@ fn decoded_sketch_link(tuple: &str) -> Option<crate::records::SketchCurveLink> {
 
 #[test]
 fn a_sketch_link_keeps_the_second_tuple_member_the_source_writes() {
-    let link = decoded_sketch_link("113 4550 1 0 2 3")
+    let link = decoded_sketch_link(SketchLinkForm::Tagged("113 4550 1 0 2 3"))
         .expect("a non-zero second member does not refuse the link");
     assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
     assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
     // The member reaches the full unsigned 64-bit range, so it does not fit the
     // signed reading the other members take.
-    let link = decoded_sketch_link("113 18446744073709551615 1 0 2 3")
+    let link = decoded_sketch_link(SketchLinkForm::Tagged("113 18446744073709551615 1 0 2 3"))
         .expect("a second member above i64::MAX does not refuse the link");
     assert_eq!(link.ref_b, u64::MAX);
+}
+
+#[test]
+fn a_sketch_link_decodes_in_every_payload_form() {
+    // Form 2 writes the five members as integers with a trailing `0`; form 0
+    // writes them with no trailing member at all.
+    for form in [
+        SketchLinkForm::Integers(2, &[113, 4550, 1, 2, 3, 0]),
+        SketchLinkForm::Integers(0, &[113, 4550, 1, 2, 3]),
+    ] {
+        let link = decoded_sketch_link(form).expect("integer-form sketch link");
+        assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
+        assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
+    }
+    // An integer form spells the unconstrained sense as the signed `-1` of the
+    // same 32-bit pattern the tagged field spells as `4294967295`.
+    assert_eq!(
+        decoded_sketch_link(SketchLinkForm::Integers(2, &[113, 0, -1, 2, 3, 0]))
+            .expect("integer-form sketch link")
+            .sense,
+        None
+    );
+    // Form 2 without its trailing `0`, and form 0 with one, are misframed.
+    assert!(decoded_sketch_link(SketchLinkForm::Integers(2, &[113, 0, 1, 2, 3])).is_none());
+    assert!(decoded_sketch_link(SketchLinkForm::Integers(0, &[113, 0, 1, 2, 3, 0])).is_none());
 }
 
 #[test]
@@ -22883,7 +22930,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     use crate::records::SketchCurveLink;
 
     let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
-        "113 0 4294967295 0 2 3",
+        SketchLinkForm::Tagged("113 0 4294967295 0 2 3"),
     ));
     let decoded = F3dCodec
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())

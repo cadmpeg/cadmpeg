@@ -13,7 +13,8 @@ use super::edits::{
     ActGuidEdit, BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
     HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
 };
-use super::geometry::{active_ref_width, patch_integer_field, required_payload_field};
+use super::geometry::{patch_integer_field, required_payload_field};
+use crate::asm_header::stream_ref_width;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::native_bool;
 use crate::{asm_header, sab};
@@ -322,7 +323,7 @@ pub(crate) fn patch_body_native_keys(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, key) in edits {
@@ -352,7 +353,7 @@ pub(crate) fn patch_transform_hints(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = active_ref_width(bytes);
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, flags) in edits {
@@ -398,7 +399,7 @@ pub(crate) fn patch_tolerant_coedge_parameters(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = active_ref_width(bytes);
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, range) in edits {
@@ -434,7 +435,7 @@ pub(crate) fn patch_wire_topologies(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = active_ref_width(bytes);
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, side) in edits {
@@ -476,7 +477,7 @@ pub(crate) fn patch_edge_ownerships(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let ref_width = active_ref_width(bytes);
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, owner) in edits {

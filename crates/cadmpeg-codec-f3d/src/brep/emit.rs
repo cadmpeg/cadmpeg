@@ -3473,6 +3473,7 @@ pub(crate) fn emit_coedges(
     carriers: &Carriers,
     reach: &Reachable,
 ) {
+    let ref_width = crate::asm_header::stream_ref_width(bytes);
     let Carriers {
         pcurve_parameter_ranges,
         ..
@@ -3533,10 +3534,11 @@ pub(crate) fn emit_coedges(
                     return None;
                 };
                 let record_bytes = bytes.get(r.offset..r.offset.checked_add(r.len)?)?;
-                let mut curve = nurbs::core::decode_curve_cache_resolving_refs(
+                let mut curve = nurbs::core::decode_curve_cache_resolving_refs_at(
                     record_bytes,
                     bytes,
                     subtype_tables,
+                    ref_width,
                 )?;
                 if *curve_reversed {
                     reverse_nurbs_curve(&mut curve);

@@ -4,8 +4,8 @@
 
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::records::{
-    CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
-    SKETCH_LINK_SENSE_UNCONSTRAINED,
+    sketch_link_sense_is_unconstrained, CreationTimestamp, PersistentDesignLink,
+    PersistentSubentityTag, SketchCurveLink,
 };
 use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -14,7 +14,7 @@ use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
 
-/// The five members a `sketch_attrib_def` payload writes.
+/// The five members every `sketch_attrib_def` payload form writes.
 struct SketchLinkPayload {
     sketch_curve_id: i64,
     ref_b: u64,
@@ -23,9 +23,13 @@ struct SketchLinkPayload {
     closure: i64,
 }
 
-/// Read the payload following a `sketch_attrib_def` family name. The three
-/// header integers are `1`, `1`, and a form selector; form `3` writes the
-/// members as one tagged ASCII field with a `0` between the sense and the role.
+/// Read the payload following a `sketch_attrib_def` family name.
+///
+/// The three header integers are `1`, `1`, and a form selector. Form `3` writes
+/// the members as one tagged ASCII field with a `0` between the sense and the
+/// role, form `2` as six integers with a trailing `0`, and form `0` as the five
+/// members alone. All three write the same five members in the same order, so
+/// each yields one link.
 fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
     let [AttributeValue::Integer(1), AttributeValue::Integer(1), AttributeValue::Integer(form), payload @ ..] =
         values
@@ -48,6 +52,20 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
                 closure: closure.parse().ok()?,
             })
         }
+        (
+            2,
+            [AttributeValue::Integer(sketch_curve_id), AttributeValue::Integer(ref_b), AttributeValue::Integer(sense), AttributeValue::Integer(role), AttributeValue::Integer(closure), AttributeValue::Integer(0)],
+        )
+        | (
+            0,
+            [AttributeValue::Integer(sketch_curve_id), AttributeValue::Integer(ref_b), AttributeValue::Integer(sense), AttributeValue::Integer(role), AttributeValue::Integer(closure)],
+        ) => Some(SketchLinkPayload {
+            sketch_curve_id: *sketch_curve_id,
+            ref_b: u64::try_from(*ref_b).ok()?,
+            sense: *sense,
+            role: *role,
+            closure: *closure,
+        }),
         _ => None,
     }
 }
@@ -62,7 +80,7 @@ pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCur
         target: attribute.target.clone(),
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
-        sense: (payload.sense != SKETCH_LINK_SENSE_UNCONSTRAINED).then_some(payload.sense),
+        sense: (!sketch_link_sense_is_unconstrained(payload.sense)).then_some(payload.sense),
         role: payload.role,
         closure: payload.closure,
     })

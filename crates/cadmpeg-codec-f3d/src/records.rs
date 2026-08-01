@@ -16,6 +16,14 @@ use cadmpeg_ir::topology::Color;
 /// unsigned decimal spelling of `0xFFFFFFFF`.
 pub(crate) const SKETCH_LINK_SENSE_UNCONSTRAINED: i64 = 0xFFFF_FFFF;
 
+/// Whether a `sketch_attrib_def` sense leaves the sense unconstrained. The
+/// tagged-field form spells the value as the unsigned decimal of `0xFFFFFFFF`
+/// and the integer forms as the signed `-1` of that same 32-bit pattern, so a
+/// reader that accepts one spelling keeps the other as a stored sense.
+pub(crate) fn sketch_link_sense_is_unconstrained(sense: i64) -> bool {
+    sense == SKETCH_LINK_SENSE_UNCONSTRAINED || sense == -1
+}
+
 /// Provenance link from a solved B-rep entity to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchCurveLink {

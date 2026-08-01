@@ -372,24 +372,35 @@ pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
     )
 }
 
-/// Decode a surface cache from a carrier record, following the ASM subtype
-/// table when the record stores a nested `ref N` instead of an inline cache.
-/// `active_bytes` is the full active SAB slice; `N` indexes its non-`ref`
-/// subtype openings in byte order.
+/// Decode a surface cache from a carrier record at the stream's integer width,
+/// following the ASM subtype table when the record stores a nested `ref N`
+/// instead of an inline cache. `active_bytes` is the full active SAB slice; `N`
+/// indexes its non-`ref` subtype openings in byte order.
+pub(crate) fn decode_surface_cache_resolving_refs_at(
+    record_bytes: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+    int_width: usize,
+) -> Option<NurbsSurface> {
+    decode_cache_resolving_refs(
+        record_bytes,
+        active_bytes,
+        tables,
+        &mut Vec::new(),
+        decode_surface_cache_at,
+        int_width,
+    )
+}
+
+/// [`decode_surface_cache_resolving_refs_at`] at whichever integer width parses,
+/// for a caller holding a slice whose stream header it has not read.
 pub fn decode_surface_cache_resolving_refs(
     record_bytes: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
 ) -> Option<NurbsSurface> {
     INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            decode_surface_cache_at,
-            int_width,
-        )
+        decode_surface_cache_resolving_refs_at(record_bytes, active_bytes, tables, int_width)
     })
 }
 
@@ -434,21 +445,21 @@ pub(crate) fn decode_owned_curve_cache_resolving_refs_at(
     )
 }
 
-/// Decode a curve cache from a carrier record, resolving nested ASM subtype
-/// references through the active slice's subtype table.
-pub fn decode_curve_cache_resolving_refs(
+/// Decode a curve cache from a carrier record at the stream's integer width,
+/// resolving nested ASM subtype references through the active slice's subtype
+/// table.
+pub(crate) fn decode_curve_cache_resolving_refs_at(
     record_bytes: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
+    int_width: usize,
 ) -> Option<NurbsCurve> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            decode_curve_cache_at,
-            int_width,
-        )
-    })
+    decode_cache_resolving_refs(
+        record_bytes,
+        active_bytes,
+        tables,
+        &mut Vec::new(),
+        decode_curve_cache_at,
+        int_width,
+    )
 }

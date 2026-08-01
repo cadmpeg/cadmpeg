@@ -119,6 +119,13 @@ pub fn has_asm_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 16 && bytes.starts_with(MAGIC_PREFIX) && matches!(bytes[14], b'4' | b'8')
 }
 
+/// The integer and reference width `bytes` declares, in bytes. A slice without
+/// a readable header is read at the `BinaryFile8` width, which is the width of
+/// every construction the decoder synthesizes.
+pub(crate) fn stream_ref_width(bytes: &[u8]) -> usize {
+    parse(bytes).map_or(8, |header| usize::from(header.width))
+}
+
 /// Byte offset of the string region for the stream's declared width, or `None`
 /// when the width is unrecognized.
 fn string_region_start(bytes: &[u8]) -> Option<usize> {

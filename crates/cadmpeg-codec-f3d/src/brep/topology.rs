@@ -63,6 +63,7 @@ pub(crate) fn keep_faces_and_carriers(
     carriers: &mut Carriers,
     reach: &mut Reachable,
 ) {
+    let ref_width = crate::asm_header::stream_ref_width(bytes);
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -121,10 +122,11 @@ pub(crate) fn keep_faces_and_carriers(
         // as supports, not as evaluated face caches.
         if !exact_cacheless_construction {
             if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
-                if let Some(ns) = nurbs::core::decode_surface_cache_resolving_refs(
+                if let Some(ns) = nurbs::core::decode_surface_cache_resolving_refs_at(
                     record_slice(surf_rec, bytes),
                     bytes,
                     subtype_tables,
+                    ref_width,
                 ) {
                     e.insert((SurfaceGeometry::Nurbs(ns), false));
                     if surf_rec.head == "spline" && !procedural_surface_defs.contains_key(&surf_ref)
