@@ -307,7 +307,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 - the thirty bytes of the class tail
 - the flag byte after the horizontal-alignment enum and the flag byte after the vertical-alignment enum
-- the twelve bytes of a `txt_tag` record's twenty-nine-byte run that the leading byte and the colour components do not fill, the two bytes between its height and its anchor coordinates, and the eleven bytes between those coordinates and its text string
+- the twelve bytes of a `txt_tag` record's twenty-nine-byte run that the leading byte and the colour components do not fill, the two bytes between its height and its anchor coordinates, and the eleven bytes between those coordinates and its text string, ten of them below class version 4
 - the members a `txt_tag` record writes between its text string and the thirty-byte class tail, and the pair list it writes as its leading block
 
 **Known.** `f3d.md` §8.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §8.1 "In a `textex_tag` record the property block" and `f3d.md` §8.1 "In a `txt_tag` record the run" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §8.1 "A `textex_tag` record writes two optional" and `f3d.md` §8.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. The text rotation and the frame-text anchor come from that transform, and the colour components come from the run ahead of the font family. The decoder reads all three. A `txt_tag` record stores no width factor.

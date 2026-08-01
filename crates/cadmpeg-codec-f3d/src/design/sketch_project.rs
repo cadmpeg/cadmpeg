@@ -195,9 +195,14 @@ pub fn project_sketch_design(
     entities.extend(texts.iter().filter_map(|text| {
         let scope = native_stream(&text.id)?;
         let placement = placements_by_suffix.get(&(scope, text.owner_reference))?;
+        // A neutral sketch-entity key is built from the record's persistent
+        // identity; indexed-record position does not participate. A record that
+        // stores no persistent identity therefore has no neutral key and stays
+        // native only.
+        let persistent_id = text.persistent_id?;
         let sketch = neutral_sketch_id(placement);
         Some(SketchEntity {
-            id: neutral_sketch_text_id(&sketch, text.persistent_id),
+            id: neutral_sketch_text_id(&sketch, persistent_id),
             sketch,
             construction: false,
             native_ref: Some(text.id.clone()),

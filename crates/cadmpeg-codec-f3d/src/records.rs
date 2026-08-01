@@ -3322,13 +3322,18 @@ pub struct SketchText {
     pub owner_reference: u32,
     /// Source per-file dynamic ASCII class tag naming this record's type.
     pub class_tag: String,
+    /// Record version of this record's class, from its Design `MetaStream` type
+    /// table. It selects the member sequence the record was written under.
+    pub class_version: u32,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Persistent genesis identity, a property key absent from most records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
-    /// Persistent identity of the text entity.
-    pub persistent_id: u64,
+    /// Persistent identity of the text entity. A `txt_tag` record below class
+    /// version 4 writes no identity key and stores none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistent_id: Option<u64>,
     /// Persistent base identity, a property key absent from some records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_id: Option<u64>,

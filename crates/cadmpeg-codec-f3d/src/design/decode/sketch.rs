@@ -1563,11 +1563,16 @@ pub(crate) fn read_property_block(
 /// UTF-16 content, and an owning-sketch reference.
 pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
+    // A record carries no version of its own: its entity id selects an entry in
+    // its segment's own type table, and that entry's version fixes the member
+    // sequence the record was written under.
+    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
+        let stream_types = stream_types_by_entity(&types, &entry.name);
         let bytes = scan.entry_bytes(&entry.name)?;
         // A stream can retain a superseded copy of a record beside the copy its
         // index names, and both parse. The record index is the entity, so the
@@ -1588,13 +1593,23 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
             let Some(record_index) = u32_at(bytes, after_tag) else {
                 break;
             };
+            let Some((_, class_version)) = stream_types.get(&u64::from(record_index)).copied()
+            else {
+                at += 1;
+                continue;
+            };
             let record_end = next_indexed_record_offset(bytes, at + 7).unwrap_or(bytes.len());
             let Some(payload) = bytes.get(at..record_end) else {
                 break;
             };
-            if let Some(text) =
-                decode_sketch_text_record(payload, &entry.name, class_tag, record_index, at)
-            {
+            if let Some(text) = decode_sketch_text_record(
+                payload,
+                &entry.name,
+                class_tag,
+                class_version,
+                record_index,
+                at,
+            ) {
                 if emitted.insert(record_index) {
                     out.push(text);
                 }
@@ -1636,8 +1651,18 @@ const TEXT_PLACEMENT_TOLERANCE: f64 = 1e-9;
 const TXT_TAG_HEAD_RUN: usize = 13;
 
 /// Bytes between the text-anchor coordinates and the u32 text count in the
-/// `txt_tag` form.
+/// `txt_tag` form, from [`TXT_TAG_ANCHOR_MEMBER_VERSION`] onward.
 const TXT_TAG_ANCHOR_RUN: usize = 11;
+
+/// The `txt_tag` class version that adds the eleventh byte of the run between
+/// the text anchor and the text count. Below it the run is ten bytes.
+const TXT_TAG_ANCHOR_MEMBER_VERSION: u32 = 4;
+
+/// The `txt_tag` class version from which a record writes its persistent
+/// identity as a property-block key. A property block carrying neither identity
+/// key belongs to a `txt_tag` record below this version, which stores no
+/// persistent identity at all.
+const TXT_TAG_IDENTITY_KEY_VERSION: u32 = 4;
 
 /// Bytes between the `txt_tag` form's counted reference run and the thirty-byte
 /// run that closes every sketch-text record.
@@ -1729,7 +1754,7 @@ fn reference_index(reference: &Reference) -> Option<u32> {
 struct SketchTextHead {
     identity: SketchTextIdentity,
     entity_genesis: Option<u64>,
-    persistent_id: u64,
+    persistent_id: Option<u64>,
     base_id: Option<u64>,
     font_family: String,
     height: f64,
@@ -1773,7 +1798,7 @@ fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<
 }
 
 /// Read the record prefix, property block, and the metrics up to the height.
-fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
+fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchTextHead> {
     // Record prefix: the LP-ASCII class tag, the u64 entity ID, and the
     // LP-ASCII record name.
     let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
@@ -1787,6 +1812,9 @@ fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
     // The block carries the text identities under keys that vary by record, so
     // each is addressed by name. The identity key is `textex_tag` or `txt_tag`,
     // and which of the two the record carries selects the layout that follows.
+    // A `txt_tag` record below TXT_TAG_IDENTITY_KEY_VERSION writes neither key
+    // and carries no persistent identity, so its class version selects the
+    // layout in place of a key.
     let properties = read_property_block(payload, &mut cursor)?;
     let property = |key: &str| {
         properties
@@ -1795,8 +1823,11 @@ fn decode_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
             .map(|(_, value)| *value)
     };
     let (identity, persistent_id) = match (property("textex_tag"), property("txt_tag")) {
-        (Some(value), _) => (SketchTextIdentity::TextexTag, value),
-        (None, Some(value)) => (SketchTextIdentity::TxtTag, value),
+        (Some(value), _) => (SketchTextIdentity::TextexTag, Some(value)),
+        (None, Some(value)) => (SketchTextIdentity::TxtTag, Some(value)),
+        (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => {
+            (SketchTextIdentity::TxtTag, None)
+        }
         (None, None) => return None,
     };
     let (width_factor, color) = match identity {
@@ -1895,16 +1926,26 @@ fn decode_sketch_text_tail(
 /// Two bytes separate the height from the anchor coordinates, which this form
 /// stores directly rather than in a placement transform. The form writes no
 /// parameter-reference slot: an eleven-byte run carries the alignment fields,
-/// and the text string is followed by a counted reference run, fifteen bytes,
-/// and the trailing run and owning-sketch reference that close both forms.
-fn decode_txt_tag_sketch_text_tail(payload: &[u8], mut cursor: usize) -> Option<SketchTextTail> {
+/// ten bytes below [`TXT_TAG_ANCHOR_MEMBER_VERSION`], and the text string is
+/// followed by a counted reference run, fifteen bytes, and the trailing run and
+/// owning-sketch reference that close both forms.
+fn decode_txt_tag_sketch_text_tail(
+    payload: &[u8],
+    mut cursor: usize,
+    class_version: u32,
+) -> Option<SketchTextTail> {
     cursor = cursor.checked_add(2)?;
     let anchor = Point2::new(
         f64_at(payload, cursor)? * 10.0,
         f64_at(payload, cursor.checked_add(8)?)? * 10.0,
     );
     (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
-    cursor = cursor.checked_add(16 + TXT_TAG_ANCHOR_RUN)?;
+    let anchor_run = if class_version < TXT_TAG_ANCHOR_MEMBER_VERSION {
+        TXT_TAG_ANCHOR_RUN - 1
+    } else {
+        TXT_TAG_ANCHOR_RUN
+    };
+    cursor = cursor.checked_add(16 + anchor_run)?;
     let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
         return None;
@@ -1937,10 +1978,11 @@ pub(crate) fn decode_sketch_text_record(
     payload: &[u8],
     stream: &str,
     class_tag: String,
+    class_version: u32,
     record_index: u32,
     byte_offset: usize,
 ) -> Option<SketchText> {
-    let head = decode_sketch_text_head(payload)?;
+    let head = decode_sketch_text_head(payload, class_version)?;
     let tail = match head.identity {
         SketchTextIdentity::TextexTag => {
             let mut closed = None;
@@ -1960,13 +2002,16 @@ pub(crate) fn decode_sketch_text_record(
             }
             closed?
         }
-        SketchTextIdentity::TxtTag => decode_txt_tag_sketch_text_tail(payload, head.cursor)?,
+        SketchTextIdentity::TxtTag => {
+            decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version)?
+        }
     };
     Some(SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),
         record_index,
         owner_reference: tail.owner_reference,
         class_tag,
+        class_version,
         byte_offset: byte_offset as u64,
         entity_genesis: head.entity_genesis,
         persistent_id: head.persistent_id,

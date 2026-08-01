@@ -739,6 +739,7 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
         &text.raw_bytes,
         "Design/BulkStream.dat",
         text.class_tag.clone(),
+        text.class_version,
         text.record_index,
         0,
     )

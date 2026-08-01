@@ -15575,14 +15575,23 @@ fn sketch_text_record(
     bytes
 }
 
-fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::SketchText> {
+/// Decode one sketch-text record at `class_version`, the version its Design
+/// `MetaStream` type table gives its class.
+fn decode_sketch_text_at(bytes: &[u8], class_version: u32) -> Option<crate::records::SketchText> {
     crate::design::decode::sketch::decode_sketch_text_record(
         bytes,
         "Design/BulkStream.dat",
         "329".into(),
+        class_version,
         304,
         7,
     )
+}
+
+/// Decode one sketch-text record at the class version that writes an identity
+/// key and the wider anchor run.
+fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::SketchText> {
+    decode_sketch_text_at(bytes, 4)
 }
 
 #[test]
@@ -15600,7 +15609,7 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     assert_eq!(text.record_index, 304);
     assert_eq!(text.owner_reference, 201);
     assert_eq!(text.entity_genesis, Some(4));
-    assert_eq!(text.persistent_id, 109);
+    assert_eq!(text.persistent_id, Some(109));
     assert_eq!(text.base_id, Some(305));
     assert_eq!(text.text, "path text");
     assert_eq!(text.font_family, "Arial");
@@ -15648,7 +15657,7 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
     .expect("sketch text record");
     assert_eq!(text.entity_genesis, None);
     assert_eq!(text.base_id, None);
-    assert_eq!(text.persistent_id, 109);
+    assert_eq!(text.persistent_id, Some(109));
     assert_eq!(text.first_reference, None);
     assert_eq!(text.second_reference, None);
     assert_eq!(text.height, 10.0);
@@ -15732,13 +15741,15 @@ fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
 
 /// Build one sketch-text record in the `txt_tag` identity form: `properties`
 /// are the property-block keys in stream order, `frame` is the leading block's
-/// reference run, `run` is the counted reference run after the text, and
-/// `anchor` is the text anchor point in centimetres.
-fn txt_tag_sketch_text_record(
+/// reference run, `run` is the counted reference run after the text, `anchor`
+/// is the text anchor point in centimetres, and `class_version` selects the
+/// width of the run between the anchor and the text string.
+fn txt_tag_sketch_text_record_at(
     properties: &[(&str, u64)],
     frame: &[u32],
     run: &[u32],
     anchor: (f64, f64),
+    class_version: u32,
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
@@ -15783,7 +15794,7 @@ fn txt_tag_sketch_text_record(
     bytes.extend_from_slice(&[0; 2]);
     bytes.extend_from_slice(&anchor.0.to_le_bytes());
     bytes.extend_from_slice(&anchor.1.to_le_bytes());
-    bytes.extend_from_slice(&[0; 11]);
+    bytes.extend_from_slice(&vec![0u8; if class_version < 4 { 10 } else { 11 }]);
     push_utf16(&mut bytes, "sketch text");
     bytes.extend_from_slice(&(run.len() as u32).to_le_bytes());
     for reference in run {
@@ -15793,6 +15804,17 @@ fn txt_tag_sketch_text_record(
     bytes.extend_from_slice(&[0; 30]);
     push_padded_reference(&mut bytes, 201);
     bytes
+}
+
+/// Build one `txt_tag` sketch-text record at the class version that writes an
+/// identity key and the wider anchor run.
+fn txt_tag_sketch_text_record(
+    properties: &[(&str, u64)],
+    frame: &[u32],
+    run: &[u32],
+    anchor: (f64, f64),
+) -> Vec<u8> {
+    txt_tag_sketch_text_record_at(properties, frame, run, anchor, 4)
 }
 
 #[test]
@@ -15807,7 +15829,7 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     assert_eq!(text.record_index, 304);
     assert_eq!(text.owner_reference, 201);
     assert_eq!(text.entity_genesis, Some(4));
-    assert_eq!(text.persistent_id, 115);
+    assert_eq!(text.persistent_id, Some(115));
     assert_eq!(text.base_id, None);
     assert_eq!(text.text, "sketch text");
     assert_eq!(text.font_family, "Arial");
@@ -15866,6 +15888,40 @@ fn sketch_text_record_refuses_a_property_block_without_an_identity_key() {
         None
     ))
     .is_none());
+}
+
+#[test]
+fn a_txt_tag_sketch_text_record_below_the_identity_key_version_stores_no_identity() {
+    let text = decode_sketch_text_at(
+        &txt_tag_sketch_text_record_at(&[("txt_tag_base", 300)], &[261], &[261], (0.25, -1.5), 3),
+        3,
+    )
+    .expect("sketch text record");
+    assert_eq!(text.class_version, 3);
+    assert_eq!(text.persistent_id, None);
+    assert_eq!(text.base_id, Some(300));
+    assert_eq!(text.text, "sketch text");
+    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(2.5, -15.0)));
+}
+
+#[test]
+fn the_txt_tag_anchor_run_widens_with_the_class_version() {
+    // The run between the anchor and the text string is ten bytes below class
+    // version 4 and eleven from it, so a record read at the other version's
+    // width does not end on its owning-sketch reference.
+    for (written, read) in [(3u32, 4u32), (4, 3)] {
+        assert!(decode_sketch_text_at(
+            &txt_tag_sketch_text_record_at(
+                &[("txt_tag", 115)],
+                &[261],
+                &[261],
+                (0.0, 0.0),
+                written
+            ),
+            read,
+        )
+        .is_none());
+    }
 }
 
 #[test]
