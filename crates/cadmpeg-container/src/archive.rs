@@ -157,13 +157,28 @@ impl<'a> ArchiveSnapshot<'a> {
     ) -> Result<View<'a>, CodecError> {
         let end = entry.data_end()?;
         match entry.compression {
-            EntryCompression::Stored => ctx.register_slice(
-                self.root,
-                ByteRange {
-                    start: entry.data_start,
-                    end,
-                },
-            ),
+            EntryCompression::Stored => {
+                let view = ctx.register_slice(
+                    self.root,
+                    ByteRange {
+                        start: entry.data_start,
+                        end,
+                    },
+                )?;
+                if view.window().len() as u64 != entry.uncompressed_size {
+                    return Err(CodecError::Malformed(format!(
+                        "stored size mismatch for {}",
+                        entry.name
+                    )));
+                }
+                if crc32fast::hash(view.window()) != entry.crc32 {
+                    return Err(CodecError::Malformed(format!(
+                        "CRC mismatch for {}",
+                        entry.name
+                    )));
+                }
+                Ok(view)
+            }
             EntryCompression::Deflate => {
                 let start = usize::try_from(entry.data_start).map_err(|_| {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
