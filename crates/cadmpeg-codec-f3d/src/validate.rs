@@ -1255,7 +1255,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && scope.frame_length > 89
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
             && scope.kind_offset > scope.byte_offset
-            && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
+            && scope.kind_offset < scope.feature_ordinal_offset
             && scope.feature_ordinal > 0
             && scope
                 .paired_byte_offset
@@ -1268,20 +1268,20 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     )
                 })
             && scope.history_state_id_offset == scope.kind_offset.saturating_sub(8)
-            && scope.previous_history_state_id_offset
-                == scope.feature_ordinal_offset.saturating_add(
-                    if scope.kind == "CopyPasteBodies" {
-                        53
-                    } else if scope
-                        .paired_byte_offset
-                        .saturating_sub(scope.feature_ordinal_offset)
-                        == 87
-                    {
-                        41
-                    } else {
-                        31
-                    },
-                )
+            && scope
+                .paired_byte_offset
+                .checked_sub(scope.feature_ordinal_offset)
+                .and_then(|tail_length| usize::try_from(tail_length).ok())
+                .and_then(|tail_length| {
+                    design::decode::scopes::parameter_scope_previous_history_offset(
+                        &scope.kind,
+                        tail_length,
+                    )
+                })
+                .is_some_and(|offset| {
+                    scope.previous_history_state_id_offset
+                        == scope.feature_ordinal_offset.saturating_add(offset as u64)
+                })
             && scope.history_state_id.is_some() == scope.previous_history_state_id.is_some()
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset

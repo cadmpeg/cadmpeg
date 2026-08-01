@@ -3744,6 +3744,26 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         !crate::design::decode::scopes::parameter_scope_tail_length_is_valid("CopyPasteBodies", 78,)
     );
 
+    for tail_length in [72, 76] {
+        let mut legacy = bytes[..feature_ordinal_at].to_vec();
+        let mut tail = vec![0; tail_length];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[30..34].copy_from_slice(&2u32.to_le_bytes());
+        legacy.extend_from_slice(&tail);
+        legacy.extend_from_slice(&3u32.to_le_bytes());
+        legacy.extend_from_slice(b"261");
+        legacy.extend_from_slice(&12u32.to_le_bytes());
+        let decoded =
+            parse_parameter_scope(&legacy, &IndexedRecordOffsets::build(&legacy), &header)
+                .expect("scope with legacy fixed tail");
+        assert_eq!(decoded.kind, "Sketch");
+        assert_eq!(decoded.previous_history_state_id, Some(2));
+        assert_eq!(
+            decoded.previous_history_state_id_offset,
+            (feature_ordinal_at + 30) as u64
+        );
+    }
+
     let mut extended_tail = bytes[..feature_ordinal_at].to_vec();
     let mut tail = [0; 87];
     tail[0..4].copy_from_slice(&1u32.to_le_bytes());

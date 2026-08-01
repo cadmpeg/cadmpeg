@@ -2499,7 +2499,20 @@ pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usiz
     if kind == "CopyPasteBodies" {
         tail_length == 110
     } else {
-        matches!(tail_length, 77 | 78 | 87)
+        matches!(tail_length, 72 | 76 | 77 | 78 | 87)
+    }
+}
+
+pub(crate) fn parameter_scope_previous_history_offset(
+    kind: &str,
+    tail_length: usize,
+) -> Option<usize> {
+    match (kind, tail_length) {
+        ("CopyPasteBodies", 110) => Some(53),
+        (_, 72 | 76) => Some(30),
+        (_, 77 | 78) => Some(31),
+        (_, 87) => Some(41),
+        _ => None,
     }
 }
 
@@ -2513,7 +2526,7 @@ pub(crate) fn parse_parameter_scope(
     let (paired_class_tag, _) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
-    for tail_length in [77, 78, 87, 110] {
+    for tail_length in [72, 76, 77, 78, 87, 110] {
         let Some(end) = paired_at.checked_sub(tail_length) else {
             continue;
         };
@@ -2545,11 +2558,7 @@ pub(crate) fn parse_parameter_scope(
         state_id => Some(i64::from(state_id)),
     };
     let previous_history_state_id_offset =
-        kind_end.checked_add(match (kind.as_str(), *tail_length) {
-            ("CopyPasteBodies", _) => 53,
-            (_, 87) => 41,
-            _ => 31,
-        })?;
+        kind_end.checked_add(parameter_scope_previous_history_offset(kind, *tail_length)?)?;
     let previous_history_state_id = match u32_at(bytes, previous_history_state_id_offset)? {
         u32::MAX => None,
         state_id => Some(i64::from(state_id)),
