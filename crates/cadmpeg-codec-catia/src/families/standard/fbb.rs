@@ -453,7 +453,26 @@ pub(crate) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec
 
 pub(crate) fn parse_edge_tables_scoped_at(
     bytes: &[u8],
+    position: usize,
+) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
+    let solutions = [1, 2, 3]
+        .into_iter()
+        .filter_map(|handle_width| {
+            let parsed = parse_edge_tables_scoped_width(bytes, position, handle_width)?;
+            parse_vertex_table(bytes, parsed.2)
+                .is_some()
+                .then_some(parsed)
+        })
+        .collect::<Vec<_>>();
+    <[_; 1]>::try_from(solutions)
+        .ok()
+        .map(|[solution]| solution)
+}
+
+fn parse_edge_tables_scoped_width(
+    bytes: &[u8],
     mut position: usize,
+    handle_width: usize,
 ) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
     let mut rows = Vec::new();
     let mut scopes = Vec::new();
@@ -477,20 +496,25 @@ pub(crate) fn parse_edge_tables_scoped_at(
             if arity < 2 {
                 return None;
             }
-            if arity > bytes.len().saturating_sub(position) / 2 {
+            if arity > bytes.len().saturating_sub(position) / handle_width {
                 return None;
             }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
-                handles.push(u32::from(u16::from_be_bytes(
-                    bytes.get(position..position + 2)?.try_into().ok()?,
-                )));
-                position += 2;
+                let mut encoded = [0u8; 4];
+                encoded[4 - handle_width..]
+                    .copy_from_slice(bytes.get(position..position + handle_width)?);
+                handles.push(u32::from_be_bytes(encoded));
+                position += handle_width;
             }
             rows.push(EdgeRow {
                 kind,
                 handles,
-                boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+                boundary_layout: if arity == 2 {
+                    EdgeBoundaryLayout::CompleteBoundaryRun
+                } else {
+                    EdgeBoundaryLayout::InteriorWithFlankingCorners
+                },
             });
             scopes.push(scope);
         }

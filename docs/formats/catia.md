@@ -155,13 +155,13 @@ Face identity is the native ordinal within the FBB row sequence.
 face_outer_bound_group := ((30|b0) 04 04 ff <4 raw bytes>){N}  at stride 8
 count_header := 01 <kind> <count_u8>  |  01 <kind> ff <count_u32le>
 edge_table   := count_header(kind∈{0x01,0x02}) edge_row{count} [delimiter]
-edge_row     := 02 <arity_u8> <payload[arity*2]>
+edge_row     := 02 <arity_u8> <payload[arity*W]>  where W is one unique width in {1,2,3}
 delimiter    := 10 24 04 ff ff 00 00 00
 vertex_table := count_header(kind=0x06) vertex_record{count}
 vertex_record:= 05 08 01 <x_f32le> <y_f32le> <z_f32le>
 ```
 
-Spine invariants: the face population is the unique largest contiguous stride-8 FBB run. Its four-byte marker is `(30|b0) 04 04 ff`; bit 7 of the leading byte is a form flag and does not change row ownership. Shorter marker runs are not members of that population. Equal-largest runs do not identify one governing face population. Edge-row payloads are big-endian handles. A standard-spine row's first and last handles are graph endpoint ports. An FBB-only row uses its family's selected `u8`, `u16`, or `u24` width and its first and last handles are the endpoints of its complete trim-boundary run. The counted `01 06` table is the vertex coordinate source. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run and carries no per-face tag.
+Spine invariants: the face population is the unique largest contiguous stride-8 FBB run. Its four-byte marker is `(30|b0) 04 04 ff`; bit 7 of the leading byte is a form flag and does not change row ownership. Shorter marker runs are not members of that population. Equal-largest runs do not identify one governing face population. Edge-row payloads are big-endian handles with one uniquely selected width across the table sequence. A two-handle standard-spine row is a complete boundary segment; a longer standard-spine row stores endpoint ports around its interior boundary handles. An FBB-only row uses its family's selected `u8`, `u16`, or `u24` width and its first and last handles are the endpoints of its complete trim-boundary run. The counted `01 06` table is the vertex coordinate source. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run and carries no per-face tag.
 
 ### 5.3 Trim records (indexed triangle-mesh packets)
 
