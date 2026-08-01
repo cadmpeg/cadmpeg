@@ -196,7 +196,7 @@ fn stream_descriptor(bytes: &[u8]) -> Result<Vec<(String, StreamDescriptorValue)
             0xcf => 8,
             _ => {
                 return Err(malformed(
-                    "paramesh stream descriptor value is not an integer",
+                    "paramesh stream descriptor value is not a supported scalar",
                 ))
             }
         };
