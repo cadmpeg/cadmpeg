@@ -1026,16 +1026,19 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        let appended_ids = checkpoint.appended_ids(ir);
-        ir.model.finalize();
-        if !cadmpeg_ir::validate(ir, Vec::new()).is_ok() {
+        let mut validation = cadmpeg_ir::validate(ir, Vec::new());
+        validation
+            .findings
+            .retain(|finding| finding.check != cadmpeg_ir::report::Check::ArenaOrder);
+        if !validation.is_ok() {
             losses.push(entity_loss(
                 entry,
                 "shell candidate failed neutral validation",
             ));
-            super::TopologyAppendCheckpoint::rollback(ir, &appended_ids);
+            checkpoint.rollback_appended(ir);
             continue;
         }
+        ir.model.finalize();
         decoded.insert(entry.sequence);
         decoded.extend(consumed);
         decoded.extend(edge_ids.keys().map(|key| key.0));

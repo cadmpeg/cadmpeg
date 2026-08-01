@@ -2373,6 +2373,18 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
             Some(original.as_slice())
         );
         assert_eq!(context.unknown_count(), 1);
+        let matching = context
+            .ir_mut()
+            .model
+            .points
+            .iter()
+            .filter(|point| point.id.0 == "rhino:test:duplicate-point")
+            .collect::<Vec<_>>();
+        assert_eq!(matching.len(), 1);
+        assert_eq!(
+            matching[0].position,
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+        );
     });
 }
 

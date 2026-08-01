@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
-use cadmpeg_ir::annotations::ExactnessNote;
+use cadmpeg_ir::annotations::{ExactnessNote, Provenance};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
@@ -75,27 +75,23 @@ struct ArenaLengths {
 #[derive(Debug)]
 struct AnnotationCheckpoint {
     stream_count: usize,
-    provenance_keys: BTreeSet<String>,
-    exactness_keys: BTreeSet<String>,
+    provenance: BTreeMap<String, Provenance>,
+    exactness: BTreeMap<String, ExactnessNote>,
 }
 
 impl AnnotationCheckpoint {
     fn capture(annotations: &cadmpeg_ir::Annotations) -> Self {
         Self {
             stream_count: annotations.streams.len(),
-            provenance_keys: annotations.provenance.keys().cloned().collect(),
-            exactness_keys: annotations.exactness.keys().cloned().collect(),
+            provenance: annotations.provenance.clone(),
+            exactness: annotations.exactness.clone(),
         }
     }
 
     fn rollback(self, annotations: &mut cadmpeg_ir::Annotations) {
         annotations.streams.truncate(self.stream_count);
-        annotations
-            .provenance
-            .retain(|key, _| self.provenance_keys.contains(key));
-        annotations
-            .exactness
-            .retain(|key, _| self.exactness_keys.contains(key));
+        annotations.provenance = self.provenance;
+        annotations.exactness = self.exactness;
     }
 }
 
@@ -142,6 +138,29 @@ impl ArenaLengths {
             features: ir.model.features.len(),
             parameters: ir.model.parameters.len(),
         }
+    }
+
+    fn truncate(self, ir: &mut CadIr) {
+        ir.model.bodies.truncate(self.bodies);
+        ir.model.regions.truncate(self.regions);
+        ir.model.shells.truncate(self.shells);
+        ir.model.faces.truncate(self.faces);
+        ir.model.loops.truncate(self.loops);
+        ir.model.coedges.truncate(self.coedges);
+        ir.model.edges.truncate(self.edges);
+        ir.model.vertices.truncate(self.vertices);
+        ir.model.points.truncate(self.points);
+        ir.model.curves.truncate(self.curves);
+        ir.model.pcurves.truncate(self.pcurves);
+        ir.model.surfaces.truncate(self.surfaces);
+        ir.model.subds.truncate(self.subds);
+        ir.model.tessellations.truncate(self.tessellations);
+        ir.model.procedural_curves.truncate(self.procedural_curves);
+        ir.model
+            .procedural_surfaces
+            .truncate(self.procedural_surfaces);
+        ir.model.features.truncate(self.features);
+        ir.model.parameters.truncate(self.parameters);
     }
 
     fn added_since(self, before: Self) -> Option<usize> {
@@ -547,10 +566,7 @@ impl<'a> DecodeContext<'a> {
         let value = match apply(&mut self.ir, &mut self.annotations) {
             Ok(value) => value,
             Err(error) => {
-                let appended = before
-                    .appended_ids(&self.ir)
-                    .expect("Rhino candidate builders only append IR entities");
-                ArenaLengths::remove_ids(&mut self.ir, &appended);
+                before.truncate(&mut self.ir);
                 annotation_checkpoint.rollback(&mut self.annotations);
                 return Err(error);
             }
@@ -561,17 +577,19 @@ impl<'a> DecodeContext<'a> {
         let appended = before
             .appended_ids(&self.ir)
             .expect("Rhino candidate builders only append IR entities");
-        self.ir.model.finalize();
-        let validation = cadmpeg_ir::validate::validate_with_annotations(
+        let mut validation = cadmpeg_ir::validate::validate_with_annotations(
             &self.ir,
             &self.annotations,
             Vec::new(),
         );
+        validation
+            .findings
+            .retain(|finding| finding.check != cadmpeg_ir::report::Check::ArenaOrder);
         if validation.is_ok() {
             let unknowns = match self.ir.native_unknowns("rhino") {
                 Ok(unknowns) => unknowns,
                 Err(error) => {
-                    ArenaLengths::remove_ids(&mut self.ir, &appended);
+                    before.truncate(&mut self.ir);
                     annotation_checkpoint.rollback(&mut self.annotations);
                     return Err(error.to_string());
                 }
@@ -583,23 +601,24 @@ impl<'a> DecodeContext<'a> {
                     .iter()
                     .position(|record| record.id == reference.id)
                 else {
-                    ArenaLengths::remove_ids(&mut self.ir, &appended);
+                    before.truncate(&mut self.ir);
                     annotation_checkpoint.rollback(&mut self.annotations);
                     return Err(format!("candidate introduced unknown {}", reference.id));
                 };
                 link_updates.push((index, reference.links));
             }
             if let Err(error) = self.expansion_budget.entities(appended.len()) {
-                ArenaLengths::remove_ids(&mut self.ir, &appended);
+                before.truncate(&mut self.ir);
                 annotation_checkpoint.rollback(&mut self.annotations);
                 return Err(error);
             }
             for (index, links) in link_updates {
                 self.unknowns[index].links = links;
             }
+            self.ir.model.finalize();
             Ok(value)
         } else {
-            ArenaLengths::remove_ids(&mut self.ir, &appended);
+            before.truncate(&mut self.ir);
             annotation_checkpoint.rollback(&mut self.annotations);
             Err(validation_findings(&validation))
         }
@@ -613,13 +632,17 @@ impl<'a> DecodeContext<'a> {
 
     #[cfg(test)]
     pub(crate) fn reject_duplicate_entity_candidate(&mut self) -> String {
+        self.ir.model.points.push(Point {
+            id: "rhino:test:duplicate-point".into(),
+            position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
+        });
         let result = self.validate_candidate(|candidate, _annotations| {
             let point = Point {
                 id: "rhino:test:duplicate-point".into(),
                 position: Point3::new(0.0, 0.0, 0.0),
                 source_object: None,
             };
-            candidate.model.points.push(point.clone());
             candidate.model.points.push(point);
         });
         result.expect_err("duplicate entity ID must fail validation")

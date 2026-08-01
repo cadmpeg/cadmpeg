@@ -728,17 +728,19 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        let appended_ids = checkpoint.appended_ids(ir);
-        ir.model.finalize();
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let mut validation = cadmpeg_ir::validate(ir, Vec::new());
+        validation
+            .findings
+            .retain(|finding| finding.check != cadmpeg_ir::report::Check::ArenaOrder);
         if !validation.is_ok() {
             losses.push(entity_loss(
                 entry,
                 "trimmed sheet candidate failed neutral validation",
             ));
-            super::TopologyAppendCheckpoint::rollback(ir, &appended_ids);
+            checkpoint.rollback_appended(ir);
             continue;
         }
+        ir.model.finalize();
         decoded.insert(entry.sequence);
         decoded.extend(consumed);
     }

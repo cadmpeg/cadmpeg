@@ -28,99 +28,19 @@ impl TopologyAppendCheckpoint {
         }
     }
 
-    pub(crate) fn appended_ids(self, ir: &CadIr) -> BTreeSet<String> {
+    pub(crate) fn rollback_appended(self, ir: &mut CadIr) {
         let [bodies, regions, shells, faces, loops, coedges, edges, vertices, points, pcurves] =
             self.lengths;
-        let mut ids = BTreeSet::new();
-        ids.extend(
-            ir.model.bodies[bodies..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.regions[regions..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.shells[shells..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.faces[faces..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.loops[loops..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.coedges[coedges..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.edges[edges..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.vertices[vertices..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.points[points..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids.extend(
-            ir.model.pcurves[pcurves..]
-                .iter()
-                .map(|item| item.id.to_string()),
-        );
-        ids
-    }
-
-    pub(crate) fn rollback(ir: &mut CadIr, ids: &BTreeSet<String>) {
-        ir.model
-            .bodies
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .regions
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .shells
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .faces
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .loops
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .coedges
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .edges
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .vertices
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .points
-            .retain(|item| !ids.contains(&item.id.to_string()));
-        ir.model
-            .pcurves
-            .retain(|item| !ids.contains(&item.id.to_string()));
-    }
-
-    pub(crate) fn rollback_appended(self, ir: &mut CadIr) {
-        let ids = self.appended_ids(ir);
-        Self::rollback(ir, &ids);
+        ir.model.bodies.truncate(bodies);
+        ir.model.regions.truncate(regions);
+        ir.model.shells.truncate(shells);
+        ir.model.faces.truncate(faces);
+        ir.model.loops.truncate(loops);
+        ir.model.coedges.truncate(coedges);
+        ir.model.edges.truncate(edges);
+        ir.model.vertices.truncate(vertices);
+        ir.model.points.truncate(points);
+        ir.model.pcurves.truncate(pcurves);
     }
 }
 
@@ -157,6 +77,37 @@ pub(crate) fn directed_cycle(
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::Point;
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::CadIr;
+
+    use super::TopologyAppendCheckpoint;
+
+    #[test]
+    fn rollback_preserves_preexisting_colliding_entity() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.push(Point {
+            id: "iges:model:point#collision".into(),
+            position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
+        });
+        let checkpoint = TopologyAppendCheckpoint::capture(&ir);
+        ir.model.points.push(Point {
+            id: "iges:model:point#collision".into(),
+            position: Point3::new(4.0, 5.0, 6.0),
+            source_object: None,
+        });
+
+        checkpoint.rollback_appended(&mut ir);
+
+        assert_eq!(ir.model.points.len(), 1);
+        assert_eq!(ir.model.points[0].position, Point3::new(1.0, 2.0, 3.0));
+    }
 }
 
 pub(crate) mod analytic_surfaces;
