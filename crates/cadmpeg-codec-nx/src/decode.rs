@@ -98,17 +98,17 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let scan = scan(ctx, root)?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report);
         return decode_result(ir, report, annotations, &unknowns);
     }
 
-    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
+    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(ctx, root, &scan) {
         return decode_result(ir, report, annotations, &unknowns);
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
     decode_result(ir, report, annotations, &unknowns)
@@ -973,6 +973,8 @@ fn positive_weights(weights: Option<&[f64]>) -> bool {
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 fn try_decode_geometry(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     scan: &Scan,
 ) -> Option<(
     CadIr,
@@ -1625,7 +1627,8 @@ fn try_decode_geometry(
     // bytes for the seven feature/segment families body selection consumes.
     // This moves extraction slightly earlier on the geometry path — the RFC's
     // accepted memory-high-water cost.
-    let model = crate::native::NativeModel::extract(&scan.container, &scan.streams, &parsed);
+    let model =
+        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
     let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
@@ -11479,6 +11482,8 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
 }
 
 fn build_metadata_ir(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     scan: &Scan,
 ) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
@@ -11497,7 +11502,8 @@ fn build_metadata_ir(
         }
     }
     let parsed = crate::native::ParsedStreams::parse(scan);
-    let model = crate::native::NativeModel::extract(&scan.container, &scan.streams, &parsed);
+    let model =
+        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
     crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     Ok((ir, annotations.build(), unknowns))
