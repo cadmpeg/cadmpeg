@@ -53,6 +53,7 @@
 
 mod compress;
 pub mod container;
+pub(crate) mod coverage;
 pub mod curve;
 pub mod datum;
 pub mod decode;

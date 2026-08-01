@@ -476,11 +476,15 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         cadmpeg_ir::features::FeatureDefinition::StoredGeometry
     ));
     assert_eq!(
-        result.report.coverage["transferred_geometry_generator_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_GEOMETRY_GENERATOR_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_native_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
         0
     );
     let surface = result
@@ -495,11 +499,15 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
     ));
     assert_eq!(
-        result.report.coverage["retained_unknown_visible_surface_row_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["untransferred_visible_surface_row_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT),
         1
     );
 }
@@ -1030,7 +1038,9 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
     }
     assert!(record.fields["type26_split_coordinate_envelope"].is_null());
     assert_eq!(
-        result.report.coverage["decoded_type26_five_coordinate_envelope_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT),
         1
     );
     assert!(result
@@ -1097,7 +1107,9 @@ fn decode_places_complete_positional_torus() {
             < 1e-12
     );
     assert_eq!(
-        result.report.coverage["transferred_positional_torus_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_POSITIONAL_TORUS_COUNT),
         1
     );
     assert!(result
@@ -1125,7 +1137,9 @@ fn decode_reports_transferred_positional_cylinders() {
         .expect("decode positional cylinder");
 
     assert_eq!(
-        result.report.coverage["transferred_positional_cylinder_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_POSITIONAL_CYLINDER_COUNT),
         1
     );
     assert!(result
@@ -1189,7 +1203,9 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
         ));
     }
     assert_eq!(
-        result.report.coverage["transferred_paired_envelope_sphere_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT),
         2
     );
     assert!(result.report.losses.iter().any(|loss| {
@@ -1228,7 +1244,9 @@ fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
     }
     assert!(record.fields["type26_five_coordinate_envelope"].is_null());
     assert_eq!(
-        result.report.coverage["decoded_type26_split_coordinate_envelope_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT),
         1
     );
     assert!(result
@@ -1469,10 +1487,19 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
             u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
         }
     );
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["visible_plane_surface_row_count"], 1);
-    assert_eq!(coverage["transferred_visible_plane_surface_row_count"], 1);
-    assert_eq!(coverage["untransferred_visible_surface_row_count"], 0);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -1955,7 +1982,9 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         assert_eq!(association.fields["replay_ordinal"], ordinal);
     }
     assert_eq!(
-        result.report.coverage["decoded_feature_surface_replay_association_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT),
         4
     );
 }
@@ -2135,15 +2164,34 @@ fn decode_types_class_911_as_unresolved_hole() {
             ..
         }
     ));
-    assert_eq!(result.report.coverage["transferred_feature_count"], 1);
-    assert_eq!(result.report.coverage["transferred_typed_feature_count"], 1);
     assert_eq!(
-        result.report.coverage["transferred_native_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
         0
     );
-    assert_eq!(result.report.coverage["transferred_hole_feature_count"], 1);
     assert_eq!(
-        result.report.coverage["transferred_incomplete_hole_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_HOLE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_HOLE_FEATURE_COUNT),
         1
     );
     for key in [
@@ -2153,22 +2201,34 @@ fn decode_types_class_911_as_unresolved_hole() {
         "transferred_unresolved_hole_diameter_feature_count",
         "transferred_incomplete_hole_termination_feature_count",
     ] {
-        assert_eq!(result.report.coverage[key], 1, "{key}");
+        assert_eq!(
+            result.report.coverage.get(key).copied().unwrap_or(0),
+            1,
+            "{key}"
+        );
     }
     assert_eq!(
-        result.report.coverage["transferred_unresolved_hole_profile_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_PROFILE_FEATURE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_native_hole_profile_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_HOLE_PROFILE_FEATURE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_hole_face_selection_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_FACE_SELECTION_FEATURE_COUNT
+        ),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_native_hole_face_selection_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_HOLE_FACE_SELECTION_FEATURE_COUNT),
         0
     );
 }
@@ -2210,23 +2270,33 @@ fn decode_types_class_914_as_unresolved_chamfer() {
         }])
     ));
     assert_eq!(
-        result.report.coverage["transferred_chamfer_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CHAMFER_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_chamfer_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_CHAMFER_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_chamfer_edge_selection_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_EDGE_SELECTION_FEATURE_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_native_chamfer_edge_selection_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_NATIVE_CHAMFER_EDGE_SELECTION_FEATURE_COUNT
+        ),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_chamfer_spec_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_SPEC_FEATURE_COUNT),
         1
     );
 }
@@ -2335,19 +2405,27 @@ fn decode_types_default_part_coordinate_system() {
         cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
     ));
     assert_eq!(
-        result.report.coverage["transferred_explicitly_unresolved_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_EXPLICITLY_UNRESOLVED_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_datum_coordinate_system_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_COORDINATE_SYSTEM_FEATURE_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_datum_plane_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_PLANE_FEATURE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_boundary_surface_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_BOUNDARY_SURFACE_FEATURE_COUNT),
         0
     );
     assert!(result.report.losses.iter().any(|loss| {
@@ -2386,27 +2464,39 @@ fn decode_types_class_946_as_unresolved_surface_merge() {
     ));
     assert_eq!(feature.name.as_deref(), Some("Surface Merge id 4"));
     assert_eq!(
-        result.report.coverage["transferred_knit_surface_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_KNIT_SURFACE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_knit_surface_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_KNIT_SURFACE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_knit_surface_faces_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_FACES_FEATURE_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_knit_surface_merge_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_MERGE_FEATURE_COUNT
+        ),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_knit_surface_solid_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_SOLID_FEATURE_COUNT
+        ),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_surface_operation_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_INCOMPLETE_SURFACE_OPERATION_FEATURE_COUNT
+        ),
         1
     );
     assert!(result.report.losses.iter().any(|loss| loss
@@ -2444,9 +2534,16 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
             outward: None,
         }
     ));
-    assert_eq!(result.report.coverage["transferred_draft_feature_count"], 1);
     assert_eq!(
-        result.report.coverage["transferred_incomplete_draft_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DRAFT_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_DRAFT_FEATURE_COUNT),
         1
     );
     for key in [
@@ -2456,14 +2553,22 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
         "transferred_unresolved_draft_angle_feature_count",
         "transferred_unresolved_draft_outward_feature_count",
     ] {
-        assert_eq!(result.report.coverage[key], 1, "{key}");
+        assert_eq!(
+            result.report.coverage.get(key).copied().unwrap_or(0),
+            1,
+            "{key}"
+        );
     }
     assert_eq!(
-        result.report.coverage["transferred_native_draft_face_selection_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_DRAFT_FACE_SELECTION_FEATURE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_native_draft_neutral_plane_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_DRAFT_NEUTRAL_PLANE_FEATURE_COUNT),
         0
     );
 }
@@ -2521,19 +2626,27 @@ fn decode_types_named_mirror_with_unresolved_operands() {
         }
     );
     assert_eq!(
-        result.report.coverage["transferred_pattern_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PATTERN_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_pattern_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_PATTERN_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_pattern_seed_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_SEED_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_pattern_transform_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_TRANSFORM_FEATURE_COUNT
+        ),
         1
     );
     assert_eq!(
@@ -2661,35 +2774,51 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
         }
     ));
     assert_eq!(
-        result.report.coverage["transferred_extrude_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_EXTRUDE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_extrude_profile_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_PROFILE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_native_extrude_profile_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_EXTRUDE_PROFILE_FEATURE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_extrude_start_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_START_FEATURE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_extrude_termination_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_TERMINATION_FEATURE_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_extrude_boolean_operation_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_BOOLEAN_OPERATION_FEATURE_COUNT
+        ),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_extrude_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_sweep_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_SWEEP_FEATURE_COUNT),
         1
     );
     assert!(result
@@ -2795,31 +2924,45 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         }
     ));
     assert_eq!(
-        result.report.coverage["transferred_revolve_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_REVOLVE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_revolve_profile_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_PROFILE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_native_revolve_profile_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_REVOLVE_PROFILE_FEATURE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_revolve_axis_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_AXIS_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_revolve_extent_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_EXTENT_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_revolve_boolean_operation_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_BOOLEAN_OPERATION_FEATURE_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_revolve_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_FEATURE_COUNT),
         1
     );
 }
@@ -3001,41 +3144,53 @@ fn decode_types_class_913_without_an_edge_array() {
         }])
     ));
     assert_eq!(
-        result.report.coverage["transferred_fillet_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FILLET_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_fillet_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_FILLET_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_fillet_edge_selection_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_EDGE_SELECTION_FEATURE_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_native_fillet_edge_selection_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_NATIVE_FILLET_EDGE_SELECTION_FEATURE_COUNT
+        ),
         0
     );
     assert_eq!(
-        result.report.coverage["transferred_unresolved_fillet_radius_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage
-            ["transferred_unresolved_fillet_radius_without_generated_surface_feature_count"],
+        result.report.coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage
-            ["transferred_unresolved_fillet_radius_with_generated_surface_feature_count"],
+        result.report.coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["untransferred_visible_plane_surface_row_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["untransferred_visible_cylinder_surface_row_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_CYLINDER_SURFACE_ROW_COUNT),
         0
     );
     assert!(result.report.losses.iter().any(|loss| {
@@ -3155,7 +3310,9 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         }])
     ));
     assert_eq!(
-        result.report.coverage["transferred_variable_radius_fillet_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_VARIABLE_RADIUS_FILLET_FEATURE_COUNT),
         1
     );
 
@@ -3210,7 +3367,9 @@ fn prototype_minor_radius_replays_define_a_constant_round_radius() {
         .expect("decode");
 
     assert_eq!(
-        result.report.coverage["decoded_type26_replayed_minor_radius_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT),
         2
     );
     assert!(matches!(
@@ -3246,13 +3405,11 @@ fn decode_types_named_german_round_without_a_schema_row() {
         }])
     ));
     assert_eq!(
-        result.report.coverage
-            ["transferred_unresolved_fillet_radius_without_generated_surface_feature_count"],
+        result.report.coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage
-            ["transferred_unresolved_fillet_radius_with_generated_surface_feature_count"],
+        result.report.coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT),
         0
     );
 }
@@ -3468,7 +3625,9 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
         Exactness::ByteExact,
     );
     assert_eq!(
-        result.report.coverage["decoded_feature_loop_history_entry_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT),
         2
     );
 }
@@ -3801,10 +3960,22 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     assert_eq!(parameters["loop_restore.direction"], "0");
     assert_eq!(parameters["loop_restore.direction#2"], "1");
     assert_eq!(parameters["loop_restore.direction2"], "167");
-    assert_eq!(result.report.coverage["transferred_feature_count"], 1);
-    assert_eq!(result.report.coverage["transferred_typed_feature_count"], 0);
     assert_eq!(
-        result.report.coverage["transferred_native_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
         1
     );
     assert!(result
@@ -4525,18 +4696,38 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     assert!(sketch.fields["opaque_segments"]
         .as_array()
         .is_some_and(Vec::is_empty));
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["decoded_feature_segment_row_count"], 6);
-    assert_eq!(coverage["decoded_feature_circle_segment_count"], 1);
-    assert_eq!(coverage["decoded_feature_point_segment_count"], 1);
-    assert_eq!(coverage["decoded_feature_centered_line_segment_count"], 2);
-    assert_eq!(coverage["decoded_feature_reference_line_segment_count"], 1);
-    assert_eq!(coverage["decoded_feature_bounded_curve_segment_count"], 1);
-    assert!(!coverage.contains_key("decoded_feature_segment_count"));
+    let coverage = &result.report;
     assert_eq!(
-        coverage["resolved_feature_segment_geometry_count"]
-            + coverage["unresolved_feature_segment_geometry_count"],
-        coverage["decoded_feature_segment_row_count"]
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        6
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT),
+        1
+    );
+    assert!(!coverage
+        .coverage
+        .contains_key("decoded_feature_segment_count"));
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT)
+            + coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT)
     );
 }
 
@@ -4660,11 +4851,23 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .len(),
         4
     );
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["decoded_feature_segment_row_count"], 4);
-    assert_eq!(coverage["resolved_feature_segment_geometry_count"], 0);
-    assert_eq!(coverage["unresolved_feature_segment_geometry_count"], 4);
-    assert_eq!(coverage["missing_feature_segment_row_count"], 0);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        4
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        4
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT),
+        0
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::report::LossKind::GeometryNotTransferred
             && loss.code.category() == cadmpeg_ir::LossCategory::Geometry
@@ -4689,16 +4892,28 @@ fn decode_reports_missing_declared_section_segment_rows() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode incomplete segment table");
-    let coverage = &result.report.coverage;
+    let coverage = &result.report;
 
-    assert_eq!(coverage["decoded_feature_segment_row_count"], 1);
-    assert_eq!(coverage["decoded_feature_line_segment_count"], 1);
-    assert_eq!(coverage["resolved_feature_line_segment_geometry_count"], 0);
     assert_eq!(
-        coverage["unresolved_feature_line_segment_geometry_count"],
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
         1
     );
-    assert_eq!(coverage["missing_feature_segment_row_count"], 1);
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_LINE_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT),
+        1
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
@@ -4726,20 +4941,44 @@ fn decode_counts_resolved_section_segment_geometry() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode resolved segment");
-    let coverage = &result.report.coverage;
+    let coverage = &result.report;
 
-    assert_eq!(coverage["decoded_feature_segment_row_count"], 1);
-    assert_eq!(coverage["resolved_feature_segment_geometry_count"], 1);
-    assert_eq!(coverage["unresolved_feature_segment_geometry_count"], 0);
-    assert_eq!(coverage["decoded_feature_line_segment_count"], 1);
-    assert_eq!(coverage["resolved_feature_line_segment_geometry_count"], 1);
     assert_eq!(
-        coverage["unresolved_feature_line_segment_geometry_count"],
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
         0
     );
-    assert_eq!(coverage["missing_feature_segment_row_count"], 0);
-    assert_eq!(coverage["decoded_feature_solver_variable_count"], 4);
-    assert_eq!(coverage["missing_feature_solver_variable_count"], 0);
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_LINE_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT),
+        4
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT),
+        0
+    );
     assert!(!result.report.losses.iter().any(|loss| {
         loss.message
             .contains("decoded section segment(s) retain source-native geometry")
@@ -4758,10 +4997,16 @@ fn decode_reports_missing_declared_solver_variable_rows() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode incomplete variable table");
-    let coverage = &result.report.coverage;
+    let coverage = &result.report;
 
-    assert_eq!(coverage["decoded_feature_solver_variable_count"], 1);
-    assert_eq!(coverage["missing_feature_solver_variable_count"], 1);
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT),
+        1
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
@@ -5523,31 +5768,54 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         .unwrap()
         .as_str()
         == "creo:model:sketch_feature#917"));
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["decoded_feature_dimension_count"], 2);
-    assert_eq!(coverage["transferred_feature_dimension_parameter_count"], 2);
-    assert_eq!(coverage["resolved_feature_dimension_value_count"], 2);
-    assert_eq!(coverage["unresolved_feature_dimension_value_count"], 0);
-    assert_eq!(coverage["decoded_feature_solver_variable_count"], 0);
+    let coverage = &result.report;
     assert_eq!(
-        coverage["decoded_feature_dimension_driven_variable_count"],
-        0
-    );
-    assert_eq!(coverage["decoded_feature_dimension_driven_guess_count"], 0);
-    assert_eq!(
-        coverage["resolved_feature_dimension_driven_variable_count"],
-        0
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_COUNT),
+        2
     );
     assert_eq!(
-        coverage["resolved_feature_dimension_driven_coordinate_variable_count"],
-        0
+        coverage.coverage_count(crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT),
+        2
     );
     assert_eq!(
-        coverage["resolved_feature_dimension_driven_other_variable_count"],
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
         0
     );
     assert_eq!(
-        coverage["unresolved_feature_dimension_driven_variable_count"],
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        coverage
+            .coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
         0
     );
 }
@@ -5565,47 +5833,62 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode dimension-driven variable");
-    let coverage = &result.report.coverage;
+    let coverage = &result.report;
 
     assert_eq!(
-        coverage["decoded_feature_dimension_driven_variable_count"],
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
         2
     );
     assert_eq!(
-        coverage["decoded_feature_dimension_driven_coordinate_variable_count"],
+        coverage.coverage_count(
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        ),
         1
     );
     assert_eq!(
-        coverage["decoded_feature_dimension_driven_other_variable_count"],
+        coverage
+            .coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT),
         1
     );
-    assert_eq!(coverage["decoded_feature_dimension_driven_guess_count"], 1);
     assert_eq!(
-        coverage["resolved_feature_dimension_driven_variable_count"],
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
         0
     );
     assert_eq!(
-        coverage["resolved_feature_dimension_driven_coordinate_variable_count"],
+        coverage.coverage_count(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        ),
         0
     );
     assert_eq!(
-        coverage["resolved_feature_dimension_driven_other_variable_count"],
+        coverage.coverage_count(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        ),
         0
     );
     assert_eq!(
-        coverage["unresolved_feature_dimension_driven_variable_count"],
+        coverage
+            .coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
         2
     );
     assert_eq!(
-        coverage["unresolved_feature_dimension_driven_coordinate_variable_count"],
+        coverage.coverage_count(
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        ),
         1
     );
     assert_eq!(
-        coverage["unresolved_feature_dimension_driven_other_variable_count"],
+        coverage.coverage_count(
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        ),
         1
     );
     assert_eq!(
-        coverage["unresolved_feature_dimension_driven_guess_count"],
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
@@ -5676,11 +5959,23 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(dimensions[2]["unresolved_value_token"][1], 4);
     assert_eq!(dimensions[2]["unresolved_value_token"][2], 254);
     assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["decoded_feature_dimension_count"], 3);
-    assert_eq!(coverage["transferred_feature_dimension_parameter_count"], 3);
-    assert_eq!(coverage["resolved_feature_dimension_value_count"], 1);
-    assert_eq!(coverage["unresolved_feature_dimension_value_count"], 2);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_COUNT),
+        3
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT),
+        3
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        2
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
             && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
@@ -5849,14 +6144,35 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(triples["declared_count"], 2);
     assert_eq!(triples["entity_ref"], 109);
     assert_eq!(triples["row_count"], 2);
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["decoded_feature_relation_count"], 2);
-    assert_eq!(coverage["missing_feature_relation_row_count"], 0);
-    assert_eq!(coverage["malformed_feature_relation_table_count"], 0);
-    assert_eq!(coverage["decoded_feature_skamp_count"], 1);
-    assert_eq!(coverage["missing_feature_skamp_row_count"], 0);
-    assert_eq!(coverage["decoded_feature_relation_triple_count"], 2);
-    assert_eq!(coverage["missing_feature_relation_triple_row_count"], 0);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SKAMP_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -5881,14 +6197,32 @@ fn decode_reports_missing_declared_constraint_table_rows() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode incomplete constraint tables");
-    let coverage = &result.report.coverage;
+    let coverage = &result.report;
 
-    assert_eq!(coverage["decoded_feature_relation_count"], 2);
-    assert_eq!(coverage["missing_feature_relation_row_count"], 1);
-    assert_eq!(coverage["decoded_feature_skamp_count"], 1);
-    assert_eq!(coverage["missing_feature_skamp_row_count"], 1);
-    assert_eq!(coverage["decoded_feature_relation_triple_count"], 2);
-    assert_eq!(coverage["missing_feature_relation_triple_row_count"], 1);
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SKAMP_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
+        1
+    );
     for message in [
         "1 declared section relation row(s) did not decode",
         "1 declared section incidence row(s) did not decode",
@@ -5914,7 +6248,9 @@ fn decode_reports_malformed_relation_table_allocation_count() {
         .expect("decode malformed relation table");
 
     assert_eq!(
-        result.report.coverage["malformed_feature_relation_table_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
@@ -5937,13 +6273,22 @@ fn decode_accepts_the_count_one_empty_relation_table() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode empty relation table");
 
-    assert_eq!(result.report.coverage["decoded_feature_relation_count"], 0);
     assert_eq!(
-        result.report.coverage["missing_feature_relation_row_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["malformed_feature_relation_table_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
         0
     );
     assert!(!result
@@ -6254,7 +6599,9 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     assert_eq!(record.fields["major_radius"], 1.0);
     assert_eq!(record.fields["minor_radius"], 1.0);
     assert_eq!(
-        result.report.coverage["transferred_reference_ellipse_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT),
         1
     );
     let ellipse = result
@@ -6370,11 +6717,15 @@ fn decode_preserves_counted_curve_expression_programs() {
         }
     ));
     assert_eq!(
-        result.report.coverage["transferred_native_axis_helix_feature_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_incomplete_other_construction_feature_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT
+        ),
         1
     );
     assert!(result
@@ -6482,14 +6833,18 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
         "d1:2,PARAM:FID_20"
     );
     assert!(!parameter.properties.contains_key("ambiguous_dependencies"));
-    let coverage = &result.report.coverage;
+    let coverage = &result.report;
     assert_eq!(
-        coverage["decoded_active_curve_expression_assignment_count"],
+        coverage.coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
         1
     );
-    assert_eq!(coverage["transferred_curve_expression_parameter_count"], 1);
     assert_eq!(
-        coverage["evaluated_active_curve_expression_assignment_count"],
+        coverage.coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
         0
     );
 }
@@ -6561,39 +6916,57 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         11.0
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_assignment_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
         5
     );
     assert_eq!(
-        result.report.coverage["evaluated_active_curve_expression_assignment_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
         5
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_solve_block_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_simultaneous_equation_count"],
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT
+        ),
         2
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_solve_assignment_count"],
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_solve_variable_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT),
         2
     );
     assert_eq!(
-        result.report.coverage["unresolved_active_curve_expression_solve_control_count"],
+        result.report.coverage_count(
+            crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT
+        ),
         0
     );
     assert_eq!(
-        result.report.coverage["evaluated_active_curve_expression_solve_block_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["evaluated_active_curve_expression_solve_variable_count"],
+        result.report.coverage_count(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        ),
         0
     );
     assert!(native.fields["solve_blocks"][0]["solutions"][0].is_null());
@@ -6640,11 +7013,15 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(native.fields["solve_blocks"][0]["solutions"][0], 6.0);
     assert_eq!(native.fields["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
-        result.report.coverage["evaluated_active_curve_expression_solve_block_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["evaluated_active_curve_expression_solve_variable_count"],
+        result.report.coverage_count(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        ),
         2
     );
     assert!(!result.report.losses.iter().any(|loss| {
@@ -6689,7 +7066,9 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(native.fields["solve_blocks"][0]["solutions"][0], 6.0);
     assert_eq!(native.fields["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
-        result.report.coverage["evaluated_active_curve_expression_solve_variable_count"],
+        result.report.coverage_count(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        ),
         2
     );
 }
@@ -6732,7 +7111,9 @@ fn decode_evaluates_dimensioned_relation_string_conversion() {
         ))
     );
     assert_eq!(
-        result.report.coverage["evaluated_active_curve_expression_assignment_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
         3
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
@@ -6803,11 +7184,15 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
         "width:fid_25:cid_12"
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_scoped_symbol_assignment_count"],
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT
+        ),
         2
     );
     assert_eq!(
-        result.report.coverage["transferred_curve_expression_parameter_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
         2
     );
 }
@@ -6843,11 +7228,15 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
         "dimension"
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_system_symbol_assignment_count"],
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_curve_expression_parameter_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
         1
     );
 }
@@ -6894,11 +7283,15 @@ fn decode_retains_registered_function_write_targets_without_emitting_parameters(
     assert_eq!(dependencies[2], "column");
     assert_eq!(dependencies[3], "driver");
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_function_write_assignment_count"],
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_curve_expression_parameter_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
         1
     );
 }
@@ -6946,15 +7339,21 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
         )]
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_assignment_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
         3
     );
     assert_eq!(
-        result.report.coverage["transferred_curve_expression_parameter_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["decoded_active_curve_expression_table_cell_assignment_count"],
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT
+        ),
         2
     );
 }
@@ -7031,12 +7430,15 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         .expect("Creo native data")
         .arenas["curve_expressions"][0];
     assert_eq!(native.fields["prohibited_constructs"][0], "itos");
-    let coverage = &result.report.coverage;
+    let coverage = &result.report;
     assert_eq!(
-        coverage["prohibited_active_curve_expression_record_count"],
+        coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT),
         1
     );
-    assert_eq!(coverage["prohibited_active_curve_expression_kind_count"], 1);
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT),
+        1
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
@@ -7204,10 +7606,19 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert_eq!(prohibited[0], "else");
     assert_eq!(prohibited[1], "endif");
     assert_eq!(prohibited[2], "if");
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["active_curve_expression_assignment_count"], 3);
-    assert_eq!(coverage["inactive_curve_expression_assignment_count"], 1);
-    assert_eq!(coverage["conditional_curve_expression_assignment_count"], 0);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        3
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::INACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::CONDITIONAL_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -7413,11 +7824,15 @@ fn scan_discovers_curve_halfedge_topology() {
         cadmpeg_ir::geometry::CurveGeometry::Unknown { record: Some(_) }
     ));
     assert_eq!(
-        result.report.coverage["retained_unknown_visible_curve_row_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["untransferred_visible_curve_row_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT),
         1
     );
 }
@@ -7814,7 +8229,9 @@ fn decode_replays_a_unique_section_prototype_minor_radius_at_type26_row_end() {
         0.199_999_999_999_999_98
     );
     assert_eq!(
-        result.report.coverage["decoded_type26_replayed_minor_radius_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT),
         1
     );
 }
@@ -7849,7 +8266,9 @@ fn decode_places_first_plane_instance_from_named_prototype() {
         }
     );
     assert_eq!(
-        result.report.coverage["transferred_first_instance_prototype_surface_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
         1
     );
 }
@@ -7906,7 +8325,9 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
         .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
     assert_unknown_visible_surface(&result.ir.model.surfaces, 8);
     assert_eq!(
-        result.report.coverage["transferred_first_instance_prototype_surface_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
         1
     );
 }
@@ -9546,11 +9967,15 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         "none"
     );
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_driver_table_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["transferred_configuration_driver_table_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT),
         0
     );
     assert!(!decoded
@@ -9581,11 +10006,15 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         "driver_table_unresolved"
     );
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_driver_table_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["transferred_configuration_driver_table_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT),
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {

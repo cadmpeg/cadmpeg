@@ -3865,11 +3865,15 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .iter()
         .any(|l| l.code.category() == cadmpeg_ir::report::LossCategory::Topology));
     assert_eq!(
-        result.report.coverage["attempted_standard_topology_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["attached_standard_topology_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         0
     );
     assert_eq!(
@@ -3889,9 +3893,11 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| result.report.coverage[key])
+        .map(|key| result.report.coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
-        result.report.coverage["standard_topology_failure_ambiguous_solution_count"]
+        result
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
     );
     assert_eq!(
         [
@@ -3900,15 +3906,25 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| result.report.coverage[key])
+        .map(|key| result.report.coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
-        result.report.coverage["standard_topology_failure_search_exhausted_count"]
+        result
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
     );
     assert_eq!(
-        result.report.coverage["standard_topology_empty_endpoint_domain_count"]
-            + result.report.coverage["standard_topology_singleton_endpoint_domain_count"]
-            + result.report.coverage["standard_topology_multiple_endpoint_domain_count"],
-        result.report.coverage["standard_topology_curve_support_count"]
+        result
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
+            + result
+                .report
+                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
+            + result
+                .report
+                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
+        result
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
     );
     assert!(
         result
@@ -3926,24 +3942,17 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             <= 1
     );
     assert_eq!(
-        result.report.coverage["standard_topology_mesh_rejection_endpoint_incidence_count"],
-        result.report.coverage
-            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count"]
+        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
+        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
     );
     assert_eq!(
-        result.report.coverage
-            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"],
-        result.report.coverage["standard_topology_mesh_rejection_incidence_input_shape_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_incidence_choice_pruning_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_incidence_fixed_assignment_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_incidence_component_domain_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_incidence_component_composition_count"]
+        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
+        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
     );
 
     // The produced IR validates (free carriers, no dangling references).
@@ -4036,11 +4045,15 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         ) && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
-        decoded.report.coverage["attempted_standard_topology_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["attached_standard_topology_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
@@ -4060,9 +4073,11 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| decoded.report.coverage[key])
+        .map(|key| decoded.report.coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
-        decoded.report.coverage["standard_topology_failure_ambiguous_solution_count"]
+        decoded
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
     );
     assert_eq!(
         [
@@ -4071,15 +4086,25 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| decoded.report.coverage[key])
+        .map(|key| decoded.report.coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
-        decoded.report.coverage["standard_topology_failure_search_exhausted_count"]
+        decoded
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
     );
     assert_eq!(
-        decoded.report.coverage["standard_topology_empty_endpoint_domain_count"]
-            + decoded.report.coverage["standard_topology_singleton_endpoint_domain_count"]
-            + decoded.report.coverage["standard_topology_multiple_endpoint_domain_count"],
-        decoded.report.coverage["standard_topology_curve_support_count"]
+        decoded
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
+            + decoded
+                .report
+                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
+            + decoded
+                .report
+                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
+        decoded
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
     );
     assert_eq!(
         decoded
@@ -4097,24 +4122,17 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         0
     );
     assert_eq!(
-        decoded.report.coverage["standard_topology_mesh_rejection_endpoint_incidence_count"],
-        decoded.report.coverage
-            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count"]
+        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
+        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
     );
     assert_eq!(
-        decoded.report.coverage
-            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"],
-        decoded.report.coverage["standard_topology_mesh_rejection_incidence_input_shape_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_incidence_choice_pruning_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_incidence_fixed_assignment_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_incidence_component_domain_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_incidence_component_composition_count"]
+        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
+        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
     );
 }
 
@@ -4170,31 +4188,45 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode legacy identity run");
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_entity_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ENTITY_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_entity_identity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ENTITY_IDENTITY_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_identity_lead_81_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_81_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_identity_lead_82_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_82_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_identity_lead_e5_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_E5_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_identity_lead_fd_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_FD_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_role_selector_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_SELECTOR_COUNT),
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
@@ -4251,30 +4283,47 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode compound legacy fields");
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_text_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_TEXT_FIELD_COUNT),
         6
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_e3_role_tail_text_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_E3_ROLE_TAIL_TEXT_FIELD_COUNT),
         6
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_role_text_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_TEXT_FIELD_COUNT),
         5
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_selected_role_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SELECTED_ROLE_COUNT),
         4
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_role_field_binding_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT),
         5
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_schema_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT),
         5
     );
-    assert_eq!(decoded.report.coverage["decoded_legacy_relation_count"], 2);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_RELATION_COUNT),
+        2
+    );
 
     let native = crate::native::CatiaNative::load(
         decoded
@@ -4356,23 +4405,33 @@ fn decode_retains_legacy_relation_synchronous_states() {
         .expect("decode legacy relation update states");
 
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_synchronous_state_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SYNCHRONOUS_STATE_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_synchronous_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SYNCHRONOUS_RELATION_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_asynchronous_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ASYNCHRONOUS_RELATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_schema_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_role_field_binding_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT),
         4
     );
     let native = crate::native::CatiaNative::load(
@@ -4475,7 +4534,9 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
         .as_deref()
         .is_some_and(|id| id.starts_with("catia:legacy:entity-run#")));
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -4516,11 +4577,15 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
         ))
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_string_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_STRING_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_named_string_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_NAMED_STRING_VALUE_COUNT),
         1
     );
 }
@@ -4554,11 +4619,15 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
     );
     assert_eq!(parameter.expression, "11");
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_integer_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_INTEGER_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_named_integer_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_NAMED_INTEGER_VALUE_COUNT),
         1
     );
 }
@@ -4590,7 +4659,9 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
     assert!(parameter.expression.is_empty());
     assert_eq!(parameter.properties["value_type"], "LENGTH");
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -4675,7 +4746,9 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
     );
     assert_eq!(integer.properties["value_type"], "Integer");
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         2
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -4706,7 +4779,9 @@ fn decode_does_not_override_a_string_value_type_descriptor() {
 
         assert!(decoded.ir.model.parameters.is_empty());
         assert_eq!(
-            decoded.report.coverage["transferred_legacy_parameter_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
             0
         );
     }
@@ -4738,7 +4813,9 @@ fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         0
     );
 }
@@ -4786,7 +4863,9 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
         ))
     );
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_selector_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT),
         1
     );
 
@@ -4798,7 +4877,9 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
         .expect("decode cyclic legacy type");
     assert!(cyclic.ir.model.parameters.is_empty());
     assert_eq!(
-        cyclic.report.coverage["transferred_legacy_selector_parameter_count"],
+        cyclic
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT),
         0
     );
 }
@@ -4863,7 +4944,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_formula_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
     let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
@@ -4877,7 +4960,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         .expect("decode mismatched legacy formula");
     assert_eq!(mismatched.ir.model.parameters[0].expression, "6");
     assert_eq!(
-        mismatched.report.coverage["transferred_legacy_formula_count"],
+        mismatched
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
 
@@ -4892,7 +4977,12 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(parameter.value, None);
-    assert_eq!(unset.report.coverage["transferred_legacy_formula_count"], 1);
+    assert_eq!(
+        unset
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        1
+    );
 
     let mismatched_unset = CatiaCodec
         .decode(
@@ -4906,7 +4996,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert!(parameter.expression.is_empty());
     assert_eq!(parameter.value, None);
     assert_eq!(
-        mismatched_unset.report.coverage["transferred_legacy_formula_count"],
+        mismatched_unset
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
 
@@ -4926,7 +5018,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         Some("Boolean")
     );
     assert_eq!(
-        boolean.report.coverage["transferred_legacy_formula_count"],
+        boolean
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
 
@@ -4950,7 +5044,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
     );
     assert_eq!(
-        conditional.report.coverage["transferred_legacy_formula_count"],
+        conditional
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
 }
@@ -5012,7 +5108,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         Some(cadmpeg_ir::ParameterValue::String("Easy Evans".to_string()))
     );
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_formula_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -5028,7 +5126,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         .expect("decode mismatched legacy string formula");
     assert!(mismatched.ir.model.parameters[0].expression.is_empty());
     assert_eq!(
-        mismatched.report.coverage["transferred_legacy_formula_count"],
+        mismatched
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
 
@@ -5053,7 +5153,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         Some(cadmpeg_ir::ParameterValue::String("ied".to_string()))
     );
     assert_eq!(
-        methods.report.coverage["transferred_legacy_formula_count"],
+        methods
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
 }
@@ -5101,11 +5203,15 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
         .expect("decode zero-entity parametric support");
 
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_support_curve_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_parametric_surface_curve_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        ),
         1
     );
     let [curve] = result.ir.model.curves.as_slice() else {
@@ -5157,11 +5263,15 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
         .expect("decode zero-entity exact support");
 
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_support_curve_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_parametric_surface_curve_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        ),
         0
     );
     assert!(matches!(
@@ -5885,11 +5995,15 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode CATIA cone-face chart");
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_cone_face_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_cone_face_parameter_point_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT),
         4
     );
 }
@@ -5999,7 +6113,9 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         } if *angular_interval == [0.5, 0.5 + std::f64::consts::TAU]
     ));
     assert_eq!(
-        decoded.report.coverage["transferred_consolidated_revolution_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT),
         1
     );
     assert!(!decoded.report.losses.iter().any(|loss| loss
@@ -6045,11 +6161,15 @@ fn decode_transfers_exact_consolidated_line_profiles() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode consolidated line profile");
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_line_profile_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["transferred_consolidated_line_profile_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
         1
     );
     assert!(decoded.ir.model.curves.iter().any(|curve| matches!(
@@ -6612,75 +6732,111 @@ fn decode_reports_zero_entity_surface_support_runs() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity support run");
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_face_bound_support_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_face_terminal_control_03_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_face_terminal_control_05_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_terminal_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_class_41_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_class_50_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_class_c1_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_forward_loop_member_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_reversed_loop_member_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_oriented_loop_member_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_occurrence_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_pcurve_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_model_curve_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_model_construction_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_uv_endpoint_pair_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_model_midpoint_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT),
         1
     );
     assert!(decoded.report.losses.iter().any(|loss| {
@@ -6706,39 +6862,57 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity topology registries");
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT),
         8
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_edge_stride_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_edge_stride_allocation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT),
         5
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_oriented_use_pair_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_oriented_use_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_oriented_use_allocation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT),
         4
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_vertex_incidence_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_vertex_incidence_allocation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_vertex_owner_binding_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT),
         1
     );
     assert!(decoded.report.losses.iter().any(|loss| {
@@ -6786,7 +6960,9 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
                 && axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
     ));
     assert_eq!(
-        decoded.report.coverage["refined_consolidated_analytic_surface_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT),
         1
     );
 }
@@ -7001,31 +7177,45 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode consolidated edge-run coverage");
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_edge_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_edge_run_support_binding_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_consolidated_edge_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["partially_resolved_consolidated_edge_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::PARTIALLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["fully_resolved_consolidated_edge_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::FULLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_edge_run_shared_locus_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_edge_run_endpoint_locus_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT),
         0
     );
 
@@ -8986,7 +9176,9 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
         ]
     );
     assert_eq!(
-        decoded.report.coverage["decoded_design_object_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
         2
     );
 
@@ -9034,7 +9226,9 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
         }]
     );
     assert_eq!(
-        decoded.report.coverage["decoded_design_unowned_field_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT),
         1
     );
 }
@@ -9070,11 +9264,15 @@ fn native_design_objects_preserve_reflexive_field_relations() {
         }]
     );
     assert_eq!(
-        decoded.report.coverage["decoded_design_same_object_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_design_reflexive_field_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_REFLEXIVE_FIELD_RELATION_COUNT),
         1
     );
 }
@@ -9230,7 +9428,9 @@ fn null_storage_roles_are_not_unresolved_storage_links() {
         .expect("decode null storage role");
 
     assert_eq!(
-        decoded.report.coverage["unresolved_storage_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_STORAGE_RECORD_COUNT),
         0
     );
 }
@@ -10441,25 +10641,76 @@ fn decode_retains_outer_object_graph_order_and_references() {
             .map(|record| record.id.clone())
             .collect::<Vec<_>>()
     );
-    assert_eq!(decoded.report.coverage["decoded_object_graph_count"], 1);
-    assert_eq!(decoded.report.coverage["decoded_object_record_count"], 2);
-    assert_eq!(decoded.report.coverage["decoded_design_object_count"], 1);
-    assert_eq!(decoded.report.coverage["decoded_design_field_count"], 2);
     assert_eq!(
-        decoded.report.coverage["decoded_design_object_relation_count"],
-        0
-    );
-    assert_eq!(decoded.report.coverage["classified_design_object_count"], 0);
-    assert_eq!(decoded.report.coverage["unresolved_design_owner_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_feature_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_sketch_count"], 0);
-    assert_eq!(
-        decoded.report.coverage["transferred_sketch_constraint_count"],
-        0
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
+        1
     );
     assert_eq!(
-        decoded.report.coverage["transferred_configuration_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_FIELD_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_SKETCH_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
@@ -10488,16 +10739,40 @@ fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode object graph without a declared part container");
 
-    assert_eq!(decoded.report.coverage["decoded_object_graph_count"], 1);
-    assert_eq!(decoded.report.coverage["decoded_object_record_count"], 2);
-    assert_eq!(decoded.report.coverage["modeling_object_graph_count"], 0);
-    assert_eq!(decoded.report.coverage["modeling_object_record_count"], 0);
     assert_eq!(
-        decoded.report.coverage["retained_unscoped_object_graph_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["retained_unscoped_object_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::MODELING_OBJECT_GRAPH_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::MODELING_OBJECT_RECORD_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT),
         2
     );
     assert!(decoded.report.losses.iter().any(|loss| {
@@ -10534,7 +10809,9 @@ fn decode_links_design_objects_through_their_owner_record_group() {
     );
     assert_eq!(native.design_objects[1].owner_design_object, None);
     assert_eq!(
-        decoded.report.coverage["decoded_design_object_owner_link_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_OWNER_LINK_COUNT),
         1
     );
 }
@@ -10986,11 +11263,15 @@ fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() 
         .expect("decode complete numeric entity-value pair");
 
     assert_eq!(
-        decoded.report.coverage["decoded_numeric_entity_value_pair_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PAIR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_numeric_entity_value_packet_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT),
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
@@ -11173,51 +11454,75 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode reference-signature incidences");
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_prefix_atom_2_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_2_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_prefix_atom_35_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_35_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_cohort_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_multi_member_reference_signature_cohort_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_MULTI_MEMBER_REFERENCE_SIGNATURE_COHORT_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_cohort_member_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_reference_signature_cohort_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_REFERENCE_SIGNATURE_COHORT_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_instruction_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_INSTRUCTION_COUNT),
         8
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_token_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_TOKEN_COUNT),
         8
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_reference_signature_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_reference_signature_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unresolved_reference_signature_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNRESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT),
         0
     );
 
@@ -11543,27 +11848,47 @@ fn decode_retains_an_opened_parser_version_expression_without_formula_incidence(
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["decoded_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_opened_boolean_parser_version_relation_expression_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_typed_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
-    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -11620,27 +11945,47 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["decoded_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_parser_version_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_typed_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
-    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -12003,71 +12348,105 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode lead-54 relation-program instance");
     assert_eq!(
-        decoded.report.coverage["decoded_relation_program_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_relation_program_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_relation_program_parameter_dependency_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+        ),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_typed_relation_program_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_relation_program_input_instance_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_relation_program_input_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_relation_program_input_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["transferred_relation_program_input_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_lead12_relation_program_context_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_lead12_relation_program_context_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_lead12_relation_program_paramout_context_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_other_lead12_relation_program_context_class_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_lead12_relation_program_context_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_lead54_relation_program_trailing_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_lead54_relation_program_trailing_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
+        ),
         0
     );
 
@@ -12124,141 +12503,208 @@ fn decode_reports_exact_relation_program_instances() {
             )
             .expect("decode relation-program instance");
         assert_eq!(
-            decoded.report.coverage["decoded_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
             1
         );
         assert_eq!(
-            decoded.report.coverage["decoded_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             8
         );
         let resolved_reference_incidences = 1 + usize::from(repeated_reference_entity_id == 1);
         let null_reference_incidences = usize::from(repeated_reference_entity_id == 3);
         assert_eq!(
-            decoded.report.coverage["decoded_resolved_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage["decoded_null_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             null_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             8 - resolved_reference_incidences - null_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage
-                ["decoded_classified_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
             1
         );
         assert_eq!(
-            decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
             0
         );
         assert_eq!(
-            decoded.report.coverage
-                ["decoded_resolved_lead12_relation_program_context_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            ),
             1
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_lead12_relation_program_context_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            ),
             0
         );
         assert_eq!(
-            decoded.report.coverage
-                ["decoded_lead12_relation_program_paramout_context_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
+            ),
             0
         );
         assert_eq!(
-            decoded.report.coverage["decoded_other_lead12_relation_program_context_class_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
+            ),
             1
         );
         assert_eq!(
-            decoded.report.coverage["unclassified_lead12_relation_program_context_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            ),
             0
         );
         assert_eq!(
-            decoded.report.coverage["decoded_resolved_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
             resolved
         );
         assert_eq!(
-            decoded.report.coverage["decoded_relation_expression_program_instance_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT
+            ),
             expression
         );
         assert_eq!(
-            decoded.report.coverage["decoded_other_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT),
             other
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_instance_count"], unresolved,
+            decoded
+                .report
+                .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
+            unresolved,
             "program entity {program_entity_id}"
         );
         assert_eq!(
-            decoded.report.coverage["decoded_null_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT),
             usize::from(program_entity_id == 3)
         );
         assert_eq!(
-            decoded.report.coverage["decoded_resolved_relation_program_repeated_reference_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            ),
             resolved_repeated
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_repeated_reference_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            ),
             usize::from(repeated_reference_entity_id > 3)
         );
         assert_eq!(
-            decoded.report.coverage["decoded_null_relation_program_repeated_reference_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            ),
             usize::from(repeated_reference_entity_id == 3)
         );
         let classified_program = usize::from(program_entity_id <= 2);
         assert_eq!(
-            decoded.report.coverage["decoded_classified_relation_program_entity_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
             classified_program
         );
         assert_eq!(
-            decoded.report.coverage["unclassified_relation_program_entity_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
             1 - classified_program
         );
         let classified_repeated = usize::from(repeated_reference_entity_id == 1);
         assert_eq!(
-            decoded.report.coverage["decoded_classified_relation_program_repeated_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
+            ),
             classified_repeated
         );
         assert_eq!(
-            decoded.report.coverage["unclassified_relation_program_repeated_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
+            ),
             1 - classified_repeated
         );
         assert_eq!(
-            decoded.report.coverage["decoded_instanced_relation_expression_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_INSTANCED_RELATION_EXPRESSION_COUNT),
             expression
         );
         assert_eq!(
-            decoded.report.coverage["decoded_referenced_relation_expression_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
             expression
         );
         assert_eq!(
-            decoded.report.coverage["decoded_formula_referenced_relation_expression_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT
+            ),
             0
         );
         assert_eq!(
-            decoded.report.coverage["decoded_program_referenced_relation_expression_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT
+            ),
             expression
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
             1 - expression
         );
         assert_eq!(
-            decoded.report.coverage["decoded_relation_program_parameter_dependency_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+            ),
             expression * 3
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_parameter_dependency_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+            ),
             expression * 3
         );
-        assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
+        assert_eq!(
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+            0
+        );
         assert!(decoded.ir.model.parameters.is_empty());
     }
 }
@@ -12564,63 +13010,93 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode configuration incidences");
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_RECORD_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_schema_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_SCHEMA_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_configuration_entity_reference_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_row_link_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_ROW_LINK_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_row_class_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_CLASS_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_row_successor_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_complete_configuration_row_chain_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_COMPLETE_CONFIGURATION_ROW_CHAIN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_ordered_configuration_row_link_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ORDERED_CONFIGURATION_ROW_LINK_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_row_chain_terminal_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_configuration_row_chain_terminal_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_row_order_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_ORDER_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["transferred_configuration_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
         0
     );
     assert!(decoded.ir.model.configurations.is_empty());
@@ -12687,11 +13163,15 @@ fn configuration_row_chain_retains_complete_source_order() {
         )
         .expect("decode configuration row intervals");
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_row_intervening_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_row_intervening_configuration_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CONFIGURATION_ROW_INTERVENING_CONFIGURATION_COUNT
+        ),
         0
     );
 }
@@ -12740,15 +13220,21 @@ fn configuration_productions_preserve_unresolved_identities() {
         .decode(&mut Cursor::new(cyclic_file), &DecodeOptions::default())
         .expect("decode cyclic configuration row");
     assert_eq!(
-        cyclic.report.coverage["decoded_complete_configuration_row_chain_count"],
+        cyclic
+            .report
+            .coverage_count(crate::coverage::DECODED_COMPLETE_CONFIGURATION_ROW_CHAIN_COUNT),
         0
     );
     assert_eq!(
-        cyclic.report.coverage["decoded_ordered_configuration_row_link_count"],
+        cyclic
+            .report
+            .coverage_count(crate::coverage::DECODED_ORDERED_CONFIGURATION_ROW_LINK_COUNT),
         0
     );
     assert_eq!(
-        cyclic.report.coverage["unresolved_configuration_row_order_count"],
+        cyclic
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_ORDER_COUNT),
         1
     );
 
@@ -12789,35 +13275,51 @@ fn configuration_productions_distinguish_terminal_null_identities() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode terminal-null configuration incidences");
     assert_eq!(
-        decoded.report.coverage["decoded_null_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_configuration_row_class_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_CLASS_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_row_class_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_CLASS_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_configuration_row_successor_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_row_successor_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_configuration_row_chain_terminal_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_row_chain_terminal_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT),
         0
     );
 }
@@ -13091,11 +13593,23 @@ fn decode_retains_a_parser_version_expression_without_fabricating_formula_incide
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["decoded_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
-    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -13455,37 +13969,58 @@ fn native_namespace_types_dimension_constraint_ranges() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode constraint range");
-    assert_eq!(decoded.report.coverage["decoded_constraint_range_count"], 1);
     assert_eq!(
-        decoded.report.coverage["decoded_dimension_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_complex_constraint_range_count"],
-        0
-    );
-    assert_eq!(
-        decoded.report.coverage["decoded_evaluated_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unset_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_constraint_range_incoming_reference_count"],
-        0
-    );
-    assert_eq!(
-        decoded.report.coverage["unreferenced_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["uniquely_referenced_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["multiply_referenced_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert!(!decoded
@@ -13574,28 +14109,39 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(unique_file), &DecodeOptions::default())
         .expect("decode uniquely referenced constraint range");
     assert_eq!(
-        uniquely_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        uniquely_referenced.report.coverage
-            ["decoded_classified_constraint_range_source_entity_count"],
+        uniquely_referenced.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT
+        ),
         usize::from(source_entity.class_name.is_some())
     );
     assert_eq!(
-        uniquely_referenced.report.coverage["unclassified_constraint_range_source_entity_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT),
         usize::from(source_entity.class_name.is_none())
     );
     assert_eq!(
-        uniquely_referenced.report.coverage["unreferenced_constraint_range_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        uniquely_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        uniquely_referenced.report.coverage["multiply_referenced_constraint_range_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
 
@@ -13629,25 +14175,33 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(storage_file), &DecodeOptions::default())
         .expect("decode storage-referenced constraint range");
     assert_eq!(
-        storage_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        storage_referenced
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        storage_referenced.report.coverage
-            ["decoded_constraint_range_incoming_payload_reference_count"],
+        storage_referenced.report.coverage_count(
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT
+        ),
         0
     );
     assert_eq!(
-        storage_referenced.report.coverage
-            ["decoded_constraint_range_incoming_storage_reference_count"],
+        storage_referenced.report.coverage_count(
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_STORAGE_REFERENCE_COUNT
+        ),
         1
     );
     assert_eq!(
-        storage_referenced.report.coverage["unreferenced_constraint_range_count"],
+        storage_referenced
+            .report
+            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        storage_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        storage_referenced
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
 
@@ -13658,11 +14212,15 @@ fn native_namespace_types_dimension_constraint_ranges() {
         )
         .expect("decode constraint range with both incidence forms");
     assert_eq!(
-        combined.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        combined
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         2
     );
     assert_eq!(
-        combined.report.coverage["multiply_referenced_constraint_range_count"],
+        combined
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
 
@@ -13690,19 +14248,27 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(multiple_file), &DecodeOptions::default())
         .expect("decode multiply referenced constraint range");
     assert_eq!(
-        multiply_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         2
     );
     assert_eq!(
-        multiply_referenced.report.coverage["unreferenced_constraint_range_count"],
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        multiply_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        multiply_referenced.report.coverage["multiply_referenced_constraint_range_count"],
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
 
@@ -13904,21 +14470,34 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
             &DecodeOptions::default(),
         )
         .expect("decode unset complex constraint range");
-    assert_eq!(decoded.report.coverage["decoded_constraint_range_count"], 1);
     assert_eq!(
-        decoded.report.coverage["decoded_dimension_constraint_range_count"],
-        0
-    );
-    assert_eq!(
-        decoded.report.coverage["decoded_complex_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_evaluated_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unset_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT),
         1
     );
 
@@ -13954,59 +14533,87 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic entity suffix");
     assert_eq!(
-        decoded.report.coverage["decoded_scalar_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unset_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_control_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_control_e9_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_separator_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_atom_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_atom_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_evaluation_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_control_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_separator_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_schema_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_SCHEMA_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_wide_prefix_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     let native =
@@ -14081,7 +14688,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode wide-prefix scalar suffix");
     assert_eq!(
-        wide_scalar.report.coverage["decoded_wide_prefix_entity_suffix_value_count"],
+        wide_scalar
+            .report
+            .coverage_count(crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let wide_scalar = crate::native::CatiaNative::load(
@@ -14162,11 +14771,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic unset entity suffix");
     assert_eq!(
-        unset.report.coverage["decoded_scalar_entity_suffix_value_count"],
+        unset
+            .report
+            .coverage_count(crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        unset.report.coverage["decoded_unset_entity_suffix_value_count"],
+        unset
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
 
@@ -14196,15 +14809,21 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic control entity suffix");
     assert_eq!(
-        control.report.coverage["decoded_control_entity_suffix_value_count"],
+        control
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
-        control.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        control
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
-        control.report.coverage["decoded_control_e9_entity_suffix_value_count"],
+        control
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     let control =
@@ -14228,15 +14847,21 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode E9 control entity suffix");
     assert_eq!(
-        control_e9.report.coverage["decoded_control_entity_suffix_value_count"],
+        control_e9
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
-        control_e9.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        control_e9
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        control_e9.report.coverage["decoded_control_e9_entity_suffix_value_count"],
+        control_e9
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let control_e9 = crate::native::CatiaNative::load(
@@ -14286,7 +14911,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic separator entity suffix");
     assert_eq!(
-        separator.report.coverage["decoded_separator_entity_suffix_value_count"],
+        separator
+            .report
+            .coverage_count(crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let separator = crate::native::CatiaNative::load(
@@ -14317,7 +14944,8 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic atom entity suffix");
     assert_eq!(
-        atom.report.coverage["decoded_atom_entity_suffix_value_count"],
+        atom.report
+            .coverage_count(crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let atom =
@@ -14361,12 +14989,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected atom entity suffix");
     assert_eq!(
-        schema_selected_atom.report.coverage
-            ["decoded_schema_selected_atom_entity_suffix_value_count"],
+        schema_selected_atom.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         1
     );
     assert_eq!(
-        schema_selected_atom.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        schema_selected_atom
+            .report
+            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let schema_selected_atom = crate::native::CatiaNative::load(
@@ -14472,8 +15103,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected scalar suffix");
     assert_eq!(
-        selected_scalar.report.coverage
-            ["decoded_schema_selected_evaluation_entity_suffix_value_count"],
+        selected_scalar.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         1
     );
     let selected_scalar = crate::native::CatiaNative::load(
@@ -14546,12 +15178,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected control suffix");
     assert_eq!(
-        selected_control.report.coverage
-            ["decoded_schema_selected_control_entity_suffix_value_count"],
+        selected_control.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         1
     );
     assert_eq!(
-        selected_control.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        selected_control
+            .report
+            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let selected_control = crate::native::CatiaNative::load(
@@ -14825,35 +15460,51 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode definition-chain evaluation");
     assert_eq!(
-        decoded.report.coverage["decoded_definition_chain_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_definition_chain_evaluation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_structurally_owned_definition_chain_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_VALUE_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_chain_value_owner_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_evaluated_definition_chain_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_EVALUATED_DEFINITION_CHAIN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unset_definition_chain_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_DEFINITION_CHAIN_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_structurally_owned_definition_chain_evaluation_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_EVALUATION_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_chain_evaluation_owner_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT),
         0
     );
     let mut native =
@@ -14930,15 +15581,18 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode definition-chain atom");
     assert_eq!(
-        atom.report.coverage["decoded_definition_chain_value_count"],
+        atom.report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        atom.report.coverage["decoded_definition_chain_atom_count"],
+        atom.report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_ATOM_COUNT),
         1
     );
     assert_eq!(
-        atom.report.coverage["decoded_definition_chain_evaluation_count"],
+        atom.report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT),
         0
     );
     let atom_native =
@@ -14964,7 +15618,10 @@ fn native_namespace_binds_two_definition_value_chains() {
                 &DecodeOptions::default(),
             )
             .expect("decode definition-chain state");
-        assert_eq!(decoded.report.coverage[coverage], 1);
+        assert_eq!(
+            decoded.report.coverage.get(coverage).copied().unwrap_or(0),
+            1
+        );
     }
 
     let nested = CatiaCodec
@@ -14976,7 +15633,9 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode nested definition-chain selector");
     assert_eq!(
-        nested.report.coverage["decoded_definition_chain_schema_selector_count"],
+        nested
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_SCHEMA_SELECTOR_COUNT),
         1
     );
     let nested_native =
@@ -15052,23 +15711,33 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
         )
         .expect("decode literal owner slot");
     assert_eq!(
-        decoded.report.coverage["decoded_definition_chain_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_chain_value_owner_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unassigned_definition_chain_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unassigned_definition_chain_evaluation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_EVALUATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unassigned_object_owner_slot_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNASSIGNED_OBJECT_OWNER_SLOT_COUNT),
         1
     );
 
@@ -15136,13 +15805,22 @@ fn native_namespace_binds_and_validates_definition_values() {
             &DecodeOptions::default(),
         )
         .expect("decode definition-bound value");
-    assert_eq!(decoded.report.coverage["decoded_definition_value_count"], 1);
     assert_eq!(
-        decoded.report.coverage["decoded_owned_definition_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_value_owner_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OWNED_DEFINITION_VALUE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_VALUE_OWNER_COUNT),
         0
     );
     let mut native =
@@ -15831,13 +16509,22 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert_eq!(input.expression, "35 mm");
     assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
     assert!(input.dependencies.is_empty());
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 1);
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         1
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
@@ -15910,27 +16597,39 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode formula with null output");
     assert_eq!(
-        decoded.report.coverage["decoded_null_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_FORMULA_OUTPUT_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_formula_output_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_formula_output_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_object_record_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_object_record_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT),
         0
     );
 }
@@ -15956,10 +16655,17 @@ fn formula_input_with_additional_object_payload_remains_unresolved() {
 
     assert_eq!(decoded.ir.model.parameters.len(), 1);
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         0
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        4
+    );
 }
 
 #[test]
@@ -16004,21 +16710,34 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 2);
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         4
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_formula_output_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         usize::from(output_entity.class_name.is_some())
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_formula_output_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         usize::from(output_entity.class_name.is_none())
     );
     let expression_classified = native.entity_records[0]
@@ -16030,11 +16749,15 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .class_name
         .is_some();
     assert_eq!(
-        decoded.report.coverage["decoded_classified_formula_expression_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT),
         usize::from(expression_classified)
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_formula_expression_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT),
         usize::from(!expression_classified)
     );
     let dependency_candidate = &native.entity_records[0]
@@ -16044,38 +16767,59 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .parameter_dependencies[0]
         .candidates[0];
     assert_eq!(
-        decoded.report.coverage["decoded_formula_parameter_dependency_candidate_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_formula_parameter_dependency_candidate_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
+        ),
         usize::from(dependency_candidate.class_name.is_some())
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_formula_parameter_dependency_candidate_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
+        ),
         usize::from(dependency_candidate.class_name.is_none())
     );
     assert_eq!(
-        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_formula_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_program_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 0);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        0
+    );
     assert!(decoded.report.losses.iter().all(|loss| {
         loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
@@ -16119,10 +16863,17 @@ fn decode_keeps_a_mismatched_formula_result_unresolved() {
     assert_eq!(input.name, "Width");
     assert!(input.dependencies.is_empty());
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         1
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 3);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        3
+    );
 }
 
 #[test]
@@ -16207,7 +16958,9 @@ fn decode_rejects_a_constant_formula_that_disagrees_with_its_stored_result() {
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         0
     );
 }
@@ -17316,7 +18069,9 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
     assert_eq!(output.expression, "(#1_ /2>#2_ /2) and (#1_ /2>=0)");
     assert_eq!(output.dependencies, [x.id.clone(), y.id.clone()]);
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         5
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -17579,10 +18334,17 @@ fn decode_transfers_each_supported_formula_input_independently() {
     );
     assert!(depth.dependencies.is_empty());
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         2
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        4
+    );
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
@@ -17773,19 +18535,27 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["decoded_formula_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_formula_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_formula_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["ambiguous_formula_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
 }
@@ -18579,7 +19349,9 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode container-bound legacy parameter");
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
     assert_eq!(decoded.ir.model.parameters.len(), 1);
@@ -19202,35 +19974,51 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.pcurves.len(), 3);
     assert_eq!(
-        result.report.coverage["resolved_object_stream_face_terminal_control_03_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_face_terminal_control_05_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_uncounted_face_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_edge_terminal_control_2a_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_vertex_incidence_terminal_control_04_count"],
+        result.report.coverage_count(
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_loop_framing_controls_05_05_count"],
+        result.report.coverage_count(
+            crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_extended_loop_metadata_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_class_21_pcurve_suffix_scalar_count"],
+        result.report.coverage_count(
+            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
+        ),
         3
     );
     assert!(result
@@ -19270,19 +20058,27 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
         .expect("decode typed unresolved face");
 
     assert_eq!(
-        result.report.coverage["typed_object_stream_face_terminal_control_03_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_face_terminal_control_05_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_face_terminal_control_03_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["typed_unresolved_object_stream_face_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
         1
     );
 }
@@ -19362,47 +20158,69 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         )
         .expect("decode typed face without resolved topology");
     assert_eq!(
-        result.report.coverage["typed_object_stream_face_terminal_control_03_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_unresolved_object_stream_face_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_loop_framing_controls_05_05_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_unresolved_object_stream_loop_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_edge_terminal_control_21_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_vertex_incidence_terminal_control_04_count"],
+        result.report.coverage_count(
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_class_21_pcurve_suffix_scalar_count"],
+        result.report.coverage_count(
+            crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_parameter_incidence_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_parameter_incidence_member_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_vertex_incidence_roster_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_vertex_incidence_roster_member_count"],
+        result.report.coverage_count(
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT
+        ),
         1
     );
 }

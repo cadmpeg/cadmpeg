@@ -45,6 +45,7 @@ mod appearance;
 pub(crate) mod assemble;
 pub(crate) mod catalog;
 pub(crate) mod container;
+pub(crate) mod coverage;
 pub(crate) mod decode;
 pub(crate) mod design_feature;
 pub(crate) mod entity_table;

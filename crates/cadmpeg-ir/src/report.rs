@@ -365,7 +365,21 @@ pub struct DecodeReport {
     pub notes: Vec<String>,
 }
 
+/// A statically declared decode-coverage measure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CoverageKey(pub &'static str);
+
 impl DecodeReport {
+    /// Records one observation for a statically declared coverage measure.
+    pub fn record_coverage(&mut self, key: CoverageKey) {
+        *self.coverage.entry(key.0.to_owned()).or_default() += 1;
+    }
+
+    /// Returns a coverage measure, treating an unobserved measure as zero.
+    pub fn coverage_count(&self, key: CoverageKey) -> usize {
+        self.coverage.get(key.0).copied().unwrap_or(0)
+    }
+
     /// Count loss notes at or above [`Severity::Error`].
     pub fn error_count(&self) -> usize {
         self.losses
