@@ -31281,6 +31281,9 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                                     | cadmpeg_ir::features::BodySelection::Native(_)
                             )
                         }
+                        cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => {
+                            occurrences.is_empty()
+                        }
                     });
                 let unresolved_transform = pattern_kind_has_unresolved_operands(pattern);
                 unresolved_pattern_seed_feature_count += usize::from(unresolved_seeds);

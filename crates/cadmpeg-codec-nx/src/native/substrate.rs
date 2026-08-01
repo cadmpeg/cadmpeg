@@ -28,7 +28,10 @@ use crate::topology::{self, BlendSurface, Graph, OffsetSurface, SurfaceCurve, Tr
 /// their partition and then cleared. This is the byte view the decode geometry path's
 /// scanners read.
 pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
-    let mut semantic = topology_streams(scan);
+    let mut semantic = topology_streams(scan)
+        .into_iter()
+        .map(std::borrow::Cow::into_owned)
+        .collect::<Vec<_>>();
     let pairs = paired_delta_streams(scan);
     let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
     for (delta, stream) in scan.streams.iter().enumerate() {
@@ -267,11 +270,11 @@ impl<'a> ParsedStreams<'a> {
             let topology_matches_raw = semantic_bytes.as_ref() == stream.inflated;
             let mut residual = Vec::new();
             if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&si) {
-                residual.extend_from_slice(&crate::deltas::procedural_residual(&stream.inflated));
+                residual.extend_from_slice(&crate::deltas::semantic_residual(&stream.inflated));
             }
             if let Some(deltas) = paired {
                 for delta in deltas {
-                    residual.extend_from_slice(&crate::deltas::procedural_residual(
+                    residual.extend_from_slice(&crate::deltas::semantic_residual(
                         &scan.streams[*delta].inflated,
                     ));
                 }

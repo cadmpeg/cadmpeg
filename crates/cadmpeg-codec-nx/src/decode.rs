@@ -11207,6 +11207,7 @@ pub(crate) fn pattern_feature_is_incomplete(
             cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
                 body_selection_is_incomplete(bodies)
             }
+            cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => occurrences.is_empty(),
         })
         || seeds
             .iter()
@@ -11320,8 +11321,10 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
         }
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
-        | BodySelection::Native(_) => true,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => true,
     }
 }
 
@@ -11359,8 +11362,10 @@ fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
-        | BodySelection::Native(_) => None,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => None,
     }
 }
 
@@ -11418,6 +11423,7 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
         | ProfileRef::SketchSelection { .. }
         | ProfileRef::SpatialSketchSelection { .. } => true,
         ProfileRef::Sketch(_) => false,
+        ProfileRef::SketchEntities { entities, .. } => selection_ids_are_incomplete(entities),
         ProfileRef::SketchProfiles { profiles, .. }
         | ProfileRef::SpatialSketchProfiles { profiles, .. } => {
             selection_ids_are_incomplete(profiles)
@@ -11475,6 +11481,7 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
         }
         PathRef::HistoricalEdges { edges, .. } => selection_ids_are_incomplete(edges),
         PathRef::Sketch(_) => false,
+        PathRef::SketchCurves { curves, .. } => selection_ids_are_incomplete(curves),
         PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
         PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
     }
