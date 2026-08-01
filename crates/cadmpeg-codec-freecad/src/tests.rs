@@ -5588,12 +5588,17 @@ fn thumbnail_bytes_are_retained_with_digest() {
             },
         )
         .expect("decode");
-    let unknowns = result
+    assert_eq!(
+        result.ir.native_unknowns_iter("fcstd").count(),
+        1,
+        "thumbnail has one product reference"
+    );
+    let retained = result
         .source_fidelity
-        .native_unknown_records(&result.ir, "fcstd")
-        .expect("unknowns");
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].data.as_deref(), Some(b"png".as_slice()));
+        .retained_records
+        .first()
+        .expect("retained thumbnail");
+    assert_eq!(retained.data.as_deref(), Some(b"png".as_slice()));
 }
 
 #[test]

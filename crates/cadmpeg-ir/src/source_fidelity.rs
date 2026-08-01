@@ -168,39 +168,6 @@ impl SourceFidelity {
         )
     }
 
-    /// Joins product references with retained source records.
-    ///
-    /// The retained records are indexed once and the product references are
-    /// consumed as they are deserialized, so the join stays linear in the
-    /// population rather than rescanning the sidecar per reference.
-    pub fn native_unknown_records(
-        &self,
-        ir: &CadIr,
-        format: &str,
-    ) -> Result<Vec<UnknownRecord>, NativeConvertError> {
-        let retained_by_id = self
-            .retained_records
-            .iter()
-            .map(|record| (record.id.as_str(), record))
-            .collect::<std::collections::HashMap<_, _>>();
-        ir.native_unknowns_iter(format)
-            .map(|reference| {
-                let reference = reference?;
-                let retained = retained_by_id.get(reference.id.0.as_str()).ok_or_else(|| {
-                    NativeConvertError::MissingRetainedSourceRecord(reference.id.0.clone())
-                })?;
-                Ok(UnknownRecord {
-                    id: reference.id,
-                    offset: retained.offset,
-                    byte_len: retained.byte_len,
-                    sha256: retained.sha256.clone(),
-                    data: retained.data.clone(),
-                    links: reference.links,
-                })
-            })
-            .collect()
-    }
-
     /// Validates retained record identity and payload integrity.
     pub fn validate(&self) -> Result<(), FidelityError> {
         if self.version != SOURCE_FIDELITY_VERSION {

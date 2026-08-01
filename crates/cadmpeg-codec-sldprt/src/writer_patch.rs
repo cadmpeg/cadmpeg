@@ -6,13 +6,14 @@ use std::collections::HashMap;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Annotations;
 
-pub fn patch_partition(
+use crate::SourceRecord;
+
+pub(crate) fn patch_partition(
     ir: &CadIr,
     annotations: &Annotations,
-    retained_records: &[UnknownRecord],
+    retained_records: &[SourceRecord<'_>],
     scale: f64,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
     patch_partition_inner(ir, annotations, retained_records, scale).transpose()
@@ -21,7 +22,7 @@ pub fn patch_partition(
 fn patch_partition_inner(
     ir: &CadIr,
     annotations: &Annotations,
-    retained_records: &[UnknownRecord],
+    retained_records: &[SourceRecord<'_>],
     scale: f64,
 ) -> Option<Result<(String, Vec<u8>), CodecError>> {
     let requires_native_carrier_patch = ir
@@ -40,9 +41,8 @@ fn patch_partition_inner(
     let source = retained_records
         .iter()
         .find(|record| record.id.0 == "sldprt:file:source-image#0")?
-        .data
-        .clone()?;
-    let scan = crate::container::scan_bytes(&source);
+        .data?;
+    let scan = crate::container::scan_bytes(source);
     let (block, header) = crate::container::select_active_parasolid(&scan)?;
     if block.ps_stream.as_deref() != Some(block.payload.as_slice()) {
         return None;
