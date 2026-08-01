@@ -93,6 +93,11 @@ macro_rules! declare_model {
                 &[$(stringify!($field)),*]
             }
 
+            /// Total number of admitted neutral entities across all arenas.
+            pub fn entity_count(&self) -> usize {
+                0 $(+ self.$field.len())*
+            }
+
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
                 $(self.$field.sort_by_key($key);)*

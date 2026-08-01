@@ -28440,6 +28440,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     } else {
         build_ir(&scan)?
     };
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit Creo entities")?;
     let report = build_report(&scan, &ir, coverage, ctx.container_only());
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,

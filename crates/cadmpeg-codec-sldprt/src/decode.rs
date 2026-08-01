@@ -97,7 +97,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(ctx, ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
@@ -111,22 +111,24 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 &decoded.configuration_bodies,
             )?;
             append_design_losses(&ir, &mut report);
-            return decode_result(ir, report, annotations, unknowns);
+            return decode_result(ctx, ir, report, annotations, unknowns);
         }
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
     append_design_losses(&ir, &mut report);
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(ctx, ir, report, annotations, unknowns)
 }
 
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()

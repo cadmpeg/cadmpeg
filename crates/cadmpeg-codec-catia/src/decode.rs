@@ -61,23 +61,32 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     for route in families::ROUTES {
         if (route.applicable)(scan.variant) {
             if let Some(out) = (route.decode)(&scan) {
-                return finish_decode(&scan, out.ir, out.report, out.annotations, &out.unknowns);
+                return finish_decode(
+                    ctx,
+                    &scan,
+                    out.ir,
+                    out.report,
+                    out.annotations,
+                    &out.unknowns,
+                );
             }
         }
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    finish_decode(&scan, ir, report, annotations, &unknowns)
+    finish_decode(ctx, &scan, ir, report, annotations, &unknowns)
 }
 
 fn finish_decode(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     mut ir: CadIr,
     mut report: DecodeReport,
     mut annotations: Annotations,
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit CATIA entities")?;
     let native = CatiaNative::decode(&scan.data);
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
