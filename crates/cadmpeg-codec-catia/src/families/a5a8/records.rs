@@ -1135,7 +1135,7 @@ fn a5_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
     }
 }
 
-fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
+pub(super) fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     let multiplicities = match degree {
         5 if distinct.len() >= 2 => {
             let mut values = vec![6u32];
@@ -1143,44 +1143,57 @@ fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
             values.push(6);
             values
         }
-        1 if distinct.len() == 2 => vec![2, 2],
+        1 | 3 | 5 if distinct.len() == 2 => vec![degree + 1, degree + 1],
         _ => return None,
     };
     let count = pole_count(&multiplicities, degree)?;
     Some((expand_knots(distinct, &multiplicities)?, count))
 }
 
-fn a5_weights(bytes: &[u8], at: &mut usize, rows: usize, cols: usize) -> Option<Vec<f64>> {
-    if bytes.get(*at..*at + 3)? != [0x01, 0x07, 0x00] {
-        return None;
-    }
-    *at += 3;
-    let mut seed = Vec::new();
-    while bytes.get(*at) != Some(&0x02) {
-        seed.push(f64_le(bytes, *at)?);
-        *at += 8;
-    }
-    let row = if seed.len() * 2 == cols {
-        seed.iter()
-            .copied()
-            .chain(seed.iter().rev().copied())
-            .collect()
-    } else if seed.len() == cols {
-        seed
-    } else {
-        return None;
-    };
-    let mut copies = 0usize;
-    while bytes.get(*at) == Some(&0x02) {
-        copies += 1;
+pub(super) fn a5_weights(
+    bytes: &[u8],
+    at: &mut usize,
+    rows: usize,
+    cols: usize,
+) -> Option<Vec<f64>> {
+    let count = rows.checked_mul(cols)?;
+    if bytes.get(*at) == Some(&0x00) {
         *at += 1;
+        return f64_values(bytes, at, count, bytes.len()).filter(|weights| {
+            weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight != 0.0)
+        });
     }
-    if copies + 1 != rows
-        || row
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight == 0.0)
-    {
+    if bytes.get(*at) != Some(&0x01) {
         return None;
     }
-    Some((0..rows).flat_map(|_| row.iter().copied()).collect())
+
+    let seed_count = cols.div_ceil(2);
+    let mut weights = Vec::with_capacity(count);
+    let mut previous = None::<Vec<f64>>;
+    for _ in 0..rows {
+        let row = if bytes.get(*at) == Some(&0x02) {
+            *at += 1;
+            previous.clone()?
+        } else {
+            if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
+                return None;
+            }
+            *at += 3;
+            let seed = f64_values(bytes, at, seed_count, bytes.len())?;
+            let mut row = seed.clone();
+            row.extend(seed[..cols / 2].iter().rev().copied());
+            if row.len() != cols {
+                return None;
+            }
+            previous = Some(row.clone());
+            row
+        };
+        weights.extend(row);
+    }
+    weights
+        .iter()
+        .all(|weight| weight.is_finite() && *weight != 0.0)
+        .then_some(weights)
 }
