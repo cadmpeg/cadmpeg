@@ -1867,8 +1867,11 @@ fn decode_sketch_text_tail(
     cursor = cursor.checked_add(9)?;
     // The class tail opens with the text-type enum, which gates the placement
     // transform: frame text stores a 4x4 transform, path text stores none. One
-    // flag byte separates the enum from the transform slot.
+    // flag byte follows the enum and repeats it, so a slot form that has
+    // desynchronized fails here instead of framing a transform out of whatever
+    // bytes the walk landed on.
     let text_type = u32_at(payload, cursor)?;
+    (u32::from(*payload.get(cursor.checked_add(4)?)?) == text_type).then_some(())?;
     cursor = cursor.checked_add(5)?;
     let placement = match text_type {
         0 => Some(read_text_placement(payload, &mut cursor)?),

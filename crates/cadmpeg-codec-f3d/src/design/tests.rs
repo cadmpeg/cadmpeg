@@ -15712,6 +15712,18 @@ fn frame_sketch_text_record_refuses_a_transform_that_is_not_a_planar_rotation() 
 }
 
 #[test]
+fn sketch_text_record_refuses_a_flag_byte_that_does_not_repeat_the_text_type() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
+    // The flag byte sits between the text-type enum and the transform slot,
+    // ahead of the trailing run and the owning-sketch reference.
+    let at = bytes.len() - 30 - 11 - 1;
+    assert_eq!(bytes[at], 1);
+    let mut broken = bytes;
+    broken[at] = 0;
+    assert!(decode_sketch_text(&broken).is_none());
+}
+
+#[test]
 fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
     let mut bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
     bytes.push(0);
