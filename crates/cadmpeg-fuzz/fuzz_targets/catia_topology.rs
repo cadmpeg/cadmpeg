@@ -7,12 +7,9 @@
 
 #![no_main]
 
-use cadmpeg_codec_catia::topology::{parse_fbb, parse_standard};
+use cadmpeg_codec_catia::fuzz::standard_topology;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    if let Some(topology) = parse_standard(data) {
-        let _ = topology.edge_vertices();
-    }
-    let _ = parse_fbb(data);
+    standard_topology(data);
 });

@@ -23,12 +23,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 mod attrib;
 mod blend;
-mod entity;
+pub(crate) mod entity;
 mod intersection;
-mod spline;
+pub(crate) mod spline;
 mod subset;
 mod sweep;
-mod topology;
+pub(crate) mod topology;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;

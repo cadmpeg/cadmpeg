@@ -10,10 +10,8 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     let bounded = &data[..data.len().min(1 << 20)];
-    let Ok(decoded) = FcstdCodec.decode(
-        &mut Cursor::new(bounded),
-        &DecodeOptions::default(),
-    ) else {
+    let Ok(decoded) = FcstdCodec.decode(&mut Cursor::new(bounded), &DecodeOptions::default())
+    else {
         return;
     };
     let mut ir = decoded.ir;
@@ -29,9 +27,6 @@ fuzz_target!(|data: &[u8]| {
     }
     let mut output = Vec::new();
     if FcstdCodec.encode(&ir, &mut output).is_ok() {
-        let _ = FcstdCodec.decode(
-            &mut Cursor::new(output),
-            &DecodeOptions::default(),
-        );
+        let _ = FcstdCodec.decode(&mut Cursor::new(output), &DecodeOptions::default());
     }
 });

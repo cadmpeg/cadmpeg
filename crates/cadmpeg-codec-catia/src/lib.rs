@@ -58,7 +58,7 @@ pub(crate) mod value_block;
 pub(crate) mod variant;
 pub(crate) mod wire;
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "fuzzing")]
 pub mod fuzz;
 
 /// Maximum number of exact rational-quadratic spans materialized for one
