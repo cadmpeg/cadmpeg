@@ -3710,6 +3710,7 @@ fn body_combine_requires_exactly_one_resolved_target() {
             ]),
             tools: BodySelection::Bodies(vec![body]),
             op: BooleanOp::Join,
+            keep_tools: false,
         },
         native_ref: None,
     });
