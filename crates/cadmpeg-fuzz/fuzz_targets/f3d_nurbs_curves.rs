@@ -6,7 +6,7 @@
 
 #![no_main]
 
-use cadmpeg_codec_f3d::nurbs::decode_curve_cache;
+use cadmpeg_codec_f3d::nurbs::core::decode_curve_cache;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

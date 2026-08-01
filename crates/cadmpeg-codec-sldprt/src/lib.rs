@@ -73,6 +73,8 @@ mod compound;
 pub mod container;
 pub mod decode;
 mod feature_schema;
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 mod history;
 pub mod loss;
 mod metadata;

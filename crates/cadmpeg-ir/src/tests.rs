@@ -4665,7 +4665,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         display: None,
         value: Some(ParameterValue::Length(Length(2.0))),
         dependencies: Vec::new(),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     });

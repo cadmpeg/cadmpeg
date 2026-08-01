@@ -2872,7 +2872,7 @@ mod tests {
             } else {
                 0.7
             };
-            let point = curve_point(&geometry, parameter).unwrap();
+            let point = curve_point(&geometry, parameter).expect("analytic curve evaluates");
             let id = CurveId(format!("test:inverse:{index}"));
             let mut ir = CadIr::empty(crate::units::Units::default());
             ir.model.curves.push(Curve {
@@ -2967,7 +2967,7 @@ mod tests {
             transform,
         };
         let parameter = 0.7 + std::f64::consts::TAU;
-        let point = curve_point(&geometry, parameter).unwrap();
+        let point = curve_point(&geometry, parameter).expect("transformed curve evaluates");
         let id = CurveId("test:transformed-inverse".into());
         let mut ir = CadIr::empty(crate::units::Units::default());
         ir.model.curves.push(Curve {
@@ -3201,7 +3201,8 @@ mod tests {
             model_surface_point_by_id(&ir, &second_id, 1.0e16, -1.0e16),
             Some(Point3::new(1.0e16, -1.0e16, -3.0))
         );
-        let partials = model_surface_partials_by_id(&ir, &second_id, 1.0e16, -1.0e16).unwrap();
+        let partials = model_surface_partials_by_id(&ir, &second_id, 1.0e16, -1.0e16)
+            .expect("transformed plane evaluates");
         assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));
         assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
         assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
@@ -3252,28 +3253,30 @@ mod tests {
             },
         };
 
-        let cylinder_second = surface_second_partials(&cylinder, 0.0, 4.0).unwrap();
-        let cylinder = surface_partials(&cylinder, 0.0, 4.0).unwrap();
+        let cylinder_second = surface_second_partials(&cylinder, 0.0, 4.0)
+            .expect("cylinder second partials evaluate");
+        let cylinder = surface_partials(&cylinder, 0.0, 4.0).expect("cylinder partials evaluate");
         assert_eq!(cylinder.point, Point3::new(2.0, 0.0, 4.0));
         assert_eq!(cylinder.du, Vector3::new(0.0, 2.0, 0.0));
         assert_eq!(cylinder.dv, Vector3::new(0.0, 0.0, 1.0));
         assert_eq!(cylinder_second.duu, Vector3::new(-2.0, 0.0, 0.0));
         assert_eq!(cylinder_second.duv, Vector3::new(0.0, 0.0, 0.0));
         assert_eq!(cylinder_second.dvv, Vector3::new(0.0, 0.0, 0.0));
-        let cone = surface_partials(&cone, 0.0, 3.0).unwrap();
+        let cone = surface_partials(&cone, 0.0, 3.0).expect("cone partials evaluate");
         assert!((cone.point.x - 5.0).abs() < 1e-12);
         assert!((cone.du.y - 5.0).abs() < 1e-12);
         assert!((cone.dv.x - 1.0).abs() < 1e-12);
         assert_eq!(cone.dv.z, 1.0);
-        let sphere = surface_partials(&sphere, 0.0, 0.0).unwrap();
+        let sphere = surface_partials(&sphere, 0.0, 0.0).expect("sphere partials evaluate");
         assert_eq!(sphere.point, Point3::new(3.0, 0.0, 0.0));
         assert_eq!(sphere.du, Vector3::new(0.0, 3.0, 0.0));
         assert_eq!(sphere.dv, Vector3::new(0.0, 0.0, 3.0));
-        let torus = surface_partials(&torus, 0.0, 0.0).unwrap();
+        let torus = surface_partials(&torus, 0.0, 0.0).expect("torus partials evaluate");
         assert_eq!(torus.point, Point3::new(7.0, 0.0, 0.0));
         assert_eq!(torus.du, Vector3::new(0.0, 7.0, 0.0));
         assert_eq!(torus.dv, Vector3::new(0.0, 0.0, 2.0));
-        let transformed = surface_partials(&transformed, 2.0, 3.0).unwrap();
+        let transformed =
+            surface_partials(&transformed, 2.0, 3.0).expect("transformed partials evaluate");
         assert_eq!(transformed.point, Point3::new(11.0, 20.0, 13.0));
         assert_eq!(transformed.du, Vector3::new(2.0, 0.0, 0.0));
         assert_eq!(transformed.dv, Vector3::new(0.0, 3.0, 0.0));

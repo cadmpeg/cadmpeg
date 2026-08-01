@@ -41,6 +41,12 @@ pub enum NativeConvertError {
     MissingRetainedSourceRecord(String),
 }
 
+impl From<NativeConvertError> for crate::codec::CodecError {
+    fn from(error: NativeConvertError) -> Self {
+        Self::Malformed(error.to_string())
+    }
+}
+
 // The wire and schema shape of a native record: `id`, then the codec-owned
 // fields in the order `Map` iterates. It is what writes a record's stored text
 // and what describes a record to the schema generator, and serializing a record

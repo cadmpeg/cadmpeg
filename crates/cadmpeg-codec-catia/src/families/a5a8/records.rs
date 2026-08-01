@@ -672,7 +672,7 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
-#[cfg(any(test, feature = "fuzz"))]
+#[cfg(any(test, feature = "fuzzing"))]
 pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
 }
@@ -829,7 +829,7 @@ pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
         .collect()
 }
 
-#[cfg(any(test, feature = "fuzz"))]
+#[cfg(any(test, feature = "fuzzing"))]
 fn scan_surfaces(
     data: &[u8],
     marker: [u8; 3],
@@ -999,7 +999,7 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
     })
 }
 
-#[cfg(any(test, feature = "fuzz"))]
+#[cfg(any(test, feature = "fuzzing"))]
 fn a8_surface(data: &[u8], pos: usize) -> Option<FreeformSurface> {
     a8_surface_from_parsed(data, parse_a8_surface_header(data, pos)?)
 }

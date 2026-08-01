@@ -23,6 +23,7 @@ use crate::decode::{
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::ExportReport;
+use crate::report::StrictConsequence;
 use crate::source_fidelity::SourceFidelity;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -191,12 +192,6 @@ pub enum CodecError {
     Io(#[from] std::io::Error),
 }
 
-impl From<crate::native::NativeConvertError> for CodecError {
-    fn from(error: crate::native::NativeConvertError) -> Self {
-        Self::Malformed(error.to_string())
-    }
-}
-
 /// Decoder and container inspector for one source format.
 pub trait Codec {
     /// Stable short id for this codec, e.g. `"f3d"`.
@@ -291,7 +286,8 @@ impl<C: Codec + ?Sized> CodecEntry for C {
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
         let result = self.inspect_impl(&ctx, root);
-        ctx.finish_inspection(result)
+        ctx.finish_session()?;
+        result
     }
 
     fn decode(
@@ -303,7 +299,22 @@ impl<C: Codec + ?Sized> CodecEntry for C {
         let (mut ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy)?;
         ctx.set_container_only(options.container_only);
         let result = self.decode_impl(&ctx, root);
-        ctx.finish(result)
+        ctx.finish_session()?;
+        let result = result?;
+        if options.policy.mode == DecodeMode::Strict && !result.report.container_only {
+            if let Some(loss) = result
+                .report
+                .losses
+                .iter()
+                .find(|loss| loss.code.strict_consequence() == StrictConsequence::Reject)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "strict mode rejects {}: {}",
+                    loss.code, loss.message
+                )));
+            }
+        }
+        Ok(result)
     }
 }
 

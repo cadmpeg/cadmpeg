@@ -149,6 +149,7 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
