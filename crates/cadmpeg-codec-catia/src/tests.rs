@@ -7930,7 +7930,7 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
     assert_eq!(graph.records[0].storage_ref, Some(4));
     assert_eq!(graph.records[0].subtype, PayloadSubtype::Mixed);
     assert!(matches!(
-        graph.records[0].payload.fields().as_slice(),
+        graph.records[0].payload.fields.as_slice(),
         [
             PayloadField::Reference { value: 5, .. },
             PayloadField::Scalar {
@@ -8010,7 +8010,7 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
     )]);
     let graph = crate::object_graph::parse(&valid).expect("bounded blob");
     assert!(matches!(
-        graph.records[0].payload.fields().as_slice(),
+        graph.records[0].payload.fields.as_slice(),
         [
             PayloadField::Blob {
                 declared_len: 1,
@@ -8027,7 +8027,7 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
     )]);
     let graph = crate::object_graph::parse(&unbounded).expect("literal E5 atom");
     assert!(matches!(
-        graph.records[0].payload.fields().as_slice(),
+        graph.records[0].payload.fields.as_slice(),
         [
             PayloadField::Atom {
                 value: 0xe5,
@@ -8046,7 +8046,7 @@ fn object_graph_payload_preserves_the_complete_terminator_run() {
     let graph = crate::object_graph::parse(&bytes).expect("multi-terminator payload");
 
     assert!(matches!(
-        graph.records[0].payload.fields().as_slice(),
+        graph.records[0].payload.fields.as_slice(),
         [
             crate::object_graph::PayloadField::Atom { value: 3, .. },
             crate::object_graph::PayloadField::Terminator,
@@ -8067,7 +8067,7 @@ fn object_graph_payload_reads_tagged_fixed_width_references() {
     let graph = crate::object_graph::parse(&bytes).expect("tagged fixed-width references");
 
     assert!(matches!(
-        graph.records[0].payload.fields().as_slice(),
+        graph.records[0].payload.fields.as_slice(),
         [
             crate::object_graph::PayloadField::Reference { value: 7934, .. },
             crate::object_graph::PayloadField::Reference { value: 235, .. },
@@ -8088,7 +8088,7 @@ fn object_graph_lists_retain_direct_fixed_width_references() {
     let native = crate::native::CatiaNative::decode(&bytes);
 
     assert!(matches!(
-        native.object_graphs[0].records[0].payload.fields().as_slice(),
+        native.object_graphs[0].records[0].payload.fields.as_slice(),
         [
             crate::object_graph::PayloadField::List {
                 declared_count: 1,
@@ -8144,7 +8144,7 @@ fn outer_object_graph_preserves_inline_records() {
         graph.records[1].inline_body.as_deref(),
         Some(&[0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x81, 0x06,][..])
     );
-    assert!(graph.records[1].payload.fields().is_empty());
+    assert!(graph.records[1].payload.fields.is_empty());
 }
 
 #[test]
@@ -8730,7 +8730,7 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
     let bytes = object_graph_from_records(&records);
     let graph = crate::object_graph::parse(&bytes).expect("fixed-width object payload");
     assert_eq!(
-        graph.records[0].payload.fields(),
+        graph.records[0].payload.fields,
         [
             PayloadField::Atom {
                 value: 0x1234_5678,
@@ -8783,7 +8783,7 @@ fn incomplete_object_payload_tags_do_not_consume_the_terminator() {
         let record = &graph.records[0];
 
         assert_eq!(
-            record.payload.fields(),
+            record.payload.fields,
             [
                 crate::object_graph::PayloadField::Atom {
                     value: u32::from(tag),
@@ -8818,7 +8818,7 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
         native.design_objects[0].first_field_byte_offset,
         native.object_graphs[0].records[0].byte_offset
     );
-    assert_eq!(native.design_objects[0].fields().len(), 2);
+    assert_eq!(native.design_objects[0].fields.len(), 2);
     assert!(native.design_objects[0].field_classes.is_empty());
     let graph = &native.object_graphs[0];
     assert_eq!(
@@ -9311,7 +9311,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         );
         assert_eq!(
             transfer.principal_plane_records,
-            native.design_objects[0].fields().iter().cloned().collect()
+            native.design_objects[0].fields.iter().cloned().collect()
         );
 
         let mut excluded_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -9447,7 +9447,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             .iter()
             .map(|column| &column.field)
             .collect::<Vec<_>>(),
-        native.design_objects[0].fields().iter().collect::<Vec<_>>()
+        native.design_objects[0].fields.iter().collect::<Vec<_>>()
     );
     assert!(table
         .columns
@@ -9855,8 +9855,8 @@ fn native_design_objects_follow_first_field_order() {
             .collect::<Vec<_>>(),
         [3, 1]
     );
-    assert_eq!(native.design_objects[0].fields().len(), 2);
-    assert_eq!(native.design_objects[1].fields().len(), 1);
+    assert_eq!(native.design_objects[0].fields.len(), 2);
+    assert_eq!(native.design_objects[1].fields.len(), 1);
     assert_eq!(
         native
             .design_objects
@@ -9896,7 +9896,7 @@ fn incomplete_object_lists_do_not_assert_reference_links() {
     assert!(native.object_graphs[0].records[0].references.is_empty());
     assert!(native.design_objects[0].relations.is_empty());
     assert!(matches!(
-        &native.object_graphs[0].records[0].payload.fields()[0],
+        &native.object_graphs[0].records[0].payload.fields[0],
         crate::object_graph::PayloadField::List {
             declared_count: 3,
             items,
@@ -9923,7 +9923,7 @@ fn incomplete_object_list_tags_do_not_consume_the_payload_terminator() {
     assert!(record.references.is_empty());
     assert!(native.design_objects[0].relations.is_empty());
     assert!(matches!(
-        record.payload.fields().as_slice(),
+        record.payload.fields.as_slice(),
         [
             crate::object_graph::PayloadField::List {
                 declared_count: 2,
@@ -9948,7 +9948,7 @@ fn incomplete_object_list_headers_do_not_consume_the_payload_terminator() {
     let record = &native.object_graphs[0].records[0];
 
     assert_eq!(
-        record.payload.fields(),
+        record.payload.fields,
         [
             crate::object_graph::PayloadField::Atom {
                 value: 0x3b,
@@ -10145,7 +10145,7 @@ fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
     assert_eq!(block.schema_selections[0].entry, None);
     assert_eq!(block.schema_selections[0].name, None);
     assert!(block.schema_selections[0].encoded_value.is_empty());
-    assert!(block.fields().iter().any(|field| matches!(
+    assert!(block.fields.iter().any(|field| matches!(
         field,
         crate::value_block::ValueField::SchemaSelector { ordinal: 5, .. }
     )));
@@ -10301,7 +10301,7 @@ fn object_graph_payload_does_not_consume_terminator_as_fixed_width_atom_data() {
     let graph = crate::object_graph::parse(&bytes).expect("terminator-bounded object payload");
 
     assert_eq!(
-        graph.records[0].payload.fields(),
+        graph.records[0].payload.fields,
         [
             PayloadField::Atom {
                 value: 13,
@@ -10335,7 +10335,7 @@ fn object_graph_payload_does_not_consume_terminator_as_paged_atom_data() {
     let graph = crate::object_graph::parse(&bytes).expect("terminator-bounded paged atom");
 
     assert_eq!(
-        graph.records[0].payload.fields(),
+        graph.records[0].payload.fields,
         [
             PayloadField::Atom {
                 value: 13,
@@ -10358,7 +10358,7 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     assert!(graph.records[0].head.contains(&HeadToken::NullHandle));
     assert_eq!(graph.records[0].subtype, PayloadSubtype::BulkTable);
     assert!(matches!(
-        &graph.records[0].payload.fields()[0],
+        &graph.records[0].payload.fields[0],
         PayloadField::List { items, .. }
             if items == &vec![
                 ListItem::Reference {
@@ -10376,7 +10376,7 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
             ]
     ));
     assert!(matches!(
-        graph.records[0].payload.fields()[1],
+        graph.records[0].payload.fields[1],
         PayloadField::BulkTable {
             count: 2,
             table_count: 1,
@@ -10421,7 +10421,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
         Some(graph.records[1].id.as_str())
     );
     assert_eq!(
-        object.fields(),
+        object.fields,
         graph
             .records
             .iter()
@@ -10769,7 +10769,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
     assert_rejected(invalid_payload);
 
     let mut invalid_fields = native.clone();
-    invalid_fields.value_blocks[0].fields().clear();
+    invalid_fields.value_blocks[0].fields.clear();
     assert_rejected(invalid_fields);
 
     let mut invalid_selections = native;
@@ -16076,15 +16076,15 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
-        decoded.source_fidelity.annotations.exactness[&input.id.0].fields()["expression"],
+        decoded.source_fidelity.annotations.exactness[&input.id.0].fields["expression"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
-        decoded.source_fidelity.annotations.exactness[&input.id.0].fields()["properties"],
+        decoded.source_fidelity.annotations.exactness[&input.id.0].fields["properties"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
-        decoded.source_fidelity.annotations.exactness[&output.id.0].fields()["properties"],
+        decoded.source_fidelity.annotations.exactness[&output.id.0].fields["properties"],
         cadmpeg_ir::Exactness::Derived
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
@@ -16181,7 +16181,7 @@ fn decode_transfers_a_closed_constant_formula() {
         .annotations
         .exactness
         .get(&output.id.0)
-        .is_none_or(|annotation| !annotation.fields().contains_key("expression")));
+        .is_none_or(|annotation| !annotation.fields.contains_key("expression")));
 }
 
 #[test]
@@ -17253,7 +17253,7 @@ fn decode_transfers_dimensionless_real_formula() {
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     for parameter in [input, output] {
         assert_eq!(
-            decoded.source_fidelity.annotations.exactness[&parameter.id.0].fields()["properties"],
+            decoded.source_fidelity.annotations.exactness[&parameter.id.0].fields["properties"],
             cadmpeg_ir::Exactness::Derived
         );
     }
