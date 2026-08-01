@@ -170,6 +170,7 @@ dependencies = [
  "memchr",
  "schemars",
  "serde",
+ "serde_json",
  "sha2",
 ]
 
