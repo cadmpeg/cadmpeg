@@ -6892,14 +6892,15 @@ fn decode_retains_registered_function_write_targets_without_emitting_parameters(
         native.fields()["assignments"][0]["target"]["name"],
         "store_value"
     );
-    let arguments = native.fields()["assignments"][0]["target"]["arguments"]
+    let fields = native.fields();
+    let arguments = fields["assignments"][0]["target"]["arguments"]
         .as_array()
         .expect("function arguments");
     assert_eq!(arguments.len(), 3);
     assert_eq!(arguments[0], "component");
     assert_eq!(arguments[1], "row");
     assert_eq!(arguments[2], "column");
-    let dependencies = native.fields()["assignments"][0]["dependencies"]
+    let dependencies = fields["assignments"][0]["dependencies"]
         .as_array()
         .expect("function dependencies");
     assert_eq!(dependencies.len(), 4);

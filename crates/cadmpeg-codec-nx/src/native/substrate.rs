@@ -327,6 +327,9 @@ mod tests {
                 version: 0,
                 file_tag: 0,
                 footer_offset: 0,
+                header_entry_count: 0,
+                footer_entry_count: 0,
+                footer_fingerprint: [0; 4],
                 entries: Vec::new(),
             },
             streams: vec![crate::parasolid::Stream {
