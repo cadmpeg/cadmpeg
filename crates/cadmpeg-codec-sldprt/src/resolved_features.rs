@@ -35985,6 +35985,45 @@ fn implicit_circle_marker<'a>(
     if operand_kind != FeatureInputOperandKind::Native(0x83fe) {
         return None;
     }
+    let relation_index = u32::from(index).checked_add(1)?;
+    let mut candidates = lanes
+        .iter()
+        .filter_map(|lane| {
+            let relation = lane.sketch_entities.iter().find(|marker| {
+                marker.feature_ref.as_deref() == Some(feature)
+                    && marker.object_index == Some(relation_index)
+                    && marker.kind == SketchInputKind::Relation(SketchRelationKind::Distance)
+                    && matches!(marker.links.as_slice(), [first, second]
+                        if first.entity_ref == second.entity_ref
+                            && first.local_id == second.local_id)
+            })?;
+            let center_id = relation.links.first()?.entity_ref.as_str();
+            let center = lane
+                .sketch_entities
+                .iter()
+                .find(|marker| marker.id == center_id && marker.coordinates_m.is_some())?;
+            let radial = lane
+                .sketch_entities
+                .iter()
+                .filter(|marker| {
+                    marker.feature_ref.as_deref() == Some(feature)
+                        && marker.offset > center.offset
+                        && marker.coordinates_m.is_some()
+                })
+                .min_by_key(|marker| marker.offset)?;
+            let [cu, cv] = center.coordinates_m?;
+            let [ru, rv] = radial.coordinates_m?;
+            let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+            (radius.is_finite() && radius > 0.0).then_some((center, radius))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(center, _)| center.id.as_str());
+    candidates
+        .dedup_by(|left, right| left.0.id == right.0.id && left.1.to_bits() == right.1.to_bits());
+    if let [candidate] = candidates.as_slice() {
+        return Some(*candidate);
+    }
+
     let mut markers = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
@@ -35999,10 +36038,9 @@ fn implicit_circle_marker<'a>(
         })
         .collect::<Vec<_>>();
     markers.sort_unstable_by_key(|marker| marker.offset);
-    if markers.is_empty() || markers.len() % 2 != 0 {
-        return None;
-    }
-    let pair = markers.chunks_exact(2).nth(usize::from(index))?;
+    let pair = (markers.len() % 2 == 0)
+        .then(|| markers.chunks_exact(2).nth(usize::from(index)))
+        .flatten()?;
     let [center, radial] = pair else {
         return None;
     };
@@ -49809,6 +49847,63 @@ mod profile_join_tests {
         )
         .expect("implicit circle pair");
         assert_eq!(resolved.id, "implicit-center");
+        assert!((radius - 5.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
+        let mut unrelated = marker("unrelated", Some([0.0, 0.0]));
+        unrelated.offset = 10;
+        unrelated.object_index = Some(7);
+        let mut center = marker("center", Some([0.010, 0.020]));
+        center.offset = 20;
+        center.object_index = Some(9);
+        center.local_id = Some(11);
+        let mut radial = marker("radial", Some([0.013, 0.024]));
+        radial.offset = 30;
+        radial.object_index = Some(8);
+        radial.local_id = Some(12);
+        let mut relation = marker("circle-owner", None);
+        relation.offset = 40;
+        relation.object_index = Some(1);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+        relation.links = vec![
+            SketchInputLink {
+                local_id: 11,
+                entity_ref: center.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 11,
+                entity_ref: center.id.clone(),
+            },
+        ];
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![unrelated, center, radial, relation],
+        };
+
+        let lanes = [lane];
+        let (resolved, radius) = implicit_circle_marker(
+            &lanes,
+            "feature-native",
+            FeatureInputOperandKind::Native(0x83fe),
+            0,
+        )
+        .expect("solver-owned implicit circle");
+
+        assert_eq!(resolved.id, "center");
         assert!((radius - 5.0).abs() < 1.0e-12);
     }
 
