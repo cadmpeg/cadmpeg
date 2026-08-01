@@ -4,4 +4,4 @@
 mod archive;
 pub mod compression;
 
-pub use archive::{ArchiveSnapshot, EntryCompression, EntryRecord};
+pub use archive::{ArchiveSnapshot, EntryCompression, EntryRecord, PhysicalSpan};
