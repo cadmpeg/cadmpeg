@@ -163,18 +163,18 @@ pub fn decode(
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, args.options(), forced)?;
+    let loaded = loader::load_artifact(registry, path, args.options(), forced)?;
     export_ir(
         registry,
         &loaded.ir,
-        loaded.source_fidelity.as_ref(),
+        loaded.fidelity(),
         Format::Cadir,
         out,
         path,
         force,
         None,
     )?;
-    if let Some(report) = &loaded.decode_report {
+    if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
     write_command_report(
@@ -182,7 +182,7 @@ pub fn decode(
         report_path,
         force,
         "decode",
-        loaded.decode_report.as_ref(),
+        loaded.decode_report(),
         None,
         None,
     )?;
@@ -197,15 +197,15 @@ pub fn validate_cmd(
     args: &DecodeArgs,
     json: bool,
 ) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, args.options(), forced)?;
+    let loaded = loader::load_artifact(registry, path, args.options(), forced)?;
     let mut stdout = io::stdout();
-    if let Some(report) = &loaded.decode_report {
+    if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
     let report = validate_ir(
         &loaded.ir,
-        loaded.source_fidelity.as_ref(),
-        losses(loaded.decode_report.as_ref()),
+        loaded.fidelity(),
+        losses(loaded.decode_report()),
     );
     if json {
         writeln!(
@@ -214,7 +214,7 @@ pub fn validate_cmd(
             serde_json::to_string_pretty(&serde_json::json!({
                 "schema_version": CLI_SCHEMA_VERSION,
                 "command": "validate",
-                "decode_report": loaded.decode_report,
+                "decode_report": loaded.decode_report(),
                 "validation_report": report,
             }))?
         )?;
@@ -264,18 +264,18 @@ pub fn export(
         forced_input,
     } = settings;
     let format = resolve_format(format, out)?;
-    let loaded = loader::load_ir(registry, path, args.options(), forced_input)?;
-    if let Some(report) = &loaded.decode_report {
+    let loaded = loader::load_artifact(registry, path, args.options(), forced_input)?;
+    if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
         eprintln!("note: export skips IR validation; use `convert` to validate");
     }
-    if let Some(refusal) = lossy_refusal(reject_lossy, loaded.decode_report.as_ref(), format) {
+    if let Some(refusal) = lossy_refusal(reject_lossy, loaded.decode_report(), format) {
         write_command_report(
             path,
             report_path.as_deref(),
             force,
             "export",
-            loaded.decode_report.as_ref(),
+            loaded.decode_report(),
             None,
             None,
         )?;
@@ -283,7 +283,7 @@ pub fn export(
     }
     if format.is_geometry_export()
         && loaded
-            .decode_report
+            .decode_report()
             .as_ref()
             .is_some_and(|report| !report.geometry_transferred)
         && !allow_empty
@@ -293,7 +293,7 @@ pub fn export(
             report_path.as_deref(),
             force,
             "export",
-            loaded.decode_report.as_ref(),
+            loaded.decode_report(),
             None,
             None,
         )?;
@@ -305,7 +305,7 @@ pub fn export(
     let report = export_ir(
         registry,
         &loaded.ir,
-        loaded.source_fidelity.as_ref(),
+        loaded.fidelity(),
         format,
         out,
         path,
@@ -317,7 +317,7 @@ pub fn export(
         report_path.as_deref(),
         force,
         "export",
-        loaded.decode_report.as_ref(),
+        loaded.decode_report(),
         None,
         Some(&report),
     )
@@ -333,21 +333,19 @@ pub fn convert(
     args: &DecodeArgs,
 ) -> Result<()> {
     let format = resolve_format(format, out)?;
-    let loaded = loader::load_ir(registry, path, args.options(), settings.forced_input)?;
+    let loaded = loader::load_artifact(registry, path, args.options(), settings.forced_input)?;
     let mut stderr = io::stderr();
-    if let Some(report) = &loaded.decode_report {
+    if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut stderr, report)?;
         writeln!(stderr)?;
     }
-    if let Some(refusal) =
-        lossy_refusal(settings.reject_lossy, loaded.decode_report.as_ref(), format)
-    {
+    if let Some(refusal) = lossy_refusal(settings.reject_lossy, loaded.decode_report(), format) {
         write_command_report(
             path,
             settings.report.as_deref(),
             settings.force,
             "convert",
-            loaded.decode_report.as_ref(),
+            loaded.decode_report(),
             None,
             None,
         )?;
@@ -355,8 +353,8 @@ pub fn convert(
     }
     let validation = validate_ir(
         &loaded.ir,
-        loaded.source_fidelity.as_ref(),
-        losses(loaded.decode_report.as_ref()),
+        loaded.fidelity(),
+        losses(loaded.decode_report()),
     );
     print_validation_report(&mut stderr, &validation)?;
     if !validation.is_ok() && !settings.allow_invalid {
@@ -365,7 +363,7 @@ pub fn convert(
             settings.report.as_deref(),
             settings.force,
             "convert",
-            loaded.decode_report.as_ref(),
+            loaded.decode_report(),
             Some(&validation),
             None,
         )?;
@@ -376,7 +374,7 @@ pub fn convert(
     }
     if format.is_geometry_export()
         && loaded
-            .decode_report
+            .decode_report()
             .as_ref()
             .is_some_and(|report| !report.geometry_transferred)
         && !settings.allow_empty
@@ -386,7 +384,7 @@ pub fn convert(
             settings.report.as_deref(),
             settings.force,
             "convert",
-            loaded.decode_report.as_ref(),
+            loaded.decode_report(),
             Some(&validation),
             None,
         )?;
@@ -398,7 +396,7 @@ pub fn convert(
     let report = export_ir(
         registry,
         &loaded.ir,
-        loaded.source_fidelity.as_ref(),
+        loaded.fidelity(),
         format,
         out,
         path,
@@ -410,7 +408,7 @@ pub fn convert(
         settings.report.as_deref(),
         settings.force,
         "convert",
-        loaded.decode_report.as_ref(),
+        loaded.decode_report(),
         Some(&validation),
         Some(&report),
     )
@@ -424,13 +422,10 @@ pub fn diff(
     args: &DecodeArgs,
     json: bool,
 ) -> Result<ExitCode> {
-    let left = loader::load_ir(registry, a, args.options(), None)?;
-    let right = loader::load_ir(registry, b, args.options(), None)?;
+    let left = loader::load_artifact(registry, a, args.options(), None)?;
+    let right = loader::load_artifact(registry, b, args.options(), None)?;
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
-    let fidelity = fidelity_diff(
-        left.source_fidelity.as_ref(),
-        right.source_fidelity.as_ref(),
-    );
+    let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
     let different = !result.is_empty() || fidelity_differs(&fidelity);
     if json {
         println!(

@@ -46,4 +46,20 @@ impl DocumentArtifact {
             },
         }
     }
+
+    /// Returns the native decode report, when this artifact has decoded origin.
+    pub const fn decode_report(&self) -> Option<&DecodeReport> {
+        match &self.origin {
+            DocumentOrigin::Neutral => None,
+            DocumentOrigin::Decoded { report, .. } => Some(report),
+        }
+    }
+
+    /// Returns source fidelity, when this artifact has decoded origin.
+    pub const fn fidelity(&self) -> Option<&SourceFidelity> {
+        match &self.origin {
+            DocumentOrigin::Neutral => None,
+            DocumentOrigin::Decoded { fidelity, .. } => Some(fidelity),
+        }
+    }
 }

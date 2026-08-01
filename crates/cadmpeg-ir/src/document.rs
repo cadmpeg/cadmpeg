@@ -240,14 +240,22 @@ impl CadIr {
 
     /// Parse JSON and reject any unsupported `ir_version`.
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        let value: serde_json::Value = serde_json::from_str(s)?;
-        let version = value.get("ir_version").and_then(serde_json::Value::as_str);
+        #[derive(Deserialize)]
+        struct VersionProbe {
+            ir_version: Option<serde_json::Value>,
+        }
+
+        let probe: VersionProbe = serde_json::from_str(s)?;
+        let version = probe
+            .ir_version
+            .as_ref()
+            .and_then(serde_json::Value::as_str);
         if version != Some(IR_VERSION) {
             return Err(<serde_json::Error as serde::de::Error>::custom(format!(
                 "unsupported ir_version {version:?}; expected {IR_VERSION}"
             )));
         }
-        serde_json::from_value(value)
+        serde_json::from_str(s)
     }
 
     /// Sort model, native, and unknown-record arenas by identity.
