@@ -3302,7 +3302,8 @@ pub(crate) fn project_extrude(
     let fixed_along = scope
         .fixed_extrude_parameters
         .as_ref()
-        .map(|fixed| Length(fixed.along_distance * 10.0));
+        .and_then(|fixed| fixed.along_distance.as_ref())
+        .map(|fixed| Length(fixed.value * 10.0));
     let along = match (parameter_along, fixed_along) {
         (Some(parameter), Some(fixed)) if (parameter.0 - fixed.0).abs() <= 1.0e-9 => {
             Some(parameter)
@@ -3323,10 +3324,12 @@ pub(crate) fn project_extrude(
         Some(parameter) => Some(design_length(parameter)?),
         None => None,
     };
+    let effective_side_one_offset = side_one_offset.filter(|offset| offset.0 != 0.0);
     let side_two_offset = match unique("Side2Offset")? {
         Some(parameter) => Some(design_length(parameter)?),
         None => None,
-    };
+    }
+    .filter(|offset| offset.0 != 0.0);
     if side_two_offset.is_some() {
         return None;
     }
@@ -3379,7 +3382,7 @@ pub(crate) fn project_extrude(
             if along.0 != 0.0
                 && !prologue.direction_reversed()
                 && termination_groups.is_empty()
-                && side_one_offset.is_none() =>
+                && effective_side_one_offset.is_none() =>
         {
             (
                 ExtentShape::OneSided(Termination::Blind {
@@ -3393,7 +3396,7 @@ pub(crate) fn project_extrude(
                 && against.0 != 0.0
                 && !prologue.direction_reversed()
                 && termination_groups.is_empty()
-                && side_one_offset.is_none() =>
+                && effective_side_one_offset.is_none() =>
         {
             (
                 ExtentShape::TwoSided {
@@ -3411,7 +3414,7 @@ pub(crate) fn project_extrude(
             if along.0 != 0.0
                 && !prologue.direction_reversed()
                 && termination_groups.is_empty()
-                && side_one_offset.is_none() =>
+                && effective_side_one_offset.is_none() =>
         {
             (
                 ExtentShape::Symmetric(Termination::Blind {
@@ -3452,7 +3455,8 @@ pub(crate) fn project_extrude(
     let fixed_draft = scope
         .fixed_extrude_parameters
         .as_ref()
-        .map(|fixed| Angle(fixed.taper_angle));
+        .and_then(|fixed| fixed.taper_angle.as_ref())
+        .map(|fixed| Angle(fixed.value));
     let draft = match (parameter_draft, fixed_draft) {
         (Some(parameter), Some(fixed)) if (parameter.0 - fixed.0).abs() <= 1.0e-12 => {
             Some(parameter)

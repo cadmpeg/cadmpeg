@@ -1967,18 +1967,39 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .filter(|parameter| parameter.source_kind == source_kind)
                     .count()
             };
+            let parameter_kind_values = |source_kind: &str| {
+                native
+                    .design_parameter_owners
+                    .iter()
+                    .filter(|owner| {
+                        design_stream(&owner.id) == native_stream
+                            && owner.scope_record_index == scope.record_index
+                    })
+                    .filter_map(|owner| {
+                        parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                    })
+                    .filter(|parameter| parameter.source_kind == source_kind)
+                    .map(|parameter| parameter.evaluated_value)
+                    .collect::<Vec<_>>()
+            };
             let along_count = parameter_kind_count("AlongDistance");
             let against_count = parameter_kind_count("AgainstDistance");
             let profile_offset_count = parameter_kind_count("ProfileOffset");
             let side_one_offset_count = parameter_kind_count("Side1Offset");
+            let side_one_offsets = parameter_kind_values("Side1Offset");
+            let side_one_offset_is_absent = side_one_offsets.is_empty()
+                || matches!(side_one_offsets.as_slice(), [offset] if *offset == 0.0);
             let has_fixed_extrude_parameters = scope.fixed_extrude_parameters.is_some();
-            let has_one_along_carrier =
-                along_count <= 1 && (along_count == 1 || has_fixed_extrude_parameters);
+            let has_fixed_along = scope
+                .fixed_extrude_parameters
+                .as_ref()
+                .is_some_and(|fixed| fixed.along_distance.is_some());
+            let has_one_along_carrier = along_count <= 1 && (along_count == 1 || has_fixed_along);
             let extent_matches_operands = match extrude_extent {
                 records::DesignExtrudeExtent::OneSidedDistance => {
                     has_one_along_carrier
                         && against_count == 0
-                        && side_one_offset_count == 0
+                        && side_one_offset_is_absent
                         && !prologue.direction_reversed()
                 }
                 records::DesignExtrudeExtent::OneSidedToFace => {
@@ -1997,7 +2018,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 records::DesignExtrudeExtent::SymmetricDistance => {
                     has_one_along_carrier
                         && against_count == 0
-                        && side_one_offset_count == 0
+                        && side_one_offset_is_absent
                         && !prologue.direction_reversed()
                 }
             };

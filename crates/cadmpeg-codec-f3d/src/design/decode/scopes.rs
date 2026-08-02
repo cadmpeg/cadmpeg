@@ -18,11 +18,11 @@ use crate::records::{
     DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
     DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
-    DesignMirrorConstruction, DesignMoveOperation, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecordHeader, DesignRectangularPatternConstruction,
-    DesignRectangularPatternInstances, DesignScaleOperation, DesignSolidPrimitive,
-    DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
+    DesignFixedExtrudeScalar, DesignFixedFilletGroup, DesignFixedFilletParameters,
+    DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignRectangularPatternConstruction, DesignRectangularPatternInstances, DesignScaleOperation,
+    DesignSolidPrimitive, DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
 };
 use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -1764,7 +1764,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
     {
         return None;
     }
-    let lanes = scope
+    let fixed_lanes = scope
         .reference_members
         .iter()
         .filter_map(|record_index| {
@@ -1773,22 +1773,104 @@ pub(crate) fn exact_fixed_extrude_parameters(
                 .then_some((*record_index, scalar))
         })
         .collect::<Vec<_>>();
-    let [(along_distance_record_index, along), (taper_angle_record_index, taper)] =
-        lanes.as_slice()
-    else {
+    let embedded_distances = scope
+        .reference_members
+        .iter()
+        .filter_map(|record_index| {
+            exact_embedded_extrude_distance(bytes, records, *record_index, scope.record_index)
+                .map(|scalar| (*record_index, scalar))
+        })
+        .collect::<Vec<_>>();
+    if fixed_lanes.len() > 2 || embedded_distances.len() > 1 {
         return None;
-    };
-    if along.ordinal != 0 || taper.ordinal != 1 || along.value == 0.0 {
+    }
+    let mut along_distance =
+        embedded_distances
+            .first()
+            .map(|(record_index, lane)| DesignFixedExtrudeScalar {
+                value: lane.value,
+                record_index: *record_index,
+                value_offset: lane.value_offset,
+            });
+    let mut taper_angle = None;
+    let mut seen_fixed_ordinals = [false; 2];
+    for (record_index, lane) in fixed_lanes {
+        let ordinal = usize::from(lane.ordinal);
+        if ordinal >= seen_fixed_ordinals.len() || seen_fixed_ordinals[ordinal] {
+            return None;
+        }
+        seen_fixed_ordinals[ordinal] = true;
+        let scalar = DesignFixedExtrudeScalar {
+            value: lane.value,
+            record_index,
+            value_offset: lane.value_offset,
+        };
+        match lane.ordinal {
+            0 if lane.value != 0.0 && along_distance.is_none() => {
+                along_distance = Some(scalar);
+            }
+            0 if along_distance.is_some() && lane.value == 0.0 => {}
+            1 if taper_angle.is_none() => taper_angle = Some(scalar),
+            _ => return None,
+        }
+    }
+    if along_distance.is_none() && taper_angle.is_none() {
         return None;
     }
     Some(DesignFixedExtrudeParameters {
-        along_distance: along.value,
-        along_distance_record_index: *along_distance_record_index,
-        along_distance_offset: along.value_offset,
-        taper_angle: taper.value,
-        taper_angle_record_index: *taper_angle_record_index,
-        taper_angle_offset: taper.value_offset,
+        along_distance,
+        taper_angle,
     })
+}
+
+fn exact_embedded_extrude_distance(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    scope_record_index: u32,
+) -> Option<FixedScalarFrame> {
+    let candidates = records
+        .frames(record_index)
+        .filter_map(|(start, end)| {
+            (end.checked_sub(start)? == 100).then_some(())?;
+            let (class_tag, after_tag) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+            let first_auxiliary = record_index.checked_add(1)?;
+            let second_auxiliary = record_index.checked_add(2)?;
+            if after_tag != start + 7
+                || class_tag.len() != 3
+                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+                || marked_record_reference(bytes, start + 21)? != scope_record_index
+                || bytes.get(start + 26..start + 32) != Some(&[0; 6])
+                || u32_at(bytes, start + 32)? != 1
+                || marked_record_reference(bytes, start + 36).is_none()
+                || bytes.get(start + 41..start + 47) != Some(&[0; 6])
+                || u32_at(bytes, start + 47)? != 210
+                || u32_at(bytes, start + 59)? != 210
+                || marked_record_reference(bytes, start + 63)? != second_auxiliary
+                || bytes.get(start + 68..start + 74) != Some(&[0; 6])
+                || bytes.get(start + 74..start + 77) != Some(&[1, 0, 0])
+                || marked_record_reference(bytes, start + 77)? != first_auxiliary
+                || bytes.get(start + 82..start + 89) != Some(&[0; 7])
+                || marked_record_reference(bytes, start + 89)? != scope_record_index
+                || bytes.get(start + 94..start + 100) != Some(&[0; 6])
+            {
+                return None;
+            }
+            let value = f64_at(bytes, start + 51)?;
+            (value.is_finite() && value != 0.0).then_some(FixedScalarFrame {
+                owner_record_index: Some(scope_record_index),
+                ordinal: 0,
+                value,
+                value_offset: u64::try_from(start + 51).ok()?,
+            })
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 pub(crate) fn exact_fixed_fillet_parameters(

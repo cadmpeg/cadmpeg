@@ -1014,21 +1014,26 @@ pub struct DesignMoveOperation {
     pub form_offset: u64,
 }
 
+/// One exact scalar carrier used by an Extrude scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedExtrudeScalar {
+    /// Scalar value in source centimetres for a distance or radians for an angle.
+    pub value: f64,
+    /// Referenced record carrying the scalar.
+    pub record_index: u32,
+    /// Byte offset of the scalar.
+    pub value_offset: u64,
+}
+
 /// Exact fixed scalar lanes carried by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignFixedExtrudeParameters {
-    /// Signed one-sided distance in source centimetres.
-    pub along_distance: f64,
-    /// Referenced distance scalar record.
-    pub along_distance_record_index: u32,
-    /// Byte offset of the distance scalar.
-    pub along_distance_offset: u64,
-    /// Taper angle in radians.
-    pub taper_angle: f64,
-    /// Referenced taper-angle scalar record.
-    pub taper_angle_record_index: u32,
-    /// Byte offset of the taper-angle scalar.
-    pub taper_angle_offset: u64,
+    /// Signed one-sided distance lane in source centimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub along_distance: Option<DesignFixedExtrudeScalar>,
+    /// Taper-angle lane in radians.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taper_angle: Option<DesignFixedExtrudeScalar>,
 }
 
 /// Exact fixed scalar lanes carried by a Fillet scope.

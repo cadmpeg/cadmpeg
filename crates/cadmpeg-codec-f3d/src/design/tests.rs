@@ -114,10 +114,10 @@ use crate::records::{
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
     DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
-    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader, DesignScaleOperation,
-    DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
+    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletParameters,
+    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
+    DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceStitchOperation, DesignTopologyRecipeSide, LostEdgeReference,
     PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
     SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface, DESIGN_MODULE_SKETCH,
@@ -4708,15 +4708,105 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &extrude_scope
         ),
         Some(DesignFixedExtrudeParameters {
-            along_distance: -2.0,
-            along_distance_record_index: 75,
-            along_distance_offset: (bytes.len() - 2 * 115 + 40) as u64,
-            taper_angle: 0.0,
-            taper_angle_record_index: 76,
-            taper_angle_offset: (bytes.len() - 115 + 40) as u64,
+            along_distance: Some(DesignFixedExtrudeScalar {
+                value: -2.0,
+                record_index: 75,
+                value_offset: (bytes.len() - 2 * 115 + 40) as u64,
+            }),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: 0.0,
+                record_index: 76,
+                value_offset: (bytes.len() - 115 + 40) as u64,
+            }),
         })
     );
+    extrude_scope.reference_members = vec![50, 75, 51];
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeScalar {
+                value: -2.0,
+                record_index: 75,
+                value_offset: (bytes.len() - 2 * 115 + 40) as u64,
+            }),
+            taper_angle: None,
+        })
+    );
+    extrude_scope.reference_members = vec![50, 75, 76, 51];
     extrude_scope.reference_members.push(75);
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
+        None
+    );
+
+    let embedded_default_at = bytes.len();
+    for (record_index, ordinal) in [(273u32, 0u8), (274, 1)] {
+        let mut scalar = vec![0; 104];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"277");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        scalar[35] = ordinal;
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"261");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&scalar);
+    }
+    let embedded_distance_at = bytes.len();
+    let embedded_distance_record_index = 275u32;
+    let mut embedded_distance = vec![0; 100];
+    embedded_distance[0..4].copy_from_slice(&3u32.to_le_bytes());
+    embedded_distance[4..7].copy_from_slice(b"314");
+    embedded_distance[7..11].copy_from_slice(&embedded_distance_record_index.to_le_bytes());
+    embedded_distance[21] = 1;
+    embedded_distance[22..26].copy_from_slice(&scope.record_index.to_le_bytes());
+    embedded_distance[32..36].copy_from_slice(&1u32.to_le_bytes());
+    embedded_distance[36] = 1;
+    embedded_distance[37..41].copy_from_slice(&999u32.to_le_bytes());
+    embedded_distance[47..51].copy_from_slice(&210u32.to_le_bytes());
+    embedded_distance[51..59].copy_from_slice(&0.25f64.to_le_bytes());
+    embedded_distance[59..63].copy_from_slice(&210u32.to_le_bytes());
+    embedded_distance[63] = 1;
+    embedded_distance[64..68].copy_from_slice(&(embedded_distance_record_index + 2).to_le_bytes());
+    embedded_distance[74] = 1;
+    embedded_distance[77] = 1;
+    embedded_distance[78..82].copy_from_slice(&(embedded_distance_record_index + 1).to_le_bytes());
+    embedded_distance[89] = 1;
+    embedded_distance[90..94].copy_from_slice(&scope.record_index.to_le_bytes());
+    embedded_distance.extend_from_slice(&3u32.to_le_bytes());
+    embedded_distance.extend_from_slice(b"258");
+    embedded_distance.extend_from_slice(&embedded_distance_record_index.to_le_bytes());
+    bytes.extend_from_slice(&embedded_distance);
+    extrude_scope.reference_members = vec![50, 273, 274, embedded_distance_record_index, 51];
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeScalar {
+                value: 0.25,
+                record_index: embedded_distance_record_index,
+                value_offset: (embedded_distance_at + 51) as u64,
+            }),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: 0.0,
+                record_index: 274,
+                value_offset: (embedded_default_at + 115 + 40) as u64,
+            }),
+        })
+    );
+    extrude_scope.reference_members.insert(2, 273);
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
@@ -13665,6 +13755,39 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if profile == &neutral_sketch_id(&placement)
     ));
+    scope.fixed_extrude_parameters = Some(DesignFixedExtrudeParameters {
+        along_distance: Some(DesignFixedExtrudeScalar {
+            value: 0.55,
+            record_index: 105,
+            value_offset: 600,
+        }),
+        taper_angle: None,
+    });
+    let zero_side_offset = parameter("Side1Offset", "mm", 0.0);
+    let hybrid = project_extrude(
+        &scope,
+        &[(0, &zero_side_offset), (1, &taper)],
+        &[body_group.clone(), profile_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .expect("typed hybrid fixed-distance Extrude");
+    assert!(matches!(
+        hybrid,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.5)
+                    },
+                    offset: None,
+                    ..
+                },
+            },
+            ..
+        }
+    ));
+    scope.fixed_extrude_parameters = None;
     let mut native_profile_scope = scope.clone();
     native_profile_scope.extrude_profile = None;
     let reversed_native_profile = project_extrude(
