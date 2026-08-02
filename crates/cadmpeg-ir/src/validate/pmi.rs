@@ -46,13 +46,13 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect::<HashSet<_>>();
     let products = ir
         .model
-        .products
+        .product_definitions
         .iter()
         .map(|item| item.id.as_str())
         .collect::<HashSet<_>>();
     let occurrences = ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
         .map(|item| item.id.as_str())
         .collect::<HashSet<_>>();

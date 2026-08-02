@@ -100,8 +100,8 @@ pub struct ViewPresentation {
 // Named presentation layers and their model-item membership.
 
 use crate::ids::{
-    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId, ProductId, SurfaceId,
-    VertexId,
+    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId, ProductDefinitionId,
+    SurfaceId, VertexId,
 };
 
 /// A model or presentation object assigned to a layer.
@@ -146,7 +146,7 @@ pub enum PresentationItem {
     /// Product prototype.
     Product {
         /// Assigned product.
-        product: ProductId,
+        product: ProductDefinitionId,
     },
     /// Product occurrence.
     Occurrence {

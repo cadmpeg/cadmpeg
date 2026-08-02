@@ -7,7 +7,7 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
     AppearanceId, BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId,
-    ProductId, SurfaceId, VertexId,
+    ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::topology::Color;
@@ -371,7 +371,7 @@ fn presentation_item(
                 .contains(&format!("step:product:product#{id}")) =>
         {
             PresentationItem::Product {
-                product: ProductId(format!("step:product:product#{id}")),
+                product: ProductDefinitionId(format!("step:product:product#{id}")),
             }
         }
         Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
