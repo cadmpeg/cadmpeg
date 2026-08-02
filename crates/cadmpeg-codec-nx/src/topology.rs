@@ -398,35 +398,40 @@ pub struct CompositeCurve {
 
 /// Decode validated type-38 surface-intersection construction records.
 pub fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
-    Graph::parse(stream)
-        .of_kind(38)
-        .filter_map(|node| {
-            let mut at = 8 + node.shift;
-            let header = read_sequence_at(&node.bytes, &mut at, 5)?;
-            let sense = match node.bytes.get(at) {
-                Some(b'+') => true,
-                Some(b'-') => false,
-                _ => return None,
-            };
-            at += 1;
-            let references: [u32; 6] =
-                read_sequence_at(&node.bytes, &mut at, 6)?.try_into().ok()?;
-            let chart_with_optional_terms =
-                references[2] > 1 && references[3..=4].iter().all(|reference| *reference >= 1);
-            let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
-            (references.iter().all(|reference| *reference != 0)
-                && (chart_with_optional_terms || null_witness)
-                && (references[0] > 1 || references[1] > 1))
-                .then_some(CompositeCurve {
-                    xmt: node.xmt,
-                    header_references: header.try_into().ok()?,
-                    sense,
-                    references,
-                    delta_twin: false,
-                    pos: node.pos,
-                })
-        })
-        .collect()
+    Graph::parse(stream).composite_curves()
+}
+
+impl Graph {
+    pub(crate) fn composite_curves(&self) -> Vec<CompositeCurve> {
+        self.of_kind(38)
+            .filter_map(|node| {
+                let mut at = 8 + node.shift;
+                let header = read_sequence_at(&node.bytes, &mut at, 5)?;
+                let sense = match node.bytes.get(at) {
+                    Some(b'+') => true,
+                    Some(b'-') => false,
+                    _ => return None,
+                };
+                at += 1;
+                let references: [u32; 6] =
+                    read_sequence_at(&node.bytes, &mut at, 6)?.try_into().ok()?;
+                let chart_with_optional_terms =
+                    references[2] > 1 && references[3..=4].iter().all(|reference| *reference >= 1);
+                let null_witness = references[2..=4].iter().all(|reference| *reference == 1);
+                (references.iter().all(|reference| *reference != 0)
+                    && (chart_with_optional_terms || null_witness)
+                    && (references[0] > 1 || references[1] > 1))
+                    .then_some(CompositeCurve {
+                        xmt: node.xmt,
+                        header_references: header.try_into().ok()?,
+                        sense,
+                        references,
+                        delta_twin: false,
+                        pos: node.pos,
+                    })
+            })
+            .collect()
+    }
 }
 
 /// Decode single-byte `0x5a` intersection-data construction records.
@@ -504,95 +509,110 @@ pub(crate) fn intersection_data_curve_at(
 
 /// Decode validated type-56 rolling-ball blend surfaces.
 pub fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
-    Graph::parse(stream)
-        .of_kind(56)
-        .filter_map(|node| {
-            let mut at = node.compact_tail_offset()?;
-            (*node.bytes.get(at)? == b'R').then_some(())?;
-            at += 1;
-            let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
-            let values = [
-                be::f64_at(&node.bytes, at)?,
-                be::f64_at(&node.bytes, at + 8)?,
-                be::f64_at(&node.bytes, at + 16)?,
-                be::f64_at(&node.bytes, at + 24)?,
-            ];
-            if !values.iter().all(|value| value.is_finite())
-                || node.bytes.get(at + 32..at + 40)? != [0, 1, 0, 1, 0, 1, 0, 1]
-                || refs[0] <= 1
-                || refs[1] <= 1
-                || values[0] == 0.0
-                || values[1] == 0.0
-                || !(values[0] * 1000.0).is_finite()
-                || !(values[1] * 1000.0).is_finite()
-                || (values[0].abs() - values[1].abs()).abs() > 1.0e-9
-            {
-                return None;
-            }
-            Some(BlendSurface {
-                xmt: node.xmt,
-                supports: [refs[0], refs[1]],
-                spine: refs[2],
-                offsets: [values[0] * 1000.0, values[1] * 1000.0],
-                thumb_weights: [values[2], values[3]],
-                pos: node.pos,
+    Graph::parse(stream).blend_surfaces()
+}
+
+impl Graph {
+    pub(crate) fn blend_surfaces(&self) -> Vec<BlendSurface> {
+        self.of_kind(56)
+            .filter_map(|node| {
+                let mut at = node.compact_tail_offset()?;
+                (*node.bytes.get(at)? == b'R').then_some(())?;
+                at += 1;
+                let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
+                let values = [
+                    be::f64_at(&node.bytes, at)?,
+                    be::f64_at(&node.bytes, at + 8)?,
+                    be::f64_at(&node.bytes, at + 16)?,
+                    be::f64_at(&node.bytes, at + 24)?,
+                ];
+                if !values.iter().all(|value| value.is_finite())
+                    || node.bytes.get(at + 32..at + 40)? != [0, 1, 0, 1, 0, 1, 0, 1]
+                    || refs[0] <= 1
+                    || refs[1] <= 1
+                    || values[0] == 0.0
+                    || values[1] == 0.0
+                    || !(values[0] * 1000.0).is_finite()
+                    || !(values[1] * 1000.0).is_finite()
+                    || (values[0].abs() - values[1].abs()).abs() > 1.0e-9
+                {
+                    return None;
+                }
+                Some(BlendSurface {
+                    xmt: node.xmt,
+                    supports: [refs[0], refs[1]],
+                    spine: refs[2],
+                    offsets: [values[0] * 1000.0, values[1] * 1000.0],
+                    thumb_weights: [values[2], values[3]],
+                    pos: node.pos,
+                })
             })
-        })
-        .collect()
+            .collect()
+    }
 }
 
 /// Decode validated type-60 offset-surface records.
 pub fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
-    Graph::parse(stream)
-        .of_kind(60)
-        .filter_map(|node| {
-            let mut at = node.compact_tail_offset()?;
-            let discriminator = match node.bytes.get(at)? {
-                b'V' => 'V',
-                b'I' => 'I',
-                b'U' => 'U',
-                _ => return None,
-            };
-            at += 1;
-            let true_offset = match node.bytes.get(at)? {
-                0 => false,
-                1 => true,
-                _ => return None,
-            };
-            at += 1;
-            let support = read_and_advance(&node.bytes, &mut at)?;
-            let distance = be::f64_at(&node.bytes, at)?;
-            let distance = distance * 1000.0;
-            (support > 1 && distance.is_finite()).then_some(OffsetSurface {
-                xmt: node.xmt,
-                discriminator,
-                true_offset,
-                support,
-                distance,
-                pos: node.pos,
+    Graph::parse(stream).offset_surfaces()
+}
+
+impl Graph {
+    pub(crate) fn offset_surfaces(&self) -> Vec<OffsetSurface> {
+        self.of_kind(60)
+            .filter_map(|node| {
+                let mut at = node.compact_tail_offset()?;
+                let discriminator = match node.bytes.get(at)? {
+                    b'V' => 'V',
+                    b'I' => 'I',
+                    b'U' => 'U',
+                    _ => return None,
+                };
+                at += 1;
+                let true_offset = match node.bytes.get(at)? {
+                    0 => false,
+                    1 => true,
+                    _ => return None,
+                };
+                at += 1;
+                let support = read_and_advance(&node.bytes, &mut at)?;
+                let distance = be::f64_at(&node.bytes, at)?;
+                let distance = distance * 1000.0;
+                (support > 1 && distance.is_finite()).then_some(OffsetSurface {
+                    xmt: node.xmt,
+                    discriminator,
+                    true_offset,
+                    support,
+                    distance,
+                    pos: node.pos,
+                })
             })
-        })
-        .collect()
+            .collect()
+    }
 }
 
 /// Decode type-137 surface-curve records as aliases of their 3D basis curves.
 pub fn surface_curves(stream: &[u8]) -> Vec<SurfaceCurve> {
-    Graph::parse(stream)
-        .of_kind(137)
-        .filter_map(|node| {
-            let mut at = node.compact_tail_offset()?;
-            let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
-            let tolerance = be::f64_at(&node.bytes, at)?;
-            (refs[0] > 1 && refs[1] > 1 && tolerance.is_finite()).then_some(SurfaceCurve {
-                xmt: node.xmt,
-                surface: refs[0],
-                pcurve: refs[1],
-                original: refs[2],
-                tolerance,
-                pos: node.pos,
+    Graph::parse(stream).surface_curves()
+}
+
+impl Graph {
+    pub(crate) fn surface_curves(&self) -> Vec<SurfaceCurve> {
+        self.of_kind(137)
+            .filter_map(|node| {
+                let mut at = node.compact_tail_offset()?;
+                let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
+                let tolerance = be::f64_at(&node.bytes, at)?;
+                (refs[0] > 1 && refs[1] > 1 && tolerance.is_finite()).then_some(SurfaceCurve {
+                    xmt: node.xmt,
+                    surface: refs[0],
+                    pcurve: refs[1],
+                    original: refs[2],
+                    tolerance,
+                    pos: node.pos,
+                })
             })
-        })
-        .collect()
+            .collect()
+    }
 }
 
 /// Decode supported type-133 trimmed-curve records.
@@ -600,36 +620,39 @@ pub fn surface_curves(stream: &[u8]) -> Vec<SurfaceCurve> {
 /// The result retains the basis-curve reference and parameter range. Topological
 /// endpoints come from the corresponding edge and vertex records.
 pub fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
-    Graph::parse(stream)
-        .of_kind(133)
-        .filter_map(|node| {
-            let mut at = node.compact_tail_offset()?;
-            let basis = read_and_advance(&node.bytes, &mut at)?;
-            let mut point_0 = be::vec3_at(&node.bytes, at)?;
-            let mut point_1 = be::vec3_at(&node.bytes, at + 24)?;
-            if point_0
-                .iter()
-                .chain(point_1.iter())
-                .any(|coordinate| !coordinate.is_finite() || !(*coordinate * 1000.0).is_finite())
-            {
-                return None;
-            }
-            for coordinate in point_0.iter_mut().chain(point_1.iter_mut()) {
-                *coordinate *= 1000.0;
-            }
-            let p0 = node.bytes.get(at + 48..at + 56)?;
-            let p1 = node.bytes.get(at + 56..at + 64)?;
-            let p0 = f64::from_be_bytes(p0.try_into().ok()?);
-            let p1 = f64::from_be_bytes(p1.try_into().ok()?);
-            (basis > 1 && p0.is_finite() && p1.is_finite()).then_some(TrimmedCurve {
-                xmt: node.xmt,
-                basis,
-                points: [point_0, point_1],
-                parameters: [p0, p1],
-                pos: node.pos,
+    Graph::parse(stream).trimmed_curves()
+}
+
+impl Graph {
+    pub(crate) fn trimmed_curves(&self) -> Vec<TrimmedCurve> {
+        self.of_kind(133)
+            .filter_map(|node| {
+                let mut at = node.compact_tail_offset()?;
+                let basis = read_and_advance(&node.bytes, &mut at)?;
+                let mut point_0 = be::vec3_at(&node.bytes, at)?;
+                let mut point_1 = be::vec3_at(&node.bytes, at + 24)?;
+                if point_0.iter().chain(point_1.iter()).any(|coordinate| {
+                    !coordinate.is_finite() || !(*coordinate * 1000.0).is_finite()
+                }) {
+                    return None;
+                }
+                for coordinate in point_0.iter_mut().chain(point_1.iter_mut()) {
+                    *coordinate *= 1000.0;
+                }
+                let p0 = node.bytes.get(at + 48..at + 56)?;
+                let p1 = node.bytes.get(at + 56..at + 64)?;
+                let p0 = f64::from_be_bytes(p0.try_into().ok()?);
+                let p1 = f64::from_be_bytes(p1.try_into().ok()?);
+                (basis > 1 && p0.is_finite() && p1.is_finite()).then_some(TrimmedCurve {
+                    xmt: node.xmt,
+                    basis,
+                    points: [point_0, point_1],
+                    parameters: [p0, p1],
+                    pos: node.pos,
+                })
             })
-        })
-        .collect()
+            .collect()
+    }
 }
 
 impl Graph {

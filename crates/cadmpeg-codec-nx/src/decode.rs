@@ -10,7 +10,7 @@
 //!
 //! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::CodecError;
@@ -25,10 +25,10 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference, EdgeSelection,
-    ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureId, HoleKind, Length,
-    LoftPointSection, LoftSection, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, SketchSpace, SweepMode,
-    SweepOrientation, Termination, TrimRegion, VertexSelection,
+    ExtrudeExtent, ExtrudeStart, FaceSelection, Feature, FeatureDefinition, FeatureId, HoleKind,
+    Length, LoftPointSection, LoftSection, ParameterId, PathRef, PatternKind, ProfileRef,
+    RadiusSpec, RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, SketchSpace,
+    SweepMode, SweepOrientation, Termination, TrimRegion, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -51,7 +51,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
-use crate::container::{self, Container};
+use crate::container::{self, Container, EntryContent};
 use crate::geometry;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::parasolid::{self, Stream, StreamKind};
@@ -148,7 +148,7 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
                 code: LossKind::RecordNotTyped,
                 severity: Severity::Info,
                 message: format!(
-                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not typed.",
+                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                     entry.name,
                     content.label()
                 ),
@@ -1650,6 +1650,7 @@ fn try_decode_geometry(
         !ir.model.faces.is_empty(),
         ir.model.bodies.len() > 1 && !active_body_selection,
         ir.model.tessellations.len(),
+        &model,
     );
     report_untransferred_streams(scan, &mut report);
     Some((ir, report, annotations, unknowns))
@@ -3230,26 +3231,6 @@ fn blend_surface_parameters_inner(
             return Some(parameters);
         }
     }
-    if let Some(fit_tolerance) = fit_tolerance {
-        let boundary_parameters = [0usize, 1usize].map(|boundary| {
-            blend_boundary_parameter(
-                ir,
-                surface,
-                point,
-                boundary,
-                seed.map(|seed| seed.u),
-                fit_tolerance,
-                depth + 1,
-            )
-        });
-        if let Some((parameter, boundary)) = match boundary_parameters {
-            [Some(parameter), None] => Some((parameter, 0usize)),
-            [None, Some(parameter)] => Some((parameter, 1usize)),
-            _ => None,
-        } {
-            return Some(Point2::new(parameter, boundary as f64));
-        }
-    }
     let angular =
         closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u)).and_then(|u| {
             let (center, tangent, first, second, _) =
@@ -3299,17 +3280,40 @@ fn blend_surface_parameters_inner(
     let initial = match grid {
         BlendParameterGrid::Build => coarse_blend_surface_parameters(ir, surface, point, depth + 1),
         BlendParameterGrid::Disabled => None,
-    }?;
-    let parameters =
-        refine_blend_surface_parameters(ir, surface, point, initial, depth + 1).unwrap_or(initial);
-    if !(0.0..=1.0).contains(&parameters.v) {
-        return None;
+    };
+    if let Some(initial) = initial {
+        let parameters = refine_blend_surface_parameters(ir, surface, point, initial, depth + 1)
+            .unwrap_or(initial);
+        if (0.0..=1.0).contains(&parameters.v) {
+            let candidate =
+                blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
+            let distance = point_distance(candidate, point);
+            if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
+                return Some(parameters);
+            }
+        }
     }
-    let candidate = blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
-    let distance = point_distance(candidate, point);
-    fit_tolerance
-        .is_none_or(|tolerance| distance <= tolerance)
-        .then_some(parameters)
+    if let Some(fit_tolerance) = fit_tolerance {
+        let boundary_parameters = [0usize, 1usize].map(|boundary| {
+            blend_boundary_parameter(
+                ir,
+                surface,
+                point,
+                boundary,
+                seed.map(|seed| seed.u),
+                fit_tolerance,
+                depth + 1,
+            )
+        });
+        if let Some((parameter, boundary)) = match boundary_parameters {
+            [Some(parameter), None] => Some((parameter, 0usize)),
+            [None, Some(parameter)] => Some((parameter, 1usize)),
+            _ => None,
+        } {
+            return Some(Point2::new(parameter, boundary as f64));
+        }
+    }
+    None
 }
 
 pub(crate) fn coarse_blend_surface_parameters(
@@ -3716,9 +3720,9 @@ fn blend_surface_frame(
     let center = model_curve_point(ir, &spine, u)?;
     let tangent = model_curve_tangent(ir, &spine, u)?;
     let first = spine_contact_direction(ir, &supports[0], &spine, u, center, radius, depth + 1)
-        .or_else(|| surface_contact_direction(ir, &supports[0], center, depth + 1))?;
+        .or_else(|| surface_contact_direction(ir, &supports[0], center, radius, depth + 1))?;
     let second = spine_contact_direction(ir, &supports[1], &spine, u, center, radius, depth + 1)
-        .or_else(|| surface_contact_direction(ir, &supports[1], center, depth + 1))?;
+        .or_else(|| surface_contact_direction(ir, &supports[1], center, radius, depth + 1))?;
     Some((center, tangent, first, second, radius))
 }
 
@@ -3768,27 +3772,13 @@ fn blend_boundary_parameter(
     depth: usize,
 ) -> Option<f64> {
     (depth < 32).then_some(())?;
-    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
-    let support = supports.get(boundary)?;
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == support)?;
-    let uv = match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, point, None, Some(fit_tolerance))
-        }
-        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, support, point, None),
-        geometry => analytic_surface_parameters(geometry, point),
-    }?;
-    let pcurve = spine_contact_pcurve(ir, support, &spine, radius, depth + 1)?;
-    closest_pcurve_parameters(pcurve, uv, seed)?
-        .into_iter()
-        .find(|parameter| {
-            blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
-                .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
-        })
+    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    // A circular blend's u parameter is its spine parameter. Invert that
+    // defining carrier directly, then certify the requested boundary point.
+    closest_spine_parameter(ir, &spine, point, seed).filter(|parameter| {
+        blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
+            .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -4774,6 +4764,7 @@ fn surface_contact_direction(
     ir: &CadIr,
     surface: &SurfaceId,
     center: Point3,
+    radius: f64,
     depth: usize,
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
@@ -4785,30 +4776,55 @@ fn surface_contact_direction(
         .surfaces
         .iter()
         .find(|candidate| &candidate.id == surface)?;
+    let tolerance = ir.tolerances.linear;
+    if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
+        return None;
+    }
+    let requires_radius_certificate = matches!(
+        &carrier.geometry,
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Procedural { .. }
+    );
     let parameters = match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, center, None),
-        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, surface, center, None)
-            .or_else(|| {
-                blend_surface_parameters_inner(
-                    ir,
-                    surface,
-                    center,
-                    None,
-                    None,
-                    BlendParameterGrid::Disabled,
-                    depth + 1,
-                )
-            }),
+        // The blend definition asks for a support contact at `radius` from the
+        // spine center. A tolerance-bounded inverse can stop as soon as it has
+        // constructed a point inside the enclosing radius band; the radial
+        // check below then certifies the actual contact shell. A global
+        // closest-point proof is neither required nor sufficient for this
+        // incidence question.
+        SurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_parameters_with_tolerance(nurbs, center, None, Some(radius + tolerance))
+        }
+        SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance(
+            ir,
+            surface,
+            center,
+            None,
+            Some(radius + tolerance),
+        )
+        .or_else(|| {
+            blend_surface_parameters_inner(
+                ir,
+                surface,
+                center,
+                None,
+                None,
+                BlendParameterGrid::Disabled,
+                depth + 1,
+            )
+        }),
         geometry => analytic_surface_parameters(geometry, center),
     }?;
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let contact =
         decoded_surface_point_inner(&index, surface, parameters.u, parameters.v, depth + 1)?;
-    unit_vector(Vector3::new(
+    let offset = Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
-    ))
+    );
+    (!requires_radius_certificate || (offset.norm() - radius).abs() <= tolerance)
+        .then(|| unit_vector(offset))
+        .flatten()
 }
 
 fn blend_surface_contact_direction(
@@ -5194,6 +5210,7 @@ fn rodrigues_rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn offset_surface_parameters(
     ir: &CadIr,
     surface: &SurfaceId,
@@ -5224,12 +5241,23 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
         .procedural_surfaces
         .iter()
         .find(|candidate| &candidate.id == construction && &candidate.surface == surface)?;
-    let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+    let ProceduralSurfaceDefinition::Offset {
+        support, distance, ..
+    } = &procedural.definition
+    else {
         return None;
     };
     let domain = surface_parameter_domain(ir, support);
+    // The target lies on the offset carrier, so its distance from the base
+    // carrier may be the full offset distance even for an exact fit. Enlarge
+    // only the base-surface seed search; the iterations and final caller-side
+    // evaluation still certify the requested tolerance on the offset itself.
+    let support_fit_tolerance = fit_tolerance.and_then(|tolerance| {
+        let tolerance = tolerance + distance.abs();
+        tolerance.is_finite().then_some(tolerance)
+    });
     let mut parameters = seed
-        .or_else(|| initial_surface_parameters(ir, support, point, None, fit_tolerance))
+        .or_else(|| initial_surface_parameters(ir, support, point, None, support_fit_tolerance))
         .or_else(|| {
             domain
                 .and_then(|domain| coarse_model_surface_parameters(&index, surface, point, domain))
@@ -5991,6 +6019,38 @@ struct RationalBezierSurfacePatch {
     controls: Vec<[f64; 4]>,
 }
 
+struct SurfacePatchQueueEntry {
+    lower_bound: f64,
+    diameter: f64,
+    sequence: usize,
+    patch: RationalBezierSurfacePatch,
+}
+
+impl PartialEq for SurfacePatchQueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.sequence == other.sequence
+    }
+}
+
+impl Eq for SurfacePatchQueueEntry {}
+
+impl PartialOrd for SurfacePatchQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SurfacePatchQueueEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // BinaryHeap is a max-heap; reverse the distance order so the patch
+        // with the strongest minimum-distance promise is examined first.
+        other
+            .lower_bound
+            .total_cmp(&self.lower_bound)
+            .then_with(|| other.sequence.cmp(&self.sequence))
+    }
+}
+
 fn rational_surface_residual_patches(
     surface: &NurbsSurface,
     point: Point3,
@@ -6249,7 +6309,7 @@ fn complete_nurbs_surface_starts(
 ) -> Option<Vec<Point2>> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let mut patches = rational_surface_residual_patches(surface, point)?;
+    let patches = rational_surface_residual_patches(surface, point)?;
     let coordinate_scale =
         patches
             .iter()
@@ -6348,14 +6408,39 @@ fn complete_nurbs_surface_starts(
         }
     }
     best_distance.is_finite().then_some(())?;
+    // A tolerance-bounded inverse asks for a parameter whose evaluated point
+    // reproduces the target within that tolerance, not a proof of the global
+    // minimum. The refined span seeds above are evaluated on the surface, so a
+    // fitting candidate is already a constructive certificate. Preserve the
+    // exhaustive branch-and-bound search for exact closest-point inversion.
+    if fit_tolerance.is_some() && best_distance <= squared_tolerance {
+        return (!best_upper_parameters.is_empty()).then_some(best_upper_parameters);
+    }
+    let mut queue = BinaryHeap::new();
+    let mut sequence = 0usize;
+    for patch in patches {
+        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        queue.push(SurfacePatchQueueEntry {
+            lower_bound,
+            diameter,
+            sequence,
+            patch,
+        });
+        sequence += 1;
+    }
     let mut terminal = Vec::<(Point2, f64)>::new();
     let mut examined = 0usize;
-    while let Some(patch) = patches.pop() {
+    while let Some(entry) = queue.pop() {
         examined += 1;
         if examined > MAX_PATCHES {
             return None;
         }
-        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        let SurfacePatchQueueEntry {
+            lower_bound,
+            diameter,
+            patch,
+            ..
+        } = entry;
         let comparison_tolerance = 128.0
             * f64::EPSILON
             * lower_bound
@@ -6363,11 +6448,14 @@ fn complete_nurbs_surface_starts(
                 .max(best_distance.abs())
                 .max(squared_tolerance);
         if lower_bound > best_distance + comparison_tolerance {
-            continue;
+            break;
         }
         let parameters = center(&patch);
         let (upper_parameters, center_distance) =
             refined_upper(parameters, patch.u_domain, patch.v_domain)?;
+        if fit_tolerance.is_some() && center_distance <= squared_tolerance {
+            return Some(vec![upper_parameters]);
+        }
         let upper_tolerance = 128.0
             * f64::EPSILON
             * center_distance
@@ -6422,7 +6510,16 @@ fn complete_nurbs_surface_starts(
             .fold(0.0_f64, f64::max);
         let split_u = u_variation >= v_variation;
         let children = split_rational_surface_patch(&patch, split_u)?;
-        patches.extend(children);
+        for patch in children {
+            let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+            queue.push(SurfacePatchQueueEntry {
+                lower_bound,
+                diameter,
+                sequence,
+                patch,
+            });
+            sequence += 1;
+        }
     }
     let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(squared_tolerance);
     let mut starts = terminal
@@ -6435,6 +6532,7 @@ fn complete_nurbs_surface_starts(
     (!starts.is_empty()).then_some(starts)
 }
 
+#[cfg(test)]
 pub(crate) fn nurbs_parameters(
     surface: &NurbsSurface,
     point: Point3,
@@ -9808,7 +9906,10 @@ fn build_geometry_report(
     has_topology: bool,
     has_unresolved_sub_bodies: bool,
     tessellation_count: usize,
+    model: &crate::native::NativeModel,
 ) -> DecodeReport {
+    let has_untransferred_material_assets = model.has_untransferred_material_assets();
+    let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
 
     losses.push(LossNote {
@@ -9952,15 +10053,43 @@ fn build_geometry_report(
 
     append_design_intent_losses(ir, &mut losses);
 
-    losses.push(LossNote {
-        code: LossKind::AttributesNotTransferred,
-        severity: Severity::Warning,
-        message: "Material and appearance assignment, class-specific entity attribute fields, and \
-                  assembly occurrence placements were not transferred: their remaining NX \
-                  object-model and Parasolid field serialization is not decoded."
-            .to_string(),
-        provenance: None,
-    });
+    if has_untransferred_material_assets {
+        losses.push(LossNote {
+            code: LossKind::MaterialNotTransferred,
+            severity: Severity::Warning,
+            message: "Embedded material texture assets were retained without material or \
+                      appearance assignment because their binding fields are not decoded."
+                .to_string(),
+            provenance: None,
+        });
+    }
+
+    if has_untransferred_attribute_fields {
+        losses.push(LossNote {
+            code: LossKind::AttributesNotTransferred,
+            severity: Severity::Warning,
+            message: "A referenced Parasolid attribute value or field-name record was not \
+                      transferred because its complete value relation did not resolve."
+                .to_string(),
+            provenance: None,
+        });
+    }
+
+    if scan
+        .container
+        .entries
+        .iter()
+        .any(|entry| entry.content() == EntryContent::ExternalReferences)
+    {
+        losses.push(LossNote {
+            code: LossKind::AssemblyPlacementsNotTransferred,
+            severity: Severity::Warning,
+            message: "Assembly occurrence placements were not transferred because their remaining \
+                      NX object-model field serialization is not decoded."
+                .to_string(),
+            provenance: None,
+        });
+    }
 
     DecodeReport {
         format: "nx".to_string(),
@@ -10122,11 +10251,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Block {
                 dimensions,
                 placement,
+                op,
             } if dimensions.is_none_or(|dimensions| {
                 dimensions
                     .into_iter()
                     .any(|dimension| !positive_feature_length(dimension))
-            }) || placement.is_none_or(|placement| !placement.is_proper_rigid()) =>
+            }) || placement.is_none_or(|placement| !placement.is_proper_rigid())
+                || matches!(op, BooleanOp::Unresolved) =>
             {
                 "block"
             }
@@ -10189,30 +10320,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "sketch"
             }
-            FeatureDefinition::Loft {
-                sections,
-                centerline,
-                guides,
-                op,
-                max_degree,
-                ..
-            } if sections.len() < 2
-                || sections.iter().any(loft_section_is_incomplete)
-                || sections.iter().any(|section| {
-                    matches!(
-                        section,
-                        LoftSection::Profile(profile)
-                            if profile_dependency_is_incomplete(profile, &feature.dependencies)
-                    )
-                })
-                || centerline.as_ref().is_some_and(path_ref_is_incomplete)
-                || guides.iter().any(path_ref_is_incomplete)
-                || (centerline.is_some() && !guides.is_empty())
-                || max_degree.is_some_and(|degree| degree == 0)
-                || matches!(op, BooleanOp::Unresolved) =>
-            {
-                "loft"
-            }
+            FeatureDefinition::Loft { .. } if loft_definition_is_incomplete(feature) => "loft",
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
@@ -10225,233 +10333,51 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "projected curve"
             }
-            FeatureDefinition::TrimSurface { faces, tool, keep }
-                if face_selection_is_incomplete(faces)
-                    || path_ref_is_incomplete(tool)
-                    || matches!(keep, TrimRegion::Unresolved) =>
+            FeatureDefinition::TrimSurface { .. }
+                if trim_surface_definition_is_incomplete(feature) =>
             {
                 "trim surface"
             }
-            FeatureDefinition::ExtendSurface {
-                faces,
-                distance,
-                method,
-            } if face_selection_is_incomplete(faces)
-                || distance.is_none_or(|distance| !positive_feature_length(distance))
-                || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved) =>
+            FeatureDefinition::ExtendSurface { .. }
+                if extend_surface_definition_is_incomplete(feature) =>
             {
                 "extend surface"
             }
-            FeatureDefinition::Hole {
-                profile,
-                profile_filter,
-                face,
-                position,
-                direction,
-                placements,
-                kind,
-                exit_kind,
-                diameter,
-                extent,
-                bottom,
-                taper_angle,
-                specification,
-                ..
-            } if hole_feature_is_incomplete(
-                profile.as_ref(),
-                face.as_ref(),
-                (*position, *direction),
-                placements,
-                (kind, exit_kind.as_ref()),
-                *diameter,
-                extent.as_ref(),
-            ) || hole_auxiliary_semantics_are_incomplete(
-                profile_filter.as_ref(),
-                bottom.as_ref(),
-                *taper_angle,
-                specification.as_deref(),
-            ) || extent.as_ref().is_some_and(|extent| {
-                termination_dependency_is_incomplete(extent, &feature.dependencies)
-            }) || profile.as_ref().is_some_and(|profile| {
-                profile_dependency_is_incomplete(profile, &feature.dependencies)
-            }) =>
-            {
-                "hole"
-            }
-            FeatureDefinition::Rib { construction, op }
-                if rib_feature_is_incomplete(construction, *op)
-                    || construction.profile.as_ref().is_some_and(|profile| {
-                        profile_dependency_is_incomplete(profile, &feature.dependencies)
-                    }) =>
-            {
-                "rib"
-            }
-            FeatureDefinition::Chamfer { groups, .. }
-                if groups.is_empty()
-                    || groups.iter().any(|group| {
-                        edge_selection_is_incomplete(&group.edges)
-                            || chamfer_spec_is_incomplete(&group.spec)
-                    }) =>
-            {
+            FeatureDefinition::Hole { .. } if hole_definition_is_incomplete(feature) => "hole",
+            FeatureDefinition::Rib { .. } if rib_definition_is_incomplete(feature) => "rib",
+            FeatureDefinition::Chamfer { .. } if chamfer_definition_is_incomplete(feature) => {
                 "chamfer"
             }
-            FeatureDefinition::Fillet { groups }
-                if groups.is_empty()
-                    || groups.iter().any(|group| {
-                        edge_selection_is_incomplete(&group.edges)
-                            || radius_spec_is_incomplete(&group.radius)
-                            || group
-                                .tangency_weight
-                                .is_some_and(|weight| !weight.is_finite())
-                    }) =>
-            {
+            FeatureDefinition::Fillet { .. } if fillet_definition_is_incomplete(feature) => {
                 "fillet"
             }
-            FeatureDefinition::FaceBlend {
-                first_faces,
-                second_faces,
-                radius,
-            } if face_selection_is_incomplete(first_faces)
-                || face_selection_is_incomplete(second_faces)
-                || face_selections_overlap(first_faces, second_faces)
-                || radius_spec_is_incomplete(radius) =>
-            {
+            FeatureDefinition::FaceBlend { .. } if face_blend_definition_is_incomplete(feature) => {
                 "face blend"
             }
-            FeatureDefinition::SewBodies {
-                bodies,
-                gap_tolerance,
-            } if body_selection_is_incomplete(bodies)
-                || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
-                || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance)) =>
-            {
+            FeatureDefinition::SewBodies { .. } if sew_bodies_definition_is_incomplete(feature) => {
                 "sew bodies"
             }
-            FeatureDefinition::TrimBodies {
-                targets,
-                tools,
-                keep,
-            } if body_selection_is_incomplete(targets)
-                || body_selection_is_incomplete(tools)
-                || body_selections_overlap(targets, tools)
-                || matches!(keep, BodyTrimSide::Unresolved) =>
+            FeatureDefinition::TrimBodies { .. }
+                if trim_bodies_definition_is_incomplete(feature) =>
             {
                 "trim bodies"
             }
-            FeatureDefinition::Extrude {
-                profile,
-                direction,
-                start,
-                extent,
-                op,
-                solid,
-                direction_source,
-                face_maker,
-                ..
-            } if profile_ref_is_incomplete(profile)
-                || profile_dependency_is_incomplete(profile, &feature.dependencies)
-                || matches!(
-                    direction,
-                    cadmpeg_ir::features::ExtrudeDirection::Unresolved
-                )
-                || matches!(
-                    direction,
-                    cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
-                        if !valid_feature_direction(*direction)
-                )
-                || extrude_start_is_incomplete(start)
-                || extrude_extent_is_incomplete(extent, &feature.dependencies)
-                || matches!(op, BooleanOp::Unresolved)
-                || solid.is_none()
-                || direction_source.as_ref().is_some_and(|source| {
-                    matches!(
-                        source,
-                        cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
-                            if path_ref_is_incomplete(reference)
-                    )
-                })
-                || face_maker
-                    .as_ref()
-                    .is_some_and(|maker| maker.class.trim().is_empty()) =>
-            {
+            FeatureDefinition::Extrude { .. } if extrude_definition_is_incomplete(feature) => {
                 "extrude"
             }
-            FeatureDefinition::Revolve { construction, op }
-                if revolve_feature_is_incomplete(construction, *op, &feature.dependencies) =>
-            {
+            FeatureDefinition::Revolve { .. } if revolve_definition_is_incomplete(feature) => {
                 "revolve"
             }
-            FeatureDefinition::Sweep {
-                section,
-                sections,
-                path,
-                mode,
-                orientation,
-                transition,
-                transformation,
-                twist,
-                scale,
-                ..
-            } if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-                || section
-                    .referenced_profile()
-                    .is_some_and(profile_ref_is_incomplete)
-                || section.referenced_profile().is_some_and(|profile| {
-                    profile_dependency_is_incomplete(profile, &feature.dependencies)
-                })
-                || sections.iter().any(|section| {
-                    matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-                        || section
-                            .referenced_profile()
-                            .is_some_and(profile_ref_is_incomplete)
-                })
-                || sections.iter().any(|section| {
-                    section.referenced_profile().is_some_and(|profile| {
-                        profile_dependency_is_incomplete(profile, &feature.dependencies)
-                    })
-                })
-                || path.as_ref().is_none_or(path_ref_is_incomplete)
-                || sweep_mode_is_incomplete(*mode)
-                || orientation
-                    .as_ref()
-                    .is_none_or(sweep_orientation_is_incomplete)
-                || transition.is_none()
-                || transformation.is_none()
-                || twist.is_some_and(|twist| !twist.0.is_finite())
-                || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) =>
-            {
-                "sweep"
-            }
-            FeatureDefinition::OffsetSurface { faces, distance }
-                if face_selection_is_incomplete(faces)
-                    || distance.is_none_or(|distance| !distance.0.is_finite()) =>
+            FeatureDefinition::Sweep { .. } if sweep_definition_is_incomplete(feature) => "sweep",
+            FeatureDefinition::OffsetSurface { .. }
+                if offset_surface_definition_is_incomplete(feature) =>
             {
                 "offset surface"
             }
-            FeatureDefinition::Thicken {
-                faces,
-                thickness,
-                side,
-            } if face_selection_is_incomplete(faces)
-                || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
-                || side.is_none() =>
-            {
+            FeatureDefinition::Thicken { .. } if thicken_definition_is_incomplete(feature) => {
                 "thicken"
             }
-            FeatureDefinition::Draft {
-                faces,
-                neutral_plane,
-                pull_direction,
-                angle,
-                outward,
-            } if face_selection_is_incomplete(faces)
-                || face_selection_is_incomplete(neutral_plane)
-                || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
-                || angle.is_none_or(|angle| !valid_draft_angle(angle))
-                || outward.is_none() =>
-            {
-                "draft"
-            }
+            FeatureDefinition::Draft { .. } if draft_definition_is_incomplete(feature) => "draft",
             FeatureDefinition::Pattern { seeds, pattern }
                 if pattern_feature_is_incomplete(seeds, pattern, &feature.dependencies) =>
             {
@@ -10468,28 +10394,16 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "section"
             }
-            FeatureDefinition::Combine {
-                target, tools, op, ..
-            } if body_selection_is_incomplete(target)
-                || body_selection_is_incomplete(tools)
-                || resolved_body_selection_len(target) != Some(1)
-                || body_selections_overlap(target, tools)
-                || matches!(op, BooleanOp::Unresolved) =>
-            {
+            FeatureDefinition::Combine { .. } if combine_definition_is_incomplete(feature) => {
                 "body combine"
             }
-            FeatureDefinition::DeleteBody { bodies, mode }
-                if body_selection_is_incomplete(bodies)
-                    || matches!(mode, BodyRetentionMode::Unresolved) =>
+            FeatureDefinition::DeleteBody { .. }
+                if delete_body_definition_is_incomplete(feature) =>
             {
                 "delete body"
             }
-            FeatureDefinition::ReplaceFace {
-                targets,
-                replacements,
-            } if face_selection_is_incomplete(targets)
-                || face_selection_is_incomplete(replacements)
-                || face_selections_overlap(targets, replacements) =>
+            FeatureDefinition::ReplaceFace { .. }
+                if replace_face_definition_is_incomplete(feature) =>
             {
                 "replace face"
             }
@@ -10543,17 +10457,6 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             ),
             provenance: None,
         });
-    } else if sketch_feature_count != 0 && ir.model.sketch_constraints.is_empty() {
-        losses.push(LossNote {
-            code: LossKind::FeatureHistoryRetained,
-            severity: Severity::Warning,
-            message: format!(
-                "Decoded {} NX sketch record(s), but no sketch constraints were transferred because \
-                 their object-model field serialization and operand roles are unresolved.",
-                ir.model.sketches.len()
-            ),
-            provenance: None,
-        });
     }
 
     let native_sketch_entity_count = ir
@@ -10592,7 +10495,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     }
 }
 
-fn active_configuration_state_is_incomplete(
+pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
@@ -10810,6 +10713,343 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
         }
     }
     incomplete
+}
+
+pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::TrimSurface { faces, tool, keep } = &feature.definition else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || path_ref_is_incomplete(tool)
+        || matches!(keep, TrimRegion::Unresolved)
+}
+
+pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::ExtendSurface {
+        faces,
+        distance,
+        method,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || distance.is_none_or(|distance| !positive_feature_length(distance))
+        || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved)
+}
+
+pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::SewBodies {
+        bodies,
+        gap_tolerance,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    body_selection_is_incomplete(bodies)
+        || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
+        || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance))
+}
+
+pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Combine {
+        target, tools, op, ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    body_selection_is_incomplete(target)
+        || body_selection_is_incomplete(tools)
+        || resolved_body_selection_len(target) != Some(1)
+        || body_selections_overlap(target, tools)
+        || matches!(op, BooleanOp::Unresolved | BooleanOp::NewBody)
+}
+
+pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::TrimBodies {
+        targets,
+        tools,
+        keep,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    body_selection_is_incomplete(targets)
+        || body_selection_is_incomplete(tools)
+        || body_selections_overlap(targets, tools)
+        || matches!(keep, BodyTrimSide::Unresolved)
+}
+
+pub(crate) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+        return true;
+    };
+    body_selection_is_incomplete(bodies) || matches!(mode, BodyRetentionMode::Unresolved)
+}
+
+pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Hole {
+        profile,
+        profile_filter,
+        face,
+        position,
+        direction,
+        placements,
+        kind,
+        exit_kind,
+        diameter,
+        extent,
+        bottom,
+        taper_angle,
+        specification,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    hole_feature_is_incomplete(
+        profile.as_ref(),
+        face.as_ref(),
+        (*position, *direction),
+        placements,
+        (kind, exit_kind.as_ref()),
+        *diameter,
+        extent.as_ref(),
+    ) || hole_auxiliary_semantics_are_incomplete(
+        profile_filter.as_ref(),
+        bottom.as_ref(),
+        *taper_angle,
+        specification.as_deref(),
+    ) || extent
+        .as_ref()
+        .is_some_and(|extent| termination_dependency_is_incomplete(extent, &feature.dependencies))
+        || profile
+            .as_ref()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+}
+
+pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Chamfer { groups, .. } = &feature.definition else {
+        return true;
+    };
+    groups.is_empty()
+        || groups.iter().any(|group| {
+            edge_selection_is_incomplete(&group.edges) || chamfer_spec_is_incomplete(&group.spec)
+        })
+}
+
+pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Fillet { groups } = &feature.definition else {
+        return true;
+    };
+    groups.is_empty()
+        || groups.iter().any(|group| {
+            edge_selection_is_incomplete(&group.edges)
+                || radius_spec_is_incomplete(&group.radius)
+                || group
+                    .tangency_weight
+                    .is_some_and(|weight| !weight.is_finite())
+        })
+}
+
+pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::FaceBlend {
+        first_faces,
+        second_faces,
+        radius,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(first_faces)
+        || face_selection_is_incomplete(second_faces)
+        || face_selections_overlap(first_faces, second_faces)
+        || radius_spec_is_incomplete(radius)
+}
+
+pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
+        return true;
+    };
+    face_selection_is_incomplete(faces) || distance.is_none_or(|distance| !distance.0.is_finite())
+}
+
+pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Thicken {
+        faces,
+        thickness,
+        side,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
+        || side.is_none()
+}
+
+pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Draft {
+        faces,
+        neutral_plane,
+        pull_direction,
+        angle,
+        outward,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || face_selection_is_incomplete(neutral_plane)
+        || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
+        || angle.is_none_or(|angle| !valid_draft_angle(angle))
+        || outward.is_none()
+}
+
+pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::ReplaceFace {
+        targets,
+        replacements,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(targets)
+        || face_selection_is_incomplete(replacements)
+        || face_selections_overlap(targets, replacements)
+}
+
+pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Loft {
+        sections,
+        centerline,
+        guides,
+        op,
+        max_degree,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    sections.len() < 2
+        || sections.iter().any(loft_section_is_incomplete)
+        || sections.iter().any(|section| {
+            matches!(
+                section,
+                LoftSection::Profile(profile)
+                    if profile_dependency_is_incomplete(profile, &feature.dependencies)
+            )
+        })
+        || centerline.as_ref().is_some_and(path_ref_is_incomplete)
+        || guides.iter().any(path_ref_is_incomplete)
+        || (centerline.is_some() && !guides.is_empty())
+        || max_degree.is_some_and(|degree| degree == 0)
+        || matches!(op, BooleanOp::Unresolved)
+}
+
+pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Extrude {
+        profile,
+        direction,
+        start,
+        extent,
+        op,
+        solid,
+        direction_source,
+        face_maker,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    profile_ref_is_incomplete(profile)
+        || profile_dependency_is_incomplete(profile, &feature.dependencies)
+        || matches!(
+            direction,
+            cadmpeg_ir::features::ExtrudeDirection::Unresolved
+        )
+        || matches!(
+            direction,
+            cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
+                if !valid_feature_direction(*direction)
+        )
+        || extrude_start_is_incomplete(start)
+        || extrude_extent_is_incomplete(extent, &feature.dependencies)
+        || matches!(op, BooleanOp::Unresolved)
+        || solid.is_none()
+        || direction_source.as_ref().is_some_and(|source| {
+            matches!(
+                source,
+                cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
+                    if path_ref_is_incomplete(reference)
+            )
+        })
+        || face_maker
+            .as_ref()
+            .is_some_and(|maker| maker.class.trim().is_empty())
+}
+
+pub(crate) fn revolve_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Revolve { construction, op } = &feature.definition else {
+        return true;
+    };
+    revolve_feature_is_incomplete(construction, *op, &feature.dependencies)
+}
+
+pub(crate) fn rib_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Rib { construction, op } = &feature.definition else {
+        return true;
+    };
+    rib_feature_is_incomplete(construction, *op)
+        || construction
+            .profile
+            .as_ref()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+}
+
+pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Sweep {
+        section,
+        sections,
+        path,
+        mode,
+        orientation,
+        transition,
+        transformation,
+        twist,
+        scale,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+        || section
+            .referenced_profile()
+            .is_some_and(profile_ref_is_incomplete)
+        || section
+            .referenced_profile()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || sections.iter().any(|section| {
+            matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                || section
+                    .referenced_profile()
+                    .is_some_and(profile_ref_is_incomplete)
+        })
+        || sections.iter().any(|section| {
+            section.referenced_profile().is_some_and(|profile| {
+                profile_dependency_is_incomplete(profile, &feature.dependencies)
+            })
+        })
+        || path.as_ref().is_none_or(path_ref_is_incomplete)
+        || sweep_mode_is_incomplete(*mode)
+        || orientation
+            .as_ref()
+            .is_none_or(sweep_orientation_is_incomplete)
+        || transition.is_none()
+        || transformation.is_none()
+        || twist.is_some_and(|twist| !twist.0.is_finite())
+        || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0)
 }
 
 pub(crate) fn hole_feature_is_incomplete(
@@ -11134,7 +11374,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             direction.is_none_or(|direction| !valid_feature_direction(direction))
                 || !positive_feature_length(*spacing)
-                || *count == 0
+                || *count < 2
                 || second.as_ref().is_some_and(|second| {
                     !valid_feature_direction(second.direction)
                         || !positive_feature_length(second.spacing)
@@ -11143,6 +11383,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         }
         PatternKind::LinearOffsets { direction, offsets } => {
             direction.is_none_or(|direction| !valid_feature_direction(direction))
+                || offsets.len() < 2
                 || !valid_increasing_locations(offsets.iter().map(|offset| offset.0))
         }
         PatternKind::Circular {
@@ -11155,7 +11396,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
                 || !valid_feature_direction(*axis_dir)
                 || !angle.0.is_finite()
                 || angle.0 <= 0.0
-                || *count == 0
+                || *count < 2
         }
         PatternKind::CircularAngles {
             axis_origin,
@@ -11164,6 +11405,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             !finite_feature_point(*axis_origin)
                 || !valid_feature_direction(*axis_dir)
+                || angles.len() < 2
                 || !valid_increasing_locations(angles.iter().map(|angle| angle.0))
         }
         PatternKind::Mirror {
@@ -11177,7 +11419,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             path.as_ref().is_none_or(path_ref_is_incomplete)
                 || !positive_feature_length(*spacing)
-                || *count == 0
+                || *count < 2
         }
         PatternKind::Scale {
             center,
@@ -11314,7 +11556,7 @@ fn pattern_composition_is_incomplete(stages: &[cadmpeg_ir::features::PatternStag
     })
 }
 
-fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
+pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
     match pattern {
         PatternKind::Linear { count, .. }
         | PatternKind::Circular { count, .. }
@@ -11323,7 +11565,26 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
         PatternKind::Mirror { .. } => Some(2),
-        PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
+        PatternKind::Composite { stages } => {
+            stages
+                .iter()
+                .try_fold(None::<usize>, |occurrences, stage| {
+                    let stage_count = pattern_occurrence_count(&stage.pattern)?;
+                    match stage.combination {
+                        cadmpeg_ir::features::PatternStageCombination::Initialize => {
+                            occurrences.is_none().then_some(Some(stage_count))
+                        }
+                        cadmpeg_ir::features::PatternStageCombination::CartesianProduct => {
+                            Some(Some(occurrences?.checked_mul(stage_count)?))
+                        }
+                        cadmpeg_ir::features::PatternStageCombination::AlignedSlices => {
+                            let occurrences = occurrences?;
+                            (occurrences % stage_count == 0).then_some(Some(occurrences))
+                        }
+                    }
+                })?
+        }
+        PatternKind::Unresolved { .. } => None,
     }
 }
 
@@ -12281,6 +12542,23 @@ mod tests {
             cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
 
         assert!(super::point_distance(mapped, point) <= 0.01);
+    }
+
+    #[test]
+    fn nurbs_blend_contact_requires_the_declared_radius_shell() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let surface = SurfaceId("nx:test:contact-support".into());
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+        let center = Point3::new(1.2, 0.7, 2.0);
+
+        let direction = super::surface_contact_direction(&ir, &surface, center, 2.0, 0)
+            .expect("the support contains one contact at the blend radius");
+        assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
+        assert!(super::surface_contact_direction(&ir, &surface, center, 1.0, 0).is_none());
     }
 
     #[test]

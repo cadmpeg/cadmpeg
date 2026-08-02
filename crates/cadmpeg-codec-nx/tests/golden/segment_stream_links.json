@@ -99,10 +99,10 @@
           "deltas.0.grammar": "typed_status_framed_records",
           "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "226",
+          "file_size": "222",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "212",
+          "footer_offset": "208",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_test",
@@ -131,7 +131,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 212, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 208, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_test"
       ]
@@ -196,11 +196,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 136,
+        "compressed_size": 132,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 136
+        "uncompressed_size": 132
       },
       {
         "attributes": {
@@ -225,7 +225,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 212, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 208, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_test"
     ]

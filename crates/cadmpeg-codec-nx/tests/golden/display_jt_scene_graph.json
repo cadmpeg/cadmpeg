@@ -173,7 +173,7 @@
                   89,
                   151
                 ],
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               },
               {
@@ -202,7 +202,7 @@
                   17,
                   17
                 ],
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               },
               {
@@ -231,7 +231,7 @@
                   89,
                   151
                 ],
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               },
               {
@@ -260,7 +260,7 @@
                   89,
                   151
                 ],
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               },
               {
@@ -289,7 +289,7 @@
                   89,
                   151
                 ],
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               }
             ],
@@ -307,7 +307,7 @@
                 "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 499,
+                "source_offset": 519,
                 "tail": [],
                 "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
               }
@@ -341,7 +341,7 @@
                 "ordinal": 0,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 499
+                "source_offset": 519
               },
               {
                 "body_byte_len": 28,
@@ -371,7 +371,7 @@
                 "ordinal": 1,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 499
+                "source_offset": 519
               },
               {
                 "body_byte_len": 106,
@@ -401,7 +401,7 @@
                 "ordinal": 2,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 499
+                "source_offset": 519
               },
               {
                 "body_byte_len": 64,
@@ -431,7 +431,7 @@
                 "ordinal": 3,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 499
+                "source_offset": 519
               },
               {
                 "body_byte_len": 118,
@@ -461,7 +461,7 @@
                 "ordinal": 4,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 499
+                "source_offset": 519
               },
               {
                 "body_byte_len": 23,
@@ -491,7 +491,7 @@
                 "ordinal": 5,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 499
+                "source_offset": 519
               }
             ],
             "display_jt_documents": [
@@ -519,8 +519,8 @@
                   1,
                   1
                 ],
-                "physical_byte_len": 466,
-                "source_offset": 338,
+                "physical_byte_len": 428,
+                "source_offset": 358,
                 "toc_entries": [
                   {
                     "attributes": [
@@ -531,7 +531,7 @@
                     ],
                     "id": "nx:display-jt:toc-entry#0-row-0-0",
                     "ordinal": 0,
-                    "segment_byte_len": 329,
+                    "segment_byte_len": 291,
                     "segment_id": [
                       2,
                       2,
@@ -551,7 +551,7 @@
                       2
                     ],
                     "segment_offset": 137,
-                    "source_offset": 447
+                    "source_offset": 467
                   }
                 ],
                 "toc_offset": 105,
@@ -590,7 +590,7 @@
                   ]
                 ],
                 "object_id": 6,
-                "source_offset": 499,
+                "source_offset": 519,
                 "state_flags": 8,
                 "stored_values_mask": 14
               }
@@ -606,7 +606,7 @@
                 "family_data_sha256": "ee10da4aefe61a37df1dee937ca3221afa3b2351f9ea34edbbb769573c6785f7",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-1",
                 "object_id": 2,
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               },
               {
@@ -618,7 +618,7 @@
                 "family_data_sha256": "f592769b90ad61ae2b837cf9c9603a3087963ff76bb28dc3b27d293e842dce32",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-2",
                 "object_id": 3,
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               },
               {
@@ -631,7 +631,7 @@
                 "family_data_sha256": "f1b62c7634dac33059f4857804efbc74e391c06cb9974ccdc3a1435e115d82d7",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-3",
                 "object_id": 4,
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               }
             ],
@@ -644,11 +644,11 @@
                     "header_offset": 28,
                     "id": "nx:display-jt:index#0-row-0",
                     "ordinal": 0,
-                    "source_offset": 318,
+                    "source_offset": 338,
                     "value": 100
                   }
                 ],
-                "source_offset": 310,
+                "source_offset": 330,
                 "version": 9
               }
             ],
@@ -658,7 +658,7 @@
                 "child_object_id": 9,
                 "id": "nx:display-jt:segment#0-row-0-0-instance-node-0",
                 "object_id": 1,
-                "source_offset": 499,
+                "source_offset": 519,
                 "version": 1
               }
             ],
@@ -686,7 +686,7 @@
                   6
                 ],
                 "reserved_bounds": null,
-                "source_offset": 499,
+                "source_offset": 519,
                 "transformed_bounds": [
                   [
                     0.0,
@@ -742,22 +742,22 @@
                 "reserved_values": [
                   0.25
                 ],
-                "source_offset": 499
+                "source_offset": 519
               }
             ],
             "display_jt_segments": [
               {
                 "compression": {
                   "algorithm": 2,
-                  "compressed_byte_len": 296,
-                  "compressed_data_byte_len": 297,
+                  "compressed_byte_len": 258,
+                  "compressed_data_byte_len": 259,
                   "flag": 2,
                   "inflated_sha256": "9664016a85340f2b4b7c84cdf59e45e428e79af680291a42eac06a4fbd28ba9c"
                 },
                 "document": "nx:display-jt:document#0-row-0",
                 "id": "nx:display-jt:segment#0-row-0-0",
-                "payload_sha256": "f898e21a43f4033b5e839e3646c6a703593613d17957551c900b6ee3bf99ddce",
-                "segment_byte_len": 329,
+                "payload_sha256": "2b876b4edbf8dea8f01a722d1cee528865d99ec6cb7737894529cd64862bd983",
+                "segment_byte_len": 291,
                 "segment_id": [
                   2,
                   2,
@@ -777,7 +777,7 @@
                   2
                 ],
                 "segment_type": 1,
-                "source_offset": 475,
+                "source_offset": 495,
                 "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
               }
             ],
@@ -811,7 +811,7 @@
                     5.0
                   ]
                 ],
-                "source_offset": 499,
+                "source_offset": 519,
                 "texture_quantization_bits": 16,
                 "untransformed_bounds": [
                   [
@@ -853,10 +853,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "818",
+          "file_size": "800",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "804",
+          "footer_offset": "786",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -887,15 +887,10 @@
           "code": "topology_not_transferred",
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
-        },
-        {
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 804, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 786, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -1019,22 +1014,22 @@
           "file_offset": "119",
           "region": "HEADER"
         },
-        "compressed_size": 191,
+        "compressed_size": 211,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 191
+        "uncompressed_size": 211
       },
       {
         "attributes": {
-          "file_offset": "310",
+          "file_offset": "330",
           "region": "HEADER"
         },
-        "compressed_size": 494,
+        "compressed_size": 456,
         "compression": "none",
         "name": "/Root/UG_PART/DisplayJT",
         "role": "display-jt",
-        "uncompressed_size": 494
+        "uncompressed_size": 456
       },
       {
         "attributes": {
@@ -1067,7 +1062,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 804, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 786, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

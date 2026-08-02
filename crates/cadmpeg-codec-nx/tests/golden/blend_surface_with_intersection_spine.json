@@ -291,10 +291,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "401",
+          "file_size": "400",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "387",
+          "footer_offset": "386",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -325,15 +325,10 @@
           "code": "object_records_untransferred",
           "message": "1 surface-intersection record(s) without a complete validated CHART_s and term-endpoint witness remain opaque constructions. Support-UV values govern optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each Parasolid stream is preserved verbatim as an unknown passthrough record so the unresolved source bytes remain available. Rejections: 1 missing chart, 0 missing start term, 0 missing end term, 0 endpoint mismatch.",
           "severity": "warning"
-        },
-        {
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 387, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 386, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -517,11 +512,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 311,
+        "compressed_size": 310,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 311
+        "uncompressed_size": 310
       },
       {
         "attributes": {
@@ -554,7 +549,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 387, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 386, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]
