@@ -3236,14 +3236,6 @@ pub(crate) fn project_extrude(
         .collect::<Vec<_>>();
     let profile_ref = match scope.extrude_profile.as_ref() {
         Some(profile) => {
-            if !profile_groups.is_empty()
-                && !matches!(
-                    profile_groups.as_slice(),
-                    [group] if group.members.first() == Some(&profile.record_index)
-                )
-            {
-                return None;
-            }
             let placement = placements.iter().find(|placement| {
                 native_stream(&placement.id) == native_stream(&scope.id)
                     && placement.entity_id == profile.entity_id

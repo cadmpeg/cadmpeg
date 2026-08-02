@@ -13486,23 +13486,21 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     profile_group.record_index = 104;
     profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
     profile_group.role = 0x0000_0041_0000_0000;
-    assert!(project_extrude(
+    let direct_profile_with_selection_group = project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
         &[body_group.clone(), profile_group.clone()],
         &[],
         std::slice::from_ref(&placement),
     )
-    .is_none());
-    profile_group.members = vec![100];
-    assert!(project_extrude(
-        &scope,
-        &[(0, &along), (1, &taper)],
-        &[body_group.clone(), profile_group.clone()],
-        &[],
-        std::slice::from_ref(&placement),
-    )
-    .is_some());
+    .expect("direct sketch profile with a scoped selection group");
+    assert!(matches!(
+        direct_profile_with_selection_group,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(ref profile),
+            ..
+        } if profile == &neutral_sketch_id(&placement)
+    ));
     let mut native_profile_scope = scope.clone();
     native_profile_scope.extrude_profile = None;
     let reversed_native_profile = project_extrude(
