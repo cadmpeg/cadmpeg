@@ -1049,6 +1049,12 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         count: 3,
         second: None,
     }));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+        spacing: Length(10.0),
+        count: 1,
+        second: None,
+    }));
     assert!(crate::decode::pattern_is_incomplete(
         &PatternKind::CurveDriven {
             path: Some(PathRef::Native("nx:path".into())),
@@ -1073,7 +1079,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         &PatternKind::Composite {
             stages: vec![
                 PatternStage {
-                    pattern: Box::new(linear),
+                    pattern: Box::new(linear.clone()),
                     combination: PatternStageCombination::Initialize,
                 },
                 PatternStage {
@@ -1087,6 +1093,23 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
             ],
         }
     ));
+    let composite = PatternKind::Composite {
+        stages: vec![
+            PatternStage {
+                pattern: Box::new(linear),
+                combination: PatternStageCombination::Initialize,
+            },
+            PatternStage {
+                pattern: Box::new(PatternKind::Mirror {
+                    plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                }),
+                combination: PatternStageCombination::CartesianProduct,
+            },
+        ],
+    };
+    assert!(!crate::decode::pattern_is_incomplete(&composite));
+    assert_eq!(crate::decode::pattern_occurrence_count(&composite), Some(6));
 }
 
 #[test]

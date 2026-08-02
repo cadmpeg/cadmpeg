@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, Length,
+    BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, Length, PatternSeed,
 };
 use cadmpeg_ir::ids::BodyId;
 
@@ -399,6 +399,19 @@ fn rederived_body_census(
                     crate::decode::delete_body_definition_is_incomplete(feature),
                 )?;
             }
+            FeatureDefinition::Pattern { seeds, pattern } => {
+                apply_complete_body_pattern(
+                    feature,
+                    &mut bodies,
+                    seeds,
+                    crate::decode::pattern_occurrence_count(pattern),
+                    crate::decode::pattern_feature_is_incomplete(
+                        seeds,
+                        pattern,
+                        &feature.dependencies,
+                    ),
+                )?;
+            }
             _ => {
                 return Err((
                     feature.id.clone(),
@@ -639,6 +652,66 @@ fn preserve_complete_body_targets(
     Ok(())
 }
 
+fn apply_complete_body_pattern(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &mut BTreeSet<BodyId>,
+    seeds: &[PatternSeed],
+    occurrence_count: Option<usize>,
+    incomplete: bool,
+) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    if incomplete {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    }
+    let Some(occurrence_count) = occurrence_count else {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    };
+    if seeds
+        .iter()
+        .any(|seed| !matches!(seed, PatternSeed::Bodies(_)))
+    {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
+        ));
+    }
+    let Some(seed_bodies) = seeds
+        .iter()
+        .map(|seed| match seed {
+            PatternSeed::Bodies(selection) => explicit_body_selection(selection),
+            PatternSeed::Feature(_) | PatternSeed::Faces(_) => None,
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    };
+    let seed_bodies = seed_bodies.into_iter().flatten().collect::<Vec<_>>();
+    let expected_outputs = seed_bodies
+        .len()
+        .checked_mul(occurrence_count.saturating_sub(1));
+    if expected_outputs != Some(feature.outputs.len())
+        || seed_bodies.iter().collect::<BTreeSet<_>>().len() != seed_bodies.len()
+        || seed_bodies.iter().any(|body| !bodies.contains(*body))
+        || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
+        || feature.outputs.iter().any(|output| bodies.contains(output))
+    {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    }
+    bodies.extend(feature.outputs.iter().cloned());
+    Ok(())
+}
+
 fn explicit_body_selection(selection: &BodySelection) -> Option<&[BodyId]> {
     let bodies = match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
@@ -665,8 +738,9 @@ mod tests {
         ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
-        HolePlacement, PathRef, ProfileRef, RadiusSpec, RevolutionConstruction, RibConstruction,
-        RibDraft, SketchSpace, SurfaceExtension, SweepMode, Termination, ThickenSide, TrimRegion,
+        HolePlacement, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolutionConstruction,
+        RibConstruction, RibDraft, SketchSpace, SurfaceExtension, SweepMode, Termination,
+        ThickenSide, TrimRegion,
     };
     use cadmpeg_ir::ids::{CurveId, FaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1766,6 +1840,95 @@ mod tests {
             BodyCensusEvaluation::Unsupported {
                 feature: Some(FeatureId("trim-surface".to_string())),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
+            }
+        );
+    }
+
+    #[test]
+    fn body_pattern_adds_one_copy_per_non_original_occurrence() {
+        let mut ir = complete_block_ir();
+        let seed = ir.model.bodies[0].id.clone();
+        let first_copy = BodyId("copy-1".to_string());
+        let second_copy = BodyId("copy-2".to_string());
+        ir.model.bodies.push(model_body(&first_copy.0));
+        ir.model.bodies.push(model_body(&second_copy.0));
+        let mut pattern = body_neutral_feature(
+            "pattern",
+            1,
+            FeatureDefinition::Pattern {
+                seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![
+                    seed.clone()
+                ]))],
+                pattern: PatternKind::Linear {
+                    direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+                    spacing: Length(2.0),
+                    count: 3,
+                    second: None,
+                },
+            },
+        );
+        pattern.outputs = vec![first_copy.clone(), second_copy.clone()];
+        ir.model.features.push(pattern);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![seed, first_copy, second_copy]
+            }
+        );
+    }
+
+    #[test]
+    fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
+        let mut ir = complete_block_ir();
+        let seed = ir.model.bodies[0].id.clone();
+        ir.model.features.push(body_preserving_feature(
+            "pattern",
+            1,
+            seed.clone(),
+            FeatureDefinition::Pattern {
+                seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![seed]))],
+                pattern: PatternKind::Mirror {
+                    plane_origin: Point3::new(0.0, 0.0, 0.0),
+                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                },
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("pattern".to_string())),
+                reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
+            }
+        );
+    }
+
+    #[test]
+    fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
+        let mut ir = complete_block_ir();
+        let seed = ir.model.features[0].id.clone();
+        let body = ir.model.bodies[0].id.clone();
+        let mut pattern = body_preserving_feature(
+            "pattern",
+            1,
+            body,
+            FeatureDefinition::Pattern {
+                seeds: vec![PatternSeed::Feature(seed.clone())],
+                pattern: PatternKind::Mirror {
+                    plane_origin: Point3::new(0.0, 0.0, 0.0),
+                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                },
+            },
+        );
+        pattern.dependencies.push(seed);
+        ir.model.features.push(pattern);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("pattern".to_string())),
+                reason: UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
             }
         );
     }

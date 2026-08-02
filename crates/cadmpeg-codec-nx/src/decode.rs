@@ -11334,7 +11334,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             direction.is_none_or(|direction| !valid_feature_direction(direction))
                 || !positive_feature_length(*spacing)
-                || *count == 0
+                || *count < 2
                 || second.as_ref().is_some_and(|second| {
                     !valid_feature_direction(second.direction)
                         || !positive_feature_length(second.spacing)
@@ -11343,6 +11343,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         }
         PatternKind::LinearOffsets { direction, offsets } => {
             direction.is_none_or(|direction| !valid_feature_direction(direction))
+                || offsets.len() < 2
                 || !valid_increasing_locations(offsets.iter().map(|offset| offset.0))
         }
         PatternKind::Circular {
@@ -11355,7 +11356,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
                 || !valid_feature_direction(*axis_dir)
                 || !angle.0.is_finite()
                 || angle.0 <= 0.0
-                || *count == 0
+                || *count < 2
         }
         PatternKind::CircularAngles {
             axis_origin,
@@ -11364,6 +11365,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             !finite_feature_point(*axis_origin)
                 || !valid_feature_direction(*axis_dir)
+                || angles.len() < 2
                 || !valid_increasing_locations(angles.iter().map(|angle| angle.0))
         }
         PatternKind::Mirror {
@@ -11377,7 +11379,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             path.as_ref().is_none_or(path_ref_is_incomplete)
                 || !positive_feature_length(*spacing)
-                || *count == 0
+                || *count < 2
         }
         PatternKind::Scale {
             center,
@@ -11513,7 +11515,7 @@ fn pattern_composition_is_incomplete(stages: &[cadmpeg_ir::features::PatternStag
     })
 }
 
-fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
+pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
     match pattern {
         PatternKind::Linear { count, .. }
         | PatternKind::Circular { count, .. }
@@ -11522,7 +11524,26 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
         PatternKind::Mirror { .. } => Some(2),
-        PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
+        PatternKind::Composite { stages } => {
+            stages
+                .iter()
+                .try_fold(None::<usize>, |occurrences, stage| {
+                    let stage_count = pattern_occurrence_count(&stage.pattern)?;
+                    match stage.combination {
+                        cadmpeg_ir::features::PatternStageCombination::Initialize => {
+                            occurrences.is_none().then_some(Some(stage_count))
+                        }
+                        cadmpeg_ir::features::PatternStageCombination::CartesianProduct => {
+                            Some(Some(occurrences?.checked_mul(stage_count)?))
+                        }
+                        cadmpeg_ir::features::PatternStageCombination::AlignedSlices => {
+                            let occurrences = occurrences?;
+                            (occurrences % stage_count == 0).then_some(Some(occurrences))
+                        }
+                    }
+                })?
+        }
+        PatternKind::Unresolved { .. } => None,
     }
 }
 
