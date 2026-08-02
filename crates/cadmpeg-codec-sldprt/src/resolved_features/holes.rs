@@ -9,7 +9,7 @@ use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
-use super::sketch_projection::{cross, dot};
+use super::sketch_edges::{cross, dot};
 use super::transforms::quantize;
 use super::CLASS_MARKER;
 use crate::classification::{classify, FeatureClass};

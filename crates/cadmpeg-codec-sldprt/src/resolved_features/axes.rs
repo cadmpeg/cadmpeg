@@ -8,7 +8,7 @@ use super::endpoints::{
     wide_indexed_curve_endpoint_indices,
 };
 use super::scalars::feature_object_name;
-use super::sketch_projection::{cross, dot};
+use super::sketch_edges::{cross, dot};
 use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform};
 use super::{CLASS_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};

@@ -1,6 +1,6 @@
 //! Helix polyline fitting and the linear solvers it uses.
 
-use super::sketch_projection::{cross, dot};
+use super::sketch_edges::{cross, dot};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 pub(crate) fn fit_helix_polyline(

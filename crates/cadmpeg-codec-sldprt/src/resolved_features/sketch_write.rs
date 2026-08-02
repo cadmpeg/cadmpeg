@@ -1,6 +1,6 @@
 //! Sketch record patching in native streams.
 
-use super::sketch_projection::{cross, dot};
+use super::sketch_edges::{cross, dot};
 use super::SKETCH_POINT_TOLERANCE;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{

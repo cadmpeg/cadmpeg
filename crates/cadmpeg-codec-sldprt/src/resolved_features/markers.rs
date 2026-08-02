@@ -153,7 +153,7 @@ use super::selections::{
     COMPACT_EDGE_VECTOR_MARKER,
 };
 #[cfg(test)]
-use super::sketch_projection::dot;
+use super::sketch_edges::dot;
 #[cfg(test)]
 use super::terminations::{
     compact_body_component_path_at, compact_body_path_at, compact_combine_operation_at,

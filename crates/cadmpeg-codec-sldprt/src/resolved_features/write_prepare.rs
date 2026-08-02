@@ -1,13 +1,13 @@
 //! Sketch write preparation and write-back validation.
 
 use super::bindings::bind_scalar_operands;
+use super::hashes::{constraint_hash, lane_hash, sketch_hash};
 use super::markers::{
     marker_spatial_coordinate_offset, reference_cells, relation_bindings, sketch_input_entities,
     spatial_sketches, spatial_vertex_offsets,
 };
 use super::names::{class_declarations, object_names};
 use super::scalars::{feature_object_name, named_scalars};
-use super::sketch_projection::{constraint_hash, lane_hash, sketch_hash};
 use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
 use super::transforms::{locus_entity, sketch_entity_loci};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
