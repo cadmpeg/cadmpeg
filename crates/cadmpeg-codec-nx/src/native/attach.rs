@@ -2041,6 +2041,7 @@ fn attach_feature_operations(
                         .get(label.id.as_str())?
                         .as_slice(),
                     &body_alias_roots,
+                    &bodies_by_object_index,
                 )
             })
             .flatten();
@@ -2052,6 +2053,7 @@ fn attach_feature_operations(
                         .get(label.id.as_str())?
                         .as_slice(),
                     &body_alias_roots,
+                    &bodies_by_object_index,
                 )
             })
             .flatten();
@@ -2126,6 +2128,7 @@ fn attach_feature_operations(
                 delete_body_feature_definition(
                     body_references.get(label.id.as_str()).copied(),
                     &body_alias_roots,
+                    &bodies_by_object_index,
                 )
             })
             .flatten();
@@ -2183,7 +2186,9 @@ fn attach_feature_operations(
                         )
                     })
             },
-            |operation| boolean_feature_definition(operation, &body_alias_roots),
+            |operation| {
+                boolean_feature_definition(operation, &body_alias_roots, &bodies_by_object_index)
+            },
         );
         annotations
             .note(&id, stream, label.source_offset)
@@ -4529,22 +4534,46 @@ fn unique_simple_hole_template(
     crate::native::features::parse_simple_hole_template(candidate)
 }
 
-fn feature_local_body_selection(
+/// Resolve a complete object-index selection only when every alias root owns one
+/// decoded body image. Retain the complete feature-input-local identities when
+/// current topology cannot represent a consumed historical body, and fall back
+/// to the native expression when even the alias namespace is incomplete.
+fn feature_body_selection(
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
 ) -> BodySelection {
-    let mut bodies = Vec::<String>::new();
+    let mut roots = Vec::new();
     for index in object_indices {
         let Some(root) = body_alias_roots.get(index) else {
             return BodySelection::Native(native);
         };
-        let body = format!("nx:om-body-object#{root}");
-        if !bodies.contains(&body) {
-            bodies.push(body);
+        if !roots.contains(root) {
+            roots.push(*root);
         }
     }
-    BodySelection::Local { bodies, native }
+    let resolved = roots
+        .iter()
+        .map(|root| {
+            let [body] = bodies_by_object_index.get(root)?.as_slice() else {
+                return None;
+            };
+            Some(body.clone())
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(bodies) =
+        resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
+    {
+        return BodySelection::Resolved { bodies, native };
+    }
+    BodySelection::Local {
+        bodies: roots
+            .into_iter()
+            .map(|root| format!("nx:om-body-object#{root}"))
+            .collect(),
+        native,
+    }
 }
 
 fn atomic_disjoint_body_selections(
@@ -4579,16 +4608,19 @@ fn atomic_disjoint_body_selections(
 pub(crate) fn boolean_feature_definition(
     operation: &crate::native::features::FeatureBooleanOperation,
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> FeatureDefinition {
     let (target, tools) = atomic_disjoint_body_selections(
-        feature_local_body_selection(
+        feature_body_selection(
             &[operation.target_object_index],
             body_alias_roots,
+            bodies_by_object_index,
             format!("nx:om-object-index#{}", operation.target_object_index),
         ),
-        feature_local_body_selection(
+        feature_body_selection(
             &operation.tool_object_indices,
             body_alias_roots,
+            bodies_by_object_index,
             format!(
                 "nx:om-object-indices#{}",
                 operation
@@ -4617,12 +4649,14 @@ pub(crate) fn boolean_feature_definition(
 fn delete_body_feature_definition(
     body_object_index: Option<u32>,
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     let body = body_object_index?;
     Some(FeatureDefinition::DeleteBody {
-        bodies: feature_local_body_selection(
+        bodies: feature_body_selection(
             &[body],
             body_alias_roots,
+            bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
         ),
         mode: BodyRetentionMode::DeleteSelected,
@@ -4633,15 +4667,17 @@ fn sew_body_feature_definition(
     primary_body_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     (!operands.is_empty()).then(|| {
         let object_indices = std::iter::once(primary_body_object_index)
             .chain(operands.iter().map(|operand| operand.operand_object_index))
             .collect::<Vec<_>>();
         FeatureDefinition::SewBodies {
-            bodies: feature_local_body_selection(
+            bodies: feature_body_selection(
                 &object_indices,
                 body_alias_roots,
+                bodies_by_object_index,
                 format!(
                     "nx:om-object-indices#{}",
                     object_indices
@@ -4660,6 +4696,7 @@ fn trim_body_feature_definition(
     target_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     let tool_object_indices = operands
         .iter()
@@ -4667,14 +4704,16 @@ fn trim_body_feature_definition(
         .collect::<Vec<_>>();
     (!tool_object_indices.is_empty()).then(|| {
         let (targets, tools) = atomic_disjoint_body_selections(
-            feature_local_body_selection(
+            feature_body_selection(
                 &[target_object_index],
                 body_alias_roots,
+                bodies_by_object_index,
                 format!("nx:om-object-index#{target_object_index}"),
             ),
-            feature_local_body_selection(
+            feature_body_selection(
                 &tool_object_indices,
                 body_alias_roots,
+                bodies_by_object_index,
                 format!(
                     "nx:om-object-indices#{}",
                     tool_object_indices
@@ -5955,9 +5994,10 @@ mod tests {
         let first = BodyId("nx:s2:body#3".to_string());
         let roots = BTreeMap::from([(94, 94), (122, 122)]);
         assert_eq!(
-            super::feature_local_body_selection(
+            super::feature_body_selection(
                 &[94, 122],
                 &roots,
+                &BTreeMap::new(),
                 "nx:om-object-indices#94,122".to_string(),
             ),
             BodySelection::Local {
@@ -5969,18 +6009,20 @@ mod tests {
             }
         );
         assert!(matches!(
-            super::feature_local_body_selection(
+            super::feature_body_selection(
                 &[94, 123],
                 &roots,
+                &BTreeMap::new(),
                 "nx:om-object-indices#94,123".to_string(),
             ),
             BodySelection::Native(_)
         ));
         let aliases = BTreeMap::from([(94, 94), (150, 94)]);
         assert_eq!(
-            super::feature_local_body_selection(
+            super::feature_body_selection(
                 &[94, 150],
                 &aliases,
+                &BTreeMap::new(),
                 "nx:om-object-indices#94,150".to_string(),
             ),
             BodySelection::Local {
@@ -5989,6 +6031,18 @@ mod tests {
             }
         );
         let bindings = BTreeMap::from([(94, vec![first.clone()])]);
+        assert_eq!(
+            super::feature_body_selection(
+                &[94],
+                &roots,
+                &bindings,
+                "nx:om-object-index#94".to_string(),
+            ),
+            BodySelection::Resolved {
+                bodies: vec![first.clone()],
+                native: "nx:om-object-index#94".to_string(),
+            }
+        );
         assert_eq!(super::feature_body_outputs(94, &bindings), vec![first]);
         assert!(super::feature_body_outputs(123, &bindings).is_empty());
     }
@@ -5996,6 +6050,7 @@ mod tests {
     #[test]
     fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+        use cadmpeg_ir::ids::BodyId;
         use std::collections::BTreeMap;
 
         let operand =
@@ -6016,7 +6071,7 @@ mod tests {
         let roots = BTreeMap::from([(10, 10), (20, 20), (30, 30)]);
 
         assert_eq!(
-            super::sew_body_feature_definition(10, &references, &roots),
+            super::sew_body_feature_definition(10, &references, &roots, &BTreeMap::new()),
             Some(FeatureDefinition::SewBodies {
                 bodies: BodySelection::Local {
                     bodies: vec![
@@ -6029,11 +6084,33 @@ mod tests {
                 gap_tolerance: None,
             })
         );
-        assert_eq!(super::sew_body_feature_definition(10, &[], &roots), None);
+        let resolved = BTreeMap::from([
+            (10, vec![BodyId("target".to_string())]),
+            (20, vec![BodyId("first-tool".to_string())]),
+            (30, vec![BodyId("second-tool".to_string())]),
+        ]);
+        assert_eq!(
+            super::sew_body_feature_definition(10, &references, &roots, &resolved),
+            Some(FeatureDefinition::SewBodies {
+                bodies: BodySelection::Resolved {
+                    bodies: vec![
+                        BodyId("target".to_string()),
+                        BodyId("first-tool".to_string()),
+                        BodyId("second-tool".to_string()),
+                    ],
+                    native: "nx:om-object-indices#10,20,30".to_string(),
+                },
+                gap_tolerance: None,
+            })
+        );
+        assert_eq!(
+            super::sew_body_feature_definition(10, &[], &roots, &BTreeMap::new()),
+            None
+        );
 
         let alias_roots = BTreeMap::from([(10, 10), (20, 20), (30, 20)]);
         assert_eq!(
-            super::sew_body_feature_definition(10, &references, &alias_roots),
+            super::sew_body_feature_definition(10, &references, &alias_roots, &BTreeMap::new()),
             Some(FeatureDefinition::SewBodies {
                 bodies: BodySelection::Local {
                     bodies: vec![
@@ -6054,7 +6131,7 @@ mod tests {
 
         let roots = BTreeMap::from([(20, 20)]);
         assert_eq!(
-            super::delete_body_feature_definition(Some(20), &roots),
+            super::delete_body_feature_definition(Some(20), &roots, &BTreeMap::new()),
             Some(FeatureDefinition::DeleteBody {
                 bodies: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#20".to_string()],
@@ -6063,12 +6140,16 @@ mod tests {
                 mode: BodyRetentionMode::DeleteSelected,
             })
         );
-        assert_eq!(super::delete_body_feature_definition(None, &roots), None);
+        assert_eq!(
+            super::delete_body_feature_definition(None, &roots, &BTreeMap::new()),
+            None
+        );
     }
 
     #[test]
     fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition};
+        use cadmpeg_ir::ids::BodyId;
         use std::collections::BTreeMap;
 
         let operands = [crate::native::features::FeatureOperationBodyOperand {
@@ -6087,7 +6168,7 @@ mod tests {
         let roots = BTreeMap::from([(10, 10), (20, 20)]);
 
         assert_eq!(
-            super::trim_body_feature_definition(10, &references, &roots),
+            super::trim_body_feature_definition(10, &references, &roots, &BTreeMap::new()),
             Some(FeatureDefinition::TrimBodies {
                 targets: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#10".to_string()],
@@ -6100,11 +6181,37 @@ mod tests {
                 keep: BodyTrimSide::Unresolved,
             })
         );
-        assert_eq!(super::trim_body_feature_definition(10, &[], &roots), None);
+        let resolved = BTreeMap::from([
+            (10, vec![BodyId("target".to_string())]),
+            (20, vec![BodyId("tool".to_string())]),
+        ]);
+        assert_eq!(
+            super::trim_body_feature_definition(10, &references, &roots, &resolved),
+            Some(FeatureDefinition::TrimBodies {
+                targets: BodySelection::Resolved {
+                    bodies: vec![BodyId("target".to_string())],
+                    native: "nx:om-object-index#10".to_string(),
+                },
+                tools: BodySelection::Resolved {
+                    bodies: vec![BodyId("tool".to_string())],
+                    native: "nx:om-object-indices#20".to_string(),
+                },
+                keep: BodyTrimSide::Unresolved,
+            })
+        );
+        assert_eq!(
+            super::trim_body_feature_definition(10, &[], &roots, &BTreeMap::new()),
+            None
+        );
 
         let same_body = BTreeMap::from([(10, 10), (20, 10)]);
         assert!(matches!(
-            super::trim_body_feature_definition(10, &references, &same_body),
+            super::trim_body_feature_definition(
+                10,
+                &references,
+                &same_body,
+                &BTreeMap::new(),
+            ),
             Some(FeatureDefinition::TrimBodies {
                 targets: BodySelection::Native(target),
                 tools: BodySelection::Native(tools),

@@ -8519,7 +8519,7 @@ mod tests {
         let roots = BTreeMap::from([(10, 10), (20, 10)]);
 
         assert_eq!(
-            crate::native::attach::boolean_feature_definition(&operation, &roots),
+            crate::native::attach::boolean_feature_definition(&operation, &roots, &BTreeMap::new(),),
             FeatureDefinition::Combine {
                 target: BodySelection::Native("nx:om-object-index#10".to_string()),
                 tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
@@ -8529,7 +8529,11 @@ mod tests {
 
         let missing_tool = BTreeMap::from([(10, 10)]);
         assert!(matches!(
-            crate::native::attach::boolean_feature_definition(&operation, &missing_tool),
+            crate::native::attach::boolean_feature_definition(
+                &operation,
+                &missing_tool,
+                &BTreeMap::new(),
+            ),
             FeatureDefinition::Combine {
                 target: BodySelection::Native(target),
                 tools: BodySelection::Native(tools),
