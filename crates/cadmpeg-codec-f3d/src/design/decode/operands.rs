@@ -51,6 +51,7 @@ pub fn decode_edge_operands(
                     | DesignFeatureFamily::Revolve
                     | DesignFeatureFamily::Loft
                     | DesignFeatureFamily::Sweep
+                    | DesignFeatureFamily::Pipe
                     | DesignFeatureFamily::SurfaceExtend
                     | DesignFeatureFamily::SurfaceOffset
             )
@@ -574,6 +575,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Coil)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Pipe)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Revolve)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Shell)

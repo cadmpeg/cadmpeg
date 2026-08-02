@@ -388,6 +388,10 @@ fn feature_family_tokens_are_localized() {
         design_feature_family("Sweep"),
         Some(DesignFeatureFamily::Sweep)
     );
+    assert_eq!(
+        design_feature_family("Pipe"),
+        Some(DesignFeatureFamily::Pipe)
+    );
 }
 
 #[test]
@@ -5667,6 +5671,52 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         })
     ));
+
+    let pipe_start = bytes.len();
+    let mut pipe = vec![0; 464];
+    pipe[25..29].copy_from_slice(&4u32.to_le_bytes());
+    pipe[29] = 1;
+    pipe[30] = 1;
+    bytes.extend_from_slice(&pipe);
+    let pipe_values: [f64; 4] = [1.0, 1.0, 0.6, 0.15];
+    let pipe_scalar_start = bytes.len();
+    for (ordinal, value) in pipe_values.into_iter().enumerate() {
+        let record_index = 170 + ordinal as u32;
+        let mut scalar = vec![0; 100];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"277");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        scalar[35] = ordinal as u8;
+        scalar[40..48].copy_from_slice(&value.to_le_bytes());
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"261");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&scalar);
+    }
+    let mut pipe_scope = scope.clone();
+    pipe_scope.byte_offset = pipe_start as u64;
+    pipe_scope.kind = "Pipe".into();
+    pipe_scope.frame_length = 464;
+    pipe_scope.reference_members = (170..174).collect();
+    assert_eq!(
+        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &pipe_scope),
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (pipe_start + 25) as u64,
+            section_shape: 1,
+            section_shape_offset: (pipe_start + 29) as u64,
+            filled: true,
+            filled_offset: (pipe_start + 30) as u64,
+            values: pipe_values,
+            record_indexes: [170, 171, 172, 173],
+            value_offsets: std::array::from_fn(|ordinal| {
+                (pipe_scalar_start + ordinal * 111 + 40) as u64
+            }),
+        })
+    );
 
     let mut companion = DesignParameterCompanion {
         id: "f3d:native:parameter-companion#11".into(),

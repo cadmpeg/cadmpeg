@@ -3316,8 +3316,11 @@ fn sweep_definition(
         }
     };
     Some(FeatureDefinition::Sweep {
-        profile: Some(profile),
-        sections: profiles,
+        section: cadmpeg_ir::features::SweepSection::Profile(profile),
+        sections: profiles
+            .into_iter()
+            .map(cadmpeg_ir::features::SweepSection::Profile)
+            .collect(),
         path: Some(PathRef::Native(path_property.id.clone())),
         mode: if solid {
             SweepMode::Solid {

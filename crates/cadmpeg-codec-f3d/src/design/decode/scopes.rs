@@ -2359,6 +2359,42 @@ pub(crate) fn exact_path_feature_construction(
                 value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
             })
         }
+        DesignFeatureFamily::Pipe => {
+            let lanes = scope
+                .reference_members
+                .iter()
+                .filter_map(|record_index| {
+                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
+                    (scalar.owner_record_index == Some(scope.record_index))
+                        .then_some((*record_index, scalar))
+                })
+                .collect::<Vec<_>>();
+            let lanes: [(u32, FixedScalarFrame); 4] = lanes.try_into().ok()?;
+            if lanes
+                .iter()
+                .enumerate()
+                .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
+            {
+                return None;
+            }
+            let section_shape = *bytes.get(start + 29)?;
+            let filled = match *bytes.get(start + 30)? {
+                0 => false,
+                1 => true,
+                _ => return None,
+            };
+            Some(DesignPathFeatureConstruction::Pipe {
+                operation: operation(start + 25)?,
+                operation_offset: u64::try_from(start + 25).ok()?,
+                section_shape,
+                section_shape_offset: u64::try_from(start + 29).ok()?,
+                filled,
+                filled_offset: u64::try_from(start + 30).ok()?,
+                values: lanes.map(|(_, scalar)| scalar.value),
+                record_indexes: lanes.map(|(record_index, _)| record_index),
+                value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
+            })
+        }
         _ => None,
     }
 }

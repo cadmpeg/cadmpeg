@@ -1761,7 +1761,9 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     assert!(matches!(
         &feature("Pipe").definition,
         cadmpeg_ir::features::FeatureDefinition::Sweep {
-            profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
+            section: cadmpeg_ir::features::SweepSection::Profile(
+                cadmpeg_ir::features::ProfileRef::Sketch(_),
+            ),
             sections,
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             mode: cadmpeg_ir::features::SweepMode::Solid {

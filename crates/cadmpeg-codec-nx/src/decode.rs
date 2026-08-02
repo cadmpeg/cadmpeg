@@ -10355,7 +10355,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "revolve"
             }
             FeatureDefinition::Sweep {
-                profile,
+                section,
                 sections,
                 path,
                 mode,
@@ -10365,13 +10365,23 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 twist,
                 scale,
                 ..
-            } if profile.as_ref().is_none_or(profile_ref_is_incomplete)
-                || profile.as_ref().is_some_and(|profile| {
+            } if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                || section
+                    .referenced_profile()
+                    .is_some_and(profile_ref_is_incomplete)
+                || section.referenced_profile().is_some_and(|profile| {
                     profile_dependency_is_incomplete(profile, &feature.dependencies)
                 })
-                || sections.iter().any(profile_ref_is_incomplete)
-                || sections.iter().any(|profile| {
-                    profile_dependency_is_incomplete(profile, &feature.dependencies)
+                || sections.iter().any(|section| {
+                    matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                        || section
+                            .referenced_profile()
+                            .is_some_and(profile_ref_is_incomplete)
+                })
+                || sections.iter().any(|section| {
+                    section.referenced_profile().is_some_and(|profile| {
+                        profile_dependency_is_incomplete(profile, &feature.dependencies)
+                    })
                 })
                 || path.as_ref().is_none_or(path_ref_is_incomplete)
                 || sweep_mode_is_incomplete(*mode)

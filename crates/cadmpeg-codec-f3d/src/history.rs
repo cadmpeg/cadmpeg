@@ -4710,7 +4710,9 @@ mod tests {
 
     #[test]
     fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SweepMode};
+        use cadmpeg_ir::features::{
+            Feature, FeatureDefinition, FeatureId, SweepMode, SweepSection,
+        };
         use cadmpeg_ir::ids::BodyId;
         use cadmpeg_ir::topology::{Body, BodyKind};
 
@@ -4736,7 +4738,7 @@ mod tests {
             source_content: Vec::new(),
             outputs,
             definition: FeatureDefinition::Sweep {
-                profile: None,
+                section: SweepSection::Unresolved(None),
                 sections: Vec::new(),
                 path: None,
                 mode: SweepMode::Unresolved,

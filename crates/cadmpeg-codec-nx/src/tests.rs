@@ -13480,7 +13480,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
             sections: Vec::new(),
             path: None,
             path_extent: None,

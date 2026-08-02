@@ -370,11 +370,11 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&ir),
-            "460b8354885d6964a39d52a5f783e47e59a7ab650baf1b322ba7e0e6fd8b823b"
+            "5e25f72c12ad3c553efcb0b62798bb38694f780ba2cb99651298db3c483f5bde"
         );
         assert_eq!(
             semantic_document_hash(&ir, "pin", "pin:source-image#0"),
-            "9c988f2974e114e5868281ca3ee3391715f112dc9f79cf91b339be744f9f9715"
+            "319b1020f6669ce2df5e4fe9869de58494cda859953e555ccc7bf91b510e6219"
         );
     }
 

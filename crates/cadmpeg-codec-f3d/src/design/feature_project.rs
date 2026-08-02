@@ -265,6 +265,23 @@ pub fn project_parameter_design_with_edge_identities(
                     parameters: BTreeMap::new(),
                     properties: native_scope_properties(scope, native_scope),
                 }),
+                Some(DesignFeatureFamily::Pipe) => project_fixed_pipe(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: parameters
+                        .iter()
+                        .map(|(_, parameter)| {
+                            (parameter.name.clone(), parameter.expression.clone())
+                        })
+                        .collect(),
+                    properties: native_scope_properties(scope, native_scope),
+                }),
                 Some(DesignFeatureFamily::SurfacePatch) => {
                     project_surface_patch(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
@@ -3001,7 +3018,9 @@ pub(crate) fn project_fixed_sweep(
         },
     });
     Some(FeatureDefinition::Sweep {
-        profile: Some(ProfileRef::Native(profile.id.clone())),
+        section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Native(
+            profile.id.clone(),
+        )),
         sections: Vec::new(),
         path: Some(path),
         mode: if *operation == DesignExtrudeOperation::NewBody {
@@ -3023,6 +3042,118 @@ pub(crate) fn project_fixed_sweep(
         }),
         guide_rail,
         taper: (values[5] != 0.0).then_some(Angle(values[5])),
+        scale: None,
+        allow_multi_profile_faces: None,
+    })
+}
+
+fn project_fixed_pipe(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{
+        BooleanOp, FeatureDefinition, GeneratedSweepSection, SweepMode, SweepSection,
+    };
+
+    let DesignPathFeatureConstruction::Pipe {
+        operation,
+        section_shape,
+        filled,
+        values,
+        ..
+    } = scope.path_feature_construction.as_ref()?
+    else {
+        return None;
+    };
+    if scope.kind != "Pipe"
+        || *operation != DesignExtrudeOperation::NewBody
+        || *section_shape != 1
+        || !*filled
+        || values[0..2] != [1.0, 1.0]
+        || values[2] <= 0.0
+        || values[3] <= 0.0
+        || parameters.len() != 4
+    {
+        return None;
+    }
+    let unique = |source_kind: &str| {
+        let matches = parameters
+            .iter()
+            .filter(|(_, parameter)| parameter.source_kind == source_kind)
+            .map(|(_, parameter)| *parameter)
+            .collect::<Vec<_>>();
+        let [parameter] = matches.as_slice() else {
+            return None;
+        };
+        Some(*parameter)
+    };
+    let along = unique("AlongDistance")?;
+    let against = unique("AgainstDistance")?;
+    let section_size_parameter = unique("SectionSize")?;
+    let section_thickness_parameter = unique("SectionThickness")?;
+    let section_size = design_length(section_size_parameter)?;
+    let section_thickness = design_length(section_thickness_parameter)?;
+    if along.unit.is_some()
+        || against.unit.is_some()
+        || along.evaluated_value != values[0]
+        || against.evaluated_value != values[1]
+        || section_size_parameter.evaluated_value != values[2]
+        || section_thickness_parameter.evaluated_value != values[3]
+        || section_size.0 <= 0.0
+        || section_thickness.0 <= 0.0
+    {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let [path_group] = groups.as_slice() else {
+        return None;
+    };
+    if path_group.role != ROLE_0X5
+        || path_group.scope_reference_ordinal != 5
+        || scope.reference_members.get(5) != Some(&path_group.record_index)
+        || path_group.members.is_empty()
+        || scope.reference_members.len() != path_group.members.len() + 8
+        || path_group.members.as_slice()
+            != &scope.reference_members[6..scope.reference_members.len() - 2]
+    {
+        return None;
+    }
+    let path = resolved_loft_path(
+        path_group,
+        construction_groups,
+        edge_operands,
+        edge_identity_operands,
+        scope,
+    );
+    Some(FeatureDefinition::Sweep {
+        section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+            outer_radius: cadmpeg_ir::features::Length(section_size.0 / 2.0),
+            wall_thickness: None,
+        }),
+        sections: Vec::new(),
+        path: Some(path),
+        mode: SweepMode::Solid {
+            op: BooleanOp::NewBody,
+        },
+        orientation: None,
+        transition: None,
+        transformation: None,
+        path_tangent: false,
+        linearize: false,
+        twist: None,
+        path_extent: None,
+        guide_rail: None,
+        taper: None,
         scale: None,
         allow_multi_profile_faces: None,
     })

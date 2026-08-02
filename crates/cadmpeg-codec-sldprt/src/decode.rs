@@ -896,12 +896,13 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Sweep {
-                profile,
+                section,
                 path,
                 mode,
                 ..
             } => {
-                profile.as_ref().is_none_or(incomplete_profile)
+                matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                    || section.referenced_profile().is_some_and(incomplete_profile)
                     || path.as_ref().is_none_or(incomplete_path)
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)

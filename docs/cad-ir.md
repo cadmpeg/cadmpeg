@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"4"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"5"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -232,7 +232,9 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "4"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version.
+Readers accept exactly `ir_version: "5"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version.
+
+Version 5 replaces the optional `Sweep.profile` field and profile-only `Sweep.sections` list with the required `Sweep.section` sum type and a same-typed `Sweep.sections` list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -254,7 +256,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

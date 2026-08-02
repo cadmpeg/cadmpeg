@@ -180,7 +180,7 @@ fn sorted_refs<T>(entities: &[T], key: impl Fn(&T) -> String) -> Vec<&T> {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "4";
+pub const IR_VERSION: &str = "5";
 
 arena_registry!(declare_model);
 arena_registry!(declare_model_view);

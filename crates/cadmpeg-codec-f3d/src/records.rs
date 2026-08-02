@@ -1402,6 +1402,28 @@ pub enum DesignPathFeatureConstruction {
         /// Byte offsets of the scalar values in lane order.
         value_offsets: [u64; 6],
     },
+    /// Generated-section Pipe result and fixed dimension lanes.
+    Pipe {
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation u32.
+        operation_offset: u64,
+        /// Section-shape selector byte.
+        section_shape: u8,
+        /// Byte offset of the section-shape selector.
+        section_shape_offset: u64,
+        /// Whether the generated section is filled.
+        filled: bool,
+        /// Byte offset of the filled-section flag.
+        filled_offset: u64,
+        /// Four scalar values in path-fraction, reverse-path-fraction,
+        /// section-size, and section-thickness order.
+        values: [f64; 4],
+        /// Referenced scalar records in lane order.
+        record_indexes: [u32; 4],
+        /// Byte offsets of the scalar values in lane order.
+        value_offsets: [u64; 4],
+    },
 }
 
 /// Exact Boolean construction carried by a `Combine` scope.

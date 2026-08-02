@@ -2338,7 +2338,7 @@ fn encoder_writes_source_less_line_sketches() {
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
-            profile: Some(profile.clone()),
+            section: cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
             sections: Vec::new(),
             path: Some(path.clone()),
             mode: cadmpeg_ir::features::SweepMode::Solid {
@@ -10934,7 +10934,7 @@ fn decode_resolves_feature_topology_selections() {
     assert!(matches!(
         &decoded.ir.model.features[5].definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Faces(faces)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Faces(faces)),
             path: Some(PathRef::Edges(edges)),
             ..
         } if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)
@@ -15802,7 +15802,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(profile)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile)),
             path: Some(PathRef::Native(path_ref)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
                 op: BooleanOp::NewBody,
@@ -15816,7 +15816,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     ));
 
     let FeatureDefinition::Sweep {
-        profile,
+        section,
         mode,
         twist,
         scale,
@@ -15825,7 +15825,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     else {
         panic!("typed sweep");
     };
-    *profile = Some(ProfileRef::Feature(profile_b.clone()));
+    *section = cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile_b.clone()));
     *mode = cadmpeg_ir::features::SweepMode::Solid {
         op: BooleanOp::Join,
     };
@@ -15875,7 +15875,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: None,
@@ -15906,7 +15906,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: Some(Angle(0.5)),
@@ -15938,7 +15938,7 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: SweepMode::Solid {
                 op: BooleanOp::Unresolved
@@ -16189,7 +16189,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     assert!(matches!(
         &sweep.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(feature)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(feature)),
             ..
         } if feature == &helix.id
     ));
@@ -16219,7 +16219,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
             .find(|feature| feature.name.as_deref() == Some("Renamed surface sweep"))
             .map(|feature| &feature.definition),
         Some(FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(_)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_)),
             ..
         })
     ));
@@ -16294,7 +16294,10 @@ fn decode_projects_generated_surface_sweep_profile_path() {
     assert!(matches!(
         &second.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Generated { curves, native }),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
+                curves,
+                native,
+            }),
             ..
         } if curves.len() == 1
             && curves[0].feature == first.id
@@ -19491,7 +19494,7 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
     assert!(matches!(
         &feature.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Sketch(id)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(id)),
             ..
         } if id == &sketch.id
     ));
@@ -19520,7 +19523,10 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
         .expect("sweep history feature");
     assert!(matches!(
         &feature.definition,
-        FeatureDefinition::Sweep { profile: None, .. }
+        FeatureDefinition::Sweep {
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
+            ..
+        }
     ));
 }
 
@@ -19893,7 +19899,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .iter()
         .find_map(|feature| match &feature.definition {
             FeatureDefinition::Sweep {
-                profile: Some(ProfileRef::Sketch(profile)),
+                section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(profile)),
                 path: Some(PathRef::Sketch(path)),
                 ..
             } => Some((profile, path)),

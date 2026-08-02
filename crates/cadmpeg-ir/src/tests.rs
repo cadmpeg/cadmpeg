@@ -922,7 +922,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Sketch(sketch.clone())),
+            section: crate::features::SweepSection::Profile(ProfileRef::Sketch(sketch.clone())),
             sections: Vec::new(),
             path: Some(PathRef::Sketch(sketch.clone())),
             mode: crate::features::SweepMode::Solid {
@@ -4214,6 +4214,93 @@ fn loft_sections_accept_legacy_profiles_and_preserve_profile_shape() {
 }
 
 #[test]
+fn generated_sweep_sections_round_trip_and_validate() {
+    use crate::features::{
+        BooleanOp, Feature, FeatureDefinition, FeatureId, GeneratedSweepSection, Length, SweepMode,
+        SweepSection,
+    };
+
+    let definition = FeatureDefinition::Sweep {
+        section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+            outer_radius: Length(3.0),
+            wall_thickness: Some(Length(1.0)),
+        }),
+        sections: Vec::new(),
+        path: None,
+        mode: SweepMode::Solid {
+            op: BooleanOp::NewBody,
+        },
+        orientation: None,
+        transition: None,
+        transformation: None,
+        path_tangent: false,
+        linearize: false,
+        twist: None,
+        path_extent: None,
+        guide_rail: None,
+        taper: None,
+        scale: None,
+        allow_multi_profile_faces: None,
+    };
+    let json = serde_json::to_string(&definition).unwrap();
+    assert!(json.contains("\"kind\":\"generated\""));
+    assert!(json.contains("\"shape\":\"circular_region\""));
+    assert_eq!(
+        serde_json::from_str::<FeatureDefinition>(&json).unwrap(),
+        definition
+    );
+
+    let validate_definition = |definition| {
+        let mut ir = unit_cube();
+        ir.model.features.push(Feature {
+            id: FeatureId("synthetic:test:feature#generated-sweep".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        });
+        ir.finalize();
+        validate(&ir, Vec::new())
+    };
+    assert!(validate_definition(definition.clone()).is_ok());
+
+    let mut invalid_wall = definition.clone();
+    let FeatureDefinition::Sweep { section, .. } = &mut invalid_wall else {
+        unreachable!();
+    };
+    let SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+        outer_radius,
+        wall_thickness,
+    }) = section
+    else {
+        unreachable!();
+    };
+    *wall_thickness = Some(*outer_radius);
+    assert!(validate_definition(invalid_wall)
+        .findings
+        .iter()
+        .any(|finding| { finding.message == "sweep magnitude is invalid" }));
+
+    let mut invalid_mode = definition;
+    let FeatureDefinition::Sweep { mode, .. } = &mut invalid_mode else {
+        unreachable!();
+    };
+    *mode = SweepMode::Surface;
+    assert!(validate_definition(invalid_mode)
+        .findings
+        .iter()
+        .any(|finding| { finding.message == "sweep magnitude is invalid" }));
+}
+
+#[test]
 fn extrusion_side_drafts_are_validated() {
     use crate::features::{
         Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
@@ -5271,7 +5358,7 @@ fn feature_operation_geometry_is_validated() {
             },
         },
         FeatureDefinition::Sweep {
-            profile: None,
+            section: crate::features::SweepSection::Unresolved(None),
             sections: Vec::new(),
             path: None,
             mode: crate::features::SweepMode::Unresolved,

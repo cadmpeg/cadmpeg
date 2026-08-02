@@ -84,7 +84,7 @@ pub(crate) fn bind_sweep_sketch_selections(
             continue;
         };
         let FeatureDefinition::Sweep {
-            profile,
+            section,
             path,
             guide_rail,
             ..
@@ -93,7 +93,7 @@ pub(crate) fn bind_sweep_sketch_selections(
             continue;
         };
         if let (Some(ProfileRef::Native(group_id)), Some(profile_operand)) =
-            (profile.as_ref(), scope.sweep_profile.as_ref())
+            (section.referenced_profile(), scope.sweep_profile.as_ref())
         {
             let group_id = group_id.clone();
             let group_matches = {
@@ -117,12 +117,13 @@ pub(crate) fn bind_sweep_sketch_selections(
                 if let (Some(placement), None) = (candidates.next(), candidates.next()) {
                     let sketch = neutral_sketch_id(placement);
                     if sketches.iter().any(|candidate| candidate.id == sketch) {
-                        *profile = Some(ProfileRef::Sketch(sketch));
+                        *section =
+                            cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(sketch));
                     }
                 }
             }
         }
-        if let Some(ProfileRef::Native(group_id)) = profile.as_ref() {
+        if let Some(ProfileRef::Native(group_id)) = section.referenced_profile() {
             let group_id = group_id.clone();
             let resolved = (|| {
                 let mut matching_groups = groups.iter().filter(|group| {
@@ -177,10 +178,11 @@ pub(crate) fn bind_sweep_sketch_selections(
                     .then_some((sketch, selected))
             })();
             if let Some((sketch, selected)) = resolved {
-                *profile = Some(ProfileRef::SketchEntities {
-                    sketch,
-                    entities: vec![selected],
-                });
+                *section =
+                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::SketchEntities {
+                        sketch,
+                        entities: vec![selected],
+                    });
             }
         }
         let resolve_path = |path: &mut PathRef| -> Option<()> {

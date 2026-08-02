@@ -17380,7 +17380,10 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             };
             if !matches!(
                 model_features[model_index].definition,
-                FeatureDefinition::Sweep { profile: None, .. }
+                FeatureDefinition::Sweep {
+                    section: cadmpeg_ir::features::SweepSection::Unresolved(_),
+                    ..
+                }
             ) {
                 continue;
             }
@@ -17434,13 +17437,15 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         };
         let mut profile_bound = false;
         if let FeatureDefinition::Sweep {
-            profile,
+            section,
             path: path_slot,
             ..
         } = &mut model_features[index].definition
         {
-            if profile.is_none() {
-                *profile = Some(cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone()));
+            if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
+                *section = cadmpeg_ir::features::SweepSection::Profile(
+                    cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone()),
+                );
                 profile_bound = true;
             }
             if let Some((_, path)) = path {
@@ -28286,10 +28291,12 @@ pub(crate) fn bind_sketch_profiles(
                     sketch.name = Some(native_feature.name.clone());
                     *feature_sketch = Some(sketch.id.clone());
                 }
-                cadmpeg_ir::features::FeatureDefinition::Sweep { profile, .. }
-                    if profile.is_none() =>
+                cadmpeg_ir::features::FeatureDefinition::Sweep { section, .. }
+                    if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) =>
                 {
-                    *profile = Some(cadmpeg_ir::features::ProfileRef::Sketch(sketch.id.clone()));
+                    *section = cadmpeg_ir::features::SweepSection::Profile(
+                        cadmpeg_ir::features::ProfileRef::Sketch(sketch.id.clone()),
+                    );
                 }
                 cadmpeg_ir::features::FeatureDefinition::Extrude { profile, .. } => {
                     if matches!(
@@ -33125,17 +33132,13 @@ pub(crate) fn project_surface_sweep_profiles(
         else {
             continue;
         };
-        let FeatureDefinition::Sweep {
-            profile: profile_slot,
-            ..
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::Sweep { section, .. } = &mut feature.definition else {
             continue;
         };
-        if profile_slot.is_some() {
+        if !matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
             continue;
         }
-        *profile_slot = Some(profile);
+        *section = cadmpeg_ir::features::SweepSection::Profile(profile);
         for dependency in dependencies {
             if dependency != feature.id && !feature.dependencies.contains(&dependency) {
                 feature.dependencies.push(dependency);
@@ -34492,9 +34495,11 @@ pub(crate) fn project_dissected_sketches(
                 .and_then(replace)
                 .into_iter()
                 .collect(),
-            FeatureDefinition::Sweep { profile, .. } => {
-                profile.as_mut().and_then(replace).into_iter().collect()
-            }
+            FeatureDefinition::Sweep { section, .. } => section
+                .referenced_profile_mut()
+                .and_then(replace)
+                .into_iter()
+                .collect(),
             FeatureDefinition::Loft { sections, .. } => sections
                 .iter_mut()
                 .filter_map(|section| match section {
@@ -48826,7 +48831,7 @@ mod profile_join_tests {
         };
         features[0].dependencies.clear();
         features[0].definition = FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
             sections: Vec::new(),
             path: Some(PathRef::Native("curve-reference".into())),
             mode: SweepMode::Solid {
@@ -48848,7 +48853,9 @@ mod profile_join_tests {
         assert!(matches!(
             features[0].definition,
             FeatureDefinition::Sweep {
-                profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(ref profile)),
+                section: cadmpeg_ir::features::SweepSection::Profile(
+                    cadmpeg_ir::features::ProfileRef::Sketch(ref profile),
+                ),
                 path: Some(PathRef::Sketch(ref path)),
                 ..
             } if profile == &sketch && path == &path_sketch

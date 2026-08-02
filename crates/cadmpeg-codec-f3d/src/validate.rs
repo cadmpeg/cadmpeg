@@ -1851,6 +1851,11 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         }
                     }
             }
+            Some(records::DesignPathFeatureConstruction::Pipe { operation, .. }) => {
+                *operation == records::DesignExtrudeOperation::NewBody
+                    && groups.len() == 1
+                    && role_count(0x0000_0005_0000_0000) == 1
+            }
             None => false,
         };
         if !valid {

@@ -3522,7 +3522,7 @@ fn non_boolean_feature_definition_with_parameters(
         "SKIN" | "THRU_CURVE" => FeatureDefinition::LoftUnresolved,
         "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
         "SWP104" => FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
             sections: Vec::new(),
             path: None,
             path_extent: None,
@@ -5334,7 +5334,7 @@ mod tests {
                 std::collections::BTreeMap::new(),
             ),
             cadmpeg_ir::features::FeatureDefinition::Sweep {
-                profile: None,
+                section: cadmpeg_ir::features::SweepSection::Unresolved(_),
                 path: None,
                 mode: cadmpeg_ir::features::SweepMode::Unresolved,
                 ..

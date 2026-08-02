@@ -2846,7 +2846,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Sweep {
+                section,
+                sections,
                 path,
+                mode,
                 orientation,
                 twist,
                 path_extent,
@@ -2856,6 +2859,26 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 ..
             } => {
                 paths.extend(path);
+                let invalid_section =
+                    std::iter::once(section)
+                        .chain(sections)
+                        .any(|section| match section {
+                            crate::features::SweepSection::Unresolved(_) => false,
+                            crate::features::SweepSection::Profile(_) => false,
+                            crate::features::SweepSection::Generated(
+                                crate::features::GeneratedSweepSection::CircularRegion {
+                                    outer_radius,
+                                    wall_thickness,
+                                },
+                            ) => {
+                                !positive_feature_length(*outer_radius)
+                                    || wall_thickness.is_some_and(|thickness| {
+                                        !positive_feature_length(thickness)
+                                            || thickness.0 >= outer_radius.0
+                                    })
+                                    || !matches!(mode, crate::features::SweepMode::Solid { .. })
+                            }
+                        });
                 if let Some(guide_rail) = guide_rail {
                     paths.push(&guide_rail.path);
                 }
@@ -2863,7 +2886,8 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 {
                     paths.push(path);
                 }
-                if twist.is_some_and(|value| !value.0.is_finite())
+                if invalid_section
+                    || twist.is_some_and(|value| !value.0.is_finite())
                     || taper.is_some_and(|value| !value.0.is_finite())
                     || path_extent.is_some_and(|extent| {
                         !(0.0..=1.0).contains(&extent.along_fraction)
@@ -4902,10 +4926,14 @@ fn definition_profiles(
             profiles.extend(&construction.profile);
         }
         crate::features::FeatureDefinition::Sweep {
-            profile, sections, ..
+            section, sections, ..
         } => {
-            profiles.extend(profile);
-            profiles.extend(sections);
+            profiles.extend(section.referenced_profile());
+            profiles.extend(
+                sections
+                    .iter()
+                    .filter_map(crate::features::SweepSection::referenced_profile),
+            );
         }
         crate::features::FeatureDefinition::HelicalSweep { construction, .. } => {
             profiles.push(&construction.profile);
@@ -5211,12 +5239,18 @@ fn check_feature_sketch_references(
                 paths.extend(&construction.axis_reference);
             }
             FeatureDefinition::Sweep {
-                profile,
+                section,
+                sections,
                 path,
                 guide_rail,
                 ..
             } => {
-                profiles.extend(profile);
+                profiles.extend(section.referenced_profile());
+                profiles.extend(
+                    sections
+                        .iter()
+                        .filter_map(crate::features::SweepSection::referenced_profile),
+                );
                 paths.extend(path);
                 if let Some(guide_rail) = guide_rail {
                     paths.push(&guide_rail.path);

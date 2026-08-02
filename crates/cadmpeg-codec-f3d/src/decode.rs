@@ -577,21 +577,27 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 }
             }
             FeatureDefinition::Sweep {
-                profile,
+                section,
+                sections,
                 path,
                 guide_rail,
                 ..
             } => {
-                if profile.as_ref().is_some_and(|profile| {
-                    matches!(
-                        profile,
-                        ProfileRef::Native(_)
-                            | ProfileRef::Unresolved(_)
-                            | ProfileRef::SketchSelection { .. }
-                            | ProfileRef::SpatialSketchSelection { .. }
-                    )
-                }) {
-                    gaps.profile_selections += 1;
+                for section in std::iter::once(section).chain(sections) {
+                    if matches!(
+                        section,
+                        cadmpeg_ir::features::SweepSection::Unresolved(Some(_))
+                    ) || section.referenced_profile().is_some_and(|profile| {
+                        matches!(
+                            profile,
+                            ProfileRef::Native(_)
+                                | ProfileRef::Unresolved(_)
+                                | ProfileRef::SketchSelection { .. }
+                                | ProfileRef::SpatialSketchSelection { .. }
+                        )
+                    }) {
+                        gaps.profile_selections += 1;
+                    }
                 }
                 if path.as_ref().is_some_and(|path| {
                     matches!(
@@ -3382,7 +3388,10 @@ mod tests {
                 "ordinal": 1,
                 "definition": {
                     "definition": "sweep",
-                    "profile": {"kind": "native", "value": "native:sweep-profile"},
+                    "section": {
+                        "kind": "profile",
+                        "value": {"kind": "native", "value": "native:sweep-profile"}
+                    },
                     "path": {"kind": "native", "value": "native:sweep-path"},
                     "mode": {"mode": "solid", "op": "cut"}
                 }
