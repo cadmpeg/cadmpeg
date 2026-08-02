@@ -264,6 +264,34 @@ opaque stream. Its directory identity and exact bounded payload remain one
 content unit; marker-shaped bytes inside it do not create an implicit known
 stream.
 
+### 2.2 Fast-load component roster
+
+`/Root/FastLoad/Structure` begins with the twelve-byte envelope
+`ff ff ff ff 00 00 00 00 payload_len:u32 BE`. `payload_len + 12` equals the
+bounded directory-entry size. Its payload contains one component roster with
+this grammar:
+
+```text
+01 metadata_count_plus_one:u8
+metadata[metadata_count]
+01 03 00 00
+01 occurrence_count_plus_one:u8
+39[occurrence_count]
+01 02 ff ff ff ff
+01 prototype_count_plus_one:u8
+prototype[prototype_count]
+01 occurrence_count_plus_one:u8
+prototype_index:u8[occurrence_count]
+```
+
+Each `metadata` and `prototype` is `04 record_len:u8`, followed by
+`record_len - 2` non-control UTF-8 bytes and a zero terminator; `record_len`
+counts its own length byte, the string bytes, and the terminator. The first
+metadata value is `MODEL`. Each occurrence index is one-based and lies in
+`1..=prototype_count`. Occurrence order and repeated indices preserve distinct
+uses of the same named prototype. The roster does not assign hierarchy or a
+placement transform.
+
 `part/attrs` has an `UgAttributes` root. Each `Attribute` supplies `owner`,
 `pdmBased`, `title`/`utf8title`, `value`/`utf8value`, `version`, and an XML schema
 type. UTF-8 title and value fields take precedence over their compatibility

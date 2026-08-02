@@ -11,7 +11,9 @@ use crate::parasolid::Stream;
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 
 #[allow(clippy::wildcard_imports)]
-use super::{display_jt::*, features::*, om::*, parasolid::*, segments::*, substrate::*};
+use super::{
+    display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, substrate::*,
+};
 
 /// Records extracted from the `display_jt` domain.
 #[allow(clippy::struct_field_names)]
@@ -96,6 +98,12 @@ pub(crate) struct SegmentRecords {
     pub(crate) segment_stream_links: Vec<SegmentStreamLink>,
     pub(crate) segment_body_bindings: Vec<SegmentBodyBinding>,
     pub(crate) segment_body_lineage_statuses: Vec<SegmentBodyLineageStatus>,
+}
+
+/// Records extracted from the fast-load `structure` domain.
+pub(crate) struct StructureRecords {
+    pub(crate) component_prototypes: Vec<FastLoadComponentPrototype>,
+    pub(crate) component_occurrences: Vec<FastLoadComponentOccurrence>,
 }
 
 /// Records extracted from the `features` domain.
@@ -257,6 +265,7 @@ pub(crate) struct NativeModel {
     pub(crate) display_jt: DisplayJtRecords,
     pub(crate) parasolid: ParasolidRecords,
     pub(crate) segments: SegmentRecords,
+    pub(crate) structure: StructureRecords,
     pub(crate) features: FeatureRecords,
     pub(crate) om: OmRecords,
 }
@@ -756,6 +765,8 @@ impl NativeModel {
             &external_reference_records,
             &external_reference_tail_reference_pairs,
         );
+        let (fast_load_component_prototypes, fast_load_component_occurrences) =
+            fast_load_component_roster(container);
 
         NativeModel {
             display_jt: DisplayJtRecords {
@@ -831,6 +842,10 @@ impl NativeModel {
                 segment_stream_links,
                 segment_body_bindings,
                 segment_body_lineage_statuses,
+            },
+            structure: StructureRecords {
+                component_prototypes: fast_load_component_prototypes,
+                component_occurrences: fast_load_component_occurrences,
             },
             features: FeatureRecords {
                 feature_operation_labels,
@@ -980,9 +995,9 @@ impl NativeModel {
 
     /// Whether every emptiness-counting record family is empty. Derived from
     /// [`CATALOGUE`](super::catalogue::CATALOGUE): the fold visits
-    /// exactly the rows whose `counts_toward_emptiness` flag is set (133 of the
-    /// 179 families), reproducing the operand set of the legacy hand-written
-    /// all-empty guard. The 46 non-counting families are documented on
+    /// exactly the rows whose `counts_toward_emptiness` flag is set (160 of the
+    /// 207 families), reproducing the operand set of the legacy hand-written
+    /// all-empty guard. The 47 non-counting families are documented on
     /// [`CatalogueRow::counts_toward_emptiness`](super::catalogue::CatalogueRow::counts_toward_emptiness).
     /// The fold is order-insensitive — the legacy guard was a pure `&&` of
     /// `is_empty()` calls on plain `Vec`s — so it is behavior-identical to the

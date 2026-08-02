@@ -24,6 +24,7 @@ mod model;
 mod om;
 mod parasolid;
 mod segments;
+mod structure;
 mod substrate;
 pub(crate) mod vector;
 

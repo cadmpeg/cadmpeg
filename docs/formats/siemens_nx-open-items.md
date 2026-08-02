@@ -456,9 +456,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the field grammar and semantics of `/Root/FastLoad/Structure`?
 
-**Known.** `siemens_nx.md:245` through `siemens_nx.md:362` classify the stream and retain its bounded container entry.
+**Known.** The stream has a big-endian bounded envelope. Its typed component
+roster defines ordered named prototypes and a one-based prototype index for
+each distinct occurrence. Other payload fields remain uninterpreted.
 
-**Need.** We must know the grammar to decode fast-load assembly structure as typed data.
+**Need.** We must know the remaining payload grammar, including hierarchy,
+placement, UUID, and state fields.
 
 ### AM-02. Fast-load JT stream
 
@@ -504,7 +507,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each child-bound persistent-handle set identify one distinct assembly occurrence?
 
-**Known.** `siemens_nx.md:146` through `siemens_nx.md:147` define segment order. `siemens_nx.md:1533` through `siemens_nx.md:1541` define `EXTREFSTREAM` handle sets and child-path bindings.
+**Known.** The fast-load component roster preserves each occurrence ordinal and
+its named prototype, including repeated uses. `EXTREFSTREAM` preserves child
+paths and persistent-handle sets independently.
 
 **Need.** We must know the mapping to preserve multiple occurrences of the same child part.
 

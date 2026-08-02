@@ -13738,7 +13738,7 @@ mod golden {
 
     use super::*;
 
-    /// Every arena name production writes via `set_arena` in `decode.rs`, extracted
+    /// Every arena name production writes via the native catalogue, extracted
     /// mechanically. This is the coverage denominator; `arena_coverage_is_a_subset`
     /// fails if production introduces an arena name this list does not know, which
     /// keeps the denominator honest as the code evolves.
@@ -13796,6 +13796,8 @@ mod golden {
         "external_reference_records",
         "external_reference_tail_reference_pairs",
         "external_references",
+        "fast_load_component_occurrences",
+        "fast_load_component_prototypes",
         "feature_block_construction_payloads",
         "feature_block_construction_references",
         "feature_block_constructions",
@@ -14647,7 +14649,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (205), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (207), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -14656,7 +14658,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 205, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 207, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

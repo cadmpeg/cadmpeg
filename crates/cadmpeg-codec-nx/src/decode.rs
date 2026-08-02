@@ -148,7 +148,7 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
                 code: LossKind::RecordNotTyped,
                 severity: Severity::Info,
                 message: format!(
-                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not typed.",
+                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                     entry.name,
                     content.label()
                 ),
