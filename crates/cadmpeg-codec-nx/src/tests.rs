@@ -14640,18 +14640,26 @@ mod golden {
     /// arenas, all of them catalogue-driven, so no non-catalogued arena exists.
     #[test]
     fn catalogue_arenas_match_known_arenas() {
-        use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
+        use cadmpeg_ir::native::catalogue::Phase;
+
+        use crate::native::catalogue::CATALOGUE;
 
         assert_eq!(CATALOGUE.len(), 205, "one catalogue row per model field");
         assert_eq!(
-            CATALOGUE[note_group_a_end()].arena,
-            "feature_parameter_uses",
-            "group A ends immediately before semantic-island parameter notes"
+            CATALOGUE
+                .iter()
+                .filter(|row| row.phase == Phase::GroupA)
+                .count(),
+            97,
+            "group A family count"
         );
         assert_eq!(
-            CATALOGUE[note_group_b_end()].arena,
-            "external_reference_records",
-            "group B ends immediately before island-noted or arena-only rows"
+            CATALOGUE
+                .iter()
+                .filter(|row| row.phase == Phase::GroupB)
+                .count(),
+            3,
+            "group B family count"
         );
 
         let mut catalogue_arenas = BTreeSet::new();
