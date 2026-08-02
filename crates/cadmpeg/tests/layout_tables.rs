@@ -353,12 +353,22 @@ impl Context {
     fn sections(&mut self, spec: &str) -> Result<&BTreeMap<String, String>, String> {
         if !self.specs.contains_key(spec) {
             let path = self.root.join(spec);
-            let text = std::fs::read_to_string(&path)
-                .map_err(|e| format!("cannot read spec `{spec}`: {e}"))?;
+            let text = read_text(&path).map_err(|e| format!("cannot read spec `{spec}`: {e}"))?;
             self.specs.insert(spec.to_string(), section_bodies(&text));
         }
         Ok(&self.specs[spec])
     }
+}
+
+/// Read a text file with `\r\n` folded to `\n`.
+///
+/// Only `crates/cadmpeg-codec-nx/tests/golden/*.json` is pinned to LF in
+/// `.gitattributes`, so a Windows checkout hands these tables, the
+/// specifications, and the rendered pages CRLF. Rendering emits LF, and the
+/// stale-page check compares the two byte for byte. Folding on read keeps the
+/// comparison, and the TOML multi-line notes that feed it, platform-neutral.
+fn read_text(path: &Path) -> std::io::Result<String> {
+    Ok(std::fs::read_to_string(path)?.replace("\r\n", "\n"))
 }
 
 /// Check that `anchor` occurs inside `section` of `spec`.
@@ -644,7 +654,7 @@ fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
 
         for check in &record.code {
             let path = ctx.root.join(&check.path);
-            match std::fs::read_to_string(&path) {
+            match read_text(&path) {
                 Err(e) => push(
                     &mut errors,
                     format!("{at}: code check cannot read `{}`: {e}", check.path),
@@ -1092,7 +1102,7 @@ fn layout_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn parse(path: &Path) -> LayoutFile {
-    let text = std::fs::read_to_string(path).unwrap();
+    let text = read_text(path).unwrap();
     toml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
@@ -1192,9 +1202,15 @@ fn rendered_layout_pages_match_the_tables() {
             std::fs::write(&target, &rendered).unwrap();
             continue;
         }
-        let current = std::fs::read_to_string(&target).unwrap_or_default();
+        let current = read_text(&target).unwrap_or_default();
         if current != rendered {
-            stale.push(target.display().to_string());
+            stale.push(
+                target
+                    .file_name()
+                    .unwrap_or(target.as_os_str())
+                    .to_string_lossy()
+                    .to_string(),
+            );
         }
     }
     assert!(
