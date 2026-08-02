@@ -906,6 +906,8 @@ pub struct FeatureSketchPayloadFixedPair {
     pub values: [f64; 2],
     /// Exact ordered seven-byte two's-complement payloads.
     pub raw_values: [[u8; 7]; 2],
+    /// Exact discriminator and branch prefix selecting the pair layout.
+    pub discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
     /// Payload-relative offsets of the two atom markers.
@@ -4469,6 +4471,7 @@ pub fn feature_sketch_payload_fixed_pairs(
                         ordinal: ordinal as u32,
                         values: pair.values,
                         raw_values: pair.raw_values,
+                        discriminator: pair.discriminator,
                         payload_offset: pair.offset as u64,
                         value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                         source_offset: source_offset(pair.offset)?,
@@ -9645,6 +9648,7 @@ mod tests {
             ordinal: 0,
             values: [0.5, -0.5],
             raw_values: [[0; 7]; 2],
+            discriminator: vec![0x04],
             payload_offset: 20,
             value_payload_offsets: [28, 37],
             source_offset: 1020,

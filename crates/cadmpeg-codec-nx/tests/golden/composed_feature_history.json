@@ -5187,6 +5187,16 @@
             "feature_sketch_payload_fixed_pairs": [
               {
                 "construction_payload": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
+                "discriminator": [
+                  4,
+                  224,
+                  72,
+                  14,
+                  2,
+                  3,
+                  128,
+                  132
+                ],
                 "id": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000",
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
                 "ordinal": 0,

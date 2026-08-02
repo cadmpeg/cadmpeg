@@ -1231,6 +1231,8 @@ pub struct SketchPayloadFixedPair {
     pub value_offsets: [usize; 2],
     /// Exact seven-byte two's-complement payloads.
     pub raw_values: [[u8; 7]; 2],
+    /// Exact discriminator and branch prefix selecting the pair layout.
+    pub discriminator: Vec<u8>,
 }
 
 /// Exact pair of signed Q1.55 atoms following a datum-CSYS branch discriminator.
@@ -4030,39 +4032,54 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
 
 /// Decode every exactly framed signed Q1.55 pair in a reconstructed sketch payload.
 pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
-    const DISCRIMINATOR: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    const LEGACY: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    const SHORT: [u8; 15] = [
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
+    ];
+    const EXTENDED: [u8; 17] = [
+        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01,
+    ];
     let mut pairs = Vec::new();
-    for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
-        if window != DISCRIMINATOR {
-            continue;
+    for (discriminator, separator_width) in [
+        (LEGACY.as_slice(), 1usize),
+        (SHORT.as_slice(), 0),
+        (EXTENDED.as_slice(), 0),
+    ] {
+        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+            if window != discriminator {
+                continue;
+            }
+            let first = offset + discriminator.len();
+            let second = first + 8 + separator_width;
+            if bytes.get(first) != Some(&0x30)
+                || (separator_width != 0 && bytes.get(first + 8) != Some(&0x00))
+                || bytes.get(second) != Some(&0x30)
+            {
+                continue;
+            }
+            let Some(first_raw) = bytes
+                .get(first + 1..first + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            let Some(second_raw) = bytes
+                .get(second + 1..second + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            pairs.push(SketchPayloadFixedPair {
+                offset,
+                values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
+                value_offsets: [first, second],
+                raw_values: [first_raw, second_raw],
+                discriminator: discriminator.to_vec(),
+            });
         }
-        let first = offset + DISCRIMINATOR.len();
-        let second = first + 9;
-        if bytes.get(first) != Some(&0x30)
-            || bytes.get(first + 8) != Some(&0x00)
-            || bytes.get(second) != Some(&0x30)
-        {
-            continue;
-        }
-        let Some(first_raw) = bytes
-            .get(first + 1..first + 8)
-            .and_then(|raw| raw.try_into().ok())
-        else {
-            continue;
-        };
-        let Some(second_raw) = bytes
-            .get(second + 1..second + 8)
-            .and_then(|raw| raw.try_into().ok())
-        else {
-            continue;
-        };
-        pairs.push(SketchPayloadFixedPair {
-            offset,
-            values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
-            value_offsets: [first, second],
-            raw_values: [first_raw, second_raw],
-        });
     }
+    pairs.sort_by_key(|pair| pair.offset);
     pairs
 }
 

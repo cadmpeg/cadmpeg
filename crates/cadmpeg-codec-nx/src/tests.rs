@@ -2737,9 +2737,40 @@ fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
     assert_eq!(pairs[0].values, [0.5, -0.5]);
     assert_eq!(pairs[0].value_offsets, [8, 17]);
     assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].discriminator, bytes[..8]);
 
     let mut malformed = bytes;
     malformed[16] = 1;
+    assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
+}
+
+#[test]
+fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
+    let short = [
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    let extended = [
+        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x30, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xe0, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    ];
+
+    let short_pair = crate::om::sketch_payload_fixed_pairs(&short);
+    assert_eq!(short_pair.len(), 1);
+    assert_eq!(short_pair[0].values, [0.5, -0.5]);
+    assert_eq!(short_pair[0].value_offsets, [15, 23]);
+    assert_eq!(short_pair[0].discriminator, short[..15]);
+
+    let extended_pair = crate::om::sketch_payload_fixed_pairs(&extended);
+    assert_eq!(extended_pair.len(), 1);
+    assert_eq!(extended_pair[0].values, [0.25, -0.25]);
+    assert_eq!(extended_pair[0].value_offsets, [17, 25]);
+    assert_eq!(extended_pair[0].discriminator, extended[..17]);
+
+    let mut malformed = short;
+    malformed[23] = 0x31;
     assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
