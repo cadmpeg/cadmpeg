@@ -1399,6 +1399,23 @@ pub struct DesignDraftOperation {
     pub opposite_angle_offset: u64,
 }
 
+/// Exact solved construction carried by a two-point `WorkAxis` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignWorkAxisConstruction {
+    /// First construction point in model centimetres.
+    pub origin: [f64; 3],
+    /// Displacement from the first construction point to the second, in centimetres.
+    pub displacement: [f64; 3],
+    /// Byte offset of the first origin coordinate.
+    pub origin_offset: u64,
+    /// Byte offset of the first displacement component.
+    pub displacement_offset: u64,
+    /// Ordered point-carrier record indices corroborating the two endpoints.
+    pub point_record_indices: [u32; 2],
+    /// Byte offsets of the first coordinate in each point carrier.
+    pub point_offsets: [u64; 2],
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -1551,6 +1568,9 @@ pub struct DesignParameterScope {
     /// Byte offset of the `WorkPlane` construction reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_reference_offset: Option<u64>,
+    /// Exact two-point construction carried by a `WorkAxis` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_axis_construction: Option<DesignWorkAxisConstruction>,
     /// Exact row-major local-to-model frame carried by a `JointOrigin` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_transform: Option<[[f64; 4]; 4]>,

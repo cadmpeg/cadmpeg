@@ -22,7 +22,7 @@ use crate::records::{
     DesignMirrorConstruction, DesignMoveOperation, DesignParameterOwner, DesignParameterScope,
     DesignPathFeatureConstruction, DesignRecordHeader, DesignRectangularPatternConstruction,
     DesignRectangularPatternInstances, DesignScaleOperation, DesignSolidPrimitive,
-    DesignSurfaceStitchOperation,
+    DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
 };
 use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -96,6 +96,9 @@ pub fn decode_parameter_scopes(
                         scope.work_plane_reference_offset = Some(reference_offset);
                     }
                 }
+            }
+            if let Some(construction) = exact_work_axis_construction(bytes, &records, &scope) {
+                scope.work_axis_construction = Some(construction);
             }
             if scope.kind == "JointOrigin" {
                 if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
@@ -2083,6 +2086,84 @@ pub(crate) fn exact_work_plane_frame(
     Some(*candidate)
 }
 
+pub(crate) fn exact_work_axis_construction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignWorkAxisConstruction> {
+    if scope.kind != "WorkAxis" {
+        return None;
+    }
+    let [axis_record_index, _, first_point_record_index, _, second_point_record_index] =
+        scope.reference_members.as_slice()
+    else {
+        return None;
+    };
+    let axis_frames = records.frames(*axis_record_index).collect::<Vec<_>>();
+    let [(axis_start, axis_paired)] = axis_frames.as_slice() else {
+        return None;
+    };
+    if axis_paired.checked_sub(*axis_start)? != 232
+        || bytes.get(axis_start + 11..axis_start + 21) != Some(&[0; 10])
+        || u32_at(bytes, axis_start + 21)? != 8
+        || u32_at(bytes, axis_start + 118)? != 2
+    {
+        return None;
+    }
+    let values = f64s_at(bytes, axis_start + 25, 8)?;
+    if values.iter().any(|value| !value.is_finite()) || values[6..] != [0.0, 0.0] {
+        return None;
+    }
+    let origin: [f64; 3] = values[..3].try_into().ok()?;
+    let displacement: [f64; 3] = values[3..6].try_into().ok()?;
+    let displacement_length = displacement[0]
+        .hypot(displacement[1])
+        .hypot(displacement[2]);
+    if displacement_length <= f64::EPSILON {
+        return None;
+    }
+    let point_record_indices = [*first_point_record_index, *second_point_record_index];
+    for (ordinal, expected) in point_record_indices.iter().enumerate() {
+        let reference_at = axis_start + 122 + ordinal * 11;
+        if bytes.get(reference_at) != Some(&1)
+            || u32_at(bytes, reference_at + 1)? != *expected
+            || bytes.get(reference_at + 5..reference_at + 11) != Some(&[0; 6])
+        {
+            return None;
+        }
+    }
+    let mut points = [[0.0; 3]; 2];
+    let mut point_offsets = [0; 2];
+    for (ordinal, record_index) in point_record_indices.iter().enumerate() {
+        let point_frames = records.frames(*record_index).collect::<Vec<_>>();
+        let [(start, paired)] = point_frames.as_slice() else {
+            return None;
+        };
+        if paired.checked_sub(*start)? != 197 || bytes.get(start + 11..start + 42) != Some(&[0; 31])
+        {
+            return None;
+        }
+        let point = f64s_at(bytes, start + 42, 3)?;
+        if point.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        points[ordinal] = point.try_into().ok()?;
+        point_offsets[ordinal] = u64::try_from(start + 42).ok()?;
+    }
+    let endpoint = std::array::from_fn(|axis| origin[axis] + displacement[axis]);
+    if points != [origin, endpoint] {
+        return None;
+    }
+    Some(DesignWorkAxisConstruction {
+        origin,
+        displacement,
+        origin_offset: u64::try_from(axis_start + 25).ok()?,
+        displacement_offset: u64::try_from(axis_start + 49).ok()?,
+        point_record_indices,
+        point_offsets,
+    })
+}
+
 pub(crate) fn exact_joint_origin_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -2753,6 +2834,7 @@ pub(crate) fn parse_parameter_scope(
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,

@@ -532,6 +532,38 @@ pub fn project_parameter_design_with_edge_identities(
                                 ),
                             },
                         )
+                    } else if scope.kind == "WorkAxis" {
+                        scope
+                            .work_axis_construction
+                            .as_ref()
+                            .and_then(|construction| {
+                                let displacement = Vector3::new(
+                                    construction.displacement[0],
+                                    construction.displacement[1],
+                                    construction.displacement[2],
+                                );
+                                Some((construction, displacement.unit()?))
+                            })
+                            .map_or_else(
+                                || FeatureDefinition::Native {
+                                    kind: scope.kind.clone(),
+                                    parameters: parameters
+                                        .iter()
+                                        .map(|(_, parameter)| {
+                                            (parameter.name.clone(), parameter.expression.clone())
+                                        })
+                                        .collect(),
+                                    properties: native_scope_properties(scope, native_scope),
+                                },
+                                |(construction, direction)| FeatureDefinition::DatumAxis {
+                                    origin: Point3::new(
+                                        construction.origin[0] * 10.0,
+                                        construction.origin[1] * 10.0,
+                                        construction.origin[2] * 10.0,
+                                    ),
+                                    direction,
+                                },
+                            )
                     } else if scope.kind == "WorkPoint" {
                         scope.work_point_position.map_or_else(
                             || FeatureDefinition::Native {

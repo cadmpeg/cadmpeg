@@ -35,8 +35,8 @@ use crate::design::decode::scopes::{
     exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters, exact_fixed_fillet_parameters,
     exact_joint_origin_frame, exact_path_feature_construction,
     exact_rectangular_pattern_construction, exact_scale_operation, exact_solid_primitive,
-    exact_surface_stitch_operation, exact_work_plane_frame, exact_work_point_position,
-    parse_parameter_scope,
+    exact_surface_stitch_operation, exact_work_axis_construction, exact_work_plane_frame,
+    exact_work_point_position, parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -3991,6 +3991,74 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (extended_direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
 
+    let mut axis_bytes = vec![0; 232];
+    axis_bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    axis_bytes[4..7].copy_from_slice(b"701");
+    axis_bytes[7..11].copy_from_slice(&100u32.to_le_bytes());
+    axis_bytes[21..25].copy_from_slice(&8u32.to_le_bytes());
+    let axis_values = [1.0_f64, 2.0, 3.0, 0.0, -3.0, 4.0, 0.0, 0.0];
+    for (ordinal, value) in axis_values.into_iter().enumerate() {
+        let at = 25 + ordinal * 8;
+        axis_bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    axis_bytes[118..122].copy_from_slice(&2u32.to_le_bytes());
+    for (ordinal, record_index) in [102_u32, 104].into_iter().enumerate() {
+        let at = 122 + ordinal * 11;
+        axis_bytes[at] = 1;
+        axis_bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+    axis_bytes.extend_from_slice(&3u32.to_le_bytes());
+    axis_bytes.extend_from_slice(b"258");
+    axis_bytes.extend_from_slice(&100u32.to_le_bytes());
+    for (record_index, point) in [(102_u32, [1.0_f64, 2.0, 3.0]), (104, [1.0, -1.0, 7.0])] {
+        let start = axis_bytes.len();
+        axis_bytes.resize(start + 197, 0);
+        axis_bytes[start..start + 4].copy_from_slice(&3u32.to_le_bytes());
+        axis_bytes[start + 4..start + 7].copy_from_slice(b"702");
+        axis_bytes[start + 7..start + 11].copy_from_slice(&record_index.to_le_bytes());
+        for (ordinal, value) in point.into_iter().enumerate() {
+            let at = start + 42 + ordinal * 8;
+            axis_bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        axis_bytes.extend_from_slice(&3u32.to_le_bytes());
+        axis_bytes.extend_from_slice(b"258");
+        axis_bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+    let mut axis_scope = scope.clone();
+    axis_scope.id = "f3d:native:parameter-scope#55".into();
+    axis_scope.kind = "WorkAxis".into();
+    axis_scope.reference_members = vec![100, 101, 102, 103, 104];
+    let construction = exact_work_axis_construction(
+        &axis_bytes,
+        &IndexedRecordOffsets::build(&axis_bytes),
+        &axis_scope,
+    )
+    .expect("exact two-point WorkAxis construction");
+    assert_eq!(construction.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(construction.displacement, [0.0, -3.0, 4.0]);
+    assert_eq!(construction.origin_offset, 25);
+    assert_eq!(construction.displacement_offset, 49);
+    assert_eq!(construction.point_record_indices, [102, 104]);
+    axis_scope.work_axis_construction = Some(construction);
+    let (axis_features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&axis_scope),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        axis_features.as_slice(),
+        [Feature {
+            definition: FeatureDefinition::DatumAxis { origin, direction },
+            ..
+        }] if *origin == Point3::new(10.0, 20.0, 30.0)
+            && *direction == Vector3::new(0.0, -0.6, 0.8)
+    ));
+
     let compact_at = bytes.len();
     let mut compact = vec![0; 321];
     compact[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -5909,6 +5977,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -6760,6 +6829,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -7190,6 +7260,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -12800,6 +12871,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -12955,6 +13027,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -13145,6 +13218,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -13863,6 +13937,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -14728,6 +14803,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -15165,6 +15241,7 @@ fn parameter_expressions_project_feature_dependencies() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -15289,6 +15366,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -16321,6 +16399,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -16496,6 +16575,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
@@ -16999,6 +17079,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,

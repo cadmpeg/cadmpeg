@@ -10967,6 +10967,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
