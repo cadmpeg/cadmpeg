@@ -35621,6 +35621,23 @@ pub(crate) fn project_relation_point_geometry(
                 .filter_map(|operand| operand.entity_ref.as_deref())
         })
         .collect::<HashSet<_>>();
+    let curve_operands = lanes
+        .iter()
+        .flat_map(|lane| &lane.relation_instances)
+        .flat_map(|relation| {
+            let first = match relation.family {
+                FeatureInputRelationFamily::LineLineDistance
+                | FeatureInputRelationFamily::Angle => 0,
+                FeatureInputRelationFamily::PointLineDistance => 1,
+                _ => relation.operands.len(),
+            };
+            relation
+                .operands
+                .iter()
+                .skip(first)
+                .filter_map(|operand| operand.entity_ref.as_deref())
+        })
+        .collect::<HashSet<_>>();
     let mut referenced = lanes
         .iter()
         .flat_map(|lane| {
@@ -35757,8 +35774,21 @@ pub(crate) fn project_relation_point_geometry(
                     current_wide_undetailed_line(&lane.native_payload, offset)
                         || legacy_undetailed_profile_line(&lane.native_payload, offset)
                 });
+            let self_linked_curve_handle = curve_operands.contains(marker.id.as_str())
+                && marker.coordinates_m.is_some()
+                && marker.links.iter().any(|link| link.entity_ref == marker.id)
+                && marker
+                    .links
+                    .iter()
+                    .filter(|link| link.entity_ref != marker.id)
+                    .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()))
+                    .filter(|linked| linked.coordinates_m.is_some())
+                    .count()
+                    == 1;
             if !referenced.contains(marker.id.as_str())
-                || !(marker.kind == SketchInputKind::LineOrCircle || undetailed_arc_line)
+                || !(marker.kind == SketchInputKind::LineOrCircle
+                    || undetailed_arc_line
+                    || self_linked_curve_handle)
                 || entities
                     .iter()
                     .any(|entity| entity.native_ref.as_deref() == Some(marker.id.as_str()))
@@ -35778,21 +35808,31 @@ pub(crate) fn project_relation_point_geometry(
                 &marker_roster,
             );
             if endpoints.len() != 2 {
-                endpoints = marker
-                    .links
-                    .iter()
-                    .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
-                    .filter(|endpoint| {
-                        endpoint.feature_ref == marker.feature_ref
-                            && endpoint.coordinates_m.is_some()
-                            && entities.iter().any(|entity| {
-                                entity.sketch == *sketch
-                                    && matches!(entity.geometry, SketchGeometry::Point { .. })
-                                    && (entity.native_ref.as_deref() == Some(endpoint.id.as_str())
-                                        || entity.geometry_ref.as_deref()
-                                            == Some(endpoint.id.as_str()))
-                            })
-                    })
+                endpoints = self_linked_curve_handle
+                    .then_some(marker)
+                    .into_iter()
+                    .chain(
+                        marker
+                            .links
+                            .iter()
+                            .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
+                            .filter(|endpoint| endpoint.id != marker.id)
+                            .filter(|endpoint| {
+                                endpoint.feature_ref == marker.feature_ref
+                                    && endpoint.coordinates_m.is_some()
+                                    && entities.iter().any(|entity| {
+                                        entity.sketch == *sketch
+                                            && matches!(
+                                                entity.geometry,
+                                                SketchGeometry::Point { .. }
+                                            )
+                                            && (entity.native_ref.as_deref()
+                                                == Some(endpoint.id.as_str())
+                                                || entity.geometry_ref.as_deref()
+                                                    == Some(endpoint.id.as_str()))
+                                    })
+                            }),
+                    )
                     .collect::<Vec<_>>();
                 endpoints.sort_unstable_by_key(|endpoint| endpoint.offset);
                 endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
@@ -51311,6 +51351,19 @@ mod profile_join_tests {
         ];
         let mut coincident_point = marker("coincident-point", Some([0.002, 0.001]));
         coincident_point.offset = 87;
+        let mut self_linked_curve = marker("self-linked-curve", Some([0.006, 0.005]));
+        self_linked_curve.offset = 88;
+        self_linked_curve.kind = SketchInputKind::Arc;
+        self_linked_curve.links = vec![
+            SketchInputLink {
+                local_id: 8,
+                entity_ref: self_linked_curve.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 9,
+                entity_ref: endpoint_b.id.clone(),
+            },
+        ];
         markers.extend([
             endpoint_a,
             endpoint_b,
@@ -51318,6 +51371,7 @@ mod profile_join_tests {
             support_handle.clone(),
             qualified_curve.clone(),
             coincident_point.clone(),
+            self_linked_curve.clone(),
         ]);
         let mut native_payload = vec![0; 181];
         for offset in [0, 27, 54] {
@@ -51408,7 +51462,7 @@ mod profile_join_tests {
                         reference_ref: "line-reference".into(),
                         kind: FeatureInputOperandKind::Native(0x8386),
                         entity_index: 0,
-                        entity_ref: Some(support_handle.id),
+                        entity_ref: Some(support_handle.id.clone()),
                     }],
                 },
                 FeatureInputRelationInstance {
@@ -51439,6 +51493,34 @@ mod profile_join_tests {
                         },
                     ],
                 },
+                FeatureInputRelationInstance {
+                    id: "self-linked-curve-relation".into(),
+                    parent: "lane".into(),
+                    ordinal: 4,
+                    offset: 100,
+                    family: FeatureInputRelationFamily::Angle,
+                    class_ref: "class".into(),
+                    feature_ref: "feature-native".into(),
+                    scalar_refs: Vec::new(),
+                    parameter_scalar_ref: None,
+                    display_scalar_ref: None,
+                    operands: vec![
+                        FeatureInputOperand {
+                            offset: 101,
+                            reference_ref: "self-linked-curve-reference".into(),
+                            kind: FeatureInputOperandKind::Native(0x8386),
+                            entity_index: 18,
+                            entity_ref: Some(self_linked_curve.id.clone()),
+                        },
+                        FeatureInputOperand {
+                            offset: 102,
+                            reference_ref: "support-curve-reference".into(),
+                            kind: FeatureInputOperandKind::Native(0x8386),
+                            entity_index: 19,
+                            entity_ref: Some(support_handle.id.clone()),
+                        },
+                    ],
+                },
             ],
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
@@ -51460,6 +51542,13 @@ mod profile_join_tests {
                     entity.geometry,
                     SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
                 )
+        }));
+        assert!(entities.iter().any(|entity| {
+            entity.construction
+                && entity.native_ref.as_deref() == Some("self-linked-curve")
+                && entity.endpoint_refs == ["endpoint-b", "self-linked-curve"]
+                && matches!(entity.geometry, SketchGeometry::Line { start, end }
+                    if start == Point2::new(4.0, 7.0) && end == Point2::new(5.0, 6.0))
         }));
         assert!(entities.iter().any(|entity| {
             entity.construction
