@@ -3367,7 +3367,10 @@ mod history_reference_tests {
             },
         ];
 
-        crate::resolved_features::enrich_history_sketch_block_references(&mut histories, &[lane]);
+        crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
+            &mut histories,
+            &[lane],
+        );
 
         assert_eq!(
             histories[0].features[1]
@@ -9385,24 +9388,24 @@ pub(crate) enum HistoryEnrichment {
     Write,
 }
 
-/// Semantic-projection mode of `resolved_features::enrich_history_parameters`
+/// Semantic-projection mode of `resolved_features::parameters::enrich_history_parameters`
 /// (the historical `true` argument): projects parameters together with their
 /// downstream semantic feature inputs.
 pub(crate) fn enrich_history_parameters_semantic(
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) {
-    crate::resolved_features::enrich_history_parameters(histories, lanes, true);
+    crate::resolved_features::parameters::enrich_history_parameters(histories, lanes, true);
 }
 
-/// Parameter-only mode of `resolved_features::enrich_history_parameters` (the
+/// Parameter-only mode of `resolved_features::parameters::enrich_history_parameters` (the
 /// historical `false` argument): projects parameter values without the semantic
 /// feature-input projection.
 pub(crate) fn enrich_history_parameters_values_only(
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) {
-    crate::resolved_features::enrich_history_parameters(histories, lanes, false);
+    crate::resolved_features::parameters::enrich_history_parameters(histories, lanes, false);
 }
 
 /// The shared native-lane enrichment prefix, declared once for both codec
@@ -9416,19 +9419,21 @@ pub(crate) fn enrich_history_semantic(
     pmi_dimensions: &[crate::records::PmiDimension],
     mode: HistoryEnrichment,
 ) {
-    crate::resolved_features::enrich_history_extrusion_terminations(histories, lanes);
-    crate::resolved_features::enrich_history_combine_selections(histories, lanes);
-    crate::resolved_features::enrich_history_sweep_paths(histories, lanes);
-    crate::resolved_features::enrich_history_sketch_block_references(histories, lanes);
+    crate::resolved_features::terminations::enrich_history_extrusion_terminations(histories, lanes);
+    crate::resolved_features::terminations::enrich_history_combine_selections(histories, lanes);
+    crate::resolved_features::terminations::enrich_history_sweep_paths(histories, lanes);
+    crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
+        histories, lanes,
+    );
     enrich_history_parameters_semantic(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
-        crate::resolved_features::enrich_history_hole_constructions(histories, lanes);
+        crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
     }
-    crate::resolved_features::enrich_history_reference_planes(histories, lanes);
+    crate::resolved_features::reference_geometry::enrich_history_reference_planes(histories, lanes);
     crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
     apply_evaluated_parameters(histories);
-    crate::resolved_features::enrich_history_reference_axes(histories, lanes);
-    crate::resolved_features::enrich_history_revolution_inputs(histories, lanes);
+    crate::resolved_features::reference_geometry::enrich_history_reference_axes(histories, lanes);
+    crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes);
 }
 
 /// The shared compact/generated projection block, declared once for both codec
@@ -9442,13 +9447,21 @@ pub(crate) fn project_compact_and_generated(
     projection: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) {
-    crate::resolved_features::project_compact_body_selections(features, lanes);
-    crate::resolved_features::project_compact_combine_paths(features, projection, lanes);
-    crate::resolved_features::project_compact_edge_selections(features, lanes);
-    crate::resolved_features::project_compact_surface_selections(features, projection, lanes);
-    crate::resolved_features::project_surface_sweep_profiles(features, projection, lanes);
-    crate::resolved_features::project_helix_axes(features, projection, lanes);
-    crate::resolved_features::project_adjacent_extrusion_profiles(features, projection, lanes);
+    crate::resolved_features::projections::project_compact_body_selections(features, lanes);
+    crate::resolved_features::terminations::project_compact_combine_paths(
+        features, projection, lanes,
+    );
+    crate::resolved_features::projections::project_compact_edge_selections(features, lanes);
+    crate::resolved_features::projections::project_compact_surface_selections(
+        features, projection, lanes,
+    );
+    crate::resolved_features::terminations::project_surface_sweep_profiles(
+        features, projection, lanes,
+    );
+    crate::resolved_features::holes::project_helix_axes(features, projection, lanes);
+    crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
+        features, projection, lanes,
+    );
 }
 
 /// Reproject configuration-local evaluated parameters and feature operations from native lanes.
@@ -9483,16 +9496,28 @@ pub(crate) fn project_configuration_design_states(
             HistoryEnrichment::Write,
         );
         let mut features = project_features(&projection);
-        crate::resolved_features::bind_pattern_inputs(&mut features, &projection, scoped_lanes);
+        crate::resolved_features::bindings::bind_pattern_inputs(
+            &mut features,
+            &projection,
+            scoped_lanes,
+        );
         project_compact_and_generated(&mut features, &projection, scoped_lanes);
-        crate::resolved_features::bind_extrusion_operations(&mut features, histories, scoped_lanes);
-        crate::resolved_features::bind_revolution_operations(
+        crate::resolved_features::operations::bind_extrusion_operations(
             &mut features,
             histories,
             scoped_lanes,
         );
-        crate::resolved_features::bind_sweep_operations(&mut features, histories, scoped_lanes);
-        crate::resolved_features::bind_sweep_adjacent_profiles(
+        crate::resolved_features::operations::bind_revolution_operations(
+            &mut features,
+            histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::operations::bind_sweep_operations(
+            &mut features,
+            histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
             &mut features,
             histories,
             scoped_lanes,
@@ -9523,7 +9548,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
 ) {
     for lane in lanes
         .iter()
-        .filter(|lane| crate::resolved_features::is_supplemental_config_lane(lane))
+        .filter(|lane| crate::resolved_features::assembly::is_supplemental_config_lane(lane))
     {
         let Some(slot_index) = lane
             .configuration
@@ -9548,7 +9573,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             feature.outputs.clone_from(&state.outputs);
             feature.definition.clone_from(&state.definition);
         }
-        crate::resolved_features::project_compact_edge_selections(
+        crate::resolved_features::projections::project_compact_edge_selections(
             &mut features,
             std::slice::from_ref(lane),
         );
@@ -9645,7 +9670,7 @@ pub(crate) fn project_configuration_sketch_states(
                 parameter.value = Some(value.clone());
             }
         }
-        crate::resolved_features::bind_sketch_profiles(
+        crate::resolved_features::profiles::bind_sketch_profiles(
             &mut features,
             &mut ir.model.sketches,
             &ir.model.sketch_entities,
@@ -9654,14 +9679,14 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
             annotations,
         );
-        crate::resolved_features::project_compact_sketch_profiles(
+        crate::resolved_features::profiles::project_compact_sketch_profiles(
             &mut features,
             &mut ir.model.sketches,
             &mut ir.model.sketch_entities,
             histories,
             scoped_lanes,
         );
-        crate::resolved_features::project_marker_backed_sketches(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
             &mut features,
             &mut ir.model.sketches,
             &mut ir.model.sketch_entities,
@@ -9669,43 +9694,47 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
-        crate::resolved_features::project_dissected_sketches(
+        crate::resolved_features::component_paths::project_dissected_sketches(
             &mut features,
             &ir.model.sketches,
             histories,
         );
-        crate::resolved_features::bind_profile_revolution_axes(
+        crate::resolved_features::axes::bind_profile_revolution_axes(
             &mut features,
             histories,
             scoped_lanes,
             &ir.model.sketches,
             &surfaces,
         );
-        crate::resolved_features::bind_pattern_inputs(&mut features, histories, scoped_lanes);
-        crate::resolved_features::project_adjacent_extrusion_profiles(
+        crate::resolved_features::bindings::bind_pattern_inputs(
             &mut features,
             histories,
             scoped_lanes,
         );
-        crate::resolved_features::bind_sweep_adjacent_profiles(
+        crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
             &mut features,
             histories,
             scoped_lanes,
         );
-        crate::resolved_features::project_profiled_hole_constructions(
+        crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
+            &mut features,
+            histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::holes::project_profiled_hole_constructions(
             &mut features,
             &ir.model.sketch_entities,
             histories,
             scoped_lanes,
         );
-        crate::resolved_features::project_hole_position_sketches(
+        crate::resolved_features::holes::project_hole_position_sketches(
             &mut features,
             &ir.model.sketches,
             &ir.model.sketch_entities,
             histories,
             scoped_lanes,
         );
-        crate::resolved_features::project_spatial_hole_position_sketches(
+        crate::resolved_features::holes::project_spatial_hole_position_sketches(
             &mut features,
             &ir.model.spatial_sketches,
             &ir.model.spatial_sketch_entities,
@@ -9713,9 +9742,9 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         );
-        crate::resolved_features::project_topological_hole_constructions(
+        crate::resolved_features::holes::project_topological_hole_constructions(
             &mut features,
-            &crate::resolved_features::HoleTopology {
+            &crate::resolved_features::holes::HoleTopology {
                 surfaces: &surfaces,
                 faces: &ir.model.faces,
                 loops: &ir.model.loops,
@@ -9725,10 +9754,10 @@ pub(crate) fn project_configuration_sketch_states(
                 points: &ir.model.points,
             },
         );
-        crate::resolved_features::project_hole_axes(
+        crate::resolved_features::holes::project_hole_axes(
             &mut features,
             &ir.model.sketch_entities,
-            &crate::resolved_features::HoleTopology {
+            &crate::resolved_features::holes::HoleTopology {
                 surfaces: &surfaces,
                 faces: &ir.model.faces,
                 loops: &ir.model.loops,
@@ -10039,7 +10068,7 @@ pub(crate) fn unresolved_configuration_lanes(
 }
 
 fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
-    !crate::resolved_features::is_supplemental_config_lane(lane)
+    !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
 }
 
 /// Stable hash of native configuration records.
@@ -10348,23 +10377,23 @@ fn project_features_with_native_inputs(
         HistoryEnrichment::Write,
     );
     let mut features = project_features(&histories);
-    crate::resolved_features::bind_pattern_inputs(
+    crate::resolved_features::bindings::bind_pattern_inputs(
         &mut features,
         &histories,
         &native.feature_input_lanes,
     );
-    crate::resolved_features::bind_sweep_operations(
+    crate::resolved_features::operations::bind_sweep_operations(
         &mut features,
         &histories,
         &native.feature_input_lanes,
     );
     project_compact_and_generated(&mut features, &histories, &native.feature_input_lanes);
-    crate::resolved_features::bind_revolution_operations(
+    crate::resolved_features::operations::bind_revolution_operations(
         &mut features,
         &histories,
         &native.feature_input_lanes,
     );
-    let _ = crate::resolved_features::spatial_sketches(
+    let _ = crate::resolved_features::markers::spatial_sketches(
         &mut features,
         &histories,
         &native.feature_input_lanes,
@@ -10406,7 +10435,7 @@ fn validate_compact_body_selection_edits(
                 .iter()
                 .map(u32::to_string)
                 .collect(),
-            native: crate::resolved_features::compact_body_selection_value(
+            native: crate::resolved_features::component_paths::compact_body_selection_value(
                 &selection.local_body_ids,
             ),
         };
@@ -10477,7 +10506,9 @@ fn validate_compact_edge_selection_edits(
                 feature.id
             )));
         };
-        let native = crate::resolved_features::compact_edge_selection_set_value(edge_selections);
+        let native = crate::resolved_features::component_paths::compact_edge_selection_set_value(
+            edge_selections,
+        );
         let generated = edge_selections
             .iter()
             .map(|selection| {
@@ -10568,8 +10599,9 @@ fn validate_compact_surface_selection_edits(
             } => SelectionSlot::Vertex(vertex),
             _ => continue,
         };
-        let native =
-            crate::resolved_features::compact_surface_selection_value(&selection.components);
+        let native = crate::resolved_features::terminations::compact_surface_selection_value(
+            &selection.components,
+        );
         let producer = if first_component {
             selection.producer_feature_refs.first().map(String::as_str)
         } else {
@@ -10838,7 +10870,7 @@ fn patch_configuration_parameter_scalars(
             .iter()
             .flat_map(|history| &history.features)
             .filter_map(|record| {
-                crate::resolved_features::feature_object_name(record, lane)
+                crate::resolved_features::scalars::feature_object_name(record, lane)
                     .map(|name| (name.offset, record))
             })
             .collect::<Vec<_>>();
@@ -13828,7 +13860,9 @@ pub fn sync_neutral_features(
                 }
                 let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
-                    if !crate::resolved_features::is_compact_body_selection_value(&selection) {
+                    if !crate::resolved_features::component_paths::is_compact_body_selection_value(
+                        &selection,
+                    ) {
                         properties.insert("Bodies".into(), selection);
                     }
                 } else if !matches!(mode, BodyRetentionMode::Unresolved) || existing.is_none() {
@@ -15386,7 +15420,7 @@ pub fn sync_neutral_features(
                 .map(move |(name, _)| (feature.id.clone(), name.clone()))
         })
         .collect::<std::collections::HashSet<_>>();
-    crate::resolved_features::sync_changed_feature_scalars(
+    crate::resolved_features::parameters::sync_changed_feature_scalars(
         &native.feature_histories,
         &mut native.feature_input_lanes,
         &changed_parameters,

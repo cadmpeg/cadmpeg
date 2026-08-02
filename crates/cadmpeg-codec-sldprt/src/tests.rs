@@ -190,7 +190,7 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
     assert!(migrated.feature_input_lanes.iter().all(|lane| {
         lane.sketch_entities.iter().all(|entity| {
             usize::try_from(entity.offset).ok().and_then(|offset| {
-                crate::resolved_features::marker_object_index(&lane.native_payload, offset)
+                crate::resolved_features::markers::marker_object_index(&lane.native_payload, offset)
             }) == entity.object_index
         })
     }));
@@ -1918,7 +1918,7 @@ fn helix_polyline_fit_recovers_axis_radius_and_rise() {
         })
         .collect::<Vec<_>>();
     let (origin, axis, radius, rise) =
-        crate::resolved_features::fit_helix_polyline(&points, 0.25, false).unwrap();
+        crate::resolved_features::helix::fit_helix_polyline(&points, 0.25, false).unwrap();
     assert!((origin.x - 10.0).abs() < 1.0e-9);
     assert!((origin.y - 20.0).abs() < 1.0e-9);
     assert!((origin.z - 30.0).abs() < 1.0e-9);
@@ -1940,11 +1940,11 @@ fn spatial_vertex_record_decodes_model_coordinates() {
         payload.extend(value.to_le_bytes());
     }
     assert_eq!(
-        crate::resolved_features::spatial_vertex_coordinates(&payload),
+        crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
         vec![cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)]
     );
     payload[7 + 43] = 0x1e;
-    assert!(crate::resolved_features::spatial_vertex_coordinates(&payload).is_empty());
+    assert!(crate::resolved_features::markers::spatial_vertex_coordinates(&payload).is_empty());
 }
 
 #[test]
@@ -12621,11 +12621,13 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
     let resolved_selection = combine_payload(true);
     assert_eq!(
         (12..resolved_selection.len())
-            .filter(|offset| crate::resolved_features::compact_body_path_at(
-                &resolved_selection,
-                *offset
+            .filter(
+                |offset| crate::resolved_features::terminations::compact_body_path_at(
+                    &resolved_selection,
+                    *offset
+                )
+                .is_some()
             )
-            .is_some())
             .count(),
         2
     );

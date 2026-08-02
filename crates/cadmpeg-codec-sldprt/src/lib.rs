@@ -121,7 +121,7 @@ struct SourceRecord<'a> {
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
-    resolved_features::validate_native(ir)
+    resolved_features::validate::validate_native(ir)
 }
 
 impl SldprtCodec {
