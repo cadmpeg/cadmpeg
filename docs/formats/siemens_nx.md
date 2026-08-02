@@ -1187,6 +1187,18 @@ ID when present, both reference occurrences and values, and the first marker's
 source offset. A run cannot cross a record boundary. A single token or a
 maximal run of three or more adjacent persistent handles does not form a pair.
 
+The contiguous storage covered by an ID-bounded record index may carry a UUID
+string frame `03 26, uuid[36], 00`. The UUID is lowercase hexadecimal with
+hyphens at positions 8, 13, 18, and 23. The frame is a logical value over the
+contiguous record storage and may intersect more than one physical record. It
+retains every intersected record in source order.
+
+An OM UUID group joins this value family to the fast-load roster when a roster
+UUID has a nonzero number of occurrences and exactly the same number of OM UUID
+frames. The group retains the ordered occurrence identities and ordered OM
+value identities as separate lists. Equal cardinality does not pair individual
+members across the lists.
+
 An offset-store block may carry a counted block-index lane `01, declared_count:u8, anchor, member[declared_count-2], 01 11`, with `declared_count >= 3`. The anchor and members are non-null compact indices: `00..7f` are direct, `80..fe, low:u8` decode as `(marker-80)*256+low`, and `ff` is null. Every index addresses the same offset-only store's control-plus-column block ordinal. The lane is retained only when its count is complete, its terminator is exact, and every addressed block exists. It retains decoded indices, exact serialized tokens, and source offsets. Anchor and member order remain distinct; no semantic role is assigned by the lane framing.
 
 Contiguous offset-store column storage may carry an `ABR` reference lane `11, slot[16], 02 11 41 42 52 ff 03`. Each ordered slot is a nullable compact block index: `ff` is null and non-null values use the direct and extended forms. Every non-null value addresses the same offset-only store's control-plus-column block ordinal. The lane is retained only when all sixteen slots and the complete literal terminator are present and every non-null target exists. It retains decoded slots, exact serialized tokens, and source offsets. Physical data-block boundaries do not constrain the lane.

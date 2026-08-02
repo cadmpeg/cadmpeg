@@ -697,6 +697,23 @@ pub struct StringValue {
     pub source_offset: u64,
 }
 
+/// Canonical UUID text spanning one or more contiguous bounded OM records.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectUuidValue {
+    /// Globally unique value identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Exact UUID text.
+    pub uuid: String,
+    /// Bounded OM records intersected by the complete UUID frame.
+    pub records: Vec<String>,
+    /// Directory entry containing the OM section.
+    pub source_entry: String,
+    /// Absolute file offset of the `03 26` marker.
+    pub source_offset: u64,
+}
+
 /// Tagged reference family serialized in an NX OM record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2733,6 +2750,84 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,
                     }
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode canonical UUID frames across the contiguous storage of ID-bounded
+/// OM records. A value retains every physical record intersected by its frame.
+pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
+    const FRAME_LEN: usize = 2 + 36 + 1;
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(first) = section.records.first() else {
+                return Vec::new();
+            };
+            let Some(last) = section.records.last() else {
+                return Vec::new();
+            };
+            if first.object_id.is_none()
+                || section.records.windows(2).any(|records| {
+                    records[0].offset.checked_add(records[0].bytes.len()) != Some(records[1].offset)
+                })
+            {
+                return Vec::new();
+            }
+            let Some(end) = last.offset.checked_add(last.bytes.len()) else {
+                return Vec::new();
+            };
+            let Some((entry_offset, _)) = entry.file_span else {
+                return Vec::new();
+            };
+            let Ok(entry_offset_usize) = usize::try_from(entry_offset) else {
+                return Vec::new();
+            };
+            let Some(storage_start) = entry_offset_usize.checked_add(first.offset) else {
+                return Vec::new();
+            };
+            let Some(storage_end) = entry_offset_usize.checked_add(end) else {
+                return Vec::new();
+            };
+            let Some(storage) = container.data.get(storage_start..storage_end) else {
+                return Vec::new();
+            };
+            crate::om::uuid_string_values(storage, first.offset)
+                .into_iter()
+                .filter_map(|value| {
+                    let frame_end = value.offset.checked_add(FRAME_LEN)?;
+                    let records = section
+                        .records
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, record)| {
+                            record.offset < frame_end
+                                && record
+                                    .offset
+                                    .checked_add(record.bytes.len())
+                                    .is_some_and(|record_end| value.offset < record_end)
+                        })
+                        .map(|(record_ordinal, _)| {
+                            format!(
+                                "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    (!records.is_empty()).then(|| ObjectUuidValue {
+                        id: format!(
+                            "nx:om-object-uuid-values-{section_ordinal}:value#{}",
+                            value.offset
+                        ),
+                        section_ordinal: section_ordinal as u32,
+                        uuid: value.value.to_owned(),
+                        records,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + value.offset as u64,
+                    })
                 })
                 .collect()
         })

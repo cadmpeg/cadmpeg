@@ -514,6 +514,10 @@ placement, UUID, and state fields.
 its named prototype, including repeated uses. `EXTREFSTREAM` preserves child
 paths and persistent-handle sets independently. Bounded OM object records retain
 exact adjacent persistent-handle pairs without assigning occurrence semantics.
+Canonical UUID frames in contiguous ID-bounded OM storage group with roster
+occurrences by exact UUID and equal multiplicity. Repeated members remain two
+separate ordered lists because their individual correspondence is not encoded
+by that invariant.
 
 **Need.** We must know the mapping to preserve multiple occurrences of the same child part.
 

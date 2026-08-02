@@ -105,6 +105,7 @@ pub(crate) struct StructureRecords {
     pub(crate) prototypes: Vec<FastLoadComponentPrototype>,
     pub(crate) uuids: Vec<FastLoadComponentUuid>,
     pub(crate) occurrences: Vec<FastLoadComponentOccurrence>,
+    pub(crate) object_groups: Vec<FastLoadComponentObjectGroup>,
 }
 
 /// Records extracted from the `features` domain.
@@ -243,6 +244,7 @@ pub(crate) struct OmRecords {
     pub(crate) data_block_column_index_tables: Vec<DataBlockColumnIndexTable>,
     pub(crate) store_headers: Vec<StoreHeader>,
     pub(crate) string_values: Vec<StringValue>,
+    pub(crate) object_uuid_values: Vec<ObjectUuidValue>,
     pub(crate) object_references: Vec<ObjectReference>,
     pub(crate) object_record_handle_pairs: Vec<ObjectRecordHandlePair>,
     pub(crate) configurations: Vec<Configuration>,
@@ -736,6 +738,7 @@ impl NativeModel {
         );
         let store_headers = store_headers(container);
         let string_values = string_values(container);
+        let object_uuid_values = object_uuid_values(container);
         let object_references = object_references(container);
         let object_record_handle_pairs = object_record_handle_pairs(&object_references);
         let configurations = configurations(container);
@@ -773,6 +776,11 @@ impl NativeModel {
             fast_load_component_uuids,
             fast_load_component_occurrences,
         ) = fast_load_component_roster(container);
+        let fast_load_component_object_groups = fast_load_component_object_groups(
+            &fast_load_component_uuids,
+            &fast_load_component_occurrences,
+            &object_uuid_values,
+        );
 
         NativeModel {
             display_jt: DisplayJtRecords {
@@ -853,6 +861,7 @@ impl NativeModel {
                 prototypes: fast_load_component_prototypes,
                 uuids: fast_load_component_uuids,
                 occurrences: fast_load_component_occurrences,
+                object_groups: fast_load_component_object_groups,
             },
             features: FeatureRecords {
                 feature_operation_labels,
@@ -982,6 +991,7 @@ impl NativeModel {
                 data_block_column_index_tables,
                 store_headers,
                 string_values,
+                object_uuid_values,
                 object_references,
                 object_record_handle_pairs,
                 configurations,

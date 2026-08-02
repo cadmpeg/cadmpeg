@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
+use crate::native::om::ObjectUuidValue;
 
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
 const ENVELOPE_LEN: usize = 12;
@@ -57,6 +58,59 @@ pub struct FastLoadComponentOccurrence {
     pub source_entry: String,
     /// Absolute file offset of the prototype index.
     pub source_offset: u64,
+}
+
+/// Equal-cardinality component uses and OM UUID values sharing one UUID.
+///
+/// The two ordered lists intentionally do not assert an instance-level pairing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FastLoadComponentObjectGroup {
+    /// Globally unique group identity.
+    pub id: String,
+    /// Referenced [`FastLoadComponentUuid::id`].
+    pub component_uuid: String,
+    /// Canonical lowercase UUID shared by every member.
+    pub uuid: String,
+    /// Ordered [`FastLoadComponentOccurrence::id`] values.
+    pub occurrences: Vec<String>,
+    /// Ordered [`ObjectUuidValue::id`] values.
+    pub object_uuid_values: Vec<String>,
+    /// Directory entry containing the component roster.
+    pub source_entry: String,
+    /// Absolute file offset of the roster UUID tag.
+    pub source_offset: u64,
+}
+
+/// Join fast-load occurrences and OM UUID frames only at the UUID group level.
+pub fn fast_load_component_object_groups(
+    uuids: &[FastLoadComponentUuid],
+    occurrences: &[FastLoadComponentOccurrence],
+    object_uuid_values: &[ObjectUuidValue],
+) -> Vec<FastLoadComponentObjectGroup> {
+    uuids
+        .iter()
+        .filter_map(|uuid| {
+            let uses = occurrences
+                .iter()
+                .filter(|occurrence| occurrence.component_uuid == uuid.id)
+                .map(|occurrence| occurrence.id.clone())
+                .collect::<Vec<_>>();
+            let values = object_uuid_values
+                .iter()
+                .filter(|value| value.uuid == uuid.uuid)
+                .map(|value| value.id.clone())
+                .collect::<Vec<_>>();
+            (!uses.is_empty() && uses.len() == values.len()).then(|| FastLoadComponentObjectGroup {
+                id: format!("nx:fast-load:object-group#{}", uuid.ordinal),
+                component_uuid: uuid.id.clone(),
+                uuid: uuid.uuid.clone(),
+                occurrences: uses,
+                object_uuid_values: values,
+                source_entry: uuid.source_entry.clone(),
+                source_offset: uuid.source_offset,
+            })
+        })
+        .collect()
 }
 
 struct Candidate {
@@ -216,7 +270,7 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
     let mut uuids = Vec::with_capacity(uuid_count);
     for _ in 0..uuid_count {
         let uuid = parse_tagged_string(bytes, &mut at, 3)?;
-        is_uuid(&uuid.1).then_some(())?;
+        crate::om::canonical_uuid_text(&uuid.1).then_some(())?;
         uuids.push(uuid);
     }
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
@@ -258,17 +312,6 @@ fn parse_tagged_string(bytes: &[u8], at: &mut usize, tag: u8) -> Option<(usize, 
     value.iter().all(|byte| *byte >= 0x20).then_some(())?;
     (terminator == 0).then_some(())?;
     Some((offset, std::str::from_utf8(value).ok()?.to_owned()))
-}
-
-fn is_uuid(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(i, byte)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
-            }
-        })
 }
 
 fn take<'a>(bytes: &'a [u8], at: &mut usize, len: usize) -> Option<&'a [u8]> {
@@ -377,6 +420,29 @@ mod tests {
             [1, 2, 2, 3]
         );
         assert_eq!(occurrences[1].prototype, occurrences[2].prototype);
+    }
+
+    #[test]
+    fn groups_equal_uuid_multiplicity_without_pairing_instances() {
+        let container = container(payload(&["plate", "bolt"], &[1, 2, 2]));
+        let (_, uuids, occurrences) = fast_load_component_roster(&container);
+        let values = (0..3)
+            .map(|ordinal| ObjectUuidValue {
+                id: format!("nx:test:object-uuid#{ordinal}"),
+                section_ordinal: 0,
+                uuid: uuids[0].uuid.clone(),
+                records: vec![format!("nx:test:record#{ordinal}")],
+                source_entry: "om".into(),
+                source_offset: 200 + ordinal,
+            })
+            .collect::<Vec<_>>();
+        let groups = fast_load_component_object_groups(&uuids, &occurrences, &values);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].occurrences.len(), 3);
+        assert_eq!(groups[0].object_uuid_values.len(), 3);
+        assert_eq!(groups[0].object_uuid_values[1], "nx:test:object-uuid#1");
+
+        assert!(fast_load_component_object_groups(&uuids, &occurrences, &values[..2]).is_empty());
     }
 
     #[test]

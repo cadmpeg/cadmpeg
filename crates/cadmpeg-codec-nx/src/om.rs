@@ -54,6 +54,15 @@ pub struct StringValue<'a> {
     pub value: &'a str,
 }
 
+/// One canonical UUID in the compact NX OM string frame `03 26, text, 00`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UuidStringValue<'a> {
+    /// Absolute byte offset of the `03 26` marker.
+    pub offset: usize,
+    /// Canonical lowercase UUID text.
+    pub value: &'a str,
+}
+
 /// One self-framed printable string in a surface-referenced payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfacePayloadString<'a> {
@@ -4954,6 +4963,68 @@ pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
             })
         })
         .collect()
+}
+
+/// Return whether `value` is canonical lowercase UUID text.
+pub fn canonical_uuid_text(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+            }
+        })
+}
+
+/// Decode complete `03 26, canonical UUID text, 00` values in `bytes`.
+pub fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringValue<'_>> {
+    const MARKER: &[u8] = &[0x03, 0x26];
+    const TEXT_LEN: usize = 36;
+    bytes
+        .windows(MARKER.len())
+        .enumerate()
+        .filter(|(_, window)| *window == MARKER)
+        .filter_map(|(offset, _)| {
+            let start = offset.checked_add(MARKER.len())?;
+            let end = start.checked_add(TEXT_LEN)?;
+            let raw = bytes.get(start..end)?;
+            let value = std::str::from_utf8(raw).ok()?;
+            (canonical_uuid_text(value) && bytes.get(end) == Some(&0)).then_some(UuidStringValue {
+                offset: base_offset + offset,
+                value,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod uuid_string_value_tests {
+    use super::*;
+
+    #[test]
+    fn decodes_only_complete_canonical_uuid_frames() {
+        let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
+        let values = uuid_string_values(&bytes, 100);
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].offset, 106);
+        assert_eq!(values[0].value, "01234567-89ab-cdef-0123-456789abcdef");
+
+        bytes[6 + 2 + 9] = b'A';
+        assert!(uuid_string_values(&bytes, 0).is_empty());
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123-456789abcde"));
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123_456789abcdef"));
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123-456789abcdeg"));
+    }
+
+    #[test]
+    fn rejects_truncated_or_unterminated_uuid_frames() {
+        let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
+        assert!(uuid_string_values(&frame[..frame.len() - 1], 0).is_empty());
+        let mut unterminated = frame.to_vec();
+        *unterminated.last_mut().expect("nonempty frame") = 1;
+        assert!(uuid_string_values(&unterminated, 0).is_empty());
+    }
 }
 
 /// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.

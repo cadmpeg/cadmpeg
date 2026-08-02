@@ -424,6 +424,16 @@ impl ContainerNoted for ObjectRecordHandlePair {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for ObjectUuidValue {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FastLoadComponentObjectGroup {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for DataBlockReference {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1815,6 +1825,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "fast_load_component_object_groups",
+        tag: Some("FAST_LOAD_COMPONENT_OBJECT_GROUP"),
+        exactness: Exactness::Derived,
+        note: Some(|m, r, a| note_container(&m.structure.object_groups, r, a)),
+        emit: |m, r, ns| emit_arena(&m.structure.object_groups, r, ns),
+        len: |m| m.structure.object_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "external_reference_records",
         tag: Some("EXTREFSTREAM_RECORD"),
         exactness: Exactness::ByteExact,
@@ -2704,6 +2723,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.om.string_values, r, ns),
         len: |m| m.om.string_values.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "object_uuid_values",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_container(&m.om.object_uuid_values, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.object_uuid_values, r, ns),
+        len: |m| m.om.object_uuid_values.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
