@@ -63,7 +63,7 @@ const SPATIAL_VERTEX_PREFIX: &[u8] = &[
     0xff, 0xfe, 0xff, 0x06, b'V', 0x00, b'e', 0x00, b'r', 0x00, b't', 0x00, b'e', 0x00, b'x', 0x00,
 ];
 
-pub(crate) fn is_detached_sketch_lane(lane: &FeatureInputLane) -> bool {
+pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
 
@@ -90,7 +90,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
         .collect()
 }
 
-pub(crate) fn detached_sketch_lanes(
+pub(crate) fn supplemental_config_lanes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> Vec<FeatureInputLane> {
@@ -13677,7 +13677,7 @@ mod marker_tests {
                 lane.native_payload.len(),
                 &HashSet::from([0x802f]),
             ),
-            Some((marker, None))
+            vec![(marker, None)]
         );
     }
 
@@ -18284,7 +18284,7 @@ fn represented_sketch_features(
         .collect::<Vec<_>>();
     let mut represented = HashSet::new();
     for lane in lanes {
-        if is_detached_sketch_lane(lane) {
+        if is_supplemental_config_lane(lane) {
             continue;
         }
         let mut objects = features
@@ -18327,7 +18327,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
         .collect::<HashSet<_>>();
     for lane in lanes
         .iter_mut()
-        .filter(|lane| is_detached_sketch_lane(lane))
+        .filter(|lane| is_supplemental_config_lane(lane))
     {
         bind_detached_legacy_sketch_objects(histories, &represented, lane);
         finalize_lane_bindings(histories, lane);
@@ -18341,7 +18341,7 @@ fn bind_detached_legacy_sketch_objects(
 ) {
     const OBJECT_GAP: u64 = 4096;
 
-    if !is_detached_sketch_lane(lane) {
+    if !is_supplemental_config_lane(lane) {
         return;
     }
     let Some(limit) = lane
@@ -23923,7 +23923,7 @@ fn cosmetic_thread_cylinder_marker_reference(
     object_start: usize,
     object_end: usize,
     cylinder_reference_tokens: &HashSet<u16>,
-) -> Option<(usize, Option<Vec<FeatureInputComponentPathEntry>>)> {
+) -> Vec<(usize, Option<Vec<FeatureInputComponentPathEntry>>)> {
     let diameter_tail = cosmetic_thread_diameter_child_tail(feature, lane);
     let mut markers = std::iter::once(object_start..object_end)
         .chain(diameter_tail)
@@ -23941,13 +23941,15 @@ fn cosmetic_thread_cylinder_marker_reference(
         .collect::<Vec<_>>();
     markers.sort_unstable();
     markers.dedup();
-    let [marker] = markers.as_slice() else {
-        return None;
-    };
-    let components = compact_sketch_surface_component_path_at(&lane.native_payload, *marker)
-        .or_else(|| compact_termination_reference_path_at(&lane.native_payload, *marker))
-        .or_else(|| compact_edge_component_path_at(&lane.native_payload, *marker));
-    Some((*marker, components))
+    markers
+        .into_iter()
+        .map(|marker| {
+            let components = compact_sketch_surface_component_path_at(&lane.native_payload, marker)
+                .or_else(|| compact_termination_reference_path_at(&lane.native_payload, marker))
+                .or_else(|| compact_edge_component_path_at(&lane.native_payload, marker));
+            (marker, components)
+        })
+        .collect()
 }
 
 fn cosmetic_thread_diameter_child_tail(
@@ -30826,7 +30828,10 @@ fn project_detached_legacy_config_sketches(
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
-    for lane in lanes.iter().filter(|lane| is_detached_sketch_lane(lane)) {
+    for lane in lanes
+        .iter()
+        .filter(|lane| is_supplemental_config_lane(lane))
+    {
         let lane_key = lane
             .id
             .rsplit_once('#')
@@ -34390,36 +34395,43 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         )
                     })
             })
-            .chain(lanes.iter().filter_map(|lane| {
-                let (_, start, end) = feature_object_byte_ranges(histories, lane)
-                    .get(native_feature.id.as_str())
-                    .copied()?;
-                let cylinder_tokens = lane
-                    .classes
-                    .iter()
-                    .filter(|class| class.name == "moCylinderRef_w")
-                    .filter_map(|class| {
-                        let body = usize::try_from(class.offset)
-                            .ok()?
-                            .checked_add(6 + class.name.len())?;
-                        let token = u16::from_le_bytes(
-                            lane.native_payload.get(body..body + 2)?.try_into().ok()?,
-                        );
-                        (token & 0x8000 != 0 && token != 0xffff).then_some(token)
-                    })
-                    .collect::<HashSet<_>>();
-                let (marker, components) = cosmetic_thread_cylinder_marker_reference(
-                    native_feature,
-                    lane,
-                    start,
-                    end,
-                    &cylinder_tokens,
-                )?;
-                let lane_key = lane
-                    .id
-                    .rsplit_once('#')
-                    .map_or(lane.id.as_str(), |(_, key)| key);
-                Some((format!("{lane_key}:{marker}"), components))
+            .chain(lanes.iter().flat_map(|lane| {
+                (|| {
+                    let (_, start, end) = feature_object_byte_ranges(histories, lane)
+                        .get(native_feature.id.as_str())
+                        .copied()?;
+                    let cylinder_tokens = lane
+                        .classes
+                        .iter()
+                        .filter(|class| class.name == "moCylinderRef_w")
+                        .filter_map(|class| {
+                            let body = usize::try_from(class.offset)
+                                .ok()?
+                                .checked_add(6 + class.name.len())?;
+                            let token = u16::from_le_bytes(
+                                lane.native_payload.get(body..body + 2)?.try_into().ok()?,
+                            );
+                            (token & 0x8000 != 0 && token != 0xffff).then_some(token)
+                        })
+                        .collect::<HashSet<_>>();
+                    let lane_key = lane
+                        .id
+                        .rsplit_once('#')
+                        .map_or(lane.id.as_str(), |(_, key)| key);
+                    Some(
+                        cosmetic_thread_cylinder_marker_reference(
+                            native_feature,
+                            lane,
+                            start,
+                            end,
+                            &cylinder_tokens,
+                        )
+                        .into_iter()
+                        .map(|(marker, components)| (format!("{lane_key}:{marker}"), components))
+                        .collect::<Vec<_>>(),
+                    )
+                })()
+                .unwrap_or_default()
             }))
             .collect::<Vec<_>>();
         let mut native_references = references
@@ -59602,7 +59614,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
     let history_lanes = native
         .feature_input_lanes
         .iter()
-        .filter(|lane| !is_detached_sketch_lane(lane))
+        .filter(|lane| !is_supplemental_config_lane(lane))
         .cloned()
         .collect::<Vec<_>>();
     crate::resolved_features::bind_history_classes(&mut expected_histories, &history_lanes);

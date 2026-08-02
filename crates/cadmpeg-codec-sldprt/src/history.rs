@@ -9857,7 +9857,7 @@ pub(crate) fn unresolved_configuration_lanes(
 }
 
 fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
-    !crate::resolved_features::is_detached_sketch_lane(lane)
+    !crate::resolved_features::is_supplemental_config_lane(lane)
 }
 
 /// Stable hash of native configuration records.
