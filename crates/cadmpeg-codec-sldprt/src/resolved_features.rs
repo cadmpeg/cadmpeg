@@ -35749,9 +35749,16 @@ pub(crate) fn project_relation_point_geometry(
             .iter()
             .map(|marker| (marker.id.as_str(), marker))
             .collect::<HashMap<_, _>>();
+        let marker_roster = lane.sketch_entities.iter().collect::<Vec<_>>();
         for marker in &lane.sketch_entities {
+            let marker_offset = usize::try_from(marker.offset).ok();
+            let undetailed_arc_line = marker.kind == SketchInputKind::Arc
+                && marker_offset.is_some_and(|offset| {
+                    current_wide_undetailed_line(&lane.native_payload, offset)
+                        || legacy_undetailed_profile_line(&lane.native_payload, offset)
+                });
             if !referenced.contains(marker.id.as_str())
-                || marker.kind != SketchInputKind::LineOrCircle
+                || !(marker.kind == SketchInputKind::LineOrCircle || undetailed_arc_line)
                 || entities
                     .iter()
                     .any(|entity| entity.native_ref.as_deref() == Some(marker.id.as_str()))
@@ -35764,7 +35771,12 @@ pub(crate) fn project_relation_point_geometry(
             let Some(sketch) = sketches_by_feature.get(feature) else {
                 continue;
             };
-            let mut endpoints = line_endpoint_markers(marker, &markers_by_id);
+            let mut endpoints = marker_curve_endpoint_markers(
+                &lane.native_payload,
+                marker,
+                &markers_by_id,
+                &marker_roster,
+            );
             if endpoints.len() != 2 {
                 endpoints = marker
                     .links
@@ -45179,7 +45191,7 @@ mod profile_join_tests {
         unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
         unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
         MarkerTransform, COMPACT_EDGE_VECTOR_MARKER, LEGACY_EXTENDED_SKETCH_MARKER,
-        LEGACY_SKETCH_MARKER,
+        LEGACY_SKETCH_MARKER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -51276,7 +51288,7 @@ mod profile_join_tests {
         endpoint_b.offset = 83;
         let mut relation_line = marker("relation-line", None);
         relation_line.offset = 84;
-        relation_line.kind = SketchInputKind::LineOrCircle;
+        relation_line.kind = SketchInputKind::Arc;
         let mut support_handle = marker("support-handle", None);
         support_handle.offset = 85;
         support_handle.links = vec![SketchInputLink {
@@ -51307,10 +51319,23 @@ mod profile_join_tests {
             qualified_curve.clone(),
             coincident_point.clone(),
         ]);
-        let mut native_payload = vec![0; 108];
+        let mut native_payload = vec![0; 181];
         for offset in [0, 27, 54] {
             native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         }
+        native_payload[84..84 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        native_payload[89..97].fill(0xff);
+        native_payload[97..101].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        native_payload[101..105].copy_from_slice(&2u32.to_le_bytes());
+        native_payload[107..111].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        native_payload[111..113].copy_from_slice(&1u16.to_le_bytes());
+        native_payload[115..123].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        native_payload[132..140].copy_from_slice(&1.0f64.to_le_bytes());
+        native_payload[148..150].copy_from_slice(&4u16.to_le_bytes());
+        native_payload[150..152].copy_from_slice(&6u16.to_le_bytes());
+        native_payload[152..156].copy_from_slice(&1u32.to_le_bytes());
+        native_payload[156..164].copy_from_slice(&(-1.0f64).to_le_bytes());
+        native_payload[176..176 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
