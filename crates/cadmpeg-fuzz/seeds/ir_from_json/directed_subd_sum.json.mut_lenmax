@@ -58,7 +58,7 @@
         }
       },
       {
-        "id": "syntheticÿÿÿÿcurve#v",
+        "id"ÿÿÿÿynthetic:v2:curve#v",
         "geometry": {
           "kind": "line",
           "origin": {
@@ -210,8 +210,6 @@
     "appearances": [],
     "appearance_bindings": [],
     "attributes": [],
-    "products": [],
-    "product_occurrences": [],
     "pmi": [],
     "presentation_layers": []
   },

@@ -380,7 +380,7 @@
         "sense": "reversed"
       },
       {
-        "id": "synthetic:cube:coe›ge#top:3",
+       ß"id": "synthetic:cube:coedge#top:3",
         "owner_loop": "synthetic:cube:loop#top",
         "edge": "synthetic:cube:edge#4",
         "next": "synthetic:cube:coedge#top:0",
@@ -957,8 +957,6 @@
     "appearances": [],
     "appearance_bindings": [],
     "attributes": [],
-    "products": [],
-    "product_occurrences": [],
     "pmi": [],
     "presentation_layers": []
   },

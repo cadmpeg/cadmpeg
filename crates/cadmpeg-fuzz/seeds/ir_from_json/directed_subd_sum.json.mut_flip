@@ -113,8 +113,7 @@
             "sharpness": [
               0.25,
               0.75
-            ],
-            "tag": "creaåe",
+            ],ı            "tag": "crease",
             "sector_coefficients": [
               0.125,
               0.875
@@ -210,8 +209,6 @@
     "appearances": [],
     "appearance_bindings": [],
     "attributes": [],
-    "products": [],
-    "product_occurrences": [],
     "pmi": [],
     "presentation_layers": []
   },

@@ -42,59 +42,6 @@ where
 }
 
 #[test]
-fn product_occurrence_tree_validates_references_and_cycles() {
-    use crate::ids::{OccurrenceId, ProductId};
-    use crate::product::{OccurrenceParent, Product, ProductOccurrence};
-    use crate::transform::Transform;
-    use crate::units::Units;
-
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.products.push(Product {
-        id: ProductId("test:product:product#assembly".into()),
-        product_id: "assembly".into(),
-        name: Some("Assembly".into()),
-        bodies: Vec::new(),
-    });
-    ir.model.product_occurrences.push(ProductOccurrence {
-        id: OccurrenceId("test:product:occurrence#root".into()),
-        product: ProductId("test:product:product#assembly".into()),
-        parent: OccurrenceParent::Root,
-        transform: Transform::identity(),
-        name: None,
-    });
-    ir.model.product_occurrences.push(ProductOccurrence {
-        id: OccurrenceId("test:product:occurrence#child".into()),
-        product: ProductId("test:product:product#assembly".into()),
-        parent: OccurrenceParent::Occurrence {
-            occurrence: OccurrenceId("test:product:occurrence#root".into()),
-        },
-        transform: Transform::identity(),
-        name: None,
-    });
-    ir.finalize();
-    assert!(crate::validate(&ir, Vec::new()).is_ok());
-
-    ir.model.product_occurrences[1].transform.rows[0][0] = f64::INFINITY;
-    assert!(crate::validate(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.check == crate::report::Check::ProductStructure
-                && finding.message.contains("non-finite")
-        }));
-    ir.model.product_occurrences[1].transform = Transform::identity();
-
-    ir.model.product_occurrences[1].parent = OccurrenceParent::Occurrence {
-        occurrence: OccurrenceId("test:product:occurrence#child".into()),
-    };
-    let report = crate::validate(&ir, Vec::new());
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.check == crate::report::Check::ProductStructure));
-}
-
-#[test]
 fn non_finite_body_transform_is_invalid() {
     let mut ir = unit_cube();
     let mut transform = crate::transform::Transform::identity();

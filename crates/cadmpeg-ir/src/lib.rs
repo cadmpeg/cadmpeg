@@ -50,7 +50,6 @@ pub mod math;
 pub mod native;
 pub mod pmi;
 pub mod presentation;
-pub mod product;
 pub mod products;
 mod provenance;
 pub mod report;
@@ -88,7 +87,6 @@ pub use presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
 };
 pub use presentation::{PresentationItem, PresentationLayer};
-pub use product::{OccurrenceParent, Product, ProductOccurrence};
 pub use products::{
     AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChangePolicy,
     ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,

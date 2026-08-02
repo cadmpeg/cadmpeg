@@ -127,15 +127,11 @@ id_type!(
     AttributeId
 );
 id_type!(
-    /// Identifies a reusable [`crate::product::Product`] prototype.
-    ProductId
-);
-id_type!(
     /// Identifies a canonical [`crate::products::ProductDefinition`].
     ProductDefinitionId
 );
 id_type!(
-    /// Identifies a placed [`crate::product::ProductOccurrence`].
+    /// Identifies a placed [`crate::products::Occurrence`].
     OccurrenceId
 );
 id_type!(
