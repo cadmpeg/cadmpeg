@@ -1575,6 +1575,13 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     );
+    crate::resolved_features::project_relation_solved_line_geometry(
+        &mut sketch_entities,
+        &sketches,
+        &ir.model.features,
+        &ir.model.parameters,
+        &lanes,
+    );
     crate::resolved_features::project_relation_solved_point_geometry(
         &mut sketch_entities,
         &sketches,
@@ -2343,6 +2350,13 @@ fn build_metadata_ir(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.features,
+        &lanes,
+    );
+    crate::resolved_features::project_relation_solved_line_geometry(
+        &mut ir.model.sketch_entities,
+        &ir.model.sketches,
+        &ir.model.features,
+        &ir.model.parameters,
         &lanes,
     );
     crate::resolved_features::project_relation_solved_point_geometry(
