@@ -610,6 +610,33 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
 }
 
 #[test]
+fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
+    let native_key = |ordinal, key| BodyNativeKey {
+        id: format!("f3d:asm:body-native-key#{ordinal}"),
+        body: BodyId(format!("f3d:brep:entity#{ordinal}")),
+        record_index: ordinal,
+        body_ordinal: ordinal,
+        source_brep: Some("BREP.source.smb".into()),
+        asm_body_key: Some(key),
+    };
+    let mut brep = Brep {
+        body_native_keys: vec![native_key(0, 1), native_key(1, 0)],
+        ..Brep::default()
+    };
+
+    assert_eq!(
+        brep.body_selectors_for(&HashSet::from([0])).unwrap(),
+        HashMap::from([(BodyId("f3d:brep:entity#1".into()), 0)])
+    );
+
+    brep.body_native_keys = vec![native_key(0, 436)];
+    assert_eq!(
+        brep.body_selectors_for(&HashSet::from([0])).unwrap(),
+        HashMap::from([(BodyId("f3d:brep:entity#0".into()), 0)])
+    );
+}
+
+#[test]
 fn nested_attributes_inherit_their_topology_owner() {
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::ids::EdgeId;

@@ -11166,6 +11166,47 @@ fn generated_f3d_rewrites_body_transform() {
 }
 
 #[test]
+fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
+    let body = cadmpeg_ir::ids::BodyId("f3d:brep:entity#1".into());
+    let mut baseline = crate::native::F3dNative::default();
+    baseline
+        .body_native_keys
+        .push(crate::records::BodyNativeKey {
+            id: "f3d:asm:body-native-key#1".into(),
+            body: body.clone(),
+            record_index: 1,
+            body_ordinal: 0,
+            source_brep: Some("BREP.source.smb".into()),
+            asm_body_key: Some(436),
+        });
+    baseline
+        .body_visibilities
+        .push(crate::records::BodyVisibility {
+            id: "f3d:design:body-visibility#1".into(),
+            body,
+            stream: "Design1/BulkStream.dat".into(),
+            byte_offset: 20,
+            asm_body_key_offset: 40,
+            asm_body_key: 0,
+            entity_suffix: 1,
+            visible: true,
+        });
+    let mut target = baseline.clone();
+    target.body_native_keys[0].asm_body_key = Some(500);
+
+    let edits = crate::writer::patch::edits::validate_body_native_key_edits(
+        crate::writer::patch::edits::PatchNatives {
+            baseline: Some(&baseline),
+            target: Some(&target),
+        },
+    )
+    .expect("body-key edit");
+
+    assert_eq!(edits.asm.get(&1), Some(&500));
+    assert!(edits.design.is_empty());
+}
+
+#[test]
 fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec

@@ -487,21 +487,21 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .body_native_keys
                     .iter()
                     .any(|key| key.source_brep.as_deref() == Some(binding.blob_name.as_str()));
-                let source_keys = native.body_native_keys.iter().filter(|key| {
-                    if has_named_source {
-                        key.source_brep.as_deref() == Some(binding.blob_name.as_str())
-                    } else {
-                        key.source_brep.is_none()
-                    }
-                });
-                let ordinal_mode = source_keys.clone().all(|key| key.asm_body_key.is_none());
-                source_keys.filter(|key| &key.body == body).any(|key| {
-                    if ordinal_mode {
-                        u64::from(key.body_ordinal) == binding.asm_body_key
-                    } else {
-                        key.asm_body_key == Some(binding.asm_body_key)
-                    }
-                })
+                let source_keys = native
+                    .body_native_keys
+                    .iter()
+                    .filter(|key| {
+                        if has_named_source {
+                            key.source_brep.as_deref() == Some(binding.blob_name.as_str())
+                        } else {
+                            key.source_brep.is_none()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                matches!(
+                    crate::brep::resolve_body_selector(&source_keys, binding.asm_body_key),
+                    Ok(Some(resolved)) if &resolved == body
+                )
             })
             && binding_offsets.insert((native_stream, binding.asm_body_key_offset));
         if !valid {

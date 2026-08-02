@@ -1010,7 +1010,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             if let Some(keys) = selected_body_keys.get(blob_name) {
                 part.retain_body_keys(keys)?;
             }
-            let mut body_selectors = part.body_selectors();
+            let mut body_selectors = match selected_body_keys.get(blob_name) {
+                Some(keys) => part.body_selectors_for(keys)?,
+                None => part.body_selectors(),
+            };
             for body in &mut part.bodies {
                 if let Some(visibility) = body_selectors.get(&body.id).and_then(|selector| {
                     all_body_visibility.get(&(blob_name.to_owned(), *selector))
@@ -1026,7 +1029,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                     ))
                 })?;
                 part.qualify_ids(namespace)?;
-                body_selectors = part.body_selectors();
+                body_selectors = match selected_body_keys.get(blob_name) {
+                    Some(keys) => part.body_selectors_for(keys)?,
+                    None => part.body_selectors(),
+                };
             }
             for body in &part.bodies {
                 if let Some((body_selector, visibility)) =
