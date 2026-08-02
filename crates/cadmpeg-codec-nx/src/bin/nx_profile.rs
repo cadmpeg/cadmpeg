@@ -515,6 +515,7 @@ mod tests {
             definition: FeatureDefinition::Block {
                 dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
                 placement: Some(cadmpeg_ir::transform::Transform::identity()),
+                op: cadmpeg_ir::features::BooleanOp::NewBody,
             },
             native_ref: None,
         });

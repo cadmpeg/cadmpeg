@@ -2069,7 +2069,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
 
 #[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
+    use cadmpeg_ir::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -2088,6 +2088,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         definition: FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(cadmpeg_ir::transform::Transform::identity()),
+            op: BooleanOp::NewBody,
         },
         native_ref: None,
     });
@@ -2130,6 +2131,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         ir.model.features[0].definition = FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(invalid_placement),
+            op: BooleanOp::NewBody,
         };
         crate::decode::append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
@@ -13658,8 +13660,8 @@ fn decode_retains_unsupported_named_stream_payloads() {
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
-        ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature, FeatureDefinition,
-        FeatureId,
+        BooleanOp, ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature,
+        FeatureDefinition, FeatureId,
     };
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -13761,6 +13763,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         definition: FeatureDefinition::Block {
             dimensions: None,
             placement: None,
+            op: BooleanOp::Unresolved,
         },
         native_ref: None,
     });

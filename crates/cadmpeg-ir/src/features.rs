@@ -533,6 +533,8 @@ pub enum FeatureDefinition {
         dimensions: Option<[Length; 3]>,
         /// Local-to-model placement, when resolved.
         placement: Option<crate::transform::Transform>,
+        /// Whether the primitive creates or combines material.
+        op: BooleanOp,
     },
     /// Parametric model-space curve defined by coordinate expressions.
     EquationCurve {

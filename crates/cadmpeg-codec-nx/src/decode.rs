@@ -10224,11 +10224,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Block {
                 dimensions,
                 placement,
+                op,
             } if dimensions.is_none_or(|dimensions| {
                 dimensions
                     .into_iter()
                     .any(|dimension| !positive_feature_length(dimension))
-            }) || placement.is_none_or(|placement| !placement.is_proper_rigid()) =>
+            }) || placement.is_none_or(|placement| !placement.is_proper_rigid())
+                || matches!(op, BooleanOp::Unresolved) =>
             {
                 "block"
             }

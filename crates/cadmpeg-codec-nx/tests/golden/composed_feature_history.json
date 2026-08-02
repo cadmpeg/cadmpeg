@@ -529,6 +529,7 @@
             "definition": {
               "definition": "block",
               "dimensions": null,
+              "op": "unresolved",
               "placement": null
             },
             "dependencies": [

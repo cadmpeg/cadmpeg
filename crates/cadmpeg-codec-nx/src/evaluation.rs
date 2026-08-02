@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureId, Length};
+use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition, FeatureId, Length};
 use cadmpeg_ir::ids::BodyId;
 
 /// Why a saved-body census cannot yet be evaluated exactly.
@@ -174,6 +174,7 @@ fn rederived_body_census(
             FeatureDefinition::Block {
                 dimensions: Some(dimensions),
                 placement: Some(placement),
+                op: BooleanOp::NewBody,
             } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
                 let [output] = feature.outputs.as_slice() else {
                     return Err((
@@ -187,6 +188,13 @@ fn rederived_body_census(
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
+            }
+            FeatureDefinition::Block {
+                dimensions: Some(dimensions),
+                placement: Some(placement),
+                op: BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
+            } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
+                preserve_complete_single_output(feature, &bodies, false)?;
             }
             FeatureDefinition::Block { .. } => {
                 return Err((
@@ -389,6 +397,7 @@ mod tests {
             definition: FeatureDefinition::Block {
                 dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
                 placement: Some(cadmpeg_ir::transform::Transform::identity()),
+                op: BooleanOp::NewBody,
             },
             native_ref: None,
         });
@@ -495,6 +504,44 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(complete_hole(body.clone()));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn unresolved_block_result_mode_stops_before_body_effect_evaluation() {
+        let mut ir = complete_block_ir();
+        let FeatureDefinition::Block { op, .. } = &mut ir.model.features[0].definition else {
+            unreachable!("block fixture")
+        };
+        *op = BooleanOp::Unresolved;
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("block".to_string())),
+                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+            }
+        );
+    }
+
+    #[test]
+    fn boolean_block_preserves_its_existing_output_body() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features.push(body_preserving_feature(
+            "joined-block",
+            1,
+            body.clone(),
+            FeatureDefinition::Block {
+                dimensions: Some([Length(0.5), Length(0.5), Length(0.5)]),
+                placement: Some(cadmpeg_ir::transform::Transform::identity()),
+                op: BooleanOp::Join,
+            },
+        ));
 
         assert_eq!(
             evaluate_saved_body_census(&ir),

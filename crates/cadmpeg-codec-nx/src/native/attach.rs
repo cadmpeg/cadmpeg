@@ -3837,6 +3837,7 @@ fn non_boolean_feature_definition_with_parameters(
         return FeatureDefinition::Block {
             dimensions: Some(dimensions.map(Length)),
             placement: block_placement,
+            op: BooleanOp::Unresolved,
         };
     }
     if let Some(op) = match kind {
@@ -3863,6 +3864,7 @@ fn non_boolean_feature_definition_with_parameters(
         "BLOCK" => FeatureDefinition::Block {
             dimensions: None,
             placement: None,
+            op: BooleanOp::Unresolved,
         },
         "SKETCH" => FeatureDefinition::Sketch {
             space: SketchSpace::Unresolved,
@@ -6232,6 +6234,7 @@ mod tests {
                     cadmpeg_ir::features::Length(30.0),
                 ]),
                 placement: None,
+                op: BooleanOp::Unresolved,
             }
         ));
         assert_eq!(
@@ -6239,6 +6242,7 @@ mod tests {
             cadmpeg_ir::features::FeatureDefinition::Block {
                 dimensions: None,
                 placement: None,
+                op: BooleanOp::Unresolved,
             }
         );
     }
