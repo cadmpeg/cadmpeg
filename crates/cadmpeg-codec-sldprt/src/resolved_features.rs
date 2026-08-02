@@ -12435,6 +12435,10 @@ mod marker_tests {
         let mut extended = current.clone();
         extended[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert!(indexed_arc_uses_coordinate_center(&extended, 0));
+        assert!(current_wide_undetailed_line(&extended, 0));
+        extended[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        assert!(indexed_arc_uses_coordinate_center(&extended, 0));
         assert!(current_wide_undetailed_line(&extended, 0));
         extended[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
         assert!(!current_wide_undetailed_line(&extended, 0));
@@ -40695,10 +40699,17 @@ fn inline_arc_endpoint_markers<'a>(
 }
 
 fn current_wide_undetailed_line(payload: &[u8], offset: usize) -> bool {
-    matches!(
+    let supported_prefix = matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(marker) if marker == SKETCH_MARKER || marker == LEGACY_EXTENDED_SKETCH_MARKER
-    ) && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+    );
+    let profile_locus = payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]);
+    let extended_geometry_locus = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && marker_is_geometry_locus(payload, offset);
+    supported_prefix
+        && (profile_locus || extended_geometry_locus)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92))
         && compact_bounded_curve_tangent(payload, offset).is_none()
@@ -42375,7 +42386,15 @@ fn coordinate_roster_arc_center(
         && marker_native_code(payload, offset) == Some(2)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92));
-    if !current_wide && legacy_referenced_wide_arc_endpoint_indices(payload, offset).is_none() {
+    let extended_wide = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+        && sketch_marker_prefix_at(payload, offset.saturating_add(92));
+    if !current_wide
+        && !extended_wide
+        && legacy_referenced_wide_arc_endpoint_indices(payload, offset).is_none()
+    {
         return None;
     }
     if let Some((endpoints, center)) = current_wide_arc_direct_markers(payload, curve, markers) {
@@ -44061,9 +44080,15 @@ fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) -> bool {
         && marker_native_code(payload, offset) == Some(2)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92));
+    let extended_wide = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+        && sketch_marker_prefix_at(payload, offset.saturating_add(92));
     extended_compact_84
         || extended_compact
         || current_wide
+        || extended_wide
         || legacy_referenced_wide_arc_endpoint_indices(payload, offset).is_some()
 }
 
