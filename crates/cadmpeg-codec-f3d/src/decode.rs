@@ -191,7 +191,8 @@ struct DesignProjectionGaps {
     unresolved_expression_dependencies: usize,
     unprojected_history_dependencies: usize,
     ambiguous_history_dependencies: usize,
-    native_constraints: usize,
+    native_sketch_relations: usize,
+    native_dimensions: usize,
     unprojected_sketch_placements: usize,
     unprojected_sketch_points: usize,
     unprojected_sketch_curves: usize,
@@ -387,6 +388,48 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .cloned()
             .collect::<HashSet<_>>();
 
+    let native_sketch_relation_ids = native
+        .sketch_relations
+        .iter()
+        .map(|relation| relation.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut native_sketch_relations = 0;
+    let mut native_dimensions = 0;
+    for constraint in &ir.model.sketch_constraints {
+        if !matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Native { .. }
+        ) {
+            continue;
+        }
+        if constraint
+            .native_ref
+            .as_deref()
+            .is_some_and(|native_ref| native_sketch_relation_ids.contains(native_ref))
+        {
+            native_sketch_relations += 1;
+        } else {
+            native_dimensions += 1;
+        }
+    }
+    for constraint in &ir.model.spatial_sketch_constraints {
+        if !matches!(
+            constraint.definition,
+            cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Native { .. }
+        ) {
+            continue;
+        }
+        if constraint
+            .native_ref
+            .as_deref()
+            .is_some_and(|native_ref| native_sketch_relation_ids.contains(native_ref))
+        {
+            native_sketch_relations += 1;
+        } else {
+            native_dimensions += 1;
+        }
+    }
+
     let mut gaps = DesignProjectionGaps {
         unresolved_body_bindings: native
             .design_body_bindings
@@ -413,27 +456,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 &native.design_parameters,
                 &ir.model.parameters,
             ),
-        native_constraints: ir
-            .model
-            .sketch_constraints
-            .iter()
-            .filter(|constraint| {
-                matches!(
-                    constraint.definition,
-                    SketchConstraintDefinition::Native { .. }
-                )
-            })
-            .count()
-            + ir.model
-                .spatial_sketch_constraints
-                .iter()
-                .filter(|constraint| {
-                    matches!(
-                        constraint.definition,
-                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Native { .. }
-                    )
-                })
-                .count(),
+        native_sketch_relations,
+        native_dimensions,
         unprojected_sketch_placements: native
             .design_sketch_placements
             .iter()
@@ -763,10 +787,17 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
-        gaps.native_constraints,
+        gaps.native_sketch_relations,
         format!(
-            "{} sketch constraint(s) retain native operands because no unique neutral relation was resolved.",
-            gaps.native_constraints
+            "{} sketch relation(s) retain native operands because no unique neutral relation was resolved.",
+            gaps.native_sketch_relations
+        ),
+    );
+    push(
+        gaps.native_dimensions,
+        format!(
+            "{} sketch dimension(s) retain native operands because no unique neutral dimension was resolved.",
+            gaps.native_dimensions
         ),
     );
     push(
@@ -3357,8 +3388,12 @@ mod tests {
             label_distance: None,
             label_position: None,
             metadata: None,
-            native_ref: Some("native:constraint".into()),
+            native_ref: Some("native:sketch-relation".into()),
         });
+        let mut native_dimension = ir.model.sketch_constraints[0].clone();
+        native_dimension.id = SketchConstraintId("dimension".into());
+        native_dimension.native_ref = Some("native:dimension-companion".into());
+        ir.model.sketch_constraints.push(native_dimension);
         ir.model.features.push(
             serde_json::from_value(serde_json::json!({
                 "id": "extrude",
@@ -3533,7 +3568,7 @@ mod tests {
             next_record_index: 1,
         });
         native.sketch_relations.push(SketchRelation {
-            id: "native:unprojected-relation".into(),
+            id: "native:sketch-relation".into(),
             record_index: 1,
             class_tag: "000".into(),
             byte_offset: 0,
@@ -3667,13 +3702,14 @@ mod tests {
                 unresolved_expression_dependencies: 0,
                 unprojected_history_dependencies: 0,
                 ambiguous_history_dependencies: 0,
-                native_constraints: 1,
+                native_sketch_relations: 1,
+                native_dimensions: 1,
                 unprojected_sketch_placements: 1,
                 unprojected_sketch_points: 1,
                 unprojected_sketch_curves: 1,
                 unprojected_sketch_surfaces: 0,
                 unprojected_sketch_texts: 0,
-                unprojected_sketch_relations: 1,
+                unprojected_sketch_relations: 0,
                 unprojected_dimensions: 1,
                 profile_selections: 2,
                 path_selections: 1,
