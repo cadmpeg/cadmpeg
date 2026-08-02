@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_ir::topology::Body;
 
 #[test]
 fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {

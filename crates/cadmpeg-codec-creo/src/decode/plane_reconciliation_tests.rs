@@ -130,8 +130,11 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         source_object: None,
     });
 
-    let transferred =
-        transfer_topology_bound_planes(&scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new());
+    let transferred = transfer_topology_bound_planes(
+        &scan,
+        &mut ir,
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+    );
 
     assert_eq!(transferred, 1);
     let plane = ir
@@ -151,7 +154,11 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         .push(scan.curves.topology_rows[0].clone());
     ir.model.surfaces.clear();
     assert_eq!(
-        transfer_topology_bound_planes(&scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),),
+        transfer_topology_bound_planes(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
         0
     );
 }
@@ -202,7 +209,11 @@ fn unique_native_line_loop_places_its_plane_surface() {
     }
 
     assert_eq!(
-        transfer_topology_bound_planes(&scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),),
+        transfer_topology_bound_planes(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
         1
     );
     assert!(ir.model.surfaces.iter().any(|surface| {

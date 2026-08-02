@@ -1,0 +1,106 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "4556",
+        "crc32": "c899ddfb",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 1512,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 7429
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4614",
+        "crc32": "8d3ae6eb",
+        "data_offset": "1606",
+        "header_offset": "1554"
+      },
+      "compressed_size": 989,
+      "compression": "deflate",
+      "name": "ColoredModel.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 11858
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4682",
+        "crc32": "49a0cc8c",
+        "data_offset": "2640",
+        "header_offset": "2595"
+      },
+      "compressed_size": 1184,
+      "compression": "deflate",
+      "name": "GuiDocument.xml",
+      "role": "gui-document",
+      "uncompressed_size": 6483
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4743",
+        "crc32": "d6834be3",
+        "data_offset": "3878",
+        "header_offset": "3824"
+      },
+      "compressed_size": 456,
+      "compression": "deflate",
+      "name": "thumbnails/Thumbnail.png",
+      "role": "thumbnail",
+      "uncompressed_size": 955
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4813",
+        "crc32": "2b73fc01",
+        "data_offset": "4378",
+        "header_offset": "4334"
+      },
+      "compressed_size": 10,
+      "compression": "deflate",
+      "name": "LineColorArray",
+      "role": "auxiliary",
+      "uncompressed_size": 8
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4873",
+        "crc32": "73879679",
+        "data_offset": "4433",
+        "header_offset": "4388"
+      },
+      "compressed_size": 10,
+      "compression": "deflate",
+      "name": "PointColorArray",
+      "role": "auxiliary",
+      "uncompressed_size": 8
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4934",
+        "crc32": "c214004f",
+        "data_offset": "4488",
+        "header_offset": "4443"
+      },
+      "compressed_size": 68,
+      "compression": "deflate",
+      "name": "ShapeAppearance",
+      "role": "auxiliary",
+      "uncompressed_size": 292
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part",
+    "object count=2",
+    "physical ledger spans=50 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

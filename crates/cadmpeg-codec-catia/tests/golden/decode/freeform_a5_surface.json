@@ -1,0 +1,204 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "brep_stream_len": "212",
+        "brep_stream_sha256": "84e451051e40729dda510b15b2e9ba5dbe1c403ed1d7036f624dd35e3b6345dd",
+        "external_reference_count": "0",
+        "fbb_runs": "0",
+        "file_size": "475",
+        "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "475",
+        "preview_count": "0",
+        "stream_count": "2",
+        "variant": "float_packed_inner_no_fbb",
+        "vertex_records": "0"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [],
+      "regions": [],
+      "shells": [],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [],
+      "points": [],
+      "surfaces": [
+        {
+          "id": "catia:a8:surf#0",
+          "geometry": {
+            "kind": "nurbs",
+            "u_degree": 1,
+            "v_degree": 1,
+            "u_knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "v_knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "u_count": 2,
+            "v_count": 2,
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              {
+                "x": 2.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              {
+                "x": 3.0,
+                "y": 1.0,
+                "z": 1.0
+              }
+            ],
+            "u_periodic": false,
+            "v_periodic": false
+          }
+        }
+      ],
+      "curves": [],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#freeform",
+              "links": [
+                "catia:a8:surf#0"
+              ]
+            }
+          ],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 475 + length 0 = 475 (file size 475); variant: float-packed inner-no-FBB (object-stream b5 03 topology): freeform carrier decode supported",
+      "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
+      "reconstructed BREP stream from MainDataStream + SurfacicReps: 0 FBB run(s), 0 vertex record(s), 0 edge-table delimiter(s)",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "catia:MainDataStream+SurfacicReps",
+        "catia:object_stream_a8_03"
+      ],
+      "provenance": {
+        "catia:a8:surf#0": {
+          "stream": 1,
+          "offset": 32,
+          "tag": "freeform:object_id:00000000"
+        },
+        "catia:payload:unknown#freeform": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "float_packed_inner_no_fbb"
+        }
+      },
+      "exactness": {
+        "catia:payload:unknown#freeform": {
+          "entity": "unknown",
+          "fields": {
+            "links": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "catia:payload:unknown#freeform",
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "offset": 0,
+        "byte_len": 212,
+        "sha256": "84e451051e40729dda510b15b2e9ba5dbe1c403ed1d7036f624dd35e3b6345dd",
+        "data": "pQM0ywAAAAAFCQwAAAAAAAAAAAAAAAAAAPA/BQkMAAAAAAAAAAAAAAAAAADwPwEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAQAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAIQAAAAAAAAPA/AAAAAAAA8D8FAQUBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      }
+    ]
+  }
+}

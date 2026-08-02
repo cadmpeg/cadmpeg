@@ -1,0 +1,1285 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "brep_stream_len": "616",
+        "brep_stream_sha256": "d7fb4c3acc0a6eba22f5b98742357824db6b2fd70767cf9be35ec0bcd799c626",
+        "external_reference_count": "0",
+        "fbb_runs": "4",
+        "file_size": "879",
+        "finjpl_segment_count": "0",
+        "inner_offset": "16",
+        "outer_dir_offset": "879",
+        "preview_count": "0",
+        "stream_count": "2",
+        "variant": "standard_nested",
+        "vertex_records": "4"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [
+        {
+          "id": "catia:standard:body#0",
+          "kind": "solid",
+          "regions": [
+            "catia:standard:region#0-0"
+          ]
+        }
+      ],
+      "regions": [
+        {
+          "id": "catia:standard:region#0-0",
+          "body": "catia:standard:body#0",
+          "shells": [
+            "catia:standard:shell#0-0"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "catia:standard:shell#0-0",
+          "region": "catia:standard:region#0-0",
+          "faces": [
+            "catia:standard:face#0",
+            "catia:standard:face#1",
+            "catia:standard:face#2",
+            "catia:standard:face#3"
+          ]
+        }
+      ],
+      "faces": [
+        {
+          "id": "catia:standard:face#0",
+          "shell": "catia:standard:shell#0-0",
+          "surface": "catia:standard:surf#0",
+          "sense": "forward",
+          "loops": [
+            "catia:standard:loop#0:0"
+          ]
+        },
+        {
+          "id": "catia:standard:face#1",
+          "shell": "catia:standard:shell#0-0",
+          "surface": "catia:standard:surf#1",
+          "sense": "forward",
+          "loops": [
+            "catia:standard:loop#1:0"
+          ]
+        },
+        {
+          "id": "catia:standard:face#2",
+          "shell": "catia:standard:shell#0-0",
+          "surface": "catia:standard:surf#2",
+          "sense": "forward",
+          "loops": [
+            "catia:standard:loop#2:0"
+          ]
+        },
+        {
+          "id": "catia:standard:face#3",
+          "shell": "catia:standard:shell#0-0",
+          "surface": "catia:standard:surf#3",
+          "sense": "forward",
+          "loops": [
+            "catia:standard:loop#3:0"
+          ]
+        }
+      ],
+      "loops": [
+        {
+          "id": "catia:standard:loop#0:0",
+          "face": "catia:standard:face#0",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "catia:standard:coedge#0:0:0",
+            "catia:standard:coedge#0:0:1",
+            "catia:standard:coedge#0:0:2"
+          ]
+        },
+        {
+          "id": "catia:standard:loop#1:0",
+          "face": "catia:standard:face#1",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "catia:standard:coedge#1:0:0",
+            "catia:standard:coedge#1:0:1",
+            "catia:standard:coedge#1:0:2"
+          ]
+        },
+        {
+          "id": "catia:standard:loop#2:0",
+          "face": "catia:standard:face#2",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "catia:standard:coedge#2:0:0",
+            "catia:standard:coedge#2:0:1",
+            "catia:standard:coedge#2:0:2"
+          ]
+        },
+        {
+          "id": "catia:standard:loop#3:0",
+          "face": "catia:standard:face#3",
+          "boundary_role": "unspecified",
+          "coedges": [
+            "catia:standard:coedge#3:0:0",
+            "catia:standard:coedge#3:0:1",
+            "catia:standard:coedge#3:0:2"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "id": "catia:standard:coedge#0:0:0",
+          "owner_loop": "catia:standard:loop#0:0",
+          "edge": "catia:standard:edge#1",
+          "next": "catia:standard:coedge#0:0:1",
+          "previous": "catia:standard:coedge#0:0:2",
+          "radial_next": "catia:standard:coedge#2:0:2",
+          "sense": "forward"
+        },
+        {
+          "id": "catia:standard:coedge#0:0:1",
+          "owner_loop": "catia:standard:loop#0:0",
+          "edge": "catia:standard:edge#2",
+          "next": "catia:standard:coedge#0:0:2",
+          "previous": "catia:standard:coedge#0:0:0",
+          "radial_next": "catia:standard:coedge#3:0:2",
+          "sense": "forward"
+        },
+        {
+          "id": "catia:standard:coedge#0:0:2",
+          "owner_loop": "catia:standard:loop#0:0",
+          "edge": "catia:standard:edge#0",
+          "next": "catia:standard:coedge#0:0:0",
+          "previous": "catia:standard:coedge#0:0:1",
+          "radial_next": "catia:standard:coedge#1:0:2",
+          "sense": "forward"
+        },
+        {
+          "id": "catia:standard:coedge#1:0:0",
+          "owner_loop": "catia:standard:loop#1:0",
+          "edge": "catia:standard:edge#3",
+          "next": "catia:standard:coedge#1:0:1",
+          "previous": "catia:standard:coedge#1:0:2",
+          "radial_next": "catia:standard:coedge#3:0:1",
+          "sense": "forward"
+        },
+        {
+          "id": "catia:standard:coedge#1:0:1",
+          "owner_loop": "catia:standard:loop#1:0",
+          "edge": "catia:standard:edge#4",
+          "next": "catia:standard:coedge#1:0:2",
+          "previous": "catia:standard:coedge#1:0:0",
+          "radial_next": "catia:standard:coedge#2:0:0",
+          "sense": "reversed"
+        },
+        {
+          "id": "catia:standard:coedge#1:0:2",
+          "owner_loop": "catia:standard:loop#1:0",
+          "edge": "catia:standard:edge#0",
+          "next": "catia:standard:coedge#1:0:0",
+          "previous": "catia:standard:coedge#1:0:1",
+          "radial_next": "catia:standard:coedge#0:0:2",
+          "sense": "reversed"
+        },
+        {
+          "id": "catia:standard:coedge#2:0:0",
+          "owner_loop": "catia:standard:loop#2:0",
+          "edge": "catia:standard:edge#4",
+          "next": "catia:standard:coedge#2:0:1",
+          "previous": "catia:standard:coedge#2:0:2",
+          "radial_next": "catia:standard:coedge#1:0:1",
+          "sense": "forward"
+        },
+        {
+          "id": "catia:standard:coedge#2:0:1",
+          "owner_loop": "catia:standard:loop#2:0",
+          "edge": "catia:standard:edge#5",
+          "next": "catia:standard:coedge#2:0:2",
+          "previous": "catia:standard:coedge#2:0:0",
+          "radial_next": "catia:standard:coedge#3:0:0",
+          "sense": "reversed"
+        },
+        {
+          "id": "catia:standard:coedge#2:0:2",
+          "owner_loop": "catia:standard:loop#2:0",
+          "edge": "catia:standard:edge#1",
+          "next": "catia:standard:coedge#2:0:0",
+          "previous": "catia:standard:coedge#2:0:1",
+          "radial_next": "catia:standard:coedge#0:0:0",
+          "sense": "reversed"
+        },
+        {
+          "id": "catia:standard:coedge#3:0:0",
+          "owner_loop": "catia:standard:loop#3:0",
+          "edge": "catia:standard:edge#5",
+          "next": "catia:standard:coedge#3:0:1",
+          "previous": "catia:standard:coedge#3:0:2",
+          "radial_next": "catia:standard:coedge#2:0:1",
+          "sense": "forward"
+        },
+        {
+          "id": "catia:standard:coedge#3:0:1",
+          "owner_loop": "catia:standard:loop#3:0",
+          "edge": "catia:standard:edge#3",
+          "next": "catia:standard:coedge#3:0:2",
+          "previous": "catia:standard:coedge#3:0:0",
+          "radial_next": "catia:standard:coedge#1:0:0",
+          "sense": "reversed"
+        },
+        {
+          "id": "catia:standard:coedge#3:0:2",
+          "owner_loop": "catia:standard:loop#3:0",
+          "edge": "catia:standard:edge#2",
+          "next": "catia:standard:coedge#3:0:0",
+          "previous": "catia:standard:coedge#3:0:1",
+          "radial_next": "catia:standard:coedge#0:0:1",
+          "sense": "reversed"
+        }
+      ],
+      "edges": [
+        {
+          "id": "catia:standard:edge#0",
+          "curve": "catia:standard:curve#290",
+          "start": "catia:standard:v#0",
+          "end": "catia:standard:v#1",
+          "param_range": [
+            0.0,
+            2.8284271247461903
+          ]
+        },
+        {
+          "id": "catia:standard:edge#1",
+          "curve": "catia:standard:curve#301",
+          "start": "catia:standard:v#1",
+          "end": "catia:standard:v#2",
+          "param_range": [
+            0.0,
+            2.8284271247461903
+          ]
+        },
+        {
+          "id": "catia:standard:edge#2",
+          "curve": "catia:standard:curve#312",
+          "start": "catia:standard:v#2",
+          "end": "catia:standard:v#0",
+          "param_range": [
+            0.0,
+            2.8284271247461903
+          ]
+        },
+        {
+          "id": "catia:standard:edge#3",
+          "curve": "catia:standard:curve#323",
+          "start": "catia:standard:v#0",
+          "end": "catia:standard:v#3",
+          "param_range": [
+            0.0,
+            2.8284271247461903
+          ]
+        },
+        {
+          "id": "catia:standard:edge#4",
+          "curve": "catia:standard:curve#334",
+          "start": "catia:standard:v#1",
+          "end": "catia:standard:v#3",
+          "param_range": [
+            0.0,
+            2.8284271247461903
+          ]
+        },
+        {
+          "id": "catia:standard:edge#5",
+          "curve": "catia:standard:curve#345",
+          "start": "catia:standard:v#2",
+          "end": "catia:standard:v#3",
+          "param_range": [
+            0.0,
+            2.8284271247461903
+          ]
+        }
+      ],
+      "vertices": [
+        {
+          "id": "catia:standard:v#0",
+          "point": "catia:standard:pt#0"
+        },
+        {
+          "id": "catia:standard:v#1",
+          "point": "catia:standard:pt#1"
+        },
+        {
+          "id": "catia:standard:v#2",
+          "point": "catia:standard:pt#2"
+        },
+        {
+          "id": "catia:standard:v#3",
+          "point": "catia:standard:pt#3"
+        }
+      ],
+      "points": [
+        {
+          "id": "catia:standard:pt#0",
+          "position": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          }
+        },
+        {
+          "id": "catia:standard:pt#1",
+          "position": {
+            "x": 1.0,
+            "y": -1.0,
+            "z": -1.0
+          }
+        },
+        {
+          "id": "catia:standard:pt#2",
+          "position": {
+            "x": -1.0,
+            "y": 1.0,
+            "z": -1.0
+          }
+        },
+        {
+          "id": "catia:standard:pt#3",
+          "position": {
+            "x": -1.0,
+            "y": -1.0,
+            "z": 1.0
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "id": "catia:standard:surf#0",
+          "geometry": {
+            "kind": "sphere",
+            "center": {
+              "x": 0.3333333432674408,
+              "y": 0.3333333432674408,
+              "z": -0.3333333432674408
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 1.632993221282959
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-carrier:000001"
+          }
+        },
+        {
+          "id": "catia:standard:surf#1",
+          "geometry": {
+            "kind": "sphere",
+            "center": {
+              "x": 0.3333333432674408,
+              "y": -0.3333333432674408,
+              "z": 0.3333333432674408
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 1.632993221282959
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-carrier:000002"
+          }
+        },
+        {
+          "id": "catia:standard:surf#2",
+          "geometry": {
+            "kind": "sphere",
+            "center": {
+              "x": -0.3333333432674408,
+              "y": -0.3333333432674408,
+              "z": -0.3333333432674408
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 1.632993221282959
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-carrier:000003"
+          }
+        },
+        {
+          "id": "catia:standard:surf#3",
+          "geometry": {
+            "kind": "sphere",
+            "center": {
+              "x": -0.3333333432674408,
+              "y": 0.3333333432674408,
+              "z": 0.3333333432674408
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 1.632993221282959
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-carrier:000004"
+          }
+        }
+      ],
+      "curves": [
+        {
+          "id": "catia:standard:curve#290",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": 1.0,
+              "z": 1.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": -0.7071067811865475,
+              "z": -0.7071067811865475
+            }
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge-support:000001"
+          }
+        },
+        {
+          "id": "catia:standard:curve#301",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": -1.0,
+              "z": -1.0
+            },
+            "direction": {
+              "x": -0.7071067811865475,
+              "y": 0.7071067811865475,
+              "z": 0.0
+            }
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge-support:000002"
+          }
+        },
+        {
+          "id": "catia:standard:curve#312",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": -1.0,
+              "y": 1.0,
+              "z": -1.0
+            },
+            "direction": {
+              "x": 0.7071067811865475,
+              "y": 0.0,
+              "z": 0.7071067811865475
+            }
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge-support:000003"
+          }
+        },
+        {
+          "id": "catia:standard:curve#323",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": 1.0,
+              "z": 1.0
+            },
+            "direction": {
+              "x": -0.7071067811865475,
+              "y": -0.7071067811865475,
+              "z": 0.0
+            }
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge-support:000004"
+          }
+        },
+        {
+          "id": "catia:standard:curve#334",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": -1.0,
+              "z": -1.0
+            },
+            "direction": {
+              "x": -0.7071067811865475,
+              "y": 0.0,
+              "z": 0.7071067811865475
+            }
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge-support:000005"
+          }
+        },
+        {
+          "id": "catia:standard:curve#345",
+          "geometry": {
+            "kind": "line",
+            "origin": {
+              "x": -1.0,
+              "y": 1.0,
+              "z": -1.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": -0.7071067811865475,
+              "z": 0.7071067811865475
+            }
+          },
+          "source_object": {
+            "format": "catia",
+            "object_id": "cgm-edge-support:000006"
+          }
+        }
+      ],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#brep-stream",
+              "links": [
+                "catia:standard:surf#0",
+                "catia:standard:surf#1",
+                "catia:standard:surf#2",
+                "catia:standard:surf#3",
+                "catia:standard:curve#290",
+                "catia:standard:curve#301",
+                "catia:standard:curve#312",
+                "catia:standard:curve#323",
+                "catia:standard:curve#334",
+                "catia:standard:curve#345"
+              ]
+            }
+          ],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "carrier_summary",
+        "category": "geometry",
+        "severity": "info",
+        "message": "4 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 4 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 0 plane, 0 cylinder, 0 cone, 4 sphere, 0 torus."
+      },
+      {
+        "code": "attributes_not_transferred",
+        "category": "attribute",
+        "severity": "warning",
+        "message": "Standard circles with an exact adjacent-carrier section normal and plane-plane lines are transferred as curves. Standard spline edges retain exact two-surface intersection constructions, but their serialized NURBS caches, persistent cache bindings, materials, and document metadata are not yet transferred."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 879 + length 0 = 879 (file size 879); variant: standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry decode supported",
+      "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
+      "reconstructed BREP stream from MainDataStream + SurfacicReps: 4 FBB run(s), 4 vertex record(s), 1 edge-table delimiter(s)",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "catia:MainDataStream+SurfacicReps"
+      ],
+      "provenance": {
+        "catia:payload:unknown#brep-stream": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "standard_nested"
+        },
+        "catia:standard:body#0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "standard_body"
+        },
+        "catia:standard:coedge#0:0:0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#0:0:1": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#0:0:2": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#1:0:0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#1:0:1": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#1:0:2": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#2:0:0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#2:0:1": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#2:0:2": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#3:0:0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#3:0:1": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:coedge#3:0:2": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_run"
+        },
+        "catia:standard:curve#290": {
+          "stream": 0,
+          "offset": 290,
+          "tag": "curve_support_60"
+        },
+        "catia:standard:curve#301": {
+          "stream": 0,
+          "offset": 301,
+          "tag": "curve_support_60"
+        },
+        "catia:standard:curve#312": {
+          "stream": 0,
+          "offset": 312,
+          "tag": "curve_support_60"
+        },
+        "catia:standard:curve#323": {
+          "stream": 0,
+          "offset": 323,
+          "tag": "curve_support_60"
+        },
+        "catia:standard:curve#334": {
+          "stream": 0,
+          "offset": 334,
+          "tag": "curve_support_60"
+        },
+        "catia:standard:curve#345": {
+          "stream": 0,
+          "offset": 345,
+          "tag": "curve_support_60"
+        },
+        "catia:standard:edge#0": {
+          "stream": 0,
+          "offset": 290,
+          "tag": "standard_spine_edge_row"
+        },
+        "catia:standard:edge#1": {
+          "stream": 0,
+          "offset": 301,
+          "tag": "standard_spine_edge_row"
+        },
+        "catia:standard:edge#2": {
+          "stream": 0,
+          "offset": 312,
+          "tag": "standard_spine_edge_row"
+        },
+        "catia:standard:edge#3": {
+          "stream": 0,
+          "offset": 323,
+          "tag": "standard_spine_edge_row"
+        },
+        "catia:standard:edge#4": {
+          "stream": 0,
+          "offset": 334,
+          "tag": "standard_spine_edge_row"
+        },
+        "catia:standard:edge#5": {
+          "stream": 0,
+          "offset": 345,
+          "tag": "standard_spine_edge_row"
+        },
+        "catia:standard:face#0": {
+          "stream": 0,
+          "offset": 361,
+          "tag": "surfacic_reps_face_sense"
+        },
+        "catia:standard:face#1": {
+          "stream": 0,
+          "offset": 426,
+          "tag": "surfacic_reps_face_sense"
+        },
+        "catia:standard:face#2": {
+          "stream": 0,
+          "offset": 491,
+          "tag": "surfacic_reps_face_sense"
+        },
+        "catia:standard:face#3": {
+          "stream": 0,
+          "offset": 556,
+          "tag": "surfacic_reps_face_sense"
+        },
+        "catia:standard:loop#0:0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_cycle"
+        },
+        "catia:standard:loop#1:0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_cycle"
+        },
+        "catia:standard:loop#2:0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_cycle"
+        },
+        "catia:standard:loop#3:0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "trim_mesh_boundary_cycle"
+        },
+        "catia:standard:pt#0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:standard:pt#1": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:standard:pt#2": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:standard:pt#3": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:standard:region#0-0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "derived_region"
+        },
+        "catia:standard:shell#0-0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "derived_shell"
+        },
+        "catia:standard:surf#0": {
+          "stream": 0,
+          "offset": 361,
+          "tag": "surfacic_reps_35"
+        },
+        "catia:standard:surf#1": {
+          "stream": 0,
+          "offset": 426,
+          "tag": "surfacic_reps_35"
+        },
+        "catia:standard:surf#2": {
+          "stream": 0,
+          "offset": 491,
+          "tag": "surfacic_reps_35"
+        },
+        "catia:standard:surf#3": {
+          "stream": 0,
+          "offset": 556,
+          "tag": "surfacic_reps_35"
+        },
+        "catia:standard:v#0": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:standard:v#1": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:standard:v#2": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:standard:v#3": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        }
+      },
+      "exactness": {
+        "catia:payload:unknown#brep-stream": {
+          "entity": "unknown",
+          "fields": {
+            "links": "derived"
+          }
+        },
+        "catia:standard:body#0": {
+          "entity": "inferred",
+          "fields": {
+            "kind": "derived",
+            "regions": "derived"
+          }
+        },
+        "catia:standard:coedge#0:0:0": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#0:0:1": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#0:0:2": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#1:0:0": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#1:0:1": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#1:0:2": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#2:0:0": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#2:0:1": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#2:0:2": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#3:0:0": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#3:0:1": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:coedge#3:0:2": {
+          "entity": "byte_exact",
+          "fields": {
+            "edge": "derived",
+            "next": "derived",
+            "owner_loop": "derived",
+            "previous": "derived",
+            "radial_next": "derived",
+            "sense": "derived"
+          }
+        },
+        "catia:standard:curve#290": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived",
+            "geometry.origin": "derived"
+          }
+        },
+        "catia:standard:curve#301": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived",
+            "geometry.origin": "derived"
+          }
+        },
+        "catia:standard:curve#312": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived",
+            "geometry.origin": "derived"
+          }
+        },
+        "catia:standard:curve#323": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived",
+            "geometry.origin": "derived"
+          }
+        },
+        "catia:standard:curve#334": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived",
+            "geometry.origin": "derived"
+          }
+        },
+        "catia:standard:curve#345": {
+          "entity": "byte_exact",
+          "fields": {
+            "geometry.direction": "derived",
+            "geometry.origin": "derived"
+          }
+        },
+        "catia:standard:edge#0": {
+          "entity": "byte_exact",
+          "fields": {
+            "curve": "derived",
+            "end": "derived",
+            "param_range": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:standard:edge#1": {
+          "entity": "byte_exact",
+          "fields": {
+            "curve": "derived",
+            "end": "derived",
+            "param_range": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:standard:edge#2": {
+          "entity": "byte_exact",
+          "fields": {
+            "curve": "derived",
+            "end": "derived",
+            "param_range": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:standard:edge#3": {
+          "entity": "byte_exact",
+          "fields": {
+            "curve": "derived",
+            "end": "derived",
+            "param_range": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:standard:edge#4": {
+          "entity": "byte_exact",
+          "fields": {
+            "curve": "derived",
+            "end": "derived",
+            "param_range": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:standard:edge#5": {
+          "entity": "byte_exact",
+          "fields": {
+            "curve": "derived",
+            "end": "derived",
+            "param_range": "derived",
+            "start": "derived"
+          }
+        },
+        "catia:standard:face#0": {
+          "entity": "byte_exact",
+          "fields": {
+            "sense": "derived",
+            "shell": "derived",
+            "surface": "derived"
+          }
+        },
+        "catia:standard:face#1": {
+          "entity": "byte_exact",
+          "fields": {
+            "sense": "derived",
+            "shell": "derived",
+            "surface": "derived"
+          }
+        },
+        "catia:standard:face#2": {
+          "entity": "byte_exact",
+          "fields": {
+            "sense": "derived",
+            "shell": "derived",
+            "surface": "derived"
+          }
+        },
+        "catia:standard:face#3": {
+          "entity": "byte_exact",
+          "fields": {
+            "sense": "derived",
+            "shell": "derived",
+            "surface": "derived"
+          }
+        },
+        "catia:standard:loop#0:0": {
+          "entity": "byte_exact",
+          "fields": {
+            "coedges": "derived",
+            "face": "derived"
+          }
+        },
+        "catia:standard:loop#1:0": {
+          "entity": "byte_exact",
+          "fields": {
+            "coedges": "derived",
+            "face": "derived"
+          }
+        },
+        "catia:standard:loop#2:0": {
+          "entity": "byte_exact",
+          "fields": {
+            "coedges": "derived",
+            "face": "derived"
+          }
+        },
+        "catia:standard:loop#3:0": {
+          "entity": "byte_exact",
+          "fields": {
+            "coedges": "derived",
+            "face": "derived"
+          }
+        },
+        "catia:standard:region#0-0": {
+          "entity": "inferred",
+          "fields": {
+            "body": "derived",
+            "shells": "derived"
+          }
+        },
+        "catia:standard:shell#0-0": {
+          "entity": "inferred",
+          "fields": {
+            "faces": "derived",
+            "region": "derived"
+          }
+        },
+        "catia:standard:v#0": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        },
+        "catia:standard:v#1": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        },
+        "catia:standard:v#2": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        },
+        "catia:standard:v#3": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "catia:payload:unknown#brep-stream",
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "offset": 0,
+        "byte_len": 616,
+        "sha256": "d7fb4c3acc0a6eba22f5b98742357824db6b2fd70767cf9be35ec0bcd799c626",
+        "data": "AUQB/wsAAAALAfQAHgAKABQAHwALABUAIAAMABYAHgFEAf8LAAAACwH1ACgADQAXACkAGAAOACoAFAAKACgBRAH/CwAAAAsB9gAyAA4AGAAzABkADwA0ABUACwAyAUQB/wsAAAALAfcAPAAPABkAPQAXAA0APgAWAAwAPDAEBP/S0tLSMAQE/9LS0tIwBAT/0tLS0jAEBP/S0tLSAQEGAgQAZAAKABQAZQIEAGUACwAVAGYCBABmAAwAFgBkAgQAZAANABcAZwIEAGUADgAYAGcCBABmAA8AGQBnECQE//8AAAABBgQFCAEAAIA/AACAPwAAgD8FCAEAAIA/AACAvwAAgL8FCAEAAIC/AACAPwAAgL8FCAEAAIC/AACAvwAAgD9gAQAAAAIAMzYAAWACAAAAAgAzNgACYAMAAAACADM2AANgBAAAAAIAMzYBA2AFAAAAAgAzNgECYAYAAAACADM2AgMBAAAAEgAzNT6qqqs+qqqrvqqqqz/RBewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQIAAAASADM1Pqqqq76qqqs+qqqrP9EF7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAwAAABIAMzW+qqqrvqqqq76qqqs/0QXsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAAAAEgAzNb6qqqs+qqqrPqqqqz/RBewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQ=="
+      }
+    ]
+  }
+}

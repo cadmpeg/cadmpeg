@@ -1,0 +1,184 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "6286",
+        "crc32": "690bcb33",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 4439,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 76819
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6344",
+        "crc32": "5697dfe8",
+        "data_offset": "4537",
+        "header_offset": "4481"
+      },
+      "compressed_size": 768,
+      "compression": "deflate",
+      "name": "BracketPrototype.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 8913
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6416",
+        "crc32": "310ea8bd",
+        "data_offset": "5357",
+        "header_offset": "5305"
+      },
+      "compressed_size": 431,
+      "compression": "deflate",
+      "name": "PinPrototype.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 3367
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6484",
+        "crc32": "2144df1c",
+        "data_offset": "5831",
+        "header_offset": "5788"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "PlacementList",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6543",
+        "crc32": "2144df1c",
+        "data_offset": "5876",
+        "header_offset": "5837"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "ScaleList",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6598",
+        "crc32": "2144df1c",
+        "data_offset": "5926",
+        "header_offset": "5882"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "PlacementList1",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6658",
+        "crc32": "2144df1c",
+        "data_offset": "5972",
+        "header_offset": "5932"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "ScaleList1",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6714",
+        "crc32": "2144df1c",
+        "data_offset": "6022",
+        "header_offset": "5978"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "PlacementList2",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6774",
+        "crc32": "2144df1c",
+        "data_offset": "6068",
+        "header_offset": "6028"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "ScaleList2",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6830",
+        "crc32": "9de342fb",
+        "data_offset": "6118",
+        "header_offset": "6074"
+      },
+      "compressed_size": 17,
+      "compression": "deflate",
+      "name": "PlacementList3",
+      "role": "auxiliary",
+      "uncompressed_size": 172
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6890",
+        "crc32": "87283ddc",
+        "data_offset": "6175",
+        "header_offset": "6135"
+      },
+      "compressed_size": 15,
+      "compression": "deflate",
+      "name": "ScaleList3",
+      "role": "auxiliary",
+      "uncompressed_size": 76
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6946",
+        "crc32": "2144df1c",
+        "data_offset": "6234",
+        "header_offset": "6190"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "PlacementList4",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7006",
+        "crc32": "2144df1c",
+        "data_offset": "6280",
+        "header_offset": "6240"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "ScaleList4",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=assembly",
+    "object count=24",
+    "physical ledger spans=92 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

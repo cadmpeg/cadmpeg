@@ -1,0 +1,11 @@
+{
+  "container_kind": "v5-cfv2",
+  "entries": [],
+  "format": "catia",
+  "notes": [
+    "outer V5_CFV2 container: directory offset 0 + length 0 = 0 (file size 181); variant: zero-entity a9 03 (no nested container): analytic carriers decoded",
+    "no nested V5_CFV2 sub-container (outer-preamble record families only)",
+    "record-family census: 1 a9 03, 0 e5 0d 03",
+    "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+  ]
+}

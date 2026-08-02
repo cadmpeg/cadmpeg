@@ -1,0 +1,218 @@
+{
+  "container_kind": "3dm-chunks",
+  "entries": [
+    {
+      "attributes": {
+        "body_offset": "63",
+        "offset": "51",
+        "record_count": "1",
+        "size": "36"
+      },
+      "compressed_size": 36,
+      "compression": "none",
+      "name": "table-0x10000014",
+      "role": "table",
+      "uncompressed_size": 24
+    },
+    {
+      "attributes": {
+        "body_offset": "99",
+        "offset": "87",
+        "record_count": "1",
+        "size": "72"
+      },
+      "compressed_size": 72,
+      "compression": "none",
+      "name": "table-0x10000015",
+      "role": "table",
+      "uncompressed_size": 60
+    },
+    {
+      "attributes": {
+        "body_offset": "171",
+        "offset": "159",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000016",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "195",
+        "offset": "183",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000025",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "219",
+        "offset": "207",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000010",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "243",
+        "offset": "231",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000023",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "267",
+        "offset": "255",
+        "record_count": "1",
+        "size": "211"
+      },
+      "compressed_size": 211,
+      "compression": "none",
+      "name": "table-0x10000011",
+      "role": "table",
+      "uncompressed_size": 199
+    },
+    {
+      "attributes": {
+        "body_offset": "478",
+        "offset": "466",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000018",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "502",
+        "offset": "490",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000019",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "526",
+        "offset": "514",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000020",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "550",
+        "offset": "538",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000012",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "574",
+        "offset": "562",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000022",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "598",
+        "offset": "586",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000021",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "622",
+        "object_typecode_0x1": "1",
+        "offset": "610",
+        "record_count": "1",
+        "size": "199"
+      },
+      "compressed_size": 199,
+      "compression": "none",
+      "name": "table-0x10000013",
+      "role": "table",
+      "uncompressed_size": 187
+    },
+    {
+      "attributes": {
+        "body_offset": "821",
+        "offset": "809",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000026",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "class_uuid": "c3101a1d-f157-11d3-bfe7-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "175"
+      },
+      "compressed_size": 175,
+      "compression": "none",
+      "name": "class-c3101a1d-f157-11d3-bfe7-0010830122f0",
+      "role": "object-class",
+      "uncompressed_size": 175
+    }
+  ],
+  "format": "rhino",
+  "notes": [
+    "archive version 80"
+  ]
+}

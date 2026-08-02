@@ -1,0 +1,43 @@
+{
+  "container_kind": "psb",
+  "entries": [
+    {
+      "attributes": {
+        "offset": "79"
+      },
+      "compressed_size": 42,
+      "compression": "none",
+      "name": "VisibGeom",
+      "role": "psb-geometry",
+      "uncompressed_size": 42
+    },
+    {
+      "attributes": {
+        "offset": "121"
+      },
+      "compressed_size": 16,
+      "compression": "none",
+      "name": "AllFeatur",
+      "role": "model-data",
+      "uncompressed_size": 16
+    },
+    {
+      "attributes": {
+        "offset": "137"
+      },
+      "compressed_size": 21,
+      "compression": "none",
+      "name": "THMB_IMG_MAIN",
+      "role": "thumbnail",
+      "uncompressed_size": 21
+    }
+  ],
+  "format": "creo",
+  "notes": [
+    "PSB container: #UGC:2 P test",
+    "layout: unknown; 3 section(s) enumerated",
+    "VisibGeom namespace census: srf_array=5, crv_array=12 (byte-backed count headers; per-instance row geometry is not decoded)",
+    "THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)",
+    "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
+  ]
+}

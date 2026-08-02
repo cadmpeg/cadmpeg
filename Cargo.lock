@@ -188,6 +188,7 @@ dependencies = [
  "cadmpeg-ir",
  "regex",
  "serde",
+ "serde_json",
  "sha2",
 ]
 

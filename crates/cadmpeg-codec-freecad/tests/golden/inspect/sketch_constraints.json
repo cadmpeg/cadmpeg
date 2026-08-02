@@ -1,0 +1,301 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "10797",
+        "crc32": "81584da7",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 5225,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 100460
+    },
+    {
+      "attributes": {
+        "central_header_offset": "10855",
+        "crc32": "00000000",
+        "data_offset": "5333",
+        "header_offset": "5267"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "GeometricRelations.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "10937",
+        "crc32": "34e2cb2c",
+        "data_offset": "5393",
+        "header_offset": "5335"
+      },
+      "compressed_size": 913,
+      "compression": "deflate",
+      "name": "GeometricRelations.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 6716
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11011",
+        "crc32": "59f57017",
+        "data_offset": "6368",
+        "header_offset": "6306"
+      },
+      "compressed_size": 204,
+      "compression": "deflate",
+      "name": "GeometricRelations.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 559
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11089",
+        "crc32": "00000000",
+        "data_offset": "6640",
+        "header_offset": "6572"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "DimensionalRelations.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11173",
+        "crc32": "47ac4b36",
+        "data_offset": "6702",
+        "header_offset": "6642"
+      },
+      "compressed_size": 725,
+      "compression": "deflate",
+      "name": "DimensionalRelations.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 4227
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11249",
+        "crc32": "17acb138",
+        "data_offset": "7491",
+        "header_offset": "7427"
+      },
+      "compressed_size": 168,
+      "compression": "deflate",
+      "name": "DimensionalRelations.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 387
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11329",
+        "crc32": "00000000",
+        "data_offset": "7723",
+        "header_offset": "7659"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "SymmetryRelation.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11409",
+        "crc32": "6ed20531",
+        "data_offset": "7781",
+        "header_offset": "7725"
+      },
+      "compressed_size": 340,
+      "compression": "deflate",
+      "name": "SymmetryRelation.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 1671
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11481",
+        "crc32": "c05a8c26",
+        "data_offset": "8181",
+        "header_offset": "8121"
+      },
+      "compressed_size": 137,
+      "compression": "deflate",
+      "name": "SymmetryRelation.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 247
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11557",
+        "crc32": "00000000",
+        "data_offset": "8382",
+        "header_offset": "8318"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "InactiveRelation.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11637",
+        "crc32": "8f55afad",
+        "data_offset": "8440",
+        "header_offset": "8384"
+      },
+      "compressed_size": 215,
+      "compression": "deflate",
+      "name": "InactiveRelation.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 797
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11709",
+        "crc32": "b020ec46",
+        "data_offset": "8715",
+        "header_offset": "8655"
+      },
+      "compressed_size": 121,
+      "compression": "deflate",
+      "name": "InactiveRelation.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 191
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11785",
+        "crc32": "00000000",
+        "data_offset": "8910",
+        "header_offset": "8836"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "InternalAlignmentRelations.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11875",
+        "crc32": "2ba68743",
+        "data_offset": "8978",
+        "header_offset": "8912"
+      },
+      "compressed_size": 238,
+      "compression": "deflate",
+      "name": "InternalAlignmentRelations.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 868
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11957",
+        "crc32": "9c944aa0",
+        "data_offset": "9286",
+        "header_offset": "9216"
+      },
+      "compressed_size": 114,
+      "compression": "deflate",
+      "name": "InternalAlignmentRelations.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 181
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12043",
+        "crc32": "00000000",
+        "data_offset": "9463",
+        "header_offset": "9400"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "OpticalRelation.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12122",
+        "crc32": "1b2307af",
+        "data_offset": "9520",
+        "header_offset": "9465"
+      },
+      "compressed_size": 506,
+      "compression": "deflate",
+      "name": "OpticalRelation.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 1680
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12193",
+        "crc32": "3f35cbb8",
+        "data_offset": "10085",
+        "header_offset": "10026"
+      },
+      "compressed_size": 137,
+      "compression": "deflate",
+      "name": "OpticalRelation.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 247
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12268",
+        "crc32": "00000000",
+        "data_offset": "10290",
+        "header_offset": "10222"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "SplineWeightRelation.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12352",
+        "crc32": "b287a934",
+        "data_offset": "10352",
+        "header_offset": "10292"
+      },
+      "compressed_size": 259,
+      "compression": "deflate",
+      "name": "SplineWeightRelation.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 1057
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12428",
+        "crc32": "28f747b2",
+        "data_offset": "10675",
+        "header_offset": "10611"
+      },
+      "compressed_size": 122,
+      "compression": "deflate",
+      "name": "SplineWeightRelation.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 191
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=application-document",
+    "object count=8",
+    "physical ledger spans=155 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

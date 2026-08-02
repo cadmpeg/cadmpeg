@@ -4,7 +4,7 @@
 use std::fs::File;
 
 use cadmpeg_codec_freecad::{FcstdCodec, FcstdDocumentBuilder, FcstdPropertyValue};
-use cadmpeg_ir::Encoder;
+use cadmpeg_ir::codec::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = std::env::args_os()

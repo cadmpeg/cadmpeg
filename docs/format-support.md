@@ -33,22 +33,22 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 
 ### Current scores
 
-| Codec                                      | Score          | Extras above score                                                                                    |
-| ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
-| FreeCAD `.FCStd` (schema 4, file 1)        | **L9 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                    |
-| Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
-| SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
-| Rhino `.3dm` (archive 50/60/70/80)         | **L9 tested**  |                                                                                                       |
-| CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
-| Siemens NX `.prt` (selected or terminal-lineage-resolved body images) | **L4 claimed** | procedural carriers, topology attributes, external-dependency inspection, named arrangements |
-| Siemens NX `.prt` (unselected multi-partition history) | **L2 claimed** | connected candidate B-reps, external-dependency inspection                              |
-| CATIA V5 `.CATPart` (other layout bands)   | **L1 claimed** |                                                                                                       |
-| Creo Parametric `.prt`                     | **L1 claimed** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features |
-| Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
-| Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
-| STEP Part 21 AP242 editions 1–3            | **L9 tested**  |                                                                                                       |
-| STEP Part 21 AP203 editions 1–2 and AP214  | **L9 tested**  |                                                                                                       |
-| IGES 5.3 Fixed ASCII mechanical/document   | **L8 tested**  | read only                                                                                             |
+| Codec                                                                 | Score          | Extras above score                                                                                    |
+| --------------------------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------- |
+| FreeCAD `.FCStd` (schema 4, file 1)                                   | **L9 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                    |
+| Autodesk Fusion `.f3d`                                                | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
+| SolidWorks `.sldprt`                                                  | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
+| Rhino `.3dm` (archive 50/60/70/80)                                    | **L9 tested**  |                                                                                                       |
+| CATIA V5 `.CATPart` (standard-nested band)                            | **L2 claimed** | conditionally connected B-rep                                                                         |
+| Siemens NX `.prt` (selected or terminal-lineage-resolved body images) | **L4 claimed** | procedural carriers, topology attributes, external-dependency inspection, named arrangements          |
+| Siemens NX `.prt` (unselected multi-partition history)                | **L2 claimed** | connected candidate B-reps, external-dependency inspection                                            |
+| CATIA V5 `.CATPart` (other layout bands)                              | **L1 claimed** |                                                                                                       |
+| Creo Parametric `.prt`                                                | **L1 claimed** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features |
+| Rhino `.3dm` (V3/V4)                                                  | **L1 tested**  | metadata and bounded object-record retention                                                          |
+| Rhino `.3dm` (V1/V2 and archive 5)                                    | **L0 tested**  | header-only inspection; decode is rejected                                                            |
+| STEP Part 21 AP242 editions 1–3                                       | **L9 tested**  |                                                                                                       |
+| STEP Part 21 AP203 editions 1–2 and AP214                             | **L9 tested**  |                                                                                                       |
+| IGES 5.3 Fixed ASCII mechanical/document                              | **L8 tested**  | read only                                                                                             |
 
 Each current score applies to the envelope described in its profile.
 

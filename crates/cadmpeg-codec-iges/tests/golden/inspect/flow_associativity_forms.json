@@ -1,0 +1,78 @@
+{
+  "container_kind": "fixed-ascii",
+  "entries": [
+    {
+      "attributes": {
+        "cards": "1",
+        "line_endings": "lf:1"
+      },
+      "compressed_size": 81,
+      "compression": "none",
+      "name": "start",
+      "role": "section",
+      "uncompressed_size": 81
+    },
+    {
+      "attributes": {
+        "cards": "2",
+        "line_endings": "lf:2"
+      },
+      "compressed_size": 162,
+      "compression": "none",
+      "name": "global",
+      "role": "section",
+      "uncompressed_size": 162
+    },
+    {
+      "attributes": {
+        "cards": "18",
+        "line_endings": "lf:18"
+      },
+      "compressed_size": 1458,
+      "compression": "none",
+      "name": "directory-entry",
+      "role": "section",
+      "uncompressed_size": 1458
+    },
+    {
+      "attributes": {
+        "cards": "9",
+        "line_endings": "lf:9"
+      },
+      "compressed_size": 729,
+      "compression": "none",
+      "name": "parameter-data",
+      "role": "section",
+      "uncompressed_size": 729
+    },
+    {
+      "attributes": {
+        "cards": "1",
+        "line_endings": "lf:1"
+      },
+      "compressed_size": 81,
+      "compression": "none",
+      "name": "terminate",
+      "role": "section",
+      "uncompressed_size": 81
+    }
+  ],
+  "format": "iges",
+  "notes": [
+    "source_bytes=2511",
+    "parameter_delimiter=,",
+    "record_delimiter=;",
+    "sender_product=product",
+    "units=MM",
+    "iges_version=5.3",
+    "entities=9",
+    "entity.110.form.0=2",
+    "entity.132.form.0=2",
+    "entity.212.form.0=1",
+    "entity.402.form.18=2",
+    "entity.402.form.20=2",
+    "parameter_records=9",
+    "parameter_tokens=116",
+    "external_references=0"
+  ]
+}

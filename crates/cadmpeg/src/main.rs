@@ -281,6 +281,9 @@ enum Command {
         /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON command report to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
         /// Resource-limit profile applied during inspection.
         #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
         limits: LimitProfile,
@@ -312,6 +315,9 @@ enum Command {
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON command report to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -355,9 +361,18 @@ enum Command {
         a: PathBuf,
         /// Second model.
         b: PathBuf,
+        /// Bypass content detection and read the first model as this format.
+        #[arg(long, value_enum)]
+        input_format_a: Option<InputFormat>,
+        /// Bypass content detection and read the second model as this format.
+        #[arg(long, value_enum)]
+        input_format_b: Option<InputFormat>,
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON command report to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
         #[command(flatten)]
         decode: DecodeArgs,
     },
@@ -405,6 +420,7 @@ fn main() -> ExitCode {
         Command::Inspect {
             input,
             json,
+            report,
             limits,
             input_args,
         } => commands::inspect(
@@ -412,6 +428,7 @@ fn main() -> ExitCode {
             &input,
             input_args.forced(),
             json,
+            report.as_deref(),
             limits.limits(),
         )
         .map(|()| ExitCode::SUCCESS),
@@ -435,10 +452,18 @@ fn main() -> ExitCode {
         Command::Validate {
             input,
             json,
+            report,
             input_args,
             decode,
-        } => commands::validate_cmd(&registry, &input, input_args.forced(), &decode, json)
-            .map(|()| ExitCode::SUCCESS),
+        } => commands::validate_cmd(
+            &registry,
+            &input,
+            input_args.forced(),
+            &decode,
+            json,
+            report.as_deref(),
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Export {
             input,
             format,
@@ -469,7 +494,28 @@ fn main() -> ExitCode {
             &decode,
         )
         .map(|()| ExitCode::SUCCESS),
-        Command::Diff { a, b, json, decode } => commands::diff(&registry, &a, &b, &decode, json),
+        Command::Diff {
+            a,
+            b,
+            input_format_a,
+            input_format_b,
+            json,
+            report,
+            decode,
+        } => commands::diff(
+            &registry,
+            commands::DiffInput {
+                path: &a,
+                forced: input_format_a.map(InputFormat::resolution),
+            },
+            commands::DiffInput {
+                path: &b,
+                forced: input_format_b.map(InputFormat::resolution),
+            },
+            &decode,
+            json,
+            report.as_deref(),
+        ),
         Command::Convert {
             input,
             format,

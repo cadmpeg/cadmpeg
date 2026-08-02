@@ -1,0 +1,171 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "8990",
+        "crc32": "d496926e",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 4668,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 56656
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9048",
+        "crc32": "60a226c1",
+        "data_offset": "4753",
+        "header_offset": "4710"
+      },
+      "compressed_size": 761,
+      "compression": "deflate",
+      "name": "Box.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 8938
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9107",
+        "crc32": "dc54a915",
+        "data_offset": "5562",
+        "header_offset": "5514"
+      },
+      "compressed_size": 418,
+      "compression": "deflate",
+      "name": "Cylinder.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 2646
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9171",
+        "crc32": "e1d6a8e8",
+        "data_offset": "6023",
+        "header_offset": "5980"
+      },
+      "compressed_size": 1067,
+      "compression": "deflate",
+      "name": "Cut.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 12897
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9230",
+        "crc32": "26892d94",
+        "data_offset": "7137",
+        "header_offset": "7090"
+      },
+      "compressed_size": 270,
+      "compression": "deflate",
+      "name": "Cut.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 645
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9293",
+        "crc32": "00000000",
+        "data_offset": "7462",
+        "header_offset": "7407"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "Profile.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9364",
+        "crc32": "0293c66b",
+        "data_offset": "7511",
+        "header_offset": "7464"
+      },
+      "compressed_size": 299,
+      "compression": "deflate",
+      "name": "Profile.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 1649
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9427",
+        "crc32": "11107795",
+        "data_offset": "7861",
+        "header_offset": "7810"
+      },
+      "compressed_size": 142,
+      "compression": "deflate",
+      "name": "Profile.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 267
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9494",
+        "crc32": "ac9bfca6",
+        "data_offset": "8058",
+        "header_offset": "8003"
+      },
+      "compressed_size": 771,
+      "compression": "deflate",
+      "name": "DesignedFeature.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 8888
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9565",
+        "crc32": "00000000",
+        "data_offset": "8894",
+        "header_offset": "8829"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "DesignedFeature.SuppressedShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9646",
+        "crc32": "2144df1c",
+        "data_offset": "8939",
+        "header_offset": "8896"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "PlacementList",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    },
+    {
+      "attributes": {
+        "central_header_offset": "9705",
+        "crc32": "2144df1c",
+        "data_offset": "8984",
+        "header_offset": "8945"
+      },
+      "compressed_size": 6,
+      "compression": "deflate",
+      "name": "ScaleList",
+      "role": "auxiliary",
+      "uncompressed_size": 4
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=17",
+    "physical ledger spans=85 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

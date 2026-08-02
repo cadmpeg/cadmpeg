@@ -73,6 +73,15 @@ pub struct ConversionPlan {
     pub forced_input: Option<ForcedInput>,
 }
 
+/// One input to a structural diff and its optional format override.
+#[derive(Clone, Copy)]
+pub(crate) struct DiffInput<'a> {
+    /// Model path to load.
+    pub(crate) path: &'a Path,
+    /// Explicit reader selection for this input.
+    pub(crate) forced: Option<ForcedInput>,
+}
+
 impl fmt::Display for SemanticFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
@@ -91,6 +100,7 @@ pub fn inspect(
     path: &Path,
     forced: Option<ForcedInput>,
     json: bool,
+    report_path: Option<&Path>,
     limits: cadmpeg_codec_core::decode::ResourceLimits,
 ) -> Result<()> {
     let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
@@ -120,6 +130,16 @@ pub fn inspect(
     let summary = codec
         .inspect(&mut file, &InspectOptions { limits })
         .with_context(|| format!("inspecting {}", path.display()))?;
+    write_json_report(
+        path,
+        report_path,
+        false,
+        "inspect",
+        &serde_json::json!({
+            "confidence": confidence,
+            "summary": summary,
+        }),
+    )?;
     if json {
         println!(
             "{}",
@@ -207,6 +227,7 @@ pub fn validate_cmd(
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
     json: bool,
+    report_path: Option<&Path>,
 ) -> Result<()> {
     let loaded = loader::load_artifact(registry, path, args.options(), forced)?;
     let mut stdout = io::stdout();
@@ -219,6 +240,16 @@ pub fn validate_cmd(
         loaded.fidelity(),
         losses(loaded.decode_report()),
     );
+    write_json_report(
+        path,
+        report_path,
+        false,
+        "validate",
+        &serde_json::json!({
+            "decode_report": loaded.decode_report(),
+            "validation_report": report,
+        }),
+    )?;
     if json {
         writeln!(
             stdout,
@@ -374,16 +405,28 @@ fn execute_conversion(
 /// Structurally compare two decoded models.
 pub fn diff(
     registry: &Registry,
-    a: &Path,
-    b: &Path,
+    a: DiffInput<'_>,
+    b: DiffInput<'_>,
     args: &DecodeArgs,
     json: bool,
+    report_path: Option<&Path>,
 ) -> Result<ExitCode> {
-    let left = loader::load_artifact(registry, a, args.options(), None)?;
-    let right = loader::load_artifact(registry, b, args.options(), None)?;
+    let left = loader::load_artifact(registry, a.path, args.options(), a.forced)?;
+    let right = loader::load_artifact(registry, b.path, args.options(), b.forced)?;
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
     let different = !result.is_empty() || fidelity_differs(&fidelity);
+    write_json_report(
+        a.path,
+        report_path,
+        false,
+        "diff",
+        &serde_json::json!({
+            "different": different,
+            "diff": result,
+            "source_fidelity": fidelity_json(&fidelity),
+        }),
+    )?;
     if json {
         println!(
             "{}",
@@ -401,7 +444,7 @@ pub fn diff(
             ExitCode::SUCCESS
         });
     }
-    println!("diff {} vs {}", a.display(), b.display());
+    println!("diff {} vs {}", a.path.display(), b.path.display());
     if let Some((before, after)) = &result.unit_change {
         println!("  units: {before:?} → {after:?}");
     }
@@ -707,16 +750,39 @@ fn write_command_report(
     validation_report: Option<&ValidationReport>,
     export: Option<&ExportReport>,
 ) -> Result<()> {
+    write_json_report(
+        input,
+        output,
+        force,
+        command,
+        &serde_json::json!({
+            "decode_report": decode_report,
+            "validation_report": validation_report,
+            "export": export,
+        }),
+    )
+}
+
+fn write_json_report(
+    input: &Path,
+    output: Option<&Path>,
+    force: bool,
+    command: &'static str,
+    payload: &serde_json::Value,
+) -> Result<()> {
     let Some(output) = output else {
         return Ok(());
     };
-    let mut bytes = serde_json::to_vec_pretty(&serde_json::json!({
-        "schema_version": CLI_SCHEMA_VERSION,
-        "command": command,
-        "decode_report": decode_report,
-        "validation_report": validation_report,
-        "export": export,
-    }))?;
+    let mut object = payload
+        .as_object()
+        .cloned()
+        .ok_or_else(|| anyhow!("command report payload must be a JSON object"))?;
+    object.insert(
+        "schema_version".to_string(),
+        serde_json::json!(CLI_SCHEMA_VERSION),
+    );
+    object.insert("command".to_string(), serde_json::json!(command));
+    let mut bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(object))?;
     bytes.push(b'\n');
     write_output(input, output, &bytes, force)?;
     eprintln!("wrote report {}", output.display());

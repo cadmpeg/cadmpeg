@@ -1,0 +1,223 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "11043",
+        "crc32": "5f3cebaa",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 2062,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 28300
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11101",
+        "crc32": "f836b5df",
+        "data_offset": "2149",
+        "header_offset": "2104"
+      },
+      "compressed_size": 763,
+      "compression": "deflate",
+      "name": "Solid.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 8938
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11162",
+        "crc32": "1b4a35c6",
+        "data_offset": "2956",
+        "header_offset": "2912"
+      },
+      "compressed_size": 1247,
+      "compression": "deflate",
+      "name": "Void.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 17543
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11222",
+        "crc32": "4496049a",
+        "data_offset": "4247",
+        "header_offset": "4203"
+      },
+      "compressed_size": 440,
+      "compression": "deflate",
+      "name": "Seam.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 3367
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11282",
+        "crc32": "3faabd08",
+        "data_offset": "4737",
+        "header_offset": "4687"
+      },
+      "compressed_size": 442,
+      "compression": "deflate",
+      "name": "Degenerate.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 2572
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11348",
+        "crc32": "41ac3862",
+        "data_offset": "5224",
+        "header_offset": "5179"
+      },
+      "compressed_size": 332,
+      "compression": "deflate",
+      "name": "Sheet.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 1947
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11409",
+        "crc32": "c1971bcb",
+        "data_offset": "5600",
+        "header_offset": "5556"
+      },
+      "compressed_size": 292,
+      "compression": "deflate",
+      "name": "Wire.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 1109
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11469",
+        "crc32": "4785b88a",
+        "data_offset": "5940",
+        "header_offset": "5892"
+      },
+      "compressed_size": 526,
+      "compression": "deflate",
+      "name": "Compound.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 3562
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11533",
+        "crc32": "b62afa7f",
+        "data_offset": "6518",
+        "header_offset": "6466"
+      },
+      "compressed_size": 170,
+      "compression": "deflate",
+      "name": "Compound.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 360
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11601",
+        "crc32": "bfdc902e",
+        "data_offset": "6738",
+        "header_offset": "6688"
+      },
+      "compressed_size": 1197,
+      "compression": "deflate",
+      "name": "MultiShell.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 17399
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11667",
+        "crc32": "2192a295",
+        "data_offset": "7989",
+        "header_offset": "7935"
+      },
+      "compressed_size": 175,
+      "compression": "deflate",
+      "name": "MultiShell.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 363
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11737",
+        "crc32": "edd3c4a4",
+        "data_offset": "8217",
+        "header_offset": "8164"
+      },
+      "compressed_size": 614,
+      "compression": "deflate",
+      "name": "CurveCarriers.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 3018
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11806",
+        "crc32": "ed0691ab",
+        "data_offset": "8888",
+        "header_offset": "8831"
+      },
+      "compressed_size": 177,
+      "compression": "deflate",
+      "name": "CurveCarriers.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 452
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11879",
+        "crc32": "6fd1a89b",
+        "data_offset": "9120",
+        "header_offset": "9065"
+      },
+      "compressed_size": 657,
+      "compression": "deflate",
+      "name": "FreeformSurface.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 4967
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11950",
+        "crc32": "2d822aeb",
+        "data_offset": "9825",
+        "header_offset": "9777"
+      },
+      "compressed_size": 754,
+      "compression": "deflate",
+      "name": "Revolved.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 7339
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12014",
+        "crc32": "15be2d5f",
+        "data_offset": "10624",
+        "header_offset": "10579"
+      },
+      "compressed_size": 419,
+      "compression": "deflate",
+      "name": "Swept.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 3117
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part",
+    "object count=13",
+    "physical ledger spans=113 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

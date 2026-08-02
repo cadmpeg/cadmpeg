@@ -1,0 +1,253 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "catia",
+      "attributes": {
+        "external_reference_count": "0",
+        "file_size": "181",
+        "finjpl_segment_count": "0",
+        "outer_dir_offset": "0",
+        "preview_count": "0",
+        "variant": "zero_entity"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [
+        {
+          "id": "catia:zero-entity:body#unbound-points",
+          "kind": "wire",
+          "regions": [
+            "catia:zero-entity:region#unbound-points"
+          ]
+        }
+      ],
+      "regions": [
+        {
+          "id": "catia:zero-entity:region#unbound-points",
+          "body": "catia:zero-entity:body#unbound-points",
+          "shells": [
+            "catia:zero-entity:shell#unbound-points"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "catia:zero-entity:shell#unbound-points",
+          "region": "catia:zero-entity:region#unbound-points",
+          "faces": [],
+          "free_vertices": [
+            "catia:zero-entity:v#0"
+          ]
+        }
+      ],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [
+        {
+          "id": "catia:zero-entity:v#0",
+          "point": "catia:zero-entity:pt#0"
+        }
+      ],
+      "points": [
+        {
+          "id": "catia:zero-entity:pt#0",
+          "position": {
+            "x": 1.0,
+            "y": 2.0,
+            "z": 3.0
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "id": "catia:zero-entity:surf#0",
+          "geometry": {
+            "kind": "cylinder",
+            "origin": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "radius": 4.0
+          }
+        }
+      ],
+      "curves": [],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "catia": {
+        "version": 71,
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_pcurves": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#zero-entity",
+              "links": [
+                "catia:zero-entity:surf#0"
+              ]
+            }
+          ],
+          "value_blocks": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "catia",
+    "container_only": false,
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "Zero-entity analytic surface carriers were decoded, but the face/loop/coedge/edge/vertex graph is not yet transferred."
+      }
+    ],
+    "notes": [
+      "outer V5_CFV2 container: directory offset 0 + length 0 = 0 (file size 181); variant: zero-entity a9 03 (no nested container): analytic carriers decoded",
+      "no nested V5_CFV2 sub-container (outer-preamble record families only)",
+      "record-family census: 1 a9 03, 0 e5 0d 03",
+      "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "catia:CATPart",
+        "catia:zero_entity_a9_03"
+      ],
+      "provenance": {
+        "catia:payload:unknown#zero-entity": {
+          "stream": 0,
+          "offset": 0,
+          "tag": "zero_entity"
+        },
+        "catia:zero-entity:body#unbound-points": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "unbound_point_owner"
+        },
+        "catia:zero-entity:pt#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        },
+        "catia:zero-entity:region#unbound-points": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "unbound_point_owner"
+        },
+        "catia:zero-entity:shell#unbound-points": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "unbound_point_owner"
+        },
+        "catia:zero-entity:surf#0": {
+          "stream": 1,
+          "offset": 16,
+          "tag": "analytic_surface"
+        },
+        "catia:zero-entity:v#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "vertex_05_08_01"
+        }
+      },
+      "exactness": {
+        "catia:payload:unknown#zero-entity": {
+          "entity": "unknown",
+          "fields": {
+            "links": "derived"
+          }
+        },
+        "catia:zero-entity:body#unbound-points": {
+          "entity": "inferred"
+        },
+        "catia:zero-entity:region#unbound-points": {
+          "entity": "inferred"
+        },
+        "catia:zero-entity:shell#unbound-points": {
+          "entity": "inferred"
+        },
+        "catia:zero-entity:v#0": {
+          "entity": "byte_exact",
+          "fields": {
+            "point": "derived"
+          }
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "catia:payload:unknown#zero-entity",
+        "stream": "catia:CATPart",
+        "offset": 0,
+        "byte_len": 181,
+        "sha256": "3dfa4c71c0c9202e4fac447a215b74e7e9326ae9a97b493e0ffd792ace0e9097",
+        "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDKIoAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAIQAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUIAQAAgD8AAABAAABAQA=="
+      }
+    ]
+  }
+}

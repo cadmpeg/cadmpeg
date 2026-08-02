@@ -76,8 +76,8 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 | `Geomlists`                      | Body-count and quilt-discriminator fields.                                                                           |
 | `ActDatums`                      | Active datum-plane geometry under `act_datum_geoms → srf_array`.                                                     |
 | `DEPDB_DATA`                     | Persistence data used by DEPDB-layout parts, including embedded geometry namespaces and feature-definition records.  |
-| `FamilyInf`                      | Family-table driver pointer for configurations.                                                                       |
-| `MdlRefInfo`                     | Model-space reference entities, including finite line endpoints.                                                       |
+| `FamilyInf`                      | Family-table driver pointer for configurations.                                                                      |
+| `MdlRefInfo`                     | Model-space reference entities, including finite line endpoints.                                                     |
 | `NeuPrtSld` and display sections | Material, appearance, display, and tessellation data.                                                                |
 | `THMB_IMG_MAIN`                  | JPEG thumbnail. The payload begins with `FF D8 FF` and does not contain model geometry.                              |
 
@@ -255,16 +255,16 @@ unbounded feature plane. When it is the unique plane row carrying its
 
 ### 3.1 Surface families
 
-| `geom_type` | Surface family                                   |
-| ----------- | ------------------------------------------------ |
-| `22`        | Plane                                            |
-| `24`        | Cylinder                                         |
-| `25`        | Cone                                             |
-| `26`        | Torus or sphere representation                   |
-| `28`        | Spline surface                                   |
-| `29`        | Fillet surface                                   |
-| `2a`        | Linear-extrusion family, `ruled_srf` variant     |
-| `2c`        | Linear-extrusion family, `tab_cyl` variant       |
+| `geom_type` | Surface family                               |
+| ----------- | -------------------------------------------- |
+| `22`        | Plane                                        |
+| `24`        | Cylinder                                     |
+| `25`        | Cone                                         |
+| `26`        | Torus or sphere representation               |
+| `28`        | Spline surface                               |
+| `29`        | Fillet surface                               |
+| `2a`        | Linear-extrusion family, `ruled_srf` variant |
+| `2c`        | Linear-extrusion family, `tab_cyl` variant   |
 
 A decoder must not infer the kind of a row without a materialized parameter row from adjacent rows or topology.
 
@@ -1381,16 +1381,16 @@ by its scalar encoding; an undefined prefix does not remove that slot. A named
 record beginning before slot six terminates the body; the remaining slots are
 absent and own no bytes.
 
-| Table         | Semantics                                                                                                                              |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `var_arr`     | Solver-variable table keyed by `key`; `type=1` is point `u`, `type=2` is point `v`, and `type=3` is radius; `value` is solved, `guess` is the pre-solve estimate, and `known`, `homogeneity`, and `uvar_id` retain solver state. |
-| `segtab`      | Two-dimensional segments; `type=2` is LINE, `type=3` is ARC, and `type=10` is CIRCLE. A line uses `f6` as its null `cntrid`; an arc and circle use a center `pointid`. |
-| `order_table` | Generated-entity ordering table.                                                                                                       |
-| `ent_tab`     | Trimmed profile entity chain.                                                                                                          |
-| `vert_tab`    | Trim vertices and their two incident `segtab` entities.                                                                                |
+| Table         | Semantics                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `var_arr`     | Solver-variable table keyed by `key`; `type=1` is point `u`, `type=2` is point `v`, and `type=3` is radius; `value` is solved, `guess` is the pre-solve estimate, and `known`, `homogeneity`, and `uvar_id` retain solver state.                                                                                                                                                          |
+| `segtab`      | Two-dimensional segments; `type=2` is LINE, `type=3` is ARC, and `type=10` is CIRCLE. A line uses `f6` as its null `cntrid`; an arc and circle use a center `pointid`.                                                                                                                                                                                                                    |
+| `order_table` | Generated-entity ordering table.                                                                                                                                                                                                                                                                                                                                                          |
+| `ent_tab`     | Trimmed profile entity chain.                                                                                                                                                                                                                                                                                                                                                             |
+| `vert_tab`    | Trim vertices and their two incident `segtab` entities.                                                                                                                                                                                                                                                                                                                                   |
 | `relat_ptr`   | Counted sketch-constraint relations. An `f8` allocation count of one is the empty table form. Larger counts include two structural entries; exactly `count - 2` positional rows follow the schema close. Zero is invalid. Each row ends at `e2` and stores `id`, `used`, three four-slot operand vectors `a`, `b`, `c`, then `sign`, dimension selector, and relation-type discriminator. |
-| `skamp_ptr`   | Counted solver-incidence rows. Each row stores `id`, `type`, `flags`, `status`, and a counted ordered array of section-entity `ent_id`/`sense` pairs. |
-| `triples_ptr` | Counted joins from relation and equation identifiers to `skamp_ptr` incidence identifiers. Each of the three fields independently admits the `f6` null sentinel. |
+| `skamp_ptr`   | Counted solver-incidence rows. Each row stores `id`, `type`, `flags`, `status`, and a counted ordered array of section-entity `ent_id`/`sense` pairs.                                                                                                                                                                                                                                     |
+| `triples_ptr` | Counted joins from relation and equation identifiers to `skamp_ptr` incidence identifiers. Each of the three fields independently admits the `f6` null sentinel.                                                                                                                                                                                                                          |
 
 Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
 The nine-byte `ed <tail8>` form is a dimension-driven sentinel in either lane;
@@ -1531,8 +1531,7 @@ across that equality under the same unique-row and conflict rules as type zero.
 A two-item type-9 incidence with sense zero on one line and one point makes the
 point coincident with the line and maps to a neutral point-on-object
 constraint. Operand order does not change the line and point roles.
-A two-item sense-zero curve incidence makes the curves perpendicular for type
-5. When both operands are lines, type 7 makes them parallel and type 8 makes
+A two-item sense-zero curve incidence makes the curves perpendicular for type 5. When both operands are lines, type 7 makes them parallel and type 8 makes
 them equal in length.
 A two-item type-6 incidence with sense zero on two arcs or circles makes their
 radii equal. A solved positive radius propagates through the connected radius

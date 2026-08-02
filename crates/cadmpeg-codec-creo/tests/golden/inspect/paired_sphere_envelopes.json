@@ -1,0 +1,23 @@
+{
+  "container_kind": "psb",
+  "entries": [
+    {
+      "attributes": {
+        "offset": "76",
+        "raw_name": "ND:0:VisibGeom:0"
+      },
+      "compressed_size": 168,
+      "compression": "none",
+      "name": "VisibGeom",
+      "role": "psb-geometry",
+      "uncompressed_size": 168
+    }
+  ],
+  "format": "creo",
+  "notes": [
+    "PSB container: #UGC:2 P c",
+    "layout: ND; 1 section(s) enumerated",
+    "VisibGeom namespace census: srf_array=2, crv_array=0 (byte-backed count headers; per-instance row geometry is not decoded)",
+    "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
+  ]
+}

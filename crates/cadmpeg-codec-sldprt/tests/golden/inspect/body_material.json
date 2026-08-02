@@ -1,0 +1,39 @@
+{
+  "container_kind": "sldprt-blocks",
+  "entries": [
+    {
+      "attributes": {
+        "family": "parasolid",
+        "offset": "8",
+        "parasolid_description": "partition body",
+        "parasolid_schema": "SCH_SW_33103_11000",
+        "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
+        "type_id": "0x00000020"
+      },
+      "compressed_size": 186,
+      "compression": "deflate",
+      "name": "Contents/Config-0-Partition",
+      "role": "block",
+      "uncompressed_size": 544
+    },
+    {
+      "attributes": {
+        "family": "unknown",
+        "offset": "247",
+        "sha256": "5bafeac17b58ba2227f47fc9721fcd69ece5198295f877765c40f6b39e27f824",
+        "type_id": "0x00000040"
+      },
+      "compressed_size": 47,
+      "compression": "deflate",
+      "name": "SWObjects",
+      "role": "block",
+      "uncompressed_size": 50
+    }
+  ],
+  "format": "sldprt",
+  "notes": [
+    "outer version word: 0x00000004; 2 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
+    "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",
+    "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+  ]
+}
