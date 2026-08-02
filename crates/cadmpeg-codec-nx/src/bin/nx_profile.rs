@@ -36,6 +36,15 @@ struct FixtureEvidence {
     validation_errors: usize,
     all_bodies_colored: bool,
     all_faces_colored: bool,
+    /// Neutral feature evaluation evidence for the saved current-body census.
+    rederivation: VerificationStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum VerificationStatus {
+    Missing,
+    Verified,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -172,6 +181,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .all(|body| body.color.is_some()),
             all_faces_colored: !first.ir.model.faces.is_empty()
                 && first.ir.model.faces.iter().all(|face| face.color.is_some()),
+            // NX has no neutral feature evaluator yet. This must remain false until
+            // evaluation is attempted and its body census is compared here.
+            rederivation: VerificationStatus::Missing,
             entities,
             losses,
             loss_codes,
@@ -186,7 +198,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 2,
+        version: 3,
         format: "nx",
         fixtures,
         totals,
@@ -230,6 +242,10 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
     let face_colors = fixtures
         .iter()
         .filter(|fixture| fixture.entities.faces == 0 || fixture.all_faces_colored)
+        .count();
+    let rederivation_verified = fixtures
+        .iter()
+        .filter(|fixture| fixture.rederivation == VerificationStatus::Verified)
         .count();
     let total = fixtures.len();
     let assertion = |id, count, required| Assertion {
@@ -306,11 +322,18 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
         ),
         (
             "L6",
-            vec![assertion(
-                "design_domain_loss_empty",
-                without(LossCategory::DesignIntent),
-                "no fixture reports a design-intent loss",
-            )],
+            vec![
+                assertion(
+                    "design_domain_loss_empty",
+                    without(LossCategory::DesignIntent),
+                    "no fixture reports a design-intent loss",
+                ),
+                assertion(
+                    "saved_body_census_rederived",
+                    rederivation_verified,
+                    "neutral feature evaluation reproduces every saved current-body census",
+                ),
+            ],
         ),
     ];
     let mut lower_passed = true;
@@ -342,6 +365,7 @@ mod tests {
             validation_errors: 0,
             all_bodies_colored: false,
             all_faces_colored: false,
+            rederivation: VerificationStatus::Verified,
         }
     }
 
@@ -377,5 +401,18 @@ mod tests {
         let gates = capability_gates(&[evidence]);
 
         assert!(gates.iter().all(|gate| gate.passed));
+    }
+
+    #[test]
+    fn l6_requires_rederivation_evidence_distinct_from_design_loss_closure() {
+        let mut evidence = fixture();
+        evidence.rederivation = VerificationStatus::Missing;
+        let gates = capability_gates(&[evidence]);
+
+        assert!(gates[..6].iter().all(|gate| gate.passed));
+        assert!(!gates[6].passed);
+        assert!(gates[6].assertions[0].passed);
+        assert_eq!(gates[6].assertions[1].id, "saved_body_census_rederived");
+        assert!(!gates[6].assertions[1].passed);
     }
 }

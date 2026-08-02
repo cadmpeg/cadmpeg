@@ -42,7 +42,8 @@ geometry in the cumulative L0–L6 gates.
 | L5 | Incomplete | Close all L2/L3 families and transfer body/face appearance with source precedence. |
 | L6 | Incomplete | Close sketch constraints and dimensions, all expression forms, every feature construction, inactive configurations, and re-derivation coherence. |
 
-The public score remains L4 for single-body, explicitly selected, and
-terminal-lineage-resolved body images, and L2 for unresolved multi-partition
-history. Higher-level implementation is extra capability until every cumulative
-gate passes.
+The full validation profile passes cumulatively through L3. Profile version 3
+records saved-body re-derivation as separate L6 evidence; absence of a
+design-domain loss cannot substitute for neutral feature evaluation and an exact
+current-body census comparison. Higher-level implementation is extra capability
+until every cumulative gate passes.
