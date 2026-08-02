@@ -3,18 +3,20 @@
 //!
 //! [`parse`] reads format words, product strings, scale, and tolerances.
 //! [`record_stream_start`] locates the first SAB record, and
-//! [`first_delta_state_offset`] marks the end of the active solved-model slice.
+//! [`solved_record_limit`] returns the exact boundary between solved BREP
+//! records and the optional construction-history partition.
 //!
 //! `BinaryFile8` layout: `0..15` magic `ASM BinaryFile8`, `15..19`
-//! little-endian u32 ASM release word, `19..31` zero, `31..39` little-endian
-//! u64 entity count, `39..47` little-endian u64 flags. Bit 0 marks a history
-//! partition. The three `0x07`-tagged UTF-8 strings (`product_family`,
+//! little-endian u32 ACIS save-format version, `19..31` zero, `31..39`
+//! little-endian u64 entity count, `39..47` little-endian u64 flags. Bit 0 marks a history
+//! partition and bits 1 to 7 hold the save format's revision number. The three
+//! `0x07`-tagged UTF-8 strings (`product_family`,
 //! `product_version_string`, `save_date`) begin at byte 47.
 //!
 //! `BinaryFile4` layout: `0..15` magic `ASM BinaryFile4`, then four
-//! little-endian u32 words: `15..19` ASM release, `19..23` record count,
-//! `23..27` entity count, `27..31` flags. Bit 0 marks a history partition. The
-//! string region begins at byte 31.
+//! little-endian u32 words: `15..19` ACIS save-format version, `19..23`
+//! record count, `23..27` entity count, `27..31` flags, with the same bit
+//! assignment as `BinaryFile8`. The string region begins at byte 31.
 //!
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
@@ -27,19 +29,21 @@ use cadmpeg_codec_core::le::u64_at as read_le_u64;
 pub struct AsmHeader {
     /// Integer width the stream declares (`4` or `8`), from `ASM BinaryFileN`.
     pub width: u8,
-    /// ASM release word (little-endian u32 at offset 15 in both widths, e.g.
-    /// `22700` for ASM 227, `23100` for ASM 231).
-    pub release: Option<u32>,
+    /// ACIS save-format version (little-endian u32 at offset 15 in both
+    /// widths), encoded as `100 * major + minor`. This is independent of the
+    /// product build string carried later in the header.
+    pub save_format_version: Option<u32>,
     /// Record-count word (little-endian u32 at offset 19; `0` when unwritten).
     /// `BinaryFile4` only; the corresponding `BinaryFile8` region is zero.
     pub record_count: Option<u32>,
     /// Entity-count word: little-endian u32 at offset 23 (`BinaryFile4`) or
     /// little-endian u64 at offset 31 (`BinaryFile8`).
-    pub entity_count: Option<u32>,
+    pub entity_count: Option<u64>,
     /// Flags word: little-endian u32 at offset 27 (`BinaryFile4`) or
-    /// little-endian u64 at offset 39 (`BinaryFile8`); bit 0 is set when the
-    /// stream carries a history partition.
-    pub flags: Option<u32>,
+    /// little-endian u64 at offset 39 (`BinaryFile8`). Bit 0 denotes a history
+    /// partition and bits 1 to 7 hold the save format's revision number. Bits 8
+    /// and above are zero and are retained as uninterpreted format flags.
+    pub flags: Option<u64>,
     /// `product_family`, e.g. `Autodesk Neutron`.
     pub product_family: Option<String>,
     /// `product_version_string`, e.g. `ASM 231.6.3.65535 OSX`.
@@ -57,8 +61,49 @@ pub struct AsmHeader {
 /// The ASM magic prefix common to both widths.
 const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
 
+/// Flag bit selecting the optional construction-history partition.
+pub const HISTORY_PARTITION_FLAG: u64 = 1;
+
+/// Flag bits 1 to 7, which hold the save format's revision number.
+pub const FORMAT_REVISION_FLAGS: u64 = 0xfe;
+
+/// Bit position of the low bit of [`FORMAT_REVISION_FLAGS`].
+const FORMAT_REVISION_SHIFT: u32 = 1;
+
+impl AsmHeader {
+    /// Major component of the encoded ACIS save-format version.
+    pub fn save_format_major(&self) -> Option<u32> {
+        self.save_format_version.map(|version| version / 100)
+    }
+
+    /// Minor component of the encoded ACIS save-format version.
+    pub fn save_format_minor(&self) -> Option<u32> {
+        self.save_format_version.map(|version| version % 100)
+    }
+
+    /// Whether the stream header declares a construction-history partition.
+    pub fn has_history_partition(&self) -> bool {
+        self.flags
+            .is_some_and(|flags| flags & HISTORY_PARTITION_FLAG != 0)
+    }
+
+    /// The save format's revision number, from flag bits 1 to 7.
+    pub fn format_revision(&self) -> Option<u32> {
+        self.flags
+            .map(|flags| ((flags & FORMAT_REVISION_FLAGS) >> FORMAT_REVISION_SHIFT) as u32)
+    }
+
+    /// Header flags outside the history-partition bit and the revision bits.
+    /// Bits 8 and above are zero. They are preserved exactly and deliberately
+    /// have no guessed semantic projection.
+    pub fn unassigned_flags(&self) -> Option<u64> {
+        self.flags
+            .map(|flags| flags & !(HISTORY_PARTITION_FLAG | FORMAT_REVISION_FLAGS))
+    }
+}
+
 /// Byte offset at which the three `0x07`-tagged product strings begin in a
-/// `BinaryFile8` header: directly after the release word at 15, the zero
+/// `BinaryFile8` header: directly after the save-format version at 15, the zero
 /// region at 19..31, and the little-endian u64 entity-count and flags words at
 /// 31 and 39.
 const BF8_STRING_REGION_START: usize = 47;
@@ -69,9 +114,16 @@ const BF4_STRING_REGION_START: usize = 31;
 
 /// Returns `true` if `bytes` begins with an ASM `BinaryFile` magic: the
 /// 15-byte prefix `ASM BinaryFile4` or `ASM BinaryFile8`. Byte 15 is the
-/// release word's low byte in both widths, not part of the magic.
+/// save-format version's low byte in both widths, not part of the magic.
 pub fn has_asm_magic(bytes: &[u8]) -> bool {
     bytes.len() >= 16 && bytes.starts_with(MAGIC_PREFIX) && matches!(bytes[14], b'4' | b'8')
+}
+
+/// The integer and reference width `bytes` declares, in bytes. A slice without
+/// a readable header is read at the `BinaryFile8` width, which is the width of
+/// every construction the decoder synthesizes.
+pub(crate) fn stream_ref_width(bytes: &[u8]) -> usize {
+    parse(bytes).map_or(8, |header| usize::from(header.width))
 }
 
 /// Byte offset of the string region for the stream's declared width, or `None`
@@ -94,7 +146,7 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
     let width = bytes[14] - b'0';
     let mut header = AsmHeader {
         width,
-        release: None,
+        save_format_version: None,
         record_count: None,
         entity_count: None,
         flags: None,
@@ -108,15 +160,15 @@ pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
 
     match width {
         8 => {
-            header.release = u32_at(bytes, 15);
-            header.entity_count = read_le_u64(bytes, 31).and_then(|v| u32::try_from(v).ok());
-            header.flags = read_le_u64(bytes, 39).and_then(|v| u32::try_from(v).ok());
+            header.save_format_version = u32_at(bytes, 15);
+            header.entity_count = read_le_u64(bytes, 31);
+            header.flags = read_le_u64(bytes, 39);
         }
         4 => {
-            header.release = u32_at(bytes, 15);
+            header.save_format_version = u32_at(bytes, 15);
             header.record_count = u32_at(bytes, 19);
-            header.entity_count = u32_at(bytes, 23);
-            header.flags = u32_at(bytes, 27);
+            header.entity_count = u32_at(bytes, 23).map(u64::from);
+            header.flags = u32_at(bytes, 27).map(u64::from);
         }
         _ => return Some(header),
     }
@@ -183,18 +235,51 @@ fn read_string_region(bytes: &[u8], start: usize) -> (Vec<String>, Vec<f64>, usi
     (strings, doubles, cur)
 }
 
-/// The literal record-name leaf of a construction-history node ([spec §4a](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#2-b-rep-streams-and-history-partition)). The
-/// active model slice contains none of these; the first occurrence marks the
-/// history boundary.
-const DELTA_STATE: &[u8] = b"delta_state";
+/// The record that opens the serialized history partition.
+const HISTORY_PREAMBLE_RECORD: &str = "Begin-of-ASM-History-Data";
 
-/// Byte offset of the first `delta_state` marker, i.e. the end of the active
-/// solved-model slice ([spec §4a](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#2-b-rep-streams-and-history-partition)). `None` if the stream carries no history
-/// partition (as `.smb` construction snapshots do not).
-pub fn first_delta_state_offset(bytes: &[u8]) -> Option<usize> {
-    bytes
-        .windows(DELTA_STATE.len())
-        .position(|w| w == DELTA_STATE)
+/// Exact byte boundary between solved BREP records and construction history.
+///
+/// The SAB framer establishes record boundaries from token widths and subtype
+/// depth. A current history stream contains a `Begin-of-ASM-History-Data`
+/// preamble record; its record start is the partition boundary. Earlier
+/// streams can begin directly with `delta_state`; for those, the first
+/// unframed record after the solved sequence is accepted only when its exact
+/// identifier token is `delta_state`. Raw substring search is deliberately not
+/// used because string payloads can contain the same bytes.
+pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
+    let header = parse(bytes)?;
+    if !header.has_history_partition() {
+        return None;
+    }
+    let start = record_stream_start(bytes)?;
+    let records = crate::sab::frame(bytes, start, bytes.len(), usize::from(header.width)).ok()?;
+    if let Some(preamble) = records
+        .iter()
+        .find(|record| record.name == HISTORY_PREAMBLE_RECORD)
+    {
+        return Some(preamble.offset);
+    }
+
+    let mut next = match records.last() {
+        Some(record) => record.offset.checked_add(record.len)?,
+        None => start,
+    };
+    while bytes.get(next) == Some(&0x11) {
+        next += 1;
+    }
+    exact_identifier_at(bytes, next, "delta_state").then_some(next)
+}
+
+fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bool {
+    let Some((&0x0d, rest)) = bytes.get(at..).and_then(|tail| tail.split_first()) else {
+        return false;
+    };
+    let Some((&length, payload)) = rest.split_first() else {
+        return false;
+    };
+    usize::from(length) == expected.len()
+        && payload.get(..usize::from(length)) == Some(expected.as_bytes())
 }
 
 /// Read a `0x07`-tagged UTF-8 string (tag byte, u8 length, bytes). Returns the

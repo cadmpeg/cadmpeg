@@ -748,11 +748,11 @@ fn bind_native_profile_features(
                     bind(profile);
                 }
             }
-            FeatureDefinition::Sweep {
-                profile: Some(profile),
-                ..
-            } => bind(profile),
-            FeatureDefinition::Sweep { profile: None, .. } => {}
+            FeatureDefinition::Sweep { section, .. } => {
+                if let Some(profile) = section.referenced_profile_mut() {
+                    bind(profile);
+                }
+            }
             FeatureDefinition::Loft { sections, .. } => {
                 for section in sections {
                     if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
@@ -5686,8 +5686,8 @@ pub fn bind_topology_selections(
                     resolve_profile_ref(profile, &face_ids);
                 }
             }
-            FeatureDefinition::Sweep { profile, path, .. } => {
-                if let Some(profile) = profile {
+            FeatureDefinition::Sweep { section, path, .. } => {
+                if let Some(profile) = section.referenced_profile_mut() {
                     resolve_profile_ref(profile, &face_ids);
                 }
                 if let Some(path) = path {
@@ -6011,8 +6011,9 @@ fn bind_definition_sketch(
         FeatureDefinition::Revolve { construction, .. } => {
             construction.profile.as_mut().is_some_and(bind_profile)
         }
-        FeatureDefinition::Sweep { profile, path, .. } => {
-            profile.as_mut().is_some_and(bind_profile) | path.as_mut().is_some_and(bind_path)
+        FeatureDefinition::Sweep { section, path, .. } => {
+            section.referenced_profile_mut().is_some_and(bind_profile)
+                | path.as_mut().is_some_and(bind_path)
         }
         FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
@@ -7367,7 +7368,10 @@ fn project_sweep(
         None => None,
     };
     Some(FeatureDefinition::Sweep {
-        profile,
+        section: profile.map_or(
+            cadmpeg_ir::features::SweepSection::Unresolved(None),
+            cadmpeg_ir::features::SweepSection::Profile,
+        ),
         sections: Vec::new(),
         path,
         mode,
@@ -7377,6 +7381,9 @@ fn project_sweep(
         path_tangent: false,
         linearize: false,
         twist,
+        path_extent: None,
+        guide_rail: None,
+        taper: None,
         scale,
         allow_multi_profile_faces: None,
     })
@@ -8061,6 +8068,7 @@ fn project_shell(feature: &Feature) -> FeatureDefinition {
         .get("Outward")
         .and_then(|value| parse_bool(value));
     FeatureDefinition::Shell {
+        bodies: None,
         removed_faces: feature
             .properties
             .get("RemovedFaces")
@@ -8266,6 +8274,7 @@ fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
             .cloned()
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         op,
+        keep_tools: false,
     })
 }
 
@@ -10288,10 +10297,12 @@ fn validate_surface_sweep_profile_edits(
     let expected = project_features_with_native_inputs(native)
         .into_iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sweep {
-                profile: Some(profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. })),
-                ..
-            } = feature.definition
+            let FeatureDefinition::Sweep { section, .. } = feature.definition else {
+                return None;
+            };
+            let cadmpeg_ir::features::SweepSection::Profile(
+                profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. }),
+            ) = section
             else {
                 return None;
             };
@@ -10304,11 +10315,13 @@ fn validate_surface_sweep_profile_edits(
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        let FeatureDefinition::Sweep {
-            profile: Some(profile),
-            ..
-        } = &feature.definition
-        else {
+        let FeatureDefinition::Sweep { section, .. } = &feature.definition else {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes a reference-curve sweep profile",
+                feature.id
+            )));
+        };
+        let Some(profile) = section.referenced_profile() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
@@ -13333,6 +13346,7 @@ pub fn sync_neutral_features(
                 )));
             }
             FeatureDefinition::Shell {
+                bodies,
                 removed_faces,
                 thickness,
                 outward,
@@ -13341,7 +13355,8 @@ pub fn sync_neutral_features(
                 resolve_intersections,
                 allow_self_intersections,
             } => {
-                if mode.is_some()
+                if bodies.is_some()
+                    || mode.is_some()
                     || join.is_some()
                     || resolve_intersections.is_some()
                     || allow_self_intersections.is_some()
@@ -13712,11 +13727,17 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Combine { target, tools, op } => {
+            FeatureDefinition::Combine {
+                target,
+                tools,
+                op,
+                keep_tools,
+            } => {
                 if existing.as_deref().is_some_and(|record| {
                     !feature_family(record, "Combine")
                         && !feature_input_class(record, NativeClassKind::Combine)
                 }) || *op == BooleanOp::NewBody
+                    || *keep_tools
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported combine semantics",
@@ -14657,7 +14678,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Sweep {
-                profile,
+                section,
                 sections,
                 path,
                 mode,
@@ -14667,6 +14688,9 @@ pub fn sync_neutral_features(
                 path_tangent,
                 linearize,
                 twist,
+                path_extent,
+                guide_rail,
+                taper,
                 scale,
                 allow_multi_profile_faces,
             } => {
@@ -14676,6 +14700,9 @@ pub fn sync_neutral_features(
                     || transformation.is_some()
                     || *path_tangent
                     || *linearize
+                    || path_extent.is_some()
+                    || guide_rail.is_some()
+                    || taper.is_some()
                     || allow_multi_profile_faces.is_some()
                 {
                     return Err(CodecError::NotImplemented(format!(
@@ -14689,16 +14716,18 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let profile_source = match profile {
-                    Some(ProfileRef::Generated { .. }) if existing.is_some() => None,
-                    Some(ProfileRef::Feature(_))
+                let profile_source = match section {
+                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
+                        ..
+                    }) if existing.is_some() => None,
+                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_))
                         if existing
                             .as_deref()
                             .is_some_and(|record| !record.properties.contains_key("Profile")) =>
                     {
                         None
                     }
-                    Some(profile) => Some(
+                    cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
                         profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
                             .ok_or_else(|| {
                                 CodecError::Malformed(format!(
@@ -14707,7 +14736,13 @@ pub fn sync_neutral_features(
                                 ))
                             })?,
                     ),
-                    None => None,
+                    cadmpeg_ir::features::SweepSection::Unresolved(_) => None,
+                    cadmpeg_ir::features::SweepSection::Generated(_) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported generated sweep section",
+                            feature.id
+                        )));
+                    }
                 };
                 let path_source = match path {
                     Some(path) => Some(
@@ -15007,6 +15042,12 @@ pub fn sync_neutral_features(
                         PatternSeed::Faces(_) | PatternSeed::Bodies(_) => {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} has a source-less topology pattern seed",
+                                feature.id
+                            )));
+                        }
+                        PatternSeed::Occurrences(_) => {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has component-occurrence pattern seeds",
                                 feature.id
                             )));
                         }
@@ -15593,6 +15634,7 @@ fn profile_source(
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
         ProfileRef::SketchProfiles { sketch, .. }
         | ProfileRef::SketchRegions { sketch, .. }
+        | ProfileRef::SketchEntities { sketch, .. }
         | ProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
         ProfileRef::SpatialSketchProfiles { .. }
         | ProfileRef::SpatialSketchSelection { .. }
@@ -15619,7 +15661,9 @@ fn path_source(
         PathRef::Unresolved(_) => None,
         PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         PathRef::Sketch(id) => sketches.get(id).cloned(),
-        PathRef::SpatialSketchSelection { .. } | PathRef::HistoricalEdges { .. } => None,
+        PathRef::SketchCurves { .. }
+        | PathRef::SpatialSketchSelection { .. }
+        | PathRef::HistoricalEdges { .. } => None,
         PathRef::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()

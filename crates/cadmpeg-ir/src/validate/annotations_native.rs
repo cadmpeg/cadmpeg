@@ -39,9 +39,9 @@ fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, 
         .flat_map(|namespace| namespace.arenas.values())
         .flatten()
     {
-        if wanted.contains(record.id.as_str()) {
+        if wanted.contains(record.id()) {
             if let Ok(value) = serde_json::to_value(record) {
-                entities.entry(record.id.clone()).or_insert(value);
+                entities.entry(record.id().to_string()).or_insert(value);
             }
         }
     }
@@ -296,23 +296,12 @@ pub(super) fn check_native_links(
         }
     }
 
-    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
-    for record in &native_unknowns {
-        for target in &record.links {
-            if !all_ids.contains(target) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!("unknown-record link `{target}` does not resolve"),
-                    entity: Some(record.id.0.clone()),
-                });
-            }
-        }
-    }
+    // The `unknowns` arena is one of the namespace arenas below, so the generic
+    // record loop already covers every unknown-record link.
     for namespace in ir.native.0.values() {
         for records in namespace.arenas.values() {
             for record in records {
-                let Some(serde_json::Value::Array(links)) = record.fields.get("links") else {
+                let Some(serde_json::Value::Array(links)) = record.field("links") else {
                     continue;
                 };
                 for target in links.iter().filter_map(serde_json::Value::as_str) {
@@ -321,7 +310,7 @@ pub(super) fn check_native_links(
                             check: Check::NativeLinks,
                             severity: Severity::Error,
                             message: format!("native-record link `{target}` does not resolve"),
-                            entity: Some(record.id.clone()),
+                            entity: Some(record.id().to_string()),
                         });
                     }
                 }
@@ -347,10 +336,10 @@ mod tests {
                 version: 1,
                 arenas: [(
                     "records".into(),
-                    vec![NativeRecord {
-                        id: id.clone(),
-                        fields: Map::from_iter([("native_only".into(), Value::Bool(true))]),
-                    }],
+                    vec![NativeRecord::new(
+                        id.clone(),
+                        Map::from_iter([("native_only".into(), Value::Bool(true))]),
+                    )],
                 )]
                 .into(),
             },

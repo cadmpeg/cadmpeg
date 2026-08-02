@@ -2,11 +2,12 @@
 //! Low-level native record byte writers for source-less generation.
 
 use cadmpeg_codec_core::CodecError;
-use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
 
-use crate::writer::primitives::{f3d_native, history_change_kind, native_bool};
+use crate::native::F3dNative;
+use crate::writer::generate::index::NativeGenerationIndex;
+use crate::writer::primitives::{history_change_kind, native_bool};
 
 pub(crate) fn native_ident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x0d, value)
@@ -51,6 +52,31 @@ pub(crate) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), 
     bytes.extend_from_slice(&length.to_le_bytes());
     bytes.extend_from_slice(value.as_bytes());
     Ok(())
+}
+
+/// Emit a native string using the minimal length-prefix width: `0x07` (u8) for
+/// values up to 255 bytes, `0x08` (u16) up to 65535, otherwise `0x09` with a
+/// ref-width (8-byte in generated `BinaryFile8` streams) length prefix.
+/// The serializer stores law-formula names this way, so the width follows the
+/// text length rather than a fixed tag.
+pub(crate) fn native_length_prefixed_string(
+    bytes: &mut Vec<u8>,
+    value: &str,
+) -> Result<(), CodecError> {
+    if u8::try_from(value.len()).is_ok() {
+        native_string(bytes, value)
+    } else if let Ok(length) = u16::try_from(value.len()) {
+        bytes.push(0x08);
+        bytes.extend_from_slice(&length.to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+        Ok(())
+    } else {
+        let length = value.len() as u64;
+        bytes.push(0x09);
+        bytes.extend_from_slice(&length.to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+        Ok(())
+    }
 }
 
 fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), CodecError> {
@@ -104,7 +130,7 @@ pub(crate) fn native_vector(bytes: &mut Vec<u8>, vector: [f64; 3]) {
 
 pub(crate) fn native_transform(
     bytes: &mut Vec<u8>,
-    target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     body: &Body,
     transform: Transform,
 ) -> Result<(), CodecError> {
@@ -134,17 +160,10 @@ pub(crate) fn native_transform(
         native_vector(bytes, vector);
     }
     native_f64(bytes, transform.rows[3][3]);
-    let hints = f3d_native(target)?
-        .and_then(|native| {
-            native
-                .transform_hints
-                .into_iter()
-                .find(|hints| hints.body == body.id)
-        })
-        .map_or_else(
-            || derived_transform_hints(transform),
-            |hints| [hints.rotation, hints.reflection, hints.shear],
-        );
+    let hints = topology.transform_hints.get(body.id.as_str()).map_or_else(
+        || derived_transform_hints(transform),
+        |hints| [hints.rotation, hints.reflection, hints.shear],
+    );
     for hint in hints {
         bytes.push(native_bool(hint));
     }
@@ -190,11 +209,11 @@ fn derived_transform_hints(transform: Transform) -> [bool; 3] {
     [rotation, reflection, shear]
 }
 
-pub(crate) fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
-    let native = f3d_native(target)?;
-    let histories = native
-        .as_ref()
-        .map_or(&[][..], |native| native.asm_histories.as_slice());
+pub(crate) fn native_history_tail(
+    bytes: &mut Vec<u8>,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
+    let histories = native.asm_histories.as_slice();
     if histories.is_empty() {
         native_ident(bytes, "delta_state")?;
         return Ok(());

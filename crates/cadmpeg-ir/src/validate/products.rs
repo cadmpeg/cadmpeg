@@ -124,6 +124,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             && joint
                 .angle
                 .into_iter()
+                .chain(joint.translation_offset.into_iter().flatten())
                 .chain(joint.distance)
                 .chain(joint.distance2)
                 .chain(

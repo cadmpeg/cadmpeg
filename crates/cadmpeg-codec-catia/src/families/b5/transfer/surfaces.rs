@@ -782,6 +782,7 @@ fn emit_extrusion_procedure(
             parameter_interval: Some(extrusion.directrix_parameter_range),
             direction: extrusion.direction,
             native_position: None,
+            revision_form: None,
         },
         cache_fit_tolerance: None,
         record_bounds: Some(parameter_record_bounds(extrusion.parameter_bounds)),

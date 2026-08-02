@@ -137,9 +137,9 @@ fn decode_result(
         .iter()
         .position(|record| record.id.0 == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
-    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", &unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
     if let Some(source_image) = source_image {
-        source_fidelity.retain_unknown_records("sldprt", std::slice::from_ref(&source_image));
+        source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
     set_semantic_hash(&mut ir);
     Ok(DecodeResult::new(ir, report, source_fidelity))
@@ -236,10 +236,14 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::HorizontalDistance { .. }
         | Constraint::VerticalDistance { .. }
         | Constraint::RepeatedDistance { .. }
+        | Constraint::RepeatedLength { .. }
+        | Constraint::ParallelLineSetDistance { .. }
         | Constraint::Angle { .. }
         | Constraint::AngleToAxis { .. }
         | Constraint::Radius { .. }
+        | Constraint::RepeatedRadius { .. }
         | Constraint::Diameter { .. }
+        | Constraint::RepeatedDiameter { .. }
         | Constraint::SnellsLaw { .. }
         | Constraint::Weight { .. }
         | Constraint::InternalAlignment { .. }
@@ -256,10 +260,17 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
     match definition {
         Constraint::Native { .. } => false,
         Constraint::Coincident { .. }
+        | Constraint::Symmetric { .. }
         | Constraint::PointOnSurface { .. }
         | Constraint::Midpoint { .. }
         | Constraint::Tangent { .. }
+        | Constraint::PointDistance { .. }
+        | Constraint::LineLength { .. }
+        | Constraint::RepeatedLineLength { .. }
         | Constraint::ParallelLineDistance { .. }
+        | Constraint::RepeatedParallelLineDistance { .. }
+        | Constraint::ParallelLineSetDistance { .. }
+        | Constraint::Offset { .. }
         | Constraint::ParallelToDirection { .. }
         | Constraint::SplineGroup { .. } => true,
     }
@@ -938,10 +949,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
-        BodySelection::Historical { bodies, .. } => bodies.is_empty(),
+        BodySelection::Historical { bodies, .. } | BodySelection::HistoricalSet { bodies, .. } => {
+            bodies.is_empty()
+        }
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
-        BodySelection::Unresolved | BodySelection::Native(_) => true,
+        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
     };
     let incomplete_profile = |profile: &ProfileRef| match profile {
         ProfileRef::Faces(faces) => faces.is_empty(),
@@ -949,6 +962,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         ProfileRef::SketchProfiles { profiles, .. }
         | ProfileRef::SpatialSketchProfiles { profiles, .. } => profiles.is_empty(),
         ProfileRef::SketchRegions { regions, .. } => regions.is_empty(),
+        ProfileRef::SketchEntities { entities, .. } => entities.is_empty(),
         ProfileRef::SketchSelection { selections, .. }
         | ProfileRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
         ProfileRef::HistoricalFaces { faces, .. } => faces.is_empty(),
@@ -962,6 +976,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         PathRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
+        PathRef::SketchCurves { curves, .. } => curves.is_empty(),
     };
     let incomplete_vertex_selection = |selection: &cadmpeg_ir::features::VertexSelection| {
         matches!(
@@ -1018,6 +1033,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::Helix { .. } => false,
             FeatureDefinition::BaseFeature { bodies }
             | FeatureDefinition::InsertBodies { bodies } => incomplete_body_selection(bodies),
+            FeatureDefinition::InsertComponent { occurrence } => !ir
+                .model
+                .occurrences
+                .iter()
+                .any(|candidate| candidate.id == *occurrence),
+            FeatureDefinition::AssemblyJoint { joint } => !ir
+                .model
+                .assembly_joints
+                .iter()
+                .any(|candidate| candidate.id == *joint),
+            FeatureDefinition::ReferenceImage { asset, .. } => {
+                !ir.model.assets.iter().any(|candidate| candidate.id == *asset)
+            }
             FeatureDefinition::StoredGeometry => state.outputs.is_empty(),
             FeatureDefinition::ExtractBody { source } => incomplete_body_selection(source),
             FeatureDefinition::DerivedGeometry { source } => {
@@ -1157,15 +1185,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Sweep {
-                profile,
+                section,
                 sections,
                 path,
                 mode,
                 orientation,
                 ..
             } => {
-                profile.as_ref().is_none_or(incomplete_profile)
-                    || sections.iter().any(incomplete_profile)
+                matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                    || section.referenced_profile().is_some_and(incomplete_profile)
+                    || sections.iter().any(|section| {
+                        matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                            || section.referenced_profile().is_some_and(incomplete_profile)
+                    })
                     || path.as_ref().is_none_or(incomplete_path)
                     || matches!(
                         orientation,
@@ -1262,6 +1294,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(radius, RadiusSpec::Variable { points } if points.is_empty())
             }
             FeatureDefinition::Shell {
+                bodies,
                 removed_faces,
                 thickness,
                 outward,
@@ -1270,7 +1303,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 resolve_intersections,
                 allow_self_intersections,
             } => {
-                incomplete_optional_face_selection(removed_faces)
+                bodies.as_ref().is_some_and(incomplete_body_selection)
+                    || incomplete_optional_face_selection(removed_faces)
                     || thickness.is_none()
                     || outward.is_none()
                     || mode.is_none()
@@ -1382,7 +1416,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || angle.is_none()
                     || outward.is_none()
             }
-            FeatureDefinition::Combine { target, tools, op } => {
+            FeatureDefinition::Combine {
+                target, tools, op, ..
+            } => {
                 incomplete_body_selection(target)
                     || incomplete_body_selection(tools)
                     || *op == BooleanOp::Unresolved
@@ -1406,6 +1442,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::SplitBody { targets, tools } => {
                 incomplete_body_selection(targets) || incomplete_face_selection(tools)
+            }
+            FeatureDefinition::SplitFace { targets, tool } => {
+                incomplete_face_selection(targets) || incomplete_path(tool)
             }
             FeatureDefinition::SewBodies {
                 bodies,
@@ -1474,6 +1513,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                         }
                         cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
                             incomplete_body_selection(bodies)
+                        }
+                        cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => {
+                            occurrences.is_empty()
                         }
                     })
                     || incomplete_pattern(pattern, &incomplete_path)
@@ -1721,7 +1763,7 @@ fn multiply_projected_sketch_relation_records(
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
 /// frames but yields no geometry, so the caller falls back to metadata.
-fn active_body_streams(scan: &ContainerScan) -> Vec<BodyStream<'_>> {
+fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
     let block_streams = scan.blocks.iter().flat_map(|block| {
         block.ps_streams.iter().filter_map(move |payload| {
             let header = crate::parasolid::stream_header(payload)?;
@@ -2241,6 +2283,7 @@ fn build_geometry_ir(
                 id: id.clone(),
                 name: None,
                 asset_guid: None,
+                library_id: None,
                 visual_guid: None,
                 physical_token: None,
                 schema: Some("entity-53".into()),
@@ -2291,6 +2334,7 @@ fn build_geometry_ir(
             id: id.clone(),
             name: Some(material.name),
             asset_guid: None,
+            library_id: None,
             visual_guid: None,
             physical_token: None,
             schema: Some("moVisualProperties_c".to_string()),
@@ -3502,39 +3546,12 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
     normalized.model.sketches.clear();
     normalized.model.sketch_entities.clear();
     normalized.model.sketch_constraints.clear();
-    sha256_hex(
-        normalized
-            .to_canonical_json()
-            .expect("CadIr serialization")
-            .as_bytes(),
-    )
+    cadmpeg_ir::hash::canonical_json_sha256(&normalized)
 }
 
+/// The document digest recorded as the SLDPRT `semantic_sha256` attribute.
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    // Normalize with a field-by-field clone so the retained source image (the
-    // largest single payload) is filtered out instead of copied and dropped.
-    let mut normalized = ir.clone();
-    normalized.finalize();
-    normalized.source = ir.source.as_ref().map(|source| {
-        let mut source = source.clone();
-        source.attributes.remove("semantic_sha256");
-        source
-    });
-    let unknowns = ir
-        .native_unknowns("sldprt")
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|record| record.id.0 != "sldprt:file:source-image#0")
-        .collect::<Vec<_>>();
-    normalized
-        .set_native_unknowns("sldprt", &unknowns)
-        .expect("SLDPRT unknown records serialize");
-    sha256_hex(
-        normalized
-            .to_canonical_json()
-            .expect("CadIr serialization")
-            .as_bytes(),
-    )
+    cadmpeg_ir::hash::semantic_document_hash(ir, "sldprt", "sldprt:file:source-image#0")
 }
 
 fn preserve_source_image(
@@ -3554,8 +3571,8 @@ fn preserve_source_image(
         id: UnknownId("sldprt:file:source-image#0".into()),
         offset: 0,
         byte_len: scan.source_image.len() as u64,
-        sha256: sha256_hex(&scan.source_image),
-        data: Some(scan.source_image.clone()),
+        sha256: sha256_hex(scan.source_image),
+        data: Some(scan.source_image.to_vec()),
         links: Vec::new(),
     });
 }
@@ -3731,6 +3748,7 @@ mod design_loss_tests {
                 target: BodySelection::Native("target".into()),
                 tools: BodySelection::Native("tools".into()),
                 op: BooleanOp::Unresolved,
+                keep_tools: false,
             },
             native_ref: None,
         });
@@ -3790,6 +3808,7 @@ mod design_loss_tests {
                     target: BodySelection::Native("target".into()),
                     tools: BodySelection::Native("tools".into()),
                     op: BooleanOp::Unresolved,
+                    keep_tools: false,
                 },
             ),
             (
@@ -4591,7 +4610,7 @@ mod design_loss_tests {
         let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
         let path = PathRef::Sketch(sketch);
         let sweep = |sections, orientation| FeatureDefinition::Sweep {
-            profile: Some(profile.clone()),
+            section: cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
             sections,
             path: Some(path.clone()),
             mode: cadmpeg_ir::features::SweepMode::Surface,
@@ -4601,12 +4620,17 @@ mod design_loss_tests {
             path_tangent: false,
             linearize: false,
             twist: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
             scale: None,
             allow_multi_profile_faces: None,
         };
         let definitions = [
             sweep(
-                vec![cadmpeg_ir::features::ProfileRef::Native("section".into())],
+                vec![cadmpeg_ir::features::SweepSection::Profile(
+                    cadmpeg_ir::features::ProfileRef::Native("section".into()),
+                )],
                 None,
             ),
             sweep(
@@ -4848,6 +4872,7 @@ mod design_loss_tests {
             feature(
                 4,
                 FeatureDefinition::Shell {
+                    bodies: None,
                     removed_faces: FaceSelection::Faces(Vec::new()),
                     thickness: Some(Length(1.0)),
                     outward: Some(false),

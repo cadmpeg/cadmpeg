@@ -50,7 +50,7 @@ macro_rules! define_model_index {
                     (identity, entity)
                 }).collect();)*
                 let mut native_identities = ir.native.0.values().flat_map(|namespace| {
-                    namespace.arenas.values().flatten().map(|record| record.id.as_str())
+                    namespace.arenas.values().flatten().map(|record| record.id())
                 }).collect::<HashSet<_>>();
                 native_identities.extend(additional);
                 identities.extend(native_identities.iter().copied());

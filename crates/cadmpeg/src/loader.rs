@@ -152,6 +152,7 @@ fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::default_trait_access, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use cadmpeg_ir::units::Units;

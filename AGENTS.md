@@ -1,4 +1,4 @@
-- Write dense, direct technical prose. No hype, filler, rhetorical framing, or emphasis cadence.
+- Write dense, direct technical prose. No hype, filler, rhetorical framing, or emphasis cadence. Use ASD-STE100.
 - Specs state the settled format model as fact. Never qualify it with corpus, sample, experiment, or provenance language.
 - Specs contain byte semantics and invariants only. Put genuine unknowns in `docs/formats/*-open-items.md`.
 - Do not treat finite evidence as an unknown. Do not put research history, project status, implementation bugs, or export behavior in specs.

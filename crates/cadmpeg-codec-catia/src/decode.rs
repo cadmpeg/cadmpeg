@@ -55,7 +55,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     for route in families::ROUTES {
@@ -67,7 +67,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                     out.ir,
                     out.report,
                     out.annotations,
-                    &out.unknowns,
+                    out.unknowns,
                 );
             }
         }
@@ -75,7 +75,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    finish_decode(ctx, &scan, ir, report, annotations, &unknowns)
+    finish_decode(ctx, &scan, ir, report, annotations, unknowns)
 }
 
 fn finish_decode(
@@ -84,7 +84,7 @@ fn finish_decode(
     mut ir: CadIr,
     mut report: DecodeReport,
     mut annotations: Annotations,
-    unknowns: &[UnknownRecord],
+    unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
     ctx.charge_entities(ir.model.entity_count() as u64, "admit CATIA entities")?;
     let native = CatiaNative::decode(&scan.data);
@@ -3179,7 +3179,7 @@ fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
     annotations: Annotations,
-    unknowns: &[UnknownRecord],
+    unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
     let mut source_fidelity = SourceFidelity {
         annotations,

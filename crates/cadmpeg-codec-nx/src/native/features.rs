@@ -8524,6 +8524,7 @@ mod tests {
                 target: BodySelection::Native("nx:om-object-index#10".to_string()),
                 tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
                 op: BooleanOp::Cut,
+                keep_tools: false,
             }
         );
 
@@ -9013,6 +9014,7 @@ mod tests {
                 target: cadmpeg_ir::features::BodySelection::Native(target),
                 tools: cadmpeg_ir::features::BodySelection::Native(tools),
                 op: cadmpeg_ir::features::BooleanOp::Join,
+                keep_tools: false,
             } if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127"
         ));
         assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());

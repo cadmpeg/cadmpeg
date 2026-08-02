@@ -407,9 +407,7 @@ pub(crate) fn exact_text_relation(
             glyph_transforms,
         } if relation.constraint_kinds == [SketchConstraintKind::TextPath]
             && relation.members.len() == 2
-            && relation.member_roles.len() == 2
-            && relation.member_roles[0] != 0
-            && relation.member_roles[1] == 0
+            && relation.member_relation_ordinals.len() == 2
             && relation.members[1] == *text_reference
             && relation.auxiliary_references == [*text_reference]
             && relation.return_members == [relation.members[0]] =>
@@ -499,31 +497,34 @@ pub(crate) fn exact_circular_pattern(
     {
         return None;
     }
-    let input = members
-        .iter()
-        .zip(&relation.member_roles)
-        .filter_map(|(entity, role)| (*role != 0).then_some(*entity))
-        .collect::<Vec<_>>();
-    let input_ids = input
+    // Member roles are relation-specific metadata and do not by themselves
+    // classify a member as center, seed, or generated. Anchor the partition to
+    // geometry instead: require the member and returned id sets to be equal and
+    // duplicate-free, then let the rotation search below pick the center/seed/
+    // generated split. Ambiguity (more than one viable center) falls through to
+    // the caller's lossless native fallback rather than guessing.
+    let member_ids = members
         .iter()
         .map(|entity| &entity.id)
         .collect::<HashSet<_>>();
-    let generated_ids = members
+    let returned_ids = returned
         .iter()
-        .zip(&relation.member_roles)
-        .filter_map(|(entity, role)| (*role == 0).then_some(&entity.id))
+        .map(|entity| &entity.id)
         .collect::<HashSet<_>>();
+    if member_ids.len() != members.len()
+        || returned_ids.len() != returned.len()
+        || member_ids != returned_ids
+    {
+        return None;
+    }
     let mut candidates = Vec::new();
-    for center in input.iter().copied() {
+    for center in members.iter().copied() {
         let SketchGeometry::Point {
             position: center_position,
         } = center.geometry
         else {
             continue;
         };
-        if !returned.iter().any(|entity| entity.id == center.id) {
-            continue;
-        }
         let patterned = returned
             .iter()
             .copied()
@@ -535,14 +536,7 @@ pub(crate) fn exact_circular_pattern(
         }
         let arity = patterned.len() / count;
         let seed = &patterned[..arity];
-        if seed.is_empty()
-            || !seed.iter().all(|entity| input_ids.contains(&entity.id))
-            || patterned[arity..]
-                .iter()
-                .map(|entity| &entity.id)
-                .collect::<HashSet<_>>()
-                != generated_ids
-        {
+        if seed.is_empty() {
             continue;
         }
         let mut divisors = vec![f64::from(*evaluated_count)];

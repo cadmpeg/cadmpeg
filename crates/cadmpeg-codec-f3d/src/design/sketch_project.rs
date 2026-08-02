@@ -195,9 +195,14 @@ pub fn project_sketch_design(
     entities.extend(texts.iter().filter_map(|text| {
         let scope = native_stream(&text.id)?;
         let placement = placements_by_suffix.get(&(scope, text.owner_reference))?;
+        // A neutral sketch-entity key is built from the record's persistent
+        // identity; indexed-record position does not participate. A record that
+        // stores no persistent identity therefore has no neutral key and stays
+        // native only.
+        let persistent_id = text.persistent_id?;
         let sketch = neutral_sketch_id(placement);
         Some(SketchEntity {
-            id: neutral_sketch_text_id(&sketch, text.persistent_id),
+            id: neutral_sketch_text_id(&sketch, persistent_id),
             sketch,
             construction: false,
             native_ref: Some(text.id.clone()),
@@ -206,8 +211,14 @@ pub fn project_sketch_design(
             geometry: SketchGeometry::Text {
                 text: text.text.clone(),
                 font_family: text.font_family.clone(),
+                font_weight: text.font_weight,
                 height: Length(text.height),
-                width_factor: text.width_factor,
+                // The record's `0` does not scale glyph advance to zero, so it
+                // is not a neutral horizontal scale of zero; only a positive
+                // factor carries one.
+                width_factor: text.width_factor.filter(|factor| *factor > 0.0),
+                anchor: text.anchor,
+                rotation: text.rotation.map(cadmpeg_ir::features::Angle),
             },
         })
     }));
@@ -266,18 +277,21 @@ pub fn project_spatial_sketch_design(
         .collect::<HashMap<_, _>>();
     let mut spline_segments = HashMap::new();
     for relation in relations {
+        // Only the second reference run of a relation record is in semantic
+        // order: the control polygon ends with the spline there, and the
+        // interleaved first run orders its members by nothing a reader can use.
+        let members = &relation.return_members;
         if relation.unknown_constraint_bits != 0
             || relation.constraint_kinds != [SketchConstraintKind::SplineGroup]
-            || relation.members.len() < 2
-            || relation.members.iter().collect::<HashSet<_>>().len() != relation.members.len()
+            || members.len() < 2
+            || members.iter().collect::<HashSet<_>>().len() != members.len()
         {
             continue;
         }
         let Some(scope) = native_stream(&relation.id) else {
             continue;
         };
-        let Some(curve) = relation
-            .members
+        let Some(curve) = members
             .last()
             .and_then(|record| curves_by_record.get(&(scope, *record)))
         else {
@@ -288,11 +302,11 @@ pub fn project_spatial_sketch_design(
             continue;
         };
         if curve.owner_reference != Some(relation.owner_reference)
-            || control_points.len() != relation.members.len()
+            || control_points.len() != members.len()
         {
             continue;
         }
-        let segments = relation.members[..relation.members.len() - 1]
+        let segments = members[..members.len() - 1]
             .iter()
             .zip(control_points.windows(2))
             .map(|(record, points)| {

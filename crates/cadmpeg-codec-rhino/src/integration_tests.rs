@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end contracts over synthesized OpenNURBS archives.
+#![allow(clippy::unwrap_used)]
+//! End-to-end contracts over synthesized `OpenNURBS` archives.
 
 use super::*;
 use crate::archive_test_support as support;

@@ -2,31 +2,78 @@
 #![deny(clippy::disallowed_methods)]
 //! Autodesk Fusion native design and construction-history records.
 
+use std::collections::HashMap;
+
+#[cfg(test)]
+thread_local! {
+    static LOAD_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+/// Reset the per-thread typed-native load counter used by writer tests.
+pub(crate) fn reset_load_count() {
+    LOAD_COUNT.set(0);
+}
+
+#[cfg(test)]
+/// Number of typed-native loads performed on this test thread since reset.
+pub(crate) fn load_count() -> usize {
+    LOAD_COUNT.get()
+}
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
 
-use crate::history_records::AsmHistory;
+use crate::history_records::{
+    AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
+    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
+};
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignBodyRecipeOperand, DesignConfiguration, DesignConstructionOperandGroup,
-    DesignConstructionOperandIdentity, DesignDimensionAnnotationFrame, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
+    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
+    DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
+    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFilletRadiusGroup, DesignMaterialAssignment, DesignObject, DesignParameter,
-    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
+    DesignFilletRadiusGroup, DesignMaterialAssignment, DesignParameter, DesignParameterCompanion,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    DesignType, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
     MeshSurfaceSentinel, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
     TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
     VertexOwnership, WireTopology, XrefDesign, XrefReference,
 };
 
+fn owner_indices<'a>(ids: impl IntoIterator<Item = &'a str>) -> HashMap<String, usize> {
+    ids.into_iter()
+        .enumerate()
+        .map(|(ordinal, id)| (id.to_owned(), ordinal))
+        .collect()
+}
+
+fn group_by_owner<T>(
+    records: Vec<T>,
+    owners: &HashMap<String, usize>,
+    owner_count: usize,
+    owner: impl Fn(&T) -> &str,
+) -> Vec<Vec<T>> {
+    let mut grouped = std::iter::repeat_with(Vec::new)
+        .take(owner_count)
+        .collect::<Vec<_>>();
+    for record in records {
+        if let Some(&ordinal) = owners.get(owner(&record)) {
+            grouped[ordinal].push(record);
+        }
+    }
+    grouped
+}
+
 /// Current schema version for the Autodesk Fusion native namespace.
-pub const F3D_NATIVE_VERSION: u32 = 5;
+pub const F3D_NATIVE_VERSION: u32 = 11;
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",
@@ -45,6 +92,8 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_body_bounds",
     "design_body_members",
     "design_body_recipe_operands",
+    "design_canvas_images",
+    "design_component_occurrences",
     "design_configurations",
     "design_construction_operand_groups",
     "design_construction_operand_identities",
@@ -62,13 +111,13 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_face_operands",
     "design_fillet_radius_groups",
     "design_material_assignments",
-    "design_objects",
     "design_parameter_companions",
     "design_parameter_owners",
     "design_parameter_scopes",
     "design_parameters",
     "design_record_headers",
     "design_sketch_placements",
+    "design_types",
     "edge_continuities",
     "edge_ownerships",
     "face_sidedness",
@@ -95,21 +144,117 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
 
 type F3dFamilyRow = FamilyRow<F3dNative, (), cadmpeg_ir::NativeNamespace, ()>;
 
+#[derive(Serialize)]
+struct FlatAsmHistory<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_size: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    history_entry_count: Option<i64>,
+    states: &'a [AsmDeltaState],
+}
+
+impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
+    fn from(history: &'a AsmHistory) -> Self {
+        Self {
+            id: &history.id,
+            byte_offset: history.byte_offset,
+            stream_size: history.stream_size,
+            history_entry_count: history.history_entry_count,
+            states: &[],
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct FlatAsmDeltaState<'a> {
+    id: &'a str,
+    parent: &'a str,
+    byte_offset: u64,
+    state_id: i64,
+    version_flag: i64,
+    state_flag: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_ref: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_ref: Option<i64>,
+    node_index: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partner_ref: Option<i64>,
+    owner_ref: i64,
+    bulletin_boards: &'a [AsmBulletinBoard],
+    records: &'a [AsmHistoryRecord],
+    #[serde(skip_serializing_if = "slice_is_empty")]
+    entity_versions: &'a [AsmEntityVersion],
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    record_table_complete: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topology: Option<&'a AsmHistoricalTopology>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transition: Option<&'a AsmHistoricalTransition>,
+}
+
+impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
+    fn from(state: &'a AsmDeltaState) -> Self {
+        Self {
+            id: &state.id,
+            parent: &state.parent,
+            byte_offset: state.byte_offset,
+            state_id: state.state_id,
+            version_flag: state.version_flag,
+            state_flag: state.state_flag,
+            previous_ref: state.previous_ref,
+            next_ref: state.next_ref,
+            node_index: state.node_index,
+            partner_ref: state.partner_ref,
+            owner_ref: state.owner_ref,
+            bulletin_boards: &[],
+            records: &[],
+            entity_versions: &state.entity_versions,
+            record_table_complete: state.record_table_complete,
+            topology: state.topology.as_ref(),
+            transition: state.transition.as_ref(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct FlatAsmBulletinBoard<'a> {
+    id: &'a str,
+    parent: &'a str,
+    byte_offset: u64,
+    owner_ref: i64,
+    number: i64,
+    changes: &'a [crate::history_records::AsmEntityChange],
+}
+
+impl<'a> From<&'a AsmBulletinBoard> for FlatAsmBulletinBoard<'a> {
+    fn from(board: &'a AsmBulletinBoard) -> Self {
+        Self {
+            id: &board.id,
+            parent: &board.parent,
+            byte_offset: board.byte_offset,
+            owner_ref: board.owner_ref,
+            number: board.number,
+            changes: &[],
+        }
+    }
+}
+
+fn slice_is_empty<T>(slice: &&[T]) -> bool {
+    slice.is_empty()
+}
+
 fn emit_asm_histories(
     model: &F3dNative,
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let records = model
-        .asm_histories
-        .iter()
-        .cloned()
-        .map(|mut history| {
-            history.states.clear();
-            history
-        })
-        .collect::<Vec<_>>();
-    namespace.set_arena(row.arena, &records)
+    namespace.set_arena_from(
+        row.arena,
+        model.asm_histories.iter().map(FlatAsmHistory::from),
+    )
 }
 
 fn emit_asm_delta_states(
@@ -117,17 +262,14 @@ fn emit_asm_delta_states(
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let records = model
-        .asm_histories
-        .iter()
-        .flat_map(|history| history.states.iter().cloned())
-        .map(|mut state| {
-            state.bulletin_boards.clear();
-            state.records.clear();
-            state
-        })
-        .collect::<Vec<_>>();
-    namespace.set_arena(row.arena, &records)
+    namespace.set_arena_from(
+        row.arena,
+        model
+            .asm_histories
+            .iter()
+            .flat_map(|history| &history.states)
+            .map(FlatAsmDeltaState::from),
+    )
 }
 
 fn emit_asm_bulletin_boards(
@@ -135,17 +277,15 @@ fn emit_asm_bulletin_boards(
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let records = model
-        .asm_histories
-        .iter()
-        .flat_map(|history| &history.states)
-        .flat_map(|state| state.bulletin_boards.iter().cloned())
-        .map(|mut board| {
-            board.changes.clear();
-            board
-        })
-        .collect::<Vec<_>>();
-    namespace.set_arena(row.arena, &records)
+    namespace.set_arena_from(
+        row.arena,
+        model
+            .asm_histories
+            .iter()
+            .flat_map(|history| &history.states)
+            .flat_map(|state| &state.bulletin_boards)
+            .map(FlatAsmBulletinBoard::from),
+    )
 }
 
 fn emit_asm_entity_changes(
@@ -158,9 +298,8 @@ fn emit_asm_entity_changes(
         .iter()
         .flat_map(|history| &history.states)
         .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| board.changes.iter().cloned())
-        .collect::<Vec<_>>();
-    namespace.set_arena(row.arena, &records)
+        .flat_map(|board| &board.changes);
+    namespace.set_arena_from(row.arena, records)
 }
 
 fn emit_asm_history_records(
@@ -172,9 +311,8 @@ fn emit_asm_history_records(
         .asm_histories
         .iter()
         .flat_map(|history| &history.states)
-        .flat_map(|state| state.records.iter().cloned())
-        .collect::<Vec<_>>();
-    namespace.set_arena(row.arena, &records)
+        .flat_map(|state| &state.records);
+    namespace.set_arena_from(row.arena, records)
 }
 
 pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
@@ -229,13 +367,35 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
-        arena: "design_objects",
+        arena: "design_types",
         tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
         note: None,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_objects),
-        len: |model| model.design_objects.len(),
+        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_types),
+        len: |model| model.design_types.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_canvas_images",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_canvas_images),
+        len: |model| model.design_canvas_images.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_component_occurrences",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_component_occurrences)
+        },
+        len: |model| model.design_component_occurrences.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -901,12 +1061,18 @@ pub struct F3dNative {
     /// Design browser-node visibility joined to solved ASM bodies.
     #[serde(default)]
     pub body_visibilities: Vec<BodyVisibility>,
-    /// Design `MetaStream` object-table records.
+    /// Design `MetaStream` type-table entries.
     #[serde(default)]
-    pub design_objects: Vec<DesignObject>,
+    pub design_types: Vec<DesignType>,
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
     pub design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    /// Exact image-plane bindings owned by Canvas timeline objects.
+    #[serde(default)]
+    pub design_canvas_images: Vec<DesignCanvasImage>,
+    /// Exact local component-definition and placed-occurrence carriers.
+    #[serde(default)]
+    pub design_component_occurrences: Vec<DesignComponentOccurrence>,
     /// Annotated paired dimension frames governing parameter companions.
     #[serde(default)]
     pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
@@ -1073,8 +1239,10 @@ impl Default for F3dNative {
             act_root_components: Vec::new(),
             body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
-            design_objects: Vec::new(),
+            design_types: Vec::new(),
             design_body_recipe_operands: Vec::new(),
+            design_canvas_images: Vec::new(),
+            design_component_occurrences: Vec::new(),
             design_dimension_annotation_frames: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),
@@ -1134,6 +1302,8 @@ impl F3dNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        #[cfg(test)]
+        LOAD_COUNT.set(LOAD_COUNT.get() + 1);
         let mut native = Self {
             version: namespace.version,
             act_entities: namespace.arena_as("act_entities")?,
@@ -1141,7 +1311,9 @@ impl F3dNative {
             act_root_components: namespace.arena_as("act_root_components")?,
             body_native_keys: namespace.arena_as("body_native_keys")?,
             body_visibilities: namespace.arena_as("body_visibilities")?,
-            design_objects: namespace.arena_as("design_objects")?,
+            design_types: namespace.arena_as("design_types")?,
+            design_canvas_images: namespace.arena_as("design_canvas_images")?,
+            design_component_occurrences: namespace.arena_as("design_component_occurrences")?,
             design_body_recipe_operands: namespace.arena_as("design_body_recipe_operands")?,
             design_dimension_annotation_frames: namespace
                 .arena_as("design_dimension_annotation_frames")?,
@@ -1203,39 +1375,56 @@ impl F3dNative {
             xref_references: namespace.arena_as("xref_references")?,
             asm_histories: namespace.arena_as("asm_histories")?,
         };
-        let mut states: Vec<crate::history_records::AsmDeltaState> =
+        let states: Vec<crate::history_records::AsmDeltaState> =
             namespace.arena_as("asm_delta_states")?;
-        let mut boards: Vec<crate::history_records::AsmBulletinBoard> =
+        let boards: Vec<crate::history_records::AsmBulletinBoard> =
             namespace.arena_as("asm_bulletin_boards")?;
         let changes: Vec<crate::history_records::AsmEntityChange> =
             namespace.arena_as("asm_entity_changes")?;
         let records: Vec<crate::history_records::AsmHistoryRecord> =
             namespace.arena_as("asm_history_records")?;
-        for board in &mut boards {
-            board.changes = changes
+        let board_indices = owner_indices(boards.iter().map(|board| board.id.as_str()));
+        let changes_by_board = group_by_owner(changes, &board_indices, boards.len(), |change| {
+            &change.parent
+        });
+        let boards = boards
+            .into_iter()
+            .zip(changes_by_board)
+            .map(|(mut board, changes)| {
+                board.changes = changes;
+                board
+            })
+            .collect::<Vec<_>>();
+        let state_indices = owner_indices(states.iter().map(|state| state.id.as_str()));
+        let boards_by_state =
+            group_by_owner(boards, &state_indices, states.len(), |board| &board.parent);
+        let records_by_state = group_by_owner(records, &state_indices, states.len(), |record| {
+            &record.parent
+        });
+        let states = states
+            .into_iter()
+            .zip(boards_by_state)
+            .zip(records_by_state)
+            .map(|((mut state, bulletin_boards), records)| {
+                state.bulletin_boards = bulletin_boards;
+                state.records = records;
+                state
+            })
+            .collect::<Vec<_>>();
+        let history_indices = owner_indices(
+            native
+                .asm_histories
                 .iter()
-                .filter(|change| change.parent == board.id)
-                .cloned()
-                .collect();
-        }
-        for state in &mut states {
-            state.bulletin_boards = boards
-                .iter()
-                .filter(|board| board.parent == state.id)
-                .cloned()
-                .collect();
-            state.records = records
-                .iter()
-                .filter(|record| record.parent == state.id)
-                .cloned()
-                .collect();
-        }
-        for history in &mut native.asm_histories {
-            history.states = states
-                .iter()
-                .filter(|state| state.parent == history.id)
-                .cloned()
-                .collect();
+                .map(|history| history.id.as_str()),
+        );
+        let states_by_history = group_by_owner(
+            states,
+            &history_indices,
+            native.asm_histories.len(),
+            |state| &state.parent,
+        );
+        for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
+            history.states = states;
         }
         Ok(native)
     }

@@ -121,6 +121,33 @@ fn write_target_and_source_requirements_are_explicit() {
 }
 
 #[test]
+fn seekable_encoder_matches_the_write_only_fallback() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut staged = Vec::new();
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut staged))
+        .expect("write-only fallback");
+    let mut streamed = Cursor::new(Vec::new());
+    crate::writer::write_seekable(
+        &decoded.ir,
+        &mut streamed,
+        crate::FcstdWriteOptions::default(),
+    )
+    .expect("seekable writer");
+
+    assert_eq!(streamed.into_inner(), staged);
+}
+
+#[test]
 fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
     let decoded = FcstdCodec
         .decode(
@@ -1566,12 +1593,17 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#A", "fcstd:design:feature#B"]
     );
-    let cadmpeg_ir::features::FeatureDefinition::Combine { target, tools, op } =
-        &feature("Fuse").definition
+    let cadmpeg_ir::features::FeatureDefinition::Combine {
+        target,
+        tools,
+        op,
+        keep_tools,
+    } = &feature("Fuse").definition
     else {
         panic!("multi-fuse");
     };
     assert_eq!(*op, cadmpeg_ir::features::BooleanOp::Join);
+    assert!(!keep_tools);
     assert!(matches!(
         target,
         cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":link:0")
@@ -1619,6 +1651,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
             op: cadmpeg_ir::features::BooleanOp::Join,
+            keep_tools: false,
         } if target.ends_with(":Group:link:2")
             && tools.ends_with(":Group:links:0..2")
     ));
@@ -1628,6 +1661,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
             op: cadmpeg_ir::features::BooleanOp::Cut,
+            keep_tools: false,
         } if target.ends_with(":BaseFeature") && tools.ends_with(":Group")
     ));
     assert!(result.report.losses.is_empty());
@@ -1727,7 +1761,9 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     assert!(matches!(
         &feature("Pipe").definition,
         cadmpeg_ir::features::FeatureDefinition::Sweep {
-            profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
+            section: cadmpeg_ir::features::SweepSection::Profile(
+                cadmpeg_ir::features::ProfileRef::Sketch(_),
+            ),
             sections,
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
@@ -5595,12 +5631,17 @@ fn thumbnail_bytes_are_retained_with_digest() {
             },
         )
         .expect("decode");
-    let unknowns = result
+    assert_eq!(
+        result.ir.native_unknowns_iter("fcstd").count(),
+        1,
+        "thumbnail has one product reference"
+    );
+    let retained = result
         .source_fidelity
-        .native_unknown_records(&result.ir, "fcstd")
-        .expect("unknowns");
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].data.as_deref(), Some(b"png".as_slice()));
+        .retained_records
+        .first()
+        .expect("retained thumbnail");
+    assert_eq!(retained.data.as_deref(), Some(b"png".as_slice()));
 }
 
 #[test]

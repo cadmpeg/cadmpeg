@@ -49,6 +49,8 @@ pub enum EntityKind {
     ProceduralSurface,
     /// Procedural curve.
     ProceduralCurve,
+    /// Embedded or externally referenced document resource.
+    Asset,
     /// Feature.
     Feature,
     /// Feature input topology.
@@ -101,7 +103,7 @@ pub enum EntityKind {
 
 impl EntityKind {
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 40] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -117,6 +119,7 @@ impl EntityKind {
         Self::Pcurve,
         Self::ProceduralSurface,
         Self::ProceduralCurve,
+        Self::Asset,
         Self::Feature,
         Self::FeatureInputTopology,
         Self::DesignConfiguration,
@@ -491,6 +494,7 @@ impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id.0; id, scheme, ver
 impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id.0; id, geometry, wrapper_reversed, native_tail_flags, parameter_range, fit_tolerance);
 impl_entity_schema!(crate::geometry::ProceduralSurface, ProceduralSurface, id.0; id, surface, definition, cache_fit_tolerance, record_bounds);
 impl_entity_schema!(crate::geometry::ProceduralCurve, ProceduralCurve, id.0; id, curve, definition, cache_fit_tolerance);
+impl_entity_schema!(crate::assets::Asset, Asset, id.0; id, name, media_type, content, native_ref);
 impl_entity_schema!(crate::features::Feature, Feature, id.0; id, ordinal, name, suppressed, parent, dependencies, source_properties, source_tag, source_text, source_content, outputs, definition, native_ref);
 impl_entity_schema!(
     crate::features::FeatureInputTopology,
@@ -525,7 +529,7 @@ impl_entity_schema!(
 impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id.0; id, feature, cells, column_widths, row_heights, merged_ranges, native_ref);
 impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id.0; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
 impl_entity_schema!(crate::products::Occurrence, Occurrence, id.0; id, prototype, parent, ordinal, transform, prototype_transform, scale, name, linked_subelements, visible, element_component, claim_child, copy_on_change, copy_on_change_source, copy_on_change_group, copy_on_change_touched, link_transform, native_ref);
-impl_entity_schema!(crate::products::AssemblyJoint, AssemblyJoint, id.0; id, kind, operands, frames, offset_frames, suppressed, detached, angle, distance, distance2, angular_limits, linear_limits, properties, native_ref);
+impl_entity_schema!(crate::products::AssemblyJoint, AssemblyJoint, id.0; id, kind, operands, frames, offset_frames, suppressed, detached, angle, translation_offset, distance, distance2, angular_limits, linear_limits, properties, native_ref);
 impl_entity_schema!(crate::drawings::Drawing, Drawing, id.0; id, object, kind, runtime_type, order, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
 impl_entity_schema!(
     crate::semantic_annotations::SemanticAnnotation,
@@ -548,7 +552,7 @@ impl_entity_schema!(
     point_size, properties, native_ref
 );
 impl_entity_schema!(crate::tessellation::Tessellation, Tessellation, id; id, body, faces, chordal_deflection, source_object, vertices, triangles, strip_lengths, normals, channels);
-impl_entity_schema!(crate::appearance::Appearance, Appearance, id.0; id, name, asset_guid, visual_guid, physical_token, schema, category, base_color, properties, textures);
+impl_entity_schema!(crate::appearance::Appearance, Appearance, id.0; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
 impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, channels);
 impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id.0; id, target, name, values);
 impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id.0; id, name, targets, definition);

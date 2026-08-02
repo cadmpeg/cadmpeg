@@ -7219,6 +7219,7 @@ fn transfer_feature_extrusion_surfaces(
                     ]),
                     direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
                     native_position: None,
+                    revision_form: None,
                 },
                 cache_fit_tolerance: None,
                 record_bounds: None,
@@ -24826,6 +24827,7 @@ fn transfer_positional_line_extrusion_planes(
                 parameter_interval: None,
                 direction: Vector3::new(frame.direction[0], frame.direction[1], frame.direction[2]),
                 native_position: None,
+                revision_form: None,
             },
             cache_fit_tolerance: None,
             record_bounds: None,
@@ -24943,6 +24945,7 @@ fn transfer_tabulated_cylinder_spline_extrusions(
                 parameter_interval: Some([0.0, 1.0]),
                 direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
                 native_position: None,
+                revision_form: None,
             },
             cache_fit_tolerance: None,
             record_bounds: None,
@@ -28468,7 +28471,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
     };
-    source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
@@ -31297,6 +31300,9 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                                 cadmpeg_ir::features::BodySelection::Unresolved
                                     | cadmpeg_ir::features::BodySelection::Native(_)
                             )
+                        }
+                        cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => {
+                            occurrences.is_empty()
                         }
                     });
                 let unresolved_transform = pattern_kind_has_unresolved_operands(pattern);

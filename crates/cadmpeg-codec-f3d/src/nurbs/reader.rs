@@ -63,6 +63,35 @@ pub(crate) fn marker_positions(b: &[u8]) -> Vec<usize> {
     out
 }
 
+/// Positions of the `nubs`/`nurbs` markers `b` itself owns, in order: those
+/// outside every construction nested within `b`. A leading `0x0f` is `b`'s own
+/// scope opening and is not counted as nesting.
+///
+/// A scope's members and the members of the constructions it nests are
+/// indistinguishable to a raw byte scan, so a scan that ignores nesting reports
+/// a nested support's cache as the scope's own.
+pub(crate) fn owned_marker_positions(b: &[u8], int_width: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut pos = usize::from(b.first() == Some(&0x0f));
+    while pos < b.len() {
+        match b[pos] {
+            0x0f => depth += 1,
+            0x10 => depth = depth.saturating_sub(1),
+            _ => {
+                if depth == 0 && marker_at(b, pos).is_some() {
+                    out.push(pos);
+                }
+            }
+        }
+        match crate::nurbs::subtypes::next_token(b, pos, int_width) {
+            Some(next) => pos = next,
+            None => break,
+        }
+    }
+    out
+}
+
 /// Read a knot table of `n` `(knot, multiplicity)` pairs, returning the expanded
 /// clamped knot vector and pole count `sum(mult) - (degree - 1)`.
 pub(crate) struct KnotLayout {

@@ -539,8 +539,8 @@ fn scan_preserves_linear_extrusion_type_variants() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["surface_rows"];
-    assert_eq!(rows[0].fields["surface_variant"], "ruled_surface");
-    assert_eq!(rows[1].fields["surface_variant"], "tabulated_cylinder");
+    assert_eq!(rows[0].fields()["surface_variant"], "ruled_surface");
+    assert_eq!(rows[1].fields()["surface_variant"], "tabulated_cylinder");
 }
 
 #[test]
@@ -583,12 +583,12 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
         .expect("decode");
     let native =
         &result.ir.native.namespace("creo").unwrap().arenas["tabulated_cylinder_curve_replays"][0];
-    assert_eq!(native.fields["surface_id"], 7);
-    assert_eq!(native.fields["control_point_ids"][2], 34);
-    assert_eq!(native.fields["control_point_bodies"][3][8], 0x46);
-    assert_eq!(native.fields["control_points"][2][0], -3.0);
+    assert_eq!(native.fields()["surface_id"], 7);
+    assert_eq!(native.fields()["control_point_ids"][2], 34);
+    assert_eq!(native.fields()["control_point_bodies"][3][8], 0x46);
+    assert_eq!(native.fields()["control_points"][2][0], -3.0);
     assert_eq!(
-        result.source_fidelity.annotations.provenance[&native.id]
+        result.source_fidelity.annotations.provenance[native.id()]
             .tag
             .as_deref(),
         Some("tabulated_cylinder_curve_replay")
@@ -697,10 +697,10 @@ fn decode_transfers_positional_line_extrusion_plane() {
         }
     ));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    assert_eq!(record.fields["surface_type_byte"], 0x2c);
-    assert_eq!(record.fields["extrusion_direction"][0], 0.0);
-    assert_eq!(record.fields["extrusion_direction"][1], 0.0);
-    assert_eq!(record.fields["extrusion_direction"][2], 1.0);
+    assert_eq!(record.fields()["surface_type_byte"], 0x2c);
+    assert_eq!(record.fields()["extrusion_direction"][0], 0.0);
+    assert_eq!(record.fields()["extrusion_direction"][1], 0.0);
+    assert_eq!(record.fields()["extrusion_direction"][2], 1.0);
     assert_eq!(
         result
             .report
@@ -772,10 +772,10 @@ fn decode_preserves_type_2c_direction_before_named_record() {
         .expect("decode");
 
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    assert_eq!(record.fields["boundary"], "named_record");
-    assert_eq!(record.fields["extrusion_direction"][0], 0.0);
-    assert_eq!(record.fields["extrusion_direction"][1], 1.0);
-    assert_eq!(record.fields["extrusion_direction"][2], 0.0);
+    assert_eq!(record.fields()["boundary"], "named_record");
+    assert_eq!(record.fields()["extrusion_direction"][0], 0.0);
+    assert_eq!(record.fields()["extrusion_direction"][1], 1.0);
+    assert_eq!(record.fields()["extrusion_direction"][2], 0.0);
     assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
@@ -826,8 +826,8 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    assert_eq!(native.fields["torus_outline_frame"]["selector"], 80);
-    assert_eq!(native.fields["torus_outline_frame"]["values"][5], 52.5);
+    assert_eq!(native.fields()["torus_outline_frame"]["selector"], 80);
+    assert_eq!(native.fields()["torus_outline_frame"]["values"][5], 52.5);
 }
 
 #[test]
@@ -878,15 +878,15 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             .expect("decode");
         let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
         assert_eq!(
-            native.fields["torus_radius_overrides"]["radius1"],
+            native.fields()["torus_radius_overrides"]["radius1"],
             0.499_999_999_999_999_94
         );
         assert_eq!(
-            native.fields["torus_radius_overrides"]["radius2"],
+            native.fields()["torus_radius_overrides"]["radius2"],
             expected_radius2
         );
         assert_eq!(
-            native.fields["torus_radius_overrides"]["radius2_encoding"],
+            native.fields()["torus_radius_overrides"]["radius2_encoding"],
             match expected_encoding {
                 TorusRadius2Encoding::Direct => "direct",
                 TorusRadius2Encoding::OuterRingDifference => "outer_ring_difference",
@@ -955,10 +955,10 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert_eq!(
-        native.fields["cone_half_angle_override"]["radians"],
+        native.fields()["cone_half_angle_override"]["radians"],
         expected
     );
-    assert_eq!(native.fields["cone_half_angle_override"]["offset"], 3);
+    assert_eq!(native.fields()["cone_half_angle_override"]["offset"], 3);
 }
 
 #[test]
@@ -974,41 +974,44 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
 
     let records = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].fields["surface_id"], 7);
-    assert_eq!(records[0].fields["surface_family"], "torus_or_sphere");
-    assert_eq!(records[0].fields["boundary"], "compound_close");
+    assert_eq!(records[0].fields()["surface_id"], 7);
+    assert_eq!(records[0].fields()["surface_family"], "torus_or_sphere");
+    assert_eq!(records[0].fields()["boundary"], "compound_close");
     assert_eq!(
-        records[0].fields["slots"][0]["value"],
+        records[0].fields()["slots"][0]["value"],
         f64::from_be_bytes([0x3f, 0xe8, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0])
     );
     for (index, expected) in [0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]
         .into_iter()
         .enumerate()
     {
-        assert_eq!(records[0].fields["slots"][0]["raw"][index], expected);
+        assert_eq!(records[0].fields()["slots"][0]["raw"][index], expected);
     }
-    assert_eq!(records[0].fields["slots"][0]["length"], 7);
+    assert_eq!(records[0].fields()["slots"][0]["length"], 7);
     assert_eq!(
-        records[0].fields["opaque_spans"].as_array().unwrap().len(),
+        records[0].fields()["opaque_spans"]
+            .as_array()
+            .unwrap()
+            .len(),
         0
     );
-    assert_eq!(records[0].fields["terminal_scalar_frame"]["offset"], 0);
-    assert_eq!(records[0].fields["scalar_frames"][0]["offset"], 0);
+    assert_eq!(records[0].fields()["terminal_scalar_frame"]["offset"], 0);
+    assert_eq!(records[0].fields()["scalar_frames"][0]["offset"], 0);
     assert_eq!(
-        records[0].fields["terminal_scalar_frame"]["slots"]
+        records[0].fields()["terminal_scalar_frame"]["slots"]
             .as_array()
             .unwrap()
             .len(),
         1
     );
     let row = &result.ir.native.namespace("creo").unwrap().arenas["surface_rows"][0];
-    assert_eq!(row.fields["surface_id"], 7);
-    assert_eq!(row.fields["type_byte"], 0x26);
-    assert_eq!(row.fields["surface_family"], "torus_or_sphere");
-    assert_eq!(row.fields["feature_id"], 4);
-    assert_eq!(row.fields["reversed"], false);
-    assert_eq!(row.fields["boundary_type"], 0);
-    assert_eq!(row.fields["next_surface"], 0);
+    assert_eq!(row.fields()["surface_id"], 7);
+    assert_eq!(row.fields()["type_byte"], 0x26);
+    assert_eq!(row.fields()["surface_family"], "torus_or_sphere");
+    assert_eq!(row.fields()["feature_id"], 4);
+    assert_eq!(row.fields()["reversed"], false);
+    assert_eq!(row.fields()["boundary_type"], 0);
+    assert_eq!(row.fields()["next_surface"], 0);
     assert_eq!(
         result.source_fidelity.annotations.provenance["creo:visibgeom:surface_row#7"]
             .tag
@@ -1034,13 +1037,13 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode type-26 envelope");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    let envelope = &record.fields["type26_five_coordinate_envelope"];
+    let envelope = &record.fields()["type26_five_coordinate_envelope"];
     assert_eq!(envelope["offset"], 7);
     let values = envelope["values"].as_array().expect("coordinate values");
     for (actual, expected) in values.iter().zip([-2.65, -15.0, -2.65, 2.65, -17.65]) {
         assert!((actual.as_f64().expect("finite coordinate") - expected).abs() < 1.0e-12);
     }
-    assert!(record.fields["type26_split_coordinate_envelope"].is_null());
+    assert!(record.fields()["type26_split_coordinate_envelope"].is_null());
     assert_eq!(
         result
             .report
@@ -1103,7 +1106,7 @@ fn decode_places_complete_positional_torus() {
     ));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert!(
-        (record.fields["positional_torus_frame"]["major_radius"]
+        (record.fields()["positional_torus_frame"]["major_radius"]
             .as_f64()
             .expect("major radius")
             - 4.45)
@@ -1240,13 +1243,13 @@ fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode split type-26 envelope");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    let envelope = &record.fields["type26_split_coordinate_envelope"];
+    let envelope = &record.fields()["type26_split_coordinate_envelope"];
     assert_eq!(envelope["offset"], 19);
     let values = envelope["values"].as_array().expect("coordinate values");
     for (actual, expected) in values.iter().zip([-4.95, 17.24, 16.74, 4.95]) {
         assert!((actual.as_f64().expect("finite coordinate") - expected).abs() < 1.0e-12);
     }
-    assert!(record.fields["type26_five_coordinate_envelope"].is_null());
+    assert!(record.fields()["type26_five_coordinate_envelope"].is_null());
     assert_eq!(
         result
             .report
@@ -1271,19 +1274,20 @@ fn decode_preserves_unframed_surface_parameter_spans() {
         .expect("decode surface parameter spans");
 
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    assert_eq!(record.fields["slots"][0]["offset"], 1);
-    assert_eq!(record.fields["slots"][1]["offset"], 4);
-    assert_eq!(record.fields["opaque_spans"][0]["offset"], 0);
-    assert_eq!(record.fields["opaque_spans"][0]["raw"][0], 0x11);
-    assert_eq!(record.fields["opaque_spans"][1]["offset"], 2);
-    assert_eq!(record.fields["opaque_spans"][1]["length"], 2);
-    assert_eq!(record.fields["terminal_scalar_frame"]["offset"], 4);
-    let frames = record.fields["scalar_frames"].as_array().unwrap();
+    assert_eq!(record.fields()["slots"][0]["offset"], 1);
+    assert_eq!(record.fields()["slots"][1]["offset"], 4);
+    assert_eq!(record.fields()["opaque_spans"][0]["offset"], 0);
+    assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0x11);
+    assert_eq!(record.fields()["opaque_spans"][1]["offset"], 2);
+    assert_eq!(record.fields()["opaque_spans"][1]["length"], 2);
+    assert_eq!(record.fields()["terminal_scalar_frame"]["offset"], 4);
+    let record_fields = record.fields();
+    let frames = record_fields["scalar_frames"].as_array().unwrap();
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0]["offset"], 1);
     assert_eq!(frames[1]["offset"], 4);
     assert_eq!(
-        record.fields["terminal_scalar_frame"]["slots"]
+        record.fields()["terminal_scalar_frame"]["slots"]
             .as_array()
             .unwrap()
             .len(),
@@ -1427,19 +1431,19 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas["plane_local_systems"][0].fields["surface_id"],
+        namespace.arenas["plane_local_systems"][0].fields()["surface_id"],
         7
     );
     assert_eq!(
-        namespace.arenas["plane_envelopes"][0].fields["surface_id"],
+        namespace.arenas["plane_envelopes"][0].fields()["surface_id"],
         7
     );
     assert_eq!(
-        namespace.arenas["plane_envelopes"][0].fields["envelope"]["kind"],
+        namespace.arenas["plane_envelopes"][0].fields()["envelope"]["kind"],
         "standard"
     );
     assert_eq!(
-        namespace.arenas["outline_planes"][0].fields["normal"][2],
+        namespace.arenas["outline_planes"][0].fields()["normal"][2],
         -1.0
     );
 
@@ -1748,48 +1752,54 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_prototypes"][0];
-    assert_eq!(native.fields["declared_family"], "cylinder");
-    assert_eq!(native.fields["family"], "cylinder");
-    assert_eq!(native.fields["parameters"][0]["name"], "local_sys");
-    assert_eq!(native.fields["parameters"][0]["value_kind"], "scalar_array");
-    assert_eq!(native.fields["parameters"][0]["scalar_dimensions"], 4);
-    assert_eq!(native.fields["parameters"][0]["scalar_values"][0], 1.0);
-    assert_eq!(native.fields["parameters"][1]["name"], "radius");
-    assert_eq!(native.fields["parameters"][1]["body"][0], 0xe4);
-    assert_eq!(native.fields["parameters"][2]["compact_values"][0], 7);
-    assert_eq!(native.fields["parameters"][2]["compact_values"][1], 8);
-    assert_eq!(native.fields["parameters"][3]["compact_values"][0], 128);
-    assert_eq!(native.fields["parameters"][3]["compact_values"][1], 129);
-    assert_eq!(native.fields["parameters"][3]["compact_values"][2], 130);
-    assert_eq!(native.fields["parameters"][4]["name"], "id");
-    assert_eq!(native.fields["parameters"][4]["compact_values"][0], 15);
-    assert_eq!(native.fields["parameters"][5]["name"], "degree");
-    assert_eq!(native.fields["parameters"][5]["compact_values"][0], 3);
-    assert_eq!(native.fields["parameters"][6]["name"], "params");
-    assert_eq!(native.fields["parameters"][6]["compact_values"][2], 1);
-    assert_eq!(native.fields["parameters"][7]["name"], "flip");
-    assert_eq!(native.fields["parameters"][7]["value_kind"], "compact_int");
-    assert_eq!(native.fields["parameters"][7]["compact_values"][0], 1);
-    assert_eq!(native.fields["parameters"][7]["body"][0], 0xf1);
-    assert_eq!(native.fields["parameters"][8]["name"], "dum_array");
-    assert_eq!(native.fields["parameters"][8]["value_kind"], "opaque");
+    assert_eq!(native.fields()["declared_family"], "cylinder");
+    assert_eq!(native.fields()["family"], "cylinder");
+    assert_eq!(native.fields()["parameters"][0]["name"], "local_sys");
     assert_eq!(
-        native.fields["parameters"][9]["name"],
+        native.fields()["parameters"][0]["value_kind"],
+        "scalar_array"
+    );
+    assert_eq!(native.fields()["parameters"][0]["scalar_dimensions"], 4);
+    assert_eq!(native.fields()["parameters"][0]["scalar_values"][0], 1.0);
+    assert_eq!(native.fields()["parameters"][1]["name"], "radius");
+    assert_eq!(native.fields()["parameters"][1]["body"][0], 0xe4);
+    assert_eq!(native.fields()["parameters"][2]["compact_values"][0], 7);
+    assert_eq!(native.fields()["parameters"][2]["compact_values"][1], 8);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][0], 128);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][1], 129);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][2], 130);
+    assert_eq!(native.fields()["parameters"][4]["name"], "id");
+    assert_eq!(native.fields()["parameters"][4]["compact_values"][0], 15);
+    assert_eq!(native.fields()["parameters"][5]["name"], "degree");
+    assert_eq!(native.fields()["parameters"][5]["compact_values"][0], 3);
+    assert_eq!(native.fields()["parameters"][6]["name"], "params");
+    assert_eq!(native.fields()["parameters"][6]["compact_values"][2], 1);
+    assert_eq!(native.fields()["parameters"][7]["name"], "flip");
+    assert_eq!(
+        native.fields()["parameters"][7]["value_kind"],
+        "compact_int"
+    );
+    assert_eq!(native.fields()["parameters"][7]["compact_values"][0], 1);
+    assert_eq!(native.fields()["parameters"][7]["body"][0], 0xf1);
+    assert_eq!(native.fields()["parameters"][8]["name"], "dum_array");
+    assert_eq!(native.fields()["parameters"][8]["value_kind"], "opaque");
+    assert_eq!(
+        native.fields()["parameters"][9]["name"],
         "frst_cntr_crv_hdr_ptr"
     );
-    assert_eq!(native.fields["parameters"][9]["compact_values"][0], 47);
-    assert_eq!(native.fields["parameters"][10]["name"], "trv");
-    assert_eq!(native.fields["parameters"][10]["compact_values"][0], 0);
-    assert_eq!(native.fields["parameters"][11]["name"], "tan_spline");
-    assert_eq!(native.fields["parameters"][11]["value_kind"], "empty");
+    assert_eq!(native.fields()["parameters"][9]["compact_values"][0], 47);
+    assert_eq!(native.fields()["parameters"][10]["name"], "trv");
+    assert_eq!(native.fields()["parameters"][10]["compact_values"][0], 0);
+    assert_eq!(native.fields()["parameters"][11]["name"], "tan_spline");
+    assert_eq!(native.fields()["parameters"][11]["value_kind"], "empty");
     assert_eq!(
-        native.fields["parameters"][11]["body"]
+        native.fields()["parameters"][11]["body"]
             .as_array()
             .map(Vec::len),
         Some(0)
     );
     assert_eq!(
-        result.source_fidelity.annotations.provenance[&native.id]
+        result.source_fidelity.annotations.provenance[native.id()]
             .tag
             .as_deref(),
         Some("surface_prototype_record")
@@ -1916,16 +1926,16 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     );
     let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_entity_tables"];
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].fields["owner_feature_id"], 4);
-    assert_eq!(tables[0].fields["table_class_id"], 29);
-    assert_eq!(tables[0].fields["entry_ids"][0], 7);
-    assert_eq!(tables[0].fields["entry_ids"][1], 9);
-    assert_eq!(tables[0].fields["entries"][0]["class_id"], 200);
-    assert_eq!(tables[0].fields["entries"][0]["source_entity_id"], 1);
-    assert_eq!(tables[0].fields["entries"][1]["prefixed"], true);
+    assert_eq!(tables[0].fields()["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields()["table_class_id"], 29);
+    assert_eq!(tables[0].fields()["entry_ids"][0], 7);
+    assert_eq!(tables[0].fields()["entry_ids"][1], 9);
+    assert_eq!(tables[0].fields()["entries"][0]["class_id"], 200);
+    assert_eq!(tables[0].fields()["entries"][0]["source_entity_id"], 1);
+    assert_eq!(tables[0].fields()["entries"][1]["prefixed"], true);
     assert_annotation(
         &result.source_fidelity.annotations,
-        &tables[0].id,
+        tables[0].id(),
         "creo:AllFeatur",
         table.offset as u64,
         "feature_entity_table",
@@ -1980,10 +1990,10 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         (&associations[2], 7, 12, 1),
         (&associations[3], 8, 13, 1),
     ] {
-        assert_eq!(association.fields["owner_feature_id"], 4);
-        assert_eq!(association.fields["visible_surface_id"], visible_id);
-        assert_eq!(association.fields["replay_surface_id"], replay_id);
-        assert_eq!(association.fields["replay_ordinal"], ordinal);
+        assert_eq!(association.fields()["owner_feature_id"], 4);
+        assert_eq!(association.fields()["visible_surface_id"], visible_id);
+        assert_eq!(association.fields()["replay_surface_id"], replay_id);
+        assert_eq!(association.fields()["replay_ordinal"], ordinal);
     }
     assert_eq!(
         result
@@ -3025,20 +3035,20 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     let entities = &namespace.arenas["feature_entities"];
     assert_eq!(entities.len(), 3);
-    assert_eq!(entities[0].id, "creo:allfeatur:entity#0");
-    assert_eq!(entities[0].fields["type_byte"], 0);
-    assert_eq!(entities[0].fields["name"], "Sld_Features");
+    assert_eq!(entities[0].id(), "creo:allfeatur:entity#0");
+    assert_eq!(entities[0].fields()["type_byte"], 0);
+    assert_eq!(entities[0].fields()["name"], "Sld_Features");
     let references = &namespace.arenas["feature_entity_references"];
     assert_eq!(references.len(), 2);
     let forward = references
         .iter()
-        .find(|reference| reference.fields["target_entity_id"] == 2)
+        .find(|reference| reference.fields()["target_entity_id"] == 2)
         .expect("forward reference");
-    assert_eq!(forward.fields["source_entity_id"], 1);
-    assert_eq!(forward.fields["target_resolved"], true);
+    assert_eq!(forward.fields()["source_entity_id"], 1);
+    assert_eq!(forward.fields()["target_resolved"], true);
     assert_annotation(
         &result.source_fidelity.annotations,
-        &entities[0].id,
+        entities[0].id(),
         "creo:AllFeatur",
         scan.features.entities[0].offset as u64,
         "feature_entity",
@@ -3518,19 +3528,19 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
         .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     let rows = &namespace.arenas["feature_rows"];
-    assert_eq!(rows[0].fields["owner_feature_id"], 4);
-    assert_eq!(rows[0].fields["header"][0], 0xeb);
-    assert_eq!(rows[0].fields["header"][1], 0x04);
-    assert_eq!(rows[0].fields["body"][0], 0xeb);
-    assert_eq!(rows[0].fields["body"][2], 0xe0);
+    assert_eq!(rows[0].fields()["owner_feature_id"], 4);
+    assert_eq!(rows[0].fields()["header"][0], 0xeb);
+    assert_eq!(rows[0].fields()["header"][1], 0x04);
+    assert_eq!(rows[0].fields()["body"][0], 0xeb);
+    assert_eq!(rows[0].fields()["body"][2], 0xe0);
     let choices = &namespace.arenas["feature_choices"];
-    assert_eq!(choices[0].fields["owner_feature_id"], 4);
-    assert_eq!(choices[0].fields["label"], "blend_choice");
+    assert_eq!(choices[0].fields()["owner_feature_id"], 4);
+    assert_eq!(choices[0].fields()["label"], "blend_choice");
     let fields = &namespace.arenas["feature_choice_fields"];
-    assert_eq!(fields[0].fields["choice_label"], "blend_choice");
-    assert_eq!(fields[0].fields["name"], "values");
-    assert_eq!(fields[0].fields["value"]["kind"], "scalar_array");
-    assert_eq!(fields[0].fields["value"]["decoded_values"][2], 3.0);
+    assert_eq!(fields[0].fields()["choice_label"], "blend_choice");
+    assert_eq!(fields[0].fields()["name"], "values");
+    assert_eq!(fields[0].fields()["value"]["kind"], "scalar_array");
+    assert_eq!(fields[0].fields()["value"]["decoded_values"][2], 3.0);
 }
 
 #[test]
@@ -3567,15 +3577,15 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         .expect("decode");
     let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_geometry_tables"];
     assert_eq!(tables.len(), 3);
-    assert_eq!(tables[0].fields["owner_feature_id"], 4);
-    assert_eq!(tables[0].fields["kind"], "edge_ids");
-    assert_eq!(tables[0].fields["declared_count"], 3);
-    assert_eq!(tables[0].fields["entity_class_id"], 0x53);
-    assert_eq!(tables[2].fields["entry_ids"][0], 42);
-    assert_eq!(tables[2].fields["entry_ids"][1], 43);
+    assert_eq!(tables[0].fields()["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields()["kind"], "edge_ids");
+    assert_eq!(tables[0].fields()["declared_count"], 3);
+    assert_eq!(tables[0].fields()["entity_class_id"], 0x53);
+    assert_eq!(tables[2].fields()["entry_ids"][0], 42);
+    assert_eq!(tables[2].fields()["entry_ids"][1], 43);
     assert_annotation(
         &result.source_fidelity.annotations,
-        &tables[0].id,
+        tables[0].id(),
         "creo:AllFeatur",
         scan.features.geometry_tables[0].offset as u64,
         "feature_geometry_table",
@@ -3607,22 +3617,22 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_history_entries"];
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].fields["owner_feature_id"], 4);
-    assert_eq!(records[0].fields["ordinal"], 0);
-    assert_eq!(records[0].fields["loop_id"], 42);
-    assert_eq!(records[0].fields["field_bytes"][0][0], 1);
-    assert_eq!(records[0].fields["boundary"], "reference_continue");
-    assert_eq!(records[0].fields["boundary_reference"], 96);
-    assert_eq!(records[1].fields["ordinal"], 1);
-    assert_eq!(records[1].fields["loop_id"], 43);
+    assert_eq!(records[0].fields()["owner_feature_id"], 4);
+    assert_eq!(records[0].fields()["ordinal"], 0);
+    assert_eq!(records[0].fields()["loop_id"], 42);
+    assert_eq!(records[0].fields()["field_bytes"][0][0], 1);
+    assert_eq!(records[0].fields()["boundary"], "reference_continue");
+    assert_eq!(records[0].fields()["boundary_reference"], 96);
+    assert_eq!(records[1].fields()["ordinal"], 1);
+    assert_eq!(records[1].fields()["loop_id"], 43);
     assert_eq!(
-        records[1].fields["field_bytes"].as_array().unwrap().len(),
+        records[1].fields()["field_bytes"].as_array().unwrap().len(),
         5
     );
-    assert_eq!(records[1].fields["boundary"], "named_record");
+    assert_eq!(records[1].fields()["boundary"], "named_record");
     assert_annotation(
         &result.source_fidelity.annotations,
-        &records[0].id,
+        records[0].id(),
         "creo:AllFeatur",
         scan.features.loop_history_entries[0].offset as u64,
         "feature_loop_history_entry",
@@ -3668,9 +3678,9 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_affected_ids"];
     assert_eq!(records.len(), 3);
-    assert_eq!(records[0].fields["owner_feature_id"], 4);
-    assert_eq!(records[0].fields["kind"], "geometry");
-    assert_eq!(records[0].fields["ids"][1], 128);
+    assert_eq!(records[0].fields()["owner_feature_id"], 4);
+    assert_eq!(records[0].fields()["kind"], "geometry");
+    assert_eq!(records[0].fields()["ids"][1], 128);
 }
 
 #[test]
@@ -3924,8 +3934,8 @@ fn scan_partitions_allfeatur_positional_round_operands() {
     ));
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_replay_affected_ids"];
-    assert_eq!(records[0].fields["geometry_extent"], "explicit");
-    assert_eq!(records[0].fields["edge_ids"][0], 9);
+    assert_eq!(records[0].fields()["geometry_extent"], "explicit");
+    assert_eq!(records[0].fields()["edge_ids"][0], 9);
 }
 
 #[test]
@@ -3947,9 +3957,9 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         .expect("decode");
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_restore_directions"];
-    assert_eq!(records[0].fields["value"], 0);
-    assert_eq!(records[1].fields["value"], 167);
-    assert_eq!(records[2].fields["value"], 1);
+    assert_eq!(records[0].fields()["value"], 0);
+    assert_eq!(records[1].fields()["value"], 167);
+    assert_eq!(records[2].fields()["value"], 1);
     let feature = result
         .ir
         .model
@@ -4037,7 +4047,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
         } if (*angle - std::f64::consts::TAU).abs() < 1e-12
     ));
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_revolution_extents"];
-    assert_eq!(records[0].fields["kind"], "full_turn");
+    assert_eq!(records[0].fields()["kind"], "full_turn");
 }
 
 #[test]
@@ -4172,7 +4182,8 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let definitions = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
-    let frames = definitions[0].fields["parameter_frames"]
+    let definition_fields = definitions[0].fields();
+    let frames = definition_fields["parameter_frames"]
         .as_array()
         .expect("parameter frames");
     assert_eq!(frames.len(), 2);
@@ -4242,9 +4253,8 @@ fn scan_decodes_featdefs_feature_local_outlines() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let definitions = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
-    let outlines = definitions[0].fields["outlines"]
-        .as_array()
-        .expect("outlines");
+    let definition_fields = definitions[0].fields();
+    let outlines = definition_fields["outlines"].as_array().expect("outlines");
     assert_eq!(outlines.len(), 2);
     assert_eq!(outlines[0]["phase"], "pre_rollback");
     assert_eq!(outlines[0]["local_values"].as_array().unwrap().len(), 6);
@@ -4408,18 +4418,19 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(namespace.version, 1);
     let definitions = &namespace.arenas["feature_definitions"];
     assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions[0].id, "creo:featdefs:feature_definition#40");
-    assert_eq!(definitions[0].fields["definition_id"], 40);
+    assert_eq!(definitions[0].id(), "creo:featdefs:feature_definition#40");
+    assert_eq!(definitions[0].fields()["definition_id"], 40);
     assert_eq!(
-        definitions[0].fields["body"].as_array().unwrap().len(),
+        definitions[0].fields()["body"].as_array().unwrap().len(),
         definition_length
     );
     let sketches = &namespace.arenas["sketches"];
     assert_eq!(sketches.len(), 1);
-    assert_eq!(sketches[0].id, "creo:featdefs:sketch#40");
-    assert_eq!(sketches[0].fields["definition_id"], 40);
-    assert!(sketches[0].fields["owner_feature_id"].is_null());
-    let headers = sketches[0].fields["table_headers"]
+    assert_eq!(sketches[0].id(), "creo:featdefs:sketch#40");
+    assert_eq!(sketches[0].fields()["definition_id"], 40);
+    assert!(sketches[0].fields()["owner_feature_id"].is_null());
+    let sketch_fields = sketches[0].fields();
+    let headers = sketch_fields["table_headers"]
         .as_array()
         .expect("table headers");
     assert_eq!(headers.len(), 1);
@@ -4427,7 +4438,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(headers[0]["declared_count"], 2);
     assert_eq!(headers[0]["entity_ref"], 1);
     assert_eq!(headers[0]["row_count"], 2);
-    let points = sketches[0].fields["section_points"]
+    let points = sketch_fields["section_points"]
         .as_array()
         .expect("section points");
     assert_eq!(points.len(), 1);
@@ -4435,7 +4446,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(points[0]["u"], 1.0);
     assert_eq!(points[0]["v"], 3.0);
     assert_eq!(points[0]["state"], "resolved");
-    let variables = sketches[0].fields["variables"]
+    let variables = sketch_fields["variables"]
         .as_array()
         .expect("variables array");
     assert_eq!(variables.len(), 2);
@@ -4531,7 +4542,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .expect("decode");
     let native_sketch = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0];
     assert_eq!(
-        native_sketch.fields["segments"][0]["body"]
+        native_sketch.fields()["segments"][0]["body"]
             .as_array()
             .expect("segment body")
             .iter()
@@ -4655,49 +4666,49 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let sketch = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0];
-    assert_eq!(sketch.fields["circle_segments"][0]["external_id"], 20);
-    assert_eq!(sketch.fields["circle_segments"][0]["center_id"], 2);
+    assert_eq!(sketch.fields()["circle_segments"][0]["external_id"], 20);
+    assert_eq!(sketch.fields()["circle_segments"][0]["center_id"], 2);
     assert_eq!(
-        sketch.fields["circle_segments"][0]["radius_dimension_id"],
+        sketch.fields()["circle_segments"][0]["radius_dimension_id"],
         1
     );
-    assert_eq!(sketch.fields["point_segments"][0]["external_id"], 21);
-    assert_eq!(sketch.fields["point_segments"][0]["point_id"], 3);
+    assert_eq!(sketch.fields()["point_segments"][0]["external_id"], 21);
+    assert_eq!(sketch.fields()["point_segments"][0]["point_id"], 3);
     assert_eq!(
-        sketch.fields["centered_line_segments"][0]["external_id"],
+        sketch.fields()["centered_line_segments"][0]["external_id"],
         22
     );
-    assert_eq!(sketch.fields["centered_line_segments"][0]["center_id"], 2);
+    assert_eq!(sketch.fields()["centered_line_segments"][0]["center_id"], 2);
     assert_eq!(
-        sketch.fields["centered_line_segments"][1]["external_id"],
+        sketch.fields()["centered_line_segments"][1]["external_id"],
         23
     );
-    assert_eq!(sketch.fields["centered_line_segments"][1]["center_id"], 0);
+    assert_eq!(sketch.fields()["centered_line_segments"][1]["center_id"], 0);
     assert_eq!(
-        sketch.fields["reference_line_segments"][0]["external_id"],
+        sketch.fields()["reference_line_segments"][0]["external_id"],
         24
     );
     assert_eq!(
-        sketch.fields["reference_line_segments"][0]["point_ids"][0],
+        sketch.fields()["reference_line_segments"][0]["point_ids"][0],
         10
     );
     assert_eq!(
-        sketch.fields["reference_line_segments"][0]["point_ids"][1],
+        sketch.fields()["reference_line_segments"][0]["point_ids"][1],
         11
     );
     assert_eq!(
-        sketch.fields["bounded_curve_segments"][0]["external_id"],
+        sketch.fields()["bounded_curve_segments"][0]["external_id"],
         25
     );
     assert_eq!(
-        sketch.fields["bounded_curve_segments"][0]["point_ids"][0],
+        sketch.fields()["bounded_curve_segments"][0]["point_ids"][0],
         2
     );
     assert_eq!(
-        sketch.fields["bounded_curve_segments"][0]["point_ids"][1],
+        sketch.fields()["bounded_curve_segments"][0]["point_ids"][1],
         3
     );
-    assert!(sketch.fields["opaque_segments"]
+    assert!(sketch.fields()["opaque_segments"]
         .as_array()
         .is_some_and(Vec::is_empty));
     let coverage = &result.report;
@@ -5379,8 +5390,8 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let trim_entities =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["trim_entities"];
+    let trim_entities = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+        ["trim_entities"];
     assert_eq!(
         trim_entities.as_array().expect("trim entity array").len(),
         3
@@ -5412,8 +5423,8 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let trim_vertices =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["trim_vertices"];
+    let trim_vertices = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+        ["trim_vertices"];
     assert_eq!(
         trim_vertices.as_array().expect("trim vertex array").len(),
         1
@@ -5489,7 +5500,7 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let order_rows =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["order_rows"];
+        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()["order_rows"];
     assert_eq!(order_rows.as_array().expect("order row array").len(), 2);
     assert_eq!(order_rows[0]["external_id"], 283);
     assert_eq!(order_rows[1]["internal_id"], 12);
@@ -5536,8 +5547,8 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         .expect("decode");
     let sketches = &result.ir.native.namespace("creo").unwrap().arenas["sketches"];
     assert_eq!(sketches.len(), 1);
-    assert_eq!(sketches[0].fields["source_section"], "FeatDefs");
-    let placement = &sketches[0].fields["section_3d"];
+    assert_eq!(sketches[0].fields()["source_section"], "FeatDefs");
+    let placement = &sketches[0].fields()["section_3d"];
     assert_eq!(placement["sketch_plane_entity_id"], 769);
     assert_eq!(placement["sketch_plane_flip"], true);
     assert_eq!(placement["reference_plane_entity_ids"][0], 5);
@@ -5949,7 +5960,8 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(parameters[2].properties["value_token"], "0104fef2");
 
     let sketches = &result.ir.native.namespace("creo").unwrap().arenas["sketches"];
-    let dimensions = sketches[0].fields["dimensions"]
+    let sketch_fields = sketches[0].fields();
+    let dimensions = sketch_fields["dimensions"]
         .as_array()
         .expect("native dimensions");
     assert_eq!(dimensions[1]["unresolved_value_token"][0], 0);
@@ -6023,11 +6035,11 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     let definition_ids = namespace.arenas["feature_definitions"]
         .iter()
-        .map(|record| record.id.as_str())
+        .map(cadmpeg_ir::NativeRecord::id)
         .collect::<BTreeSet<_>>();
     let sketch_ids = namespace.arenas["sketches"]
         .iter()
-        .map(|record| record.id.as_str())
+        .map(cadmpeg_ir::NativeRecord::id)
         .collect::<BTreeSet<_>>();
     assert_eq!(definition_ids.len(), 2);
     assert_eq!(sketch_ids.len(), 2);
@@ -6130,8 +6142,8 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let headers = result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields
-        ["table_headers"]
+    let sketch_fields = result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields();
+    let headers = sketch_fields["table_headers"]
         .as_array()
         .expect("table headers");
     let solver = headers
@@ -6379,8 +6391,8 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native_saved =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["saved_entities"];
+    let native_saved = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+        ["saved_entities"];
     for (native, expected) in native_saved
         .as_array()
         .expect("saved entity array")
@@ -6445,8 +6457,8 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let saved =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["saved_entities"];
+    let saved = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+        ["saved_entities"];
     assert_eq!(saved.as_array().expect("saved entity array").len(), 3);
     assert_eq!(saved[0]["kind"], "arc");
     assert_eq!(saved[1]["kind"], "circle");
@@ -6496,11 +6508,11 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         "MdlRefInfo:arc_z:45"
     );
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_circles"][0];
-    assert_eq!(record.fields["entity_id"], 45);
-    assert_eq!(record.fields["center_source"], "endpoint_midpoint");
+    assert_eq!(record.fields()["entity_id"], 45);
+    assert_eq!(record.fields()["center_source"], "endpoint_midpoint");
     assert_annotation(
         &result.source_fidelity.annotations,
-        &record.id,
+        record.id(),
         "creo:MdlRefInfo",
         scan.references.circles[0].offset as u64,
         "reference_circle_record",
@@ -6530,9 +6542,9 @@ fn decode_retains_line3d_original_length() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_lines"][0];
-    assert_eq!(record.fields["family"], "line3d");
-    assert_eq!(record.fields["entity_id"], 35);
-    assert_eq!(record.fields["original_length"], 1.0);
+    assert_eq!(record.fields()["family"], "line3d");
+    assert_eq!(record.fields()["entity_id"], 35);
+    assert_eq!(record.fields()["original_length"], 1.0);
     let curve = result
         .ir
         .model
@@ -6599,9 +6611,9 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         }
     )));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_ellipses"][0];
-    assert_eq!(record.fields["source_entity_id"], 43);
-    assert_eq!(record.fields["major_radius"], 1.0);
-    assert_eq!(record.fields["minor_radius"], 1.0);
+    assert_eq!(record.fields()["source_entity_id"], 43);
+    assert_eq!(record.fields()["major_radius"], 1.0);
+    assert_eq!(record.fields()["minor_radius"], 1.0);
     assert_eq!(
         result
             .report
@@ -6625,7 +6637,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     }));
     assert_annotation(
         &result.source_fidelity.annotations,
-        &record.id,
+        record.id(),
         "creo:MdlRefInfo",
         scan.references.ellipses[0].offset as u64,
         "reference_ellipse_carrier",
@@ -6668,9 +6680,9 @@ fn scan_discovers_labeled_curve_prototypes() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_prototypes"];
-    assert_eq!(records[0].fields["curve_id"], 7);
-    assert_eq!(records[0].fields["type_byte"], 8);
-    assert_eq!(records[0].fields["generating_feature_id"], 4);
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["type_byte"], 8);
+    assert_eq!(records[0].fields()["generating_feature_id"], 4);
 }
 
 #[test]
@@ -6699,15 +6711,18 @@ fn decode_preserves_counted_curve_expression_programs() {
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].fields["entity_id"], 0x094c);
-    assert_eq!(records[0].fields["lines"][2]["text"], "theta=w*t*360");
+    assert_eq!(records[0].fields()["entity_id"], 0x094c);
+    assert_eq!(records[0].fields()["lines"][2]["text"], "theta=w*t*360");
     assert_eq!(
-        records[0].fields["assignments"][2]["target"]["name"],
+        records[0].fields()["assignments"][2]["target"]["name"],
         "theta"
     );
-    assert_eq!(records[0].fields["assignments"][2]["dependencies"][0], "w");
-    assert_eq!(records[0].fields["assignments"][0]["value"], 5.0);
-    assert_eq!(records[0].fields["local_system"]["dimensions"], 4);
+    assert_eq!(
+        records[0].fields()["assignments"][2]["dependencies"][0],
+        "w"
+    );
+    assert_eq!(records[0].fields()["assignments"][0]["value"], 5.0);
+    assert_eq!(records[0].fields()["local_system"]["dimensions"], 4);
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         &result.ir.model.features[0].definition,
@@ -6771,7 +6786,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     );
     assert_annotation(
         &result.source_fidelity.annotations,
-        &records[0].id,
+        records[0].id(),
         "creo:DEPDB_DATA",
         scan.curves.expressions[0].expression_offset as u64,
         "curve_expression_program",
@@ -6893,30 +6908,30 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
-    assert_eq!(native.fields["solve_blocks"][0]["variables"][0], "width");
-    assert_eq!(native.fields["solve_blocks"][0]["variables"][1], "height");
+    assert_eq!(native.fields()["solve_blocks"][0]["variables"][0], "width");
+    assert_eq!(native.fields()["solve_blocks"][0]["variables"][1], "height");
     assert_eq!(
-        native.fields["solve_blocks"][0]["equations"][0]["left"],
+        native.fields()["solve_blocks"][0]["equations"][0]["left"],
         "width"
     );
     assert_eq!(
-        native.fields["solve_blocks"][0]["equations"][0]["right"],
+        native.fields()["solve_blocks"][0]["equations"][0]["right"],
         "height+1"
     );
     assert_eq!(
-        native.fields["solve_blocks"][0]["equations"][1]["dependencies"][2],
+        native.fields()["solve_blocks"][0]["equations"][1]["dependencies"][2],
         "area"
     );
     assert_eq!(
-        native.fields["solve_blocks"][0]["assignments"][0]["target"]["name"],
+        native.fields()["solve_blocks"][0]["assignments"][0]["target"]["name"],
         "offset"
     );
     assert_eq!(
-        native.fields["solve_blocks"][0]["assignments"][0]["dependencies"][0],
+        native.fields()["solve_blocks"][0]["assignments"][0]["dependencies"][0],
         "base"
     );
     assert_eq!(
-        native.fields["solve_blocks"][0]["assignments"][0]["value"],
+        native.fields()["solve_blocks"][0]["assignments"][0]["value"],
         11.0
     );
     assert_eq!(
@@ -6973,8 +6988,8 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         ),
         0
     );
-    assert!(native.fields["solve_blocks"][0]["solutions"][0].is_null());
-    assert!(native.fields["solve_blocks"][0]["solutions"][1].is_null());
+    assert!(native.fields()["solve_blocks"][0]["solutions"][0].is_null());
+    assert!(native.fields()["solve_blocks"][0]["solutions"][1].is_null());
 }
 
 #[test]
@@ -7014,8 +7029,8 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
-    assert_eq!(native.fields["solve_blocks"][0]["solutions"][0], 6.0);
-    assert_eq!(native.fields["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
+    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
         result
             .report
@@ -7067,8 +7082,8 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
-    assert_eq!(native.fields["solve_blocks"][0]["solutions"][0], 6.0);
-    assert_eq!(native.fields["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
+    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
         result.report.coverage_count(
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
@@ -7144,7 +7159,7 @@ fn decode_retains_scoped_model_name_call_as_model_context() {
     assert!(parameter.dependencies.is_empty());
     assert!(!parameter.properties.contains_key("external_dependencies"));
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
-    assert!(native.fields["assignments"][0]["dependencies"]
+    assert!(native.fields()["assignments"][0]["dependencies"]
         .as_array()
         .is_some_and(Vec::is_empty));
 }
@@ -7179,12 +7194,12 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
     );
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
     assert_eq!(
-        native.fields["assignments"][0]["target"]["kind"],
+        native.fields()["assignments"][0]["target"]["kind"],
         "scoped_symbol"
     );
-    assert_eq!(native.fields["assignments"][0]["target"]["name"], "d7:0");
+    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "d7:0");
     assert_eq!(
-        native.fields["assignments"][1]["target"]["name"],
+        native.fields()["assignments"][1]["target"]["name"],
         "width:fid_25:cid_12"
     );
     assert_eq!(
@@ -7223,12 +7238,12 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
     assert_eq!(parameter.properties["external_dependencies"], "d42");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
     assert_eq!(
-        native.fields["assignments"][0]["target"]["kind"],
+        native.fields()["assignments"][0]["target"]["kind"],
         "system_symbol"
     );
-    assert_eq!(native.fields["assignments"][0]["target"]["name"], "d42");
+    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "d42");
     assert_eq!(
-        native.fields["assignments"][0]["target"]["family"],
+        native.fields()["assignments"][0]["target"]["family"],
         "dimension"
     );
     assert_eq!(
@@ -7264,21 +7279,22 @@ fn decode_retains_registered_function_write_targets_without_emitting_parameters(
     assert_eq!(parameter.name, "result");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
     assert_eq!(
-        native.fields["assignments"][0]["target"]["kind"],
+        native.fields()["assignments"][0]["target"]["kind"],
         "function_write"
     );
     assert_eq!(
-        native.fields["assignments"][0]["target"]["name"],
+        native.fields()["assignments"][0]["target"]["name"],
         "store_value"
     );
-    let arguments = native.fields["assignments"][0]["target"]["arguments"]
+    let fields = native.fields();
+    let arguments = fields["assignments"][0]["target"]["arguments"]
         .as_array()
         .expect("function arguments");
     assert_eq!(arguments.len(), 3);
     assert_eq!(arguments[0], "component");
     assert_eq!(arguments[1], "row");
     assert_eq!(arguments[2], "column");
-    let dependencies = native.fields["assignments"][0]["dependencies"]
+    let dependencies = fields["assignments"][0]["dependencies"]
         .as_array()
         .expect("function dependencies");
     assert_eq!(dependencies.len(), 4);
@@ -7322,7 +7338,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
         "samples,row_index,column_index"
     );
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
-    let first = &native.fields["assignments"][0];
+    let first = &native.fields()["assignments"][0];
     assert_eq!(first["target"]["kind"], "table_cell");
     assert_eq!(first["target"]["parameter"], "samples");
     assert_eq!(first["target"]["row"], "row_index");
@@ -7331,7 +7347,7 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
     assert_eq!(first["dependencies"][1], "row_index");
     assert_eq!(first["dependencies"][2], "column_index");
     assert_eq!(first["dependencies"][3], "driver");
-    let second = &native.fields["assignments"][1];
+    let second = &native.fields()["assignments"][1];
     assert_eq!(second["target"]["kind"], "table_cell");
     assert_eq!(second["target"]["parameter"], "series");
     assert_eq!(second["target"]["row"], "2");
@@ -7433,7 +7449,7 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         .namespace("creo")
         .expect("Creo native data")
         .arenas["curve_expressions"][0];
-    assert_eq!(native.fields["prohibited_constructs"][0], "itos");
+    assert_eq!(native.fields()["prohibited_constructs"][0], "itos");
     let coverage = &result.report;
     assert_eq!(
         coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT),
@@ -7467,10 +7483,10 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
             "1 active curve-equation record(s) containing prohibited datum-curve constructs"
         )));
     assert_eq!(
-        native.fields["assignments"][4]["expression"],
+        native.fields()["assignments"][4]["expression"],
         "rtos(123.456,2)"
     );
-    assert!(native.fields["assignments"][5]["value"].is_null());
+    assert!(native.fields()["assignments"][5]["value"].is_null());
     assert_eq!(parameters[4].expression, "rtos(123.456,2)");
     assert_eq!(parameters[5].expression, "rel_model_type()");
     assert_eq!(parameters[5].value, None);
@@ -7533,9 +7549,9 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     };
     assert!((copy.0 - 76.2).abs() < 1e-12);
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
-    assert_eq!(native.fields["assignments"][0]["target"]["name"], "span");
+    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
     assert_eq!(
-        native.fields["assignments"][0]["target"]["declared_unit"],
+        native.fields()["assignments"][0]["target"]["declared_unit"],
         "inch"
     );
     assert_eq!(parameters[2].properties["declared_unit"], "N/mm^2");
@@ -7548,8 +7564,11 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
         "length:-1,mass:1,time:-2,angle:0,temperature:0"
     );
     assert_eq!(parameters[2].value, None);
-    assert_eq!(native.fields["assignments"][2]["value"]["value"], 2_000.0);
-    assert_eq!(native.fields["assignments"][2]["value"]["length_power"], -1);
+    assert_eq!(native.fields()["assignments"][2]["value"]["value"], 2_000.0);
+    assert_eq!(
+        native.fields()["assignments"][2]["value"]["length_power"],
+        -1
+    );
     let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
         panic!("angle parameter");
     };
@@ -7587,23 +7606,18 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert!(!parameters[3]
         .properties
         .contains_key("ambiguous_dependencies"));
-    let native_assignments = result
+    let curve_expression_fields = result
         .ir
         .native
         .namespace("creo")
         .expect("Creo native data")
         .arenas["curve_expressions"][0]
-        .fields["assignments"]
+        .fields();
+    let native_assignments = curve_expression_fields["assignments"]
         .as_array()
         .expect("assignments");
     assert_eq!(native_assignments[2]["activation"], "inactive");
-    let prohibited = result
-        .ir
-        .native
-        .namespace("creo")
-        .expect("Creo native data")
-        .arenas["curve_expressions"][0]
-        .fields["prohibited_constructs"]
+    let prohibited = curve_expression_fields["prohibited_constructs"]
         .as_array()
         .expect("prohibited constructs");
     assert_eq!(prohibited.len(), 3);
@@ -7713,7 +7727,7 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .namespace("creo")
             .expect("Creo native data")
             .arenas["curve_expressions"][0]
-            .fields["assignments"]
+            .fields()["assignments"]
             .as_array()
             .expect("assignments")
             .len(),
@@ -7801,15 +7815,15 @@ fn scan_discovers_curve_halfedge_topology() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let row = &result.ir.native.namespace("creo").unwrap().arenas["curve_topology_rows"][0];
-    assert_eq!(row.fields["curve_id"], 7);
-    assert_eq!(row.fields["type_byte"], 8);
-    assert_eq!(row.fields["feature_id"], 4);
-    assert_eq!(row.fields["directions"][0], 1);
-    assert_eq!(row.fields["directions"][1], 0xf6);
-    assert_eq!(row.fields["faces"][0], 10);
-    assert_eq!(row.fields["faces"][1], 11);
-    assert_eq!(row.fields["next_edges"][0], 7);
-    assert_eq!(row.fields["next_edges"][1], 7);
+    assert_eq!(row.fields()["curve_id"], 7);
+    assert_eq!(row.fields()["type_byte"], 8);
+    assert_eq!(row.fields()["feature_id"], 4);
+    assert_eq!(row.fields()["directions"][0], 1);
+    assert_eq!(row.fields()["directions"][1], 0xf6);
+    assert_eq!(row.fields()["faces"][0], 10);
+    assert_eq!(row.fields()["faces"][1], 11);
+    assert_eq!(row.fields()["next_edges"][0], 7);
+    assert_eq!(row.fields()["next_edges"][1], 7);
     assert_eq!(
         result.source_fidelity.annotations.provenance["creo:visibgeom:curve_topology#7"]
             .tag
@@ -7889,22 +7903,22 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["curve_parameters"][0];
-    assert_eq!(record.fields["curve_id"], 7);
-    assert_eq!(record.fields["type_byte"], 8);
+    assert_eq!(record.fields()["curve_id"], 7);
+    assert_eq!(record.fields()["type_byte"], 8);
     assert_eq!(
-        record.fields["body"].as_array().unwrap().len(),
+        record.fields()["body"].as_array().unwrap().len(),
         parameters.body.len()
     );
-    assert_eq!(record.fields["scalar_values"][2], 3.0);
-    assert_eq!(record.fields["scalar_tokens"][2]["offset"], 5);
-    assert_eq!(record.fields["scalar_tokens"][2]["raw"][0], 0x46);
-    assert_eq!(record.fields["skipped_references"][0], 256);
-    assert_eq!(record.fields["references"][0]["entity_id"], 256);
-    assert_eq!(record.fields["references"][0]["offset"], 2);
-    assert_eq!(record.fields["opaque_spans"][0]["offset"], 13);
-    assert_eq!(record.fields["opaque_spans"][0]["raw"][0], 0xff);
-    assert_eq!(record.fields["suffix"], "unique");
-    assert!(record.fields["suffix_candidate_count"].is_null());
+    assert_eq!(record.fields()["scalar_values"][2], 3.0);
+    assert_eq!(record.fields()["scalar_tokens"][2]["offset"], 5);
+    assert_eq!(record.fields()["scalar_tokens"][2]["raw"][0], 0x46);
+    assert_eq!(record.fields()["skipped_references"][0], 256);
+    assert_eq!(record.fields()["references"][0]["entity_id"], 256);
+    assert_eq!(record.fields()["references"][0]["offset"], 2);
+    assert_eq!(record.fields()["opaque_spans"][0]["offset"], 13);
+    assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0xff);
+    assert_eq!(record.fields()["suffix"], "unique");
+    assert!(record.fields()["suffix_candidate_count"].is_null());
     assert_eq!(
         result.source_fidelity.annotations.provenance["creo:visibgeom:curve_parameter#7"]
             .tag
@@ -7951,10 +7965,10 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["pcurve_endpoints"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].id, "creo:visibgeom:pcurve_endpoints#7");
-    assert_eq!(records[0].fields["faces"][0], 10);
-    assert_eq!(records[0].fields["faces"][1], 11);
-    assert_eq!(records[0].fields["source_form"], "positional");
+    assert_eq!(records[0].id(), "creo:visibgeom:pcurve_endpoints#7");
+    assert_eq!(records[0].fields()["faces"][0], 10);
+    assert_eq!(records[0].fields()["faces"][1], 11);
+    assert_eq!(records[0].fields()["source_form"], "positional");
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
@@ -8052,11 +8066,11 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc_curve_coordinates"];
-    assert_eq!(records[0].fields["curve_id"], 7);
-    assert_eq!(records[0].fields["values_mm"][1], -3.0);
-    assert_eq!(records[0].fields["tokens"][1]["offset"], 10);
-    assert_eq!(records[0].fields["tokens"][1]["length"], 8);
-    assert_eq!(records[0].fields["opaque_spans"][1]["raw"][0], 0xff);
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["values_mm"][1], -3.0);
+    assert_eq!(records[0].fields()["tokens"][1]["offset"], 10);
+    assert_eq!(records[0].fields()["tokens"][1]["length"], 8);
+    assert_eq!(records[0].fields()["opaque_spans"][1]["raw"][0], 0xff);
 }
 
 #[test]
@@ -8229,7 +8243,7 @@ fn decode_replays_a_unique_section_prototype_minor_radius_at_type26_row_end() {
         .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert_eq!(
-        native.fields["replayed_torus_minor_radius"],
+        native.fields()["replayed_torus_minor_radius"],
         0.199_999_999_999_999_98
     );
     assert_eq!(
@@ -8538,10 +8552,10 @@ fn scan_validates_fc05_circle_from_record_points() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc05_circles"];
-    assert_eq!(records[0].fields["curve_id"], 7);
-    assert_eq!(records[0].fields["radius_mm"], 1.0);
-    assert_eq!(records[0].fields["sample_direction_row_frame"][0], 1.0);
-    assert_eq!(records[0].fields["parameter_sign"], 1);
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["radius_mm"], 1.0);
+    assert_eq!(records[0].fields()["sample_direction_row_frame"][0], 1.0);
+    assert_eq!(records[0].fields()["parameter_sign"], 1);
 }
 
 #[test]
@@ -8679,10 +8693,10 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         .expect("decode");
     let cap_pairs = &result.ir.native.namespace("creo").unwrap().arenas["fc05_cylinder_cap_pairs"];
     assert_eq!(cap_pairs.len(), 1);
-    assert_eq!(cap_pairs[0].fields["surface_id"], 10);
-    assert_eq!(cap_pairs[0].fields["curve_ids"][0], 20);
-    assert_eq!(cap_pairs[0].fields["curve_ids"][1], 21);
-    assert_eq!(cap_pairs[0].fields["radius_mm"], 1.0);
+    assert_eq!(cap_pairs[0].fields()["surface_id"], 10);
+    assert_eq!(cap_pairs[0].fields()["curve_ids"][0], 20);
+    assert_eq!(cap_pairs[0].fields()["curve_ids"][1], 21);
+    assert_eq!(cap_pairs[0].fields()["radius_mm"], 1.0);
     let cylinder = result
         .ir
         .model
@@ -8813,11 +8827,11 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas["prototype_pcurves"][0].fields["curve_id"],
+        namespace.arenas["prototype_pcurves"][0].fields()["curve_id"],
         44
     );
     assert_eq!(
-        namespace.arenas["curve_prototype_topology"][0].fields["faces"][1],
+        namespace.arenas["curve_prototype_topology"][0].fields()["faces"][1],
         11
     );
 }
@@ -8998,8 +9012,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(namespace.arenas["topological_vertices"].len(), 4);
     assert_eq!(namespace.arenas["half_edge_vertex_incidence"].len(), 12);
     assert_eq!(namespace.arenas["face_components"].len(), 1);
-    assert_eq!(namespace.arenas["half_edges"][0].fields["curve_id"], 10);
-    assert_eq!(namespace.arenas["half_edges"][0].fields["side"], 0);
+    assert_eq!(namespace.arenas["half_edges"][0].fields()["curve_id"], 10);
+    assert_eq!(namespace.arenas["half_edges"][0].fields()["side"], 0);
 
     assert_eq!(model.points.len(), 4);
     assert_eq!(model.vertices.len(), 4);
@@ -9156,10 +9170,10 @@ fn decode_transfers_exact_datum_plane_carrier() {
         .unwrap();
     assert!(result.report.geometry_transferred);
     let records = &result.ir.native.namespace("creo").unwrap().arenas["datum_planes"];
-    assert_eq!(records[0].fields["datum_id"], 4);
-    assert_eq!(records[0].fields["owner_feature_id"], 1);
-    assert_eq!(records[0].fields["normal"][1], 1.0);
-    assert_eq!(records[0].fields["plane_offset"], 0.0);
+    assert_eq!(records[0].fields()["datum_id"], 4);
+    assert_eq!(records[0].fields()["owner_feature_id"], 1);
+    assert_eq!(records[0].fields()["normal"][1], 1.0);
+    assert_eq!(records[0].fields()["plane_offset"], 0.0);
     assert_eq!(result.ir.model.surfaces.len(), 1);
     assert_eq!(result.ir.model.features.len(), 1);
     let feature = &result.ir.model.features[0];
@@ -9448,14 +9462,14 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(states.len(), 7);
     let feature_40 = states
         .iter()
-        .filter(|state| state.fields["feature_id"] == 40)
+        .filter(|state| state.fields()["feature_id"] == 40)
         .collect::<Vec<_>>();
     assert_eq!(feature_40.len(), 2);
-    assert_eq!(feature_40[0].fields["state_ordinal"], 0);
-    assert_eq!(feature_40[0].fields["current"], false);
-    assert_eq!(feature_40[0].fields["stored_name"], "xProtrusion id 40");
+    assert_eq!(feature_40[0].fields()["state_ordinal"], 0);
+    assert_eq!(feature_40[0].fields()["current"], false);
+    assert_eq!(feature_40[0].fields()["stored_name"], "xProtrusion id 40");
     assert_eq!(
-        feature_40[0].fields["stored_name_bytes"]
+        feature_40[0].fields()["stored_name_bytes"]
             .as_array()
             .unwrap()
             .iter()
@@ -9463,9 +9477,9 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
             .collect::<Vec<_>>(),
         b"xProtrusion id 40"
     );
-    assert_eq!(feature_40[0].fields["identifier_keyword"], "id");
-    assert_eq!(feature_40[1].fields["state_ordinal"], 1);
-    assert_eq!(feature_40[1].fields["current"], true);
+    assert_eq!(feature_40[0].fields()["identifier_keyword"], "id");
+    assert_eq!(feature_40[1].fields()["state_ordinal"], 1);
+    assert_eq!(feature_40[1].fields()["current"], true);
     assert_eq!(result.ir.model.features.len(), 6);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
@@ -9630,28 +9644,31 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
         .expect("decode");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["nonvisible_surface_rows"];
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].id, "creo:novisgeom:surface_row#8");
-    assert_eq!(rows[0].fields["source_section"], "NovisGeom");
+    assert_eq!(rows[0].id(), "creo:novisgeom:surface_row#8");
+    assert_eq!(rows[0].fields()["source_section"], "NovisGeom");
     let namespace = result.ir.native.namespace("creo").unwrap();
     let surface_parameters = &namespace.arenas["nonvisible_surface_parameters"];
     assert_eq!(
-        surface_parameters[0].id,
+        surface_parameters[0].id(),
         "creo:novisgeom:surface_parameter#8"
     );
-    assert_eq!(surface_parameters[0].fields["slots"][0]["value"], 1.0);
+    assert_eq!(surface_parameters[0].fields()["slots"][0]["value"], 1.0);
     let surface_prototypes = &namespace.arenas["nonvisible_surface_prototypes"];
     assert!(surface_prototypes[0]
-        .id
+        .id()
         .starts_with("creo:novisgeom:surface_prototype#"));
-    assert_eq!(surface_prototypes[0].fields["source_section"], "NovisGeom");
+    assert_eq!(
+        surface_prototypes[0].fields()["source_section"],
+        "NovisGeom"
+    );
     let prototypes = &namespace.arenas["nonvisible_curve_prototypes"];
-    assert_eq!(prototypes[0].fields["curve_id"], 7);
-    assert_eq!(prototypes[0].fields["source_section"], "NovisGeom");
+    assert_eq!(prototypes[0].fields()["curve_id"], 7);
+    assert_eq!(prototypes[0].fields()["source_section"], "NovisGeom");
     let parameters = &namespace.arenas["nonvisible_curve_parameters"];
-    assert_eq!(parameters[0].id, "creo:novisgeom:curve_parameter#7");
+    assert_eq!(parameters[0].id(), "creo:novisgeom:curve_parameter#7");
     let topology = &namespace.arenas["nonvisible_curve_topology_rows"];
-    assert_eq!(topology[0].id, "creo:novisgeom:curve_topology#7");
-    assert_eq!(topology[0].fields["faces"][0], 12);
+    assert_eq!(topology[0].id(), "creo:novisgeom:curve_topology#7");
+    assert_eq!(topology[0].fields()["faces"][0], 12);
 }
 
 #[test]
@@ -9707,10 +9724,10 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .expect("recipe feature");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["depdb_recipe_rows"];
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].fields["owner_feature_id"], 8053);
-    assert_eq!(rows[0].fields["header"][0], 0);
+    assert_eq!(rows[0].fields()["owner_feature_id"], 8053);
+    assert_eq!(rows[0].fields()["header"][0], 0);
     assert_eq!(
-        rows[0].fields["body"].as_array().map(Vec::len),
+        rows[0].fields()["body"].as_array().map(Vec::len),
         Some(scan.features.depdb_recipe_rows[0].body.len())
     );
     assert_eq!(feature.name, None);
@@ -9862,7 +9879,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
-    assert_eq!(records[0].fields["source_section"], "DEPDB_DATA");
+    assert_eq!(records[0].fields()["source_section"], "DEPDB_DATA");
     assert_annotation(
         &result.source_fidelity.annotations,
         "creo:featdefs:feature_definition#2",
@@ -9905,8 +9922,8 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
     let positional_ids = records
         .iter()
-        .filter(|record| expected_positional_ids.contains(record.id.as_str()))
-        .map(|record| record.id.clone())
+        .filter(|record| expected_positional_ids.contains(record.id()))
+        .map(|record| record.id().to_string())
         .collect::<BTreeSet<_>>();
 
     assert_eq!(positional_ids, expected_positional_ids);
@@ -9963,9 +9980,9 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         .expect("decode null family table");
     let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
     assert_eq!(configuration.len(), 1);
-    assert_eq!(configuration[0].id, "creo:family_info:driver_table#root");
-    assert_eq!(configuration[0].fields["pointer_kind"], "null");
-    assert!(configuration[0].fields["table_entity_id"].is_null());
+    assert_eq!(configuration[0].id(), "creo:family_info:driver_table#root");
+    assert_eq!(configuration[0].fields()["pointer_kind"], "null");
+    assert!(configuration[0].fields()["table_entity_id"].is_null());
     assert_eq!(
         decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
         "none"
@@ -10003,8 +10020,11 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         .decode(&mut Cursor::new(referenced_data), &DecodeOptions::default())
         .expect("decode referenced family table");
     let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
-    assert_eq!(configuration[0].fields["pointer_kind"], "entity_reference");
-    assert_eq!(configuration[0].fields["table_entity_id"], 0x0123);
+    assert_eq!(
+        configuration[0].fields()["pointer_kind"],
+        "entity_reference"
+    );
+    assert_eq!(configuration[0].fields()["table_entity_id"], 0x0123);
     assert_eq!(
         decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
         "driver_table_unresolved"

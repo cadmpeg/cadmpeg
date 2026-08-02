@@ -1203,7 +1203,7 @@ impl Codec for FcstdCodec {
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
-                &[UnknownRecord {
+                [UnknownRecord {
                     id: UnknownId(native::native_id("thumbnail", name)),
                     offset: 0,
                     byte_len: bytes.len() as u64,
@@ -1845,6 +1845,7 @@ fn append_text_surface(
                     parameter_interval: None,
                     direction: *direction,
                     native_position: None,
+                    revision_form: None,
                 },
                 record_bounds: None,
                 cache_fit_tolerance: None,

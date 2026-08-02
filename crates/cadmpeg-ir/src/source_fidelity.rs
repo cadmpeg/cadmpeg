@@ -190,71 +190,67 @@ impl SourceFidelity {
     }
 
     /// Retains source records without adding them to the product model.
-    pub fn retain_unknown_records(&mut self, stream: &str, records: &[UnknownRecord]) {
+    ///
+    /// The records are consumed: their retained bytes move into the sidecar
+    /// rather than being copied into it.
+    pub fn retain_unknown_records(
+        &mut self,
+        stream: &str,
+        records: impl IntoIterator<Item = UnknownRecord>,
+    ) {
         self.retained_records
-            .extend(records.iter().map(|record| RetainedSourceRecord {
-                id: record.id.to_string(),
+            .extend(records.into_iter().map(|record| RetainedSourceRecord {
+                id: record.id.0,
                 stream: stream.into(),
                 offset: record.offset,
                 byte_len: record.byte_len,
-                sha256: record.sha256.clone(),
-                data: record.data.clone(),
+                sha256: record.sha256,
+                data: record.data,
             }));
     }
 
     /// Stores source bytes in the sidecar and references in the product model.
+    ///
+    /// The records are consumed and split as they arrive: the retained bytes
+    /// move into the sidecar and the identity and links move into the product
+    /// arena, so neither the retained source image nor the derived product
+    /// references are ever duplicated. A caller that still needs a record
+    /// afterwards clones that record itself.
     pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
         format: &str,
-        records: &[UnknownRecord],
+        records: impl IntoIterator<Item = UnknownRecord>,
     ) -> Result<(), NativeConvertError> {
-        self.retained_records.extend(records.iter().map(|record| {
-            let stream = self
-                .annotations
-                .provenance
-                .get(&record.id.0)
-                .and_then(|provenance| self.annotations.streams.get(provenance.stream as usize))
-                .cloned()
-                .unwrap_or_else(|| "source".into());
-            RetainedSourceRecord {
-                id: record.id.to_string(),
-                stream,
-                offset: record.offset,
-                byte_len: record.byte_len,
-                sha256: record.sha256.clone(),
-                data: record.data.clone(),
-            }
-        }));
-        let product_records = records
-            .iter()
-            .map(crate::NativeUnknownRecord::from)
-            .collect::<Vec<_>>();
-        ir.set_native_unknowns(format, &product_records)
-    }
-
-    /// Joins product references with retained source records.
-    pub fn native_unknown_records(
-        &self,
-        ir: &CadIr,
-        format: &str,
-    ) -> Result<Vec<UnknownRecord>, NativeConvertError> {
-        ir.native_unknowns(format)?
-            .into_iter()
-            .map(|reference| {
-                let retained = self.retained_record(&reference.id.0).ok_or_else(|| {
-                    NativeConvertError::MissingRetainedSourceRecord(reference.id.0.clone())
-                })?;
-                Ok(UnknownRecord {
-                    id: reference.id,
-                    offset: retained.offset,
-                    byte_len: retained.byte_len,
-                    sha256: retained.sha256.clone(),
-                    data: retained.data.clone(),
-                    links: reference.links,
-                })
-            })
-            .collect()
+        let Self {
+            annotations,
+            retained_records,
+            ..
+        } = self;
+        ir.set_native_unknowns_from(
+            format,
+            records.into_iter().map(|record| {
+                let stream = annotations
+                    .provenance
+                    .get(&record.id.0)
+                    .and_then(|provenance| annotations.streams.get(provenance.stream as usize))
+                    .cloned()
+                    .unwrap_or_else(|| "source".into());
+                let product = crate::NativeUnknownRecord {
+                    id: record.id.clone(),
+                    links: record.links,
+                };
+                retained_records.push(RetainedSourceRecord {
+                    id: record.id.0,
+                    stream,
+                    offset: record.offset,
+                    byte_len: record.byte_len,
+                    sha256: record.sha256,
+                    data: record.data,
+                });
+                product
+            }),
+        )
     }
 
     /// Validates retained record identity and payload integrity.
@@ -288,13 +284,6 @@ impl SourceFidelity {
             }
         }
         Ok(())
-    }
-
-    /// Serializes the canonical sidecar as compact JSON.
-    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
-        let mut canonical = self.clone();
-        canonical.finalize();
-        serde_json::to_string(&canonical)
     }
 
     /// Parses and validates a sidecar.
@@ -334,14 +323,13 @@ mod tests {
     }
 
     #[test]
-    fn canonical_json_orders_retained_records() {
-        let sidecar = SourceFidelity {
+    fn finalize_orders_retained_records() {
+        let mut sidecar = SourceFidelity {
             retained_records: vec![record("b", &[2]), record("a", &[1])],
             ..SourceFidelity::default()
         };
-        let json = sidecar.to_canonical_json().expect("serialize sidecar");
-        let parsed = SourceFidelity::from_json(&json).expect("parse sidecar");
-        assert_eq!(parsed.retained_records[0].id, "a");
+        sidecar.finalize();
+        assert_eq!(sidecar.retained_records[0].id, "a");
     }
 
     #[test]

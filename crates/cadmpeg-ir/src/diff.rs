@@ -152,7 +152,7 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
                         .and_then(|value| value.arenas.get(name))
                         .map(Vec::as_slice)
                         .unwrap_or_default(),
-                    |record| record.id.as_str(),
+                    |record| record.id(),
                 )
             })
         })

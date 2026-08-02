@@ -20,7 +20,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What grammar and role do outer `01 00 04 00 <tag>` rows have when they do not satisfy the surface-alias production?
 
-**Known.** `catia.md:728` defines the complete outer surface-alias row. Each freeform surface tag has one matching alias row. Vertex tags do not use that alias.
+**Known.** `catia.md` §7.5 `alias_row` defines the complete outer surface-alias row. Each freeform surface tag has one matching alias row. Vertex tags do not use that alias.
 
 **Need.** We must distinguish other row classes from surface aliases and vertex registrations.
 
@@ -28,7 +28,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each bit of the extent `flags` word control?
 
-**Known.** `catia.md:82` defines the extent directory and the position of `flags`. The decoder retains the word and reports it as `extent_flags`.
+**Known.** `catia.md` §3.4 "ds+0x54 : k extent structs" defines the extent directory and the position of `flags`. The decoder retains the word and reports it as `extent_flags`.
 
 **Need.** We must know the bit assignments to validate an extent and to write its flags.
 
@@ -38,7 +38,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What operation does each compact schema-program record represent?
 
-**Known.** `catia.md:578` defines the program boundary, identity run, schema text fields, role selectors, and typed relation fields. The decoder retains their exact framing and identities.
+**Known.** `catia.md` §7.1 "A legacy schema catalog opens with" defines the program boundary, identity run, schema text fields, role selectors, and typed relation fields. The decoder retains their exact framing and identities.
 
 **Need.** We must know the record semantics to transfer the complete design program.
 
@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What field role does each unresolved schema-selector byte select?
 
-**Known.** `catia.md:578` defines the byte production and its target selector. A literal role name assigns its role directly. An unresolved selector byte does not.
+**Known.** `catia.md` §7.1 "Within an identity interval, `<inclusive-length:u8> <name:utf8> <selector>`" defines the byte production and its target selector. A literal role name assigns its role directly. An unresolved selector byte does not.
 
 **Need.** We must know the selected role to assign field semantics.
 
@@ -54,7 +54,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a `CATFeatCont` object graph relate to the design history in `CATPrtCont`?
 
-**Known.** `catia.md:621` defines object-graph framing, entity identity, structural owner groups, and source-schema selection. Container class names and owner groups are independent incidences.
+**Known.** `catia.md` §7.3 "An object graph is preceded by" defines object-graph framing, entity identity, structural owner groups, and source-schema selection. Container class names and owner groups are independent incidences.
 
 **Need.** We must know the relationship to combine feature records into one design history.
 
@@ -62,7 +62,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each reference in an inline `7C09` body select?
 
-**Known.** `catia.md:621` defines the inline body boundary and retains each reference identity.
+**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" defines the inline body boundary and retains each reference identity.
 
 **Need.** We must know the reference roles to bind objects and fields.
 
@@ -86,7 +86,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which compound relation-program frame slot selects the `paramout` result entity?
 
-**Known.** `catia.md:621` defines lead-`12` and lead-`54` relation-program frames. A complete typed expression and its source symbols give the ordered inputs. The program identity, repeated reference, lead-`12` `ref(h)` context identity, and lead-`54` trailing identity remain distinct incidences. A selected entity class does not by itself assign a result.
+**Known.** `catia.md` §7.3 "A compact compound relation-program instance is" and `catia.md` §7.3 "A separator-form compound relation-program instance is" defines lead-`12` and lead-`54` relation-program frames. A complete typed expression and its source symbols give the ordered inputs. The program identity, repeated reference, lead-`12` `ref(h)` context identity, and lead-`54` trailing identity remain distinct incidences. A selected entity class does not by itself assign a result.
 
 **Need.** We must know the result slot to transfer a relation with an output.
 
@@ -94,7 +94,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What identity space does a nonlocal `body` selector on a legacy typed relation use?
 
-**Known.** `catia.md:578` defines the local identity case. A `body` selector equal to the containing identity supplies the local relation context.
+**Known.** `catia.md` §7.1 "A typed relation consists of" defines the local identity case. A `body` selector equal to the containing identity supplies the local relation context.
 
 **Need.** We must resolve a nonlocal selector to bind the relation context.
 
@@ -102,7 +102,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What identity space does a nonlocal `param` selector on a legacy typed relation use?
 
-**Known.** `catia.md:578` defines the local identity case. A `param` selector inside the containing run can select the relation parameter.
+**Known.** `catia.md` §7.1 "A typed relation consists of" defines the local identity case. A `param` selector inside the containing run can select the relation parameter.
 
 **Need.** We must resolve a nonlocal selector to bind the relation result.
 
@@ -110,7 +110,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which string-value entity supplies each typed `String` relation input?
 
-**Known.** `catia.md:578` defines named and evaluated string-value packets. A complete relation program can bind ordered source symbols.
+**Known.** `catia.md` §7.1 "A legacy string-value packet is" defines named and evaluated string-value packets. A complete relation program can bind ordered source symbols.
 
 **Need.** We must join the source symbol to its string packet to evaluate the relation.
 
@@ -118,7 +118,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which string-value entity stores the result of a typed `String` relation?
 
-**Known.** `catia.md:578` defines string packets and typed relation result signatures. The type signature does not select the result packet.
+**Known.** `catia.md` §7.1 "A typed relation consists of" and `catia.md` §7.1 "A legacy string-value packet is" defines string packets and typed relation result signatures. The type signature does not select the result packet.
 
 **Need.** We must know the result entity to transfer the evaluated value.
 
@@ -126,7 +126,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What byte production stores the scalar value of a typed `Boolean` parameter?
 
-**Known.** `catia.md:621` defines scalar, unset, atom, control, and schema-selected object values. Boolean-named field classes can contain compound object payloads.
+**Known.** `catia.md` §7.3 "A complete entity-record suffix value begins" defines scalar, unset, atom, control, and schema-selected object values. Boolean-named field classes can contain compound object payloads.
 
 **Need.** We must know the scalar production to transfer a Boolean parameter.
 
@@ -134,7 +134,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field selects the active configuration state?
 
-**Known.** `catia.md:621` defines `Configuration` records, `configrow` successor chains, selected value schemas, and the source-ordered open intervals between rows. These incidences do not assign active state.
+**Known.** `catia.md` §7.3 "A self-defining configuration record is" and `catia.md` §7.3 "A configuration-row link is" defines `Configuration` records, `configrow` successor chains, selected value schemas, and the source-ordered open intervals between rows. These incidences do not assign active state.
 
 **Need.** We must know the selector to transfer the active configuration.
 
@@ -150,7 +150,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do numeric tuples and the `2DPoint`, `PRTSketch`, and `Sketch` schema fields bind to one sketch instance?
 
-**Known.** `catia.md:621` defines field framing, object identity, schema selection, and structural ownership. These incidences do not assign sketch identity.
+**Known.** `catia.md` §7.3 "An object graph is preceded by" and `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines field framing, object identity, schema selection, and structural ownership. These incidences do not assign sketch identity.
 
 **Need.** We must know the binding to make a neutral sketch.
 
@@ -174,7 +174,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which individual constraint owns each complete `Range`/`CstAttr_Dimension` or `Range`/`ComplexCst` value?
 
-**Known.** `catia.md:621` defines both range forms and retains incoming payload references and object-head storage selectors as distinct incidences. `ListAggregator` references can include unrelated and repeated identities.
+**Known.** `catia.md` §7.3 "A lead-`2` constraint-range entity has exactly two value selectors" defines both range forms and retains incoming payload references and object-head storage selectors as distinct incidences. `ListAggregator` references can include unrelated and repeated identities.
 
 **Need.** We must know the owner to assign a range to a neutral constraint.
 
@@ -214,7 +214,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do operation fields, definition-bound values, and structurally owned operand objects form one feature instance?
 
-**Known.** `catia.md:621` defines each incidence independently. An operation-named field class or owner group does not assign feature identity, operands, outputs, or replay order.
+**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. An operation-named field class or owner group does not assign feature identity, operands, outputs, or replay order.
 
 **Need.** We must know the binding to transfer an ordered design feature.
 
@@ -224,7 +224,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each header token `05`, `09`, `0d`, and `1d` select?
 
-**Known.** `catia.md:419` admits these four width-1 tokens for an `a5 03 32` rolling-ball jet. All four use the defined degree-5 jet grammar.
+**Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." admits these four width-1 tokens for an `a5 03 32` rolling-ball jet. All four use the defined degree-5 jet grammar.
 
 **Need.** We must know the selection rule to write the correct token.
 
@@ -232,7 +232,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What fields follow the three aligned jet blocks in each numeric-continuation length class?
 
-**Known.** `catia.md:419` defines the knots and the value, first-derivative, and second-derivative blocks. The continuation has more than one length class.
+**Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." defines the knots and the value, first-derivative, and second-derivative blocks. The continuation has more than one length class.
 
 **Need.** We must know its lanes and terminal fields to read and write the complete record.
 
@@ -256,7 +256,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each field of a class-`0x18` descriptor represent?
 
-**Known.** `catia.md:471` defines the record family and its framing.
+**Known.** `catia.md` §6.4 `b2/b3/b4 03 18` defines the record family and its framing.
 
 **Need.** We must know the fields to interpret the descriptor.
 
@@ -264,7 +264,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What are the operands and the roles of the eight scalar lanes in an analytic-circle class-`0x23` edge definition?
 
-**Known.** `catia.md:423` defines the class-`0x23` wrapper role in an exact pcurve dependency chain.
+**Known.** `catia.md` §6.3 "Class-`23` and class-`24` scalar edge definitions have payload" defines the class-`0x23` wrapper role in an exact pcurve dependency chain.
 
 **Need.** We must know the direct definition to read a circle without an independent identity binding.
 
@@ -280,7 +280,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each scalar lane of a class-`0x25` record represent?
 
-**Known.** `catia.md:481` defines the `a8 03 25` directrix interval and fit tolerance independently of its sampled cache.
+**Known.** `catia.md` §6.7 "`a8 03 25` (extrusion directrix):" defines the `a8 03 25` directrix interval and fit tolerance independently of its sampled cache.
 
 **Need.** We must know the lanes to decode the sampled cache.
 
@@ -296,7 +296,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row?
 
-**Known.** `catia.md:197` defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation.
+**Known.** `catia.md` §5.4 "Standard `u16be` edge rows are handle sequences" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation.
 
 **Need.** We must know the allocation relation for byte-faithful writing.
 
@@ -304,7 +304,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does the separate standard 3D spline cache encode its poles and knots?
 
-**Known.** `catia.md:314` defines exact two-surface constructions from class-`0x20` pcurve jets, their supports, and their shared parameter interval. The separate 3D cache remains an opaque carrier.
+**Known.** `catia.md` §6.3 "A complete consolidated edge run is" defines exact two-surface constructions from class-`0x20` pcurve jets, their supports, and their shared parameter interval. The separate 3D cache remains an opaque carrier.
 
 **Need.** We must know the cache program to read a spline when the exact construction is unavailable and to write the cache.
 
@@ -312,7 +312,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does an `op1` or absolute persistent CGM tag select a serialized record outside the exact class-`0x19` analytic-circle binding?
 
-**Known.** `catia.md:423` defines the exact unique class-`0x19` binding. The decoder retains other persistent identities.
+**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding. The decoder retains other persistent identities.
 
 **Need.** We must resolve the namespace to bind other consolidated curve and support records.
 
@@ -320,7 +320,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a standard `0x60` row local allocation tag bind to its native edge record when no edge node has the same curve identity?
 
-**Known.** `catia.md:276` defines exact identity binding and the endpoint-incidence fallback.
+**Known.** `catia.md` §5.5 `edge_support_row` defines exact identity binding and the endpoint-incidence fallback.
 
 **Need.** We must know the remaining binding to transfer the native edge carrier.
 
@@ -328,7 +328,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields assign standard-path faces and edges to topology components when the file has multiple separate FBB face groups?
 
-**Known.** `catia.md:140` defines topology reconstruction for one positional spine and its FBB incidences.
+**Known.** `catia.md` §5.1 "trim_record[i] -> face_outer_bound_row[i] -> face i" defines topology reconstruction for one positional spine and its FBB incidences.
 
 **Need.** We must know cross-group membership to build all bodies and shells.
 
@@ -336,7 +336,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which arc branch applies when no adjacent face witness and no exact two-support object-stream pcurve witness is available?
 
-**Known.** `catia.md:296` defines arc selection when one of these witnesses fixes the branch.
+**Known.** `catia.md` §5.6 "**Circle/arc endpoints by support intersection:**" defines arc selection when one of these witnesses fixes the branch.
 
 **Need.** We must know the remaining selector to reconstruct the arc.
 
@@ -344,7 +344,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does the `op1` or persistent-tag reference in an `a5 03 20` record select a serialized record?
 
-**Known.** `catia.md:423` defines the pcurve payload and support binding for exact identity and chart matches.
+**Known.** `catia.md` §6.3 "`b2 03 20` is the B-family form" defines the pcurve payload and support binding for exact identity and chart matches.
 
 **Need.** We must resolve other references to bind the pcurve support.
 
@@ -368,7 +368,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does `pre_range_scalar` control in a `b2 03 29` or `b5 03 29` cone record?
 
-**Known.** `catia.md:374` defines the active angular range that follows this scalar.
+**Known.** `catia.md` §5.12 "The 184-byte payload is" defines the active angular range that follows this scalar.
 
 **Need.** We must know its role to preserve the cone chart semantics.
 
@@ -384,7 +384,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each reference and control in a `b2 03 3b` cone-face chart program represent?
 
-**Known.** `catia.md:471` defines its bounded support-construction record.
+**Known.** `catia.md` §6.4 "**`b2/b3/b4 03 3b`** has width-coded header token" defines its bounded support-construction record.
 
 **Need.** We must know the program to bind and evaluate the chart.
 
@@ -392,7 +392,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does group type `2` select? What does each group type from `12` through `21` select?
 
-**Known.** `catia.md:471` defines type `3` as a cylinder chain.
+**Known.** `catia.md` §6.5 `b2 03 60` defines type `3` as a cylinder chain.
 
 **Need.** We must know the other type namespaces to parse their groups.
 
@@ -424,7 +424,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does the `u16le` profile allocation identity in a `b2 03 2d` revolution record select its native profile record?
 
-**Known.** `catia.md:386` defines the axis frame, angular chart, and exact unique profile-interval binding.
+**Known.** `catia.md` §5.15 "The `00 33 30` byte is only" defines the axis frame, angular chart, and exact unique profile-interval binding.
 
 **Need.** We must resolve the directrix identity when the interval binding is not unique.
 
@@ -434,7 +434,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a `b5 03 5f` face select and combine more than one surface record?
 
-**Known.** `catia.md:491` defines single-carrier object-stream face, loop, edge, and vertex incidence.
+**Known.** `catia.md` §6.7 "**Object-stream topology:**" defines single-carrier object-stream face, loop, edge, and vertex incidence.
 
 **Need.** We must know the multi-surface rule to transfer the face.
 
@@ -466,7 +466,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which source field gives the outward-shell sign?
 
-**Known.** `catia.md:491` defines the radial orientation equations used to select a consistent neutral shell gauge.
+**Known.** `catia.md` §6.7 "**Object-stream topology:**" defines the radial orientation equations used to select a consistent neutral shell gauge.
 
 **Need.** We must know the source sign to preserve native shell orientation.
 
@@ -474,7 +474,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the semantic difference among edge terminal controls `01`, `02`, `21`, `22`, `25`, `26`, `29`, and `2a`?
 
-**Known.** `catia.md:491` defines the common edge record and its topology incidences.
+**Known.** `catia.md` §6.7 "`b5 03 5e` (edge node):" defines the common edge record and its topology incidences.
 
 **Need.** We must know the namespace to validate and write an edge.
 
@@ -506,7 +506,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the positive scalar in the exact `b5 03 21` pcurve suffix control?
 
-**Known.** `catia.md:491` defines the pcurve geometry and parameter interval independently of this scalar.
+**Known.** `catia.md` §6.7 "`b5 03 21` (pcurve):" defines the pcurve geometry and parameter interval independently of this scalar.
 
 **Need.** We must know the role to make the complete pcurve record.
 
@@ -522,7 +522,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What operation does a `b5 03 37` support-bound construction represent? What does each of its six control bytes control?
 
-**Known.** `catia.md:471` defines the support and result-carrier references.
+**Known.** `catia.md` §6.7 "`b5 03 37` (support-bound surface construction):" defines the support and result-carrier references.
 
 **Need.** We must know the operation and controls to construct the result surface directly.
 
@@ -530,7 +530,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What operation does a `b5 03 3b` support-bound construction represent? What do its first scalar and six controls mean?
 
-**Known.** `catia.md:471` defines the bounded record and support references.
+**Known.** `catia.md` §6.7 "`b5 03 3b` (two-scalar support-bound surface construction):" defines the bounded record and support references.
 
 **Need.** We must know the operation and fields to construct the result surface directly.
 
@@ -548,7 +548,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the terminal control byte in each `0x5fxx` face record control?
 
-**Known.** `catia.md:756` defines the zero-entity face roster and support incidences.
+**Known.** `catia.md` §8 "Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`; records reference each" defines the zero-entity face roster and support incidences.
 
 **Need.** We must know the control to validate and write the face.
 
@@ -556,7 +556,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which allocation-lane rule associates a `0638` oriented use with its owner-local `0x21xx` support and `0x05xx` incidence record?
 
-**Known.** `catia.md:756` defines these record populations and their owner-local identities independently.
+**Known.** `catia.md` §8 "Record families:" defines these record populations and their owner-local identities independently.
 
 **Need.** We must know the association to build neutral coedges.
 
@@ -572,7 +572,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each independent `T`, `X`, and `Y` allocation in the `5e 1a` tuple `[T,X,Y,T−1,T−2]` select?
 
-**Known.** `catia.md:756` defines the tuple relation and retains all five identities.
+**Known.** `catia.md` §8 "A `5e1a` edge-stride record contains" defines the tuple relation and retains all five identities.
 
 **Need.** We must know the namespaces to bind the edge, supports, and incidences.
 
@@ -582,7 +582,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field selects the circle branch of an `0xa0` wrapper?
 
-**Known.** `catia.md:801` defines the admitted `0xa0` wrapper and analytic circle primitive.
+**Known.** `catia.md` §9 "Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <payload>`, stride" and `catia.md` §9 "Classes: `0x01` body" defines the admitted `0xa0` wrapper and analytic circle primitive.
 
 **Need.** We must know the selector to choose the correct circle arc.
 
@@ -598,7 +598,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields orient a plane-cap digon?
 
-**Known.** `catia.md:801` defines the E5 incidence graph and the non-degenerate orientation equations.
+**Known.** `catia.md` §9 "**E5 orientation** is" defines the E5 incidence graph and the non-degenerate orientation equations.
 
 **Need.** We must know the fields to orient the cap when its boundary is a digon.
 
@@ -614,7 +614,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each of the two root `extra_orientation_signs` control?
 
-**Known.** `catia.md:801` defines the other body, shell, face, and use orientation factors.
+**Known.** `catia.md` §9 "**E5 orientation** is" defines the other body, shell, face, and use orientation factors.
 
 **Need.** We must know both roles to complete the source body and shell orientation equation.
 
@@ -638,7 +638,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the trailing `u32` code after each E5 bound parameter control?
 
-**Known.** `catia.md:801` defines the bound parameter value and its edge incidence.
+**Known.** `catia.md` §9 "**Topology:**" defines the bound parameter value and its edge incidence.
 
 **Need.** We must know the code to interpret and write the bound.
 
@@ -656,7 +656,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do native identities bind the logical quotient of `u24be` endpoints to the counted coordinate rows?
 
-**Known.** `catia.md:835` defines the endpoint values and coordinate-row population. The topology solver can form the abstract endpoint quotient independently.
+**Known.** `catia.md` §9 "E5 `05 08 01` coordinate rows occupy" defines the endpoint values and coordinate-row population. The topology solver can form the abstract endpoint quotient independently.
 
 **Need.** We must know the native binding for byte-faithful vertex assignment.
 
@@ -664,7 +664,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record discriminates the geometry family when an FBB-like run lacks a required edge or vertex population?
 
-**Known.** `catia.md:835` defines the complete FBB-only partial-spine variant. An incomplete population does not satisfy that grammar.
+**Known.** `catia.md` §10 "A nested-`V5_CFV2` file with a valid FBB face group" defines the complete FBB-only partial-spine variant. An incomplete population does not satisfy that grammar.
 
 **Need.** We must know the discriminator to select the correct decoder.
 
@@ -680,7 +680,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What payload grammar do loop nodes use outside the length-framed `b5 03 62` and `a8 03 62` forms?
 
-**Known.** `catia.md:851` defines both length-framed forms.
+**Known.** `catia.md` §10 "edge_table :=" defines both length-framed forms.
 
 **Need.** We must know the other grammars to reconstruct variant loops.
 
@@ -712,7 +712,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What delimiter grammar closes each record in the marker-only `00 33 3X` surface path?
 
-**Known.** `catia.md:851` defines the admitted marker family. Marker bytes can also occur inside numeric payloads.
+**Known.** `catia.md` §11 "A nested-`V5_CFV2` file without a standard FBB spine" defines the admitted marker family. Marker bytes can also occur inside numeric payloads.
 
 **Need.** We must know the delimiter grammar to separate adjacent surface records without a false marker match.
 

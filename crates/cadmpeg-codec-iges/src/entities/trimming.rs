@@ -485,11 +485,12 @@ pub(super) fn project(
             continue;
         }
         let surface_id = SurfaceId(format!("iges:model:surface#D{surface_sequence}"));
-        let Some(support) = ir
+        let Some(support_geometry) = ir
             .model
             .surfaces
             .iter()
             .find(|surface| surface.id == surface_id)
+            .map(|surface| surface.geometry.clone())
         else {
             losses.push(entity_loss(
                 entry,
@@ -553,7 +554,7 @@ pub(super) fn project(
                 let pcurves = segment
                     .pcurves
                     .iter()
-                    .map(|sequence| pcurve_geometry(ir, *sequence, &support.geometry, factor))
+                    .map(|sequence| pcurve_geometry(ir, *sequence, &support_geometry, factor))
                     .collect::<Option<Vec<_>>>();
                 let Some(pcurves) = pcurves else {
                     losses.push(entity_loss(
@@ -568,9 +569,9 @@ pub(super) fn project(
                         && global.minimum_resolution_mm().is_some_and(|tolerance| {
                             let (geometry, range) = &pcurves[0];
                             let mapped_start = evaluation::pcurve(geometry, range[0])
-                                .and_then(|uv| evaluation::surface(&support.geometry, uv));
+                                .and_then(|uv| evaluation::surface(&support_geometry, uv));
                             let mapped_end = evaluation::pcurve(geometry, range[1])
-                                .and_then(|uv| evaluation::surface(&support.geometry, uv));
+                                .and_then(|uv| evaluation::surface(&support_geometry, uv));
                             mapped_start.is_some_and(|point| {
                                 evaluation::distance(point, start) <= tolerance
                             }) && mapped_end

@@ -685,11 +685,12 @@ pub(super) fn project(
                 let face_definition = faces[&face_sequence].clone();
                 let surface_id =
                     SurfaceId(format!("iges:model:surface#D{}", face_definition.surface));
-                let Some(support) = ir
+                let Some(support_geometry) = ir
                     .model
                     .surfaces
                     .iter()
                     .find(|surface| surface.id == surface_id)
+                    .map(|surface| surface.geometry.clone())
                 else {
                     valid = false;
                     break;
@@ -759,7 +760,7 @@ pub(super) fn project(
                                 pcurves_agree(
                                     ir,
                                     pcurves,
-                                    &support.geometry,
+                                    &support_geometry,
                                     factor,
                                     expected,
                                     expected,
@@ -777,7 +778,7 @@ pub(super) fn project(
                                 &mut candidate,
                                 ir,
                                 pcurves,
-                                &support.geometry,
+                                &support_geometry,
                                 factor,
                                 &format!(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
@@ -821,7 +822,7 @@ pub(super) fn project(
                             pcurves_agree(
                                 ir,
                                 pcurves,
-                                &support.geometry,
+                                &support_geometry,
                                 factor,
                                 expected_start,
                                 expected_end,
@@ -902,7 +903,7 @@ pub(super) fn project(
                             &mut candidate,
                             ir,
                             pcurves,
-                            &support.geometry,
+                            &support_geometry,
                             factor,
                             &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
                         ) else {

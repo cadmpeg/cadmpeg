@@ -1,21 +1,72 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parse sketch placements, objects, headers, relations, and geometry.
+//! Parse sketch placements, `MetaStream` types, headers, relations, and geometry.
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::{
+    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
+};
 use crate::container::{role, ContainerScan};
-use crate::design::decode::body::object_kind;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignEntityHeader, DesignObject, DesignObjectKind, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    DesignType, LostEdgeReference, PersistentReference, PersistentReferenceKind,
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand, SketchSurface, SketchText,
+    SketchRelationOperand, SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
 };
-use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64, utf16le_at};
+use cadmpeg_codec_core::le::{f64_at, f64s_at, take_f32, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::topology::Color;
 use std::collections::HashMap;
+
+/// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
+/// the record index carried at header offset seven.
+pub(crate) struct IndexedRecordOffsets {
+    by_record_index: HashMap<u32, Vec<usize>>,
+}
+
+impl IndexedRecordOffsets {
+    /// Index every exact indexed-record header in `bytes` in one forward pass.
+    pub(crate) fn build(bytes: &[u8]) -> Self {
+        let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
+        for at in indexed_record_offsets(bytes) {
+            if let Some(record_index) = indexed_record_index(bytes, at) {
+                by_record_index.entry(record_index).or_default().push(at);
+            }
+        }
+        Self { by_record_index }
+    }
+
+    /// Ascending header offsets carrying `record_index`.
+    pub(crate) fn offsets(&self, record_index: u32) -> &[usize] {
+        self.by_record_index
+            .get(&record_index)
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// Record indexes and their ascending header offsets.
+    pub(crate) fn records(&self) -> impl Iterator<Item = (u32, &[usize])> {
+        self.by_record_index
+            .iter()
+            .map(|(record_index, offsets)| (*record_index, offsets.as_slice()))
+    }
+
+    /// The first header at or after `position` that carries `record_index`.
+    pub(crate) fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize> {
+        let offsets = self.offsets(record_index);
+        offsets
+            .get(offsets.partition_point(|offset| *offset < position))
+            .copied()
+    }
+
+    /// Consecutive header offsets carrying `record_index`, each pair delimiting
+    /// one frame of that record.
+    pub(crate) fn frames(&self, record_index: u32) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.offsets(record_index)
+            .windows(2)
+            .map(|pair| (pair[0], pair[1]))
+    }
+}
 
 /// Decode the unique local-to-model placement frame referenced by every
 /// parameter-owning sketch scope, and every member-run head placement. A
@@ -28,6 +79,17 @@ pub fn decode_sketch_placements(
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
+    let mut record_offsets = HashMap::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        record_offsets.insert(
+            ids::native_scope(&entry.name),
+            IndexedRecordOffsets::build(scan.entry_bytes(&entry.name)?),
+        );
+    }
     for scope in scopes
         .iter()
         .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch))
@@ -46,6 +108,9 @@ pub fn decode_sketch_placements(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(records) = record_offsets.get(&ids::native_scope(&entry.name)) else {
+            continue;
+        };
         let start = usize::try_from(scope.byte_offset).ok();
         let end = usize::try_from(scope.paired_byte_offset).ok();
         let Some(frame) = start
@@ -71,6 +136,7 @@ pub fn decode_sketch_placements(
                 entity_id,
                 entity_suffix,
                 record_index,
+                records,
             ));
         }
         if candidates.len() == 1 {
@@ -96,10 +162,7 @@ pub fn decode_sketch_placements(
             ))
         })
         .collect::<std::collections::HashSet<_>>();
-    for entity in entities
-        .iter()
-        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
-    {
+    for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
         let Some(stream) = native_stream(&entity.id) else {
             continue;
         };
@@ -110,13 +173,16 @@ pub fn decode_sketch_placements(
             continue;
         };
         let bytes = scan.entry_bytes(entry_name)?;
-        let Some(mut placement) = parse_member_run_head_placement(bytes, entity) else {
+        let Some(records) = record_offsets.get(stream) else {
+            continue;
+        };
+        let Some(mut placement) = parse_member_run_head_placement(bytes, entity, records) else {
             continue;
         };
         let next_entity_offset = entities
             .iter()
             .filter(|candidate| {
-                candidate.object_kind == Some(DesignObjectKind::Sketch)
+                candidate.in_sketch_module()
                     && native_stream(&candidate.id) == Some(stream)
                     && candidate.byte_offset > entity.byte_offset
             })
@@ -152,17 +218,12 @@ pub(crate) const MEMBER_RUN_HEAD_FRAME: usize = 162;
 pub(crate) fn parse_member_run_head_placement(
     bytes: &[u8],
     entity: &DesignEntityHeader,
+    records: &IndexedRecordOffsets,
 ) -> Option<DesignSketchPlacement> {
     let start = usize::try_from(entity.byte_offset).ok()?;
     // Locate the paired same-index record after the entity header.
-    let mut position = start + 1;
-    let paired_at = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
-        if u32_at(bytes, at + 7).map(u64::from) == Some(entity.entity_suffix) && at > start {
-            break at;
-        }
-        position = at + 1;
-    };
+    let entity_index = u32::try_from(entity.entity_suffix).ok()?;
+    let paired_at = records.first_at_or_after(start.checked_add(1)?, entity_index)?;
     let (paired_class_tag, paired_after_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if paired_class_tag.len() != 3 || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -181,14 +242,7 @@ pub(crate) fn parse_member_run_head_placement(
         return None;
     }
     // Locate the head record and decode its transform.
-    let mut position = 0usize;
-    let head_at = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
-        if u32_at(bytes, at + 7) == Some(head_index) {
-            break at;
-        }
-        position = at + 1;
-    };
+    let head_at = records.offsets(head_index).first().copied()?;
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, head_at, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != head_at + 7
         || class_tag.len() != 3
@@ -243,17 +297,10 @@ pub(crate) fn parse_sketch_placement_candidates(
     entity_id: &str,
     entity_suffix: u64,
     record_index: u32,
+    records: &IndexedRecordOffsets,
 ) -> Vec<DesignSketchPlacement> {
-    let mut headers = Vec::new();
-    let mut position = 0usize;
-    while let Some(at) = next_indexed_record_offset(bytes, position) {
-        if u32_at(bytes, at + 7) == Some(record_index) {
-            headers.push(at);
-        }
-        position = at + 1;
-    }
     let mut out = Vec::new();
-    for pair in headers.windows(2) {
+    for pair in records.offsets(record_index).windows(2) {
         let start = pair[0];
         let paired_at = pair[1];
         let frame_length = paired_at.saturating_sub(start);
@@ -537,49 +584,74 @@ pub fn decode_lost_edge_references(
     Ok(out)
 }
 
-/// Decode every GUID-owned design object record from each design
-/// `MetaStream` entry in `scan` ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): an ASCII type name, the design
-/// entity IDs it owns, its self GUID, an optional parent GUID, and a
-/// revision. Unrecognized type names remain exact native object kinds.
-pub fn decode_objects(scan: &ContainerScan) -> Result<Vec<DesignObject>, CodecError> {
+/// Skip a `u32`-counted run of fixed-width elements at `at`, returning the
+/// offset past it.
+fn skip_counted_run(bytes: &[u8], at: usize, stride: usize) -> Option<usize> {
+    let count = usize::try_from(u32_at(bytes, at)?).ok()?;
+    let end = count
+        .checked_mul(stride)
+        .and_then(|size| at.checked_add(4)?.checked_add(size))?;
+    (end <= bytes.len()).then_some(end)
+}
+
+/// Parse one Design `MetaStream` segment ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) into its type table.
+///
+/// The stream is a segment header, a type table, a named-entity list, two
+/// record indexes, and an optional trailing property block, in that order. Each
+/// type-table entry is an LP-ASCII type GUID, an LP-ASCII base type GUID that is
+/// empty for a root type, a u32 type version, an LP-ASCII add-in name, and a
+/// u32-counted run of u64 design-entity ids. The whole stream must close on its
+/// own end, which pins the header shape; a stream that does not is rejected
+/// whole rather than parsed in part. Returned entries carry no `id`.
+pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignType>> {
+    // Header: short segment type name, segment id, asset GUID, serializer
+    // magic and its magic-gated integer group, full segment type name, add-in
+    // name, and the segment type code.
+    let (_, at) = lp_ascii_filtered(bytes, 0, 1..=256, u8::is_ascii_graphic)?;
+    let at = at.checked_add(4)?;
+    let (_, at) = lp_utf16_bounded(bytes, at, 0..=256)?;
+    let magic = u32_at(bytes, at)?;
+    let at = at.checked_add(if magic == 1234 { 16 } else { 8 })?;
+    let (_, at) = lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)?;
+    let (_, at) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
+    let mut at = at.checked_add(8)?;
+    let count = u32_at(bytes, at)?;
+    at = at.checked_add(4)?;
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let mut offset = 0usize;
-        while offset + 8 <= bytes.len() {
-            let Some((name, after_name)) =
-                lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)
-            else {
-                offset += 1;
-                continue;
-            };
-            if name.is_empty()
-                || is_guid_relaxed(&name)
-                || !name.bytes().all(|byte| byte.is_ascii_graphic())
-            {
-                offset += 1;
-                continue;
-            }
-            let kind = object_kind(&name);
-            let Some(count_raw) = bytes.get(after_name..after_name + 4) else {
-                break;
-            };
-            let count = usize::try_from(u32::from_le_bytes(count_raw.try_into().expect(
-                "invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4",
-            )))
-            .unwrap_or(usize::MAX);
-            let ids_end = after_name
-                .checked_add(4)
-                .and_then(|at| count.checked_mul(8).and_then(|size| at.checked_add(size)));
-            let Some(ids_end) = ids_end.filter(|end| count <= 200 && *end <= bytes.len()) else {
-                offset += 1;
-                continue;
-            };
-            let entity_ids = bytes[after_name + 4..ids_end]
+    for _ in 0..count {
+        let entry_at = at;
+        let type_guid_offset = at.checked_add(4)?;
+        let (type_guid, next) = lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)
+            .filter(|(guid, _)| is_guid_relaxed(guid))?;
+        at = next;
+        let base_type_guid_offset = at.checked_add(4)?;
+        let (base_type_guid, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)
+            .filter(|(guid, _)| guid.is_empty() || is_guid_relaxed(guid))?;
+        at = next;
+        let version_offset = at;
+        let version = u32_at(bytes, at)?;
+        at = at.checked_add(4)?;
+        let (module, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
+        at = next;
+        let id_count = usize::try_from(u32_at(bytes, at)?).ok()?;
+        let ids_at = at.checked_add(4)?;
+        let ids_end = id_count
+            .checked_mul(8)
+            .and_then(|size| ids_at.checked_add(size))?;
+        let raw_ids = bytes.get(ids_at..ids_end)?;
+        at = ids_end;
+        out.push(DesignType {
+            id: String::new(),
+            byte_offset: entry_at as u64,
+            type_guid,
+            type_guid_offset: type_guid_offset as u64,
+            base_type_guid_offset: (!base_type_guid.is_empty())
+                .then_some(base_type_guid_offset as u64),
+            base_type_guid: (!base_type_guid.is_empty()).then_some(base_type_guid),
+            version,
+            version_offset: version_offset as u64,
+            module,
+            entity_ids: raw_ids
                 .chunks_exact(8)
                 .map(|raw| {
                     u64::from_le_bytes(
@@ -587,57 +659,105 @@ pub fn decode_objects(scan: &ContainerScan) -> Result<Vec<DesignObject>, CodecEr
                             .expect("invariant: chunks_exact(8) yields 8-byte slices"),
                     )
                 })
-                .collect::<Vec<_>>();
-            let entity_id_offsets = (0..entity_ids.len())
-                .map(|index| (after_name + 4 + index * 8) as u64)
-                .collect();
-            let Some((self_guid, after_self)) =
-                lp_ascii_filtered(bytes, ids_end, 0..=2000, u8::is_ascii_graphic)
-                    .filter(|(guid, _)| is_guid_relaxed(guid))
-            else {
-                offset += 1;
-                continue;
-            };
-            let mut tail = after_self;
-            while bytes.get(tail) == Some(&0) {
-                tail += 1;
-            }
-            let zero_run_length = u32::try_from(tail - after_self).unwrap_or(u32::MAX);
-            let (parent_guid, parent_guid_offset, revision_offset) =
-                lp_ascii_filtered(bytes, tail, 0..=2000, u8::is_ascii_graphic)
-                    .filter(|(guid, _)| is_guid_relaxed(guid))
-                    .map_or((None, None, tail), |(guid, end)| {
-                        (Some(guid), Some((tail + 4) as u64), end)
-                    });
-            let Some(revision_raw) = bytes.get(revision_offset..revision_offset + 4) else {
-                offset += 1;
-                continue;
-            };
-            let revision = u32::from_le_bytes(revision_raw.try_into().expect(
-                "invariant: revision_raw is a 4-byte slice from bytes.get(range) of length 4",
-            ));
-            if revision > 10_000 {
-                offset += 1;
-                continue;
-            }
-            out.push(DesignObject {
-                id: ids::native_design_object_id(&entry.name, offset),
-                byte_offset: offset as u64,
-                kind,
-                entity_ids,
-                entity_id_offsets,
-                self_guid,
-                self_guid_offset: (ids_end + 4) as u64,
-                zero_run_length,
-                parent_guid,
-                parent_guid_offset,
-                revision,
-                revision_offset: revision_offset as u64,
-            });
-            offset = revision_offset + 4;
+                .collect(),
+            entity_id_offsets: (0..id_count)
+                .map(|index| (ids_at + index * 8) as u64)
+                .collect(),
+        });
+    }
+    // The named-entity list, the record index, and the secondary index. A
+    // legacy segment may end at any of the trailing next-entity counter, the
+    // flag, or the property block.
+    at = skip_counted_run(bytes, at, 8)?;
+    at = skip_counted_run(bytes, at, 16)?;
+    at = skip_counted_run(bytes, at, 16)?;
+    if bytes.len() - at >= 8 {
+        at += 8;
+    }
+    if bytes.len() - at >= 4 {
+        at += 4;
+    }
+    if bytes.len() - at >= 4 {
+        let properties = u32_at(bytes, at)?;
+        at = at.checked_add(4)?;
+        for _ in 0..properties {
+            let (_, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
+            at = next.checked_add(4)?;
         }
     }
+    (at == bytes.len()).then_some(out)
+}
+
+/// Decode the type table of every design `MetaStream` entry in `scan`
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)). A stream that does not close on its own end contributes
+/// nothing.
+pub fn decode_types(scan: &ContainerScan) -> Result<Vec<DesignType>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
+    {
+        let Some(types) = parse_design_type_table(scan.entry_bytes(&entry.name)?) else {
+            continue;
+        };
+        out.extend(types.into_iter().map(|mut design_type| {
+            design_type.id = ids::native_design_type_id(&entry.name, design_type.byte_offset);
+            design_type
+        }));
+    }
     Ok(out)
+}
+
+/// Type GUID and record version of the types registered by the design
+/// `MetaStream` beside `bulk_entry_name`, keyed by the design entity ids those
+/// types own. A record carries neither of its own: its class tag selects a
+/// type-table entry, that entry's version fixes the member sequence the record
+/// was written under, and that entry's GUID is the type's only identity that
+/// holds across segments, since a class tag is `256` plus a segment-local index.
+pub fn stream_types_by_entity<'a>(
+    types: &'a [DesignType],
+    bulk_entry_name: &str,
+) -> HashMap<u64, (&'a str, u32)> {
+    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
+        return HashMap::new();
+    };
+    let meta_scope = ids::native_scope(&format!("{prefix}MetaStream.dat"));
+    types
+        .iter()
+        .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
+        .flat_map(|design_type| {
+            design_type.entity_ids.iter().map(|entity_id| {
+                (
+                    *entity_id,
+                    (design_type.type_guid.as_str(), design_type.version),
+                )
+            })
+        })
+        .collect()
+}
+
+/// Type GUID and record version keyed by the three-digit dynamic class tag.
+/// A tag is `256` plus its zero-based position in the segment-local type table.
+fn stream_types_by_class_tag<'a>(
+    types: &'a [DesignType],
+    bulk_entry_name: &str,
+) -> HashMap<u32, (&'a str, u32)> {
+    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
+        return HashMap::new();
+    };
+    let meta_scope = ids::native_scope(&format!("{prefix}MetaStream.dat"));
+    types
+        .iter()
+        .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
+        .enumerate()
+        .filter_map(|(ordinal, design_type)| {
+            Some((
+                u32::try_from(ordinal).ok()?.checked_add(256)?,
+                (design_type.type_guid.as_str(), design_type.version),
+            ))
+        })
+        .collect()
 }
 
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
@@ -809,6 +929,38 @@ pub(crate) fn parse_legacy_sketch_member_run(
     Some((member_indices, member_offsets))
 }
 
+/// Recognize either legacy sketch-container tail. A counted container owns
+/// its complete member run. A localized container omits that run and is
+/// accepted only when its paired record names an exact placement-head frame.
+pub(crate) fn parse_legacy_sketch_container_members(
+    bytes: &[u8],
+    primary_at: usize,
+    entity_suffix: u32,
+    records: &IndexedRecordOffsets,
+) -> Option<(Vec<u32>, Vec<u64>)> {
+    if let Some(members) = parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix) {
+        return Some(members);
+    }
+    let entity = DesignEntityHeader {
+        id: String::new(),
+        byte_offset: primary_at as u64,
+        entity_suffix: u64::from(entity_suffix),
+        entity_id: format!("Sketch_{entity_suffix}"),
+        class_tag: String::new(),
+        optional_slot_present: false,
+        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
+        record_reference: None,
+        record_reference_offset: None,
+        declared_reference_count: None,
+        reference_indices: Vec::new(),
+        reference_offsets: Vec::new(),
+        member_indices: Vec::new(),
+        member_offsets: Vec::new(),
+    };
+    parse_member_run_head_placement(bytes, &entity, records)?;
+    Some((Vec::new(), Vec::new()))
+}
+
 /// Decode every self-validating per-entity design `BulkStream` header (spec
 /// [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
 /// whose numeric suffix must match the header's entity suffix, and, for
@@ -816,17 +968,24 @@ pub(crate) fn parse_legacy_sketch_member_run(
 /// the fixed layout or in the `EntityGenesis` layout.
 pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
-    let mut object_kinds = HashMap::new();
-    let objects = decode_objects(scan)?;
+    // A design entity id is unique inside its own segment and not across the
+    // archive, so the module map is per stream: one archive's Design segments
+    // reuse ids for entities of different modules, and a flat map would let
+    // whichever segment is read first name the module for all of them.
+    let mut entity_modules = HashMap::<String, HashMap<u64, String>>::new();
+    let types = decode_types(scan)?;
     let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
-    for object in objects {
-        for &entity_id in &object.entity_ids {
-            object_kinds
-                .entry(entity_id)
-                .or_insert_with(|| object.kind.clone());
+    for design_type in types {
+        if let Some(stream) = native_stream(&design_type.id) {
+            let stream_modules = entity_modules.entry(stream.to_owned()).or_default();
+            for &entity_id in &design_type.entity_ids {
+                stream_modules
+                    .entry(entity_id)
+                    .or_insert_with(|| design_type.module.clone());
+            }
         }
-        if object.kind == DesignObjectKind::Sketch {
-            let Some(stream) = native_stream(&object.id) else {
+        if design_type.module == DESIGN_MODULE_SKETCH {
+            let Some(stream) = native_stream(&design_type.id) else {
                 continue;
             };
             let Some(meta_name) = stream.strip_prefix(ids::SCHEME_PREFIX) else {
@@ -840,7 +999,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 .entry(bulk_name)
                 .or_default()
                 .extend(
-                    object
+                    design_type
                         .entity_ids
                         .into_iter()
                         .filter_map(|identity| u32::try_from(identity).ok()),
@@ -853,22 +1012,17 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut offset = 0usize;
-        while offset + 30 <= bytes.len() {
-            let Some(relative) = bytes[offset..]
-                .windows(4)
-                .position(|window| window == [3, 0, 0, 0])
-            else {
-                break;
-            };
-            let start = offset + relative;
-            offset = start + 1;
+        // Modules come from the type table of this stream's own `MetaStream`.
+        let stream_modules = entry
+            .name
+            .strip_suffix("BulkStream.dat")
+            .map(|prefix| ids::native_scope(&format!("{prefix}MetaStream.dat")))
+            .and_then(|meta_scope| entity_modules.get(&meta_scope));
+        let indexed_offsets = indexed_record_offsets(bytes).collect::<Vec<_>>();
+        for &start in &indexed_offsets {
             let Some(class_tag) = bytes.get(start + 4..start + 7) else {
-                break;
-            };
-            if !class_tag.iter().all(u8::is_ascii_digit) {
                 continue;
-            }
+            };
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
             let Some((entity_suffix, entity_id, optional_slot_present, end)) =
@@ -876,7 +1030,10 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             else {
                 continue;
             };
-            let object_kind = object_kinds.get(&entity_suffix).cloned();
+            let module = stream_modules
+                .and_then(|modules| modules.get(&entity_suffix))
+                .cloned();
+            let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
             let (
                 record_reference,
                 record_reference_offset,
@@ -884,7 +1041,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 reference_indices,
                 reference_offsets,
                 record_end,
-            ) = if object_kind == Some(DesignObjectKind::Sketch) {
+            ) = if in_sketch_module {
                 decode_reference_list(bytes, end).map_or_else(
                     || (None, None, None, Vec::new(), Vec::new(), end),
                     |list| {
@@ -904,12 +1061,11 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             } else {
                 (None, None, None, Vec::new(), Vec::new(), end)
             };
-            let (member_indices, member_offsets) =
-                if genesis_form && object_kind == Some(DesignObjectKind::Sketch) {
-                    parse_sketch_member_run(bytes, record_end, entity_suffix)
-                } else {
-                    (Vec::new(), Vec::new())
-                };
+            let (member_indices, member_offsets) = if genesis_form && in_sketch_module {
+                parse_sketch_member_run(bytes, record_end, entity_suffix)
+            } else {
+                (Vec::new(), Vec::new())
+            };
             out.push(DesignEntityHeader {
                 id: ids::native_design_entity_header_id(&entry.name, start),
                 byte_offset: start as u64,
@@ -917,7 +1073,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 entity_id,
                 class_tag: String::from_utf8_lossy(class_tag).into_owned(),
                 optional_slot_present,
-                object_kind,
+                module,
                 record_reference,
                 record_reference_offset,
                 declared_reference_count,
@@ -926,7 +1082,6 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 member_indices,
                 member_offsets,
             });
-            offset = record_end;
         }
 
         // Legacy Design streams do not carry textual entity headers. Their
@@ -938,15 +1093,17 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .get(&entry.name)
             .cloned()
             .unwrap_or_default();
+        if candidates.is_empty() {
+            continue;
+        }
+        let records = IndexedRecordOffsets::build(bytes);
         let scope = ids::native_scope(&entry.name);
         let mut existing = out
             .iter()
             .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<std::collections::HashSet<_>>();
-        let mut position = 0usize;
-        while let Some(start) = next_indexed_record_offset(bytes, position) {
-            position = start + 1;
+        for &start in &indexed_offsets {
             let Some(entity_suffix) = u32_at(bytes, start + 7) else {
                 continue;
             };
@@ -965,7 +1122,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 continue;
             }
             let Some((member_indices, member_offsets)) =
-                parse_legacy_sketch_member_run(bytes, start, entity_suffix)
+                parse_legacy_sketch_container_members(bytes, start, entity_suffix, &records)
             else {
                 continue;
             };
@@ -977,7 +1134,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 entity_id: format!("Sketch_{entity_suffix}"),
                 class_tag,
                 optional_slot_present: false,
-                object_kind: Some(DesignObjectKind::Sketch),
+                module: Some(DESIGN_MODULE_SKETCH.to_owned()),
                 record_reference: None,
                 record_reference_offset: None,
                 declared_reference_count: None,
@@ -1046,38 +1203,20 @@ fn decode_headers_for_indices(
     {
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut position = 0usize;
-        while position + 11 <= bytes.len() {
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, position, 0..=2000, u8::is_ascii_graphic)
-            else {
-                position += 1;
-                continue;
-            };
-            if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-                position += 1;
-                continue;
-            }
-            let Some(raw) = bytes.get(after_tag..after_tag + 4) else {
-                break;
-            };
-            let record_index = u32::from_le_bytes(
-                raw.try_into()
-                    .expect("invariant: raw is a 4-byte slice from bytes.get(range) of length 4"),
-            );
+        for position in indexed_record_offsets(bytes) {
+            let record_index = indexed_record_index(bytes, position)
+                .expect("validated indexed-record header carries a four-byte record index");
             let scope = ids::native_scope(&entry.name);
             if wanted.contains(&(scope, record_index)) && emitted.insert(record_index) {
                 out.push(DesignRecordHeader {
                     id: ids::native_design_record_header_id(&entry.name, position),
                     record_index,
-                    class_tag,
+                    class_tag: std::str::from_utf8(&bytes[position + 4..position + 7])
+                        .expect("validated indexed-record class tag is ASCII")
+                        .to_owned(),
                     byte_offset: position as u64,
                 });
             }
-            // Headers are located in an otherwise heterogeneous stream. Keep
-            // the scan byte-aligned so a plausible length-prefixed string in
-            // an enclosing payload cannot skip a real nested header.
-            position += 1;
         }
     }
     out.sort_by_key(|record| record.id.clone());
@@ -1091,23 +1230,19 @@ fn decode_headers_for_indices(
 pub fn decode_sketch_relations(
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
-    entities: &[DesignEntityHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
+    // A record carries no class identity of its own: its class tag selects an
+    // entry in its segment's own type table, and only that entry's GUID names
+    // the class across segments.
+    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
-        let owners = entities
-            .iter()
-            .filter(|entity| {
-                native_stream(&entity.id) == Some(scope.as_str())
-                    && entity.object_kind == Some(DesignObjectKind::Sketch)
-            })
-            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
-            .collect::<std::collections::HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
         for record in records
             .iter()
@@ -1120,7 +1255,14 @@ pub fn decode_sketch_relations(
             let Some(payload) = bytes.get(at..record_end) else {
                 continue;
             };
-            let Some(parsed) = parse_sketch_relation(payload, &owners) else {
+            let class = record
+                .class_tag
+                .parse::<u32>()
+                .ok()
+                .and_then(|class_tag| stream_types.get(&class_tag))
+                .and_then(|(type_guid, version)| SketchRelationClass::of(type_guid, *version));
+            let parsed = class.and_then(|class| parse_classed_sketch_relation(payload, class));
+            let Some(parsed) = parsed else {
                 continue;
             };
             if payload
@@ -1156,7 +1298,7 @@ pub fn decode_sketch_relations(
                 state: parsed.state,
                 constraint_kinds,
                 unknown_constraint_bits,
-                member_roles: parsed.member_roles,
+                member_relation_ordinals: parsed.member_relation_ordinals,
                 entity_genesis: parsed.entity_genesis,
                 pattern,
                 return_members: parsed.return_members,
@@ -1173,15 +1315,15 @@ pub fn decode_sketch_relations(
     Ok(out)
 }
 
-/// Decode the class-specific auxiliary payload of a pattern or text-frame
-/// relation from its fixed positions inside `payload`. Circular patterns store
+/// Decode the pattern definition a relation's class members carry, reading them
+/// beside the auxiliary references the parse recorded. Circular patterns store
 /// the angle- and count-parameter references, the evaluated f64 total angle six
 /// zero bytes after the count-parameter reference, and the evaluated u32
 /// instance count directly after it. Rectangular patterns store, per direction,
 /// the evaluated u32 count, the count-parameter reference, a three-component
 /// f64 unit direction six zero bytes after that reference, the evaluated f64
-/// adjacent-instance spacing, and the distance-parameter reference. Text-frame relations
-/// repeat the sketch-text member as the single auxiliary reference.
+/// seed-to-final-instance span, and the distance-parameter reference. Text-frame
+/// relations repeat the sketch-text member as an auxiliary reference.
 pub(crate) fn decode_pattern_definition(
     payload: &[u8],
     parsed: &ParsedSketchRelation,
@@ -1208,19 +1350,31 @@ pub(crate) fn decode_pattern_definition(
             evaluated_count,
         });
     }
-    if parsed.state == 0x2000_0000 && matches!(parsed.auxiliary_references.len(), 4 | 5) {
+    if parsed.state == 0x2000_0000 {
+        // Each direction clause writes its evaluated count directly before its
+        // count-parameter reference, so the count is five bytes before that
+        // reference's target. The clauses follow the class members that precede
+        // them, which is one leading reference or none; where the class was not
+        // named that is read off the length of the auxiliary run.
+        let clause_ordinal = parsed
+            .rectangular_clause_ordinal
+            .unwrap_or(usize::from(parsed.auxiliary_references.len() == 5));
+        if parsed.auxiliary_references.len() < clause_ordinal + 4 {
+            return None;
+        }
         let mut directions = Vec::with_capacity(2);
-        let clauses = if parsed.auxiliary_references.len() == 5 {
-            [
-                (reference_end(0)? + 10, 1, 2),
-                (reference_end(2)? + 6, 3, 4),
-            ]
-        } else {
-            [
-                (parsed.auxiliary_reference_offsets[0].checked_sub(5)?, 0, 1),
-                (parsed.auxiliary_reference_offsets[2].checked_sub(5)?, 2, 3),
-            ]
-        };
+        let clauses = [
+            (
+                parsed.auxiliary_reference_offsets[clause_ordinal].checked_sub(5)?,
+                clause_ordinal,
+                clause_ordinal + 1,
+            ),
+            (
+                parsed.auxiliary_reference_offsets[clause_ordinal + 2].checked_sub(5)?,
+                clause_ordinal + 2,
+                clause_ordinal + 3,
+            ),
+        ];
         for (count_at, count_ordinal, distance_ordinal) in clauses {
             let evaluated_count = u32_at(payload, count_at)?;
             if !(1..=100_000).contains(&evaluated_count) {
@@ -1383,16 +1537,62 @@ pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, Co
     Ok(out)
 }
 
+/// Read a class property block: a presence byte, and when it is `01`, a u32
+/// count and that many `(key, type name, value)` triples.
+///
+/// Which keys a record carries varies by record, so a caller addresses a
+/// property by name. Reading the block by fixed offset misframes every record
+/// whose key set differs from the one the offsets were taken from.
+pub(crate) fn read_property_block(
+    payload: &[u8],
+    cursor: &mut usize,
+) -> Option<Vec<(String, u64)>> {
+    let mut properties = Vec::new();
+    match payload.get(*cursor)? {
+        0 => *cursor += 1,
+        1 => {
+            *cursor += 1;
+            let count = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            if count > MAX_RELATION_RUN {
+                return None;
+            }
+            *cursor += 4;
+            for _ in 0..count {
+                let (key, after_key) =
+                    lp_ascii_filtered(payload, *cursor, 0..=256, u8::is_ascii_graphic)?;
+                let (type_name, after_type) =
+                    lp_ascii_filtered(payload, after_key, 0..=256, u8::is_ascii_graphic)?;
+                if type_name != "IntrinsicMetaTypeuint64" {
+                    return None;
+                }
+                properties.push((key, read_u64(payload, after_type)?));
+                *cursor = after_type.checked_add(8)?;
+            }
+        }
+        _ => return None,
+    }
+    Some(properties)
+}
+
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
 pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
+    // A record carries no version of its own: its class tag selects an entry in
+    // its segment's own type table, and that entry's version fixes the member
+    // sequence the record was written under.
+    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let bytes = scan.entry_bytes(&entry.name)?;
+        // A stream can retain a superseded copy of a record beside the copy its
+        // index names, and both parse. The record index is the entity, so the
+        // first copy is kept and the rest dropped.
+        let mut emitted = std::collections::HashSet::new();
         let mut at = 0usize;
         while at + 230 <= bytes.len() {
             let Some((class_tag, after_tag)) =
@@ -1408,14 +1608,30 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
             let Some(record_index) = u32_at(bytes, after_tag) else {
                 break;
             };
+            let Some((_, class_version)) = class_tag
+                .parse::<u32>()
+                .ok()
+                .and_then(|class_tag| stream_types.get(&class_tag))
+                .copied()
+            else {
+                at += 1;
+                continue;
+            };
             let record_end = next_indexed_record_offset(bytes, at + 7).unwrap_or(bytes.len());
             let Some(payload) = bytes.get(at..record_end) else {
                 break;
             };
-            if let Some(text) =
-                decode_sketch_text_record(payload, &entry.name, class_tag, record_index, at)
-            {
-                out.push(text);
+            if let Some(text) = decode_sketch_text_record(
+                payload,
+                &entry.name,
+                class_tag,
+                class_version,
+                record_index,
+                at,
+            ) {
+                if emitted.insert(record_index) {
+                    out.push(text);
+                }
                 at = record_end;
             } else {
                 at += 1;
@@ -1425,96 +1641,433 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
     Ok(out)
 }
 
+/// Whether a sketch-text record carries one of the two parameter-reference
+/// members. A record either writes the member, whose own presence byte then
+/// says whether it targets a parameter, or omits the member entirely; nothing
+/// ahead of the slot distinguishes the two.
+#[derive(Clone, Copy)]
+enum TextReferenceSlot {
+    Omitted,
+    Written,
+}
+
+const TEXT_REFERENCE_SLOTS: [TextReferenceSlot; 2] =
+    [TextReferenceSlot::Omitted, TextReferenceSlot::Written];
+
+/// Bytes between a sketch-text record's last class member and its
+/// owning-sketch reference, in either identity form.
+const SKETCH_TEXT_TRAILING_RUN: usize = 30;
+
+/// How far a placement-transform element may sit from the constant a planar
+/// rigid placement writes there. The transform is composed in floating point,
+/// so its constants arrive rounded; the bound is far tighter than a run of
+/// misframed bytes would meet.
+const TEXT_PLACEMENT_TOLERANCE: f64 = 1e-9;
+
+/// Bytes between the end of the stored `txt_tag` rotation and the four f32 RGBA
+/// components. The first byte is zero and four further bytes are unclassified.
+const TXT_TAG_POST_ROTATION_RUN: usize = 5;
+
+/// Bytes between the text-anchor coordinates and the u32 text count in the
+/// `txt_tag` form, from [`TXT_TAG_ANCHOR_MEMBER_VERSION`] onward.
+const TXT_TAG_ANCHOR_RUN: usize = 11;
+
+/// The `txt_tag` class version that adds the eleventh byte of the run between
+/// the text anchor and the text count. Below it the run is ten bytes.
+const TXT_TAG_ANCHOR_MEMBER_VERSION: u32 = 4;
+
+/// The `txt_tag` class version from which a record writes its persistent
+/// identity as a property-block key. A property block carrying neither identity
+/// key belongs to a `txt_tag` record below this version, which stores no
+/// persistent identity at all.
+const TXT_TAG_IDENTITY_KEY_VERSION: u32 = 4;
+
+/// Three unknown bytes, one i32 font weight, and eight further bytes between
+/// the `txt_tag` form's counted reference run and the thirty-byte class tail.
+const TXT_TAG_MEMBER_RUN: usize = 15;
+const TXT_TAG_FONT_WEIGHT_AT: usize = 3;
+
+/// Which identity key a sketch-text record carries. The key selects the layout
+/// the record uses from the property block onward.
+#[derive(Clone, Copy, PartialEq)]
+enum SketchTextIdentity {
+    /// `textex_tag`: a `1` byte, the width factor, a zero byte between the font
+    /// family and the height, and the anchor inside a placement transform.
+    TextexTag,
+    /// `txt_tag`: a `0` byte, no width factor, the height directly after the
+    /// font family, and the anchor stored on its own.
+    TxtTag { rotation: f64 },
+}
+
+/// Read one parameter-reference slot in the given form, advancing `cursor` by
+/// what that form occupies. An omitted member reads as a null reference.
+fn read_text_reference(
+    payload: &[u8],
+    cursor: &mut usize,
+    slot: TextReferenceSlot,
+) -> Option<Reference> {
+    match slot {
+        TextReferenceSlot::Omitted => Some(Reference::default()),
+        TextReferenceSlot::Written => take_reference(payload, cursor),
+    }
+}
+
+/// Read the four f32 RGBA colour components both sketch-text classes store,
+/// advancing `cursor` past them. Every component is a fraction of full
+/// intensity, so a run leaving `[0, 1]` says the record is misframed rather
+/// than that the text carries an out-of-range colour.
+fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
+    let mut components = [0f32; 4];
+    for component in &mut components {
+        let value = take_f32(payload, cursor)?;
+        (0.0..=1.0).contains(&value).then_some(())?;
+        *component = value;
+    }
+    let [r, g, b, a] = components;
+    Some(Color { r, g, b, a })
+}
+
+/// Read the row-major 4×4 f64 placement transform a frame-text record stores,
+/// advancing `cursor` past it, and reduce it to the anchor point in millimetres
+/// and the rotation about that point in radians.
+///
+/// The transform is a planar rigid placement: its third row and column are the
+/// identity's, its bottom row is `(0, 0, 0, 1)`, its translation lives in the
+/// last column, and its 2×2 basis is a rotation of unit determinant carrying no
+/// scale or shear. A run failing any of that is not a placement, so the record
+/// is misframed.
+fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<(Point2, f64)> {
+    let elements = f64s_at(payload, *cursor, 16)?;
+    *cursor = cursor.checked_add(128)?;
+    let at = |row: usize, column: usize| elements[row * 4 + column];
+    let constant = |value: f64, expected: f64| (value - expected).abs() <= TEXT_PLACEMENT_TOLERANCE;
+    let planar = [
+        (0, 2, 0.0),
+        (1, 2, 0.0),
+        (2, 0, 0.0),
+        (2, 1, 0.0),
+        (2, 2, 1.0),
+        (2, 3, 0.0),
+        (3, 0, 0.0),
+        (3, 1, 0.0),
+        (3, 2, 0.0),
+        (3, 3, 1.0),
+    ]
+    .into_iter()
+    .all(|(row, column, expected)| constant(at(row, column), expected));
+    let determinant = at(0, 0) * at(1, 1) - at(0, 1) * at(1, 0);
+    (planar && constant(determinant, 1.0)).then_some(())?;
+    let anchor = Point2::new(at(0, 3) * 10.0, at(1, 3) * 10.0);
+    (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
+    Some((anchor, at(1, 0).atan2(at(0, 0))))
+}
+
+/// The record index a reference names, absent when the reference is null.
+fn reference_index(reference: &Reference) -> Option<u32> {
+    reference
+        .target
+        .and_then(|target| u32::try_from(target).ok())
+}
+
+/// Class-level fields of a sketch-text record, ending at the text height.
+struct SketchTextHead {
+    identity: SketchTextIdentity,
+    entity_genesis: Option<u64>,
+    persistent_id: Option<u64>,
+    base_id: Option<u64>,
+    font_family: String,
+    height: f64,
+    width_factor: Option<f64>,
+    color: Color,
+    cursor: usize,
+}
+
+/// Fields following the height, whose framing depends on the two slot forms.
+struct SketchTextTail {
+    first_reference: Option<u32>,
+    second_reference: Option<u32>,
+    text: String,
+    font_weight: i32,
+    anchor: Option<Point2>,
+    rotation: Option<f64>,
+    owner_reference: u32,
+}
+
+/// Read the class-defined leading block: the presence byte, and when it is
+/// `01`, a u32 count and that many `(reference, u32)` pairs. The `txt_tag` form
+/// writes such a block; the `textex_tag` form writes the `00` byte alone.
+fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<()> {
+    match payload.get(*cursor)? {
+        0 => *cursor += 1,
+        1 => {
+            *cursor += 1;
+            let count = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            if count > MAX_RELATION_RUN {
+                return None;
+            }
+            *cursor = cursor.checked_add(4)?;
+            for _ in 0..count {
+                take_reference(payload, cursor)?;
+                u32_at(payload, *cursor)?;
+                *cursor = cursor.checked_add(4)?;
+            }
+        }
+        _ => return None,
+    }
+    Some(())
+}
+
+/// Read the record prefix, property block, and the metrics up to the height.
+fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchTextHead> {
+    // Record prefix: the LP-ASCII class tag, the u64 entity ID, and the
+    // LP-ASCII record name.
+    let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
+    let (_, mut cursor) = lp_ascii_filtered(
+        payload,
+        after_tag.checked_add(8)?,
+        0..=256,
+        u8::is_ascii_graphic,
+    )?;
+    read_sketch_text_leading_block(payload, &mut cursor)?;
+    // The block carries the text identities under keys that vary by record, so
+    // each is addressed by name. The identity key is `textex_tag` or `txt_tag`,
+    // and which of the two the record carries selects the layout that follows.
+    // A `txt_tag` record below TXT_TAG_IDENTITY_KEY_VERSION writes neither key
+    // and carries no persistent identity, so its class version selects the
+    // layout in place of a key.
+    let properties = read_property_block(payload, &mut cursor)?;
+    let property = |key: &str| {
+        properties
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| *value)
+    };
+    let is_txt_tag = match (property("textex_tag"), property("txt_tag")) {
+        (Some(_), _) => false,
+        (None, Some(_)) => true,
+        (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => true,
+        (None, None) => return None,
+    };
+    let identity = if is_txt_tag {
+        let rotation = f64_at(payload, cursor)?;
+        rotation.is_finite().then_some(())?;
+        SketchTextIdentity::TxtTag { rotation }
+    } else {
+        SketchTextIdentity::TextexTag
+    };
+    let property = |key: &str| {
+        properties
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| *value)
+    };
+    let persistent_id = match identity {
+        SketchTextIdentity::TextexTag => property("textex_tag"),
+        SketchTextIdentity::TxtTag { .. } => property("txt_tag"),
+    };
+    let (width_factor, color) = match identity {
+        SketchTextIdentity::TextexTag => {
+            (payload.get(cursor)? == &1).then_some(())?;
+            cursor += 1;
+            let width_factor = f64_at(payload, cursor)?;
+            cursor = cursor.checked_add(8)?;
+            let color = read_sketch_text_color(payload, &mut cursor)?;
+            (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
+            (Some(width_factor), color)
+        }
+        SketchTextIdentity::TxtTag { .. } => {
+            cursor = cursor.checked_add(8)?;
+            (payload.get(cursor)? == &0).then_some(())?;
+            cursor = cursor.checked_add(TXT_TAG_POST_ROTATION_RUN)?;
+            let color = read_sketch_text_color(payload, &mut cursor)?;
+            (None, color)
+        }
+    };
+    let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if font_count == 0 || font_count > 1_024 {
+        return None;
+    }
+    let (font_family, after_font) = utf16le_at(payload, cursor + 4, font_count)?;
+    cursor = after_font;
+    if matches!(identity, SketchTextIdentity::TextexTag) {
+        (payload.get(cursor)? == &0).then_some(())?;
+        cursor += 1;
+    }
+    let height = f64_at(payload, cursor)? * 10.0;
+    cursor = cursor.checked_add(8)?;
+    (height.is_finite() && height > 0.0).then_some(())?;
+    Some(SketchTextHead {
+        identity,
+        entity_genesis: property("EntityGenesis"),
+        persistent_id,
+        base_id: property("txt_tag_base"),
+        font_family,
+        height,
+        width_factor,
+        color,
+        cursor,
+    })
+}
+
+/// Read the alignment fields, text content, and class tail under one pair of
+/// slot forms, requiring the walk to end exactly on the owning-sketch
+/// reference.
+fn decode_sketch_text_tail(
+    payload: &[u8],
+    mut cursor: usize,
+    first_slot: TextReferenceSlot,
+    second_slot: TextReferenceSlot,
+) -> Option<SketchTextTail> {
+    let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
+    // Horizontal alignment enum and three flag bytes.
+    u32_at(payload, cursor)?;
+    cursor = cursor.checked_add(7)?;
+    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if text_count == 0 || text_count > 1_048_576 {
+        return None;
+    }
+    let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
+    cursor = after_text;
+    let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
+    // Vertical alignment enum, one flag byte, and the font weight.
+    u32_at(payload, cursor)?;
+    let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
+    matches!(font_weight, 400 | 500 | 750).then_some(())?;
+    cursor = cursor.checked_add(9)?;
+    // The class tail opens with the text-type enum, which gates the placement
+    // transform: frame text stores a 4x4 transform, path text stores none. One
+    // flag byte follows the enum and repeats it, so a slot form that has
+    // desynchronized fails here instead of framing a transform out of whatever
+    // bytes the walk landed on.
+    let text_type = u32_at(payload, cursor)?;
+    (u32::from(*payload.get(cursor.checked_add(4)?)?) == text_type).then_some(())?;
+    cursor = cursor.checked_add(5)?;
+    let placement = match text_type {
+        0 => Some(read_text_placement(payload, &mut cursor)?),
+        1 => None,
+        _ => return None,
+    };
+    cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
+    let owner = take_reference(payload, &mut cursor)?;
+    (cursor == payload.len()).then_some(())?;
+    Some(SketchTextTail {
+        first_reference: reference_index(&first_reference),
+        second_reference: reference_index(&second_reference),
+        text,
+        font_weight,
+        anchor: placement.map(|(anchor, _)| anchor),
+        rotation: placement.map(|(_, rotation)| rotation),
+        owner_reference: reference_index(&owner)?,
+    })
+}
+
+/// Read the `txt_tag` form's members from the height to the end of the record.
+/// Two bytes separate the height from the anchor coordinates, which this form
+/// stores directly rather than in a placement transform. The form writes no
+/// parameter-reference slot: an eleven-byte run carries the alignment fields,
+/// ten bytes below [`TXT_TAG_ANCHOR_MEMBER_VERSION`], and the text string is
+/// followed by a counted reference run, fifteen bytes, and the trailing run and
+/// owning-sketch reference that close both forms.
+fn decode_txt_tag_sketch_text_tail(
+    payload: &[u8],
+    mut cursor: usize,
+    class_version: u32,
+    rotation: f64,
+) -> Option<SketchTextTail> {
+    cursor = cursor.checked_add(2)?;
+    let anchor = Point2::new(
+        f64_at(payload, cursor)? * 10.0,
+        f64_at(payload, cursor.checked_add(8)?)? * 10.0,
+    );
+    (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
+    let anchor_run = if class_version < TXT_TAG_ANCHOR_MEMBER_VERSION {
+        TXT_TAG_ANCHOR_RUN - 1
+    } else {
+        TXT_TAG_ANCHOR_RUN
+    };
+    cursor = cursor.checked_add(16 + anchor_run)?;
+    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if text_count == 0 || text_count > 1_048_576 {
+        return None;
+    }
+    let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
+    cursor = after_text;
+    let references = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if references > MAX_RELATION_RUN {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    for _ in 0..references {
+        take_reference(payload, &mut cursor)?;
+    }
+    let font_weight = u32_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)? as i32;
+    matches!(font_weight, 400 | 500 | 750).then_some(())?;
+    cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
+    let owner = take_reference(payload, &mut cursor)?;
+    (cursor == payload.len()).then_some(())?;
+    Some(SketchTextTail {
+        first_reference: None,
+        second_reference: None,
+        text,
+        font_weight,
+        anchor: Some(anchor),
+        rotation: Some(rotation),
+        owner_reference: reference_index(&owner)?,
+    })
+}
+
 pub(crate) fn decode_sketch_text_record(
     payload: &[u8],
     stream: &str,
     class_tag: String,
+    class_version: u32,
     record_index: u32,
     byte_offset: usize,
 ) -> Option<SketchText> {
-    if payload.get(20) != Some(&1)
-        || u32_at(payload, 21) != Some(3)
-        || u32_at(payload, 25) != Some(13)
-        || payload.get(29..42) != Some(b"EntityGenesis")
-        || u32_at(payload, 42) != Some(23)
-        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
-        || u32_at(payload, 77) != Some(10)
-        || payload.get(81..91) != Some(b"textex_tag")
-        || u32_at(payload, 91) != Some(23)
-        || payload.get(95..118) != Some(b"IntrinsicMetaTypeuint64")
-        || u32_at(payload, 126) != Some(12)
-        || payload.get(130..142) != Some(b"txt_tag_base")
-        || u32_at(payload, 142) != Some(23)
-        || payload.get(146..169) != Some(b"IntrinsicMetaTypeuint64")
-        || payload.get(177) != Some(&1)
-    {
-        return None;
-    }
-    let entity_genesis = read_u64(payload, 69)?;
-    let persistent_id = read_u64(payload, 118)?;
-    let base_id = read_u64(payload, 169)?;
-    let height = f64_at(payload, 178)? * 10.0;
-    let rotation = f64_at(payload, 186)?;
-    let baseline_shift = f32::from_le_bytes(payload.get(194..198)?.try_into().ok()?);
-    let vertical_scale = f32::from_le_bytes(payload.get(198..202)?.try_into().ok()?);
-    let font_count = usize::try_from(u32_at(payload, 202)?).ok()?;
-    if font_count == 0 || font_count > 1_024 {
-        return None;
-    }
-    let (font_family, after_font) = utf16le_at(payload, 206, font_count)?;
-    if payload.get(after_font) != Some(&0) {
-        return None;
-    }
-    let width_factor = f64_at(payload, after_font + 1)?;
-    let first_reference = after_font.checked_add(9)?;
-    if payload.get(first_reference) != Some(&1)
-        || payload.get(first_reference + 5..first_reference + 11) != Some(&[0; 6])
-        || payload.get(first_reference + 11) != Some(&1)
-        || payload.get(first_reference + 12..first_reference + 18) != Some(&[0; 6])
-    {
-        return None;
-    }
-    let text_count_at = first_reference.checked_add(18)?;
-    let text_count = usize::try_from(u32_at(payload, text_count_at)?).ok()?;
-    if text_count == 0 || text_count > 1_048_576 {
-        return None;
-    }
-    let (text, after_text) = utf16le_at(payload, text_count_at + 4, text_count)?;
-    if payload.get(after_text) != Some(&1)
-        || payload.get(after_text + 5..after_text + 11) != Some(&[0; 6])
-        || payload.len() < 11
-    {
-        return None;
-    }
-    let owner_at = payload.len() - 11;
-    if payload.get(owner_at) != Some(&1)
-        || payload.get(owner_at + 5..owner_at + 11) != Some(&[0; 6])
-        || !height.is_finite()
-        || height <= 0.0
-        || !rotation.is_finite()
-        || !baseline_shift.is_finite()
-        || !vertical_scale.is_finite()
-        || vertical_scale <= 0.0
-        || !width_factor.is_finite()
-        || width_factor <= 0.0
-    {
-        return None;
-    }
+    let head = decode_sketch_text_head(payload, class_version)?;
+    let tail = match head.identity {
+        SketchTextIdentity::TextexTag => {
+            let mut closed = None;
+            for first_slot in TEXT_REFERENCE_SLOTS {
+                for second_slot in TEXT_REFERENCE_SLOTS {
+                    let Some(tail) =
+                        decode_sketch_text_tail(payload, head.cursor, first_slot, second_slot)
+                    else {
+                        continue;
+                    };
+                    // Two slot forms both ending on the owning-sketch reference
+                    // leave the parameter references undetermined.
+                    if closed.replace(tail).is_some() {
+                        return None;
+                    }
+                }
+            }
+            closed?
+        }
+        SketchTextIdentity::TxtTag { rotation } => {
+            decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version, rotation)?
+        }
+    };
     Some(SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),
         record_index,
-        owner_reference: u32_at(payload, owner_at + 1)?,
+        owner_reference: tail.owner_reference,
         class_tag,
+        class_version,
         byte_offset: byte_offset as u64,
-        entity_genesis,
-        persistent_id,
-        base_id,
-        text,
-        font_family,
-        height,
-        width_factor,
-        first_reference: u32_at(payload, first_reference + 1)?,
-        second_reference: u32_at(payload, after_text + 1)?,
+        entity_genesis: head.entity_genesis,
+        persistent_id: head.persistent_id,
+        base_id: head.base_id,
+        text: tail.text,
+        font_family: head.font_family,
+        font_weight: tail.font_weight,
+        height: head.height,
+        width_factor: head.width_factor,
+        color: head.color,
+        anchor: tail.anchor,
+        rotation: tail.rotation,
+        first_reference: tail.first_reference,
+        second_reference: tail.second_reference,
         raw_bytes: payload.to_vec(),
     })
 }
@@ -1603,23 +2156,49 @@ pub fn decode_sketch_curve_identities(
                 let geometry_payload = payload
                     .get(geometry_shift..)
                     .expect("invariant: geometry_shift (0 or 52) is <= payload.len() (checked >= 133 by the at + 133 <= bytes.len() loop guard)");
-                let (geometry, owner_scan_from) =
+                let (geometry, geometry_offset, owner_scan_from) =
                     if let Some((geometry, end)) = decode_legacy_sketch_nurbs(geometry_payload) {
-                        (Some(geometry), geometry_shift + end)
+                        (Some(geometry), geometry_shift + 133, geometry_shift + end)
                     } else if let Some((geometry, end)) = decode_sketch_nurbs(geometry_payload) {
-                        (Some(geometry), geometry_shift + end)
+                        (Some(geometry), geometry_shift + 133, geometry_shift + end)
                     } else if let Some(geometry) = decode_circular_arc(geometry_payload) {
-                        (Some(geometry), geometry_shift + 133 + 12 * 8)
+                        (
+                            Some(geometry),
+                            geometry_shift + 133,
+                            geometry_shift + 133 + 12 * 8,
+                        )
                     } else if let Some(geometry) = decode_line(geometry_payload) {
-                        (Some(geometry), geometry_shift + 133 + 12 * 8)
+                        (
+                            Some(geometry),
+                            geometry_shift + 133,
+                            geometry_shift + 133 + 12 * 8,
+                        )
+                    } else if let Some(geometry) = decode_compact_planar_line(geometry_payload) {
+                        (
+                            Some(geometry),
+                            geometry_shift + 133,
+                            geometry_shift + 133 + 9 * 8,
+                        )
                     } else if let Some(geometry) = decode_referenced_analytic(geometry_payload) {
-                        (Some(geometry), geometry_shift + 11 + 133 + 12 * 8)
+                        let shifted = geometry_payload
+                            .get(11..)
+                            .expect("referenced analytic decoder validated its 11-byte prefix");
+                        let scalar_count = if decode_compact_planar_line(shifted).is_some() {
+                            9
+                        } else {
+                            12
+                        };
+                        (
+                            Some(geometry),
+                            geometry_shift + 11 + 133,
+                            geometry_shift + 11 + 133 + scalar_count * 8,
+                        )
                     } else if let Some((geometry, end)) =
                         decode_text_frame_line(payload, geometry_shift, record_index)
                     {
-                        (Some(geometry), end)
+                        (Some(geometry), end - 12 * 8, end)
                     } else {
-                        (None, geometry_shift + 133)
+                        (None, geometry_shift + 133, geometry_shift + 133)
                     };
                 out.push(SketchCurveIdentity {
                     id: ids::native_sketch_curve_identity_id(&entry.name, at),
@@ -1627,7 +2206,7 @@ pub fn decode_sketch_curve_identities(
                     owner_reference: trailing_sketch_owner_reference(bytes, at + owner_scan_from),
                     class_tag,
                     byte_offset: at as u64,
-                    geometry_offset: (133 + geometry_shift) as u32,
+                    geometry_offset: geometry_offset as u32,
                     entity_genesis,
                     primary_id,
                     secondary_id,
@@ -1773,7 +2352,7 @@ pub(crate) fn bind_sketch_graph(
 ) -> Result<(), CodecError> {
     let sketch_owners = entities
         .iter()
-        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
+        .filter(|entity| entity.in_sketch_module())
         .filter_map(|entity| {
             Some((
                 (
@@ -1865,10 +2444,7 @@ pub(crate) fn bind_sketch_graph(
     // `EntityGenesis`-form sketch container's paired record names every owned
     // record in its counted member run; backfill those owners after the
     // relation-derived pass, holding both sources to one owner per record.
-    for entity in entities
-        .iter()
-        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
-    {
+    for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
         let (Some(scope), Ok(suffix)) = (
             native_stream(&entity.id),
             u32::try_from(entity.entity_suffix),
@@ -2027,12 +2603,14 @@ fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
-fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
+pub(crate) fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
     if payload.get(133) != Some(&1) || payload.get(138..144) != Some(&[0; 6]) {
         return None;
     }
     let shifted = payload.get(11..)?;
-    decode_circular_arc(shifted).or_else(|| decode_line(shifted))
+    decode_circular_arc(shifted)
+        .or_else(|| decode_line(shifted))
+        .or_else(|| decode_compact_planar_line(shifted))
 }
 
 /// Decode a text-frame boundary line after its two point references and
@@ -2251,6 +2829,25 @@ pub(crate) fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     decode_line_values(payload, 133)
 }
 
+pub(crate) fn decode_compact_planar_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
+    let values_at = 133;
+    let values = (0..9)
+        .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
+        .collect::<Option<Vec<_>>>()?;
+    if values.iter().any(|value| !value.is_finite())
+        || values[2] != 0.0
+        || values[5] != 0.0
+        || values[8] != 0.0
+    {
+        return None;
+    }
+    let (_, reference_end) = marked_u32(payload, values_at + 9 * 8)?;
+    if payload.get(reference_end..reference_end + 6) != Some(&[0; 6]) {
+        return None;
+    }
+    decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0))
+}
+
 fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeometry> {
     let values = (0..12)
         .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
@@ -2258,9 +2855,13 @@ fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeo
     if values.iter().any(|value| !value.is_finite()) {
         return None;
     }
+    let stored_normal = Vector3::new(values[9], values[10], values[11]);
+    decode_line_components(&values, stored_normal)
+}
+
+fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<SketchCurveGeometry> {
     let displacement = Vector3::new(values[3], values[4], values[5]);
     let direction = Vector3::new(values[6], values[7], values[8]);
-    let stored_normal = Vector3::new(values[9], values[10], values[11]);
     let length = displacement.norm();
     if length <= 0.0 {
         return None;
@@ -2315,7 +2916,7 @@ fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeo
 pub(crate) struct ParsedSketchRelation {
     pub(crate) members: Vec<u32>,
     pub(crate) member_offsets: Vec<usize>,
-    pub(crate) member_roles: Vec<u32>,
+    pub(crate) member_relation_ordinals: Vec<u32>,
     pub(crate) auxiliary_references: Vec<u32>,
     pub(crate) auxiliary_reference_offsets: Vec<usize>,
     pub(crate) owner_reference: u32,
@@ -2324,137 +2925,369 @@ pub(crate) struct ParsedSketchRelation {
     pub(crate) state_offset: usize,
     pub(crate) entity_genesis: Option<u64>,
     pub(crate) text_glyph_transforms: Option<Vec<[[f64; 4]; 4]>>,
+    /// Position within `auxiliary_references` of the first direction clause's
+    /// count-parameter reference on a rectangular pattern whose four clause
+    /// references are all present. `None` where the class was not named or a
+    /// clause reference is absent, which leaves the ordinals to be guessed from
+    /// the length of the auxiliary run.
+    pub(crate) rectangular_clause_ordinal: Option<usize>,
     pub(crate) return_members: Vec<u32>,
     pub(crate) return_member_offsets: Vec<usize>,
     pub(crate) parsed_end: usize,
 }
 
-/// Largest plausible member-role code; larger values indicate a misparse.
-const MAX_MEMBER_ROLE: u32 = 10_000;
+/// Type GUID of the shared sketch-relation class, which adds no member of its
+/// own between the property block and `ParentNode`.
+const RELATION_TYPE_GUID: &str = "60403D47-0C49-49B0-BDE8-1679608164A2";
+/// Type GUID of the offset class, whose relations carry mask `0x2000000000`.
+const OFFSET_RELATION_TYPE_GUID: &str = "D3BD153B-EB8A-405E-9D29-69EE0C3D227C";
+/// Type GUID of the spline-group class, whose relations carry mask `0x80000000`.
+const SPLINE_RELATION_TYPE_GUID: &str = "73762C3B-82DC-4632-93B0-B8FE1CC5282F";
+/// Type GUID of the tangency class, whose relations carry mask `0x100`.
+const TANGENT_RELATION_TYPE_GUID: &str = "24DB790E-3DCD-4336-AFA3-6F119EF2239B";
+/// Type GUID of the circular-pattern class, mask `0x10000000`.
+const CIRCULAR_PATTERN_RELATION_TYPE_GUID: &str = "8269E861-0BB7-47E0-9911-5AE3EC475058";
+/// Type GUID of the rectangular-pattern class, mask `0x20000000`.
+const RECTANGULAR_PATTERN_RELATION_TYPE_GUID: &str = "40800FB9-C2BE-494E-A047-7D76E82B9F6C";
+/// Type GUID of the text-frame class, mask `0x10000000000`.
+const TEXT_FRAME_RELATION_TYPE_GUID: &str = "8B369926-123F-4F9D-878E-6D4C076128D3";
+/// Type GUID of the text-path class, mask `0x20000000000`.
+const TEXT_PATH_RELATION_TYPE_GUID: &str = "9D30FCDC-EA07-4141-93E2-918B1A59E962";
 
-pub(crate) fn parse_sketch_relation(
-    payload: &[u8],
-    owners: &std::collections::HashSet<u32>,
-) -> Option<ParsedSketchRelation> {
-    if payload.get(19) != Some(&1) {
-        return None;
-    }
-    let member_count = usize::try_from(u32_at(payload, 20)?).ok()?;
-    if member_count > 64 {
-        return None;
-    }
-    let mut cursor = 24;
-    let mut members = Vec::with_capacity(member_count);
-    let mut member_offsets = Vec::with_capacity(member_count);
-    let mut member_roles = Vec::with_capacity(member_count);
-    for _ in 0..member_count {
-        let (value, end) = marked_u32(payload, cursor)?;
-        members.push(value);
-        member_offsets.push(cursor + 1);
-        // A member entry is the reference, six zero bytes, and a u32 role. A
-        // reference marker directly at the entry end is a role-less entry.
-        cursor = next_reference_marker(payload, end)?;
-        let role = if cursor >= end + 10 && payload.get(end..end + 6) == Some(&[0u8; 6]) {
-            u32_at(payload, end + 6).filter(|role| *role <= MAX_MEMBER_ROLE)
-        } else {
-            None
-        };
-        member_roles.push(role.unwrap_or(0));
-    }
-    // An optional `EntityGenesis` metadata block follows the member run: a
-    // `0x01`-marked u32 1, the two length-prefixed key strings, and the u64
-    // origin bitfield.
-    let mut entity_genesis = None;
-    if payload.get(cursor) == Some(&1)
-        && u32_at(payload, cursor + 1) == Some(1)
-        && lp_ascii_filtered(payload, cursor + 5, 0..=2000, u8::is_ascii_graphic)
-            .is_some_and(|(key, _)| key == "EntityGenesis")
-    {
-        let (_, after_key) =
-            lp_ascii_filtered(payload, cursor + 5, 0..=2000, u8::is_ascii_graphic)?;
-        let (meta_type, after_type) =
-            lp_ascii_filtered(payload, after_key, 0..=2000, u8::is_ascii_graphic)?;
-        if meta_type == "IntrinsicMetaTypeuint64" {
-            entity_genesis = Some(u64::from_le_bytes(
-                payload.get(after_type..after_type + 8)?.try_into().ok()?,
-            ));
-            cursor = next_reference_marker(payload, after_type + 8)?;
-        }
-    }
-    let mut auxiliary_references = Vec::new();
-    let mut auxiliary_reference_offsets = Vec::new();
-    // A text-path relation follows the `EntityGenesis` block with a `0x01`
-    // flag, the marked text-entity reference and its zero padding, a u32
-    // character count, and per-character blocks of `u32 16` and sixteen f64
-    // values. Parse the run structurally so the f64 payload's bytes are not
-    // misread as auxiliary references; the owning sketch reference follows
-    // the last block directly.
-    let mut text_glyph_transforms = None;
-    if payload.get(cursor) == Some(&1) && payload.get(cursor + 1) == Some(&1) {
-        if let Some((text_reference, transforms, after)) = parse_text_glyph_run(payload, cursor + 1)
+/// A sketch-relation record class, named by the type GUID its segment's type
+/// table carries for the record's entity. The class fixes the members written
+/// between the property block and the base class's `ParentNode`. A class tag
+/// cannot name it: a tag is `256` plus an index into the segment's own type
+/// table, so one tag names different relation classes in different segments.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SketchRelationClass {
+    /// A class whose most-derived level adds no member: the shared relation
+    /// class, the offset class, and the spline-group class.
+    Plain,
+    /// Three `u8` flags, each `0` or `1`.
+    Tangent,
+    /// The angle-parameter reference, the count-parameter reference, the
+    /// evaluated f64 total angle in radians, the evaluated u32 instance count,
+    /// the pattern tables, and one `u8`.
+    CircularPattern,
+    /// Three `u8` flags, a u32-counted run of references, the pattern tables,
+    /// and two direction clauses.
+    RectangularPattern,
+    /// Two references.
+    TextFrame,
+    /// The text-entity reference, a u32 character count, and that many glyph
+    /// blocks. `leading_flag` is the `u8` the class writes before the
+    /// reference, which it does from class version 1.
+    TextPath {
+        /// Whether the class version writes the leading `u8`.
+        leading_flag: bool,
+    },
+}
+
+impl SketchRelationClass {
+    /// The relation class `type_guid` names at class version `version`, or
+    /// `None` where the GUID is not a sketch-relation class.
+    pub(crate) fn of(type_guid: &str, version: u32) -> Option<Self> {
+        let matches = |known: &str| type_guid.eq_ignore_ascii_case(known);
+        if matches(RELATION_TYPE_GUID)
+            || matches(OFFSET_RELATION_TYPE_GUID)
+            || matches(SPLINE_RELATION_TYPE_GUID)
         {
-            if marked_u32(payload, after).is_some_and(|(reference, _)| owners.contains(&reference))
-            {
-                auxiliary_references.push(text_reference);
-                auxiliary_reference_offsets.push(cursor + 2);
-                text_glyph_transforms = Some(transforms);
-                cursor = after;
-            }
+            return Some(Self::Plain);
         }
+        if matches(TANGENT_RELATION_TYPE_GUID) {
+            return Some(Self::Tangent);
+        }
+        if matches(CIRCULAR_PATTERN_RELATION_TYPE_GUID) {
+            return Some(Self::CircularPattern);
+        }
+        if matches(RECTANGULAR_PATTERN_RELATION_TYPE_GUID) {
+            return Some(Self::RectangularPattern);
+        }
+        if matches(TEXT_FRAME_RELATION_TYPE_GUID) {
+            return Some(Self::TextFrame);
+        }
+        if matches(TEXT_PATH_RELATION_TYPE_GUID) {
+            return Some(Self::TextPath {
+                leading_flag: version >= 1,
+            });
+        }
+        None
     }
-    let (owner_reference, owner_reference_offset, end) = loop {
-        let (reference, end) = marked_u32(payload, cursor)?;
-        if owners.contains(&reference) {
-            break (reference, cursor + 1, end);
-        }
-        auxiliary_references.push(reference);
-        auxiliary_reference_offsets.push(cursor + 1);
-        cursor = next_reference_marker(payload, end)?;
+}
+
+/// Largest plausible counted run inside a sketch relation; a larger count is a
+/// misparse rather than a record that owns that many members.
+const MAX_RELATION_RUN: usize = 4096;
+
+/// Whether a sketch-relation record carries the paired member run. That leading
+/// byte also selects the constraint-mask width: a u64 with the run, a u32 at
+/// class version 0, which has neither.
+pub(crate) fn relation_has_paired_member_run(record: &[u8]) -> Option<bool> {
+    let (_, start) = lp_ascii_filtered(record, 15, 0..=256, u8::is_ascii_graphic)?;
+    match record.get(start)? {
+        1 => Some(true),
+        0 => Some(false),
+        _ => None,
+    }
+}
+
+/// Take one reference member at `cursor`, returning its 32-bit target and the
+/// byte offset of the target within the reference. Relation members address
+/// records in the relation's own segment, so a reference whose target does not
+/// fit a `u32` is a misparse.
+fn take_relation_reference(payload: &[u8], cursor: &mut usize) -> Option<(u32, usize)> {
+    let at = *cursor;
+    let reference = take_reference(payload, cursor)?;
+    Some((u32::try_from(reference.target?).ok()?, at + 1))
+}
+
+/// Take one reference member that the class may leave absent, recording it in
+/// the auxiliary run when it is present. An absent reference is one zero byte
+/// and names nothing, so it contributes no entry.
+fn take_auxiliary_relation_reference(
+    payload: &[u8],
+    cursor: &mut usize,
+    auxiliary_references: &mut Vec<u32>,
+    auxiliary_reference_offsets: &mut Vec<usize>,
+) -> Option<bool> {
+    let at = *cursor;
+    let reference = take_reference(payload, cursor)?;
+    let Some(target) = reference.target else {
+        return Some(false);
     };
-    // In records carrying an `EntityGenesis` block the constraint mask is a
-    // u64 six zero bytes after the owner reference. Records without that
-    // block store a `0x01`-marked or direct u32 mask after the owner padding.
-    let (state, state_offset, end) = if payload.get(end) == Some(&1) {
-        let (state, after) = marked_u32(payload, end)?;
-        (u64::from(state), end + 1, after)
-    } else if entity_genesis.is_some() {
-        if payload.get(end..end + 6) != Some(&[0u8; 6]) {
+    auxiliary_references.push(u32::try_from(target).ok()?);
+    auxiliary_reference_offsets.push(at + 1);
+    Some(true)
+}
+
+/// Skip the two tables both pattern classes write after their own leading
+/// members: a u32-counted map whose entry is a u64 key, a u32 count, and that
+/// many u64 values; then a u32-counted run of u32.
+fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
+    let entries = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+    if entries > MAX_RELATION_RUN {
+        return None;
+    }
+    *cursor += 4;
+    for _ in 0..entries {
+        let values = usize::try_from(u32_at(payload, *cursor + 8)?).ok()?;
+        if values > MAX_RELATION_RUN {
             return None;
         }
-        let state = u64::from_le_bytes(payload.get(end + 6..end + 14)?.try_into().ok()?);
-        (state, end + 6, end + 14)
-    } else {
-        let at = next_nonzero(payload, end)?;
-        if payload.get(at) == Some(&1) {
-            let (state, after) = marked_u32(payload, at)?;
-            (u64::from(state), at + 1, after)
-        } else {
-            (u64::from(u32_at(payload, at)?), at, at + 4)
-        }
+        *cursor += 12 + values * 8;
+    }
+    let ordinals = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+    if ordinals > MAX_RELATION_RUN {
+        return None;
+    }
+    *cursor += 4 + ordinals * 4;
+    (*cursor <= payload.len()).then_some(())
+}
+
+/// What a sketch-relation subclass leaves behind after its own members.
+struct RelationClassMembers {
+    rectangular_clause_ordinal: Option<usize>,
+    text_glyph_transforms: Option<Vec<[[f64; 4]; 4]>>,
+}
+
+/// Consume the members `class` writes between the property block and the base
+/// class's `ParentNode`, advancing `cursor` past them and recording every
+/// present reference among them in the auxiliary run
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+fn parse_relation_class_members(
+    payload: &[u8],
+    cursor: &mut usize,
+    class: SketchRelationClass,
+    auxiliary_references: &mut Vec<u32>,
+    auxiliary_reference_offsets: &mut Vec<usize>,
+) -> Option<RelationClassMembers> {
+    let mut members = RelationClassMembers {
+        rectangular_clause_ordinal: None,
+        text_glyph_transforms: None,
     };
-    cursor = next_nonzero(payload, end)?;
+    macro_rules! take {
+        () => {
+            take_auxiliary_relation_reference(
+                payload,
+                cursor,
+                auxiliary_references,
+                auxiliary_reference_offsets,
+            )
+        };
+    }
+    match class {
+        SketchRelationClass::Plain => {}
+        SketchRelationClass::Tangent => {
+            for _ in 0..3 {
+                // A flag outside `{0, 1}` is a misparse, not a third state.
+                if !matches!(payload.get(*cursor)?, 0 | 1) {
+                    return None;
+                }
+                *cursor += 1;
+            }
+        }
+        SketchRelationClass::TextFrame => {
+            take!()?;
+            take!()?;
+        }
+        SketchRelationClass::CircularPattern => {
+            take!()?;
+            take!()?;
+            // The evaluated total angle and the evaluated instance count.
+            *cursor += 12;
+            skip_pattern_tables(payload, cursor)?;
+            if payload.get(*cursor)? != &0 {
+                return None;
+            }
+            *cursor += 1;
+        }
+        SketchRelationClass::RectangularPattern => {
+            // The three flags are not checked the way the tangency class's are:
+            // the counted runs and the unit directions that follow them already
+            // reject a misframed record, and the flags do not.
+            *cursor += 3;
+            let seeds = usize::try_from(u32_at(payload, *cursor)?).ok()?;
+            if seeds > MAX_RELATION_RUN {
+                return None;
+            }
+            *cursor += 4;
+            for _ in 0..seeds {
+                take!()?;
+            }
+            skip_pattern_tables(payload, cursor)?;
+            let clause_ordinal = auxiliary_reference_offsets.len();
+            let mut complete = true;
+            for _ in 0..2 {
+                // The evaluated instance count precedes the count-parameter
+                // reference; the unit direction and the seed-to-final-instance
+                // span follow it, and the distance parameter closes the clause.
+                *cursor += 4;
+                complete &= take!()?;
+                *cursor += 32;
+                complete &= take!()?;
+            }
+            members.rectangular_clause_ordinal = complete.then_some(clause_ordinal);
+        }
+        SketchRelationClass::TextPath { leading_flag } => {
+            if leading_flag {
+                if payload.get(*cursor)? != &1 {
+                    return None;
+                }
+                *cursor += 1;
+            }
+            let (text_reference, transforms, end) = parse_text_glyph_run(payload, *cursor)?;
+            auxiliary_references.push(text_reference);
+            auxiliary_reference_offsets.push(*cursor + 1);
+            members.text_glyph_transforms = Some(transforms);
+            *cursor = end;
+        }
+    }
+    Some(members)
+}
+
+/// Parse one sketch-relation record body whose class is known
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+///
+/// The payload is `u8 1`, a u32 count and that many `(reference, u32 relation
+/// ordinal)` pairs, the property-block presence byte and its block, the
+/// class-defined members, the `ParentNode` reference naming the owning sketch,
+/// a u64 constraint mask, a u32 count and that many bare references, and one
+/// zero byte. At class version 0 the leading byte is zero, the pair list is
+/// absent, and the mask is a u32. Both reference runs hold the same members;
+/// only the second is in semantic order.
+pub(crate) fn parse_classed_sketch_relation(
+    payload: &[u8],
+    class: SketchRelationClass,
+) -> Option<ParsedSketchRelation> {
+    parse_relation(payload, class)
+}
+
+fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSketchRelation> {
+    // The record header is the LP-ASCII class tag, the u64 entity id, and the
+    // LP-ASCII record name; the member payload follows it.
+    let (_, start) = lp_ascii_filtered(payload, 15, 0..=256, u8::is_ascii_graphic)?;
+    let paired_run = match payload.get(start)? {
+        1 => true,
+        0 => false,
+        _ => return None,
+    };
+    let mut cursor = start + 1;
+    let mut members = Vec::new();
+    let mut member_offsets = Vec::new();
+    let mut member_relation_ordinals = Vec::new();
+    if paired_run {
+        let member_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+        if member_count > MAX_RELATION_RUN {
+            return None;
+        }
+        cursor += 4;
+        members.reserve(member_count);
+        member_offsets.reserve(member_count);
+        member_relation_ordinals.reserve(member_count);
+        for _ in 0..member_count {
+            let (member, offset) = take_relation_reference(payload, &mut cursor)?;
+            members.push(member);
+            member_offsets.push(offset);
+            member_relation_ordinals.push(u32_at(payload, cursor)?);
+            cursor += 4;
+        }
+    }
+    // The base class level opens with its property-block presence byte. The
+    // block is `u32 count` and that many `(key, type name, value)` triples;
+    // `EntityGenesis` is one such key.
+    let entity_genesis = read_property_block(payload, &mut cursor)?
+        .into_iter()
+        .find(|(key, _)| key == "EntityGenesis")
+        .map(|(_, value)| value);
+    let mut auxiliary_references = Vec::new();
+    let mut auxiliary_reference_offsets = Vec::new();
+    let class_members = parse_relation_class_members(
+        payload,
+        &mut cursor,
+        class,
+        &mut auxiliary_references,
+        &mut auxiliary_reference_offsets,
+    )?;
+    let rectangular_clause_ordinal = class_members.rectangular_clause_ordinal;
+    let text_glyph_transforms = class_members.text_glyph_transforms;
+    let (owner_reference, owner_reference_offset) = take_relation_reference(payload, &mut cursor)?;
+    let state_offset = cursor;
+    // The constraint mask follows `ParentNode` directly. It is a u64 in the
+    // paired-run form and a u32 at class version 0.
+    let (state, mut cursor) = if paired_run {
+        (
+            u64::from_le_bytes(
+                payload
+                    .get(state_offset..state_offset + 8)?
+                    .try_into()
+                    .ok()?,
+            ),
+            state_offset + 8,
+        )
+    } else {
+        (u64::from(u32_at(payload, state_offset)?), state_offset + 4)
+    };
     let return_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
-    if return_count > 64 {
+    if return_count > MAX_RELATION_RUN {
         return None;
     }
     cursor += 4;
     let mut return_members = Vec::with_capacity(return_count);
     let mut return_member_offsets = Vec::with_capacity(return_count);
-    for ordinal in 0..return_count {
-        cursor = next_reference_marker(payload, cursor)?;
-        let (value, end) = marked_u32(payload, cursor)?;
-        return_members.push(value);
-        return_member_offsets.push(cursor + 1);
-        cursor = end;
-        if ordinal + 1 < return_count {
-            cursor = next_reference_marker(payload, cursor)?;
-        }
+    for _ in 0..return_count {
+        let (member, offset) = take_relation_reference(payload, &mut cursor)?;
+        return_members.push(member);
+        return_member_offsets.push(offset);
     }
-    let parsed_end = cursor;
+    if payload.get(cursor) != Some(&0) {
+        return None;
+    }
+    let parsed_end = cursor + 1;
     Some(ParsedSketchRelation {
         members,
         member_offsets,
-        member_roles,
+        member_relation_ordinals,
         auxiliary_references,
         auxiliary_reference_offsets,
         owner_reference,
@@ -2463,6 +3296,7 @@ pub(crate) fn parse_sketch_relation(
         state_offset,
         entity_genesis,
         text_glyph_transforms,
+        rectangular_clause_ordinal,
         return_members,
         return_member_offsets,
         parsed_end,
@@ -2510,23 +3344,40 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
     Some((text_reference, transforms, cursor))
 }
 
-pub(crate) fn next_indexed_record_offset(bytes: &[u8], mut position: usize) -> Option<usize> {
-    while position + 11 <= bytes.len() {
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered(bytes, position, 0..=2000, u8::is_ascii_graphic)
-        else {
-            position += 1;
-            continue;
-        };
-        if class_tag.len() == 3
-            && class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && bytes.get(after_tag..after_tag + 4).is_some()
-        {
-            return Some(position);
-        }
-        position += 1;
-    }
-    None
+/// Whether an indexed-record header starts at `at`: a u32 length prefix of
+/// three, a three-digit ASCII class tag, and a u32 record index. The eleven
+/// bytes must be present.
+fn indexed_record_header_at(bytes: &[u8], at: usize) -> bool {
+    u32_at(bytes, at) == Some(3)
+        && bytes
+            .get(at + 4..at + 7)
+            .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit))
+        && bytes.get(at + 7..at + 11).is_some()
+}
+
+/// The record index carried by the indexed-record header at `at`. The header
+/// spends its first seven bytes on the length-prefixed class tag, so the index
+/// always sits at `at + 7`.
+pub(crate) fn indexed_record_index(bytes: &[u8], at: usize) -> Option<u32> {
+    u32_at(bytes, at.checked_add(7)?)
+}
+
+pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
+    indexed_record_offsets(bytes.get(position..)?)
+        .next()
+        .map(|at| position + at)
+}
+
+/// Header offsets of every indexed record whose class tag is three characters.
+///
+/// A class tag is `256` plus an index into the segment's own type table, so a
+/// tag reaches four characters only in a segment registering more than 744
+/// types. No segment registers that many, and `indexed_record_index` reads the
+/// record index at a fixed `at + 7` on the same assumption; both would have to
+/// change together to widen it.
+pub(crate) fn indexed_record_offsets(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
+    memchr::memmem::find_iter(bytes, &[3, 0, 0, 0])
+        .filter(|at| indexed_record_header_at(bytes, *at))
 }
 
 pub(crate) fn next_indexed_record_offset_with_index(
@@ -2536,8 +3387,7 @@ pub(crate) fn next_indexed_record_offset_with_index(
 ) -> Option<usize> {
     loop {
         let offset = next_indexed_record_offset(bytes, position)?;
-        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag) == Some(record_index) {
+        if indexed_record_index(bytes, offset) == Some(record_index) {
             return Some(offset);
         }
         position = offset.checked_add(1)?;
@@ -2546,26 +3396,6 @@ pub(crate) fn next_indexed_record_offset_with_index(
 
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
     (bytes.get(position) == Some(&1)).then_some((u32_at(bytes, position + 1)?, position + 5))
-}
-
-fn next_reference_marker(bytes: &[u8], mut position: usize) -> Option<usize> {
-    while position + 5 <= bytes.len() {
-        if bytes.get(position) == Some(&1) {
-            let reference = u32_at(bytes, position + 1)?;
-            if reference <= 10_000_000 {
-                return Some(position);
-            }
-        }
-        position += 1;
-    }
-    None
-}
-
-fn next_nonzero(bytes: &[u8], mut position: usize) -> Option<usize> {
-    while bytes.get(position) == Some(&0) {
-        position += 1;
-    }
-    (position + 4 <= bytes.len()).then_some(position)
 }
 
 struct SketchReferenceList {
@@ -2613,4 +3443,390 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         reference_offsets,
         end: cursor,
     })
+}
+
+#[cfg(test)]
+mod relation_class_tests {
+    use super::{decode_pattern_definition, parse_classed_sketch_relation, SketchRelationClass};
+    use crate::records::{SketchPatternDefinition, SketchPatternDirection};
+
+    /// One present reference: the presence byte, the u64 target, and the
+    /// `cross_document` and same-segment flags.
+    fn push_reference(out: &mut Vec<u8>, target: u32) {
+        out.push(1);
+        out.extend_from_slice(&u64::from(target).to_le_bytes());
+        out.extend_from_slice(&[0u8; 2]);
+    }
+
+    /// One absent reference.
+    fn push_absent_reference(out: &mut Vec<u8>) {
+        out.push(0);
+    }
+
+    /// A relation record: the header, the paired member run, an empty property
+    /// block, `class_members`, `ParentNode`, the u64 mask, the return run, and
+    /// the trailing zero byte. The record ends where the parse must end.
+    fn relation_record(
+        members: &[(u32, u32)],
+        class_members: &[u8],
+        owner: u32,
+        mask: u64,
+        returns: &[u32],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(b"298");
+        out.extend_from_slice(&7u32.to_le_bytes());
+        out.extend_from_slice(&[0u8; 8]);
+        out.push(1);
+        out.extend_from_slice(
+            &u32::try_from(members.len())
+                .expect("member count fits a u32")
+                .to_le_bytes(),
+        );
+        for (reference, ordinal) in members {
+            push_reference(&mut out, *reference);
+            out.extend_from_slice(&ordinal.to_le_bytes());
+        }
+        out.push(0);
+        out.extend_from_slice(class_members);
+        push_reference(&mut out, owner);
+        out.extend_from_slice(&mask.to_le_bytes());
+        out.extend_from_slice(
+            &u32::try_from(returns.len())
+                .expect("return count fits a u32")
+                .to_le_bytes(),
+        );
+        for reference in returns {
+            push_reference(&mut out, *reference);
+        }
+        out.push(0);
+        out
+    }
+
+    /// The two pattern tables, both empty.
+    fn empty_pattern_tables() -> [u8; 8] {
+        [0u8; 8]
+    }
+
+    /// One rectangular direction clause.
+    fn push_direction_clause(
+        out: &mut Vec<u8>,
+        count: u32,
+        count_parameter: u32,
+        direction: [f64; 3],
+        distance: f64,
+        distance_parameter: u32,
+    ) {
+        out.extend_from_slice(&count.to_le_bytes());
+        push_reference(out, count_parameter);
+        for axis in direction {
+            out.extend_from_slice(&axis.to_le_bytes());
+        }
+        out.extend_from_slice(&distance.to_le_bytes());
+        push_reference(out, distance_parameter);
+    }
+
+    /// A glyph run: the text reference, the character count, and one block of
+    /// `u32 16` and a row-major 4x4 transform.
+    fn push_glyph_run(out: &mut Vec<u8>, text: u32, translation: f64) {
+        push_reference(out, text);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&16u32.to_le_bytes());
+        for row in 0..4 {
+            for column in 0..4 {
+                let value = if row == 0 && column == 3 {
+                    translation
+                } else {
+                    f64::from(u8::from(row == column))
+                };
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
+
+    #[test]
+    fn relation_classes_are_named_by_type_guid() {
+        assert_eq!(
+            SketchRelationClass::of("60403D47-0C49-49B0-BDE8-1679608164A2", 3),
+            Some(SketchRelationClass::Plain)
+        );
+        assert_eq!(
+            SketchRelationClass::of("d3bd153b-eb8a-405e-9d29-69ee0c3d227c", 0),
+            Some(SketchRelationClass::Plain)
+        );
+        assert_eq!(
+            SketchRelationClass::of("73762C3B-82DC-4632-93B0-B8FE1CC5282F", 0),
+            Some(SketchRelationClass::Plain)
+        );
+        assert_eq!(
+            SketchRelationClass::of("24DB790E-3DCD-4336-AFA3-6F119EF2239B", 0),
+            Some(SketchRelationClass::Tangent)
+        );
+        assert_eq!(
+            SketchRelationClass::of("8269E861-0BB7-47E0-9911-5AE3EC475058", 3),
+            Some(SketchRelationClass::CircularPattern)
+        );
+        assert_eq!(
+            SketchRelationClass::of("40800FB9-C2BE-494E-A047-7D76E82B9F6C", 5),
+            Some(SketchRelationClass::RectangularPattern)
+        );
+        assert_eq!(
+            SketchRelationClass::of("8B369926-123F-4F9D-878E-6D4C076128D3", 0),
+            Some(SketchRelationClass::TextFrame)
+        );
+        assert_eq!(
+            SketchRelationClass::of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 0),
+            Some(SketchRelationClass::TextPath {
+                leading_flag: false
+            })
+        );
+        assert_eq!(
+            SketchRelationClass::of("9D30FCDC-EA07-4141-93E2-918B1A59E962", 1),
+            Some(SketchRelationClass::TextPath { leading_flag: true })
+        );
+        assert_eq!(
+            SketchRelationClass::of("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 0),
+            None
+        );
+    }
+
+    #[test]
+    fn plain_relation_reads_parent_node_without_class_members() {
+        let record = relation_record(&[(300, 1), (301, 0)], &[], 201, 0x1, &[300, 301]);
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.state, 0x1);
+        assert_eq!(parsed.members, [300, 301]);
+        assert_eq!(parsed.return_members, [300, 301]);
+        assert!(parsed.auxiliary_references.is_empty());
+        assert_eq!(parsed.parsed_end, record.len());
+    }
+
+    #[test]
+    fn tangent_relation_reads_its_three_flags() {
+        // The middle flag is `1`, which the reference-marker walk reads as the
+        // presence byte of a reference and steps into the flags.
+        let record = relation_record(&[(300, 1), (301, 0)], &[0, 1, 0], 201, 0x100, &[300, 301]);
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Tangent)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.state, 0x100);
+        assert!(parsed.auxiliary_references.is_empty());
+        assert_eq!(parsed.parsed_end, record.len());
+        assert!(parse_classed_sketch_relation(
+            &relation_record(&[(300, 1)], &[0, 2, 0], 201, 0x100, &[300]),
+            SketchRelationClass::Tangent
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn circular_pattern_relation_reads_its_parameters_and_tables() {
+        let mut class_members = Vec::new();
+        push_reference(&mut class_members, 336);
+        push_reference(&mut class_members, 333);
+        class_members.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
+        class_members.extend_from_slice(&3u32.to_le_bytes());
+        class_members.extend_from_slice(&empty_pattern_tables());
+        class_members.push(0);
+        let record = relation_record(
+            &[(300, 1), (301, 0)],
+            &class_members,
+            201,
+            0x1000_0000,
+            &[300, 301],
+        );
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.auxiliary_references, [336, 333]);
+        assert_eq!(parsed.parsed_end, record.len());
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(SketchPatternDefinition::Circular {
+                angle_parameter: 336,
+                count_parameter: 333,
+                evaluated_angle: std::f64::consts::TAU,
+                evaluated_count: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
+        let mut class_members = Vec::new();
+        push_absent_reference(&mut class_members);
+        push_absent_reference(&mut class_members);
+        class_members.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
+        class_members.extend_from_slice(&6u32.to_le_bytes());
+        // One map entry keyed `1` holding two values, then a two-entry u32 run.
+        class_members.extend_from_slice(&1u32.to_le_bytes());
+        class_members.extend_from_slice(&1u64.to_le_bytes());
+        class_members.extend_from_slice(&2u32.to_le_bytes());
+        class_members.extend_from_slice(&122u64.to_le_bytes());
+        class_members.extend_from_slice(&118u64.to_le_bytes());
+        class_members.extend_from_slice(&2u32.to_le_bytes());
+        class_members.extend_from_slice(&1u32.to_le_bytes());
+        class_members.extend_from_slice(&2u32.to_le_bytes());
+        class_members.push(0);
+        let record = relation_record(&[(300, 1)], &class_members, 201, 0x1000_0000, &[300]);
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert!(parsed.auxiliary_references.is_empty());
+        assert_eq!(parsed.parsed_end, record.len());
+        assert_eq!(decode_pattern_definition(&record, &parsed), None);
+    }
+
+    #[test]
+    fn rectangular_pattern_relation_reads_a_seed_reference_before_its_clauses() {
+        let mut class_members = vec![1, 0, 0];
+        class_members.extend_from_slice(&1u32.to_le_bytes());
+        push_reference(&mut class_members, 900);
+        class_members.extend_from_slice(&empty_pattern_tables());
+        push_direction_clause(&mut class_members, 3, 464, [1.0, 0.0, 0.0], 3.0, 470);
+        push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.5, 473);
+        let record = relation_record(
+            &[(300, 1), (301, 0)],
+            &class_members,
+            201,
+            0x2000_0000,
+            &[300, 301],
+        );
+        let parsed =
+            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+                .expect("the classed parse reads the record");
+        assert_eq!(parsed.owner_reference, 201);
+        assert_eq!(parsed.auxiliary_references, [900, 464, 470, 467, 473]);
+        assert_eq!(parsed.rectangular_clause_ordinal, Some(1));
+        assert_eq!(parsed.parsed_end, record.len());
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(SketchPatternDefinition::Rectangular {
+                directions: [
+                    SketchPatternDirection {
+                        evaluated_count: 3,
+                        count_parameter: 464,
+                        direction: [1.0, 0.0, 0.0],
+                        evaluated_distance: 3.0,
+                        distance_parameter: 470,
+                    },
+                    SketchPatternDirection {
+                        evaluated_count: 1,
+                        count_parameter: 467,
+                        direction: [0.0, 1.0, 0.0],
+                        evaluated_distance: 0.5,
+                        distance_parameter: 473,
+                    },
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn rectangular_pattern_relation_reads_clauses_without_a_seed_reference() {
+        let mut class_members = vec![0, 0, 0];
+        class_members.extend_from_slice(&0u32.to_le_bytes());
+        class_members.extend_from_slice(&empty_pattern_tables());
+        push_direction_clause(&mut class_members, 4, 464, [1.0, 0.0, 0.0], 2.0, 470);
+        push_direction_clause(&mut class_members, 2, 467, [0.0, 1.0, 0.0], 1.5, 473);
+        let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
+        let parsed =
+            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+                .expect("the classed parse reads the record");
+        assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
+        assert_eq!(parsed.rectangular_clause_ordinal, Some(0));
+        assert_eq!(parsed.parsed_end, record.len());
+        let Some(SketchPatternDefinition::Rectangular { directions }) =
+            decode_pattern_definition(&record, &parsed)
+        else {
+            panic!("expected a rectangular pattern definition");
+        };
+        assert_eq!(directions[0].evaluated_count, 4);
+        assert_eq!(directions[1].evaluated_count, 2);
+    }
+
+    #[test]
+    fn text_frame_relation_reads_its_two_references() {
+        let mut class_members = Vec::new();
+        push_absent_reference(&mut class_members);
+        push_reference(&mut class_members, 2394);
+        let record = relation_record(
+            &[(2394, 0), (2403, 0)],
+            &class_members,
+            201,
+            0x100_0000_0000,
+            &[2403],
+        );
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.auxiliary_references, [2394]);
+        assert_eq!(parsed.parsed_end, record.len());
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(SketchPatternDefinition::TextFrame {
+                text_reference: 2394
+            })
+        );
+
+        let mut both = Vec::new();
+        push_reference(&mut both, 2404);
+        push_reference(&mut both, 2394);
+        let record = relation_record(
+            &[(2394, 0), (2403, 0)],
+            &both,
+            201,
+            0x100_0000_0000,
+            &[2403],
+        );
+        let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
+            .expect("the classed parse reads the record");
+        assert_eq!(parsed.auxiliary_references, [2404, 2394]);
+        assert_eq!(parsed.parsed_end, record.len());
+    }
+
+    #[test]
+    fn text_path_relation_reads_its_glyph_run_at_both_versions() {
+        for leading_flag in [false, true] {
+            let mut class_members = Vec::new();
+            if leading_flag {
+                class_members.push(1);
+            }
+            push_glyph_run(&mut class_members, 2, 5.0);
+            let record = relation_record(
+                &[(1, 1), (2, 0)],
+                &class_members,
+                201,
+                0x200_0000_0000,
+                &[1],
+            );
+            let parsed = parse_classed_sketch_relation(
+                &record,
+                SketchRelationClass::TextPath { leading_flag },
+            )
+            .expect("the classed parse reads the record");
+            assert_eq!(parsed.auxiliary_references, [2]);
+            assert_eq!(parsed.parsed_end, record.len());
+            let Some(SketchPatternDefinition::TextPath {
+                text_reference,
+                glyph_transforms,
+            }) = decode_pattern_definition(&record, &parsed)
+            else {
+                panic!("expected a text-path pattern definition");
+            };
+            assert_eq!(text_reference, 2);
+            assert_eq!(glyph_transforms[0][0][3], 5.0);
+            // The version-0 layout has no leading byte, so reading one steps
+            // into the text reference and the run no longer closes.
+            assert!(parse_classed_sketch_relation(
+                &record,
+                SketchRelationClass::TextPath {
+                    leading_flag: !leading_flag
+                }
+            )
+            .is_none_or(|other| other.parsed_end != record.len()));
+        }
+    }
 }

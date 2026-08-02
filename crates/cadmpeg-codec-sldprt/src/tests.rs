@@ -12,6 +12,27 @@ use cadmpeg_ir::LossKind;
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
 
+#[test]
+fn source_record_join_borrows_the_retained_source_image() {
+    let payload = vec![0x5a; 4096];
+    let payload_ptr = payload.as_ptr();
+    let fidelity = cadmpeg_ir::SourceFidelity {
+        retained_records: vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord {
+            id: "sldprt:file:source-image#0".into(),
+            stream: "source".into(),
+            offset: 0,
+            byte_len: payload.len() as u64,
+            sha256: cadmpeg_ir::hash::sha256_hex(&payload),
+            data: Some(payload),
+        }],
+        ..Default::default()
+    };
+
+    let records = crate::source_records(&cadmpeg_ir::examples::unit_cube(), &fidelity).unwrap();
+    let retained = records[0].data.expect("retained source bytes");
+    assert_eq!(retained.as_ptr(), payload_ptr);
+}
+
 fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> crate::native::SldprtNative {
     crate::native::SldprtNative::load(
         ir.native
@@ -59,7 +80,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     for records in round_trip.arenas.values() {
         for record in records {
             let json = serde_json::to_value(record).unwrap();
-            assert_eq!(json["id"], record.id);
+            assert_eq!(json["id"], record.id());
             assert!(json.as_object().unwrap().len() > 1);
         }
     }
@@ -161,7 +182,9 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
     let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
     legacy.version = 4;
     for record in legacy.arenas.get_mut("sketch_input_entities").unwrap() {
-        record.fields.remove("object_index");
+        let mut fields = record.fields();
+        fields.remove("object_index");
+        *record = cadmpeg_ir::NativeRecord::new(record.id().to_string(), fields);
     }
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
     assert!(migrated.feature_input_lanes.iter().all(|lane| {
@@ -177,9 +200,11 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
 
     let mut sentinel = decoded.ir.native.namespace("sldprt").unwrap().clone();
     sentinel.version = 6;
-    sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0]
-        .fields
-        .insert("object_index".into(), serde_json::json!(u32::MAX));
+    let sentinel_entity = &mut sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0];
+    let mut sentinel_fields = sentinel_entity.fields();
+    sentinel_fields.insert("object_index".into(), serde_json::json!(u32::MAX));
+    *sentinel_entity =
+        cadmpeg_ir::NativeRecord::new(sentinel_entity.id().to_string(), sentinel_fields);
     let migrated = crate::native::SldprtNative::load(&sentinel).unwrap();
     assert_eq!(
         migrated.feature_input_lanes[0].sketch_entities[0].object_index,
@@ -2320,7 +2345,7 @@ fn encoder_writes_source_less_line_sketches() {
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
-            profile: Some(profile.clone()),
+            section: cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
             sections: Vec::new(),
             path: Some(path.clone()),
             mode: cadmpeg_ir::features::SweepMode::Solid {
@@ -2332,6 +2357,9 @@ fn encoder_writes_source_less_line_sketches() {
             path_tangent: false,
             linearize: false,
             twist: Some(Angle(0.3)),
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
             scale: Some(1.5),
             allow_multi_profile_faces: None,
         },
@@ -3783,6 +3811,7 @@ fn encoder_writes_source_less_native_features() {
             flip_direction: false,
         },
         FeatureDefinition::Shell {
+            bodies: None,
             removed_faces: FaceSelection::Resolved {
                 faces: vec![ir.model.faces[0].id.clone()],
                 native: "face-a".into(),
@@ -3808,6 +3837,7 @@ fn encoder_writes_source_less_native_features() {
             },
             tools: BodySelection::Native("body-b,body-c".into()),
             op: BooleanOp::Join,
+            keep_tools: false,
         },
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Native("face-d".into()),
@@ -8647,18 +8677,26 @@ fn native_validation_rejects_orphan_history_records() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded
+    let orphan = decoded
         .ir
         .native
         .namespace_mut("sldprt")
         .arenas
         .get_mut("features")
         .unwrap()[0]
-        .fields
-        .insert(
-            "parent".into(),
-            serde_json::Value::String("missing-history".into()),
-        );
+        .clone();
+    let mut orphan_fields = orphan.fields();
+    orphan_fields.insert(
+        "parent".into(),
+        serde_json::Value::String("missing-history".into()),
+    );
+    decoded
+        .ir
+        .native
+        .namespace_mut("sldprt")
+        .arenas
+        .get_mut("features")
+        .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
     assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
         finding.message.contains("invalid owner") && finding.message.contains("missing-history")
     }));
@@ -10903,7 +10941,7 @@ fn decode_resolves_feature_topology_selections() {
     assert!(matches!(
         &decoded.ir.model.features[5].definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Faces(faces)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Faces(faces)),
             path: Some(PathRef::Edges(edges)),
             ..
         } if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)
@@ -12469,11 +12507,13 @@ fn semantic_writer_round_trips_typed_combine() {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             op: BooleanOp::Join,
+            keep_tools: false,
         } if target == "body:1" && tools == "body:2,body:3"
     ));
 
-    let FeatureDefinition::Combine { target, tools, op } =
-        &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Combine {
+        target, tools, op, ..
+    } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed combine");
     };
@@ -12498,6 +12538,7 @@ fn semantic_writer_round_trips_typed_combine() {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             op: BooleanOp::Intersect,
+            keep_tools: false,
         } if target == "body:4" && tools == "body:5,body:6"
     ));
 }
@@ -12526,6 +12567,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             op: BooleanOp::Unresolved,
+            keep_tools: false,
         }
     ));
 
@@ -12543,6 +12585,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             op: BooleanOp::Unresolved,
+            keep_tools: false,
         }
     ));
 }
@@ -15766,7 +15809,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(profile)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile)),
             path: Some(PathRef::Native(path_ref)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
                 op: BooleanOp::NewBody,
@@ -15780,7 +15823,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     ));
 
     let FeatureDefinition::Sweep {
-        profile,
+        section,
         mode,
         twist,
         scale,
@@ -15789,7 +15832,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     else {
         panic!("typed sweep");
     };
-    *profile = Some(ProfileRef::Feature(profile_b.clone()));
+    *section = cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile_b.clone()));
     *mode = cadmpeg_ir::features::SweepMode::Solid {
         op: BooleanOp::Join,
     };
@@ -15839,7 +15882,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: None,
@@ -15870,7 +15913,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: Some(Angle(0.5)),
@@ -15902,7 +15945,7 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: SweepMode::Solid {
                 op: BooleanOp::Unresolved
@@ -16153,7 +16196,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     assert!(matches!(
         &sweep.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(feature)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(feature)),
             ..
         } if feature == &helix.id
     ));
@@ -16183,7 +16226,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
             .find(|feature| feature.name.as_deref() == Some("Renamed surface sweep"))
             .map(|feature| &feature.definition),
         Some(FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(_)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_)),
             ..
         })
     ));
@@ -16258,7 +16301,10 @@ fn decode_projects_generated_surface_sweep_profile_path() {
     assert!(matches!(
         &second.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Generated { curves, native }),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
+                curves,
+                native,
+            }),
             ..
         } if curves.len() == 1
             && curves[0].feature == first.id
@@ -18740,7 +18786,9 @@ fn decode_and_validate_compact_delete_body_selection() {
         .get_mut("feature_input_body_selections")
         .unwrap()
     {
-        record.fields.remove("mode");
+        let mut fields = record.fields();
+        fields.remove("mode");
+        *record = cadmpeg_ir::NativeRecord::new(record.id().to_string(), fields);
     }
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
     assert_eq!(
@@ -19465,7 +19513,7 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
     assert!(matches!(
         &feature.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Sketch(id)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(id)),
             ..
         } if id == &sketch.id
     ));
@@ -19494,7 +19542,10 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
         .expect("sweep history feature");
     assert!(matches!(
         &feature.definition,
-        FeatureDefinition::Sweep { profile: None, .. }
+        FeatureDefinition::Sweep {
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
+            ..
+        }
     ));
 }
 
@@ -19867,7 +19918,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .iter()
         .find_map(|feature| match &feature.definition {
             FeatureDefinition::Sweep {
-                profile: Some(ProfileRef::Sketch(profile)),
+                section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(profile)),
                 path: Some(PathRef::Sketch(path)),
                 ..
             } => Some((profile, path)),
@@ -21280,10 +21331,7 @@ fn source_less_cube() -> cadmpeg_ir::CadIr {
 fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec::DecodeResult {
     let mut encoded = Vec::new();
     SldprtCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: ir,
-            fidelity: None,
-        })
+        .plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     SldprtCodec

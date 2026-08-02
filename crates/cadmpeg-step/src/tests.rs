@@ -3,6 +3,7 @@
 //! fixtures or inline), and expected STEP fragments are asserted inline. No test
 //! depends on an external STEP consumer.
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 
@@ -3189,10 +3190,10 @@ fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord {
-            id: "asm-history-0".into(),
-            fields: std::iter::empty().collect(),
-        }],
+        vec![cadmpeg_ir::NativeRecord::new(
+            "asm-history-0",
+            Default::default(),
+        )],
     );
     ir.finalize();
 
@@ -3208,10 +3209,10 @@ fn strict_writer_rejects_before_emitting_bytes() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord {
-            id: "asm-history-0".into(),
-            fields: std::iter::empty().collect(),
-        }],
+        vec![cadmpeg_ir::NativeRecord::new(
+            "asm-history-0",
+            Default::default(),
+        )],
     );
     ir.finalize();
     let options = StepWriteOptions {
@@ -3342,6 +3343,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
         id: AppearanceId("test:appearance#black".to_string()),
         name: None,
         asset_guid: None,
+        library_id: None,
         visual_guid: None,
         physical_token: None,
         schema: None,
@@ -3401,6 +3403,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         id: AppearanceId("test:appearance#black".to_string()),
         name: None,
         asset_guid: None,
+        library_id: None,
         visual_guid: None,
         physical_token: None,
         schema: None,

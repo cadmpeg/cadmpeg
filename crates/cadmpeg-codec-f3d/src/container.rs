@@ -4,9 +4,12 @@
 //!
 //! [`scan`] retains the source archive, enumerates each entry, reads ASM headers
 //! from `.smb` and `.smbh` B-rep streams, and locates their `delta_state`
-//! history boundaries. [`select_active_brep`] chooses the `.smbh` stream when
-//! present and otherwise uses the first `.smb` construction snapshot.
-//! [`crate::decode`] passes the selected stream to the SAB and B-rep layers.
+//! history boundaries. Model geometry is selected from Design body-to-blob
+//! bindings by [`crate::decode`]. [`select_history_brep`] independently locates
+//! the stream whose header declares a history partition. When Design bindings
+//! are absent, [`legacy_design_model_breps`] and [`select_fallback_brep`]
+//! supply explicit compatibility fallbacks without asserting that one
+//! extension is the document model.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -23,9 +26,11 @@ pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
-    /// The authoritative final-model ASM BREP stream.
+    /// An ASM BREP entry with the `.smbh` extension. Its header normally
+    /// declares a history partition.
     pub const BREP_SMBH: &str = "brep-smbh";
-    /// An earlier construction-snapshot ASM BREP stream.
+    /// An ASM BREP entry with the `.smb` extension. Its header normally omits
+    /// the history partition.
     pub const BREP_SMB: &str = "brep-smb";
     /// A nested `.protein` material/appearance ZIP.
     pub const PROTEIN: &str = "protein-assets";
@@ -41,6 +46,14 @@ pub mod role {
     pub const IMAGE: &str = "image";
     /// Secondary tessellated mesh data (`.paramesh`), not the exact source.
     pub const PARAMESH: &str = "paramesh";
+    /// The `OGS.BlobFolder` display scene graph and its buffer arenas. The
+    /// `world` member's drawable nodes carry the design entity ID they draw,
+    /// `stream_mesh_NNN` and `Fusion_mesh_NNN` are the vertex and index
+    /// buffer arenas that graph addresses by byte offset, its geometry is a
+    /// tessellation of the B-rep streams, and its appearance bindings repeat
+    /// the ACT and protein assets, so no carrier depends on it. See DR-28 for
+    /// the one value class whose design source is unknown.
+    pub const OGS_CACHE: &str = "ogs-cache";
     /// An empty/placeholder design-configuration entry.
     pub const DESIGN_CONFIG: &str = "design-config";
     /// The empty top-level document-properties slot.
@@ -132,6 +145,8 @@ pub fn classify(name: &str) -> &'static str {
         role::PREVIEW
     } else if name.contains("Images.BlobParts") {
         role::IMAGE
+    } else if name.contains("OGS.BlobFolder/") {
+        role::OGS_CACHE
     } else {
         role::OTHER
     }
@@ -143,14 +158,14 @@ pub fn classify(name: &str) -> &'static str {
 pub struct BrepFacts {
     /// Entry name.
     pub name: String,
-    /// Whether this is the `.smbh` authoritative stream.
+    /// Whether the archive entry has the `.smbh` extension.
     pub is_smbh: bool,
     /// Uncompressed byte length.
     pub uncompressed_len: u64,
     /// Parsed ASM header, if the magic was present.
     pub header: Option<asm_header::AsmHeader>,
-    /// Offset of the first `delta_state` marker (active-slice boundary).
-    pub delta_state_offset: Option<usize>,
+    /// Exact byte boundary between solved records and construction history.
+    pub solved_record_limit: Option<usize>,
     /// SHA-256 (lowercase hex) of the decompressed stream.
     pub sha256: String,
 }
@@ -219,14 +234,14 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                 }
             }
             let header = asm_header::parse(buf);
-            let delta = asm_header::first_delta_state_offset(buf);
+            let solved_record_limit = asm_header::solved_record_limit(buf);
             let sha = sha256_hex(buf);
 
             attributes.insert("asm_magic".to_string(), asm_magic_label(buf));
             if let Some(h) = &header {
                 attributes.insert("asm_width".to_string(), h.width.to_string());
-                if let Some(v) = h.release {
-                    attributes.insert("asm_release".to_string(), v.to_string());
+                if let Some(v) = h.save_format_version {
+                    attributes.insert("acis_save_format_version".to_string(), v.to_string());
                 }
                 if let Some(v) = h.record_count {
                     attributes.insert("asm_record_count".to_string(), v.to_string());
@@ -256,13 +271,13 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                     attributes.insert("resnor".to_string(), format!("{r}"));
                 }
             }
-            match delta {
-                Some(off) => {
-                    attributes.insert("delta_state_first_offset".to_string(), off.to_string());
-                    attributes.insert("active_slice_len".to_string(), off.to_string());
+            match solved_record_limit {
+                Some(offset) => {
+                    attributes.insert("history_partition_offset".to_string(), offset.to_string());
+                    attributes.insert("solved_record_len".to_string(), offset.to_string());
                 }
                 None => {
-                    attributes.insert("delta_state_first_offset".to_string(), "none".to_string());
+                    attributes.insert("history_partition_offset".to_string(), "none".to_string());
                 }
             }
             attributes.insert("sha256".to_string(), sha.clone());
@@ -272,7 +287,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                 is_smbh: role == role::BREP_SMBH,
                 uncompressed_len: uncompressed_size,
                 header,
-                delta_state_offset: delta,
+                solved_record_limit,
                 sha256: sha,
             });
         }
@@ -297,28 +312,38 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     })
 }
 
-/// Build a [`ContainerSummary`] with the active B-rep selection.
+/// Build a [`ContainerSummary`] without assigning model authority from a ZIP
+/// extension. Design body bindings perform the model selection during decode.
 pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
     let mut notes = Vec::new();
     if let Some(folder) = &scan.asset_folder {
         notes.push(format!("asset folder (from entry paths): {folder}"));
     }
-    match select_active_brep(scan) {
-        Some(b) => notes.push(format!(
-            "active BREP candidate: {} ({} bytes uncompressed, {})",
-            b.name,
-            b.uncompressed_len,
-            if b.is_smbh {
-                "authoritative .smbh history stream"
-            } else {
-                "no .smbh present; .smb is a construction snapshot"
-            }
+    notes.push(format!(
+        "{} ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+        scan.breps.len()
+    ));
+    let history_count = history_breps(scan).count();
+    match history_count {
+        0 if !scan.breps.is_empty() => {
+            notes.push("no BREP header declares a history partition".to_string());
+        }
+        1 => {
+            let history = select_history_brep(scan)
+                .expect("invariant: exactly one history-bearing BREP was counted");
+            notes.push(format!(
+                "history-bearing BREP: {} ({} bytes uncompressed)",
+                history.name, history.uncompressed_len
+            ));
+        }
+        count if count > 1 => notes.push(format!(
+            "{count} history-bearing BREPs; each history graph is decoded independently"
         )),
-        None => notes.push("no ASM BREP stream found".to_string()),
+        _ => {}
     }
     notes.push(
-        "container-level inspection only; run `decode` to build the B-rep graph and analytic \
-         geometry from the active BREP's SAB record stream"
+        "container-level inspection only; run `decode` to resolve Design body bindings and build \
+         each referenced BREP graph"
             .to_string(),
     );
 
@@ -330,18 +355,60 @@ pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
     }
 }
 
-/// Select the first `.smbh` B-rep, falling back to the first `.smb`.
-pub fn select_active_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
-    scan.breps
-        .iter()
-        .find(|b| b.is_smbh)
-        .or_else(|| scan.breps.first())
+/// Iterate over every BREP whose parsed header sets the history-partition bit.
+/// The extension is not used as a semantic substitute for the header flag.
+pub fn history_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s BrepFacts> + 's {
+    scan.breps.iter().filter(|brep| {
+        brep.header
+            .as_ref()
+            .is_some_and(asm_header::AsmHeader::has_history_partition)
+    })
+}
+
+/// Return the history-bearing BREP only when the header relation is unique.
+pub fn select_history_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
+    let mut candidates = history_breps(scan);
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+/// Compatibility fallback used only when Design body-to-blob bindings are
+/// absent. It returns a BREP only when the available evidence identifies one
+/// unambiguously: exactly one history-bearing stream, or exactly one BREP in
+/// total. Ambiguous archives do not acquire an archive-order guess.
+pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
+    if let Some(history) = select_history_brep(scan) {
+        return Some(history);
+    }
+    match scan.breps.as_slice() {
+        [only] => Some(only),
+        _ => None,
+    }
+}
+
+/// Return the complete BREP set for the legacy `Design1` segment layout.
+///
+/// That layout predates body-to-blob bindings: its model is distributed across
+/// the archive's BREP entries, in archive order. Both design streams must be
+/// present so an unrelated path component named `Design1` cannot select this
+/// fallback.
+pub fn legacy_design_model_breps<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s [BrepFacts]> {
+    let has = |leaf: &str| {
+        scan.entries.iter().any(|entry| {
+            entry
+                .name
+                .strip_suffix(leaf)
+                .is_some_and(|parent| parent.ends_with("/Design1"))
+        })
+    };
+    (has("/BulkStream.dat") && has("/MetaStream.dat") && !scan.breps.is_empty())
+        .then_some(scan.breps.as_slice())
 }
 
 fn asm_magic_label(bytes: &[u8]) -> String {
     if asm_header::has_asm_magic(bytes) {
         // Both magics are the 15-byte prefix plus the width digit; byte 15 is
-        // release-word data.
+        // save-format-version data.
         String::from_utf8_lossy(&bytes[..15]).to_string()
     } else {
         "absent".to_string()

@@ -182,6 +182,7 @@ fn insert_appearance(ir: &mut CadIr, rgba: [u8; 4]) -> AppearanceId {
         ir.model.appearances.push(Appearance {
             id: id.clone(),
             name: None,
+            library_id: None,
             asset_guid: None,
             visual_guid: None,
             physical_token: None,

@@ -1,24 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, decode_recipe_references, recipe_record_prefix,
 };
+use crate::design::decode::scopes::payload_prologue;
 use crate::design::decode::sketch::{
-    next_indexed_record_offset, next_indexed_record_offset_with_index,
+    indexed_record_index, next_indexed_record_offset, next_indexed_record_offset_with_index,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand, DesignBodyRecipeReference,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand,
+    DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignConstructionOperandGroup,
+    DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignEdgeIdentityOperand, DesignEdgeOperand,
     DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
-    DesignObjectKind, DesignParameter, DesignParameterOwner, DesignParameterScope,
+    DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
+    DesignFilletRadiusLaw, DesignParameter, DesignParameterOwner, DesignParameterScope,
     DesignRecordHeader, DesignSketchProfileOperand, DesignTopologyRecipeEntry,
     DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference,
     PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
@@ -48,10 +50,14 @@ pub fn decode_edge_operands(
                     | DesignFeatureFamily::Chamfer
                     | DesignFeatureFamily::Revolve
                     | DesignFeatureFamily::Loft
+                    | DesignFeatureFamily::Sweep
+                    | DesignFeatureFamily::Pipe
+                    | DesignFeatureFamily::SurfaceExtend
+                    | DesignFeatureFamily::SurfaceOffset
             )
         ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem")
     }) {
-        let member_indices = groups
+        let mut member_indices = groups
             .iter()
             .filter(|group| {
                 native_stream(&group.id) == native_stream(&scope.id)
@@ -59,6 +65,12 @@ pub fn decode_edge_operands(
             })
             .flat_map(|group| group.members.iter().copied())
             .collect::<HashSet<_>>();
+        if let Some(operation) = &scope.surface_extend_operation {
+            member_indices.extend(operation.edge_record_indices.iter().copied());
+        }
+        if let Some(operation) = &scope.surface_offset_operation {
+            member_indices.extend(operation.edge_record_indices.iter().copied());
+        }
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -208,11 +220,26 @@ pub fn decode_face_operands(
             design_feature_family(&scope.kind),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
         );
+        let is_circular_pattern_seed = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::CircularPattern)
+            && group.role == 0x0000_0008_0000_0000;
+        let is_mirror_seed = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::Mirror)
+            && group.role == 0x0000_0008_0000_0000;
+        let is_split_face_operand = scope.kind == "SplitFace";
+        let is_delete_face_operand = scope.kind == "DeleteFace";
+        let is_draft_operand =
+            design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
             && !is_loft_profile
             && !is_edge_treatment_support
+            && !is_circular_pattern_seed
+            && !is_mirror_seed
+            && !is_split_face_operand
+            && !is_delete_face_operand
+            && !is_draft_operand
         {
             continue;
         }
@@ -279,7 +306,7 @@ pub fn decode_face_operands(
                     | DesignFeatureFamily::Thicken
                     | DesignFeatureFamily::Split
             )
-        )
+        ) || scope.kind == "SplitFace"
     }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -333,7 +360,7 @@ pub fn bind_face_operand_candidates(
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags);
+            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -344,7 +371,10 @@ pub fn bind_face_operand_candidates(
         };
         operand.candidate_faces = tags
             .iter()
-            .filter(|tag| tag.design_references.contains(&design_reference))
+            .filter(|tag| {
+                crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                    && tag.design_references.contains(&design_reference)
+            })
             .filter_map(|tag| match &tag.target {
                 AttributeTarget::Face(id) => Some(id.clone()),
                 _ => None,
@@ -393,7 +423,7 @@ pub fn bind_edge_operand_candidates(
     for operand in operands {
         operand.candidate_faces.clear();
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags);
+            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -402,19 +432,24 @@ pub fn bind_edge_operand_candidates(
         else {
             continue;
         };
-        operand.candidate_faces = edge_operand_candidate_faces(design_reference, tags);
+        operand.candidate_faces =
+            edge_operand_candidate_faces(design_reference, tags, Some(&operand.id));
     }
 }
 
 pub(crate) fn edge_operand_candidate_faces(
     design_reference: i64,
     tags: &[PersistentSubentityTag],
+    owner_id: Option<&str>,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut faces = tags
         .iter()
-        .filter(|tag| tag.design_references.contains(&design_reference))
+        .filter(|tag| {
+            owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
+                && tag.design_references.contains(&design_reference)
+        })
         .filter_map(|tag| match &tag.target {
             AttributeTarget::Face(id) => Some(id.clone()),
             _ => None,
@@ -438,6 +473,7 @@ pub fn bind_sketch_profiles(
         .collect::<HashMap<_, _>>();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
             || scope.kind == "BaseFlange"
     }) {
         let Some(stream) = native_stream(&scope.id) else {
@@ -465,6 +501,8 @@ pub fn bind_sketch_profiles(
         if let [profile] = candidates.as_slice() {
             if scope.kind == "BaseFlange" {
                 scope.base_flange_profile = Some(profile.clone());
+            } else if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep) {
+                scope.sweep_profile = Some(profile.clone());
             } else {
                 scope.extrude_profile = Some(profile.clone());
             }
@@ -518,9 +556,13 @@ pub fn decode_extrude_selection_groups(
 }
 
 /// Decode counted construction-operand groups named by feature scopes.
+///
+/// A scope reference member whose record opens the group grammar but does not
+/// close it is recorded on the owning scope, so a group the grammar cannot read
+/// is distinguishable from a reference member that is not a group at all.
 pub fn decode_construction_operand_groups(
     scan: &ContainerScan,
-    scopes: &[DesignParameterScope],
+    scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignConstructionOperandGroup>, CodecError> {
     let headers = headers
@@ -528,11 +570,12 @@ pub fn decode_construction_operand_groups(
         .filter_map(|h| Some(((native_stream(&h.id)?, h.record_index), h)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| {
+    for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Coil)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Pipe)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Revolve)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Shell)
@@ -541,9 +584,15 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
+            || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Mirror)
             || scope.kind == "RemoveBody"
             || scope.kind == "SurfaceStitch"
+            || scope.kind == "DeleteFace"
+            || scope.kind == "Decal"
             || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
@@ -559,21 +608,26 @@ pub fn decode_construction_operand_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
             let (Ok(ordinal), Some(header)) =
                 (u32::try_from(ordinal), headers.get(&(stream, record_index)))
             else {
                 continue;
             };
-            if let Some(mut group) = parse_construction_operand_group(bytes, scope, ordinal, header)
-            {
-                group.id = ids::native_design_construction_operand_group_id(
-                    &entry.name,
-                    header.byte_offset,
-                );
-                out.push(group);
+            match parse_construction_operand_group(bytes, scope, ordinal, header) {
+                ConstructionOperandGroupParse::Complete(mut group) => {
+                    group.id = ids::native_design_construction_operand_group_id(
+                        &entry.name,
+                        header.byte_offset,
+                    );
+                    out.push(*group);
+                }
+                ConstructionOperandGroupParse::Unclosed => unclosed.push(record_index),
+                ConstructionOperandGroupParse::NotAGroup => {}
             }
         }
+        scope.unclosed_construction_operand_groups = unclosed;
         if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
@@ -589,7 +643,9 @@ pub(crate) fn assign_extrude_face_roles(
     let mut face_groups = groups
         .iter_mut()
         .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces));
-    if scope.extrude_start == Some(DesignExtrudeStart::FromFace) {
+    if scope.extrude_prologue.map(DesignExtrudePrologue::start)
+        == Some(DesignExtrudeStart::FromFace)
+    {
         if let Some(group) = face_groups.next() {
             group.extrude_face_role = Some(DesignExtrudeFaceRole::Start);
         }
@@ -772,125 +828,248 @@ pub fn disambiguate_fixed_fillet_parameters(
     }
 }
 
+/// Outcome of reading a scope reference member as a construction-operand group.
+pub(crate) enum ConstructionOperandGroupParse {
+    /// The record does not open a construction-operand group.
+    NotAGroup,
+    /// The record opens a group the grammar does not close.
+    Unclosed,
+    /// A complete group.
+    Complete(Box<DesignConstructionOperandGroup>),
+}
+
+impl ConstructionOperandGroupParse {
+    /// The group, where the record carried a complete one.
+    #[cfg(test)]
+    pub(crate) fn complete(self) -> Option<DesignConstructionOperandGroup> {
+        match self {
+            Self::Complete(group) => Some(*group),
+            Self::NotAGroup | Self::Unclosed => None,
+        }
+    }
+}
+
+/// Read the construction-operand group at `header`.
+///
+/// The record's members are a leading-block presence byte, the property block
+/// its presence byte gates, the counted member run, two optional references,
+/// the counted identity run, a zero u32 and the u32 role, ten zero bytes, an
+/// ordinal, a duration, and a repeat of the ordinal that one container
+/// generation omits. The tail is a reference to record `N + 2`, a flag block,
+/// a reference to record `N + 1`, a zero byte, the owning scope's reference,
+/// and the same-index paired header. The flag block's last byte is zero; one
+/// container generation prefixes it with a further byte. Neither the repeated
+/// ordinal nor the prefix byte is announced, so the tail settles both: exactly
+/// one of the four readings reaches a paired header carrying this record's own
+/// index.
 pub(crate) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<DesignConstructionOperandGroup> {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let count_at = if scope.kind == "SurfaceStitch" {
-        if bytes.get(start + 11..start + 20)? != [0; 9]
-            || bytes.get(start + 20) != Some(&1)
-            || u32_at(bytes, start + 21)? != 1
-        {
-            return None;
-        }
-        let (property, after_property) =
-            lp_ascii_filtered(bytes, start + 25, 0..=2000, u8::is_ascii_graphic)?;
-        let (property_type, after_property_type) =
-            lp_ascii_filtered(bytes, after_property, 0..=2000, u8::is_ascii_graphic)?;
-        if property != "DcFeatureOperationIdFlag" || property_type != "IntrinsicMetaTypeuint64" {
-            return None;
-        }
-        after_property_type.checked_add(8)?
-    } else {
-        if bytes.get(start + 11..start + 21)? != [0; 10] {
-            return None;
-        }
-        start.checked_add(21)?
+) -> ConstructionOperandGroupParse {
+    use ConstructionOperandGroupParse::{Complete, NotAGroup, Unclosed};
+
+    let Ok(start) = usize::try_from(header.byte_offset) else {
+        return NotAGroup;
     };
-    let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
-    if count == 0 {
-        return None;
+    // The indexed header is the three-digit class tag, the u64 entity id whose
+    // low word is the record index, and the record's own empty name.
+    if bytes.get(start + 11..start + 19) != Some(&[0; 8]) {
+        return NotAGroup;
     }
-    let mut position = count_at.checked_add(4)?;
-    let mut members = Vec::with_capacity(count);
-    let mut member_offsets = Vec::with_capacity(count);
-    for _ in 0..count {
-        if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
-            return None;
+    let Some(mut cursor) = payload_prologue(bytes, start + 19, bytes.len()) else {
+        return NotAGroup;
+    };
+    let member_count_at = cursor;
+    let Some(member_count) = u32_at(bytes, cursor) else {
+        return NotAGroup;
+    };
+    cursor += 4;
+    // A reference is at least one byte, so a count the remaining bytes cannot
+    // supply is corrupt and must not reach the allocator.
+    if usize::try_from(member_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
+        return NotAGroup;
+    }
+    let mut members = Vec::new();
+    let mut member_offsets = Vec::new();
+    for _ in 0..member_count {
+        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+            return NotAGroup;
+        };
+        members.push(record_index);
+        member_offsets.push(offset);
+    }
+    let mut auxiliary_record_indices = Vec::new();
+    let mut auxiliary_record_offsets = Vec::new();
+    for _ in 0..2 {
+        if bytes.get(cursor) == Some(&0) {
+            cursor += 1;
+            continue;
         }
-        members.push(u32_at(bytes, position + 1)?);
-        member_offsets.push(u64::try_from(position + 1).ok()?);
-        position = position.checked_add(11)?;
+        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+            return NotAGroup;
+        };
+        auxiliary_record_indices.push(record_index);
+        auxiliary_record_offsets.push(offset);
     }
-    if bytes.get(position..position + 2)? != [0; 2]
-        || u32_at(bytes, position + 2)? != 1
-        || bytes.get(position + 6) != Some(&1)
-        || bytes.get(position + 11..position + 17)? != [0; 6]
-        || bytes.get(position + 25..position + 35)? != [0; 10]
-    {
-        return None;
+    let Some(identity_count) = u32_at(bytes, cursor) else {
+        return NotAGroup;
+    };
+    cursor += 4;
+    if usize::try_from(identity_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
+        return NotAGroup;
     }
-    let identity_record_index = u32_at(bytes, position + 7)?;
-    let role = read_u64(bytes, position + 17)?;
+    let mut identity_record_indices = Vec::new();
+    let mut identity_record_offsets = Vec::new();
+    for _ in 0..identity_count {
+        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+            return NotAGroup;
+        };
+        identity_record_indices.push(record_index);
+        identity_record_offsets.push(offset);
+    }
+    // The role occupies the high word of a u64 whose low word is zero.
+    let role_at = cursor;
+    let (Some(0), Some(role)) = (u32_at(bytes, role_at), read_u64(bytes, role_at)) else {
+        return NotAGroup;
+    };
+    cursor += 8;
+    if bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
+        return NotAGroup;
+    }
+    cursor += 10;
+    let opaque_index_at = cursor;
+    let (Some(opaque_index), Some(opaque_scalar)) =
+        (u32_at(bytes, cursor), f64_at(bytes, cursor + 4))
+    else {
+        return NotAGroup;
+    };
+    if opaque_index == 0 || !opaque_scalar.is_finite() {
+        return NotAGroup;
+    }
+    cursor += 12;
+
+    // Past this point the record has opened the group grammar, so a tail that
+    // does not close is a group this reader cannot name.
+    let mut closed = None;
+    for repeats_ordinal in [true, false] {
+        let mut tail = cursor;
+        if repeats_ordinal {
+            if u32_at(bytes, tail) != Some(opaque_index) {
+                continue;
+            }
+            tail += 4;
+        }
+        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+            != header.record_index.checked_add(2)
+        {
+            continue;
+        }
+        for flag_bytes in [2usize, 3] {
+            let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
+                continue;
+            };
+            if flags.last() != Some(&0) {
+                continue;
+            }
+            // The wider block prefixes the narrower one, so the variant flag is
+            // always the byte before the terminating zero.
+            let variant = flags[flag_bytes - 2] != 0;
+            let mut after = tail + flag_bytes;
+            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+                != header.record_index.checked_add(1)
+            {
+                continue;
+            }
+            if bytes.get(after) != Some(&0) {
+                continue;
+            }
+            after += 1;
+            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+                != Some(scope.record_index)
+            {
+                continue;
+            }
+            let Some((paired_class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, after, 3..=3, u8::is_ascii_digit)
+            else {
+                continue;
+            };
+            if u32_at(bytes, after_tag) != Some(header.record_index) {
+                continue;
+            }
+            if closed.replace((variant, after, paired_class_tag)).is_some() {
+                return Unclosed;
+            }
+        }
+    }
+    let Some((variant, paired_at, paired_class_tag)) = closed else {
+        return Unclosed;
+    };
+
     let extrude_role = if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
-        Some(match role {
-            0x0000_0008_0000_0000 => DesignExtrudeOperandRole::Bodies,
-            0x0000_0041_0000_0000 => DesignExtrudeOperandRole::Profile,
-            0x0000_0011_0000_0000 => DesignExtrudeOperandRole::Faces,
-            _ => return None,
-        })
+        match role {
+            0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
+            0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
+            0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
+            _ => None,
+        }
     } else {
         None
     };
-    let opaque_index = u32_at(bytes, position + 35)?;
-    let opaque_scalar = f64_at(bytes, position + 39)?;
-    if opaque_index == 0
-        || !opaque_scalar.is_finite()
-        || u32_at(bytes, position + 47)? != opaque_index
-        || bytes.get(position + 51) != Some(&1)
-        || u32_at(bytes, position + 52)? != header.record_index.checked_add(2)?
-        || bytes.get(position + 56..position + 62)? != [0; 6]
-        || bytes.get(position + 62) != Some(&1)
-        || !matches!(bytes.get(position + 63), Some(0 | 1))
-        || bytes.get(position + 64) != Some(&0)
-        || bytes.get(position + 65) != Some(&1)
-        || u32_at(bytes, position + 66)? != header.record_index.checked_add(1)?
-        || bytes.get(position + 70..position + 77)? != [0; 7]
-        || bytes.get(position + 77) != Some(&1)
-        || u32_at(bytes, position + 78)? != scope.record_index
-    {
-        return None;
-    }
-    let paired_at = if bytes.get(position + 82..position + 88)? == [0; 6] {
-        position + 88
-    } else if bytes.get(position + 82..position + 85)? == [0; 3] {
-        position + 85
-    } else {
-        return None;
+    let (Ok(member_count_offset), Ok(role_offset), Ok(opaque_index_offset), Ok(paired_byte_offset)) = (
+        u64::try_from(member_count_at),
+        u64::try_from(role_at),
+        u64::try_from(opaque_index_at),
+        u64::try_from(paired_at),
+    ) else {
+        return Unclosed;
     };
-    let (paired_class_tag, after_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_tag)? != header.record_index {
-        return None;
-    }
-    Some(DesignConstructionOperandGroup {
+    Complete(Box::new(DesignConstructionOperandGroup {
         id: String::new(),
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        member_count_offset: u64::try_from(count_at).ok()?,
         members,
         lost_edge_references: Vec::new(),
         member_offsets,
-        identity_record_index,
-        identity_record_offset: u64::try_from(position + 7).ok()?,
+        frame: DesignConstructionOperandGroupFrame {
+            member_count_offset,
+            auxiliary_record_indices,
+            auxiliary_record_offsets,
+            identity_record_indices,
+            identity_record_offsets,
+            opaque_index,
+            opaque_index_offset,
+            opaque_scalar,
+            opaque_scalar_offset: opaque_index_offset + 4,
+            variant,
+        },
         role,
         extrude_role,
         extrude_face_role: None,
-        role_offset: u64::try_from(position + 17).ok()?,
-        opaque_index,
-        opaque_index_offset: u64::try_from(position + 35).ok()?,
-        opaque_scalar,
-        opaque_scalar_offset: u64::try_from(position + 39).ok()?,
-        variant: bytes[position + 63] != 0,
+        role_offset,
         paired_class_tag,
-        paired_byte_offset: u64::try_from(paired_at).ok()?,
-    })
+        paired_byte_offset,
+    }))
+}
+
+/// Take one reference naming a record of the same segment, advancing `at` past
+/// every byte it owns. Returns the record index and the byte offset of the low
+/// word of the target entity id.
+fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
+    let target_at = at.checked_add(1)?;
+    let reference = take_reference(bytes, at)?;
+    if reference.segment.is_some() || reference.link_name.is_some() {
+        return None;
+    }
+    Some((
+        u32::try_from(reference.target?).ok()?,
+        u64::try_from(target_at).ok()?,
+    ))
 }
 
 /// Decode the persistent identity frame named by each construction-operand group.
@@ -915,7 +1094,10 @@ pub fn decode_construction_operand_identities(
         }) else {
             continue;
         };
-        let Some(wrapper_header) = headers.get(&(stream, group.identity_record_index)) else {
+        let Some(identity_record_index) = group.frame.identity_record_indices.first() else {
+            continue;
+        };
+        let Some(wrapper_header) = headers.get(&(stream, *identity_record_index)) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1091,10 +1273,12 @@ pub(crate) fn parse_extrude_selection_group(
         return None;
     }
     let member_count = usize::try_from(u32_at(bytes, start + 32)?).ok()?;
-    if member_count == 0 {
+    let mut position = start.checked_add(36)?;
+    // Each member consumes 11 bytes; a count the remaining bytes cannot
+    // supply is corrupt and must not reach the allocator.
+    if member_count == 0 || member_count > bytes.len().saturating_sub(position) / 11 {
         return None;
     }
-    let mut position = start.checked_add(36)?;
     let mut members = Vec::with_capacity(member_count);
     let mut member_offsets = Vec::with_capacity(member_count);
     for _ in 0..member_count {
@@ -1319,6 +1503,7 @@ pub(crate) fn parse_entity_selection_operand(
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub fn decode_body_recipe_operands(
     scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
@@ -1332,6 +1517,22 @@ pub fn decode_body_recipe_operands(
             .entry((stream, header.record_index))
             .and_modify(|header| *header = None)
             .or_insert(Some(header));
+    }
+    let mut body_recipes_by_stream = HashMap::<_, Vec<&ConstructionRecipe>>::new();
+    for recipe in recipes
+        .iter()
+        .filter(|recipe| recipe.kind == ConstructionRecipeKind::Body)
+    {
+        let Some(stream) = native_stream(&recipe.id) else {
+            continue;
+        };
+        body_recipes_by_stream
+            .entry(stream)
+            .or_default()
+            .push(recipe);
+    }
+    for stream_recipes in body_recipes_by_stream.values_mut() {
+        stream_recipes.sort_by_key(|recipe| recipe.byte_offset);
     }
     let mut out = Vec::new();
     for group in groups {
@@ -1353,22 +1554,13 @@ pub fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(start) = usize::try_from(header.byte_offset).ok() else {
-                continue;
-            };
-            let Some(next_at) = body_recipe_operand_end(bytes, start, header.record_index) else {
-                continue;
-            };
-            let matching_recipes = recipes
-                .iter()
-                .filter(|recipe| {
-                    native_stream(&recipe.id) == Some(stream)
-                        && recipe.kind == ConstructionRecipeKind::Body
-                        && recipe.byte_offset > header.byte_offset
-                        && recipe.byte_offset < next_at as u64
-                })
-                .collect::<Vec<_>>();
-            let [recipe] = matching_recipes.as_slice() else {
+            let Some(recipe) = unique_body_recipe(
+                bytes,
+                header,
+                body_recipes_by_stream
+                    .get(stream)
+                    .map_or(&[], Vec::as_slice),
+            ) else {
                 continue;
             };
             if let Some(mut operand) =
@@ -1380,31 +1572,136 @@ pub fn decode_body_recipe_operands(
             }
         }
     }
+    for scope in scopes
+        .iter()
+        .filter(|scope| scope.combine_operation.is_some())
+    {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(operation) = &scope.combine_operation else {
+            continue;
+        };
+        for record_index in &operation.body_selection_record_indexes {
+            let mut ordinals = scope
+                .reference_members
+                .iter()
+                .enumerate()
+                .filter(|(_, member)| *member == record_index)
+                .filter_map(|(ordinal, _)| u32::try_from(ordinal).ok());
+            let Some(scope_reference_ordinal) = ordinals.next() else {
+                continue;
+            };
+            if ordinals.next().is_some() || scope_reference_ordinal.is_multiple_of(2) {
+                continue;
+            }
+            let Some(Some(header)) = headers_by_identity.get(&(stream, *record_index)) else {
+                continue;
+            };
+            let Some(recipe) = unique_body_recipe(
+                bytes,
+                header,
+                body_recipes_by_stream
+                    .get(stream)
+                    .map_or(&[], Vec::as_slice),
+            ) else {
+                continue;
+            };
+            let owner = DesignBodyRecipeOperandOwner::ScopeReference {
+                scope_reference_ordinal,
+            };
+            if let Some(mut operand) =
+                parse_body_recipe_operand_frame(bytes, scope.record_index, owner, header, recipe)
+            {
+                operand.id =
+                    ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
+                out.push(operand);
+            }
+        }
+    }
     out.sort_by_key(|operand| operand.id.clone());
+    let mut owner_counts = HashMap::new();
+    for operand in &out {
+        *owner_counts.entry(operand.id.clone()).or_insert(0_u32) += 1;
+    }
+    out.retain(|operand| owner_counts.get(&operand.id) == Some(&1));
     Ok(out)
 }
 
-fn body_recipe_operand_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
+fn unique_body_recipe<'a>(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+    recipes: &'a [&'a ConstructionRecipe],
+) -> Option<&'a ConstructionRecipe> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
+    let next_at = next_indexed_record_offset_with_index(
+        bytes,
+        prologue_end,
+        header.record_index.checked_add(4)?,
+    )?;
+    let lower = u64::try_from(prologue_end.max(next_at.saturating_sub(1 << 16))).ok()?;
+    let upper = u64::try_from(next_at).ok()?;
+    let matching = &recipes[recipes.partition_point(|recipe| recipe.byte_offset < lower)
+        ..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
+    let [recipe] = matching else {
+        return None;
+    };
+    Some(recipe)
+}
+
+/// Offset past the four consecutively indexed records that open a body-recipe
+/// operand, or `None` when the records after `start` do not carry
+/// `record_index` through `record_index + 3` in order.
+///
+/// The prologue depends only on the operand header, so a caller weighing many
+/// candidate recipes against one header resolves it once.
+fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
     let mut search = start.checked_add(11)?;
-    for (ordinal, expected) in [
+    for expected in [
         record_index,
         record_index.checked_add(1)?,
         record_index.checked_add(2)?,
         record_index.checked_add(3)?,
-        record_index.checked_add(4)?,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         let at = next_indexed_record_offset(bytes, search)?;
-        let (_, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if u32_at(bytes, after_tag)? != expected {
+        if indexed_record_index(bytes, at)? != expected {
             return None;
         }
-        if ordinal == 4 {
+        search = at.checked_add(11)?;
+    }
+    Some(search)
+}
+
+/// Offset of the record carrying `record_index + 4` that closes a body-recipe
+/// operand whose recipe sits at `recipe_at`, searching the 64 KiB after the
+/// recipe. The recipe must follow the prologue that ends at `prologue_end`.
+fn body_recipe_operand_end(
+    bytes: &[u8],
+    prologue_end: usize,
+    record_index: u32,
+    recipe_at: usize,
+) -> Option<usize> {
+    if recipe_at < prologue_end {
+        return None;
+    }
+    let expected = record_index.checked_add(4)?;
+    let search_limit = recipe_at.checked_add(1 << 16)?.min(bytes.len());
+    let window = bytes.get(..search_limit)?;
+    let mut search = recipe_at;
+    while let Some(at) = next_indexed_record_offset(window, search) {
+        if indexed_record_index(window, at) == Some(expected) {
             return Some(at);
         }
-        search = at.checked_add(11)?;
+        search = at.checked_add(1)?;
     }
     None
 }
@@ -1416,9 +1713,29 @@ pub(crate) fn parse_body_recipe_operand(
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
 ) -> Option<DesignBodyRecipeOperand> {
+    parse_body_recipe_operand_frame(
+        bytes,
+        group.scope_record_index,
+        DesignBodyRecipeOperandOwner::Group {
+            group_record_index: group.record_index,
+            group_member_ordinal,
+        },
+        header,
+        recipe,
+    )
+}
+
+fn parse_body_recipe_operand_frame(
+    bytes: &[u8],
+    scope_record_index: u32,
+    owner: DesignBodyRecipeOperandOwner,
+    header: &DesignRecordHeader,
+    recipe: &ConstructionRecipe,
+) -> Option<DesignBodyRecipeOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let next_at = body_recipe_operand_end(bytes, start, header.record_index)?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
+    let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
+    let next_at = body_recipe_operand_end(bytes, prologue_end, header.record_index, recipe_at)?;
     let reference_count = usize::try_from(u32_at(bytes, start + 21)?).ok()?;
     if start >= recipe_at
         || recipe_at >= next_at
@@ -1427,8 +1744,13 @@ pub(crate) fn parse_body_recipe_operand(
     {
         return None;
     }
-    let mut references = Vec::with_capacity(reference_count);
     let mut cursor = start.checked_add(25)?;
+    // Each reference consumes 12 bytes; a count the remaining bytes cannot
+    // supply is corrupt and must not reach the allocator.
+    if reference_count > bytes.len().saturating_sub(cursor) / 12 {
+        return None;
+    }
+    let mut references = Vec::with_capacity(reference_count);
     for _ in 0..reference_count {
         references.push(DesignBodyRecipeReference {
             design_reference: read_u64(bytes, cursor)?,
@@ -1461,9 +1783,8 @@ pub(crate) fn parse_body_recipe_operand(
     }
     Some(DesignBodyRecipeOperand {
         id: String::new(),
-        scope_record_index: group.scope_record_index,
-        group_record_index: group.record_index,
-        group_member_ordinal,
+        scope_record_index,
+        owner,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
@@ -1485,19 +1806,46 @@ pub(crate) fn parse_body_recipe_operand(
 /// Join body-recipe Design references to solved persistent face tags.
 pub fn bind_body_recipe_operand_candidates(
     operands: &mut [DesignBodyRecipeOperand],
+    recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
 ) {
     use cadmpeg_ir::attributes::AttributeTarget;
 
+    let mut recipes_by_id = HashMap::<_, Option<&ConstructionRecipe>>::new();
+    for recipe in recipes {
+        recipes_by_id
+            .entry(recipe.id.as_str())
+            .and_modify(|recipe| *recipe = None)
+            .or_insert(Some(recipe));
+    }
     for operand in operands {
+        let derived_selector = recipes_by_id
+            .get(operand.recipe_id.as_str())
+            .and_then(|recipe| *recipe)
+            .and_then(|recipe| recipe.design_selector)
+            .map(|selector| u64::from(selector.value));
         for reference in &mut operand.references {
             reference.candidate_faces.clear();
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
             };
+            let derived_reference = if reference.form == 3 {
+                derived_selector
+                    .and_then(|selector| reference.design_reference.checked_add(selector))
+            } else {
+                None
+            };
             reference.candidate_faces = tags
                 .iter()
-                .filter(|tag| tag.design_references.contains(&design_reference))
+                .filter(|tag| {
+                    crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                        && tag.design_references.contains(&design_reference)
+                        && derived_reference.is_none_or(|derived| {
+                            i64::try_from(derived)
+                                .ok()
+                                .is_some_and(|derived| tag.design_references.contains(&derived))
+                        })
+                })
                 .filter_map(|tag| match &tag.target {
                     AttributeTarget::Face(face) => Some(face.clone()),
                     _ => None,
@@ -1764,16 +2112,30 @@ pub(crate) fn parse_sketch_profile(
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
     let (paired_class_tag, after_paired_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    if u32_at(bytes, after_paired_tag)? != header.record_index
-        || after_entity_suffix.checked_add(94)? != paired_at
-    {
+    let tail_length = paired_at.checked_sub(after_entity_suffix)?;
+    if u32_at(bytes, after_paired_tag)? != header.record_index || !matches!(tail_length, 93 | 94) {
         return None;
+    }
+    if tail_length == 93 {
+        let tail = after_entity_suffix;
+        if bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
+            || u32_at(bytes, tail + 8) != Some(1)
+            || marked_record_reference(bytes, tail + 57) != header.record_index.checked_add(2)
+            || bytes.get(tail + 68..tail + 70) != Some(&[0; 2])
+            || marked_record_reference(bytes, tail + 70) != header.record_index.checked_add(1)
+            || bytes.get(tail + 81) != Some(&0)
+            || marked_record_reference(bytes, tail + 82).is_none()
+            || u32_at(bytes, tail + 41) == Some(0)
+            || u32_at(bytes, tail + 41) != u32_at(bytes, tail + 53)
+        {
+            return None;
+        }
     }
     let matches = entities
         .iter()
         .filter(|entity| {
             native_stream(&entity.id) == Some(stream)
-                && entity.object_kind == Some(DesignObjectKind::Sketch)
+                && entity.in_sketch_module()
                 && entity.entity_suffix == entity_suffix
         })
         .collect::<Vec<_>>();
@@ -1793,6 +2155,13 @@ pub(crate) fn parse_sketch_profile(
         paired_class_tag,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
+}
+
+fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
+    if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
+        return None;
+    }
+    u32_at(bytes, at + 1)
 }
 
 pub(crate) fn parse_edge_operand(
@@ -2013,6 +2382,11 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
     let Some(mut remaining) = words.get(2..).and_then(recipe_delimiter) else {
         return Vec::new();
     };
+    // Each scalar consumes at least one remaining word; a larger count is
+    // corrupt and must not reach the allocator.
+    if scalar_count > remaining.len() {
+        return Vec::new();
+    }
     let mut scalars = Vec::with_capacity(scalar_count);
     for _ in 0..scalar_count {
         let Some((&scalar, tail)) = remaining.split_first() else {

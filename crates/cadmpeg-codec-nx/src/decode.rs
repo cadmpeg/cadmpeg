@@ -101,24 +101,24 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report);
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(ctx, root, &scan) {
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
-    decode_result(ir, report, annotations, &unknowns)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
-    unknowns: &[UnknownRecord],
+    unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
@@ -10752,7 +10752,10 @@ pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Combine { target, tools, op } = &feature.definition else {
+    let FeatureDefinition::Combine {
+        target, tools, op, ..
+    } = &feature.definition
+    else {
         return true;
     };
     body_selection_is_incomplete(target)
@@ -11006,7 +11009,7 @@ pub(crate) fn rib_definition_is_incomplete(feature: &Feature) -> bool {
 
 pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Sweep {
-        profile,
+        section,
         sections,
         path,
         mode,
@@ -11020,14 +11023,24 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
     else {
         return true;
     };
-    profile.as_ref().is_none_or(profile_ref_is_incomplete)
-        || profile
-            .as_ref()
+    matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+        || section
+            .referenced_profile()
+            .is_some_and(profile_ref_is_incomplete)
+        || section
+            .referenced_profile()
             .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
-        || sections.iter().any(profile_ref_is_incomplete)
-        || sections
-            .iter()
-            .any(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || sections.iter().any(|section| {
+            matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                || section
+                    .referenced_profile()
+                    .is_some_and(profile_ref_is_incomplete)
+        })
+        || sections.iter().any(|section| {
+            section.referenced_profile().is_some_and(|profile| {
+                profile_dependency_is_incomplete(profile, &feature.dependencies)
+            })
+        })
         || path.as_ref().is_none_or(path_ref_is_incomplete)
         || sweep_mode_is_incomplete(*mode)
         || orientation
@@ -11454,6 +11467,7 @@ pub(crate) fn pattern_feature_is_incomplete(
             cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
                 body_selection_is_incomplete(bodies)
             }
+            cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => occurrences.is_empty(),
         })
         || seeds
             .iter()
@@ -11586,8 +11600,10 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
         }
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
-        | BodySelection::Native(_) => true,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => true,
     }
 }
 
@@ -11609,9 +11625,11 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
-        | BodySelection::Native(_) => None,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => None,
     }
 }
 
@@ -11623,8 +11641,10 @@ fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
-        | BodySelection::Native(_) => None,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => None,
     }
 }
 
@@ -11682,6 +11702,7 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
         | ProfileRef::SketchSelection { .. }
         | ProfileRef::SpatialSketchSelection { .. } => true,
         ProfileRef::Sketch(_) => false,
+        ProfileRef::SketchEntities { entities, .. } => selection_ids_are_incomplete(entities),
         ProfileRef::SketchProfiles { profiles, .. }
         | ProfileRef::SpatialSketchProfiles { profiles, .. } => {
             selection_ids_are_incomplete(profiles)
@@ -11739,6 +11760,7 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
         }
         PathRef::HistoricalEdges { edges, .. } => selection_ids_are_incomplete(edges),
         PathRef::Sketch(_) => false,
+        PathRef::SketchCurves { curves, .. } => selection_ids_are_incomplete(curves),
         PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
         PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
     }

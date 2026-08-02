@@ -6,7 +6,8 @@ use crate::nurbs::reader::{
     is_periodic, marker_at, marker_positions, read_knots, take_tagged_int, INT_WIDTHS,
 };
 use crate::nurbs::subtypes::{
-    decode_cache_resolving_refs, subtype_refs, subtype_span, SubtypeTables,
+    decode_cache_resolving_refs, find_owned_subtype_marker, subtype_refs, subtype_span,
+    SubtypeTables,
 };
 use cadmpeg_codec_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
@@ -31,6 +32,8 @@ pub(crate) struct PcurveCandidate {
     pub(crate) curve: NurbsPcurve,
     /// The same bytes do not also form a 3D NURBS curve block.
     pub(crate) unambiguous_2d: bool,
+    /// This is the first BS2 block owned by an `exp_par_cur` definition.
+    pub(crate) authoritative: bool,
 }
 
 /// Writable value offsets for one 2D pcurve cache.
@@ -218,6 +221,26 @@ pub(crate) fn decode_pcurve_cache_candidates_resolving_refs(
     active_bytes: &[u8],
     tables: &SubtypeTables,
 ) -> Vec<PcurveCandidate> {
+    decode_pcurve_candidates(record_bytes, active_bytes, tables, false)
+}
+
+/// Decode candidates from the interior of an explicitly owned `exp_par_cur`
+/// scope. The scope opener is outside `record_bytes`, so ownership must enter
+/// through this boundary rather than be inferred from the interior bytes.
+pub(crate) fn decode_owned_pcurve_cache_candidates_resolving_refs(
+    record_bytes: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Vec<PcurveCandidate> {
+    decode_pcurve_candidates(record_bytes, active_bytes, tables, true)
+}
+
+fn decode_pcurve_candidates(
+    record_bytes: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+    owns_explicit_pcurve: bool,
+) -> Vec<PcurveCandidate> {
     for int_width in INT_WIDTHS {
         let mut out = Vec::new();
         collect_pcurve_candidates(
@@ -226,6 +249,7 @@ pub(crate) fn decode_pcurve_cache_candidates_resolving_refs(
             tables,
             &mut Vec::new(),
             int_width,
+            owns_explicit_pcurve,
             &mut out,
         );
         if !out.is_empty() {
@@ -241,23 +265,31 @@ fn collect_pcurve_candidates(
     tables: &SubtypeTables,
     seen: &mut Vec<usize>,
     int_width: usize,
+    owns_explicit_pcurve: bool,
     out: &mut Vec<PcurveCandidate>,
 ) {
     // A 3D curve block's bytes can also parse as a 2D block; such ambiguous
     // reads rank after every unambiguous 2D block so an unverified caller
     // taking the first candidate never picks a misread 3D carrier.
     let mut ambiguous = Vec::new();
+    let owns_explicit_pcurve = owns_explicit_pcurve
+        || find_owned_subtype_marker(bytes, &[b"exp_par_cur"], int_width).is_some();
+    let mut claimed_owned_carrier = false;
     for position in marker_positions(bytes) {
         if let Some(pcurve) = decode_pcurve_block(bytes, position, int_width) {
+            let authoritative = owns_explicit_pcurve && !claimed_owned_carrier;
+            claimed_owned_carrier |= authoritative;
             if decode_curve_block(bytes, position, int_width).is_some() {
                 ambiguous.push(PcurveCandidate {
                     curve: pcurve,
                     unambiguous_2d: false,
+                    authoritative,
                 });
             } else {
                 out.push(PcurveCandidate {
                     curve: pcurve,
                     unambiguous_2d: true,
+                    authoritative,
                 });
             }
         }
@@ -275,7 +307,7 @@ fn collect_pcurve_candidates(
         let Some(span) = subtype_span(active_bytes, target, int_width) else {
             continue;
         };
-        collect_pcurve_candidates(span, active_bytes, tables, seen, int_width, out);
+        collect_pcurve_candidates(span, active_bytes, tables, seen, int_width, false, out);
     }
 }
 
@@ -287,7 +319,7 @@ mod width_tests {
         decode_rolling_ball_surface, DecodedRollingBallCurve,
     };
     use crate::nurbs::core::{
-        decode_curve_cache, decode_surface_cache, decode_surface_cache_resolving_refs,
+        decode_curve_cache, decode_surface_cache, decode_surface_cache_resolving_refs_at,
     };
     use crate::nurbs::proc_curve::{
         compound_patch_layout, decode_helix_definition, decode_procedural_curve_resolving_refs,
@@ -400,6 +432,40 @@ mod width_tests {
             push_f64(&mut b, component);
         }
         b
+    }
+
+    #[test]
+    fn referenced_explicit_pcurve_marks_only_its_owned_bs2_carrier() {
+        for int_width in [4usize, 8] {
+            let mut active = vec![0x0f];
+            push_ident(&mut active, "int_int_cur");
+            active.extend_from_slice(&pcurve_block(int_width));
+            active.push(0x10);
+
+            active.push(0x0f);
+            push_ident(&mut active, "exp_par_cur");
+            active.extend_from_slice(&pcurve_block(int_width));
+            active.push(0x0f);
+            push_ident(&mut active, "ref");
+            push_int(&mut active, 0x04, 0, int_width);
+            active.extend_from_slice(&[0x10, 0x10]);
+
+            let record_start = active.len();
+            active.push(0x0f);
+            push_ident(&mut active, "ref");
+            push_int(&mut active, 0x04, 1, int_width);
+            active.push(0x10);
+            let tables = SubtypeTables::from_stream(&active);
+            let candidates = decode_pcurve_cache_candidates_resolving_refs(
+                &active[record_start..],
+                &active,
+                &tables,
+            );
+
+            assert_eq!(candidates.len(), 2);
+            assert!(candidates[0].authoritative);
+            assert!(!candidates[1].authoritative);
+        }
     }
 
     fn rolling_ball_side(int_width: usize, label: &str) -> Vec<u8> {
@@ -902,7 +968,7 @@ mod width_tests {
             bytes.extend_from_slice(&curve_block(int_width));
             bytes.push(0x10);
 
-            let decoded = decode_cyl_spl_sur_at(&bytes, int_width)
+            let decoded = decode_cyl_spl_sur_at(&bytes, int_width, None)
                 .unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
             assert_eq!(decoded.cache_fit_tolerance, None);
             let DecodedProceduralSurfaceDefinition::Extrusion {
@@ -1164,10 +1230,11 @@ mod width_tests {
         record.extend_from_slice(b"ref");
         push_int(&mut record, 0x04, 0, 4);
         record.push(0x10);
-        let surface = decode_surface_cache_resolving_refs(
+        let surface = decode_surface_cache_resolving_refs_at(
             &record,
             &active,
             &SubtypeTables::from_stream(&active),
+            4,
         )
         .expect("resolved width-4 ref");
         assert_eq!((surface.u_count, surface.v_count), (2, 2));
@@ -1183,10 +1250,11 @@ mod width_tests {
             let mut record = vec![0x0f];
             push_int(&mut record, 0x04, 0, int_width);
             record.push(0x10);
-            let surface = decode_surface_cache_resolving_refs(
+            let surface = decode_surface_cache_resolving_refs_at(
                 &record,
                 &active,
                 &SubtypeTables::from_stream(&active),
+                int_width,
             )
             .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
             assert_eq!((surface.u_count, surface.v_count), (2, 2));
@@ -1459,6 +1527,69 @@ mod width_tests {
             let tail = tail.expect("cache-first tail");
             assert_eq!(tail.extension, 7);
             assert!(tail.flag);
+        }
+    }
+
+    #[test]
+    fn cache_first_par_curve_selects_mirrored_support_slot() {
+        use cadmpeg_ir::geometry::SurfaceCurveFamily;
+
+        // `flag1 = F` mirrors the support onto the second serialized slot:
+        // surface slot 1 and pcurve slot 1 are null, while slot 2 carries the
+        // parametric support surface and its bs2 pcurve. `par_int_cur`
+        // terminates on two booleans, so `flag2` is read after `flag1`.
+        for int_width in [4usize, 8] {
+            let mut support = vec![0x0f];
+            push_ident(&mut support, "par_support");
+            support.extend_from_slice(&surface_block(int_width));
+            support.push(0x10);
+
+            let mut record = vec![0x0f];
+            push_ident(&mut record, "par_int_cur");
+            push_int(&mut record, 0x04, 22_507, int_width);
+            push_int(&mut record, 0x15, 0, int_width);
+            record.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut record, 1.0e-6);
+            // Surface slot 1: null; slot 2: reference into the support table.
+            push_ident(&mut record, "null_surface");
+            push_ident(&mut record, "spline");
+            record.push(0x0b);
+            record.push(0x0f);
+            push_ident(&mut record, "ref");
+            push_int(&mut record, 0x04, 0, int_width);
+            record.push(0x10);
+            record.extend_from_slice(&[0x0b; 4]);
+            // Pcurve slot 1: null; slot 2: populated bs2 pcurve.
+            push_ident(&mut record, "nullbs");
+            record.extend_from_slice(&pcurve_block(int_width));
+            record.extend_from_slice(&[0x0b, 0x0b]);
+            for _ in 0..3 {
+                push_int(&mut record, 0x04, 0, int_width);
+            }
+            push_int(&mut record, 0x04, 7, int_width);
+            record.push(0x0b);
+            record.push(0x0b);
+            record.push(0x10);
+
+            let mut active = support;
+            active.extend_from_slice(&record);
+            let tables = SubtypeTables::from_stream(&active);
+            let decoded = decode_procedural_curve_resolving_refs(&record, &active, &tables)
+                .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
+            let (family, context, tail) =
+                decoded.embedded_surface_curve.expect("typed par context");
+            assert_eq!(family, SurfaceCurveFamily::Parametric);
+            assert!(context.surfaces[0].is_none());
+            assert!(matches!(
+                context.surfaces[1],
+                Some(SurfaceGeometry::Nurbs(_))
+            ));
+            assert!(context.pcurves[0].is_none());
+            assert!(context.pcurves[1].is_some());
+            let tail = tail.expect("cache-first tail");
+            assert_eq!(tail.extension, 7);
+            assert!(!tail.flag);
+            assert_eq!(tail.second_flag, Some(false));
         }
     }
 

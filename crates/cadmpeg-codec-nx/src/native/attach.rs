@@ -3859,6 +3859,7 @@ fn non_boolean_feature_definition_with_parameters(
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             op,
+            keep_tools: false,
         };
     }
     match kind {
@@ -3888,9 +3889,12 @@ fn non_boolean_feature_definition_with_parameters(
         "SKIN" | "THRU_CURVE" => FeatureDefinition::LoftUnresolved,
         "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
         "SWP104" => FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
             sections: Vec::new(),
             path: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
             mode: SweepMode::Unresolved,
             orientation: None,
             transition: None,
@@ -4601,9 +4605,11 @@ fn atomic_disjoint_body_selections(
         BodySelection::Resolved { native, .. }
         | BodySelection::Local { native, .. }
         | BodySelection::Native(native) => BodySelection::Native(native),
+        BodySelection::NativeSet(members) => BodySelection::NativeSet(members),
         BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
         BodySelection::Generated { .. }
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Unresolved => BodySelection::Unresolved,
     };
     (native(left), native(right))
@@ -4644,6 +4650,7 @@ pub(crate) fn boolean_feature_definition(
             crate::native::features::FeatureBooleanKind::Subtract => BooleanOp::Cut,
             crate::native::features::FeatureBooleanKind::Intersect => BooleanOp::Intersect,
         },
+        keep_tools: false,
     }
 }
 
@@ -5728,7 +5735,7 @@ mod tests {
                 std::collections::BTreeMap::new(),
             ),
             cadmpeg_ir::features::FeatureDefinition::Sweep {
-                profile: None,
+                section: cadmpeg_ir::features::SweepSection::Unresolved(_),
                 path: None,
                 mode: cadmpeg_ir::features::SweepMode::Unresolved,
                 ..
@@ -6417,6 +6424,7 @@ mod tests {
                     target: BodySelection::Unresolved,
                     tools: BodySelection::Unresolved,
                     op,
+                    keep_tools: false,
                 }
             );
         }

@@ -20,7 +20,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What target relation does a compact tombstone use when its explicit `(type, xmt)` key does not match a partition entity?
 
-**Known.** `siemens_nx.md:1516` through `siemens_nx.md:1522` define exact-key deletion and chronological replacement in the final BODY revision. `siemens_nx.md:1544` states that deletion runs can span record families.
+**Known.** `siemens_nx.md` §4.2 "Tombstones form descending contiguous xmt runs" and `siemens_nx.md` §7.2 "A compact deltas tombstone is" define exact-key deletion and chronological replacement in the final BODY revision. The current-revision tombstone run can span topology, geometry, and attribute record types.
 
 **Need.** We must know the target relation to apply an unmatched tombstone without deleting the wrong entity.
 
@@ -28,7 +28,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a terminal type-38 or `0x5a` procedural intersection select a finite branch when it has no usable support-parameter lane or paired FIN-carried `SP_CURVE` witnesses?
 
-**Known.** `siemens_nx.md:913` through `siemens_nx.md:1024` define procedural-intersection framing, support relations, endpoint witnesses, correction, and accepted exact branches.
+**Known.** `siemens_nx.md` §6.3 "NX stores freeform edges and blend rails as construction relations with branch witnesses." `siemens_nx.md` §6.3 "The chart/start-term/end-term witness slots" and `siemens_nx.md` §6.3 "A FIN-carried SP_CURVE is a serialized terminal-branch witness" define procedural-intersection framing, support relations, endpoint witnesses, and accepted exact branches.
 
 **Need.** We must know the selection rule to construct the terminal curve as exact geometry.
 
@@ -36,7 +36,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which branch does a terminal procedural intersection use when distinct endpoints map to one procedural-curve parameter?
 
-**Known.** `siemens_nx.md:913` through `siemens_nx.md:1024` define endpoint witnesses and ordered procedural-curve branches. They do not define this folded terminal case.
+**Known.** `siemens_nx.md` §6.3 "The chart/start-term/end-term witness slots" and `siemens_nx.md` §6.3 "A FIN-carried SP_CURVE is a serialized terminal-branch witness" define endpoint witnesses and ordered procedural-curve branches. They do not define this folded terminal case.
 
 **Need.** We must know the branch to preserve both endpoints and the curve orientation.
 
@@ -44,7 +44,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does correction select terminal folds and multiple corrected branches for a degenerate support-0 array or a sentinel-truncated marker-4 plane-support array?
 
-**Known.** `siemens_nx.md:913` through `siemens_nx.md:1024` define predictor inversion and correction for complete supported procedural curves.
+**Known.** `siemens_nx.md` §6.3 "When independent support inversion still leaves a procedural support lane incomplete" and `siemens_nx.md` §6.3 "Each CHART_s point first maps independently through one support carrier's inverse parameterization." define predictor inversion and correction for complete supported procedural curves.
 
 **Need.** We must know the correction rule to construct these curves without an arbitrary branch choice.
 
@@ -52,7 +52,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which saved carrier owns a NURBS-offset spine when its graph-only offset support has no established saved-carrier identity?
 
-**Known.** `siemens_nx.md:913` through `siemens_nx.md:1024` define procedural support graphs. `siemens_nx.md:1050` through `siemens_nx.md:1107` define blend spines and saved carrier relations.
+**Known.** `siemens_nx.md` §6.5 "A BLEND_SURF used by a FACE transfers as a procedural surface carrier." `siemens_nx.md` §6.5 "`values[0:2]` are nonzero signed support offsets `range[2]` in meters." and `siemens_nx.md` §6.5 "For an offset-intersection spine, each complete spine-side pcurve maps the spine parameter directly" define procedural support graphs, blend spines, and saved-carrier relations.
 
 **Need.** We must know the identity relation to evaluate and transfer the spine as exact geometry.
 
@@ -60,7 +60,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What complete record grammar and semantics does each deltas node family that the specification does not define use?
 
-**Known.** `siemens_nx.md:487` through `siemens_nx.md:731` define the admitted deltas record families and their byte boundaries. A remaining byte region has no typed node grammar.
+**Known.** `siemens_nx.md` §4.2 "A deltas stream is a schema-framed incremental edit log paired with a partition." and `siemens_nx.md` §4.2 "After complete record frames, compact tombstones, complete BODY revision" define the admitted deltas record families and their byte boundaries. A remaining byte region has no typed node grammar.
 
 **Need.** We must know each grammar to delimit and transfer the remaining deltas records as typed data.
 
@@ -68,7 +68,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the semantic role of each of the two consecutive XMT identities in a deltas transmit header?
 
-**Known.** `siemens_nx.md:491` through `siemens_nx.md:498` define the header grammar and require two non-null consecutive identities.
+**Known.** `siemens_nx.md` §4.2 "A deltas transmit header is" defines the header grammar and requires two non-null consecutive identities.
 
 **Need.** We must know the roles to relate the header identities to the deltas schema and body history.
 
@@ -76,7 +76,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What fields and semantics does the bounded state tail after the eight-reference deltas `BODY` prefix contain?
 
-**Known.** `siemens_nx.md:1495` through `siemens_nx.md:1505` define the prefix, tail boundary, revision counter, and current-revision rule.
+**Known.** `siemens_nx.md` §7.2 "BODY (`00 0c`) records delimit body revisions." and `siemens_nx.md` §4.2 "The state tail of a validated BODY revision begins immediately after its" define the prefix, tail boundary, revision counter, and current-revision rule.
 
 **Need.** We must know the tail fields to transfer the complete body revision state.
 
@@ -84,7 +84,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the canonical later-schema node-type name for delta tag `0x5a`?
 
-**Known.** `siemens_nx.md:485` and `siemens_nx.md:517` through `siemens_nx.md:520` define tag `0x5a` as the `intersection_data` layout shared with type 38.
+**Known.** `siemens_nx.md` §4.1 "Type 38 is the XT `INTERSECTION` node." and `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" define tag `0x5a` as the `intersection_data` layout shared with type 38.
 
 **Need.** We must know the name to give the node one stable schema identity.
 
@@ -92,7 +92,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the canonical node-type name of deltas type 45 (`002d`), and what does each value mean?
 
-**Known.** `siemens_nx.md:555` through `siemens_nx.md:566` define its count-selected binary64 grammar and record boundary.
+**Known.** `siemens_nx.md` §4.2 "Type 45 has the complete deltas record" defines its count-selected binary64 grammar and record boundary.
 
 **Need.** We must know the name and value roles to transfer the record as typed Parasolid state.
 
@@ -100,7 +100,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the canonical node-type name of deltas type 70 (`0046`), and what does each field mean?
 
-**Known.** `siemens_nx.md:548` through `siemens_nx.md:553` define its XMT identity, node ID, reference lanes, count, constants, and boundary.
+**Known.** `siemens_nx.md` §4.2 "Type 70 has the complete deltas record" defines its XMT identity, node ID, reference lanes, count, constants, and boundary.
 
 **Need.** We must know the name and field roles to relate the record to its owner and referenced entities.
 
@@ -108,7 +108,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the semantic role of the leading sentinel reference in deltas type 74 `ATTDEF_LIST`?
 
-**Known.** `siemens_nx.md:568` through `siemens_nx.md:575` define the record, active-count rule, sentinel value, slots, and boundary.
+**Known.** `siemens_nx.md` §4.2 "Type 74 `ATTDEF_LIST` has the complete deltas record" defines the record, active-count rule, sentinel value, slots, and boundary.
 
 **Need.** We must know the role to represent the complete attribute-definition list without an untyped reference.
 
@@ -116,7 +116,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each of the five references and the `02|04` mode in deltas type 90 `GROUP` mean?
 
-**Known.** `siemens_nx.md:577` through `siemens_nx.md:583` define the complete record grammar, reference statuses, mode values, and boundary.
+**Known.** `siemens_nx.md` §4.2 "Type 90 `GROUP` has the complete deltas record" defines the complete record grammar, reference statuses, mode values, and boundary.
 
 **Need.** We must know the roles to construct group membership and ownership relations.
 
@@ -124,7 +124,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the canonical node-type name of deltas type 91 (`005b`), and what does each field mean?
 
-**Known.** `siemens_nx.md:508` through `siemens_nx.md:515` define its XMT identity, binary flag, six status-framed references, and boundary.
+**Known.** `siemens_nx.md` §4.2 "Type-91 records are" defines its XMT identity, binary flag, six status-framed references, and boundary.
 
 **Need.** We must know the name and field roles to transfer the record as typed Parasolid state.
 
@@ -132,7 +132,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the canonical node-type name of deltas type 101 (`0065`), and what does each field mean?
 
-**Known.** `siemens_nx.md:522` through `siemens_nx.md:524` define its boundary precedence. `siemens_nx.md:585` through `siemens_nx.md:593` define its complete field grammar.
+**Known.** `siemens_nx.md` §4.2 "A complete type-101 record whose start lies inside a fixed-record candidate and" defines its boundary precedence. `siemens_nx.md` §4.2 "Type 101 has the complete deltas record" defines its complete field grammar.
 
 **Need.** We must know the name and field roles to transfer the record as typed Parasolid state.
 
@@ -140,7 +140,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the canonical node-type name of deltas type 141 (`008d`), and what is the role of each reference field?
 
-**Known.** `siemens_nx.md:541` through `siemens_nx.md:546` define the four-reference status-framed grammar and boundary.
+**Known.** `siemens_nx.md` §4.2 "Type 141 has the complete deltas record" defines the four-reference status-framed grammar and boundary.
 
 **Need.** We must know the name and reference roles to relate the record to its owner and operands.
 
@@ -148,7 +148,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each binary64 value in the count-selected deltas `term_use` tail mean?
 
-**Known.** `siemens_nx.md:526` through `siemens_nx.md:539` define the tail start, count-to-cardinality rule, finite values, and independent byte identity.
+**Known.** `siemens_nx.md` §4.2 "Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, and type-204 support-UV records use the layouts in section 6.3." defines the tail start, count-to-cardinality rule, finite values, and independent byte identity.
 
 **Need.** We must know the value roles to transfer the complete terminal-use state.
 
@@ -156,7 +156,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record owns each deltas tagged-reference lane, and what does each field mean?
 
-**Known.** `siemens_nx.md:595` through `siemens_nx.md:603` define the lane grammar, tag values, references, statuses, and exact boundary.
+**Known.** `siemens_nx.md` §4.2 "After complete record frames, compact tombstones, complete BODY revision" defines the tagged-reference lane grammar, record-kind values, and exact byte identity.
 
 **Need.** We must know ownership and field roles to attach each lane to the correct typed record.
 
@@ -164,7 +164,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record owns each deltas reference/type map, and what does each entry mean?
 
-**Known.** `siemens_nx.md:605` through `siemens_nx.md:613` define the counted reference and type lanes and their byte boundary.
+**Known.** `siemens_nx.md` §4.2 "A reference/type map begins with either" defines the counted reference and type lanes and their byte boundary.
 
 **Need.** We must know ownership and entry roles to apply the map to the correct entities.
 
@@ -172,7 +172,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record owns each deltas four-reference state packet, and what is the role of each reference?
 
-**Known.** `siemens_nx.md:615` through `siemens_nx.md:622` define its reference-status grammar and exact boundary.
+**Known.** `siemens_nx.md` §4.2 "One reference-state packet is" defines its reference-status grammar and exact boundary.
 
 **Need.** We must know ownership and reference roles to attach the packet to typed state.
 
@@ -180,7 +180,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which declaration owns each deltas schema reference preamble, and what is the role of each field?
 
-**Known.** `siemens_nx.md:624` through `siemens_nx.md:635` define the preamble variants, reference lanes, state bytes, and boundary.
+**Known.** `siemens_nx.md` §4.2 "A schema reference preamble is" defines the preamble variants, reference lanes, state bytes, and boundary.
 
 **Need.** We must know ownership and field roles to construct the complete inline schema model.
 
@@ -188,7 +188,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record owns each deltas reference-marker packet, and what do its references and marker mean?
 
-**Known.** `siemens_nx.md:637` through `siemens_nx.md:645` define the packet grammar, marker values, and boundary.
+**Known.** `siemens_nx.md` §4.2 "One reference-marker packet is" defines the packet grammar, marker values, and boundary.
 
 **Need.** We must know ownership and marker semantics to attach the packet to typed state.
 
@@ -196,7 +196,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each field and marker in a deltas type-150 state packet mean?
 
-**Known.** `siemens_nx.md:647` through `siemens_nx.md:654` define the packet grammar, marker values, and boundary.
+**Known.** `siemens_nx.md` §4.2 "A type-150 state packet is" defines the packet grammar, marker values, and boundary.
 
 **Need.** We must know the roles to transfer the packet as typed type-150 state.
 
@@ -204,7 +204,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the semantic role of each field in an inline deltas schema declaration?
 
-**Known.** `siemens_nx.md:656` through `siemens_nx.md:707` define the declaration variants, names, signatures, references, states, and byte boundaries.
+**Known.** `siemens_nx.md` §4.2 "An inline schema declaration begins with one of eight exact headers." defines the declaration variants, names, signatures, references, states, and byte boundaries.
 
 **Need.** We must know the field roles to construct a typed schema declaration instead of a framed declaration record.
 
@@ -212,7 +212,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each field in inline type-12 `BODY` instance state mean, and how do its counts constrain its lanes?
 
-**Known.** `siemens_nx.md:709` through `siemens_nx.md:723` define its reference lanes, count fields, scalar lanes, state bytes, and boundary.
+**Known.** `siemens_nx.md` §4.2 "A type-12 `BODY` header binds the immediately following instance state." defines its reference lanes, count fields, scalar lanes, state bytes, and boundary.
 
 **Need.** We must know the roles and cardinality rules to transfer the complete inline body state.
 
@@ -222,7 +222,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What byte grammar and semantic role does each declared field of each NX OM class use?
 
-**Known.** `siemens_nx.md:415` through `siemens_nx.md:461` define OM section boundaries, class and member declarations, store identities, compact indices, and expression records. `siemens_nx.md:1111` through `siemens_nx.md:1486` define typed fields for selected construction families.
+**Known.** `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" and `siemens_nx.md` §7.1 "A feature-history operation record begins at the fixed operation-header marker" define OM section boundaries, class and member declarations, store identities, compact indices, and expression records. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines typed fields for selected construction families.
 
 **Need.** We must know the remaining class grammars to decode feature history, constraints, attributes, and material bindings as typed fields.
 
@@ -230,7 +230,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `SKETCH` construction payload represent?
 
-**Known.** `siemens_nx.md:238` through `siemens_nx.md:243` define sketch record identity. Section 7.1 defines the framed payload lanes but does not assign a model-space frame, sketch entity, or constraint role from equal scalar values.
+**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is" and `siemens_nx.md` §7.1 "A sketch fixed pair has one of three exact forms:" define sketch record identity and the framed payload lanes but do not assign a model-space frame, sketch entity, or constraint role from equal scalar values.
 
 **Need.** We must know the roles to construct neutral sketch geometry and constraints.
 
@@ -238,7 +238,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `DATUM_PLANE` construction payload represent?
 
-**Known.** `siemens_nx.md:1451` through `siemens_nx.md:1480` define datum-plane branches, resolved blocks, scalar-pair framing, descriptors, and feature identity.
+**Known.** `siemens_nx.md` §7.1 "A `DATUM_PLANE` payload begins" and `siemens_nx.md` §7.1 "A datum-plane object scalar-pair frame is" and `siemens_nx.md` §7.1 "A datum-plane descriptor block is exactly 40 bytes:" define datum-plane branches, resolved blocks, scalar-pair framing, descriptors, and feature identity.
 
 **Need.** We must know the roles to construct the model-space reference plane.
 
@@ -246,7 +246,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `DATUM_CSYS` construction payload represent?
 
-**Known.** `siemens_nx.md:1435` through `siemens_nx.md:1449` define the eight-reference construction lane, logical payload, scalar-pair framing, and feature identity.
+**Known.** `siemens_nx.md` §7.1 "A `DATUM_CSYS` payload begins" and `siemens_nx.md` §7.1 "An object-payload scalar-pair frame is" define the eight-reference construction lane, logical payload, scalar-pair framing, and feature identity.
 
 **Need.** We must know the roles to construct the model-space coordinate-system frame.
 
@@ -254,7 +254,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the trailing byte in an OM class or member declaration mean?
 
-**Known.** `siemens_nx.md:435` through `siemens_nx.md:440` define the declaration length, `UGS::` or `m_` name, trailing-code boundary, and following registry suffix.
+**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the declaration length, `UGS::` or `m_` name, trailing-code boundary, and following registry suffix.
 
 **Need.** We must know the meaning to validate and transfer declaration metadata.
 
@@ -262,7 +262,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each byte in a bounded OM field-registry suffix mean?
 
-**Known.** `siemens_nx.md:435` through `siemens_nx.md:440` define the suffix boundary and the 11-to-14-byte prefix, fingerprint, and terminal-byte decomposition.
+**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the suffix boundary and the 11-to-14-byte prefix, fingerprint, and terminal-byte decomposition.
 
 **Need.** We must know the field roles to construct the complete OM schema registry.
 
@@ -270,7 +270,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a primary feature body field that resolves to an offset-store block identify a segment body-image object-index pair?
 
-**Known.** `siemens_nx.md:122` through `siemens_nx.md:137` define segment body-image tuples and prohibit a relation based only on equal integer values across namespaces. `siemens_nx.md:208` through `siemens_nx.md:228` define primary-body fields and body selection.
+**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §2 "A primary feature body field whose operation does not select an offset-store" define segment body-image tuples and prohibit a relation based only on equal integer values across namespaces. They also define primary-body fields and body selection.
 
 **Need.** We must know the cross-store relation to attach the feature output and lineage to the correct body image.
 
@@ -278,7 +278,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What relation does each feature-history object index that is not a primary-body writer or Boolean tool use?
 
-**Known.** `siemens_nx.md:163` through `siemens_nx.md:228` define operation-header inputs, shared-block identity groups, primary-body lineage, and Boolean operands.
+**Known.** `siemens_nx.md` §2 "Within a feature-history record area, an operation header is encoded as the" and `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §2 "A body-affecting operation record contains exactly one primary-body field" define operation-header inputs, shared-block identity groups, primary-body lineage, and Boolean operands.
 
 **Need.** We must know each remaining relation to construct complete feature dependencies and selections.
 
@@ -286,7 +286,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which operation owns each embedded common frame, and what does each field in its eight-byte state lane mean?
 
-**Known.** Section 7.1 of `siemens_nx.md` defines the exact frame and state-lane boundaries for the admitted operation families.
+**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families.
 
 **Need.** We must know ownership and field roles to attach the state to the correct operation.
 
@@ -294,7 +294,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do the embedded operation state lanes encode suppression?
 
-**Known.** `siemens_nx.md:68` through `siemens_nx.md:80` derive active state for the closed output-and-dependency graph and leave suppression outside that graph unresolved.
+**Known.** `siemens_nx.md` §2 "Every feature producing a body in the selected current B-rep is active in the" derives active state for the closed output-and-dependency graph and leaves suppression outside that graph unresolved.
 
 **Need.** We must know the serialized suppression fields to construct operation state for all configurations.
 
@@ -302,7 +302,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What object family can each of the five leading nullable references in a `DELETE` payload address, and what is the role of each slot?
 
-**Known.** `siemens_nx.md:230` through `siemens_nx.md:236` define the five-slot field, canonical reference encodings, resolution rule, logical payload, and body-target exclusion.
+**Known.** `siemens_nx.md` §2 "`DELETE` is a body-deletion operation only when its bounded record contains the" and `siemens_nx.md` §2 "A `DELETE` payload begins with one nullable reference field" define the five-slot field, canonical reference encodings, resolution rule, logical payload, and body-target exclusion.
 
 **Need.** We must know the slot roles to decode the delete construction independently of its primary-body target.
 
@@ -310,7 +310,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which bodies belong to each inactive arrangement, and what per-body state does that arrangement select?
 
-**Known.** `siemens_nx.md:54` through `siemens_nx.md:66` define arrangement identity and active body membership. Other arrangements have no body membership without a separate relation.
+**Known.** `siemens_nx.md` §2 "`/Root/part/arrangements` has an `Arrangements` root." and `siemens_nx.md` §2 "A unique part-owned `NX_Arrangement` string attribute names the active" define arrangement identity and active body membership. Other arrangements have no body membership without a separate relation.
 
 **Need.** We must know the relation to construct inactive configuration body sets.
 
@@ -318,7 +318,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which parameter values does each inactive arrangement select?
 
-**Known.** `siemens_nx.md:75` through `siemens_nx.md:89` define complete parameter state only for a uniquely resolved active configuration.
+**Known.** `siemens_nx.md` §2 "When exactly one active configuration has complete body membership, the same" and `siemens_nx.md` §2 "The same active configuration retains the complete current parameter state when" define complete parameter state only for a uniquely resolved active configuration.
 
 **Need.** We must know the relation to construct inactive configuration parameter maps.
 
@@ -326,7 +326,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each type index, flag, and trailing index in an operation terminal discriminator lane mean?
 
-**Known.** Section 7.1 of `siemens_nx.md` defines the exact terminal discriminator lanes for the admitted operation payloads and retains their serialized order.
+**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" defines the exact terminal discriminator lanes for the admitted operation payloads and retains their serialized order.
 
 **Need.** We must know the field roles to construct termination, direction, draft, and other operation controls.
 
@@ -334,7 +334,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which `CPROJ` construction references select the source curve, target surface, direction, and combination controls?
 
-**Known.** `siemens_nx.md:1393` through `siemens_nx.md:1399` define the ordered three-reference graph, block resolution, and logical payload.
+**Known.** `siemens_nx.md` §7.1 "A `CPROJ` payload contains at most one construction-reference field framed as" defines the ordered three-reference graph, block resolution, and logical payload.
 
 **Need.** We must know the roles to construct a neutral projected curve.
 
@@ -342,7 +342,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which `CPROJ_CMB` construction references select the source curves, target surfaces, directions, and combination controls?
 
-**Known.** `siemens_nx.md:1393` through `siemens_nx.md:1399` define the ordered eight-reference graph, block resolution, and logical payload.
+**Known.** `siemens_nx.md` §7.1 "A `CPROJ_CMB` payload contains at most one construction-reference graph framed as" defines the ordered eight-reference graph, block resolution, and logical payload.
 
 **Need.** We must know the roles to construct the combined projected curves.
 
@@ -350,7 +350,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the `FSET` selector mean, and what selection role does each ordered object-reference group have?
 
-**Known.** `siemens_nx.md:1348` through `siemens_nx.md:1350` define the selector, two separate reference groups, resolution rule, and logical payloads.
+**Known.** `siemens_nx.md` §7.1 "An `FSET` operation payload contains at most one two-group reference graph framed as" defines the selector, two separate reference groups, resolution rule, and logical payloads.
 
 **Need.** We must know the roles to construct the selected face or feature set.
 
@@ -358,7 +358,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which ordered references in `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` select the seed, transform, and pattern controls?
 
-**Known.** `siemens_nx.md:1352` through `siemens_nx.md:1365` define the construction graph, logical payload, and counted row forms.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." define the construction graph, logical payload, and counted row forms.
 
 **Need.** We must know the roles to construct neutral pattern dependencies and transforms.
 
@@ -366,7 +366,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each scalar in a counted pattern row mean?
 
-**Known.** `siemens_nx.md:1361` through `siemens_nx.md:1365` define the Q1.55 and wide-row scalar encodings, row order, exact values, and boundaries.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and `siemens_nx.md` §7.1 "`Pattern Feature` also admits the wide-row form" define the Q1.55 and wide-row scalar encodings, row order, exact values, and boundaries.
 
 **Need.** We must know the roles to construct pattern coordinates, spacing, angles, and other controls.
 
@@ -374,7 +374,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each compact selector in a counted pattern row select?
 
-**Known.** `siemens_nx.md:1363` through `siemens_nx.md:1365` define selector framing, non-null requirements, row ordinals, and exact tokens.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." defines selector framing, non-null requirements, row ordinals, and exact tokens.
 
 **Need.** We must know the roles to bind each row to its seed or transform operand.
 
@@ -382,7 +382,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each selector group and trailing reference in a `Multi Instance Output` lane mean?
 
-**Known.** Section 7.1 of `siemens_nx.md` defines the ordered lane framing and retains its exact selectors and references.
+**Known.** `siemens_nx.md` §7.1 "`Multi Instance Output` payloads contain at most one counted output lane" defines the ordered lane framing and retains its exact selectors and references.
 
 **Need.** We must know the roles to relate pattern instances to their output bodies or geometry.
 
@@ -390,7 +390,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What serialized relation establishes identity or a seed relation between blocks that have equal canonical line labels?
 
-**Known.** `siemens_nx.md:163` through `siemens_nx.md:184` define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
+**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
 
 **Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
 
@@ -398,7 +398,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What construction role does the `POINT` header reference have, and what does its `02|03` mode select?
 
-**Known.** `siemens_nx.md:1371` defines the complete header grammar, canonical reference, mode values, and datum-point family.
+**Known.** `siemens_nx.md` §7.1 "The `POINT` operation payload begins with one construction header." defines the complete header grammar, canonical reference, mode values, and datum-point family.
 
 **Need.** We must know the roles to select the point construction method and its operand.
 
@@ -406,7 +406,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What coordinate spaces and construction roles do the two ordered scalar triples in the selected six-scalar `POINT` lane use?
 
-**Known.** Section 7.1 of `siemens_nx.md` defines the six-scalar lane, its selected form, values, and exact boundaries. A shared target block does not identify either triple as the model-space point.
+**Known.** `siemens_nx.md` §7.1 "The header reference selects a six-scalar lane ending in its addressed offset-store block." defines the six-scalar lane, its selected form, values, and exact boundaries. A shared target block does not identify either triple as the model-space point.
 
 **Need.** We must know the roles to construct the datum point at its authored model-space position.
 
@@ -414,7 +414,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which counted leading indices, ordered references, terminal indices, and tail fields select the drafted faces, neutral plane, pull direction, and draft angle?
 
-**Known.** `siemens_nx.md:1375` through `siemens_nx.md:1391` define the leading index lane, four-reference graph, terminal lanes, scalar encodings, store resolution, and exact boundaries.
+**Known.** `siemens_nx.md` §7.1 "The `DRAFT` operation payload begins" and `siemens_nx.md` §7.1 "The same payload contains exactly one four-reference construction graph." define the leading index lane, four-reference graph, terminal lanes, scalar encodings, store resolution, and exact boundaries.
 
 **Need.** We must know the roles to construct a neutral draft operation.
 
@@ -422,7 +422,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which ordered `SKIN` references and branch groups select sections, guides, continuity, and terminal controls?
 
-**Known.** `siemens_nx.md:1413` through `siemens_nx.md:1419` define the loft family, common construction envelope, ordered references, and logical payload.
+**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions." and `siemens_nx.md` §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, common construction envelope, ordered references, and logical payload.
 
 **Need.** We must know the roles to construct the neutral loft surface or body.
 
@@ -430,7 +430,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which ordered `Studio Surface` references and branch groups select control geometry, continuity, and terminal controls?
 
-**Known.** `siemens_nx.md:1417` through `siemens_nx.md:1425` define the surface construction envelope, ordered references, logical payload, and feature family.
+**Known.** `siemens_nx.md` §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." and `siemens_nx.md` §7.1 "The `Studio Surface` operation label identifies a freeform-surface construction." define the surface construction envelope, ordered references, logical payload, and feature family.
 
 **Need.** We must know the roles to construct the neutral freeform surface.
 
@@ -438,7 +438,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which feature owns each plain cached-body stream?
 
-**Known.** `siemens_nx.md:122` through `siemens_nx.md:137` define segment tuples for partition and plain cached-body streams. `siemens_nx.md:1488` through `siemens_nx.md:1514` define body writers, operands, aliases, and terminal lineage.
+**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §7.2 "Across the ordered feature-history sections, the last non-`DELETE` operation carrying a primary-body field is that body object's latest writer." define segment tuples for partition and plain cached-body streams, body writers, operands, aliases, and terminal lineage.
 
 **Need.** We must know the ownership relation to use a cached body as the correct feature result or tool.
 
@@ -446,7 +446,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the per-class entity-record grammar in `RMFastLoad` outside its object-ID membership table?
 
-**Known.** `siemens_nx.md:1506` through `siemens_nx.md:1510` define the counted object-ID table and active-body membership semantics.
+**Known.** `siemens_nx.md` §2.1 "| `/Root/FastLoad/RMFastLoad`" and `siemens_nx.md` §2.3 "`/Root/FastLoad/Structure` begins with the twelve-byte envelope" define the fast-load object-ID table and the bounded structure stream. The per-class entity-record grammar outside the membership table remains unresolved.
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
@@ -454,7 +454,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Does a `HOLE PACKAGE` operation own its related `SIMPLE HOLE` operations as child features, replace them as the authored neutral feature, or coexist with them as an independent operation?
 
-**Known.** `siemens_nx.md` defines the exact four-block package lane and its unambiguous equality relation to a simple-hole construction group. The equality does not encode hierarchy, dependency direction, or neutral feature identity.
+**Known.** `siemens_nx.md` §7.1 "A `HOLE PACKAGE` payload contains at most one construction-group lane framed as" and `siemens_nx.md` §7.1 "One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order" define the four-block package lane and its unambiguous equality relation to a simple-hole construction group. The equality does not encode hierarchy, dependency direction, or neutral feature identity.
 
 **Need.** We must identify the serialized hierarchy or operation-role field before collapsing, parenting, or suppressing either neutral feature family.
 
@@ -464,12 +464,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the field grammar and semantics of `/Root/FastLoad/Structure`?
 
-**Known.** The stream has a big-endian bounded OM envelope and typed class and
-member declarations. Its typed component
-roster defines ordered named prototypes and a one-based prototype index for
-each distinct occurrence. A second counted table stores UUID identities, and a
-parallel one-based index associates every occurrence with one UUID. Other
-payload fields remain uninterpreted.
+**Known.** `siemens_nx.md` §2.3 "`/Root/FastLoad/Structure` begins with the twelve-byte envelope" and `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" define the big-endian bounded OM envelope and typed class and member declarations. The typed component roster defines ordered named prototypes and a one-based prototype index for each distinct occurrence. A second counted table stores UUID identities, and a parallel one-based index associates every occurrence with one UUID. Other payload fields remain uninterpreted.
 
 **Need.** We must know the remaining payload grammar, including hierarchy,
 placement, UUID, and state fields.
@@ -478,7 +473,7 @@ placement, UUID, and state fields.
 
 **Question.** What is the field grammar and semantics of `/Root/FastLoad/JT`?
 
-**Known.** `siemens_nx.md:245` through `siemens_nx.md:362` classify the stream separately from `/Root/UG_PART/DisplayJT` and retain its bounded container entry.
+**Known.** `siemens_nx.md` §2.1 "| `/Root/FastLoad/JT`" and `siemens_nx.md` §2.1 "| `/Root/UG_PART/DisplayJT`" classify the stream separately from `/Root/UG_PART/DisplayJT` and retain its bounded container entry.
 
 **Need.** We must know the grammar to decode its fast-load display relations as typed data.
 
@@ -488,9 +483,7 @@ placement, UUID, and state fields.
 does an `On` or `Off` member control feature suppression, visibility, or another
 state domain?
 
-**Known.** `siemens_nx.md` defines the complete counted stream envelope and
-retains each 32-hex-digit identity and `On`/`Off` state exactly. The toggle
-identities have no proven join to feature-operation records.
+**Known.** `siemens_nx.md` §2.2 "`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:" defines the complete counted stream envelope and retains each 32-hex-digit identity and `On`/`Off` state exactly. The toggle identities have no proven join to feature-operation records.
 
 **Need.** We must identify the addressed object namespace before projecting any
 member as a neutral suppression or visibility state.
@@ -499,7 +492,7 @@ member as a neutral suppression or visibility state.
 
 **Question.** What does each nonzero outer-index row value in `/Root/UG_PART/DisplayJT` mean?
 
-**Known.** Section 2 of `siemens_nx.md` defines the outer index, referenced JT segments, scene graph, shape data, and tessellation relations.
+**Known.** `siemens_nx.md` §2.3 "`/Root/UG_PART/DisplayJT` begins with `version:u32 LE, count:u32 LE`" and `siemens_nx.md` §2.3 "Each indexed JT document extends from its header offset" define the outer index, referenced JT segments, scene graph, shape data, and tessellation relations.
 
 **Need.** We must know the row roles to relate each indexed value to the correct display object or segment.
 
@@ -507,7 +500,7 @@ member as a neutral suppression or visibility state.
 
 **Question.** Which serialized fields define the transform and units of each assembly occurrence placement?
 
-**Known.** `siemens_nx.md:354` through `siemens_nx.md:362` define external child geometry and require occurrence placement. The OM expression grammar defines stored numeric expression values.
+**Known.** `siemens_nx.md` §2.3 "Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams." defines external child geometry and requires occurrence placement. The OM expression grammar defines stored numeric expression values.
 
 **Need.** We must know the fields to place each child part in assembly coordinates.
 
@@ -515,7 +508,7 @@ member as a neutral suppression or visibility state.
 
 **Question.** Which serialized fields bind assembly pattern angles, counts, metric radii, and base frames to an occurrence pattern?
 
-**Known.** `siemens_nx.md:448` through `siemens_nx.md:459` define `hostglobalvariables` names, units, formulas, and evaluated values. They do not define the occurrence-pattern binding.
+**Known.** `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines `hostglobalvariables` names, units, formulas, and evaluated values. It does not define the occurrence-pattern binding.
 
 **Need.** We must know the bindings to construct patterned assembly occurrences.
 
@@ -523,14 +516,7 @@ member as a neutral suppression or visibility state.
 
 **Question.** How does each child-bound persistent-handle set identify one distinct assembly occurrence?
 
-**Known.** The fast-load component roster preserves each occurrence ordinal and
-its named prototype, including repeated uses. `EXTREFSTREAM` preserves child
-paths and persistent-handle sets independently. Bounded OM object records retain
-exact adjacent persistent-handle pairs without assigning occurrence semantics.
-Canonical UUID frames in contiguous ID-bounded OM storage group with roster
-occurrences by exact UUID and equal multiplicity. Repeated members remain two
-separate ordered lists because their individual correspondence is not encoded
-by that invariant.
+**Known.** `siemens_nx.md` §2.3 "Each `metadata` and `prototype` is" and `siemens_nx.md` §7.1 "**Persistent-handle identity.**" define occurrence ordinals, named prototypes, persistent handles, and their independent occurrence counts.
 
 **Need.** We must know the mapping to preserve multiple occurrences of the same child part.
 
@@ -538,7 +524,7 @@ by that invariant.
 
 **Question.** What are the field boundaries and roles of the residual bytes in an indexed `EXTREFSTREAM` record tail?
 
-**Known.** `siemens_nx.md:1533` through `siemens_nx.md:1539` define the indexed-record boundary, handle-set prefix, persistent-handle pairs, tagged references, string uses, and child binding. Other tail bytes remain opaque.
+**Known.** `siemens_nx.md` §9.1 "An `EXTREFSTREAM` record region begins with" and `siemens_nx.md` §9.1 "Slot zero names the child `.prt`, slot one is the reference code," define the indexed-record boundary, handle-set prefix, persistent-handle pairs, tagged references, string uses, and child binding. Other tail bytes remain opaque.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
 
@@ -546,6 +532,6 @@ by that invariant.
 
 **Question.** Which serialized relation binds a material or appearance to a Parasolid face identity?
 
-**Known.** `siemens_nx.md:325` through `siemens_nx.md:352` define preview and texture assets and the material-texture catalog. `siemens_nx.md:1563` through `siemens_nx.md:1614` define topology-owned Parasolid attributes.
+**Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes.
 
 **Need.** We must know the relation to assign material and appearance state to neutral faces.

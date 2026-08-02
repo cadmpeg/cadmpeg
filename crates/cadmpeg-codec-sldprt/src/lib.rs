@@ -101,14 +101,23 @@ use cadmpeg_codec_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, FidelityResolution, Finding, LossNote, Severity, SourceFidelity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
+
+/// A joined native-record reference whose retained payload stays owned by the
+/// source-fidelity sidecar throughout export.
+struct SourceRecord<'a> {
+    id: UnknownId,
+    byte_len: u64,
+    sha256: &'a str,
+    data: Option<&'a [u8]>,
+}
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
@@ -130,7 +139,7 @@ impl SldprtCodec {
     fn write_preserved_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
-        records: &[UnknownRecord],
+        records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
     ) -> Result<(), CodecError> {
         let expected = ir
@@ -258,7 +267,7 @@ impl SldprtCodec {
     fn encode_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
-        records: &[UnknownRecord],
+        records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
         let replay = records
@@ -287,19 +296,38 @@ impl SldprtCodec {
     }
 }
 
-fn source_records(
+fn source_records<'a>(
     ir: &CadIr,
-    source_fidelity: &SourceFidelity,
-) -> Result<Vec<UnknownRecord>, CodecError> {
-    let mut records = source_fidelity.native_unknown_records(ir, "sldprt")?;
+    source_fidelity: &'a SourceFidelity,
+) -> Result<Vec<SourceRecord<'a>>, CodecError> {
+    let retained_by_id = source_fidelity
+        .retained_records
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut records = ir
+        .native_unknowns_iter("sldprt")
+        .map(|reference| {
+            let reference = reference?;
+            let retained = retained_by_id.get(reference.id.0.as_str()).ok_or_else(|| {
+                cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
+                    reference.id.0.clone(),
+                )
+            })?;
+            Ok(SourceRecord {
+                id: reference.id,
+                byte_len: retained.byte_len,
+                sha256: &retained.sha256,
+                data: retained.data.as_deref(),
+            })
+        })
+        .collect::<Result<Vec<_>, cadmpeg_ir::native::NativeConvertError>>()?;
     if let Some(source) = source_fidelity.retained_record("sldprt:file:source-image#0") {
-        records.push(UnknownRecord {
+        records.push(SourceRecord {
             id: source.id.clone().into(),
-            offset: source.offset,
             byte_len: source.byte_len,
-            sha256: source.sha256.clone(),
-            data: source.data.clone(),
-            links: Vec::new(),
+            sha256: &source.sha256,
+            data: source.data.as_deref(),
         });
     }
     Ok(records)

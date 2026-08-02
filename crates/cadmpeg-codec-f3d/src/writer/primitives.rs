@@ -55,6 +55,34 @@ pub(crate) fn validate_configuration_projection(
     Ok(())
 }
 
+pub(crate) fn validate_assembly_projection(
+    target: &CadIr,
+    native: Option<&F3dNative>,
+) -> Result<(), CodecError> {
+    let Some(native) = native else {
+        return target
+            .model
+            .assembly_joints
+            .is_empty()
+            .then_some(())
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D generation does not support assembly joints".into(),
+                )
+            });
+    };
+    let projected = crate::design::assembly::project_assembly_joints(
+        &native.design_parameter_scopes,
+        &native.design_component_occurrences,
+    );
+    if target.model.assembly_joints != projected {
+        return Err(CodecError::NotImplemented(
+            "editing F3D assembly joints is not supported".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn normalized_face_sense_to_native(
     desired: Sense,
     native_at_decode: Sense,

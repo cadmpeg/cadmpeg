@@ -506,14 +506,13 @@ fn decode_retains_a_typed_dimensionless_direction() {
     assert!(result.report.losses.is_empty());
     let native = result.ir.native.namespace("iges").unwrap();
     assert_eq!(native.arenas["directions"].len(), 1);
-    let components = native.arenas["directions"][0].fields["components"]
-        .as_array()
-        .unwrap();
+    let direction_fields = native.arenas["directions"][0].fields();
+    let components = direction_fields["components"].as_array().unwrap();
     assert_eq!(components[0], 2.0);
     assert_eq!(components[1], -3.0);
     assert_eq!(components[2], 4.0);
     assert_eq!(
-        native.arenas["directions"][0].fields["physically_dependent"],
+        native.arenas["directions"][0].fields()["physically_dependent"],
         true
     );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
@@ -910,7 +909,10 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
     assert_eq!(points.ir.model.vertices.len(), 2);
     let native = points.ir.native.namespace("iges").unwrap();
     assert_eq!(native.arenas["copious_data"].len(), 1);
-    assert_eq!(native.arenas["copious_data"][0].fields["tuples"][0][5], 1.0);
+    assert_eq!(
+        native.arenas["copious_data"][0].fields()["tuples"][0][5],
+        1.0
+    );
     assert!(points.report.losses.is_empty());
 
     let witness = IgesCodec
@@ -4731,8 +4733,11 @@ fn decode_applies_standard_body_color_and_face_color_override() {
     let native = result.ir.native.namespace("iges").unwrap();
     assert_eq!(native.version, 2);
     assert_eq!(native.arenas["colors"].len(), 1);
-    assert_eq!(native.arenas["colors"][0].id, "iges:presentation:color#D13");
-    assert_eq!(native.arenas["colors"][0].fields["red_percent"], 20.0);
+    assert_eq!(
+        native.arenas["colors"][0].id(),
+        "iges:presentation:color#D13"
+    );
+    assert_eq!(native.arenas["colors"][0].fields()["red_percent"], 20.0);
     assert_eq!(native.arenas["display_attributes"].len(), 7);
     assert!(
         result.report.losses.is_empty(),
@@ -4754,14 +4759,17 @@ fn decode_types_template_and_visible_blank_line_fonts() {
     let native = result.ir.native.namespace("iges").unwrap();
     let line_fonts = &native.arenas["line_fonts"];
     assert_eq!(line_fonts.len(), 2);
-    assert_eq!(line_fonts[0].id, "iges:presentation:line-font#D3");
-    assert_eq!(line_fonts[0].fields["kind"], "template");
-    assert_eq!(line_fonts[0].fields["tangent_oriented"], true);
-    assert_eq!(line_fonts[0].fields["template"], "iges:entity:directory#1");
-    assert_eq!(line_fonts[1].fields["kind"], "visible_blank_pattern");
-    assert_eq!(line_fonts[1].fields["segment_count"], 5);
+    assert_eq!(line_fonts[0].id(), "iges:presentation:line-font#D3");
+    assert_eq!(line_fonts[0].fields()["kind"], "template");
+    assert_eq!(line_fonts[0].fields()["tangent_oriented"], true);
     assert_eq!(
-        line_fonts[1].fields["hexadecimal_pattern"]
+        line_fonts[0].fields()["template"],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(line_fonts[1].fields()["kind"], "visible_blank_pattern");
+    assert_eq!(line_fonts[1].fields()["segment_count"], 5);
+    assert_eq!(
+        line_fonts[1].fields()["hexadecimal_pattern"]
             .as_array()
             .unwrap()
             .iter()
@@ -4771,11 +4779,11 @@ fn decode_types_template_and_visible_blank_line_fonts() {
     );
     let line_display = native.arenas["display_attributes"]
         .iter()
-        .find(|record| record.id == "iges:presentation:display-attributes#D7")
+        .find(|record| record.id() == "iges:presentation:display-attributes#D7")
         .unwrap();
-    assert_eq!(line_display.fields["line_font_number"], -5);
+    assert_eq!(line_display.fields()["line_font_number"], -5);
     assert_eq!(
-        line_display.fields["line_font_definition"],
+        line_display.fields()["line_font_definition"],
         "iges:entity:directory#5"
     );
     assert!(
@@ -4796,10 +4804,10 @@ fn decode_types_definition_levels_and_directory_level_links() {
     let native = result.ir.native.namespace("iges").unwrap();
     let levels = &native.arenas["definition_levels"];
     assert_eq!(levels.len(), 1);
-    assert_eq!(levels[0].id, "iges:presentation:definition-levels#D1");
-    assert_eq!(levels[0].fields["declared_count"], 3);
+    assert_eq!(levels[0].id(), "iges:presentation:definition-levels#D1");
+    assert_eq!(levels[0].fields()["declared_count"], 3);
     assert_eq!(
-        levels[0].fields["levels"]
+        levels[0].fields()["levels"]
             .as_array()
             .unwrap()
             .iter()
@@ -4809,11 +4817,11 @@ fn decode_types_definition_levels_and_directory_level_links() {
     );
     let line = native.arenas["display_attributes"]
         .iter()
-        .find(|record| record.id == "iges:presentation:display-attributes#D3")
+        .find(|record| record.id() == "iges:presentation:display-attributes#D3")
         .unwrap();
-    assert_eq!(line.fields["level_number"], -1);
+    assert_eq!(line.fields()["level_number"], -1);
     assert_eq!(
-        line.fields["level_definition"],
+        line.fields()["level_definition"],
         "iges:presentation:definition-levels#D1"
     );
     assert!(
@@ -4832,8 +4840,8 @@ fn decode_resolves_directory_line_weight_to_millimetres() {
         )
         .unwrap();
     let display = &result.ir.native.namespace("iges").unwrap().arenas["display_attributes"][0];
-    assert_eq!(display.fields["line_weight_number"], 1);
-    assert_eq!(display.fields["line_weight_mm"], 1.0);
+    assert_eq!(display.fields()["line_weight_number"], 1);
+    assert_eq!(display.fields()["line_weight_mm"], 1.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -4853,30 +4861,33 @@ fn decode_types_all_csg_primitive_solids_and_defaults() {
     assert_eq!(solids.len(), 8);
     let block = solids
         .iter()
-        .find(|solid| solid.id == "iges:solid:primitive#D1")
+        .find(|solid| solid.id() == "iges:solid:primitive#D1")
         .unwrap();
-    assert_eq!(block.fields["kind"], "block");
-    assert_eq!(block.fields["dimensions"]["x_length"], 2.0);
-    assert_eq!(block.fields["origin"][0], 1.0);
+    assert_eq!(block.fields()["kind"], "block");
+    assert_eq!(block.fields()["dimensions"]["x_length"], 2.0);
+    assert_eq!(block.fields()["origin"][0], 1.0);
     let default_block = solids
         .iter()
-        .find(|solid| solid.id == "iges:solid:primitive#D3")
+        .find(|solid| solid.id() == "iges:solid:primitive#D3")
         .unwrap();
-    assert!(default_block.fields["origin"][0].is_null());
+    assert!(default_block.fields()["origin"][0].is_null());
     assert_eq!(
         solids
             .iter()
-            .map(|solid| solid.fields["kind"].as_str().unwrap())
+            .map(|solid| solid.fields()["kind"].as_str().unwrap().to_owned())
             .collect::<std::collections::BTreeSet<_>>(),
-        std::collections::BTreeSet::from([
-            "block",
-            "ellipsoid",
-            "right_angular_wedge",
-            "right_circular_cone_frustum",
-            "right_circular_cylinder",
-            "sphere",
-            "torus",
-        ])
+        std::collections::BTreeSet::from(
+            [
+                "block",
+                "ellipsoid",
+                "right_angular_wedge",
+                "right_circular_cone_frustum",
+                "right_circular_cylinder",
+                "sphere",
+                "torus",
+            ]
+            .map(str::to_owned)
+        )
     );
     assert!(
         result.report.losses.is_empty(),
@@ -4920,32 +4931,32 @@ fn decode_types_swept_solids_and_balanced_boolean_postfix() {
     assert_eq!(procedural.len(), 3);
     let open_revolution = procedural
         .iter()
-        .find(|solid| solid.id == "iges:solid:procedural#D5")
+        .find(|solid| solid.id() == "iges:solid:procedural#D5")
         .unwrap();
-    assert_eq!(open_revolution.fields["kind"], "revolution");
-    assert_eq!(open_revolution.fields["form"], 0);
-    assert_eq!(open_revolution.fields["amount"], 0.5);
+    assert_eq!(open_revolution.fields()["kind"], "revolution");
+    assert_eq!(open_revolution.fields()["form"], 0);
+    assert_eq!(open_revolution.fields()["amount"], 0.5);
     let closed_revolution = procedural
         .iter()
-        .find(|solid| solid.id == "iges:solid:procedural#D7")
+        .find(|solid| solid.id() == "iges:solid:procedural#D7")
         .unwrap();
-    assert_eq!(closed_revolution.fields["form"], 1);
+    assert_eq!(closed_revolution.fields()["form"], 1);
     let extrusion = procedural
         .iter()
-        .find(|solid| solid.id == "iges:solid:procedural#D9")
+        .find(|solid| solid.id() == "iges:solid:procedural#D9")
         .unwrap();
-    assert_eq!(extrusion.fields["kind"], "linear_extrusion");
+    assert_eq!(extrusion.fields()["kind"], "linear_extrusion");
     let trees = &native.arenas["boolean_trees"];
     assert_eq!(trees.len(), 1);
-    assert_eq!(trees[0].fields["declared_length"], 3);
-    assert_eq!(trees[0].fields["terms"].as_array().unwrap().len(), 3);
+    assert_eq!(trees[0].fields()["declared_length"], 3);
+    assert_eq!(trees[0].fields()["terms"].as_array().unwrap().len(), 3);
     let selected = &native.arenas["selected_components"];
     assert_eq!(selected.len(), 1);
     assert_eq!(
-        selected[0].fields["boolean_tree"],
+        selected[0].fields()["boolean_tree"],
         "iges:solid:boolean-tree#D15"
     );
-    assert_eq!(selected[0].fields["selection_point"][0], 1.0);
+    assert_eq!(selected[0].fields()["selection_point"][0], 1.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -4964,28 +4975,28 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
     let trees = &result.ir.native.namespace("iges").unwrap().arenas["boolean_trees"];
     let tree = trees
         .iter()
-        .find(|tree| tree.id == "iges:solid:boolean-tree#D59")
+        .find(|tree| tree.id() == "iges:solid:boolean-tree#D59")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
-    assert_eq!(tree.fields["form"], 1);
+    assert_eq!(tree.fields()["form"], 1);
     assert_eq!(
-        tree.fields["terms"][0]["entity"],
+        tree.fields()["terms"][0]["entity"],
         "iges:entity:directory#55"
     );
     let assembly = result.ir.native.namespace("iges").unwrap().arenas["solid_assemblies"]
         .iter()
-        .find(|assembly| assembly.id == "iges:product:solid-assembly#D61")
+        .find(|assembly| assembly.id() == "iges:product:solid-assembly#D61")
         .unwrap();
-    assert_eq!(assembly.fields["form"], 1);
+    assert_eq!(assembly.fields()["form"], 1);
     assert_eq!(
-        assembly.fields["items"][0]["item"],
+        assembly.fields()["items"][0]["item"],
         "iges:entity:directory#55"
     );
     let instance = result.ir.native.namespace("iges").unwrap().arenas["solid_instances"]
         .iter()
-        .find(|instance| instance.id == "iges:product:solid-instance#D63")
+        .find(|instance| instance.id() == "iges:product:solid-instance#D63")
         .unwrap();
-    assert_eq!(instance.fields["form"], 1);
-    assert_eq!(instance.fields["solid"], "iges:entity:directory#55");
+    assert_eq!(instance.fields()["form"], 1);
+    assert_eq!(instance.fields()["solid"], "iges:entity:directory#55");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5003,8 +5014,8 @@ fn decode_preserves_solid_definition_and_instance_identities() {
         .unwrap();
     let instances = &result.ir.native.namespace("iges").unwrap().arenas["solid_instances"];
     assert_eq!(instances.len(), 1);
-    assert_eq!(instances[0].id, "iges:product:solid-instance#D3");
-    assert_eq!(instances[0].fields["solid"], "iges:entity:directory#1");
+    assert_eq!(instances[0].id(), "iges:product:solid-instance#D3");
+    assert_eq!(instances[0].fields()["solid"], "iges:entity:directory#1");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5022,15 +5033,15 @@ fn decode_preserves_rectangular_and_circular_pattern_order() {
         .unwrap();
     let native = result.ir.native.namespace("iges").unwrap();
     let rectangular = &native.arenas["rectangular_arrays"][0];
-    assert_eq!(rectangular.fields["base"], "iges:entity:directory#1");
-    assert_eq!(rectangular.fields["columns"], 2);
-    assert_eq!(rectangular.fields["rows"], 3);
-    assert_eq!(rectangular.fields["positions"][0], 2);
+    assert_eq!(rectangular.fields()["base"], "iges:entity:directory#1");
+    assert_eq!(rectangular.fields()["columns"], 2);
+    assert_eq!(rectangular.fields()["rows"], 3);
+    assert_eq!(rectangular.fields()["positions"][0], 2);
     let circular = &native.arenas["circular_arrays"][0];
-    assert_eq!(circular.fields["base"], "iges:entity:directory#3");
-    assert_eq!(circular.fields["location_count"], 4);
-    assert_eq!(circular.fields["positions"][0], 1);
-    assert_eq!(circular.fields["positions"][1], 3);
+    assert_eq!(circular.fields()["base"], "iges:entity:directory#3");
+    assert_eq!(circular.fields()["location_count"], 4);
+    assert_eq!(circular.fields()["positions"][0], 1);
+    assert_eq!(circular.fields()["positions"][1], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5057,24 +5068,27 @@ fn decode_distinguishes_all_external_reference_forms_without_resolution() {
     let references = &result.ir.native.namespace("iges").unwrap().arenas["external_references"];
     assert_eq!(references.len(), 5);
     assert_eq!(
-        references[0].fields["reference_kind"],
+        references[0].fields()["reference_kind"],
         "external_definition"
     );
     assert_eq!(
-        references[1].fields["reference_kind"],
+        references[1].fields()["reference_kind"],
         "external_file_definition"
     );
-    assert!(references[1].fields["symbolic_name"].is_null());
-    assert_eq!(references[2].fields["reference_kind"], "external_logical");
-    assert_eq!(references[3].fields["reference_kind"], "native_definition");
+    assert!(references[1].fields()["symbolic_name"].is_null());
+    assert_eq!(references[2].fields()["reference_kind"], "external_logical");
     assert_eq!(
-        references[4].fields["reference_kind"],
+        references[3].fields()["reference_kind"],
+        "native_definition"
+    );
+    assert_eq!(
+        references[4].fields()["reference_kind"],
         "native_library_definition"
     );
-    assert_eq!(references[4].fields["library_name"][0], 68);
+    assert_eq!(references[4].fields()["library_name"][0], 68);
     assert!(references
         .iter()
-        .all(|reference| reference.fields["resolution_state"] == "not_attempted"));
+        .all(|reference| reference.fields()["resolution_state"] == "not_attempted"));
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5092,17 +5106,17 @@ fn decode_preserves_group_order_and_back_pointer_policy() {
         .unwrap();
     let groups = &result.ir.native.namespace("iges").unwrap().arenas["groups"];
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].fields["ordered"], true);
-    assert_eq!(groups[0].fields["back_pointers_required"], true);
-    assert_eq!(groups[0].fields["members"][0], "iges:entity:directory#1");
-    assert_eq!(groups[1].fields["ordered"], false);
-    assert_eq!(groups[1].fields["back_pointers_required"], false);
+    assert_eq!(groups[0].fields()["ordered"], true);
+    assert_eq!(groups[0].fields()["back_pointers_required"], true);
+    assert_eq!(groups[0].fields()["members"][0], "iges:entity:directory#1");
+    assert_eq!(groups[1].fields()["ordered"], false);
+    assert_eq!(groups[1].fields()["back_pointers_required"], false);
     let entities = &result.ir.native.namespace("iges").unwrap().arenas["entities"];
     assert_eq!(
-        entities[0].fields["association_links"][0],
+        entities[0].fields()["association_links"][0],
         "iges:entity:directory#3"
     );
-    assert!(entities[0].fields["property_links"]
+    assert!(entities[0].fields()["property_links"]
         .as_array()
         .unwrap()
         .is_empty());
@@ -5124,24 +5138,24 @@ fn decode_types_all_attribute_table_definition_forms() {
     let definitions =
         &result.ir.native.namespace("iges").unwrap().arenas["attribute_table_definitions"];
     assert_eq!(definitions.len(), 3);
-    assert_eq!(definitions[0].fields["form"], 0);
+    assert_eq!(definitions[0].fields()["form"], 0);
     assert_eq!(
-        definitions[0].fields["attributes"][0]["declared_value_count"],
+        definitions[0].fields()["attributes"][0]["declared_value_count"],
         1
     );
     assert_eq!(
-        definitions[1].fields["attributes"][0]["values"][0]["value"]["kind"],
+        definitions[1].fields()["attributes"][0]["values"][0]["value"]["kind"],
         "integer"
     );
     assert_eq!(
-        definitions[1].fields["attributes"][1]["values"][0]["value"]["kind"],
+        definitions[1].fields()["attributes"][1]["values"][0]["value"]["kind"],
         "string"
     );
     assert_eq!(
-        definitions[2].fields["attributes"][0]["values"][0]["value"]["kind"],
+        definitions[2].fields()["attributes"][0]["values"][0]["value"]["kind"],
         "real"
     );
-    assert!(definitions[2].fields["attributes"][0]["values"][0]["display_template"].is_null());
+    assert!(definitions[2].fields()["attributes"][0]["values"][0]["display_template"].is_null());
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5165,7 +5179,7 @@ fn decode_bounds_declared_attribute_counts_by_record_tokens() {
     let definitions =
         &result.ir.native.namespace("iges").unwrap().arenas["attribute_table_definitions"];
     assert_eq!(definitions.len(), 1);
-    assert!(definitions[0].fields["attributes"]
+    assert!(definitions[0].fields()["attributes"]
         .as_array()
         .unwrap()
         .is_empty());
@@ -5244,7 +5258,10 @@ fn decode_bounds_declared_presentation_counts_by_record_tokens() {
         .iter()
         .any(|loss| loss.message.contains("font header")));
     let fonts = &result.ir.native.namespace("iges").unwrap().arenas["text_fonts"];
-    assert!(fonts[0].fields["characters"].as_array().unwrap().is_empty());
+    assert!(fonts[0].fields()["characters"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -5266,7 +5283,7 @@ fn decode_bounds_declared_annotation_counts_by_record_tokens() {
         .iter()
         .any(|loss| loss.message.contains("text count")));
     let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
-    assert!(annotations[0].fields["strings"]
+    assert!(annotations[0].fields()["strings"]
         .as_array()
         .unwrap()
         .is_empty());
@@ -5291,7 +5308,7 @@ fn decode_bounds_declared_drawing_counts_by_record_tokens() {
         .iter()
         .any(|loss| loss.message.contains("drawing view placements")));
     let drawings = &result.ir.native.namespace("iges").unwrap().arenas["drawings"];
-    assert!(drawings[0].fields["views"].as_array().unwrap().is_empty());
+    assert!(drawings[0].fields()["views"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -5313,7 +5330,7 @@ fn decode_bounds_declared_solid_counts_by_record_tokens() {
         .iter()
         .any(|loss| loss.message.contains("Boolean postfix length")));
     let trees = &result.ir.native.namespace("iges").unwrap().arenas["boolean_trees"];
-    assert!(trees[0].fields["terms"].as_array().unwrap().is_empty());
+    assert!(trees[0].fields()["terms"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -5328,14 +5345,14 @@ fn decode_types_attribute_table_tuple_and_row_major_instances() {
         &result.ir.native.namespace("iges").unwrap().arenas["attribute_table_instances"];
     assert_eq!(instances.len(), 2);
     assert_eq!(
-        instances[0].fields["definition"],
+        instances[0].fields()["definition"],
         "iges:product:attribute-definition#D1"
     );
-    assert_eq!(instances[0].fields["rows"].as_array().unwrap().len(), 1);
-    assert_eq!(instances[1].fields["declared_row_count"], 2);
-    assert_eq!(instances[1].fields["rows"].as_array().unwrap().len(), 2);
-    assert_eq!(instances[1].fields["rows"][1][0]["kind"], "integer");
-    assert_eq!(instances[1].fields["rows"][1][1]["kind"], "string");
+    assert_eq!(instances[0].fields()["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(instances[1].fields()["declared_row_count"], 2);
+    assert_eq!(instances[1].fields()["rows"].as_array().unwrap().len(), 2);
+    assert_eq!(instances[1].fields()["rows"][1][0]["kind"], "integer");
+    assert_eq!(instances[1].fields()["rows"][1][1]["kind"], "string");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5354,20 +5371,32 @@ fn decode_links_product_names_and_reference_designators_to_owners() {
     let properties = &result.ir.native.namespace("iges").unwrap().arenas["product_properties"];
     assert_eq!(properties.len(), 2);
     assert_eq!(
-        properties[0].fields["property_kind"],
+        properties[0].fields()["property_kind"],
         "reference_designator"
     );
-    assert_eq!(properties[0].fields["owners"][0], "iges:entity:directory#1");
-    assert_eq!(properties[1].fields["property_kind"], "name");
-    assert_eq!(properties[1].fields["value"][0], 66);
-    assert_eq!(properties[1].fields["owners"][0], "iges:entity:directory#1");
+    assert_eq!(
+        properties[0].fields()["owners"][0],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(properties[1].fields()["property_kind"], "name");
+    assert_eq!(properties[1].fields()["value"][0], 66);
+    assert_eq!(
+        properties[1].fields()["owners"][0],
+        "iges:entity:directory#1"
+    );
     let owner = &result.ir.native.namespace("iges").unwrap().arenas["entities"][0];
-    assert!(owner.fields["association_links"]
+    assert!(owner.fields()["association_links"]
         .as_array()
         .unwrap()
         .is_empty());
-    assert_eq!(owner.fields["property_links"][0], "iges:entity:directory#3");
-    assert_eq!(owner.fields["property_links"][1], "iges:entity:directory#5");
+    assert_eq!(
+        owner.fields()["property_links"][0],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(
+        owner.fields()["property_links"][1],
+        "iges:entity:directory#5"
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5387,21 +5416,21 @@ fn decode_types_scalar_and_string_property_forms() {
     assert_eq!(properties.len(), 14);
     assert!(properties
         .iter()
-        .all(|property| property.id.starts_with("iges:application:property#D")));
+        .all(|property| property.id().starts_with("iges:application:property#D")));
     let property = |form| {
         properties
             .iter()
-            .find(|property| property.fields["form"] == form)
+            .find(|property| property.fields()["form"] == form)
             .unwrap()
     };
-    assert_eq!(property(2).fields["property_kind"], "region_restriction");
-    assert_eq!(property(2).fields["electrical_circuitry"], 2);
-    assert_eq!(property(5).fields["extension_flag"], 2);
-    assert_eq!(property(12).fields["names"].as_array().unwrap().len(), 2);
-    assert_eq!(property(13).fields["standard"][0], 65);
-    assert_eq!(property(18).fields["percent"], 12.5);
-    assert_eq!(property(20).fields["highlighted"], true);
-    assert_eq!(property(21).fields["pickable"], true);
+    assert_eq!(property(2).fields()["property_kind"], "region_restriction");
+    assert_eq!(property(2).fields()["electrical_circuitry"], 2);
+    assert_eq!(property(5).fields()["extension_flag"], 2);
+    assert_eq!(property(12).fields()["names"].as_array().unwrap().len(), 2);
+    assert_eq!(property(13).fields()["standard"][0], 65);
+    assert_eq!(property(18).fields()["percent"], 12.5);
+    assert_eq!(property(20).fields()["highlighted"], true);
+    assert_eq!(property(21).fields()["pickable"], true);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5418,14 +5447,17 @@ fn decode_types_grid_group_and_lep_property_forms() {
     };
     let grid = decode(grid_property_file());
     let property = &grid.ir.native.namespace("iges").unwrap().arenas["properties"][0];
-    assert_eq!(property.fields["property_kind"], "uniform_rectangular_grid");
-    assert_eq!(property.fields["owners"][0], "iges:entity:directory#5");
+    assert_eq!(
+        property.fields()["property_kind"],
+        "uniform_rectangular_grid"
+    );
+    assert_eq!(property.fields()["owners"][0], "iges:entity:directory#5");
     assert!(grid.report.losses.is_empty(), "{:#?}", grid.report.losses);
 
     let group = decode(group_type_property_file());
     let property = &group.ir.native.namespace("iges").unwrap().arenas["properties"][0];
-    assert_eq!(property.fields["associativity_type"], 5);
-    assert_eq!(property.fields["owners"][0], "iges:entity:directory#3");
+    assert_eq!(property.fields()["associativity_type"], 5);
+    assert_eq!(property.fields()["owners"][0], "iges:entity:directory#3");
     assert!(group.report.losses.is_empty(), "{:#?}", group.report.losses);
 
     let lep = decode(lep_property_forms_file());
@@ -5433,16 +5465,22 @@ fn decode_types_grid_group_and_lep_property_forms() {
     let property = |form| {
         properties
             .iter()
-            .find(|value| value.fields["form"] == form)
+            .find(|value| value.fields()["form"] == form)
             .unwrap()
     };
     assert_eq!(
-        property(24).fields["definitions"].as_array().unwrap().len(),
+        property(24).fields()["definitions"]
+            .as_array()
+            .unwrap()
+            .len(),
         2
     );
-    assert_eq!(property(25).fields["levels"].as_array().unwrap().len(), 3);
-    assert_eq!(property(26).fields["function_code"], 5);
-    assert_eq!(property(26).fields["owners"][0], "iges:entity:directory#5");
+    assert_eq!(property(25).fields()["levels"].as_array().unwrap().len(), 3);
+    assert_eq!(property(26).fields()["function_code"], 5);
+    assert_eq!(
+        property(26).fields()["owners"][0],
+        "iges:entity:directory#5"
+    );
     assert!(lep.report.losses.is_empty(), "{:#?}", lep.report.losses);
 }
 
@@ -5458,18 +5496,24 @@ fn decode_types_tabular_and_generic_data_properties() {
     let property = |form| {
         properties
             .iter()
-            .find(|value| value.fields["form"] == form)
+            .find(|value| value.fields()["form"] == form)
             .unwrap()
     };
-    assert_eq!(property(11).fields["property_kind"], "tabular_data");
+    assert_eq!(property(11).fields()["property_kind"], "tabular_data");
     assert_eq!(
-        property(11).fields["independent_variables"][0]["values"][1],
+        property(11).fields()["independent_variables"][0]["values"][1],
         25.0
     );
-    assert_eq!(property(11).fields["dependent_values"][1], 46.0);
-    assert_eq!(property(27).fields["values"].as_array().unwrap().len(), 6);
-    assert_eq!(property(27).fields["values"][4]["value"]["kind"], "integer");
-    assert_eq!(property(27).fields["owners"][0], "iges:entity:directory#1");
+    assert_eq!(property(11).fields()["dependent_values"][1], 46.0);
+    assert_eq!(property(27).fields()["values"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        property(27).fields()["values"][4]["value"]["kind"],
+        "integer"
+    );
+    assert_eq!(
+        property(27).fields()["owners"][0],
+        "iges:entity:directory#1"
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5495,7 +5539,7 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
         for form in &expected_forms {
             assert!(properties
                 .iter()
-                .any(|property| property.fields["form"] == *form));
+                .any(|property| property.fields()["form"] == *form));
         }
         assert!(
             result.report.losses.is_empty(),
@@ -5515,17 +5559,20 @@ fn decode_types_orthographic_and_perspective_views() {
         .unwrap();
     let views = &result.ir.native.namespace("iges").unwrap().arenas["views"];
     assert_eq!(views.len(), 2);
-    assert_eq!(views[0].fields["projection"], "orthographic_parallel");
-    assert!(views[0].fields["scale"].is_null());
+    assert_eq!(views[0].fields()["projection"], "orthographic_parallel");
+    assert!(views[0].fields()["scale"].is_null());
     assert_eq!(
-        views[0].fields["clipping_planes"].as_array().unwrap().len(),
+        views[0].fields()["clipping_planes"]
+            .as_array()
+            .unwrap()
+            .len(),
         6
     );
-    assert_eq!(views[1].fields["projection"], "perspective");
-    assert_eq!(views[1].fields["view_plane_normal"][2], 1.0);
-    assert_eq!(views[1].fields["center_of_projection"][2], 10.0);
-    assert_eq!(views[1].fields["clipping_window"][0], -2.0);
-    assert_eq!(views[1].fields["depth_clipping"], 3);
+    assert_eq!(views[1].fields()["projection"], "perspective");
+    assert_eq!(views[1].fields()["view_plane_normal"][2], 1.0);
+    assert_eq!(views[1].fields()["center_of_projection"][2], 10.0);
+    assert_eq!(views[1].fields()["clipping_window"][0], -2.0);
+    assert_eq!(views[1].fields()["depth_clipping"], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5543,16 +5590,16 @@ fn decode_types_view_visibility_and_display_overrides() {
         .unwrap();
     let visibility = &result.ir.native.namespace("iges").unwrap().arenas["view_visibility"];
     assert_eq!(visibility.len(), 2);
-    assert_eq!(visibility[0].fields["form"], 3);
+    assert_eq!(visibility[0].fields()["form"], 3);
     assert_eq!(
-        visibility[0].fields["displays"][0]["view"],
+        visibility[0].fields()["displays"][0]["view"],
         "iges:presentation:view#D1"
     );
-    assert!(visibility[0].fields["displays"][0]["line_font"].is_null());
-    assert_eq!(visibility[1].fields["form"], 4);
-    assert_eq!(visibility[1].fields["displays"][0]["line_font"], 1);
-    assert_eq!(visibility[1].fields["displays"][0]["color"], 2);
-    assert_eq!(visibility[1].fields["displays"][0]["line_weight"], 3);
+    assert!(visibility[0].fields()["displays"][0]["line_font"].is_null());
+    assert_eq!(visibility[1].fields()["form"], 4);
+    assert_eq!(visibility[1].fields()["displays"][0]["line_font"], 1);
+    assert_eq!(visibility[1].fields()["displays"][0]["color"], 2);
+    assert_eq!(visibility[1].fields()["displays"][0]["line_weight"], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5569,12 +5616,12 @@ fn decode_preserves_ordered_segmented_view_display() {
         )
         .unwrap();
     let segmented = &result.ir.native.namespace("iges").unwrap().arenas["segmented_visibility"][0];
-    assert_eq!(segmented.fields["blocks"].as_array().unwrap().len(), 2);
-    assert_eq!(segmented.fields["blocks"][0]["breakpoint"], 0.5);
-    assert_eq!(segmented.fields["blocks"][0]["color"]["kind"], "omitted");
-    assert_eq!(segmented.fields["blocks"][1]["breakpoint"], 1.0);
-    assert_eq!(segmented.fields["blocks"][1]["color"]["value"], 2);
-    assert_eq!(segmented.fields["blocks"][1]["line_font"]["value"], 3);
+    assert_eq!(segmented.fields()["blocks"].as_array().unwrap().len(), 2);
+    assert_eq!(segmented.fields()["blocks"][0]["breakpoint"], 0.5);
+    assert_eq!(segmented.fields()["blocks"][0]["color"]["kind"], "omitted");
+    assert_eq!(segmented.fields()["blocks"][1]["breakpoint"], 1.0);
+    assert_eq!(segmented.fields()["blocks"][1]["color"]["value"], 2);
+    assert_eq!(segmented.fields()["blocks"][1]["line_font"]["value"], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5591,19 +5638,22 @@ fn decode_types_drawing_view_placement_annotations_and_sheet_properties() {
         )
         .unwrap();
     let drawing = &result.ir.native.namespace("iges").unwrap().arenas["drawings"][0];
-    assert_eq!(drawing.fields["form"], 1);
+    assert_eq!(drawing.fields()["form"], 1);
     assert_eq!(
-        drawing.fields["views"][0]["view"],
+        drawing.fields()["views"][0]["view"],
         "iges:presentation:view#D1"
     );
-    assert_eq!(drawing.fields["views"][0]["origin"][0], 10.0);
-    assert_eq!(drawing.fields["views"][0]["rotation"], 0.5);
-    assert_eq!(drawing.fields["annotations"][0], "iges:entity:directory#3");
-    assert_eq!(drawing.fields["size"][0], 210.0);
-    assert_eq!(drawing.fields["size"][1], 297.0);
-    assert_eq!(drawing.fields["units_flag"], 2);
-    assert_eq!(drawing.fields["units_name"][0], 77);
-    assert_eq!(drawing.fields["name"][0], 68);
+    assert_eq!(drawing.fields()["views"][0]["origin"][0], 10.0);
+    assert_eq!(drawing.fields()["views"][0]["rotation"], 0.5);
+    assert_eq!(
+        drawing.fields()["annotations"][0],
+        "iges:entity:directory#3"
+    );
+    assert_eq!(drawing.fields()["size"][0], 210.0);
+    assert_eq!(drawing.fields()["size"][1], 297.0);
+    assert_eq!(drawing.fields()["units_flag"], 2);
+    assert_eq!(drawing.fields()["units_name"][0], 77);
+    assert_eq!(drawing.fields()["name"][0], 68);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5621,18 +5671,21 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
         .unwrap();
     let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
     assert_eq!(annotations.len(), 2);
-    assert_eq!(annotations[0].fields["kind"], "general_note");
+    assert_eq!(annotations[0].fields()["kind"], "general_note");
     assert_eq!(
-        annotations[0].fields["strings"].as_array().unwrap().len(),
+        annotations[0].fields()["strings"].as_array().unwrap().len(),
         2
     );
-    assert_eq!(annotations[0].fields["strings"][0]["text"][0], 65);
-    assert_eq!(annotations[0].fields["strings"][1]["mirror"], 1);
-    assert_eq!(annotations[0].fields["strings"][1]["vertical"], 1);
-    assert_eq!(annotations[1].fields["kind"], "new_general_note");
-    assert_eq!(annotations[1].fields["justification"], 2);
-    assert_eq!(annotations[1].fields["strings"][0]["control_codes"][0], 84);
-    assert_eq!(annotations[1].fields["strings"][0]["text"]["text"][3], 33);
+    assert_eq!(annotations[0].fields()["strings"][0]["text"][0], 65);
+    assert_eq!(annotations[0].fields()["strings"][1]["mirror"], 1);
+    assert_eq!(annotations[0].fields()["strings"][1]["vertical"], 1);
+    assert_eq!(annotations[1].fields()["kind"], "new_general_note");
+    assert_eq!(annotations[1].fields()["justification"], 2);
+    assert_eq!(
+        annotations[1].fields()["strings"][0]["control_codes"][0],
+        84
+    );
+    assert_eq!(annotations[1].fields()["strings"][0]["text"]["text"][3], 33);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5652,28 +5705,31 @@ fn decode_types_every_leader_arrow_form_and_segment_chain() {
     assert_eq!(annotations.len(), 12);
     let mut forms = Vec::new();
     for annotation in annotations {
-        assert_eq!(annotation.fields["kind"], "leader");
-        forms.push(annotation.fields["form"].as_i64().unwrap());
-        assert_eq!(annotation.fields["arrowhead"][2], 3.0);
+        assert_eq!(annotation.fields()["kind"], "leader");
+        forms.push(annotation.fields()["form"].as_i64().unwrap());
+        assert_eq!(annotation.fields()["arrowhead"][2], 3.0);
         assert_eq!(
-            annotation.fields["segment_tails"].as_array().unwrap().len(),
+            annotation.fields()["segment_tails"]
+                .as_array()
+                .unwrap()
+                .len(),
             2
         );
-        assert_eq!(annotation.fields["segment_tails"][1][1], 4.0);
+        assert_eq!(annotation.fields()["segment_tails"][1][1], 4.0);
     }
     forms.sort_unstable();
     assert_eq!(forms, (1..=12).collect::<Vec<_>>());
     let no_arrow = annotations
         .iter()
-        .find(|annotation| annotation.fields["form"] == 4)
+        .find(|annotation| annotation.fields()["form"] == 4)
         .unwrap();
-    assert_eq!(no_arrow.fields["arrowhead_size"][0], 0.0);
+    assert_eq!(no_arrow.fields()["arrowhead_size"][0], 0.0);
     let circle = annotations
         .iter()
-        .find(|annotation| annotation.fields["form"] == 5)
+        .find(|annotation| annotation.fields()["form"] == 5)
         .unwrap();
-    assert_eq!(circle.fields["arrowhead_size"][0], 2.0);
-    assert_eq!(circle.fields["arrowhead_size"][1], 2.0);
+    assert_eq!(circle.fields()["arrowhead_size"][0], 2.0);
+    assert_eq!(circle.fields()["arrowhead_size"][1], 2.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5692,7 +5748,7 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
     let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
     let kinds = annotations
         .iter()
-        .filter_map(|annotation| annotation.fields["kind"].as_str())
+        .filter_map(|annotation| annotation.fields()["kind"].as_str().map(str::to_owned))
         .collect::<Vec<_>>();
     assert_eq!(
         kinds
@@ -5724,20 +5780,20 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
     );
     let point = annotations
         .iter()
-        .find(|annotation| annotation.fields["kind"] == "point_dimension")
+        .find(|annotation| annotation.fields()["kind"] == "point_dimension")
         .unwrap();
-    assert_eq!(point.fields["note"], "iges:presentation:annotation#D1");
-    assert_eq!(point.fields["leader"], "iges:presentation:annotation#D3");
-    assert_eq!(point.fields["enclosure"], "iges:entity:directory#7");
+    assert_eq!(point.fields()["note"], "iges:presentation:annotation#D1");
+    assert_eq!(point.fields()["leader"], "iges:presentation:annotation#D3");
+    assert_eq!(point.fields()["enclosure"], "iges:entity:directory#7");
     let radius = annotations
         .iter()
         .find(|annotation| {
-            annotation.fields["kind"] == "radius_dimension" && annotation.fields["form"] == 1
+            annotation.fields()["kind"] == "radius_dimension" && annotation.fields()["form"] == 1
         })
         .unwrap();
-    assert_eq!(radius.fields["center"][0], 10.0);
+    assert_eq!(radius.fields()["center"][0], 10.0);
     assert_eq!(
-        radius.fields["leaders"][1],
+        radius.fields()["leaders"][1],
         "iges:presentation:annotation#D9"
     );
     assert!(
@@ -5765,7 +5821,7 @@ fn decode_types_angular_curve_diameter_flag_and_label_annotations() {
     ] {
         assert!(annotations
             .iter()
-            .any(|annotation| annotation.fields["kind"] == kind));
+            .any(|annotation| annotation.fields()["kind"] == kind));
     }
     assert!(
         result.report.losses.is_empty(),
@@ -5785,22 +5841,22 @@ fn decode_types_general_symbol_components_and_section_fill_definition() {
     let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
     let symbol = annotations
         .iter()
-        .find(|annotation| annotation.fields["kind"] == "general_symbol")
+        .find(|annotation| annotation.fields()["kind"] == "general_symbol")
         .unwrap();
-    assert_eq!(symbol.fields["note"], "iges:presentation:annotation#D1");
-    assert_eq!(symbol.fields["geometry"][0], "iges:entity:directory#3");
+    assert_eq!(symbol.fields()["note"], "iges:presentation:annotation#D1");
+    assert_eq!(symbol.fields()["geometry"][0], "iges:entity:directory#3");
     assert_eq!(
-        symbol.fields["leaders"][0],
+        symbol.fields()["leaders"][0],
         "iges:presentation:annotation#D5"
     );
     let section = annotations
         .iter()
-        .find(|annotation| annotation.fields["kind"] == "sectioned_area")
+        .find(|annotation| annotation.fields()["kind"] == "sectioned_area")
         .unwrap();
-    assert_eq!(section.fields["boundary"], "iges:entity:directory#9");
-    assert_eq!(section.fields["fill_pattern"], 2);
-    assert_eq!(section.fields["pattern_spacing"], 1.0);
-    assert_eq!(section.fields["islands"][0], "iges:entity:directory#11");
+    assert_eq!(section.fields()["boundary"], "iges:entity:directory#9");
+    assert_eq!(section.fields()["fill_pattern"], 2);
+    assert_eq!(section.fields()["pattern_spacing"], 1.0);
+    assert_eq!(section.fields()["islands"][0], "iges:entity:directory#11");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5817,22 +5873,22 @@ fn decode_preserves_implementor_associativity_class_grammar() {
         )
         .unwrap();
     let definition = &result.ir.native.namespace("iges").unwrap().arenas["associativities"][0];
-    assert_eq!(definition.fields["kind"], "definition");
-    assert_eq!(definition.fields["associativity_form"], 5001);
-    assert_eq!(definition.fields["classes"].as_array().unwrap().len(), 2);
+    assert_eq!(definition.fields()["kind"], "definition");
+    assert_eq!(definition.fields()["associativity_form"], 5001);
+    assert_eq!(definition.fields()["classes"].as_array().unwrap().len(), 2);
     assert_eq!(
-        definition.fields["classes"][0]["back_pointers_required"],
+        definition.fields()["classes"][0]["back_pointers_required"],
         true
     );
-    assert_eq!(definition.fields["classes"][0]["ordered"], true);
-    assert_eq!(definition.fields["classes"][0]["item_types"][0], 1);
-    assert_eq!(definition.fields["classes"][0]["item_types"][1], 2);
+    assert_eq!(definition.fields()["classes"][0]["ordered"], true);
+    assert_eq!(definition.fields()["classes"][0]["item_types"][0], 1);
+    assert_eq!(definition.fields()["classes"][0]["item_types"][1], 2);
     assert_eq!(
-        definition.fields["classes"][1]["back_pointers_required"],
+        definition.fields()["classes"][1]["back_pointers_required"],
         false
     );
-    assert_eq!(definition.fields["classes"][1]["ordered"], false);
-    assert_eq!(definition.fields["classes"][1]["item_types"][0], 3);
+    assert_eq!(definition.fields()["classes"][1]["ordered"], false);
+    assert_eq!(definition.fields()["classes"][1]["item_types"][0], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5852,31 +5908,31 @@ fn decode_types_bounded_predefined_associativity_roles() {
     assert_eq!(associativities.len(), 5);
     let parent = associativities
         .iter()
-        .find(|value| value.fields["kind"] == "single_parent")
+        .find(|value| value.fields()["kind"] == "single_parent")
         .unwrap();
-    assert_eq!(parent.fields["parent"], "iges:entity:directory#9");
-    assert_eq!(parent.fields["children"][0], "iges:entity:directory#11");
+    assert_eq!(parent.fields()["parent"], "iges:entity:directory#9");
+    assert_eq!(parent.fields()["children"][0], "iges:entity:directory#11");
     let labels = associativities
         .iter()
-        .find(|value| value.fields["kind"] == "label_display")
+        .find(|value| value.fields()["kind"] == "label_display")
         .unwrap();
     assert_eq!(
-        labels.fields["placements"][0]["view"],
+        labels.fields()["placements"][0]["view"],
         "iges:entity:directory#1"
     );
-    assert_eq!(labels.fields["placements"][0]["text_location"][2], 3.0);
+    assert_eq!(labels.fields()["placements"][0]["text_location"][2], 3.0);
     let dimension = associativities
         .iter()
-        .find(|value| value.fields["kind"] == "dimensioned_geometry")
+        .find(|value| value.fields()["kind"] == "dimensioned_geometry")
         .unwrap();
-    assert_eq!(dimension.fields["dimension"], "iges:entity:directory#21");
-    assert_eq!(dimension.fields["geometry"][0], "iges:entity:directory#9");
+    assert_eq!(dimension.fields()["dimension"], "iges:entity:directory#21");
+    assert_eq!(dimension.fields()["geometry"][0], "iges:entity:directory#9");
     let planar = associativities
         .iter()
-        .find(|value| value.fields["kind"] == "planar")
+        .find(|value| value.fields()["kind"] == "planar")
         .unwrap();
-    assert!(planar.fields["plane_transform"].is_null());
-    assert_eq!(planar.fields["entities"].as_array().unwrap().len(), 2);
+    assert!(planar.fields()["plane_transform"].is_null());
+    assert_eq!(planar.fields()["entities"].as_array().unwrap().len(), 2);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5894,12 +5950,12 @@ fn decode_types_view_list_with_required_back_pointers() {
         .unwrap();
     let view_list = result.ir.native.namespace("iges").unwrap().arenas["associativities"]
         .iter()
-        .find(|value| value.fields["kind"] == "view_list")
+        .find(|value| value.fields()["kind"] == "view_list")
         .unwrap();
-    assert_eq!(view_list.fields["declared_visible_count"], 1);
-    assert_eq!(view_list.fields["view"], "iges:entity:directory#1");
+    assert_eq!(view_list.fields()["declared_visible_count"], 1);
+    assert_eq!(view_list.fields()["view"], "iges:entity:directory#1");
     assert_eq!(
-        view_list.fields["visible_entities"][0],
+        view_list.fields()["visible_entities"][0],
         "iges:entity:directory#5"
     );
     assert!(
@@ -5932,30 +5988,39 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
     let signal = associativities
         .iter()
         .find(|value| {
-            value.fields["kind"] == "flow"
-                && value.fields["form"] == 18
-                && value.fields["connections"].as_array().unwrap().len() == 1
+            value.fields()["kind"] == "flow"
+                && value.fields()["form"] == 18
+                && value.fields()["connections"].as_array().unwrap().len() == 1
         })
         .unwrap();
-    assert_eq!(signal.fields["type_flag"], 1);
-    assert_eq!(signal.fields["function_flag"], 2);
-    assert_eq!(signal.fields["connections"][0], "iges:entity:directory#1");
-    assert_eq!(signal.fields["joins"][0], "iges:entity:directory#3");
-    assert_eq!(signal.fields["names"][0][0], 70);
-    assert_eq!(signal.fields["name_displays"][0], "iges:entity:directory#5");
-    assert_eq!(signal.fields["continuations"][0], "iges:entity:directory#9");
+    assert_eq!(signal.fields()["type_flag"], 1);
+    assert_eq!(signal.fields()["function_flag"], 2);
+    assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#1");
+    assert_eq!(signal.fields()["joins"][0], "iges:entity:directory#3");
+    assert_eq!(signal.fields()["names"][0][0], 70);
+    assert_eq!(
+        signal.fields()["name_displays"][0],
+        "iges:entity:directory#5"
+    );
+    assert_eq!(
+        signal.fields()["continuations"][0],
+        "iges:entity:directory#9"
+    );
     let pipe = associativities
         .iter()
         .find(|value| {
-            value.fields["kind"] == "flow"
-                && value.fields["form"] == 20
-                && value.fields["connections"].as_array().unwrap().len() == 1
+            value.fields()["kind"] == "flow"
+                && value.fields()["form"] == 20
+                && value.fields()["connections"].as_array().unwrap().len() == 1
         })
         .unwrap();
-    assert_eq!(pipe.fields["type_flag"], 2);
-    assert!(pipe.fields["function_flag"].is_null());
-    assert_eq!(pipe.fields["connections"][0], "iges:entity:directory#11");
-    assert_eq!(pipe.fields["continuations"][0], "iges:entity:directory#17");
+    assert_eq!(pipe.fields()["type_flag"], 2);
+    assert!(pipe.fields()["function_flag"].is_null());
+    assert_eq!(pipe.fields()["connections"][0], "iges:entity:directory#11");
+    assert_eq!(
+        pipe.fields()["continuations"][0],
+        "iges:entity:directory#17"
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -5973,28 +6038,28 @@ fn decode_preserves_recalculable_dimension_geometry_points() {
         .unwrap();
     let associativity = result.ir.native.namespace("iges").unwrap().arenas["associativities"]
         .iter()
-        .find(|value| value.fields["kind"] == "recalculable_dimension")
+        .find(|value| value.fields()["kind"] == "recalculable_dimension")
         .unwrap();
     assert_eq!(
-        associativity.fields["dimension"],
+        associativity.fields()["dimension"],
         "iges:entity:directory#11"
     );
-    assert_eq!(associativity.fields["orientation_flag"], 4);
+    assert_eq!(associativity.fields()["orientation_flag"], 4);
     assert_eq!(
-        associativity.fields["geometry"].as_array().unwrap().len(),
+        associativity.fields()["geometry"].as_array().unwrap().len(),
         2
     );
     assert_eq!(
-        associativity.fields["geometry"][0]["geometry"],
+        associativity.fields()["geometry"][0]["geometry"],
         "iges:entity:directory#7"
     );
-    assert_eq!(associativity.fields["geometry"][0]["location_flag"], 0);
+    assert_eq!(associativity.fields()["geometry"][0]["location_flag"], 0);
     assert_eq!(
-        associativity.fields["geometry"][1]["geometry"],
+        associativity.fields()["geometry"][1]["geometry"],
         "iges:entity:directory#9"
     );
-    assert_eq!(associativity.fields["geometry"][1]["location_flag"], 1);
-    assert_eq!(associativity.fields["geometry"][1]["point"][0], 4.0);
+    assert_eq!(associativity.fields()["geometry"][1]["location_flag"], 1);
+    assert_eq!(associativity.fields()["geometry"][1]["point"][0], 4.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -6014,19 +6079,19 @@ fn decode_distinguishes_absolute_and_incremental_text_templates() {
     assert_eq!(templates.len(), 2);
     let absolute = templates
         .iter()
-        .find(|template| template.fields["form"] == 0)
+        .find(|template| template.fields()["form"] == 0)
         .unwrap();
-    assert_eq!(absolute.fields["origin_or_increment"][0], 10.0);
-    assert_eq!(absolute.fields["origin_or_increment"][1], 20.0);
+    assert_eq!(absolute.fields()["origin_or_increment"][0], 10.0);
+    assert_eq!(absolute.fields()["origin_or_increment"][1], 20.0);
     let incremental = templates
         .iter()
-        .find(|template| template.fields["form"] == 1)
+        .find(|template| template.fields()["form"] == 1)
         .unwrap();
-    assert_eq!(incremental.fields["font_code"], 18);
-    assert_eq!(incremental.fields["mirror"], 1);
-    assert_eq!(incremental.fields["vertical"], 1);
-    assert_eq!(incremental.fields["origin_or_increment"][0], 2.0);
-    assert_eq!(incremental.fields["origin_or_increment"][1], -1.0);
+    assert_eq!(incremental.fields()["font_code"], 18);
+    assert_eq!(incremental.fields()["mirror"], 1);
+    assert_eq!(incremental.fields()["vertical"], 1);
+    assert_eq!(incremental.fields()["origin_or_increment"][0], 2.0);
+    assert_eq!(incremental.fields()["origin_or_increment"][1], -1.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -6046,35 +6111,38 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
     assert_eq!(fonts.len(), 2);
     let base = fonts
         .iter()
-        .find(|font| font.fields["font_code"] == 101)
+        .find(|font| font.fields()["font_code"] == 101)
         .unwrap();
-    assert_eq!(base.fields["characters"].as_array().unwrap().len(), 2);
-    assert_eq!(base.fields["characters"][0]["character_code"], 65);
+    assert_eq!(base.fields()["characters"].as_array().unwrap().len(), 2);
+    assert_eq!(base.fields()["characters"][0]["character_code"], 65);
     assert_eq!(
-        base.fields["characters"][0]["motions"]
+        base.fields()["characters"][0]["motions"]
             .as_array()
             .unwrap()
             .len(),
         3
     );
-    assert!(base.fields["characters"][0]["motions"][0]["pen_up"].is_null());
-    assert_eq!(base.fields["characters"][0]["motions"][1]["pen_up"], false);
-    assert_eq!(base.fields["characters"][1]["declared_motion_count"], 0);
+    assert!(base.fields()["characters"][0]["motions"][0]["pen_up"].is_null());
+    assert_eq!(
+        base.fields()["characters"][0]["motions"][1]["pen_up"],
+        false
+    );
+    assert_eq!(base.fields()["characters"][1]["declared_motion_count"], 0);
     let modification = fonts
         .iter()
-        .find(|font| font.fields["font_code"] == 102)
+        .find(|font| font.fields()["font_code"] == 102)
         .unwrap();
     assert_eq!(
-        modification.fields["supersedes_definition"],
+        modification.fields()["supersedes_definition"],
         "iges:presentation:text-font#D1"
     );
     assert_eq!(
-        modification.fields["characters"][0]["motions"][0]["pen_up"],
+        modification.fields()["characters"][0]["motions"][0]["pen_up"],
         true
     );
     let template = &result.ir.native.namespace("iges").unwrap().arenas["text_templates"][0];
     assert_eq!(
-        template.fields["font_definition"],
+        template.fields()["font_definition"],
         "iges:presentation:text-font#D3"
     );
     assert!(
@@ -6093,17 +6161,20 @@ fn decode_types_fundamental_units_and_property_owner() {
         )
         .unwrap();
     let units = &result.ir.native.namespace("iges").unwrap().arenas["units_data"][0];
-    assert_eq!(units.fields["units"].as_array().unwrap().len(), 3);
-    assert_eq!(units.fields["units"][0]["unit_type"][0], 76);
-    assert_eq!(units.fields["units"][0]["unit_value"][0], 77);
-    assert_eq!(units.fields["units"][0]["scale_factor"], 1000.0);
+    assert_eq!(units.fields()["units"].as_array().unwrap().len(), 3);
+    assert_eq!(units.fields()["units"][0]["unit_type"][0], 76);
+    assert_eq!(units.fields()["units"][0]["unit_value"][0], 77);
+    assert_eq!(units.fields()["units"][0]["scale_factor"], 1000.0);
     assert_eq!(
-        units.fields["units"][2]["scale_factor"],
+        units.fields()["units"][2]["scale_factor"],
         0.017_453_292_519_943_295
     );
-    assert_eq!(units.fields["owners"][0], "iges:entity:directory#1");
+    assert_eq!(units.fields()["owners"][0], "iges:entity:directory#1");
     let owner = &result.ir.native.namespace("iges").unwrap().arenas["entities"][0];
-    assert_eq!(owner.fields["property_links"][0], "iges:entity:directory#3");
+    assert_eq!(
+        owner.fields()["property_links"][0],
+        "iges:entity:directory#3"
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -6121,7 +6192,8 @@ fn decode_preserves_ordered_solid_assembly_member_placements() {
         .unwrap();
     let assemblies = &result.ir.native.namespace("iges").unwrap().arenas["solid_assemblies"];
     assert_eq!(assemblies.len(), 1);
-    let items = assemblies[0].fields["items"].as_array().unwrap();
+    let assembly_fields = assemblies[0].fields();
+    let items = assembly_fields["items"].as_array().unwrap();
     assert_eq!(items.len(), 2);
     assert_eq!(items[0]["item"], "iges:entity:directory#1");
     assert!(items[0]["transformation"].is_null());
@@ -6192,43 +6264,49 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
     assert_eq!(definitions.len(), 2);
     let parent = definitions
         .iter()
-        .find(|definition| definition.id == "iges:product:subfigure-definition#D7")
+        .find(|definition| definition.id() == "iges:product:subfigure-definition#D7")
         .unwrap();
-    assert_eq!(parent.fields["depth"], 1);
-    assert_eq!(parent.fields["members"][0], "iges:entity:directory#5");
+    assert_eq!(parent.fields()["depth"], 1);
+    assert_eq!(parent.fields()["members"][0], "iges:entity:directory#5");
     let instances = &native.arenas["subfigure_instances"];
     assert_eq!(instances.len(), 2);
     let child = instances
         .iter()
-        .find(|instance| instance.id == "iges:product:subfigure-instance#D5")
+        .find(|instance| instance.id() == "iges:product:subfigure-instance#D5")
         .unwrap();
     assert_eq!(
-        child.fields["definition"],
+        child.fields()["definition"],
         "iges:product:subfigure-definition#D3"
     );
-    assert_eq!(child.fields["translation"][0], 1.0);
-    assert_eq!(child.fields["scale"], 0.5);
+    assert_eq!(child.fields()["translation"][0], 1.0);
+    assert_eq!(child.fields()["scale"], 0.5);
     let occurrences = &native.arenas["product_occurrences"];
     assert_eq!(occurrences.len(), 3);
     let nested = occurrences
         .iter()
-        .find(|occurrence| occurrence.id == "iges:product:occurrence#9/5")
+        .find(|occurrence| occurrence.id() == "iges:product:occurrence#9/5")
         .unwrap();
-    assert_eq!(nested.fields["instance_path"][0], "iges:entity:directory#9");
-    assert_eq!(nested.fields["instance_path"][1], "iges:entity:directory#5");
-    assert_eq!(nested.fields["world_transform"][0][0], 1.0);
-    assert_eq!(nested.fields["world_transform"][0][3], 12.0);
-    assert_eq!(nested.fields["world_transform"][1][3], 24.0);
-    assert_eq!(nested.fields["world_transform"][2][3], 36.0);
+    assert_eq!(
+        nested.fields()["instance_path"][0],
+        "iges:entity:directory#9"
+    );
+    assert_eq!(
+        nested.fields()["instance_path"][1],
+        "iges:entity:directory#5"
+    );
+    assert_eq!(nested.fields()["world_transform"][0][0], 1.0);
+    assert_eq!(nested.fields()["world_transform"][0][3], 12.0);
+    assert_eq!(nested.fields()["world_transform"][1][3], 24.0);
+    assert_eq!(nested.fields()["world_transform"][2][3], 36.0);
     let leaf = occurrences
         .iter()
-        .find(|occurrence| occurrence.id == "iges:product:occurrence#9/5/D1")
+        .find(|occurrence| occurrence.id() == "iges:product:occurrence#9/5/D1")
         .unwrap();
-    assert_eq!(leaf.fields["member"], "iges:entity:directory#1");
-    assert_eq!(leaf.fields["neutral_links"][0], "iges:model:curve#D1");
+    assert_eq!(leaf.fields()["member"], "iges:entity:directory#1");
+    assert_eq!(leaf.fields()["neutral_links"][0], "iges:model:curve#D1");
     assert_eq!(
-        leaf.fields["world_transform"],
-        nested.fields["world_transform"]
+        leaf.fields()["world_transform"],
+        nested.fields()["world_transform"]
     );
     assert!(
         result.report.losses.is_empty(),
@@ -6249,9 +6327,9 @@ fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
 
     assert_eq!(native.arenas["product_occurrences"].len(), 100);
     let expansion = &native.arenas["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields["limit"], 100);
-    assert_eq!(expansion.fields["emitted"], 100);
-    assert_eq!(expansion.fields["truncated"], true);
+    assert_eq!(expansion.fields()["limit"], 100);
+    assert_eq!(expansion.fields()["emitted"], 100);
+    assert_eq!(expansion.fields()["truncated"], true);
     assert!(result.report.losses.iter().any(|loss| {
         loss.message == "IGES product occurrence expansion reached its configured output limit"
     }));
@@ -6284,11 +6362,11 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
         .unwrap();
     let native = result.ir.native.namespace("iges").unwrap();
     let definition = &native.arenas["network_definitions"][0];
-    assert_eq!(definition.id, "iges:product:network-definition#D1");
-    assert_eq!(definition.fields["type_flag"], 1);
-    assert_eq!(definition.fields["declared_connect_point_count"], 2);
+    assert_eq!(definition.id(), "iges:product:network-definition#D1");
+    assert_eq!(definition.fields()["type_flag"], 1);
+    assert_eq!(definition.fields()["declared_connect_point_count"], 2);
     assert_eq!(
-        definition.fields["connect_points"]
+        definition.fields()["connect_points"]
             .as_array()
             .unwrap()
             .len(),
@@ -6296,18 +6374,18 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
     );
     let instance = &native.arenas["network_instances"][0];
     assert_eq!(
-        instance.fields["definition"],
+        instance.fields()["definition"],
         "iges:product:network-definition#D1"
     );
-    assert_eq!(instance.fields["translation"][2], 3.0);
-    assert_eq!(instance.fields["scale"][0], 2.0);
-    assert!(instance.fields["scale"][1].is_null());
-    assert!(instance.fields["scale"][2].is_null());
+    assert_eq!(instance.fields()["translation"][2], 3.0);
+    assert_eq!(instance.fields()["scale"][0], 2.0);
+    assert!(instance.fields()["scale"][1].is_null());
+    assert!(instance.fields()["scale"][2].is_null());
     let occurrence = &native.arenas["product_occurrences"][0];
-    assert_eq!(occurrence.fields["world_transform"][0][0], 2.0);
-    assert_eq!(occurrence.fields["world_transform"][1][1], 2.0);
-    assert_eq!(occurrence.fields["world_transform"][2][2], 2.0);
-    assert_eq!(occurrence.fields["world_transform"][0][3], 1.0);
+    assert_eq!(occurrence.fields()["world_transform"][0][0], 2.0);
+    assert_eq!(occurrence.fields()["world_transform"][1][1], 2.0);
+    assert_eq!(occurrence.fields()["world_transform"][2][2], 2.0);
+    assert_eq!(occurrence.fields()["world_transform"][0][3], 1.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -6326,12 +6404,12 @@ fn decode_preserves_owned_network_connect_points() {
     let native = result.ir.native.namespace("iges").unwrap();
     let points = &native.arenas["connect_points"];
     assert_eq!(points.len(), 2);
-    assert_eq!(points[0].fields["type_flag"], 101);
-    assert_eq!(points[0].fields["function_identifier"][0], 80);
-    assert_eq!(points[0].fields["function_identifier"][1], 49);
-    assert_eq!(points[0].fields["owner"], "iges:entity:directory#3");
-    assert_eq!(points[1].fields["position"][2], 3.0);
-    assert_eq!(points[1].fields["owner"], "iges:entity:directory#7");
+    assert_eq!(points[0].fields()["type_flag"], 101);
+    assert_eq!(points[0].fields()["function_identifier"][0], 80);
+    assert_eq!(points[0].fields()["function_identifier"][1], 49);
+    assert_eq!(points[0].fields()["owner"], "iges:entity:directory#3");
+    assert_eq!(points[1].fields()["position"][2], 3.0);
+    assert_eq!(points[1].fields()["owner"], "iges:entity:directory#7");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -7499,7 +7577,7 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
         );
         assert!(result.report.losses.is_empty());
         let native = result.ir.native.namespace("iges").unwrap();
-        assert_eq!(native.arenas["entities"][0].fields["form"], form);
+        assert_eq!(native.arenas["entities"][0].fields()["form"], form);
         let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
@@ -7628,7 +7706,7 @@ fn decode_preserves_native_entities_and_graph() {
     assert!(native.arenas["colors"].is_empty());
     assert_eq!(native.arenas["display_attributes"].len(), 1);
     assert!(!native.arenas.contains_key("opaque_bytes"));
-    assert_eq!(native.arenas["entities"][0].id, "iges:entity:directory#1");
+    assert_eq!(native.arenas["entities"][0].id(), "iges:entity:directory#1");
     assert_eq!(result.ir.model.points.len(), 1);
     assert_eq!(result.ir.model.points[0].position.x, 1.0);
     assert_eq!(result.ir.model.points[0].position.y, 2.0);

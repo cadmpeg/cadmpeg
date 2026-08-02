@@ -4,11 +4,12 @@
 
 use std::collections::BTreeMap;
 
-use schemars::JsonSchema;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
 pub mod catalogue;
+mod replay;
 
 /// One non-empty native arena reported as an exporter loss.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -50,14 +51,154 @@ impl From<NativeConvertError> for cadmpeg_codec_core::CodecError {
     }
 }
 
+// The wire and schema shape of a native record: `id`, then the codec-owned
+// fields in the order `Map` iterates. It is what writes a record's stored text
+// and what describes a record to the schema generator, and serializing a record
+// replays that text member for member, so one type fixes the document shape
+// instead of every path that builds, serializes, or describes a record. Its doc
+// comments are the ones that reach the generated JSON Schema.
 /// One source-native record with a stable identity and codec-owned fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct NativeRecord {
+#[derive(Serialize, JsonSchema)]
+#[serde(rename = "NativeRecord")]
+struct RecordShape<'a> {
     /// Globally unique record identity.
-    pub id: String,
+    id: &'a str,
     /// Codec-owned record fields.
     #[serde(flatten)]
-    pub fields: Map<String, Value>,
+    fields: &'a Map<String, Value>,
+}
+
+/// One source-native record with a stable identity and codec-owned fields.
+///
+/// The codec-owned fields are held as the record's canonical JSON text rather
+/// than as a parsed [`Value`] tree. A `Value` tree spends a separately
+/// allocated map node, key string, and enum cell on every field at every depth,
+/// which costs roughly an order of magnitude more memory than the equivalent
+/// JSON and scatters it across the heap. Retained source populations reach
+/// hundreds of thousands of records carrying deeply nested arrays, so the
+/// parsed form is materialized per record on demand and never kept resident.
+#[derive(Debug, Clone)]
+pub struct NativeRecord {
+    /// Globally unique record identity, also the leading `id` member of `json`.
+    id: String,
+    /// Canonical JSON object text, as produced by [`RecordShape`].
+    json: Box<str>,
+}
+
+impl NativeRecord {
+    /// Build a record from a stable identity and its codec-owned fields.
+    ///
+    /// Any `id` member of `fields` is dropped in favour of `id`.
+    #[must_use]
+    pub fn new(id: impl Into<String>, mut fields: Map<String, Value>) -> Self {
+        let id = id.into();
+        fields.remove("id");
+        let json = Self::canonical_json(&id, &fields);
+        Self { id, json }
+    }
+
+    /// Build a record by serializing one codec-owned typed record.
+    fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
+        let Value::Object(mut fields) = serde_json::to_value(record)? else {
+            return Err(NativeConvertError::NonObject);
+        };
+        let Some(Value::String(id)) = fields.remove("id") else {
+            return Err(NativeConvertError::MissingId);
+        };
+        let json = Self::canonical_json(&id, &fields);
+        Ok(Self { id, json })
+    }
+
+    /// Globally unique record identity.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Parse the codec-owned fields, excluding `id`.
+    ///
+    /// This allocates a fresh [`Value`] tree on every call; read it once and
+    /// reuse the map when inspecting more than one field, and prefer
+    /// [`field`](Self::field) when one field is all that is wanted.
+    #[must_use]
+    pub fn fields(&self) -> Map<String, Value> {
+        let mut fields: Map<String, Value> =
+            serde_json::from_str(&self.json).expect("a native record always holds a JSON object");
+        fields.remove("id");
+        fields
+    }
+
+    /// Parse one codec-owned field.
+    ///
+    /// Only the named field is materialized; the rest of the record is scanned
+    /// past without being built.
+    #[must_use]
+    pub fn field(&self, name: &str) -> Option<Value> {
+        if name == "id" {
+            return None;
+        }
+        replay::field(&self.json, name)
+    }
+
+    /// Deserialize the record into a codec-owned typed record.
+    fn to_typed<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
+        Ok(serde_json::from_str(&self.json)?)
+    }
+
+    /// Render `id` and `fields` as canonical record text.
+    fn canonical_json(id: &str, fields: &Map<String, Value>) -> Box<str> {
+        serde_json::to_string(&RecordShape { id, fields })
+            .expect("a JSON object of JSON values always serializes")
+            .into_boxed_str()
+    }
+}
+
+/// Two records are equal when their canonical texts are equal. Canonicalizing
+/// on every construction makes that the same relation as comparing the parsed
+/// identity and field map.
+impl PartialEq for NativeRecord {
+    fn eq(&self, other: &Self) -> bool {
+        self.json == other.json
+    }
+}
+
+impl Serialize for NativeRecord {
+    /// Replays the stored text member for member through `serializer` rather
+    /// than splicing it, so the record honours the caller's formatting:
+    /// `to_string_pretty` must indent a native record the same way it indents
+    /// every other document entity. The text was written by [`RecordShape`] and
+    /// is replayed in the order it holds, which is the order that shape emits:
+    /// `id` first, then the codec-owned fields by key.
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        replay::emit(&self.json, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for NativeRecord {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut fields = Map::<String, Value>::deserialize(deserializer)?;
+        let Some(Value::String(id)) = fields.remove("id") else {
+            return Err(<D::Error as serde::de::Error>::custom(
+                NativeConvertError::MissingId,
+            ));
+        };
+        let json = Self::canonical_json(&id, &fields);
+        Ok(Self { id, json })
+    }
+}
+
+impl JsonSchema for NativeRecord {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "NativeRecord".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::NativeRecord").into()
+    }
+
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        RecordShape::json_schema(generator)
+    }
 }
 
 /// Independently versioned source-format arena collection.
@@ -77,35 +218,48 @@ impl NativeNamespace {
         name: impl Into<String>,
         records: &[T],
     ) -> Result<(), NativeConvertError> {
+        self.set_arena_from(name, records.iter())
+    }
+
+    /// Replace an arena by serializing codec-owned typed records one at a time.
+    ///
+    /// Codecs whose typed records must be reshaped before storage should build
+    /// the reshaped record inside the iterator rather than collecting a full
+    /// second copy of the population first.
+    pub fn set_arena_from<T: Serialize, I: IntoIterator<Item = T>>(
+        &mut self,
+        name: impl Into<String>,
+        records: I,
+    ) -> Result<(), NativeConvertError> {
         let mut converted = records
-            .iter()
-            .map(|record| {
-                let Value::Object(mut fields) = serde_json::to_value(record)? else {
-                    return Err(NativeConvertError::NonObject);
-                };
-                let Some(Value::String(id)) = fields.remove("id") else {
-                    return Err(NativeConvertError::MissingId);
-                };
-                Ok(NativeRecord { id, fields })
-            })
+            .into_iter()
+            .map(|record| NativeRecord::from_typed(&record))
             .collect::<Result<Vec<_>, NativeConvertError>>()?;
-        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        converted.sort_by(|left, right| left.id().cmp(right.id()));
         self.arenas.insert(name.into(), converted);
         Ok(())
     }
 
     /// Deserialize an arena into codec-owned typed records.
     pub fn arena_as<T: DeserializeOwned>(&self, name: &str) -> Result<Vec<T>, NativeConvertError> {
+        self.arena_iter_as(name).collect()
+    }
+
+    /// Deserialize an arena into codec-owned typed records one at a time.
+    ///
+    /// A record is parsed only when the iterator is advanced onto it, so a
+    /// caller that consumes and releases each one — reshaping an arena, or
+    /// reducing it for hashing — never holds the typed population alongside
+    /// whatever it produces from it.
+    pub fn arena_iter_as<'a, T: DeserializeOwned + 'a>(
+        &'a self,
+        name: &str,
+    ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
         self.arenas
             .get(name)
             .into_iter()
             .flatten()
-            .map(|record| {
-                let mut fields = record.fields.clone();
-                fields.insert("id".into(), Value::String(record.id.clone()));
-                Ok(serde_json::from_value(Value::Object(fields))?)
-            })
-            .collect()
+            .map(NativeRecord::to_typed)
     }
 }
 
@@ -129,7 +283,7 @@ impl Native {
     pub(crate) fn finalize(&mut self) {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
-                records.sort_by(|left, right| left.id.cmp(&right.id));
+                records.sort_by(|left, right| left.id().cmp(right.id()));
             }
         }
     }

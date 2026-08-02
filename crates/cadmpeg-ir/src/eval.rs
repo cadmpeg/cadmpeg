@@ -17,6 +17,7 @@ use crate::geometry::{
     SurfaceGeometry, SurfaceParameterAxis,
 };
 use crate::math::{Point2, Point3, Vector3};
+use crate::sketches::SpatialSketchGeometry;
 use crate::transform::Transform;
 use crate::CadIr;
 
@@ -26,6 +27,103 @@ fn cross(a: Vector3, b: Vector3) -> Vector3 {
         a.z * b.x - a.x * b.z,
         a.x * b.y - a.y * b.x,
     )
+}
+
+/// Signed separation of two parallel model-space sketch lines in one plane.
+///
+/// Positive distance is along the left normal selected by `plane_normal`
+/// and the source line's stored traversal.
+pub fn spatial_line_offset(
+    source: &SpatialSketchGeometry,
+    result: &SpatialSketchGeometry,
+    plane_normal: Vector3,
+) -> Option<f64> {
+    let (
+        SpatialSketchGeometry::Line {
+            start: source_start,
+            end: source_end,
+        },
+        SpatialSketchGeometry::Line {
+            start: result_start,
+            end: result_end,
+        },
+    ) = (source, result)
+    else {
+        return None;
+    };
+    let tangent = Vector3::new(
+        source_end.x - source_start.x,
+        source_end.y - source_start.y,
+        source_end.z - source_start.z,
+    );
+    let result_tangent = Vector3::new(
+        result_end.x - result_start.x,
+        result_end.y - result_start.y,
+        result_end.z - result_start.z,
+    );
+    let length = tangent.norm();
+    let result_length = result_tangent.norm();
+    if length <= 1.0e-12
+        || result_length <= 1.0e-12
+        || cross(tangent, result_tangent).norm() > 1.0e-9 * length * result_length
+    {
+        return None;
+    }
+    let left = cross(plane_normal, tangent);
+    let left_length = left.norm();
+    if left_length <= 1.0e-12 {
+        return None;
+    }
+    let offset = Vector3::new(
+        result_start.x - source_start.x,
+        result_start.y - source_start.y,
+        result_start.z - source_start.z,
+    );
+    Some((offset.x * left.x + offset.y * left.y + offset.z * left.z) / left_length)
+}
+
+/// Test whether two model-space points are reflections across a line carrier.
+///
+/// The line is unbounded for the reflection operation but its two stored
+/// endpoints must define a finite, nondegenerate direction.
+pub fn spatial_points_are_reflections(
+    first: Point3,
+    second: Point3,
+    axis_start: Point3,
+    axis_end: Point3,
+) -> bool {
+    let axis = Vector3::new(
+        axis_end.x - axis_start.x,
+        axis_end.y - axis_start.y,
+        axis_end.z - axis_start.z,
+    );
+    let axis_length = axis.norm();
+    if !axis_length.is_finite() || axis_length <= 1.0e-12 {
+        return false;
+    }
+    let midpoint = Point3::new(
+        0.5 * (first.x + second.x),
+        0.5 * (first.y + second.y),
+        0.5 * (first.z + second.z),
+    );
+    let from_axis = Vector3::new(
+        midpoint.x - axis_start.x,
+        midpoint.y - axis_start.y,
+        midpoint.z - axis_start.z,
+    );
+    let separation = Vector3::new(second.x - first.x, second.y - first.y, second.z - first.z);
+    let scale = 1.0
+        + axis_length
+            .max(from_axis.norm())
+            .max(separation.norm())
+            .max(first.x.abs())
+            .max(first.y.abs())
+            .max(first.z.abs())
+            .max(second.x.abs())
+            .max(second.y.abs())
+            .max(second.z.abs());
+    axis.cross(from_axis).norm() <= 1.0e-9 * axis_length * scale
+        && axis.dot(separation).abs() <= 1.0e-9 * axis_length * scale
 }
 
 /// Recover native parameters for an analytic surface point.
@@ -718,6 +816,34 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
         }
     }
     (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
+}
+
+/// The parametric direction a surface isoline holds fixed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IsolineDirection {
+    /// `u` is fixed; the curve runs along `v` in the surface's `v` parameter.
+    ConstantU,
+    /// `v` is fixed; the curve runs along `u` in the surface's `u` parameter.
+    ConstantV,
+}
+
+/// The isoline of `surface` at `at` in `direction`, as an exact NURBS curve.
+///
+/// A tensor-product surface restricted to a constant parameter in one direction
+/// is a NURBS curve of the free direction's degree over the free direction's
+/// knot vector, whose poles are the fixed direction's pole rows blended by the
+/// basis at `at`. The result is exact, not a fit; its parameter is the
+/// surface's own parameter in the free direction.
+pub fn nurbs_surface_isoline(
+    surface: &NurbsSurface,
+    direction: IsolineDirection,
+    at: f64,
+) -> Option<NurbsCurve> {
+    let fixed_axis = match direction {
+        IsolineDirection::ConstantU => SurfaceParameterAxis::U,
+        IsolineDirection::ConstantV => SurfaceParameterAxis::V,
+    };
+    nurbs_surface_isocurve(surface, fixed_axis, at)
 }
 
 /// Extract the exact rational NURBS curve obtained by fixing one parameter of
@@ -2668,10 +2794,10 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 mod tests {
     use super::{
         curve_point, curve_second_derivative, curve_tangent, model_surface_partials_by_id,
-        model_surface_point_by_id, nurbs_curve_parameter_near_point, nurbs_curve_speed_bound,
-        nurbs_surface_isocurve, nurbs_surface_partials, nurbs_surface_point,
-        nurbs_surface_second_partials, pcurve_tangent, pcurve_uv, surface_partials,
-        surface_second_partials,
+        model_surface_point_by_id, nurbs_curve_parameter_near_point, nurbs_curve_point,
+        nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_isoline,
+        nurbs_surface_partials, nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent,
+        pcurve_uv, surface_partials, surface_second_partials, IsolineDirection,
     };
     use crate::geometry::{
         Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
@@ -2871,6 +2997,60 @@ mod tests {
             seed,
         )
         .is_none());
+    }
+
+    #[test]
+    fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
+        // Rational, quadratic in u and linear in v, so the blend across the
+        // fixed direction has to carry weights to stay exact.
+        let surface = NurbsSurface {
+            u_degree: 2,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![-2.0, -2.0, 3.0, 3.0],
+            u_count: 3,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 4.0),
+                Point3::new(1.0, 2.0, 0.5),
+                Point3::new(1.0, 2.0, 4.5),
+                Point3::new(3.0, -1.0, 1.0),
+                Point3::new(3.0, -1.0, 5.0),
+            ],
+            weights: Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
+            u_periodic: false,
+            v_periodic: false,
+        };
+
+        for (direction, at, samples) in [
+            (IsolineDirection::ConstantU, 0.4, [-2.0, 0.75, 3.0]),
+            (IsolineDirection::ConstantV, 1.25, [0.0, 0.6, 1.0]),
+        ] {
+            let curve = nurbs_surface_isoline(&surface, direction, at).expect("isoline");
+            for sample in samples {
+                let (u, v) = match direction {
+                    IsolineDirection::ConstantU => (at, sample),
+                    IsolineDirection::ConstantV => (sample, at),
+                };
+                let expected = nurbs_surface_point(&surface, u, v).expect("surface point");
+                let actual = nurbs_curve_point(
+                    curve.degree,
+                    &curve.knots,
+                    &curve.control_points,
+                    curve.weights.as_deref(),
+                    sample,
+                )
+                .expect("curve point");
+                for (left, right) in [
+                    (actual.x, expected.x),
+                    (actual.y, expected.y),
+                    (actual.z, expected.z),
+                ] {
+                    assert!((left - right).abs() <= 1.0e-12, "{left} vs {right}");
+                }
+            }
+        }
     }
 
     #[test]

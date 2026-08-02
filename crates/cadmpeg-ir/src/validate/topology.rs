@@ -1306,13 +1306,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Deformable { bend, data, .. } => {
-                if ids.curves(&bend.0).is_none() {
-                    ref_error(findings, &procedural.id.0, "curve", &bend.0);
+            ProceduralCurveDefinition::Deformable {
+                context, source, ..
+            } => {
+                if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                    if ids.curves(&curve.0).is_none() {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
                 }
-                if let crate::geometry::DeformableCurveData::Surface { surface } = data {
-                    if ids.surfaces(&surface.0).is_none() {
-                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                for side in &context.sides {
+                    if let Some(surface) = &side.surface {
+                        if ids.surfaces(&surface.0).is_none() {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
                     }
                 }
             }
@@ -1717,6 +1723,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     .collect(),
                 Some(parameter.0.as_str()),
             ),
+            Definition::RepeatedLength {
+                entities,
+                parameter,
+            } => (entities.clone(), Some(parameter.0.as_str())),
+            Definition::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            } => (
+                first.iter().chain(second).cloned().collect(),
+                Some(parameter.0.as_str()),
+            ),
             Definition::Angle {
                 first,
                 second,
@@ -1728,6 +1746,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             Definition::AngleToAxis {
                 entity, parameter, ..
             } => (vec![entity.clone()], Some(parameter.0.as_str())),
+            Definition::RepeatedRadius {
+                entities,
+                parameter,
+            }
+            | Definition::RepeatedDiameter {
+                entities,
+                parameter,
+            } => (entities.clone(), Some(parameter.0.as_str())),
             Definition::Radius { entity, parameter }
             | Definition::Diameter { entity, parameter }
             | Definition::Weight { entity, parameter } => {
@@ -1851,6 +1877,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .parameters
         .iter()
         .map(|parameter| parameter.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let asset_ids = ir
+        .model
+        .assets
+        .iter()
+        .map(|asset| asset.id.0.as_str())
         .collect::<HashSet<_>>();
     let parameter_values = ir
         .model
@@ -2147,6 +2179,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .iter()
         .map(|feature| (feature.id.0.as_str(), feature))
         .collect::<HashMap<_, _>>();
+    let sketch_entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| entity.id.0.clone())
+        .collect::<HashSet<_>>();
     let mut reported_plane_cycles = HashSet::new();
     for feature in &ir.model.features {
         let mut path = Vec::new();
@@ -2391,6 +2429,41 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved => {}
+            FeatureDefinition::ReferenceImage {
+                asset,
+                origin,
+                u_axis,
+                v_axis,
+                bounds,
+                opacity,
+            } => {
+                if !asset_ids.contains(asset.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "reference-image asset", &asset.0);
+                }
+                let frame_is_valid = [origin.x, origin.y, origin.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && (u_axis.norm() - 1.0).abs() <= 1.0e-9
+                    && (v_axis.norm() - 1.0).abs() <= 1.0e-9
+                    && u_axis.dot(*v_axis).abs() <= 1.0e-9;
+                let [first, second] = bounds;
+                let bounds_are_valid = [first.u, first.v, second.u, second.v]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && first.u != second.u
+                    && first.v != second.v;
+                if !frame_is_valid
+                    || !bounds_are_valid
+                    || opacity
+                        .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "reference-image placement is invalid",
+                    );
+                }
+            }
             FeatureDefinition::Block {
                 dimensions,
                 placement,
@@ -2431,10 +2504,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
                         Some(bodies.len())
                     }
-                    BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Historical { bodies, .. }
+                    | BodySelection::HistoricalSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
                     BodySelection::Local { bodies, .. } => Some(bodies.len()),
-                    BodySelection::Unresolved | BodySelection::Native(_) => None,
+                    BodySelection::Unresolved
+                    | BodySelection::Native(_)
+                    | BodySelection::NativeSet(_) => None,
                 };
                 if body_count.is_some_and(|count| count < 2) {
                     feature_geometry_error(findings, feature, "sew requires at least two bodies");
@@ -2454,6 +2530,31 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             "inserted bodies do not match feature outputs",
                         );
                     }
+                }
+            }
+            FeatureDefinition::InsertComponent { occurrence } => {
+                if !ir
+                    .model
+                    .occurrences
+                    .iter()
+                    .any(|candidate| candidate.id == *occurrence)
+                {
+                    ref_error(
+                        findings,
+                        &feature.id.0,
+                        "inserted component occurrence",
+                        &occurrence.0,
+                    );
+                }
+            }
+            FeatureDefinition::AssemblyJoint { joint } => {
+                if !ir
+                    .model
+                    .assembly_joints
+                    .iter()
+                    .any(|candidate| candidate.id == *joint)
+                {
+                    ref_error(findings, &feature.id.0, "assembly joint", &joint.0);
                 }
             }
             FeatureDefinition::Form { cages } => {
@@ -2676,18 +2777,57 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::Sweep {
+                section,
+                sections,
                 path,
+                mode,
                 orientation,
                 twist,
+                path_extent,
+                guide_rail,
+                taper,
                 scale,
                 ..
             } => {
                 paths.extend(path);
+                let invalid_section =
+                    std::iter::once(section)
+                        .chain(sections)
+                        .any(|section| match section {
+                            crate::features::SweepSection::Unresolved(_) => false,
+                            crate::features::SweepSection::Profile(_) => false,
+                            crate::features::SweepSection::Generated(
+                                crate::features::GeneratedSweepSection::CircularRegion {
+                                    outer_radius,
+                                    wall_thickness,
+                                },
+                            ) => {
+                                !positive_feature_length(*outer_radius)
+                                    || wall_thickness.is_some_and(|thickness| {
+                                        !positive_feature_length(thickness)
+                                            || thickness.0 >= outer_radius.0
+                                    })
+                                    || !matches!(mode, crate::features::SweepMode::Solid { .. })
+                            }
+                        });
+                if let Some(guide_rail) = guide_rail {
+                    paths.push(&guide_rail.path);
+                }
                 if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
                 {
                     paths.push(path);
                 }
-                if twist.is_some_and(|value| !value.0.is_finite())
+                if invalid_section
+                    || twist.is_some_and(|value| !value.0.is_finite())
+                    || taper.is_some_and(|value| !value.0.is_finite())
+                    || path_extent.is_some_and(|extent| {
+                        !(0.0..=1.0).contains(&extent.along_fraction)
+                            || !(0.0..=1.0).contains(&extent.against_fraction)
+                    })
+                    || guide_rail.as_ref().is_some_and(|guide| {
+                        !(0.0..=1.0).contains(&guide.extent.along_fraction)
+                            || !(0.0..=1.0).contains(&guide.extent.against_fraction)
+                    })
                     || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
                     || matches!(orientation, Some(crate::features::SweepOrientation::Binormal { direction }) if !valid_feature_direction(*direction))
                 {
@@ -2820,10 +2960,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::Shell {
+                bodies,
                 removed_faces,
                 thickness,
                 ..
             } => {
+                if let Some(bodies) = bodies {
+                    body_selections.push(bodies);
+                }
                 face_selections.push(removed_faces);
                 if thickness.is_some_and(|value| !positive_feature_length(value)) {
                     feature_geometry_error(findings, feature, "shell thickness is invalid");
@@ -2968,6 +3112,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 body_selections.push(targets);
                 face_selections.push(tools);
             }
+            FeatureDefinition::SplitFace { targets, tool } => {
+                face_selections.push(targets);
+                paths.push(tool);
+            }
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
             }
@@ -3103,10 +3251,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
                         Some(bodies.len())
                     }
-                    BodySelection::Historical { bodies, .. } => Some(bodies.len()),
+                    BodySelection::Historical { bodies, .. }
+                    | BodySelection::HistoricalSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
                     BodySelection::Local { bodies, .. } => Some(bodies.len()),
-                    BodySelection::Unresolved | BodySelection::Native(_) => None,
+                    BodySelection::Unresolved
+                    | BodySelection::Native(_)
+                    | BodySelection::NativeSet(_) => None,
                 };
                 if target_count.is_some_and(|count| count != 1) {
                     feature_geometry_error(findings, feature, "body combine target is invalid");
@@ -3312,6 +3463,38 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                         PatternSeed::Faces(selection) => face_selections.push(selection),
                         PatternSeed::Bodies(selection) => body_selections.push(selection),
+                        PatternSeed::Occurrences(occurrences) => {
+                            if occurrences.is_empty() {
+                                feature_geometry_error(
+                                    findings,
+                                    feature,
+                                    "pattern occurrence seed is empty",
+                                );
+                            }
+                            let mut unique = HashSet::new();
+                            for occurrence in occurrences {
+                                if !unique.insert(occurrence) {
+                                    feature_geometry_error(
+                                        findings,
+                                        feature,
+                                        "pattern occurrence seed is repeated",
+                                    );
+                                }
+                                if !ir
+                                    .model
+                                    .occurrences
+                                    .iter()
+                                    .any(|candidate| candidate.id == *occurrence)
+                                {
+                                    ref_error(
+                                        findings,
+                                        &feature.id.0,
+                                        "seed occurrence",
+                                        &occurrence.0,
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
                 let valid = pattern_is_valid(pattern, false);
@@ -4090,6 +4273,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     curves.iter().map(|id| id.0.as_str()),
                     |identity| ids.curves(identity).is_some(),
                 ),
+                PathRef::SketchCurves { curves, .. } => check_ids(
+                    findings,
+                    &feature.id.0,
+                    "sketch path curve",
+                    curves.iter().map(|id| id.0.as_str()),
+                    |identity| sketch_entities.contains(identity),
+                ),
                 PathRef::HistoricalEdges {
                     state,
                     edges,
@@ -4404,6 +4594,42 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                     );
                 }
+                BodySelection::HistoricalSet {
+                    state,
+                    bodies,
+                    native,
+                } => {
+                    let native_is_valid = bodies.len() == native.len()
+                        && !native.is_empty()
+                        && native.iter().all(|member| !member.trim().is_empty())
+                        && native.iter().collect::<HashSet<_>>().len() == native.len();
+                    if !native_is_valid {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "historical body selection set is invalid",
+                        );
+                    }
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
+                            native.first().map_or("", String::as_str),
+                        ),
+                        "body",
+                        false,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .bodies
+                                .iter()
+                                .map(crate::ids::HistoricalBodyId::as_str)
+                                .collect()
+                        },
+                    );
+                }
                 BodySelection::Generated { bodies, native } => {
                     if bodies.is_empty()
                         || native.trim().is_empty()
@@ -4428,6 +4654,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             findings,
                             feature,
                             "local body selection is invalid",
+                        );
+                    }
+                }
+                BodySelection::NativeSet(members) => {
+                    if members.is_empty() || members.iter().any(|member| member.trim().is_empty()) {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "native body selection set is invalid",
                         );
                     }
                 }
@@ -4579,7 +4814,8 @@ fn regeneration_references(
             references.extend(seeds.iter().filter_map(|seed| match seed {
                 crate::features::PatternSeed::Feature(feature) => Some(feature),
                 crate::features::PatternSeed::Faces(_)
-                | crate::features::PatternSeed::Bodies(_) => None,
+                | crate::features::PatternSeed::Bodies(_)
+                | crate::features::PatternSeed::Occurrences(_) => None,
             }));
         }
         _ => {}
@@ -4621,10 +4857,14 @@ fn definition_profiles(
             profiles.extend(&construction.profile);
         }
         crate::features::FeatureDefinition::Sweep {
-            profile, sections, ..
+            section, sections, ..
         } => {
-            profiles.extend(profile);
-            profiles.extend(sections);
+            profiles.extend(section.referenced_profile());
+            profiles.extend(
+                sections
+                    .iter()
+                    .filter_map(crate::features::SweepSection::referenced_profile),
+            );
         }
         crate::features::FeatureDefinition::HelicalSweep { construction, .. } => {
             profiles.push(&construction.profile);
@@ -4877,6 +5117,12 @@ fn check_feature_sketch_references(
         .iter()
         .map(|sketch| sketch.id.0.as_str())
         .collect::<HashSet<_>>();
+    let sketch_entity_owners = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .collect::<HashMap<_, _>>();
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
         let sketch = match &feature.definition {
@@ -4923,9 +5169,23 @@ fn check_feature_sketch_references(
                 profiles.extend(&construction.profile);
                 paths.extend(&construction.axis_reference);
             }
-            FeatureDefinition::Sweep { profile, path, .. } => {
-                profiles.extend(profile);
+            FeatureDefinition::Sweep {
+                section,
+                sections,
+                path,
+                guide_rail,
+                ..
+            } => {
+                profiles.extend(section.referenced_profile());
+                profiles.extend(
+                    sections
+                        .iter()
+                        .filter_map(crate::features::SweepSection::referenced_profile),
+                );
                 paths.extend(path);
+                if let Some(guide_rail) = guide_rail {
+                    paths.push(&guide_rail.path);
+                }
             }
             FeatureDefinition::HelicalSweep { construction, .. } => {
                 profiles.push(&construction.profile);
@@ -5019,6 +5279,7 @@ fn check_feature_sketch_references(
                 ProfileRef::Sketch(sketch)
                 | ProfileRef::SketchProfiles { sketch, .. }
                 | ProfileRef::SketchRegions { sketch, .. }
+                | ProfileRef::SketchEntities { sketch, .. }
                 | ProfileRef::SketchSelection { sketch, .. } => sketch,
                 ProfileRef::Native(_)
                 | ProfileRef::Unresolved(_)
@@ -5120,6 +5381,23 @@ fn check_feature_sketch_references(
                         );
                     }
                 }
+                ProfileRef::SketchEntities { entities, .. } => {
+                    let unique = entities.iter().collect::<HashSet<_>>();
+                    if entities.is_empty()
+                        || unique.len() != entities.len()
+                        || entities.iter().any(|entity| {
+                            sketch_entity_owners
+                                .get(entity.0.as_str())
+                                .is_none_or(|owner| *owner != sketch.0.as_str())
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch profile entities are empty, repeated, missing, or owned by another sketch",
+                        );
+                    }
+                }
                 ProfileRef::SketchSelection { selections, .. }
                     if selections.is_empty()
                         || selections.iter().any(String::is_empty)
@@ -5144,8 +5422,27 @@ fn check_feature_sketch_references(
             }
         }
         for path in paths {
+            if let PathRef::SketchCurves { sketch, curves } = path {
+                let invalid = curves.is_empty()
+                    || curves.iter().collect::<HashSet<_>>().len() != curves.len()
+                    || curves.iter().any(|curve| {
+                        sketch_entity_owners
+                            .get(curve.0.as_str())
+                            .is_none_or(|owner| *owner != sketch.0.as_str())
+                    });
+                if invalid {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sketch path curves are empty, repeated, or owned by another sketch",
+                    );
+                }
+            }
             let (sketch, known_sketches, description, selections) = match path {
                 PathRef::Sketch(sketch) => (sketch.0.as_str(), sketches, "sketch path", None),
+                PathRef::SketchCurves { sketch, .. } => {
+                    (sketch.0.as_str(), sketches, "sketch curve path", None)
+                }
                 PathRef::SpatialSketchSelection { sketch, selections } => (
                     sketch.0.as_str(),
                     &spatial_sketches,

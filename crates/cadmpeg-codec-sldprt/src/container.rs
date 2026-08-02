@@ -178,9 +178,9 @@ pub struct CompoundStream {
 }
 
 /// Complete result of an outer-container scan.
-pub struct ContainerScan {
+pub struct ContainerScan<'a> {
     /// Complete source image for exact passthrough writing.
-    pub source_image: Vec<u8>,
+    pub source_image: &'a [u8],
     /// Big-endian outer version word.
     pub version: u32,
     /// CRC-validated compressed blocks, in file order.
@@ -255,7 +255,7 @@ impl<'a> Section<'a> {
     }
 }
 
-impl ContainerScan {
+impl ContainerScan<'_> {
     pub(crate) fn sections(&self) -> impl Iterator<Item = Section<'_>> {
         self.blocks
             .iter()
@@ -302,7 +302,7 @@ fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
 ///
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
-pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
+pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = crate::compound::streams(bytes)
             .unwrap_or_default()
@@ -310,7 +310,7 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
             .map(compound_stream)
             .collect();
         return ContainerScan {
-            source_image: bytes.to_vec(),
+            source_image: bytes,
             version: 0,
             blocks: Vec::new(),
             directory: Vec::new(),
@@ -346,7 +346,7 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
     }
 
     ContainerScan {
-        source_image: bytes.to_vec(),
+        source_image: bytes,
         version,
         blocks,
         directory,
@@ -374,7 +374,7 @@ fn compound_stream(stream: crate::compound::Stream) -> CompoundStream {
 }
 
 /// Scans an in-memory image while routing CFB expansion through the decode budget.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan, CodecError> {
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
     if !root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         return Ok(scan_bytes(root.window()));
     }
@@ -384,7 +384,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         .map(compound_stream)
         .collect();
     Ok(ContainerScan {
-        source_image: root.window().to_vec(),
+        source_image: root.window(),
         version: 0,
         blocks: Vec::new(),
         directory: Vec::new(),
@@ -713,9 +713,9 @@ pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
 /// Ranking favors larger partition streams, then deltas streams. Ghost and
 /// `ResolvedFeatures` sections receive a penalty. The return value includes the
 /// parsed stream header.
-pub fn select_active_parasolid(
-    scan: &ContainerScan,
-) -> Option<(&Block, crate::parasolid::StreamHeader)> {
+pub fn select_active_parasolid<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Option<(&'a Block, crate::parasolid::StreamHeader)> {
     let active_configuration = active_configuration_index(scan);
     let mut best: Option<(i64, &Block, crate::parasolid::StreamHeader)> = None;
     for b in &scan.blocks {

@@ -22,6 +22,7 @@ use crate::topology::Coedge;
 use crate::units::LengthUnit;
 
 mod annotations_native;
+mod assets;
 mod carriers_parameterization;
 mod drawings;
 mod geometry_consistency;
@@ -38,6 +39,7 @@ mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
+use assets::check_assets;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{
@@ -80,6 +82,7 @@ fn validate_model_with_index(
     let mut findings = Vec::new();
 
     check_version(ir, &mut findings);
+    check_assets(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);
@@ -129,6 +132,21 @@ pub fn validate_with_additional_native_identities<'a>(
 /// Validate one neutral product model.
 pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     validate_model(ir, losses)
+}
+
+/// Validate one neutral product model together with borrowed annotations.
+pub fn validate_with_annotations(
+    ir: &CadIr,
+    annotations: &crate::annotations::Annotations,
+    losses: Vec<LossNote>,
+) -> ValidationReport {
+    let mut report = validate_model(ir, losses);
+    let all_ids = crate::index::ModelIndex::new(ir)
+        .identities()
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    check_annotations(ir, annotations, &all_ids, &mut report.findings);
+    report
 }
 
 /// Validate a neutral product model together with its decode-time source sidecar.

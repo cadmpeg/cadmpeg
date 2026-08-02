@@ -15,6 +15,8 @@ pub enum EntryCompression {
     Stored,
     /// The entry payload is a raw-DEFLATE member.
     Deflate,
+    /// The entry payload is a Zstandard frame.
+    Zstd,
 }
 
 impl EntryCompression {
@@ -22,6 +24,7 @@ impl EntryCompression {
         match method {
             CompressionMethod::Stored => Ok(Self::Stored),
             CompressionMethod::Deflated => Ok(Self::Deflate),
+            CompressionMethod::Zstd => Ok(Self::Zstd),
             other => Err(CodecError::NotImplemented(format!(
                 "ZIP compression {other:?} for {name}"
             ))),
@@ -33,6 +36,7 @@ impl EntryCompression {
         match self {
             Self::Stored => "stored",
             Self::Deflate => "deflate",
+            Self::Zstd => "zstd",
         }
     }
 }
@@ -179,7 +183,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 }
                 Ok(view)
             }
-            EntryCompression::Deflate => {
+            EntryCompression::Deflate | EntryCompression::Zstd => {
                 let start = usize::try_from(entry.data_start).map_err(|_| {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
                 })?;
@@ -192,7 +196,22 @@ impl<'a> ArchiveSnapshot<'a> {
                         entry.name
                     ))
                 })?;
-                let mut decoder = flate2::read::DeflateDecoder::new(source.window());
+                let mut decoder: Box<dyn Read> = match entry.compression {
+                    EntryCompression::Deflate => {
+                        Box::new(flate2::read::DeflateDecoder::new(source.window()))
+                    }
+                    EntryCompression::Zstd => Box::new(
+                        zstd::stream::read::Decoder::with_buffer(source.window()).map_err(
+                            |error| {
+                                CodecError::Malformed(format!(
+                                    "cannot open Zstandard frame for {}: {error}",
+                                    entry.name
+                                ))
+                            },
+                        )?,
+                    ),
+                    EntryCompression::Stored => unreachable!("stored entries use borrowed views"),
+                };
                 let mut writer =
                     ctx.begin_expand(source, ExpandSpec::Exact(entry.uncompressed_size))?;
                 let mut chunk = [0_u8; 16 * 1024];
@@ -660,19 +679,29 @@ mod tests {
         archive
             .write_all(b"deflated payload")
             .expect("deflated entry writes");
+        archive
+            .start_file(
+                "zstd.bin",
+                SimpleFileOptions::default().compression_method(CompressionMethod::Zstd),
+            )
+            .expect("Zstandard entry starts");
+        archive
+            .write_all(b"Zstandard payload")
+            .expect("Zstandard entry writes");
         archive.finish().expect("archive finishes").into_inner()
     }
 
     #[test]
-    fn snapshot_opens_stored_and_deflated_entries_after_parser_drop() {
+    fn snapshot_opens_supported_entries_after_parser_drop() {
         let bytes = archive_bytes();
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("archive fits root policy");
         let snapshot = ArchiveSnapshot::new(root).expect("archive snapshots");
-        assert_eq!(snapshot.entries().len(), 2);
+        assert_eq!(snapshot.entries().len(), 3);
         let stored = snapshot.entry("stored.bin").expect("stored record");
         let deflated = snapshot.entry("deflated.bin").expect("deflated record");
+        let zstd = snapshot.entry("zstd.bin").expect("Zstandard record");
         assert_eq!(
             snapshot.open(&ctx, stored).expect("stored opens").window(),
             b"stored"
@@ -683,6 +712,13 @@ mod tests {
                 .expect("deflated opens")
                 .window(),
             b"deflated payload"
+        );
+        assert_eq!(
+            snapshot
+                .open(&ctx, zstd)
+                .expect("Zstandard entry opens")
+                .window(),
+            b"Zstandard payload"
         );
     }
 }

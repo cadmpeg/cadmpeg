@@ -22,6 +22,47 @@ use crate::variant::Variant;
 
 use crate::CatiaCodec;
 
+struct NativeFieldsMut<'a> {
+    record: &'a mut cadmpeg_ir::NativeRecord,
+    fields: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+impl std::ops::Deref for NativeFieldsMut<'_> {
+    type Target = serde_json::Map<String, serde_json::Value>;
+
+    fn deref(&self) -> &Self::Target {
+        self.fields.as_ref().expect("native fields guard")
+    }
+}
+
+impl std::ops::DerefMut for NativeFieldsMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.fields.as_mut().expect("native fields guard")
+    }
+}
+
+impl Drop for NativeFieldsMut<'_> {
+    fn drop(&mut self) {
+        let id = self.record.id().to_owned();
+        let fields = self.fields.take().expect("native fields guard");
+        *self.record = cadmpeg_ir::NativeRecord::new(id, fields);
+    }
+}
+
+trait NativeRecordTestExt {
+    fn fields_mut(&mut self) -> NativeFieldsMut<'_>;
+}
+
+impl NativeRecordTestExt for cadmpeg_ir::NativeRecord {
+    fn fields_mut(&mut self) -> NativeFieldsMut<'_> {
+        let fields = self.fields();
+        NativeFieldsMut {
+            record: self,
+            fields: Some(fields),
+        }
+    }
+}
+
 fn summary_preview_segment() -> Vec<u8> {
     let mut bytes = b"FINJPL  \x01\x01\x00\x03\x00\x00\x00\x15\x00CATSummaryInformation".to_vec();
     bytes.extend_from_slice(b"LastSaveVersion\0<Version>5/<Version><Release>27/<Release><ServicePack>2/<ServicePack><BuildDate>03-10-2017.22.00/<BuildDate><HotFix>0/<HotFix>\0");
@@ -9762,11 +9803,12 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     native
         .store(&mut version_256_namespace)
         .expect("store pre-column-incidence parallel reference table");
-    let columns = version_256_namespace
+    let mut stored_fields = version_256_namespace
         .arenas
         .get_mut("design_objects")
         .expect("stored design objects")[0]
-        .fields
+        .fields_mut();
+    let columns = stored_fields
         .get_mut("parallel_reference_table")
         .expect("stored parallel reference table")
         .as_object_mut()
@@ -9783,6 +9825,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     }
     version_256_namespace.version =
         crate::native::CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_256_namespace)
         .expect("migrate parallel-reference column incidences");
     assert_eq!(
@@ -11018,7 +11061,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
         .get("value_blocks")
         .is_some_and(|blocks| blocks
             .iter()
-            .all(|block| !block.fields.contains_key("schema_selections"))));
+            .all(|block| !block.fields().contains_key("schema_selections"))));
     assert_eq!(
         canonical_namespace
             .arenas
@@ -11345,17 +11388,19 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .store(&mut stored)
         .expect("store reference-signature incidences");
     stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION - 1;
-    let stored_signature = stored
+    let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let stored_signature = stored_fields
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
         .expect("stored reference-signature object");
     stored_signature.remove("signature_offset");
     stored_signature.remove("second_reference_offset");
+    drop(stored_fields);
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("migrate reference-signature incidences");
     assert_eq!(
@@ -11368,17 +11413,19 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .store(&mut stored)
         .expect("store resolved reference-signature incidences");
     stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION - 1;
-    let stored_signature = stored
+    let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let stored_signature = stored_fields
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
         .expect("stored reference-signature object");
     stored_signature.remove("first_entity");
     stored_signature.remove("second_entity");
+    drop(stored_fields);
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("resolve reference-signature incidences");
     assert_eq!(
@@ -11391,17 +11438,19 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .store(&mut stored)
         .expect("store reference-signature program");
     stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_FRAME_VERSION - 1;
-    let stored_signature = stored
+    let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let stored_signature = stored_fields
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
         .expect("stored reference-signature object");
     stored_signature.remove("prefix");
     stored_signature.remove("signature_program");
+    drop(stored_fields);
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("parse reference-signature program");
     assert_eq!(
@@ -12773,11 +12822,12 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         ] {
             let mut namespace = stored.clone();
             namespace.version = version;
-            let stored_instance = namespace
+            let mut stored_fields = namespace
                 .arenas
                 .get_mut("entity_records")
                 .expect("stored entity records")[1]
-                .fields
+                .fields_mut();
+            let stored_instance = stored_fields
                 .get_mut("relation_program_instance")
                 .expect("stored relation-program field")
                 .as_object_mut()
@@ -12805,6 +12855,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 }
             }
 
+            drop(stored_fields);
             let migrated = crate::native::CatiaNative::load(&namespace)
                 .expect("migrate relation-program instance");
             assert_eq!(
@@ -12817,11 +12868,12 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
 
         let mut namespace = stored.clone();
         namespace.version = crate::native::CATIA_RELATION_REFERENCE_OFFSET_VERSION - 1;
-        let incidences = namespace
+        let mut stored_fields = namespace
             .arenas
             .get_mut("entity_records")
             .expect("stored entity records")[1]
-            .fields
+            .fields_mut();
+        let incidences = stored_fields
             .get_mut("relation_program_instance")
             .expect("stored relation-program field")
             .as_object_mut()
@@ -12834,6 +12886,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             *incidence =
                 incidence.as_object().expect("stored reference incidence")["reference"].clone();
         }
+        drop(stored_fields);
         let migrated = crate::native::CatiaNative::load(&namespace)
             .expect("migrate relation-program reference offsets");
         assert_eq!(
@@ -12845,11 +12898,12 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
 
         let mut namespace = stored.clone();
         namespace.version = crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1;
-        let dependencies = namespace
+        let mut stored_fields = namespace
             .arenas
             .get_mut("entity_records")
             .expect("stored entity records")[1]
-            .fields
+            .fields_mut();
+        let dependencies = stored_fields
             .get_mut("relation_program_instance")
             .expect("stored relation-program field")
             .as_object_mut()
@@ -12864,6 +12918,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 .expect("stored parameter dependency")
                 .remove("source_offset");
         }
+        drop(stored_fields);
         let migrated = crate::native::CatiaNative::load(&namespace)
             .expect("migrate relation-program dependency offsets");
         assert_eq!(
@@ -13339,8 +13394,11 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .get_mut("entity_records")
         .expect("stored entity records")
     {
-        entity.fields.remove("configuration_record");
-        entity.fields.remove("configuration_row_link");
+        let id = entity.id().to_owned();
+        let mut fields = entity.fields();
+        fields.remove("configuration_record");
+        fields.remove("configuration_row_link");
+        *entity = cadmpeg_ir::NativeRecord::new(id, fields);
     }
     let migrated =
         crate::native::CatiaNative::load(&older).expect("migrate configuration incidences");
@@ -13365,8 +13423,8 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records");
-    let configuration = entities[0]
-        .fields
+    let mut stored_fields = entities[0].fields_mut();
+    let configuration = stored_fields
         .get_mut("configuration_record")
         .expect("stored configuration record")
         .as_object_mut()
@@ -13377,8 +13435,9 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .expect("stored configuration incidence")["reference"]
         .clone();
     configuration.insert("entity_reference".to_string(), entity_reference);
+    drop(stored_fields);
     entities[1]
-        .fields
+        .fields()
         .get_mut("configuration_row_link")
         .expect("stored configuration-row link")
         .as_object_mut()
@@ -13408,8 +13467,9 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .get_mut("configuration_row_chains")
         .expect("stored configuration-row chains")
     {
-        for link in chain
-            .fields
+        let id = chain.id().to_owned();
+        let mut fields = chain.fields();
+        for link in fields
             .get_mut("links")
             .expect("stored configuration-row links")
             .as_array_mut()
@@ -13419,6 +13479,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
                 .expect("stored configuration-row link")
                 .remove("intervening_entities");
         }
+        *chain = cadmpeg_ir::NativeRecord::new(id, fields);
     }
     let migrated = crate::native::CatiaNative::load(&older)
         .expect("migrate configuration-row successor intervals");
@@ -13449,7 +13510,10 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .get_mut("configuration_row_chains")
         .expect("stored configuration-row chains")
     {
-        chain.fields.remove("links");
+        let id = chain.id().to_owned();
+        let mut fields = chain.fields();
+        fields.remove("links");
+        *chain = cadmpeg_ir::NativeRecord::new(id, fields);
     }
     version_254.version = crate::native::CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION - 1;
     let migrated = crate::native::CatiaNative::load(&version_254)
@@ -14346,7 +14410,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields()
         .get_mut("constraint_range")
         .expect("stored constraint range")
         .as_object_mut()
@@ -14373,7 +14437,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields()
         .get_mut("constraint_range")
         .expect("stored constraint range")
         .as_object_mut()
@@ -14411,7 +14475,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields()
         .get_mut("constraint_range")
         .expect("stored constraint range")
         .as_object_mut()
@@ -16112,11 +16176,12 @@ fn native_namespace_types_and_validates_formula_relations() {
     native
         .store(&mut version_235_namespace)
         .expect("store current formula output reference");
-    let formula_fields = version_235_namespace
+    let mut stored_fields = version_235_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let formula_fields = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -16147,6 +16212,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         output.get("entity").cloned().unwrap_or_default(),
     );
     version_235_namespace.version = crate::native::CATIA_FORMULA_OUTPUT_REFERENCE_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_235_namespace)
         .expect("migrate formula output reference");
     assert_eq!(
@@ -16158,11 +16224,12 @@ fn native_namespace_types_and_validates_formula_relations() {
     native
         .store(&mut version_236_namespace)
         .expect("store current formula expression reference");
-    let formula_fields = version_236_namespace
+    let mut stored_fields = version_236_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let formula_fields = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -16178,6 +16245,7 @@ fn native_namespace_types_and_validates_formula_relations() {
             .clone(),
     );
     version_236_namespace.version = crate::native::CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_236_namespace)
         .expect("migrate formula expression reference");
     assert_eq!(
@@ -16189,11 +16257,12 @@ fn native_namespace_types_and_validates_formula_relations() {
     native
         .store(&mut version_249_namespace)
         .expect("store current formula reference offsets");
-    let formula_fields = version_249_namespace
+    let mut stored_fields = version_249_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let formula_fields = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -16206,6 +16275,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         formula_fields.insert(field.to_string(), reference);
     }
     version_249_namespace.version = crate::native::CATIA_FORMULA_REFERENCE_OFFSET_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_249_namespace)
         .expect("migrate formula reference offsets");
     assert_eq!(
@@ -16217,11 +16287,12 @@ fn native_namespace_types_and_validates_formula_relations() {
     native
         .store(&mut version_237_namespace)
         .expect("store current formula dependency references");
-    let candidates = version_237_namespace
+    let mut stored_fields = version_237_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let candidates = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -16240,6 +16311,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         *candidate = candidate.as_object().expect("stored candidate reference")["entity"].clone();
     }
     version_237_namespace.version = crate::native::CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_237_namespace)
         .expect("migrate formula dependency references");
     assert_eq!(
@@ -16255,7 +16327,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields()
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -16412,11 +16484,12 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
     native
         .store(&mut old_namespace)
         .expect("store relation dependencies");
-    let dependencies = old_namespace
+    let mut stored_fields = old_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let dependencies = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -16432,6 +16505,7 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
         .insert("source_offset".to_string(), 9_u64.into());
     dependencies.insert(0, literal_dependency);
     old_namespace.version = crate::native::CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&old_namespace)
         .expect("migrate string-literal relation dependencies");
     assert_eq!(

@@ -296,12 +296,6 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .model
         .procedural_surfaces
         .iter()
-        .filter(|surface| {
-            !matches!(
-                surface.definition,
-                crate::geometry::ProceduralSurfaceDefinition::Exact { .. }
-            )
-        })
         .map(|surface| surface.surface.0.as_str())
         .collect::<HashSet<_>>();
     let pcurves = ir

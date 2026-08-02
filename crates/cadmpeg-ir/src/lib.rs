@@ -33,6 +33,7 @@
 pub mod annotations;
 pub mod appearance;
 pub mod artifact;
+pub mod assets;
 pub mod attributes;
 pub mod bytes;
 pub mod codec;

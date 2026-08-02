@@ -2306,6 +2306,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             native: "nx:body-selection#tools".into(),
         },
         op: cadmpeg_ir::features::BooleanOp::Join,
+        keep_tools: false,
     };
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
@@ -13832,9 +13833,12 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
             sections: Vec::new(),
             path: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
             mode: cadmpeg_ir::features::SweepMode::Unresolved,
             orientation: None,
             transition: None,

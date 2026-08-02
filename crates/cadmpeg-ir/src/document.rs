@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -44,6 +44,7 @@ macro_rules! arena_registry {
             pcurves: Pcurve, "Pcurve arena.", [];
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [];
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [];
+            assets: crate::assets::Asset, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             features: Feature, "Feature arena.", [];
             feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)];
@@ -113,6 +114,28 @@ macro_rules! declare_model {
                         .cmp(crate::schema::EntitySchema::identity(right))
                 });)*
             }
+
+            /// Append every arena of `other` onto the matching arena of this
+            /// model, passing each entity through `rewrite`.
+            ///
+            /// Derived from the same `arena_registry!` declaration as
+            /// [`finalize`](Self::finalize), so a new arena is merged without
+            /// editing any call site. One entity is handed to `rewrite` at a
+            /// time, which bounds a rewriting caller's transient storage by the
+            /// largest single entity rather than by the whole model.
+            pub fn extend_rewritten<R: EntityRewrite>(
+                &mut self,
+                other: Self,
+                rewrite: &mut R,
+            ) -> Result<(), R::Error> {
+                $(
+                    self.$field.reserve(other.$field.len());
+                    for entity in other.$field {
+                        self.$field.push(rewrite.rewrite(entity)?);
+                    }
+                )*
+                Ok(())
+            }
         }
     };
 }
@@ -126,11 +149,46 @@ macro_rules! assert_entity_schemas {
     };
 }
 
+/// Per-entity rewrite applied by [`Model::extend_rewritten`].
+pub trait EntityRewrite {
+    /// Failure raised while rewriting one entity.
+    type Error;
+
+    /// Rewrite one arena entity.
+    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error>;
+}
+
+macro_rules! declare_model_view {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        /// Every model arena borrowed in canonical identity order.
+        #[derive(Serialize)]
+        pub(crate) struct SortedModel<'a> {
+            $($(#[$attribute])* $field: Vec<&'a $ty>,)*
+        }
+
+        impl Model {
+            /// Borrow every arena in canonical identity order.
+            pub(crate) fn sorted(&self) -> SortedModel<'_> {
+                SortedModel {
+                    $($field: sorted_refs(&self.$field),)*
+                }
+            }
+        }
+    };
+}
+
+fn sorted_refs<T: crate::schema::EntitySchema>(entities: &[T]) -> Vec<&T> {
+    let mut refs = entities.iter().collect::<Vec<_>>();
+    refs.sort_by(|left, right| left.identity().cmp(right.identity()));
+    refs
+}
+
 /// The IR schema version this build produces and accepts.
 pub const IR_VERSION: &str = "5";
 
 arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
+arena_registry!(declare_model_view);
 
 fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
@@ -183,24 +241,41 @@ impl CadIr {
         &self,
         format: &str,
     ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
-        self.native.namespace(format).map_or_else(
-            || Ok(Vec::new()),
-            |namespace| namespace.arena_as("unknowns"),
-        )
+        self.native_unknowns_iter(format).collect()
     }
 
-    /// Deserialize every reserved native `unknowns` arena.
-    pub fn all_native_unknowns(
+    /// Deserialize the reserved `unknowns` arena for `format` one record at a
+    /// time.
+    ///
+    /// Retained source populations reach hundreds of thousands of records, so a
+    /// caller that rebuilds the arena — reducing it for hashing, say — should
+    /// consume this rather than [`native_unknowns`](Self::native_unknowns) and
+    /// convert each record before the next is read, which keeps the typed
+    /// population and the rebuilt one from ever coexisting.
+    pub fn native_unknowns_iter<'a>(
+        &'a self,
+        format: &str,
+    ) -> impl Iterator<Item = Result<NativeUnknownRecord, crate::native::NativeConvertError>> + 'a
+    {
+        self.native
+            .namespace(format)
+            .into_iter()
+            .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
+    }
+
+    /// Deserialize every reserved native `unknowns` arena one record at a time.
+    ///
+    /// Each record is converted as it is read, so a caller that only scans the
+    /// population — collecting link targets or record ids — keeps just what it
+    /// retains resident rather than the whole typed population at once.
+    pub fn all_native_unknowns_iter(
         &self,
-    ) -> Result<Vec<NativeUnknownRecord>, crate::native::NativeConvertError> {
+    ) -> impl Iterator<Item = Result<NativeUnknownRecord, crate::native::NativeConvertError>> + '_
+    {
         self.native
             .0
             .values()
-            .filter(|namespace| namespace.arenas.contains_key("unknowns"))
-            .try_fold(Vec::new(), |mut records, namespace| {
-                records.extend(namespace.arena_as::<NativeUnknownRecord>("unknowns")?);
-                Ok(records)
-            })
+            .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
     }
 
     /// Replace the reserved `unknowns` arena for `format`.
@@ -209,11 +284,22 @@ impl CadIr {
         format: &str,
         records: &[NativeUnknownRecord],
     ) -> Result<(), crate::native::NativeConvertError> {
-        let namespace = self.native.namespace_mut(format);
-        if namespace.version == 0 {
-            namespace.version = 1;
-        }
-        namespace.set_arena("unknowns", records)
+        self.set_native_unknowns_from(format, records.iter())
+    }
+
+    /// Replace the reserved `unknowns` arena for `format` one record at a time.
+    ///
+    /// A caller that derives its product references from a larger population
+    /// should derive them inside the iterator: each reference is serialized as
+    /// it is produced, so the derived population is never resident alongside the
+    /// arena built from it.
+    pub fn set_native_unknowns_from<T: Serialize, I: IntoIterator<Item = T>>(
+        &mut self,
+        format: &str,
+        records: I,
+    ) -> Result<(), crate::native::NativeConvertError> {
+        self.unknowns_namespace_mut(format)
+            .set_arena_from("unknowns", records)
     }
 
     /// Replace the reserved `unknowns` arena for `format`, consuming the records.
@@ -221,28 +307,22 @@ impl CadIr {
     /// Codecs retaining large source populations should use this form to avoid
     /// keeping typed and generic native copies alive at the same time.
     pub fn set_native_unknowns_owned(&mut self, format: &str, records: Vec<UnknownRecord>) {
-        let namespace = self.native.namespace_mut(format);
-        if namespace.version == 0 {
-            namespace.version = 1;
-        }
+        let namespace = self.unknowns_namespace_mut(format);
         let mut converted = records
             .into_iter()
             .map(UnknownRecord::into_native_record)
             .collect::<Vec<_>>();
-        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        converted.sort_by(|left, right| left.id().cmp(right.id()));
         namespace.arenas.insert("unknowns".into(), converted);
     }
 
-    /// Append one record to the reserved `unknowns` arena for `format`.
-    pub fn push_native_unknown(
-        &mut self,
-        format: &str,
-        record: NativeUnknownRecord,
-    ) -> Result<(), crate::native::NativeConvertError> {
-        let mut records = self.native_unknowns(format)?;
-        records.retain(|existing| existing.id != record.id);
-        records.push(record);
-        self.set_native_unknowns(format, &records)
+    /// Return the `format` namespace, versioning a newly created one.
+    fn unknowns_namespace_mut(&mut self, format: &str) -> &mut crate::native::NativeNamespace {
+        let namespace = self.native.namespace_mut(format);
+        if namespace.version == 0 {
+            namespace.version = 1;
+        }
+        namespace
     }
 
     /// Construct an empty current-version document with default tolerances.
@@ -265,13 +345,23 @@ impl CadIr {
     }
 
     /// Parse JSON and reject any unsupported `ir_version`.
+    ///
+    /// The version is read by a probe that names `ir_version` and nothing else,
+    /// which serde skips past without building. Reading the version out of a
+    /// [`serde_json::Value`] of the whole document instead would hold that tree
+    /// — an allocation per member at every depth — for as long as it takes to
+    /// build the typed document from it, so a load would peak at both. The
+    /// document text is scanned twice and materialized once.
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
+        /// Every member but `ir_version` is skipped, and the version stays a
+        /// [`serde_json::Value`] so a non-string one is reported as an
+        /// unsupported version rather than as a type error.
         #[derive(Deserialize)]
         struct VersionProbe {
             ir_version: Option<serde_json::Value>,
         }
 
-        let probe: VersionProbe = serde_json::from_str(s)?;
+        let probe = serde_json::from_str::<VersionProbe>(s)?;
         let version = probe
             .ir_version
             .as_ref()

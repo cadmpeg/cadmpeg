@@ -22,10 +22,17 @@ use super::geometry::{
     orthonormal_pair, valid_edited_curve_structure, valid_edited_nurbs_direction,
 };
 use super::records::{canonical_guid, native_stream};
+use crate::native::F3dNative;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{
-    f3d_native, finite_point, finite_vector, history_change_kind, normalized_face_sense_to_native,
+    finite_point, finite_vector, history_change_kind, normalized_face_sense_to_native,
 };
+
+#[derive(Clone, Copy)]
+pub(crate) struct PatchNatives<'a> {
+    pub(crate) baseline: Option<&'a F3dNative>,
+    pub(crate) target: Option<&'a F3dNative>,
+}
 
 pub(crate) type SketchPointEdit = (u64, u32, cadmpeg_ir::math::Point2);
 pub(crate) type PersistentReferenceEdit = (u64, u32, u64);
@@ -35,11 +42,10 @@ pub(crate) type SketchCurveEdit = (u64, u32, SketchCurveGeometry);
 pub(crate) type SketchRelationEdit = Vec<(u64, Vec<u8>)>;
 
 pub(crate) fn validate_creation_timestamp_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, f64>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map_or(&[][..], |native| native.creation_timestamps.as_slice());
@@ -91,15 +97,14 @@ pub(crate) fn validate_creation_timestamp_edits(
 }
 
 pub(crate) fn validate_edge_continuity_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, (Sense, String)>, CodecError> {
-    let baseline = f3d_native(baseline)?
-        .map(|native| native.edge_continuities)
-        .unwrap_or_default();
-    let target = f3d_native(target)?
-        .map(|native| native.edge_continuities)
-        .unwrap_or_default();
+    let baseline = native
+        .baseline
+        .map_or(&[][..], |native| native.edge_continuities.as_slice());
+    let target = native
+        .target
+        .map_or(&[][..], |native| native.edge_continuities.as_slice());
     let baseline_by_id = baseline
         .iter()
         .map(|metadata| (metadata.id.as_str(), metadata))
@@ -142,15 +147,15 @@ pub(crate) fn validate_edge_continuity_edits(
 }
 
 pub(crate) fn validate_edge_ownership_edits(
-    baseline: &CadIr,
+    native: PatchNatives<'_>,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, i64>, CodecError> {
-    let baseline = f3d_native(baseline)?
-        .map(|native| native.edge_ownerships)
-        .unwrap_or_default();
-    let target_ownerships = f3d_native(target)?
-        .map(|native| native.edge_ownerships)
-        .unwrap_or_default();
+    let baseline = native
+        .baseline
+        .map_or(&[][..], |native| native.edge_ownerships.as_slice());
+    let target_ownerships = native
+        .target
+        .map_or(&[][..], |native| native.edge_ownerships.as_slice());
     let baseline_by_id = baseline
         .iter()
         .map(|ownership| (ownership.id.as_str(), ownership))
@@ -211,15 +216,15 @@ pub(crate) fn validate_edge_ownership_edits(
 }
 
 pub(crate) fn validate_vertex_ownership_edits(
-    baseline: &CadIr,
+    native: PatchNatives<'_>,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, (i64, u8)>, CodecError> {
-    let baseline = f3d_native(baseline)?
-        .map(|native| native.vertex_ownerships)
-        .unwrap_or_default();
-    let target_native = f3d_native(target)?
-        .map(|native| native.vertex_ownerships)
-        .unwrap_or_default();
+    let baseline = native
+        .baseline
+        .map_or(&[][..], |native| native.vertex_ownerships.as_slice());
+    let target_native = native
+        .target
+        .map_or(&[][..], |native| native.vertex_ownerships.as_slice());
     let baseline_by_id = baseline
         .iter()
         .map(|metadata| (metadata.id.as_str(), metadata))
@@ -289,15 +294,14 @@ pub(crate) fn validate_vertex_ownership_edits(
 }
 
 pub(crate) fn validate_face_sidedness_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, crate::records::FaceContainment>, CodecError> {
-    let baseline = f3d_native(baseline)?
-        .map(|native| native.face_sidedness)
-        .unwrap_or_default();
-    let target = f3d_native(target)?
-        .map(|native| native.face_sidedness)
-        .unwrap_or_default();
+    let baseline = native
+        .baseline
+        .map_or(&[][..], |native| native.face_sidedness.as_slice());
+    let target = native
+        .target
+        .map_or(&[][..], |native| native.face_sidedness.as_slice());
     let baseline_by_id = baseline
         .iter()
         .map(|metadata| (metadata.id.as_str(), metadata))
@@ -339,6 +343,7 @@ pub(crate) fn validate_face_sidedness_edits(
 }
 
 pub(crate) fn validate_tolerant_vertex_edits(
+    native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, (f64, [f64; 2])>, CodecError> {
@@ -376,12 +381,12 @@ pub(crate) fn validate_tolerant_vertex_edits(
             )));
         }
     }
-    let baseline_tails = f3d_native(baseline)?
-        .map(|native| native.tolerant_vertex_tails)
-        .unwrap_or_default();
-    let target_tails = f3d_native(target)?
-        .map(|native| native.tolerant_vertex_tails)
-        .unwrap_or_default();
+    let baseline_tails = native
+        .baseline
+        .map_or(&[][..], |native| native.tolerant_vertex_tails.as_slice());
+    let target_tails = native
+        .target
+        .map_or(&[][..], |native| native.tolerant_vertex_tails.as_slice());
     let baseline_by_id = baseline_tails
         .iter()
         .map(|tail| (tail.id.as_str(), tail))
@@ -444,6 +449,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
 }
 
 pub(crate) fn validate_tolerant_edge_edits(
+    native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, f64>, CodecError> {
@@ -474,12 +480,12 @@ pub(crate) fn validate_tolerant_edge_edits(
             )));
         }
     }
-    let baseline_tails = f3d_native(baseline)?
-        .map(|native| native.tolerant_edge_tails)
-        .unwrap_or_default();
-    let target_tails = f3d_native(target)?
-        .map(|native| native.tolerant_edge_tails)
-        .unwrap_or_default();
+    let baseline_tails = native
+        .baseline
+        .map_or(&[][..], |native| native.tolerant_edge_tails.as_slice());
+    let target_tails = native
+        .target
+        .map_or(&[][..], |native| native.tolerant_edge_tails.as_slice());
     let baseline_by_id = baseline_tails
         .iter()
         .map(|tail| (tail.id.as_str(), tail))
@@ -504,7 +510,7 @@ pub(crate) fn validate_tolerant_edge_edits(
         let tolerance = target_edges[after.edge.as_str()]
             .tolerance
             .ok_or_else(|| CodecError::Malformed(format!("tolerant edge {id} has no tolerance")))?;
-        if !tolerance.is_finite() || tolerance < 0.0 || after.trailing_integers[1] != 0 {
+        if !tolerance.is_finite() || tolerance < 0.0 {
             return Err(CodecError::Malformed(format!(
                 "F3D tolerant edge {id} has invalid fields"
             )));
@@ -517,6 +523,7 @@ pub(crate) fn validate_tolerant_edge_edits(
 }
 
 pub(crate) fn validate_tolerant_coedge_edits(
+    native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, [f64; 2]>, CodecError> {
@@ -547,12 +554,12 @@ pub(crate) fn validate_tolerant_coedge_edits(
             )));
         }
     }
-    let baseline_parameters = f3d_native(baseline)?
-        .map(|native| native.tolerant_coedge_parameters)
-        .unwrap_or_default();
-    let target_parameters = f3d_native(target)?
-        .map(|native| native.tolerant_coedge_parameters)
-        .unwrap_or_default();
+    let baseline_parameters = native.baseline.map_or(&[][..], |native| {
+        native.tolerant_coedge_parameters.as_slice()
+    });
+    let target_parameters = native.target.map_or(&[][..], |native| {
+        native.tolerant_coedge_parameters.as_slice()
+    });
     let baseline_by_id = baseline_parameters
         .iter()
         .map(|parameters| (parameters.id.as_str(), parameters))
@@ -589,15 +596,14 @@ pub(crate) fn validate_tolerant_coedge_edits(
 }
 
 pub(crate) fn validate_wire_topology_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, crate::records::WireSide>, CodecError> {
-    let baseline_wires = f3d_native(baseline)?
-        .map(|native| native.wire_topologies)
-        .unwrap_or_default();
-    let target_wires = f3d_native(target)?
-        .map(|native| native.wire_topologies)
-        .unwrap_or_default();
+    let baseline_wires = native
+        .baseline
+        .map_or(&[][..], |native| native.wire_topologies.as_slice());
+    let target_wires = native
+        .target
+        .map_or(&[][..], |native| native.wire_topologies.as_slice());
     let baseline_by_id = baseline_wires
         .iter()
         .map(|wire| (wire.id.as_str(), wire))
@@ -664,11 +670,12 @@ pub(crate) struct ProceduralCurveEdit {
 }
 
 pub(crate) fn validate_material_assignment_appearances(
+    native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, crate::materials::ProteinAppearanceEdit>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline_appearances = baseline
         .model
         .appearances
@@ -792,11 +799,10 @@ pub(crate) fn validate_material_assignment_appearances(
 }
 
 pub(crate) fn validate_material_assignment_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<DesignMaterialAssignment>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.design_material_assignments[..])
@@ -889,11 +895,10 @@ fn validate_optional_utf16_replacement(
 }
 
 pub(crate) fn validate_lost_edge_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<LostEdgeReference>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.lost_edge_references[..])
@@ -944,11 +949,12 @@ pub(crate) fn validate_lost_edge_edits(
 }
 
 pub(crate) fn validate_act_appearance_bindings(
+    native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<(), CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline_entities = baseline_native
         .as_ref()
         .map(|native| &native.act_entities[..])
@@ -1105,11 +1111,10 @@ pub(crate) fn validate_act_appearance_bindings(
 }
 
 pub(crate) fn validate_act_entity_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActEntity>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.act_entities[..])
@@ -1176,11 +1181,10 @@ pub(crate) fn validate_act_entity_edits(
 }
 
 pub(crate) fn validate_act_guid_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActGuidEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.act_guids[..])
@@ -1240,11 +1244,10 @@ pub(crate) fn validate_act_guid_edits(
 }
 
 pub(crate) fn validate_act_root_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActRootComponent>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.act_root_components[..])
@@ -1305,56 +1308,55 @@ pub(crate) fn validate_act_root_edits(
     Ok(edits)
 }
 
-pub(crate) struct DesignObjectEdit {
+pub(crate) struct DesignTypeEdit {
     pub(crate) integers: Vec<(u64, Vec<u8>)>,
     pub(crate) strings: Vec<(u64, Vec<u8>)>,
 }
 
-pub(crate) fn validate_design_object_edits(
-    baseline: &CadIr,
-    target: &CadIr,
-) -> Result<BTreeMap<String, Vec<DesignObjectEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+pub(crate) fn validate_design_type_edits(
+    native: PatchNatives<'_>,
+) -> Result<BTreeMap<String, Vec<DesignTypeEdit>>, CodecError> {
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
-        .map(|native| &native.design_objects[..])
+        .map(|native| &native.design_types[..])
         .unwrap_or_default();
     let target = target_native
         .as_ref()
-        .map(|native| &native.design_objects[..])
+        .map(|native| &native.design_types[..])
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
-        .map(|object| (object.id.as_str(), object))
+        .map(|design_type| (design_type.id.as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     let target_by_id = target
         .iter()
-        .map(|object| (object.id.as_str(), object))
+        .map(|design_type| (design_type.id.as_str(), design_type))
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
-            "F3D design-object regeneration requires the unchanged object-id set".into(),
+            "F3D design-type regeneration requires the unchanged type-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<DesignObjectEdit>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<DesignTypeEdit>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
         normalized.entity_ids.clone_from(&before.entity_ids);
-        normalized.self_guid.clone_from(&before.self_guid);
-        normalized.parent_guid.clone_from(&before.parent_guid);
-        normalized.revision = before.revision;
+        normalized.type_guid.clone_from(&before.type_guid);
+        normalized.base_type_guid.clone_from(&before.base_type_guid);
+        normalized.version = before.version;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D design-object edit changes fields outside its fixed object payload: {id}"
+                "F3D design-type edit changes fields outside its fixed type payload: {id}"
             )));
         }
         if after.entity_ids.len() != before.entity_ids.len()
             || after.entity_ids.len() != after.entity_id_offsets.len()
         {
             return Err(CodecError::NotImplemented(format!(
-                "F3D design object {id} must retain its entity-id cardinality"
+                "F3D design type {id} must retain its entity-id cardinality"
             )));
         }
         let mut integers = after
@@ -1365,27 +1367,29 @@ pub(crate) fn validate_design_object_edits(
             .filter(|((value, before), _)| value != before)
             .map(|((&value, _), &offset)| (offset, value.to_le_bytes().to_vec()))
             .collect::<Vec<_>>();
-        if after.revision != before.revision {
-            integers.push((after.revision_offset, after.revision.to_le_bytes().to_vec()));
+        if after.version != before.version {
+            integers.push((after.version_offset, after.version.to_le_bytes().to_vec()));
         }
         let mut strings = Vec::new();
-        if after.self_guid != before.self_guid {
-            validate_fixed_design_string(id, &before.self_guid, &after.self_guid)?;
-            strings.push((after.self_guid_offset, after.self_guid.as_bytes().to_vec()));
+        if after.type_guid != before.type_guid {
+            validate_fixed_design_string(id, &before.type_guid, &after.type_guid)?;
+            strings.push((after.type_guid_offset, after.type_guid.as_bytes().to_vec()));
         }
-        if after.parent_guid != before.parent_guid {
-            let before_parent = before.parent_guid.as_deref().ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot add F3D object parent GUID: {id}"))
+        if after.base_type_guid != before.base_type_guid {
+            let before_base = before.base_type_guid.as_deref().ok_or_else(|| {
+                CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
             })?;
-            let after_parent = after.parent_guid.as_deref().ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot remove F3D object parent GUID: {id}"))
+            let after_base = after.base_type_guid.as_deref().ok_or_else(|| {
+                CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
             })?;
-            validate_fixed_design_string(id, before_parent, after_parent)?;
+            validate_fixed_design_string(id, before_base, after_base)?;
             strings.push((
-                after.parent_guid_offset.ok_or_else(|| {
-                    CodecError::Malformed(format!("F3D object {id} has no parent-GUID offset"))
+                after.base_type_guid_offset.ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D design type {id} has no base-type-GUID offset"
+                    ))
                 })?,
-                after_parent.as_bytes().to_vec(),
+                after_base.as_bytes().to_vec(),
             ));
         }
         if integers.is_empty() && strings.is_empty() {
@@ -1393,13 +1397,13 @@ pub(crate) fn validate_design_object_edits(
         }
         let stream = id
             .strip_prefix(crate::ids::SCHEME_PREFIX)
-            .and_then(|id| id.rsplit_once(":design-object#"))
+            .and_then(|id| id.rsplit_once(":design-type#"))
             .map(|(stream, _)| stream.to_owned())
-            .ok_or_else(|| CodecError::Malformed(format!("invalid design-object id {id}")))?;
+            .ok_or_else(|| CodecError::Malformed(format!("invalid design-type id {id}")))?;
         edits
             .entry(stream)
             .or_default()
-            .push(DesignObjectEdit { integers, strings });
+            .push(DesignTypeEdit { integers, strings });
     }
     Ok(edits)
 }
@@ -1418,15 +1422,14 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
 }
 
 pub(crate) fn validate_configuration_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
-    let baseline = f3d_native(baseline)?
-        .map(|native| native.design_configurations)
-        .unwrap_or_default();
-    let target = f3d_native(target)?
-        .map(|native| native.design_configurations)
-        .unwrap_or_default();
+    let baseline = native
+        .baseline
+        .map_or(&[][..], |native| native.design_configurations.as_slice());
+    let target = native
+        .target
+        .map_or(&[][..], |native| native.design_configurations.as_slice());
     let baseline = baseline
         .iter()
         .map(|configuration| (configuration.entry_name.as_str(), configuration))
@@ -1468,11 +1471,10 @@ pub(crate) struct EntityHeaderEdit {
 }
 
 pub(crate) fn validate_entity_header_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<EntityHeaderEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.design_entity_headers[..])
@@ -1557,11 +1559,10 @@ pub(crate) fn validate_entity_header_edits(
 }
 
 pub(crate) fn validate_body_member_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<BodyMemberEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.design_body_members[..])
@@ -1612,6 +1613,7 @@ pub(crate) fn validate_body_member_edits(
 }
 
 pub(crate) fn validate_body_visibility_edits(
+    native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, Vec<(u64, bool)>>, CodecError> {
@@ -1632,11 +1634,12 @@ pub(crate) fn validate_body_visibility_edits(
             "F3D body-visibility regeneration requires the unchanged body-id set".into(),
         ));
     }
-    let metadata = f3d_native(baseline)?
+    let metadata = native
+        .baseline
         .map(|native| {
             native
                 .body_visibilities
-                .into_iter()
+                .iter()
                 .map(|item| (item.body.clone(), item))
                 .collect::<BTreeMap<_, _>>()
         })
@@ -1664,15 +1667,14 @@ pub(crate) fn validate_body_visibility_edits(
 }
 
 pub(crate) fn validate_transform_hint_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, [bool; 3]>, CodecError> {
-    let baseline = f3d_native(baseline)?
-        .map(|native| native.transform_hints)
-        .unwrap_or_default();
-    let target = f3d_native(target)?
-        .map(|native| native.transform_hints)
-        .unwrap_or_default();
+    let baseline = native
+        .baseline
+        .map_or(&[][..], |native| native.transform_hints.as_slice());
+    let target = native
+        .target
+        .map_or(&[][..], |native| native.transform_hints.as_slice());
     let baseline = baseline
         .iter()
         .map(|hints| (hints.id.as_str(), hints))
@@ -1707,18 +1709,22 @@ pub(crate) fn validate_transform_hint_edits(
 }
 
 pub(crate) fn validate_body_native_key_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BodyNativeKeyEdits, CodecError> {
-    let baseline_native = f3d_native(baseline)?.unwrap_or_default();
-    let target_native = f3d_native(target)?.unwrap_or_default();
+    let baseline_native = native.baseline;
+    let target_native = native.target;
+    let baseline_body_visibilities =
+        baseline_native.map_or(&[][..], |native| native.body_visibilities.as_slice());
+    let baseline_material_assignments = baseline_native.map_or(&[][..], |native| {
+        native.design_material_assignments.as_slice()
+    });
     let baseline = baseline_native
-        .body_native_keys
+        .map_or(&[][..], |native| native.body_native_keys.as_slice())
         .iter()
         .map(|key| (key.id.as_str(), key))
         .collect::<BTreeMap<_, _>>();
     let target = target_native
-        .body_native_keys
+        .map_or(&[][..], |native| native.body_native_keys.as_slice())
         .iter()
         .map(|key| (key.id.as_str(), key))
         .collect::<BTreeMap<_, _>>();
@@ -1746,16 +1752,14 @@ pub(crate) fn validate_body_native_key_edits(
             edits.asm.insert(after.record_index as usize, key);
             let mut joined = Vec::new();
             joined.extend(
-                baseline_native
-                    .body_visibilities
+                baseline_body_visibilities
                     .iter()
                     .filter(|visibility| visibility.body == before.body)
                     .map(|visibility| (visibility.stream.clone(), visibility.asm_body_key_offset)),
             );
             if let Some(old_key) = before.asm_body_key {
                 joined.extend(
-                    baseline_native
-                        .design_material_assignments
+                    baseline_material_assignments
                         .iter()
                         .filter(|assignment| assignment.asm_body_key == old_key)
                         .map(|assignment| {
@@ -1798,11 +1802,10 @@ pub(crate) struct ConstructionRecipeEdit {
 }
 
 pub(crate) fn validate_construction_recipe_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ConstructionRecipeEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.construction_recipes[..])
@@ -1891,11 +1894,10 @@ pub(crate) fn validate_construction_recipe_edits(
 }
 
 pub(crate) fn validate_persistent_reference_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<PersistentReferenceEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.persistent_references[..])
@@ -1966,11 +1968,10 @@ pub(crate) struct HistoryEdits {
 }
 
 pub(crate) fn validate_history_state_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, HistoryEdits>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.asm_histories[..])
@@ -2134,11 +2135,10 @@ pub(crate) fn validate_history_state_edits(
 }
 
 pub(crate) fn validate_sketch_point_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchPointEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.sketch_points[..])
@@ -2198,11 +2198,10 @@ pub(crate) fn validate_sketch_point_edits(
 }
 
 pub(crate) fn validate_sketch_curve_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchCurveEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.sketch_curve_identities[..])
@@ -2354,11 +2353,10 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
 }
 
 pub(crate) fn validate_sketch_relation_edits(
-    baseline: &CadIr,
-    target: &CadIr,
+    native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchRelationEdit>>, CodecError> {
-    let baseline_native = f3d_native(baseline)?;
-    let target_native = f3d_native(target)?;
+    let baseline_native = native.baseline;
+    let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
         .map(|native| &native.sketch_relations[..])
@@ -2454,14 +2452,14 @@ pub(crate) fn validate_sketch_relation_edits(
             &mut values,
         )?;
         if relation.state != before.state {
-            // The stored mask width follows the source form: a `0x01`-marked
-            // u32 or an unmarked u64.
-            let marked = usize::try_from(relation.state_offset)
-                .ok()
-                .and_then(|offset| offset.checked_sub(1))
-                .and_then(|offset| relation.raw_bytes.get(offset))
-                == Some(&1);
-            let encoded = if marked {
+            // The stored mask width follows the record's class version: a u64
+            // with the paired member run, a u32 without it.
+            let paired_run =
+                crate::design::decode::sketch::relation_has_paired_member_run(&relation.raw_bytes)
+                    .unwrap_or(true);
+            let encoded = if paired_run {
+                relation.state.to_le_bytes().to_vec()
+            } else {
                 u32::try_from(relation.state)
                     .map_err(|_| {
                         CodecError::NotImplemented(format!(
@@ -2471,8 +2469,6 @@ pub(crate) fn validate_sketch_relation_edits(
                     })?
                     .to_le_bytes()
                     .to_vec()
-            } else {
-                relation.state.to_le_bytes().to_vec()
             };
             values.push((
                 relation.byte_offset + u64::from(relation.state_offset),
@@ -2657,19 +2653,21 @@ pub(crate) fn validate_edge_range_edits(
 }
 
 pub(crate) fn validate_face_sense_edits(
+    native: PatchNatives<'_>,
     baseline_ir: &CadIr,
     target_ir: &CadIr,
 ) -> Result<BTreeMap<String, Sense>, CodecError> {
     let baseline = &baseline_ir.model.faces;
     let target = &target_ir.model.faces;
-    let native_senses = f3d_native(baseline_ir)?
+    let native_senses = native
+        .baseline
         .map(|native| {
             native
                 .face_sidedness
-                .into_iter()
+                .iter()
                 .map(|metadata| {
                     (
-                        metadata.face,
+                        metadata.face.clone(),
                         (metadata.native_sense, metadata.normalized_sense),
                     )
                 })
@@ -3188,12 +3186,14 @@ pub(crate) fn validate_procedural_surface_edits(
                     parameter_interval: before_parameter_interval,
                     direction: before_direction,
                     native_position: before_native_position,
+                    revision_form: None,
                 },
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix: after_directrix,
                     parameter_interval: after_parameter_interval,
                     direction: after_direction,
                     native_position: after_native_position,
+                    revision_form: None,
                 },
             ) if before_directrix == after_directrix => {
                 let interval = after_parameter_interval.ok_or_else(|| {

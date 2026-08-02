@@ -110,7 +110,48 @@ fn spatial_oriented_endpoints(
     })
 }
 
-fn line_offset_matches(source: &SketchGeometry, result: &SketchGeometry, expected: f64) -> bool {
+fn sketch_curve_offset_matches(
+    source: &SketchGeometry,
+    result: &SketchGeometry,
+    expected: f64,
+) -> bool {
+    if let (
+        SketchGeometry::Arc {
+            center: source_center,
+            radius: source_radius,
+            start_angle: source_start,
+            end_angle: source_end,
+        },
+        SketchGeometry::Arc {
+            center: result_center,
+            radius: result_radius,
+            start_angle: result_start,
+            end_angle: result_end,
+        },
+    ) = (source, result)
+    {
+        let scale = 1.0
+            + source_center
+                .u
+                .abs()
+                .max(source_center.v.abs())
+                .max(result_center.u.abs())
+                .max(result_center.v.abs())
+                .max(source_radius.0)
+                .max(result_radius.0)
+                .max(expected.abs());
+        let sweep = source_end.0 - source_start.0;
+        return source_radius.0 > 0.0
+            && result_radius.0 > 0.0
+            && sweep.abs() > 1.0e-12
+            && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
+            && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale
+            && (source_start.0 - result_start.0).abs() <= 1.0e-9
+            && (source_end.0 - result_end.0).abs() <= 1.0e-9
+            && (sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
+                <= 1.0e-9 * scale;
+    }
+
     let (
         SketchGeometry::Line {
             start: source_start,
@@ -200,6 +241,68 @@ fn spatial_parallel_line_distance(
         .norm()
             / first_length,
     )
+}
+
+fn spatial_line_length(geometry: &SpatialSketchGeometry) -> Option<f64> {
+    let SpatialSketchGeometry::Line { start, end } = geometry else {
+        return None;
+    };
+    Some((end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z)))
+}
+
+fn spatial_parallel_line_span_distance(
+    first: &SpatialSketchGeometry,
+    second: &SpatialSketchGeometry,
+    linear_tolerance: f64,
+) -> Option<f64> {
+    let distance = spatial_parallel_line_distance(first, second)?;
+    let (
+        SpatialSketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SpatialSketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        unreachable!("parallel line distance requires line geometry")
+    };
+    let direction = crate::math::Vector3::new(
+        first_end.x - first_start.x,
+        first_end.y - first_start.y,
+        first_end.z - first_start.z,
+    );
+    let length = direction.norm();
+    let project = |point: crate::math::Point3| {
+        (point.x * direction.x + point.y * direction.y + point.z * direction.z) / length
+    };
+    let first_interval = [project(*first_start), project(*first_end)];
+    let second_interval = [project(*second_start), project(*second_end)];
+    let first_min = first_interval[0].min(first_interval[1]);
+    let first_max = first_interval[0].max(first_interval[1]);
+    let second_min = second_interval[0].min(second_interval[1]);
+    let second_max = second_interval[0].max(second_interval[1]);
+    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
+}
+
+fn spatial_length_parameter_matches(
+    measured: Option<f64>,
+    parameter: &crate::features::ParameterId,
+    parameter_values: &HashMap<
+        &crate::features::ParameterId,
+        &Option<crate::features::ParameterValue>,
+    >,
+) -> bool {
+    let expected = match parameter_values.get(parameter) {
+        Some(Some(crate::features::ParameterValue::Length(length))) => length.0.abs(),
+        _ => return false,
+    };
+    measured.is_some_and(|measured| {
+        let scale = 1.0 + measured.abs().max(expected.abs());
+        (measured - expected).abs() <= 1.0e-9 * scale
+    })
 }
 
 pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -418,13 +521,19 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SketchGeometry::Text {
                 text,
                 font_family,
+                font_weight,
                 height,
                 width_factor,
+                anchor,
+                rotation,
             } => {
                 if text.is_empty()
                     || font_family.is_empty()
+                    || !matches!(font_weight, 400 | 500 | 750)
                     || nonpositive(height.0)
-                    || nonpositive(*width_factor)
+                    || width_factor.is_some_and(nonpositive)
+                    || anchor.is_some_and(|anchor| !finite2(anchor))
+                    || rotation.is_some_and(|rotation| !rotation.0.is_finite())
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }
@@ -719,9 +828,28 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::SplineGroup { entities } => entities.clone(),
             SpatialConstraint::Coincident { first, second }
             | SpatialConstraint::Tangent { first, second }
+            | SpatialConstraint::PointDistance { first, second, .. }
             | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
                 vec![first.clone(), second.clone()]
             }
+            SpatialConstraint::LineLength { entity, .. } => vec![entity.clone()],
+            SpatialConstraint::RepeatedLineLength { entities, .. } => entities.clone(),
+            SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => pairs
+                .iter()
+                .flat_map(|pair| [pair.first.clone(), pair.second.clone()])
+                .collect(),
+            SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
+                first.iter().chain(second).cloned().collect()
+            }
+            SpatialConstraint::Offset { pairs, .. } => pairs
+                .iter()
+                .flat_map(|pair| [pair.source.clone(), pair.result.clone()])
+                .collect(),
+            SpatialConstraint::Symmetric {
+                first,
+                second,
+                axis,
+            } => vec![first.clone(), second.clone(), axis.clone()],
             SpatialConstraint::Midpoint { point, entity } => {
                 vec![point.clone(), entity.clone()]
             }
@@ -733,7 +861,29 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         let distinct = entities.iter().collect::<HashSet<_>>();
         let valid_arity = match &constraint.definition {
             SpatialConstraint::Native { .. } => true,
-            SpatialConstraint::ParallelToDirection { .. } => entities.len() == 1,
+            SpatialConstraint::ParallelToDirection { .. }
+            | SpatialConstraint::LineLength { .. } => entities.len() == 1,
+            SpatialConstraint::RepeatedLineLength { .. } => entities.len() >= 2,
+            SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => pairs.len() >= 2,
+            SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
+                !first.is_empty() && !second.is_empty() && (first.len() > 1 || second.len() > 1)
+            }
+            SpatialConstraint::Offset {
+                pairs,
+                normal,
+                distance,
+                parameter,
+                parameter_factor,
+            } => {
+                !pairs.is_empty()
+                    && (normal.norm() - 1.0).abs() <= 1.0e-9
+                    && distance.0.is_finite()
+                    && distance.0 > 0.0
+                    && matches!(
+                        (parameter, parameter_factor),
+                        (None, None) | (Some(_), Some(-1.0 | 1.0))
+                    )
+            }
             _ => entities.len() >= 2,
         };
         if !valid_arity || distinct.len() != entities.len() {
@@ -771,6 +921,32 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     &constraint.id.0,
                     "spatial coincidence requires two points",
                 );
+            }
+            SpatialConstraint::Symmetric {
+                first,
+                second,
+                axis,
+            } => {
+                let solved = match (
+                    spatial_geometry.get(first),
+                    spatial_geometry.get(second),
+                    spatial_geometry.get(axis),
+                ) {
+                    (
+                        Some(SpatialSketchGeometry::Point { position: first }),
+                        Some(SpatialSketchGeometry::Point { position: second }),
+                        Some(SpatialSketchGeometry::Line { start, end }),
+                    ) => crate::eval::spatial_points_are_reflections(*first, *second, *start, *end),
+                    _ => false,
+                };
+                if !solved {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial symmetry requires two points reflected across a nondegenerate line",
+                    );
+                }
             }
             SpatialConstraint::Midpoint { point, entity }
                 if !matches!(
@@ -856,6 +1032,209 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::GeometricConsistency,
                         &constraint.id.0,
                         "spatial distance requires parallel lines separated by its length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::RepeatedParallelLineDistance { pairs, parameter } => {
+                let matches = pairs.iter().all(|pair| {
+                    let measured = spatial_geometry.get(&pair.first).and_then(|first| {
+                        spatial_geometry
+                            .get(&pair.second)
+                            .and_then(|second| spatial_parallel_line_distance(first, second))
+                    });
+                    spatial_length_parameter_matches(measured, parameter, &parameter_values)
+                });
+                if !matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "repeated spatial distance requires disjoint parallel-line pairs matching one length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::PointDistance {
+                first,
+                second,
+                parameter,
+            } => {
+                let measured = match (spatial_geometry.get(first), spatial_geometry.get(second)) {
+                    (
+                        Some(SpatialSketchGeometry::Point { position: first }),
+                        Some(SpatialSketchGeometry::Point { position: second }),
+                    ) => Some(
+                        ((second.x - first.x).powi(2)
+                            + (second.y - first.y).powi(2)
+                            + (second.z - first.z).powi(2))
+                        .sqrt(),
+                    ),
+                    _ => None,
+                };
+                let expected = match parameter_values.get(parameter) {
+                    Some(Some(crate::features::ParameterValue::Length(length))) => {
+                        Some(length.0.abs())
+                    }
+                    _ => None,
+                };
+                let matches = measured.zip(expected).is_some_and(|(measured, expected)| {
+                    let scale = 1.0 + measured.max(expected);
+                    (measured - expected).abs() <= 1.0e-9 * scale
+                });
+                if !matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial point distance requires two points separated by its length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::LineLength { entity, parameter } => {
+                let measured = spatial_geometry
+                    .get(entity)
+                    .and_then(|geometry| spatial_line_length(geometry));
+                if !spatial_length_parameter_matches(measured, parameter, &parameter_values) {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial line length requires a line matching its length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::RepeatedLineLength {
+                entities,
+                parameter,
+            } => {
+                let measured = entities
+                    .iter()
+                    .map(|entity| {
+                        spatial_geometry
+                            .get(entity)
+                            .and_then(|geometry| spatial_line_length(geometry))
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let matches = measured.is_some_and(|measured| {
+                    measured.iter().all(|measured| {
+                        spatial_length_parameter_matches(
+                            Some(*measured),
+                            parameter,
+                            &parameter_values,
+                        )
+                    })
+                });
+                if !matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "repeated spatial line length requires distinct lines matching one length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            } => {
+                let first_geometry = first
+                    .iter()
+                    .filter_map(|entity| spatial_geometry.get(entity).copied())
+                    .collect::<Vec<_>>();
+                let second_geometry = second
+                    .iter()
+                    .filter_map(|entity| spatial_geometry.get(entity).copied())
+                    .collect::<Vec<_>>();
+                let tolerance = ir.tolerances.linear;
+                let first_collinear = first_geometry.first().is_some_and(|reference| {
+                    first_geometry.iter().all(|candidate| {
+                        spatial_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance)
+                    })
+                });
+                let second_collinear = second_geometry.first().is_some_and(|reference| {
+                    second_geometry.iter().all(|candidate| {
+                        spatial_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance)
+                    })
+                });
+                let measured = first_geometry.iter().find_map(|first| {
+                    second_geometry.iter().find_map(|second| {
+                        spatial_parallel_line_span_distance(first, second, tolerance)
+                    })
+                });
+                let matches = first_geometry.len() == first.len()
+                    && second_geometry.len() == second.len()
+                    && first_collinear
+                    && second_collinear
+                    && spatial_length_parameter_matches(measured, parameter, &parameter_values);
+                if !matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial parallel-line-set distance requires collinear carriers with overlapping spans separated by its length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::Offset {
+                pairs,
+                normal,
+                distance,
+                parameter,
+                parameter_factor,
+            } => {
+                let metric_witnesses = pairs
+                    .iter()
+                    .filter_map(|pair| {
+                        let source = spatial_geometry.get(&pair.source)?;
+                        let result = spatial_geometry.get(&pair.result)?;
+                        crate::eval::spatial_line_offset(source, result, *normal)
+                            .map(|signed| (signed, pair.source_reversed))
+                    })
+                    .collect::<Vec<_>>();
+                let geometry_matches = metric_witnesses.iter().all(|(signed, reversed)| {
+                    let expected = if *reversed { -distance.0 } else { distance.0 };
+                    let scale = 1.0 + signed.abs().max(distance.0);
+                    (signed - expected).abs() <= 1.0e-9 * scale
+                });
+                let curves_match = pairs.iter().all(|pair| {
+                    spatial_geometry.get(&pair.source).is_some_and(|geometry| {
+                        matches!(
+                            geometry,
+                            SpatialSketchGeometry::Line { .. }
+                                | SpatialSketchGeometry::Circle { .. }
+                                | SpatialSketchGeometry::Arc { .. }
+                                | SpatialSketchGeometry::Nurbs { .. }
+                        )
+                    }) && spatial_geometry.get(&pair.result).is_some_and(|geometry| {
+                        matches!(
+                            geometry,
+                            SpatialSketchGeometry::Line { .. }
+                                | SpatialSketchGeometry::Circle { .. }
+                                | SpatialSketchGeometry::Arc { .. }
+                                | SpatialSketchGeometry::Nurbs { .. }
+                        )
+                    })
+                });
+                let parameter_matches = match (parameter, parameter_factor) {
+                    (None, None) => true,
+                    (Some(parameter), Some(factor)) => match parameter_values.get(parameter) {
+                        Some(Some(crate::features::ParameterValue::Length(value))) => {
+                            let expected = value.0 * factor;
+                            let scale = 1.0 + expected.abs().max(distance.0);
+                            (expected - distance.0).abs() <= 1.0e-9 * scale
+                        }
+                        _ => false,
+                    },
+                    _ => false,
+                };
+                if !geometry_matches || !curves_match || !parameter_matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial offset requires a consistent curve-pair distance and parameter",
                     );
                 }
             }
@@ -1040,6 +1419,105 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             && entities.insert(second.clone())
                     })
             }
+            Constraint::RepeatedLength { entities, .. } => {
+                let distinct = entities.iter().collect::<HashSet<_>>();
+                let lengths = entities
+                    .iter()
+                    .filter_map(|entity| match geometry.get(entity) {
+                        Some(SketchGeometry::Line { start, end }) => {
+                            Some((end.u - start.u).hypot(end.v - start.v))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                entities.len() >= 2
+                    && distinct.len() == entities.len()
+                    && lengths.len() == entities.len()
+                    && lengths[1..].iter().all(|length| {
+                        (length - lengths[0]).abs()
+                            <= ir
+                                .tolerances
+                                .linear
+                                .max(1.0e-9 * (1.0 + length.abs().max(lengths[0].abs())))
+                    })
+            }
+            Constraint::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            } => {
+                let distinct = first.iter().chain(second).collect::<HashSet<_>>();
+                let first_geometry = first
+                    .iter()
+                    .filter_map(|entity| geometry.get(entity).copied())
+                    .collect::<Vec<_>>();
+                let second_geometry = second
+                    .iter()
+                    .filter_map(|entity| geometry.get(entity).copied())
+                    .collect::<Vec<_>>();
+                let tolerance = ir.tolerances.linear;
+                let first_collinear = first_geometry.first().is_some_and(|reference| {
+                    first_geometry.iter().all(|candidate| {
+                        planar_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance)
+                    })
+                });
+                let second_collinear = second_geometry.first().is_some_and(|reference| {
+                    second_geometry.iter().all(|candidate| {
+                        planar_parallel_line_distance(reference, candidate)
+                            .is_some_and(|distance| distance <= tolerance)
+                    })
+                });
+                let measured = first_geometry.iter().find_map(|first| {
+                    second_geometry.iter().find_map(|second| {
+                        planar_parallel_line_span_distance(first, second, tolerance)
+                    })
+                });
+                let expected = match parameter_values.get(parameter) {
+                    Some(Some(crate::features::ParameterValue::Length(length))) => {
+                        Some(length.0.abs())
+                    }
+                    _ => None,
+                };
+                let measurement_matches =
+                    measured.zip(expected).is_some_and(|(measured, expected)| {
+                        (measured - expected).abs()
+                            <= tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())))
+                    });
+                !first.is_empty()
+                    && !second.is_empty()
+                    && (first.len() > 1 || second.len() > 1)
+                    && distinct.len() == first.len() + second.len()
+                    && first_geometry.len() == first.len()
+                    && second_geometry.len() == second.len()
+                    && first_collinear
+                    && second_collinear
+                    && measurement_matches
+            }
+            Constraint::RepeatedRadius { entities, .. }
+            | Constraint::RepeatedDiameter { entities, .. } => {
+                let distinct = entities.iter().collect::<HashSet<_>>();
+                let radii = entities
+                    .iter()
+                    .filter_map(|entity| match geometry.get(entity) {
+                        Some(
+                            SketchGeometry::Circle { radius, .. }
+                            | SketchGeometry::Arc { radius, .. },
+                        ) => Some(radius.0),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                entities.len() >= 2
+                    && distinct.len() == entities.len()
+                    && radii.len() == entities.len()
+                    && radii[1..].iter().all(|radius| {
+                        (radius - radii[0]).abs()
+                            <= ir
+                                .tolerances
+                                .linear
+                                .max(1.0e-9 * (1.0 + radius.abs().max(radii[0].abs())))
+                    })
+            }
             Constraint::Offset {
                 pairs,
                 distance,
@@ -1148,7 +1626,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         } else {
                             distance.0
                         };
-                        line_offset_matches(source, result, expected)
+                        sketch_curve_offset_matches(source, result, expected)
                     });
                 if !valid {
                     finding(
@@ -1183,6 +1661,73 @@ fn invalid_optional_parameter_pair(start: Option<f64>, end: Option<f64>) -> bool
 
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
     (left.u - right.u).hypot(left.v - right.v)
+}
+
+fn planar_parallel_line_distance(first: &SketchGeometry, second: &SketchGeometry) -> Option<f64> {
+    let (
+        SketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        return None;
+    };
+    let first_direction =
+        crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
+    let second_direction =
+        crate::math::Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
+    let first_length = first_direction.u.hypot(first_direction.v);
+    let second_length = second_direction.u.hypot(second_direction.v);
+    if first_length <= 1.0e-12 || second_length <= 1.0e-12 {
+        return None;
+    }
+    let cross = first_direction.u * second_direction.v - first_direction.v * second_direction.u;
+    if cross.abs() > 1.0e-9 * first_length * second_length {
+        return None;
+    }
+    let offset = crate::math::Point2::new(
+        second_start.u - first_start.u,
+        second_start.v - first_start.v,
+    );
+    Some((offset.u * first_direction.v - offset.v * first_direction.u).abs() / first_length)
+}
+
+fn planar_parallel_line_span_distance(
+    first: &SketchGeometry,
+    second: &SketchGeometry,
+    linear_tolerance: f64,
+) -> Option<f64> {
+    let distance = planar_parallel_line_distance(first, second)?;
+    let (
+        SketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        unreachable!("parallel line distance requires line geometry")
+    };
+    let direction =
+        crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
+    let length = direction.u.hypot(direction.v);
+    let project =
+        |point: crate::math::Point2| (point.u * direction.u + point.v * direction.v) / length;
+    let first_interval = [project(*first_start), project(*first_end)];
+    let second_interval = [project(*second_start), project(*second_end)];
+    let first_min = first_interval[0].min(first_interval[1]);
+    let first_max = first_interval[0].max(first_interval[1]);
+    let second_min = second_interval[0].min(second_interval[1]);
+    let second_max = second_interval[0].max(second_interval[1]);
+    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
 }
 
 fn oriented_endpoints(

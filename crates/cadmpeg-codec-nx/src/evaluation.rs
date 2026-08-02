@@ -370,12 +370,18 @@ fn rederived_body_census(
                     crate::decode::replace_face_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::Combine { target, tools, .. } => {
+            FeatureDefinition::Combine {
+                target,
+                tools,
+                keep_tools,
+                ..
+            } => {
                 apply_complete_body_combine(
                     feature,
                     &mut bodies,
                     target,
                     tools,
+                    *keep_tools,
                     crate::decode::combine_definition_is_incomplete(feature),
                 )?;
             }
@@ -567,6 +573,7 @@ fn apply_complete_body_combine(
     bodies: &mut BTreeSet<BodyId>,
     target: &BodySelection,
     tools: &BodySelection,
+    keep_tools: bool,
     incomplete: bool,
 ) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
     if incomplete {
@@ -593,8 +600,10 @@ fn apply_complete_body_combine(
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
-    for tool in tools {
-        bodies.remove(tool);
+    if !keep_tools {
+        for tool in tools {
+            bodies.remove(tool);
+        }
     }
     Ok(())
 }
@@ -741,7 +750,7 @@ fn apply_complete_body_pattern(
         .iter()
         .map(|seed| match seed {
             PatternSeed::Bodies(selection) => explicit_body_selection(selection),
-            PatternSeed::Feature(_) | PatternSeed::Faces(_) => None,
+            PatternSeed::Feature(_) | PatternSeed::Faces(_) | PatternSeed::Occurrences(_) => None,
         })
         .collect::<Option<Vec<_>>>()
     else {
@@ -774,9 +783,11 @@ fn explicit_body_selection(selection: &BodySelection) -> Option<&[BodyId]> {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
-        | BodySelection::Native(_) => return None,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => return None,
     };
     (!bodies.is_empty() && bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
         .then_some(bodies)
@@ -796,8 +807,8 @@ mod tests {
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
         HolePlacement, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolutionConstruction,
-        RibConstruction, RibDraft, SketchSpace, SurfaceExtension, SweepMode, Termination,
-        ThickenSide, TrimRegion,
+        RibConstruction, RibDraft, SketchSpace, SurfaceExtension, SweepMode, SweepSection,
+        Termination, ThickenSide, TrimRegion,
     };
     use cadmpeg_ir::ids::{CurveId, FaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1219,7 +1230,7 @@ mod tests {
                 op: BooleanOp::Join,
             },
             FeatureDefinition::Sweep {
-                profile: None,
+                section: SweepSection::Unresolved(None),
                 sections: Vec::new(),
                 path: None,
                 mode: SweepMode::Unresolved,
@@ -1229,6 +1240,9 @@ mod tests {
                 path_tangent: false,
                 linearize: false,
                 twist: None,
+                path_extent: None,
+                guide_rail: None,
+                taper: None,
                 scale: None,
                 allow_multi_profile_faces: None,
             },
@@ -1515,6 +1529,7 @@ mod tests {
                 target: BodySelection::Bodies(vec![target.clone()]),
                 tools: BodySelection::Bodies(vec![tool]),
                 op: BooleanOp::Join,
+                keep_tools: false,
             },
         ));
 
@@ -1522,6 +1537,36 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
                 bodies: vec![target]
+            }
+        );
+    }
+
+    #[test]
+    fn combine_preserves_tools_when_requested() {
+        let mut ir = complete_block_ir();
+        let target = ir.model.bodies[0].id.clone();
+        let tool = BodyId("tool".to_string());
+        ir.model.bodies.push(model_body(&tool.0));
+        ir.model.features[0].outputs.push(tool.clone());
+        ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+        };
+        ir.model.features.push(body_preserving_feature(
+            "combine",
+            1,
+            target.clone(),
+            FeatureDefinition::Combine {
+                target: BodySelection::Bodies(vec![target.clone()]),
+                tools: BodySelection::Bodies(vec![tool.clone()]),
+                op: BooleanOp::Join,
+                keep_tools: true,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![target, tool]
             }
         );
     }
@@ -1652,6 +1697,7 @@ mod tests {
                 target: BodySelection::Bodies(vec![body]),
                 tools: BodySelection::Bodies(vec![BodyId("missing".to_string())]),
                 op: BooleanOp::Cut,
+                keep_tools: false,
             },
         ));
 
