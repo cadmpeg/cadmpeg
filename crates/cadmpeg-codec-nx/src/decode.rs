@@ -10,7 +10,7 @@
 //!
 //! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::CodecError;
@@ -3228,26 +3228,6 @@ fn blend_surface_parameters_inner(
             return Some(parameters);
         }
     }
-    if let Some(fit_tolerance) = fit_tolerance {
-        let boundary_parameters = [0usize, 1usize].map(|boundary| {
-            blend_boundary_parameter(
-                ir,
-                surface,
-                point,
-                boundary,
-                seed.map(|seed| seed.u),
-                fit_tolerance,
-                depth + 1,
-            )
-        });
-        if let Some((parameter, boundary)) = match boundary_parameters {
-            [Some(parameter), None] => Some((parameter, 0usize)),
-            [None, Some(parameter)] => Some((parameter, 1usize)),
-            _ => None,
-        } {
-            return Some(Point2::new(parameter, boundary as f64));
-        }
-    }
     let angular =
         closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u)).and_then(|u| {
             let (center, tangent, first, second, _) =
@@ -3297,17 +3277,40 @@ fn blend_surface_parameters_inner(
     let initial = match grid {
         BlendParameterGrid::Build => coarse_blend_surface_parameters(ir, surface, point, depth + 1),
         BlendParameterGrid::Disabled => None,
-    }?;
-    let parameters =
-        refine_blend_surface_parameters(ir, surface, point, initial, depth + 1).unwrap_or(initial);
-    if !(0.0..=1.0).contains(&parameters.v) {
-        return None;
+    };
+    if let Some(initial) = initial {
+        let parameters = refine_blend_surface_parameters(ir, surface, point, initial, depth + 1)
+            .unwrap_or(initial);
+        if (0.0..=1.0).contains(&parameters.v) {
+            let candidate =
+                blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
+            let distance = point_distance(candidate, point);
+            if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
+                return Some(parameters);
+            }
+        }
     }
-    let candidate = blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
-    let distance = point_distance(candidate, point);
-    fit_tolerance
-        .is_none_or(|tolerance| distance <= tolerance)
-        .then_some(parameters)
+    if let Some(fit_tolerance) = fit_tolerance {
+        let boundary_parameters = [0usize, 1usize].map(|boundary| {
+            blend_boundary_parameter(
+                ir,
+                surface,
+                point,
+                boundary,
+                seed.map(|seed| seed.u),
+                fit_tolerance,
+                depth + 1,
+            )
+        });
+        if let Some((parameter, boundary)) = match boundary_parameters {
+            [Some(parameter), None] => Some((parameter, 0usize)),
+            [None, Some(parameter)] => Some((parameter, 1usize)),
+            _ => None,
+        } {
+            return Some(Point2::new(parameter, boundary as f64));
+        }
+    }
+    None
 }
 
 pub(crate) fn coarse_blend_surface_parameters(
@@ -3708,9 +3711,9 @@ fn blend_surface_frame(
     let center = model_curve_point(ir, &spine, u)?;
     let tangent = model_curve_tangent(ir, &spine, u)?;
     let first = spine_contact_direction(ir, &supports[0], &spine, u, center, radius, depth + 1)
-        .or_else(|| surface_contact_direction(ir, &supports[0], center, depth + 1))?;
+        .or_else(|| surface_contact_direction(ir, &supports[0], center, radius, depth + 1))?;
     let second = spine_contact_direction(ir, &supports[1], &spine, u, center, radius, depth + 1)
-        .or_else(|| surface_contact_direction(ir, &supports[1], center, depth + 1))?;
+        .or_else(|| surface_contact_direction(ir, &supports[1], center, radius, depth + 1))?;
     Some((center, tangent, first, second, radius))
 }
 
@@ -3760,27 +3763,13 @@ fn blend_boundary_parameter(
     depth: usize,
 ) -> Option<f64> {
     (depth < 32).then_some(())?;
-    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
-    let support = supports.get(boundary)?;
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == support)?;
-    let uv = match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, point, None, Some(fit_tolerance))
-        }
-        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, support, point, None),
-        geometry => analytic_surface_parameters(geometry, point),
-    }?;
-    let pcurve = spine_contact_pcurve(ir, support, &spine, radius, depth + 1)?;
-    closest_pcurve_parameters(pcurve, uv, seed)?
-        .into_iter()
-        .find(|parameter| {
-            blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
-                .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
-        })
+    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    // A circular blend's u parameter is its spine parameter. Invert that
+    // defining carrier directly, then certify the requested boundary point.
+    closest_spine_parameter(ir, &spine, point, seed).filter(|parameter| {
+        blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
+            .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -4765,6 +4754,7 @@ fn surface_contact_direction(
     ir: &CadIr,
     surface: &SurfaceId,
     center: Point3,
+    radius: f64,
     depth: usize,
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
@@ -4776,28 +4766,53 @@ fn surface_contact_direction(
         .surfaces
         .iter()
         .find(|candidate| &candidate.id == surface)?;
+    let tolerance = ir.tolerances.linear;
+    if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
+        return None;
+    }
+    let requires_radius_certificate = matches!(
+        &carrier.geometry,
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Procedural { .. }
+    );
     let parameters = match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, center, None),
-        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, surface, center, None)
-            .or_else(|| {
-                blend_surface_parameters_inner(
-                    ir,
-                    surface,
-                    center,
-                    None,
-                    None,
-                    BlendParameterGrid::Disabled,
-                    depth + 1,
-                )
-            }),
+        // The blend definition asks for a support contact at `radius` from the
+        // spine center. A tolerance-bounded inverse can stop as soon as it has
+        // constructed a point inside the enclosing radius band; the radial
+        // check below then certifies the actual contact shell. A global
+        // closest-point proof is neither required nor sufficient for this
+        // incidence question.
+        SurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_parameters_with_tolerance(nurbs, center, None, Some(radius + tolerance))
+        }
+        SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance(
+            ir,
+            surface,
+            center,
+            None,
+            Some(radius + tolerance),
+        )
+        .or_else(|| {
+            blend_surface_parameters_inner(
+                ir,
+                surface,
+                center,
+                None,
+                None,
+                BlendParameterGrid::Disabled,
+                depth + 1,
+            )
+        }),
         geometry => analytic_surface_parameters(geometry, center),
     }?;
     let contact = decoded_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
-    unit_vector(Vector3::new(
+    let offset = Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
-    ))
+    );
+    (!requires_radius_certificate || (offset.norm() - radius).abs() <= tolerance)
+        .then(|| unit_vector(offset))
+        .flatten()
 }
 
 fn blend_surface_contact_direction(
@@ -5183,6 +5198,7 @@ fn rodrigues_rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn offset_surface_parameters(
     ir: &CadIr,
     surface: &SurfaceId,
@@ -5212,12 +5228,23 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
         .procedural_surfaces
         .iter()
         .find(|candidate| &candidate.id == construction && &candidate.surface == surface)?;
-    let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+    let ProceduralSurfaceDefinition::Offset {
+        support, distance, ..
+    } = &procedural.definition
+    else {
         return None;
     };
     let domain = surface_parameter_domain(ir, support);
+    // The target lies on the offset carrier, so its distance from the base
+    // carrier may be the full offset distance even for an exact fit. Enlarge
+    // only the base-surface seed search; the iterations and final caller-side
+    // evaluation still certify the requested tolerance on the offset itself.
+    let support_fit_tolerance = fit_tolerance.and_then(|tolerance| {
+        let tolerance = tolerance + distance.abs();
+        tolerance.is_finite().then_some(tolerance)
+    });
     let mut parameters = seed
-        .or_else(|| initial_surface_parameters(ir, support, point, None, fit_tolerance))
+        .or_else(|| initial_surface_parameters(ir, support, point, None, support_fit_tolerance))
         .or_else(|| {
             domain.and_then(|domain| coarse_model_surface_parameters(ir, surface, point, domain))
         })?;
@@ -5966,6 +5993,38 @@ struct RationalBezierSurfacePatch {
     controls: Vec<[f64; 4]>,
 }
 
+struct SurfacePatchQueueEntry {
+    lower_bound: f64,
+    diameter: f64,
+    sequence: usize,
+    patch: RationalBezierSurfacePatch,
+}
+
+impl PartialEq for SurfacePatchQueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.sequence == other.sequence
+    }
+}
+
+impl Eq for SurfacePatchQueueEntry {}
+
+impl PartialOrd for SurfacePatchQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SurfacePatchQueueEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // BinaryHeap is a max-heap; reverse the distance order so the patch
+        // with the strongest minimum-distance promise is examined first.
+        other
+            .lower_bound
+            .total_cmp(&self.lower_bound)
+            .then_with(|| other.sequence.cmp(&self.sequence))
+    }
+}
+
 fn rational_surface_residual_patches(
     surface: &NurbsSurface,
     point: Point3,
@@ -6224,7 +6283,7 @@ fn complete_nurbs_surface_starts(
 ) -> Option<Vec<Point2>> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let mut patches = rational_surface_residual_patches(surface, point)?;
+    let patches = rational_surface_residual_patches(surface, point)?;
     let coordinate_scale =
         patches
             .iter()
@@ -6323,14 +6382,39 @@ fn complete_nurbs_surface_starts(
         }
     }
     best_distance.is_finite().then_some(())?;
+    // A tolerance-bounded inverse asks for a parameter whose evaluated point
+    // reproduces the target within that tolerance, not a proof of the global
+    // minimum. The refined span seeds above are evaluated on the surface, so a
+    // fitting candidate is already a constructive certificate. Preserve the
+    // exhaustive branch-and-bound search for exact closest-point inversion.
+    if fit_tolerance.is_some() && best_distance <= squared_tolerance {
+        return (!best_upper_parameters.is_empty()).then_some(best_upper_parameters);
+    }
+    let mut queue = BinaryHeap::new();
+    let mut sequence = 0usize;
+    for patch in patches {
+        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        queue.push(SurfacePatchQueueEntry {
+            lower_bound,
+            diameter,
+            sequence,
+            patch,
+        });
+        sequence += 1;
+    }
     let mut terminal = Vec::<(Point2, f64)>::new();
     let mut examined = 0usize;
-    while let Some(patch) = patches.pop() {
+    while let Some(entry) = queue.pop() {
         examined += 1;
         if examined > MAX_PATCHES {
             return None;
         }
-        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        let SurfacePatchQueueEntry {
+            lower_bound,
+            diameter,
+            patch,
+            ..
+        } = entry;
         let comparison_tolerance = 128.0
             * f64::EPSILON
             * lower_bound
@@ -6338,11 +6422,14 @@ fn complete_nurbs_surface_starts(
                 .max(best_distance.abs())
                 .max(squared_tolerance);
         if lower_bound > best_distance + comparison_tolerance {
-            continue;
+            break;
         }
         let parameters = center(&patch);
         let (upper_parameters, center_distance) =
             refined_upper(parameters, patch.u_domain, patch.v_domain)?;
+        if fit_tolerance.is_some() && center_distance <= squared_tolerance {
+            return Some(vec![upper_parameters]);
+        }
         let upper_tolerance = 128.0
             * f64::EPSILON
             * center_distance
@@ -6397,7 +6484,16 @@ fn complete_nurbs_surface_starts(
             .fold(0.0_f64, f64::max);
         let split_u = u_variation >= v_variation;
         let children = split_rational_surface_patch(&patch, split_u)?;
-        patches.extend(children);
+        for patch in children {
+            let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+            queue.push(SurfacePatchQueueEntry {
+                lower_bound,
+                diameter,
+                sequence,
+                patch,
+            });
+            sequence += 1;
+        }
     }
     let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(squared_tolerance);
     let mut starts = terminal
@@ -6410,6 +6506,7 @@ fn complete_nurbs_surface_starts(
     (!starts.is_empty()).then_some(starts)
 }
 
+#[cfg(test)]
 pub(crate) fn nurbs_parameters(
     surface: &NurbsSurface,
     point: Point3,
@@ -12248,6 +12345,23 @@ mod tests {
             cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
 
         assert!(super::point_distance(mapped, point) <= 0.01);
+    }
+
+    #[test]
+    fn nurbs_blend_contact_requires_the_declared_radius_shell() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let surface = SurfaceId("nx:test:contact-support".into());
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+        let center = Point3::new(1.2, 0.7, 2.0);
+
+        let direction = super::surface_contact_direction(&ir, &surface, center, 2.0, 0)
+            .expect("the support contains one contact at the blend radius");
+        assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
+        assert!(super::surface_contact_direction(&ir, &surface, center, 1.0, 0).is_none());
     }
 
     #[test]
