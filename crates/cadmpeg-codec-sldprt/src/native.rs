@@ -5,6 +5,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
+
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
     FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
@@ -16,8 +18,13 @@ use crate::records::{
 pub const SLDPRT_NATIVE_VERSION: u32 = 13;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
+const SLDPRT_VERSION_CONTRACT: VersionContract = VersionContract {
+    minimum: SLDPRT_MIN_NATIVE_VERSION,
+    maximum: SLDPRT_NATIVE_VERSION,
+};
+
 pub(crate) fn native_version_supported(version: u32) -> bool {
-    (SLDPRT_MIN_NATIVE_VERSION..=SLDPRT_NATIVE_VERSION).contains(&version)
+    SLDPRT_VERSION_CONTRACT.check_version(version).is_ok()
 }
 
 pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
@@ -38,6 +45,189 @@ pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "pmi_dimensions",
     "sketch_input_entities",
 ];
+
+type SldprtFamilyRow = FamilyRow<SldprtNative, (), cadmpeg_ir::NativeNamespace, ()>;
+
+#[allow(clippy::needless_pass_by_value)] // Callers materialize flattened temporary arenas.
+fn emit_owned<T: Serialize>(
+    records: Vec<T>,
+    row: &SldprtFamilyRow,
+    namespace: &mut cadmpeg_ir::NativeNamespace,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    namespace.set_arena(row.arena, &records)
+}
+
+macro_rules! lane_family {
+    ($arena:literal, $field:ident) => {
+        SldprtFamilyRow {
+            arena: $arena,
+            tag: None,
+            exactness: (),
+            phase: Phase::ArenaOnly,
+            note: None,
+            emit: |model, row, namespace| {
+                emit_owned(
+                    model
+                        .feature_input_lanes
+                        .iter()
+                        .flat_map(|lane| lane.$field.clone())
+                        .collect(),
+                    row,
+                    namespace,
+                )
+            },
+            len: |model| {
+                model
+                    .feature_input_lanes
+                    .iter()
+                    .map(|lane| lane.$field.len())
+                    .sum()
+            },
+            counts_toward_emptiness: true,
+        }
+    };
+}
+
+const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
+    SldprtFamilyRow {
+        arena: "feature_histories",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            emit_owned(
+                model
+                    .feature_histories
+                    .iter()
+                    .cloned()
+                    .map(|mut history| {
+                        history.configurations.clear();
+                        history.features.clear();
+                        history
+                    })
+                    .collect(),
+                row,
+                namespace,
+            )
+        },
+        len: |model| model.feature_histories.len(),
+        counts_toward_emptiness: true,
+    },
+    SldprtFamilyRow {
+        arena: "pmi_dimensions",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| emit_owned(model.pmi_dimensions.clone(), row, namespace),
+        len: |model| model.pmi_dimensions.len(),
+        counts_toward_emptiness: true,
+    },
+    SldprtFamilyRow {
+        arena: "configurations",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            emit_owned(
+                model
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| history.configurations.clone())
+                    .collect(),
+                row,
+                namespace,
+            )
+        },
+        len: |model| {
+            model
+                .feature_histories
+                .iter()
+                .map(|history| history.configurations.len())
+                .sum()
+        },
+        counts_toward_emptiness: true,
+    },
+    SldprtFamilyRow {
+        arena: "features",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            emit_owned(
+                model
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| history.features.clone())
+                    .collect(),
+                row,
+                namespace,
+            )
+        },
+        len: |model| {
+            model
+                .feature_histories
+                .iter()
+                .map(|history| history.features.len())
+                .sum()
+        },
+        counts_toward_emptiness: true,
+    },
+    SldprtFamilyRow {
+        arena: "feature_input_lanes",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            emit_owned(
+                model
+                    .feature_input_lanes
+                    .iter()
+                    .cloned()
+                    .map(|mut lane| {
+                        lane.classes.clear();
+                        lane.names.clear();
+                        lane.scalars.clear();
+                        lane.relation_bindings.clear();
+                        lane.relation_instances.clear();
+                        lane.body_selections.clear();
+                        lane.edge_selections.clear();
+                        lane.surface_selections.clear();
+                        lane.generated_surface_identities.clear();
+                        lane.references.clear();
+                        lane.sketch_entities.clear();
+                        lane
+                    })
+                    .collect(),
+                row,
+                namespace,
+            )
+        },
+        len: |model| model.feature_input_lanes.len(),
+        counts_toward_emptiness: true,
+    },
+    lane_family!("feature_input_body_selections", body_selections),
+    lane_family!("feature_input_edge_selections", edge_selections),
+    lane_family!("feature_input_surface_selections", surface_selections),
+    lane_family!(
+        "feature_input_generated_surface_identities",
+        generated_surface_identities
+    ),
+    lane_family!("feature_input_classes", classes),
+    lane_family!("feature_input_names", names),
+    lane_family!("feature_input_scalars", scalars),
+    lane_family!("feature_input_references", references),
+    lane_family!("feature_input_relation_bindings", relation_bindings),
+    lane_family!("feature_input_relation_instances", relation_instances),
+    lane_family!("sketch_input_entities", sketch_entities),
+];
+
+const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeNamespace, ()> =
+    Catalogue::new(SLDPRT_FAMILIES);
 
 /// SOLIDWORKS records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -70,12 +260,7 @@ impl SldprtNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        if !native_version_supported(namespace.version) {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "unsupported SLDPRT native namespace version {}",
-                namespace.version
-            )));
-        }
+        SLDPRT_VERSION_CONTRACT.check_version(namespace.version)?;
         let mut native = Self {
             version: SLDPRT_NATIVE_VERSION,
             feature_histories: namespace.arena_as("feature_histories")?,
@@ -1113,142 +1298,7 @@ impl SldprtNative {
             ));
         }
         namespace.version = SLDPRT_NATIVE_VERSION;
-        let histories = self
-            .feature_histories
-            .iter()
-            .cloned()
-            .map(|mut history| {
-                history.configurations.clear();
-                history.features.clear();
-                history
-            })
-            .collect::<Vec<_>>();
-        namespace.set_arena("feature_histories", &histories)?;
-        namespace.set_arena("pmi_dimensions", &self.pmi_dimensions)?;
-        namespace.set_arena(
-            "configurations",
-            &self
-                .feature_histories
-                .iter()
-                .flat_map(|history| history.configurations.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "features",
-            &self
-                .feature_histories
-                .iter()
-                .flat_map(|history| history.features.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        let lanes = self
-            .feature_input_lanes
-            .iter()
-            .cloned()
-            .map(|mut lane| {
-                lane.classes.clear();
-                lane.names.clear();
-                lane.scalars.clear();
-                lane.relation_bindings.clear();
-                lane.relation_instances.clear();
-                lane.body_selections.clear();
-                lane.edge_selections.clear();
-                lane.surface_selections.clear();
-                lane.generated_surface_identities.clear();
-                lane.references.clear();
-                lane.sketch_entities.clear();
-                lane
-            })
-            .collect::<Vec<_>>();
-        namespace.set_arena("feature_input_lanes", &lanes)?;
-        namespace.set_arena(
-            "feature_input_body_selections",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.body_selections.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_edge_selections",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.edge_selections.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_surface_selections",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.surface_selections.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_generated_surface_identities",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.generated_surface_identities.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_classes",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.classes.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_names",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.names.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_scalars",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.scalars.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_references",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.references.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_relation_bindings",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.relation_bindings.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "feature_input_relation_instances",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.relation_instances.clone())
-                .collect::<Vec<_>>(),
-        )?;
-        namespace.set_arena(
-            "sketch_input_entities",
-            &self
-                .feature_input_lanes
-                .iter()
-                .flat_map(|lane| lane.sketch_entities.clone())
-                .collect::<Vec<_>>(),
-        )?;
+        SLDPRT_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(SLDPRT_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));
