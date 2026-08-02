@@ -2197,6 +2197,19 @@ pub fn parasolid_attribute_field_uses(
     uses
 }
 
+/// Whether declarations require an attribute value or name record not yet decoded.
+pub fn parasolid_attribute_definitions_have_untransferred_fields(
+    definitions: &[ParasolidAttributeDefinition],
+) -> bool {
+    definitions.iter().any(|definition| {
+        definition.field_names_xmt != 1
+            || definition
+                .field_codes
+                .iter()
+                .any(|code| (4..=10).contains(code))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(unused_imports)]
@@ -2844,6 +2857,36 @@ mod tests {
             &[ambiguous_string],
         )
         .is_empty());
+    }
+
+    #[test]
+    fn attribute_loss_requires_an_untransferred_declared_field() {
+        let definition = |field_names_xmt, field_codes: Vec<u8>| ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 0,
+            xmt: 20,
+            next_definition_xmt: 1,
+            identifier_xmt: 21,
+            identifier_inflated_offset: 10,
+            name: "CLASS".into(),
+            type_id: 8000,
+            action_codes: [0; 8],
+            field_names_xmt,
+            legal_owner_flags: [0; 16],
+            field_count: u32::try_from(field_codes.len()).expect("test field count fits u32"),
+            field_codes,
+            inflated_offset: 20,
+        };
+
+        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
+            &[definition(1, vec![1, 2, 3]),]
+        ));
+        assert!(parasolid_attribute_definitions_have_untransferred_fields(
+            &[definition(22, vec![1]),]
+        ));
+        assert!(parasolid_attribute_definitions_have_untransferred_fields(
+            &[definition(1, vec![4]),]
+        ));
     }
 
     #[test]

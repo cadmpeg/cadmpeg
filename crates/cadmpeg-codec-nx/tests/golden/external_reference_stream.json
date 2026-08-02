@@ -371,11 +371,6 @@
           "severity": "warning"
         },
         {
-          "code": "attributes_not_transferred",
-          "message": "Parasolid type-85 through type-89 attribute values and serialized field names were not transferred because those record layouts are not decoded.",
-          "severity": "warning"
-        },
-        {
           "code": "assembly_placements_not_transferred",
           "message": "Assembly occurrence placements were not transferred because their remaining NX object-model field serialization is not decoded.",
           "severity": "warning"

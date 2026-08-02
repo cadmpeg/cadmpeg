@@ -7605,19 +7605,15 @@ fn decode_emits_connected_primitive_brep() {
         .losses
         .iter()
         .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
-    for (kind, text) in [
-        (LossKind::MaterialNotTransferred, "Material and appearance"),
-        (
-            LossKind::AttributesNotTransferred,
-            "Parasolid type-85 through type-89 attribute values",
-        ),
-    ] {
-        assert!(result
-            .report
-            .losses
-            .iter()
-            .any(|loss| loss.code == kind && loss.message.contains(text)));
-    }
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::MaterialNotTransferred
+            && loss.message.contains("Material and appearance")
+    }));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::AttributesNotTransferred));
     assert!(!result.report.losses.iter().any(|loss| {
         loss.code == LossKind::AssemblyPlacementsNotTransferred
             && loss.message.contains("Assembly occurrence placements")

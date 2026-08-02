@@ -288,6 +288,12 @@ pub(crate) struct NativeModel {
 }
 
 impl NativeModel {
+    pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
+        parasolid_attribute_definitions_have_untransferred_fields(
+            &self.parasolid.parasolid_attribute_definitions,
+        )
+    }
+
     /// Runs the full extraction dependency DAG in the original hand-ordered
     /// sequence. The ordering is load-bearing: several families feed later ones
     /// and some record ids embed positional information, so the `let` order here

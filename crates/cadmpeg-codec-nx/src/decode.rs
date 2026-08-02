@@ -1650,6 +1650,7 @@ fn try_decode_geometry(
         !ir.model.faces.is_empty(),
         ir.model.bodies.len() > 1 && !active_body_selection,
         ir.model.tessellations.len(),
+        model.has_untransferred_parasolid_attribute_fields(),
     );
     report_untransferred_streams(scan, &mut report);
     Some((ir, report, annotations, unknowns))
@@ -9879,6 +9880,7 @@ fn build_geometry_report(
     has_topology: bool,
     has_unresolved_sub_bodies: bool,
     tessellation_count: usize,
+    has_untransferred_attribute_fields: bool,
 ) -> DecodeReport {
     let mut losses = Vec::new();
 
@@ -10032,14 +10034,16 @@ fn build_geometry_report(
         provenance: None,
     });
 
-    losses.push(LossNote {
-        code: LossKind::AttributesNotTransferred,
-        severity: Severity::Warning,
-        message: "Parasolid type-85 through type-89 attribute values and serialized field names \
-                  were not transferred because those record layouts are not decoded."
-            .to_string(),
-        provenance: None,
-    });
+    if has_untransferred_attribute_fields {
+        losses.push(LossNote {
+            code: LossKind::AttributesNotTransferred,
+            severity: Severity::Warning,
+            message: "Parasolid field-code 4 through 10 values or serialized field names were not \
+                      transferred because those record layouts are not decoded."
+                .to_string(),
+            provenance: None,
+        });
+    }
 
     if scan
         .container

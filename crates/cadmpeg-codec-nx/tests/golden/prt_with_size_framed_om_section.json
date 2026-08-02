@@ -275,11 +275,6 @@
           "code": "material_not_transferred",
           "message": "Material and appearance assignment was not transferred because the remaining NX object-model and Parasolid binding fields are not decoded.",
           "severity": "warning"
-        },
-        {
-          "code": "attributes_not_transferred",
-          "message": "Parasolid type-85 through type-89 attribute values and serialized field names were not transferred because those record layouts are not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
