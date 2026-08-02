@@ -43904,21 +43904,109 @@ fn single_marker_line_entity(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchEntityId> {
-    let mut entities = marker_entities(marker_id, markers_by_id, loci_by_marker)
-        .into_iter()
-        .filter(|id| {
-            sketch_entities
-                .iter()
-                .find(|entity| entity.id == *id)
-                .is_some_and(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
-        })
-        .collect::<Vec<_>>();
+    let mut entities = marker_line_entities_inner(
+        marker_id,
+        markers_by_id,
+        loci_by_marker,
+        sketch_entities,
+        &mut HashSet::new(),
+    );
     entities.sort();
     entities.dedup();
-    let [entity] = entities.as_slice() else {
+    if let [entity] = entities.as_slice() {
+        return Some(entity.clone());
+    }
+    let marker = markers_by_id.get(marker_id)?;
+    let [first_link, second_link] = marker.links.as_slice() else {
         return None;
     };
-    Some(entity.clone())
+    let first_locus = marker_point_locus(&first_link.entity_ref, markers_by_id, loci_by_marker)?;
+    let second_locus = marker_point_locus(&second_link.entity_ref, markers_by_id, loci_by_marker)?;
+    let first_entity = locus_entity(&first_locus);
+    let second_entity = locus_entity(&second_locus);
+    let sketch = &sketch_entities
+        .iter()
+        .find(|entity| entity.id == first_entity)?
+        .sketch;
+    if sketch_entities
+        .iter()
+        .find(|entity| entity.id == second_entity)
+        .is_none_or(|entity| entity.sketch != *sketch)
+    {
+        return None;
+    }
+    let first = profile_locus_point(&first_locus, sketch_entities)?;
+    let second = profile_locus_point(&second_locus, sketch_entities)?;
+    if same_dimension_length(first.u, second.u) && same_dimension_length(first.v, second.v) {
+        return None;
+    }
+    sole_sorted(
+        sketch_entities
+            .iter()
+            .filter(|entity| {
+                entity.sketch == *sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+            })
+            .filter(|entity| {
+                sketch_entity_contains_point(entity, first)
+                    && sketch_entity_contains_point(entity, second)
+            })
+            .map(|entity| entity.id.clone())
+            .collect(),
+    )
+}
+
+fn marker_line_entities_inner(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+    visited: &mut HashSet<String>,
+) -> Vec<SketchEntityId> {
+    let is_line = |id: &SketchEntityId| {
+        sketch_entities
+            .iter()
+            .find(|entity| entity.id == *id)
+            .is_some_and(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+    };
+    let direct = loci_by_marker.get(marker_id).map(|loci| {
+        loci.iter()
+            .map(locus_entity)
+            .filter(is_line)
+            .collect::<HashSet<_>>()
+    });
+    if loci_by_marker.contains_key(marker_id) {
+        return direct.into_iter().flatten().collect();
+    }
+    if !visited.insert(marker_id.to_string()) {
+        return direct.into_iter().flatten().collect();
+    }
+    let Some(marker) = markers_by_id.get(marker_id) else {
+        return direct.into_iter().flatten().collect();
+    };
+    let mut linked = marker
+        .links
+        .iter()
+        .filter(|link| link.entity_ref != marker_id)
+        .map(|link| {
+            marker_line_entities_inner(
+                &link.entity_ref,
+                markers_by_id,
+                loci_by_marker,
+                sketch_entities,
+                &mut visited.clone(),
+            )
+            .into_iter()
+            .collect::<HashSet<_>>()
+        })
+        .filter(|entities| !entities.is_empty());
+    let mut entities = direct
+        .filter(|entities| !entities.is_empty())
+        .or_else(|| linked.next())
+        .unwrap_or_default();
+    for candidates in linked {
+        entities.retain(|entity| candidates.contains(entity));
+    }
+    entities.into_iter().collect()
 }
 
 fn profile_loci_by_marker(
@@ -47276,6 +47364,125 @@ mod profile_join_tests {
         assert_eq!(
             single_marker_curve_entity("circle-marker", &HashMap::new(), &loci, &entities),
             Some(circle_id)
+        );
+    }
+
+    #[test]
+    fn line_operand_uses_linked_endpoint_incidence_beside_a_direct_point_locus() {
+        let sketch = SketchId("sketch".into());
+        let line_id = SketchEntityId("line".into());
+        let misleading_line_id = SketchEntityId("misleading-line".into());
+        let point_id = SketchEntityId("display-point".into());
+        let first_point_id = SketchEntityId("first-point".into());
+        let second_point_id = SketchEntityId("second-point".into());
+        let entities = vec![
+            SketchEntity {
+                id: line_id.clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            },
+            SketchEntity {
+                id: point_id.clone(),
+                sketch,
+                construction: true,
+                native_ref: Some("handle".into()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(0.5, 0.0),
+                },
+            },
+            SketchEntity {
+                id: misleading_line_id.clone(),
+                sketch: SketchId("sketch".into()),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 1.0),
+                    end: Point2::new(1.0, 1.0),
+                },
+            },
+            SketchEntity {
+                id: SketchEntityId("other-sketch-line".into()),
+                sketch: SketchId("other-sketch".into()),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            },
+            SketchEntity {
+                id: first_point_id.clone(),
+                sketch: SketchId("sketch".into()),
+                construction: true,
+                native_ref: Some("first".into()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(0.25, 0.0),
+                },
+            },
+            SketchEntity {
+                id: second_point_id.clone(),
+                sketch: SketchId("sketch".into()),
+                construction: true,
+                native_ref: Some("second".into()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(0.75, 0.0),
+                },
+            },
+        ];
+        let mut first = marker("first", Some([0.0, 0.0]));
+        let second = marker("second", Some([0.001, 0.0]));
+        let misleading = marker("misleading", None);
+        first.links = vec![SketchInputLink {
+            local_id: 3,
+            entity_ref: misleading.id.clone(),
+        }];
+        let mut handle = marker("handle", Some([0.0005, 0.0]));
+        handle.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: first.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: second.id.clone(),
+            },
+        ];
+        let markers = HashMap::from([
+            (first.id.as_str(), &first),
+            (second.id.as_str(), &second),
+            (handle.id.as_str(), &handle),
+            (misleading.id.as_str(), &misleading),
+        ]);
+        let loci = HashMap::from([
+            ("first".into(), vec![SketchLocus::Entity(first_point_id)]),
+            ("second".into(), vec![SketchLocus::Entity(second_point_id)]),
+            ("handle".into(), vec![SketchLocus::Entity(point_id)]),
+            (
+                "misleading".into(),
+                vec![SketchLocus::Entity(misleading_line_id)],
+            ),
+        ]);
+
+        assert_eq!(
+            single_marker_line_entity("handle", &markers, &loci, &entities),
+            Some(line_id)
         );
     }
 
