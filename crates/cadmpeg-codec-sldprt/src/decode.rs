@@ -884,7 +884,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     };
     let incomplete_typed_features = evaluated_feature_states
         .iter()
-        .filter(|state| match state.definition {
+        .filter(|state| {
+            let mut definition = state.definition;
+            while let FeatureDefinition::PostProcess { operation, .. } = definition {
+                definition = operation;
+            }
+            match definition {
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
@@ -1354,17 +1359,17 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     })
                     || incomplete_pattern(pattern, &incomplete_path)
             }
-            FeatureDefinition::Native { .. } => false,
-            // These neutral families have no audited SLDPRT projection contract. Keep the
-            // list exhaustive so a new common-IR family cannot silently pass the L6 gate.
+            FeatureDefinition::Native { .. } | FeatureDefinition::PostProcess { .. } => false,
+            // These variants explicitly retain unresolved construction semantics. Keep
+            // the match exhaustive so a new common-IR family cannot silently pass L6.
             FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
-            | FeatureDefinition::DraftUnresolved
-            | FeatureDefinition::PostProcess { .. } => true,
+            | FeatureDefinition::DraftUnresolved => true,
+            }
         })
         .count();
     if incomplete_typed_features > 0 {
@@ -4086,6 +4091,66 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "2 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn post_process_completeness_delegates_to_the_wrapped_operation() {
+        let mut ir = CadIr::empty(Units::default());
+        let post_process = |operation| FeatureDefinition::PostProcess {
+            operation: Box::new(operation),
+            refine: true,
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::KernelDefault,
+        };
+        for (ordinal, definition) in [
+            post_process(FeatureDefinition::Helix {
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                radius: Length(1.0),
+                pitch: Length(2.0),
+                revolutions: 3.0,
+                start_angle: Angle(0.0),
+                clockwise: false,
+                radial_growth: None,
+                cone_angle: None,
+                segment_turns: None,
+                construction_style: None,
+            }),
+            post_process(post_process(FeatureDefinition::DatumPlaneUnresolved)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("post-process-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "1 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
