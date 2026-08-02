@@ -20,9 +20,9 @@ use crate::records::{
     DesignCoilSectionPlacement, DesignConstructionOperandGroup, DesignDirectFaceOperation,
     DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart, DesignFaceOperand,
-    DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignParameter, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignSketchPlacement, DesignSolidPrimitive,
+    DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignParameter,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
 };
 use cadmpeg_codec_core::le::{u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -3236,6 +3236,12 @@ pub(crate) fn project_extrude(
         },
     }
 
+    #[derive(Clone, Copy)]
+    enum AlongDirection {
+        SignedDistance,
+        PrologueReversal,
+    }
+
     let supported_parameter = |source_kind: &str| {
         matches!(
             source_kind,
@@ -3303,12 +3309,23 @@ pub(crate) fn project_extrude(
         .fixed_extrude_parameters
         .as_ref()
         .and_then(|fixed| fixed.along_distance.as_ref())
-        .map(|fixed| Length(fixed.value * 10.0));
+        .map(|fixed| match fixed {
+            DesignFixedExtrudeDistance::FixedScalar(scalar) => {
+                (Length(scalar.value * 10.0), AlongDirection::SignedDistance)
+            }
+            DesignFixedExtrudeDistance::DistanceConstruction(scalar) => (
+                Length(scalar.value * 10.0),
+                AlongDirection::PrologueReversal,
+            ),
+        });
     let along = match (parameter_along, fixed_along) {
-        (Some(parameter), Some(fixed)) if (parameter.0 - fixed.0).abs() <= 1.0e-9 => {
-            Some(parameter)
+        (Some(parameter), Some((fixed, AlongDirection::SignedDistance)))
+            if (parameter.0 - fixed.0).abs() <= 1.0e-9 =>
+        {
+            Some((parameter, AlongDirection::SignedDistance))
         }
-        (Some(distance), None) | (None, Some(distance)) => Some(distance),
+        (Some(distance), None) => Some((distance, AlongDirection::SignedDistance)),
+        (None, Some(distance)) => Some(distance),
         (None, None) => None,
         _ => return None,
     };
@@ -3378,9 +3395,10 @@ pub(crate) fn project_extrude(
         _ => return None,
     };
     let (shape, reverse_direction) = match (prologue.extent()?, along, against) {
-        (DesignExtrudeExtent::OneSidedDistance, Some(along), None)
+        (DesignExtrudeExtent::OneSidedDistance, Some((along, along_direction)), None)
             if along.0 != 0.0
-                && !prologue.direction_reversed()
+                && (matches!(along_direction, AlongDirection::PrologueReversal)
+                    || !prologue.direction_reversed())
                 && termination_groups.is_empty()
                 && effective_side_one_offset.is_none() =>
         {
@@ -3388,15 +3406,21 @@ pub(crate) fn project_extrude(
                 ExtentShape::OneSided(Termination::Blind {
                     length: Length(along.0.abs()),
                 }),
-                along.0 < 0.0,
+                match along_direction {
+                    AlongDirection::SignedDistance => along.0 < 0.0,
+                    AlongDirection::PrologueReversal => prologue.direction_reversed(),
+                },
             )
         }
-        (DesignExtrudeExtent::TwoSidedDistance, Some(along), Some(against))
-            if along.0 != 0.0
-                && against.0 != 0.0
-                && !prologue.direction_reversed()
-                && termination_groups.is_empty()
-                && effective_side_one_offset.is_none() =>
+        (
+            DesignExtrudeExtent::TwoSidedDistance,
+            Some((along, AlongDirection::SignedDistance)),
+            Some(against),
+        ) if along.0 != 0.0
+            && against.0 != 0.0
+            && !prologue.direction_reversed()
+            && termination_groups.is_empty()
+            && effective_side_one_offset.is_none() =>
         {
             (
                 ExtentShape::TwoSided {
@@ -3410,11 +3434,14 @@ pub(crate) fn project_extrude(
                 along.0 < 0.0,
             )
         }
-        (DesignExtrudeExtent::SymmetricDistance, Some(along), None)
-            if along.0 != 0.0
-                && !prologue.direction_reversed()
-                && termination_groups.is_empty()
-                && effective_side_one_offset.is_none() =>
+        (
+            DesignExtrudeExtent::SymmetricDistance,
+            Some((along, AlongDirection::SignedDistance)),
+            None,
+        ) if along.0 != 0.0
+            && !prologue.direction_reversed()
+            && termination_groups.is_empty()
+            && effective_side_one_offset.is_none() =>
         {
             (
                 ExtentShape::Symmetric(Termination::Blind {

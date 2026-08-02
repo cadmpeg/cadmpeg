@@ -17,10 +17,10 @@ use crate::records::{
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
     DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
     DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
-    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedExtrudeScalar, DesignFixedFilletGroup, DesignFixedFilletParameters,
-    DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
+    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
+    DesignFixedFilletParameters, DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignRectangularPatternConstruction, DesignRectangularPatternInstances, DesignScaleOperation,
     DesignSolidPrimitive, DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
 };
@@ -1784,14 +1784,13 @@ pub(crate) fn exact_fixed_extrude_parameters(
     if fixed_lanes.len() > 2 || embedded_distances.len() > 1 {
         return None;
     }
-    let mut along_distance =
-        embedded_distances
-            .first()
-            .map(|(record_index, lane)| DesignFixedExtrudeScalar {
-                value: lane.value,
-                record_index: *record_index,
-                value_offset: lane.value_offset,
-            });
+    let mut along_distance = embedded_distances.first().map(|(record_index, lane)| {
+        DesignFixedExtrudeDistance::DistanceConstruction(DesignFixedExtrudeScalar {
+            value: lane.value,
+            record_index: *record_index,
+            value_offset: lane.value_offset,
+        })
+    });
     let mut taper_angle = None;
     let mut seen_fixed_ordinals = [false; 2];
     for (record_index, lane) in fixed_lanes {
@@ -1807,7 +1806,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
         };
         match lane.ordinal {
             0 if lane.value != 0.0 && along_distance.is_none() => {
-                along_distance = Some(scalar);
+                along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(scalar));
             }
             0 if along_distance.is_some() && lane.value == 0.0 => {}
             1 if taper_angle.is_none() => taper_angle = Some(scalar),
@@ -1859,7 +1858,7 @@ fn exact_embedded_extrude_distance(
                 return None;
             }
             let value = f64_at(bytes, start + 51)?;
-            (value.is_finite() && value != 0.0).then_some(FixedScalarFrame {
+            (value.is_finite() && value > 0.0).then_some(FixedScalarFrame {
                 owner_record_index: Some(scope_record_index),
                 ordinal: 0,
                 value,

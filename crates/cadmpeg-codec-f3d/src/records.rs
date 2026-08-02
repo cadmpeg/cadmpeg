@@ -1025,12 +1025,22 @@ pub struct DesignFixedExtrudeScalar {
     pub value_offset: u64,
 }
 
+/// Exact carrier of an Extrude's one-sided distance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "carrier", content = "scalar", rename_all = "snake_case")]
+pub enum DesignFixedExtrudeDistance {
+    /// Signed distance in an owner-local scalar lane.
+    FixedScalar(DesignFixedExtrudeScalar),
+    /// Positive magnitude in an owned distance-construction frame.
+    DistanceConstruction(DesignFixedExtrudeScalar),
+}
+
 /// Exact fixed scalar lanes carried by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignFixedExtrudeParameters {
-    /// Signed one-sided distance lane in source centimetres.
+    /// One-sided distance carrier in source centimetres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub along_distance: Option<DesignFixedExtrudeScalar>,
+    pub along_distance: Option<DesignFixedExtrudeDistance>,
     /// Taper-angle lane in radians.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub taper_angle: Option<DesignFixedExtrudeScalar>,

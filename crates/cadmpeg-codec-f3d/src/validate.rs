@@ -1994,13 +1994,23 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .fixed_extrude_parameters
                 .as_ref()
                 .is_some_and(|fixed| fixed.along_distance.is_some());
+            let fixed_along_uses_reversal = scope
+                .fixed_extrude_parameters
+                .as_ref()
+                .and_then(|fixed| fixed.along_distance.as_ref())
+                .is_some_and(|distance| {
+                    matches!(
+                        distance,
+                        records::DesignFixedExtrudeDistance::DistanceConstruction(_)
+                    )
+                });
             let has_one_along_carrier = along_count <= 1 && (along_count == 1 || has_fixed_along);
             let extent_matches_operands = match extrude_extent {
                 records::DesignExtrudeExtent::OneSidedDistance => {
                     has_one_along_carrier
                         && against_count == 0
                         && side_one_offset_is_absent
-                        && !prologue.direction_reversed()
+                        && (!prologue.direction_reversed() || fixed_along_uses_reversal)
                 }
                 records::DesignExtrudeExtent::OneSidedToFace => {
                     along_count == 0

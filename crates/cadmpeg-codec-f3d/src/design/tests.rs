@@ -114,13 +114,14 @@ use crate::records::{
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
     DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
-    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletParameters,
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
-    DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
-    DesignSurfaceStitchOperation, DesignTopologyRecipeSide, LostEdgeReference,
-    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface, DESIGN_MODULE_SKETCH,
+    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
+    DesignFixedFilletParameters, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecipeReference, DesignRecordHeader, DesignScaleOperation, DesignSketchPlacement,
+    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    SketchSurface, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::{
@@ -4708,11 +4709,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &extrude_scope
         ),
         Some(DesignFixedExtrudeParameters {
-            along_distance: Some(DesignFixedExtrudeScalar {
-                value: -2.0,
-                record_index: 75,
-                value_offset: (bytes.len() - 2 * 115 + 40) as u64,
-            }),
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
+                DesignFixedExtrudeScalar {
+                    value: -2.0,
+                    record_index: 75,
+                    value_offset: (bytes.len() - 2 * 115 + 40) as u64,
+                },
+            )),
             taper_angle: Some(DesignFixedExtrudeScalar {
                 value: 0.0,
                 record_index: 76,
@@ -4728,11 +4731,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &extrude_scope
         ),
         Some(DesignFixedExtrudeParameters {
-            along_distance: Some(DesignFixedExtrudeScalar {
-                value: -2.0,
-                record_index: 75,
-                value_offset: (bytes.len() - 2 * 115 + 40) as u64,
-            }),
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
+                DesignFixedExtrudeScalar {
+                    value: -2.0,
+                    record_index: 75,
+                    value_offset: (bytes.len() - 2 * 115 + 40) as u64,
+                },
+            )),
             taper_angle: None,
         })
     );
@@ -4794,11 +4799,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &extrude_scope
         ),
         Some(DesignFixedExtrudeParameters {
-            along_distance: Some(DesignFixedExtrudeScalar {
-                value: 0.25,
-                record_index: embedded_distance_record_index,
-                value_offset: (embedded_distance_at + 51) as u64,
-            }),
+            along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
+                DesignFixedExtrudeScalar {
+                    value: 0.25,
+                    record_index: embedded_distance_record_index,
+                    value_offset: (embedded_distance_at + 51) as u64,
+                },
+            )),
             taper_angle: Some(DesignFixedExtrudeScalar {
                 value: 0.0,
                 record_index: 274,
@@ -13756,11 +13763,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if profile == &neutral_sketch_id(&placement)
     ));
     scope.fixed_extrude_parameters = Some(DesignFixedExtrudeParameters {
-        along_distance: Some(DesignFixedExtrudeScalar {
-            value: 0.55,
-            record_index: 105,
-            value_offset: 600,
-        }),
+        along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
+            DesignFixedExtrudeScalar {
+                value: 0.55,
+                record_index: 105,
+                value_offset: 600,
+            },
+        )),
         taper_angle: None,
     });
     let zero_side_offset = parameter("Side1Offset", "mm", 0.0);
@@ -13787,6 +13796,31 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         }
     ));
+    set_extrude_direction_reversed(&mut scope, true);
+    let reversed_hybrid = project_extrude(
+        &scope,
+        &[(0, &zero_side_offset), (1, &taper)],
+        &[body_group.clone(), profile_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .expect("typed reversed hybrid fixed-distance Extrude");
+    assert!(matches!(
+        reversed_hybrid,
+        FeatureDefinition::Extrude {
+            direction: ExtrudeDirection::ReversedProfileNormal,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.5)
+                    },
+                    ..
+                },
+            },
+            ..
+        }
+    ));
+    set_extrude_direction_reversed(&mut scope, false);
     scope.fixed_extrude_parameters = None;
     let mut native_profile_scope = scope.clone();
     native_profile_scope.extrude_profile = None;
