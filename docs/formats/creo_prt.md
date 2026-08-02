@@ -4,6 +4,8 @@
 
 This specification covers the Creo Parametric and Pro/ENGINEER `.prt` variant. Creo files use the PSB (Pro/E Session Binary) container.
 
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/creo.md`](../layouts/creo.md), generated from `docs/layouts/creo.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+
 ## 1. Container
 
 A PSB file begins with an ASCII UGC header and table of contents, followed by named binary sections.

@@ -1,0 +1,2063 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for Siemens NX `.prt`.
+schema = 1
+format = "nx"
+spec = "docs/formats/siemens_nx.md"
+note = """
+Covers the SPLMSSTR container (§2), the Parasolid XT fixed record families
+(§4.1), the topology node field maps (§5.1), the analytic payload offsets
+(§6.1), the trimmed and SP curve carriers (§6.4), the rolling-ball blend
+(§6.5), and the CHART_s preamble (§6.3).
+
+Endianness follows the two lanes §1 states: SPLMSSTR and UG_PART table fields
+are little-endian, Parasolid neutral-binary payload fields are big-endian. Each
+record states which lane it is in.
+"""
+
+[[type]]
+name = "u48"
+bytes = 6
+endianness = "little"
+note = "48-bit unsigned little-endian offset word used by the SPLMSSTR header."
+section = "2"
+anchor = "0x11..0x16 FOOTER offset, 48-bit LE"
+
+[[type]]
+name = "xmt_ref"
+bytes = 2
+endianness = "big"
+note = "Parasolid XMT index, small form: a big-endian u16. The large form is a negative i16 remainder plus a u16 quotient and occupies 4 bytes, shifting every later fixed field in the record."
+section = "3.1"
+anchor = "| Small index | `uint16` BE, 2 bytes |"
+
+# --- §2 SPLMSSTR container --------------------------------------------------
+
+[[record]]
+name = "splmsstr_header"
+kind = "byte"
+section = "2"
+anchor = "0x00..0x07 ASCII \"SPLMSSTR\""
+size = 31
+endianness = "little"
+note = "Fixed prefix through the `HEADER` marker. The spec's byte map labels 0x1f as the start of the directory entries; the §2 prose and the parser both place `entry_count:u32 LE` there with the entries at 0x23. Recorded in the pull request."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "0x00..0x07 ASCII \"SPLMSSTR\""
+
+[[record.field]]
+name = "version_tag"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "0x08 version tag, constant 0x06"
+
+[[record.field]]
+name = "file_tag"
+offset = 9
+type = "u24"
+source = "spec"
+anchor = "0x09..0x0b file-specific uint24 LE (correlates with file complexity, not footer offset)"
+
+[[record.field]]
+name = "zero_word"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "0x0c..0x0f constant 0x00000000"
+
+[[record.field]]
+name = "zero_byte"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "0x10 constant 0x00"
+
+[[record.field]]
+name = "footer_offset"
+offset = 17
+type = "u48"
+source = "spec"
+anchor = "0x11..0x16 FOOTER offset, 48-bit LE (points into the FOOTER region near EOF)"
+
+[[record.field]]
+name = "header_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "0x19..0x1e ASCII \"HEADER\""
+
+[[record.gap]]
+offset = 23
+size = 2
+note = "Bytes 0x17..0x18. The spec's byte map skips from `0x11..0x16` to `0x19..0x1e` and states nothing for these two bytes; the parser does not read them either."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/container.rs"
+contains = "pub const MAGIC: &[u8; 8] = b\"SPLMSSTR\";"
+note = "The parser's magic matches offset 0x00."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/container.rs"
+contains = "let footer_offset = u48_le(&data, 0x11);"
+note = "The parser reads the 48-bit footer offset at 0x11, matching this table."
+
+[[record]]
+name = "directory_entry"
+kind = "byte"
+section = "2"
+anchor = "An entry is `name_len:u32 LE, ASCII path[name_len], payload[16]`"
+size = 4
+endianness = "little"
+note = "Only the leading count is at a fixed offset; `path[name_len]` and the 16-byte payload follow it. The path begins `/Root` and has length 6 through 128."
+
+[[record.field]]
+name = "name_len"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "An entry is `name_len:u32 LE, ASCII path[name_len], payload[16]`"
+
+[[record]]
+name = "directory_file_payload"
+kind = "byte"
+section = "2"
+anchor = "A file payload is `file_offset:u64 LE, size:u64 LE`, with nonzero size"
+size = 16
+endianness = "little"
+note = "The 16-byte payload of a directory entry when it names a file. Other payloads remain exact opaque bytes."
+
+[[record.field]]
+name = "file_offset"
+offset = 0
+type = "u64"
+source = "spec"
+anchor = "A file payload is `file_offset:u64 LE, size:u64 LE`"
+
+[[record.field]]
+name = "size"
+offset = 8
+type = "u64"
+source = "spec"
+anchor = "`file_offset:u64 LE, size:u64 LE`, with nonzero size"
+
+[[record]]
+name = "ug_part_segment_index_row"
+kind = "byte"
+section = "2"
+anchor = "The canonical `/Root/UG_PART/UG_PART` payload begins with a segment index of 12-byte little-endian rows"
+size = 12
+endianness = "little"
+note = "Row ordinal 1 has `type_code = 1`, `subtype_code = 1`, and a `value` equal to the payload-relative byte offset immediately after the index."
+
+[[record.field]]
+name = "type_code"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "type_code:u32 subtype_code:u32 value:u32"
+
+[[record.field]]
+name = "subtype_code"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "type_code:u32 subtype_code:u32 value:u32"
+
+[[record.field]]
+name = "value"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "type_code:u32 subtype_code:u32 value:u32"
+
+[[record]]
+name = "fastload_structure_envelope"
+kind = "byte"
+section = "2.3"
+anchor = "begins with the twelve-byte envelope `ff ff ff ff 00 00 00 00 payload_len:u32 BE`"
+size = 12
+note = "`payload_len + 12` equals the bounded directory-entry size. The payload begins `OM 01 01`."
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff 00 00 00 00 payload_len:u32 BE`"
+
+[[record.field]]
+name = "zero_word"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff 00 00 00 00 payload_len:u32 BE`"
+
+[[record.field]]
+name = "payload_len"
+offset = 8
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "payload_len:u32 BE`. `payload_len + 12` equals the bounded directory-entry size"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/native/structure.rs"
+contains = "const ENVELOPE_LEN: usize = 12;"
+note = "The parser's envelope length matches the stated twelve bytes."
+
+[[record]]
+name = "om_section_header"
+kind = "byte"
+section = "7.1"
+anchor = "An OM section starts at signature `ff ff ff ff`, optionally preceded by `c0 d1 f1 ed`, and stores `payload_size:u32 BE` at `+8`"
+size = 14
+note = "Signature-relative. `section_end = signature_offset + 16 + payload_size`, so bytes +14..+16 belong to the header but the spec names no field for them."
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "An OM section starts at signature `ff ff ff ff`"
+
+[[record.field]]
+name = "payload_size"
+offset = 8
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "stores `payload_size:u32 BE` at `+8`"
+
+[[record.field]]
+name = "om_marker"
+offset = 12
+type = "bytes[2]"
+source = "spec"
+anchor = "Bytes `+12..+14` are `OM`."
+
+[[record.gap]]
+offset = 4
+size = 4
+note = "Bytes +4..+8. The spec describes no field between the signature and the payload size."
+
+[[record]]
+name = "jt_document_header"
+kind = "byte"
+section = "2.3"
+anchor = "Its header is `version_field[80], byte_order:u8, reserved:u32, toc_offset:u32, lsg_segment_id[16]`"
+size = 105
+endianness = "little"
+note = "Byte order is zero and the reserved word is zero. Field offsets are derived by laying the spec's ordered field list out from the header start; the total 105 is the derived sum."
+
+[[record.field]]
+name = "version_field"
+offset = 0
+type = "bytes[80]"
+source = "spec"
+anchor = "Its header is `version_field[80], byte_order:u8"
+
+[[record.field]]
+name = "byte_order"
+offset = 80
+type = "u8"
+source = "derived"
+anchor = "byte_order:u8, reserved:u32"
+note = "Offset derived from the stated 80-byte version field."
+
+[[record.field]]
+name = "reserved"
+offset = 81
+type = "u32"
+source = "derived"
+anchor = "reserved:u32, toc_offset:u32"
+note = "Offset derived by laying the stated ordered field list out from the header start."
+
+[[record.field]]
+name = "toc_offset"
+offset = 85
+type = "u32"
+source = "derived"
+anchor = "toc_offset:u32, lsg_segment_id[16]"
+note = "Offset derived by laying the stated ordered field list out from the header start."
+
+[[record.field]]
+name = "lsg_segment_id"
+offset = 89
+type = "bytes[16]"
+source = "derived"
+anchor = "lsg_segment_id[16]"
+note = "Offset derived by laying the stated ordered field list out from the header start."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/native/display_jt.rs"
+contains = "const VERSION_FIELD_LEN: usize = 80;"
+note = "The parser's version-field length matches the stated 80 bytes; it reads `byte_order` at 80 and `toc_offset` from 85..89."
+
+[[record]]
+name = "jt_toc_entry"
+kind = "byte"
+section = "2.3"
+anchor = "`count` fixed 28-byte entries: `segment_id[16], segment_offset:u32 LE, segment_byte_len:u32 LE, attributes[4]`"
+size = 28
+endianness = "little"
+
+[[record.field]]
+name = "segment_id"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "`segment_id[16], segment_offset:u32 LE"
+
+[[record.field]]
+name = "segment_offset"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "segment_offset:u32 LE, segment_byte_len:u32 LE"
+
+[[record.field]]
+name = "segment_byte_len"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "segment_byte_len:u32 LE, attributes[4]"
+
+[[record.field]]
+name = "attributes"
+offset = 24
+type = "bytes[4]"
+source = "spec"
+anchor = "attributes[4]"
+
+[[record]]
+name = "jt_shape_lod_element_header"
+kind = "byte"
+section = "2.3"
+anchor = "`element_byte_len:u32 LE, object_type_id[16], object_base_type:u8, object_id:u32 LE, body[]` elements"
+size = 25
+endianness = "little"
+note = "`element_byte_len` counts every byte after its own word, so `body` has length `element_byte_len - 21`."
+
+[[record.field]]
+name = "element_byte_len"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`element_byte_len:u32 LE, object_type_id[16]"
+
+[[record.field]]
+name = "object_type_id"
+offset = 4
+type = "bytes[16]"
+source = "spec"
+anchor = "object_type_id[16], object_base_type:u8"
+
+[[record.field]]
+name = "object_base_type"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "object_base_type:u8, object_id:u32 LE"
+
+[[record.field]]
+name = "object_id"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "object_id:u32 LE, body[]"
+
+[[record]]
+name = "jt_tristrip_shape_node_family_data"
+kind = "byte"
+section = "2.3"
+anchor = "Vertex version 1 ends after the quantization bytes and occupies 100 bytes."
+size = 100
+endianness = "little"
+note = "Offsets are derived by laying the spec's ordered field list out from the block start; the stated 100-byte total for vertex version 1 confirms the arithmetic. Vertex version 2 appends `version_2_vertex_bindings:u64 LE` and occupies 108 bytes."
+
+[[record.field]]
+name = "shape_version"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "Its family data is `shape_version:u16 LE = 1, reserved_bounds[6]:f32 LE"
+
+[[record.field]]
+name = "reserved_bounds"
+offset = 2
+type = "f32[6]"
+source = "derived"
+anchor = "reserved_bounds[6]:f32 LE, untransformed_bounds[6]:f32 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "untransformed_bounds"
+offset = 26
+type = "f32[6]"
+source = "derived"
+anchor = "untransformed_bounds[6]:f32 LE, area:f32 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "area"
+offset = 50
+type = "f32"
+source = "derived"
+anchor = "area:f32 LE, vertex_count_range[2]:i32 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "vertex_count_range"
+offset = 54
+type = "i32[2]"
+source = "derived"
+anchor = "vertex_count_range[2]:i32 LE, node_count_range[2]:i32 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "node_count_range"
+offset = 62
+type = "i32[2]"
+source = "derived"
+anchor = "node_count_range[2]:i32 LE, polygon_count_range[2]:i32 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "polygon_count_range"
+offset = 70
+type = "i32[2]"
+source = "derived"
+anchor = "polygon_count_range[2]:i32 LE, memory_byte_len:u32 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "memory_byte_len"
+offset = 78
+type = "u32"
+source = "derived"
+anchor = "memory_byte_len:u32 LE, compression_level:f32 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "compression_level"
+offset = 82
+type = "f32"
+source = "derived"
+anchor = "compression_level:f32 LE, vertex_version:u16 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "vertex_version"
+offset = 86
+type = "u16"
+source = "derived"
+anchor = "vertex_version:u16 LE, vertex_bindings:u64 LE"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "vertex_bindings"
+offset = 88
+type = "u64"
+source = "derived"
+anchor = "vertex_bindings:u64 LE, vertex_quantization_bits:u8"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "vertex_quantization_bits"
+offset = 96
+type = "u8"
+source = "derived"
+anchor = "vertex_quantization_bits:u8, normal_quantization_factor:u8"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "normal_quantization_factor"
+offset = 97
+type = "u8"
+source = "derived"
+anchor = "normal_quantization_factor:u8, texture_quantization_bits:u8"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "texture_quantization_bits"
+offset = 98
+type = "u8"
+source = "derived"
+anchor = "texture_quantization_bits:u8, color_quantization_bits:u8"
+note = "Offset derived by laying the stated ordered field list out from the block start."
+
+[[record.field]]
+name = "color_quantization_bits"
+offset = 99
+type = "u8"
+source = "derived"
+anchor = "color_quantization_bits:u8`. Vertex version 1 ends after the quantization bytes and occupies 100 bytes."
+note = "Offset derived by laying the stated ordered field list out from the block start; it closes the stated 100-byte total exactly."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/native/display_jt.rs"
+contains = "family.len() < 100"
+note = "The parser gates on the stated 100-byte minimum and reads `vertex_version` at 86..88 and `vertex_bindings` at 88..96, matching the derived offsets."
+
+[[record]]
+name = "toggle_information_stream"
+kind = "byte"
+section = "2.2"
+anchor = "version:u8 = 1"
+size = 5
+endianness = "little"
+note = "Fixed prefix only; `count` members of `byte_len:u16 LE, value:utf8[byte_len]` follow, then a four-byte trailer. `count` covers the members and the trailer."
+
+[[record.field]]
+name = "version"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "version:u8 = 1"
+
+[[record.field]]
+name = "count"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "count:u32 LE"
+
+[[record]]
+name = "extrefstream_header"
+kind = "byte"
+section = "2.3"
+anchor = "`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region"
+size = 20
+endianness = "little"
+note = "The spec's field list places the record region at byte 20. The parser expects the record region's leading `0x00` at byte 24 and the first directory pair at 25, leaving bytes 20..24 undescribed. Recorded in the pull request."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[12]"
+source = "derived"
+anchor = "`EXTREFSTREAM` contains `EXTREFSTREAM` magic"
+note = "Width derived from the length of the stated ASCII magic."
+
+[[record.field]]
+name = "version"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "`version:u32 LE (3)`"
+
+[[record.field]]
+name = "payload_size"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "`payload_size:u32 LE`, a record region"
+
+[[record]]
+name = "extrefstream_handle_set_record"
+kind = "byte"
+section = "9.1"
+anchor = "A handle-set record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, `count:u8`"
+size = 25
+endianness = "little"
+note = "Fixed prefix only. `count - 1` occurrences of `e0 + handle:u32 BE` follow at +25, then a closing byte equal to `count`. Note the mixed lane: `n` is big-endian while the four ID slots are little-endian."
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "begins `01 00 00 00`, then `n:u16 BE`"
+
+[[record.field]]
+name = "n"
+offset = 4
+type = "u16"
+endianness = "big"
+source = "spec"
+anchor = "then `n:u16 BE`, `01`, four `u32 LE` ID slots"
+
+[[record.field]]
+name = "marker_a"
+offset = 6
+type = "u8"
+source = "derived"
+anchor = "`n:u16 BE`, `01`, four `u32 LE` ID slots"
+note = "Offset derived by laying the stated ordered field list out from the record start."
+
+[[record.field]]
+name = "id_slots"
+offset = 7
+type = "u32[4]"
+source = "derived"
+anchor = "four `u32 LE` ID slots, `01`, `count:u8`"
+note = "Offset derived by laying the stated ordered field list out from the record start."
+
+[[record.field]]
+name = "marker_b"
+offset = 23
+type = "u8"
+source = "derived"
+anchor = "`01`, `count:u8`, `count - 1` occurrences"
+note = "Offset derived by laying the stated ordered field list out from the record start."
+
+[[record.field]]
+name = "count"
+offset = 24
+type = "u8"
+source = "derived"
+anchor = "`count:u8`, `count - 1` occurrences of `e0 + handle:u32 BE`"
+note = "Offset derived by laying the stated ordered field list out from the record start."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/container.rs"
+contains = "let prefix_byte_len = 26"
+note = "The parser derives the same prefix, with the closing byte at +25 + 5 * handle_token_count."
+
+# --- §4.1 Fixed Parasolid XT record families -------------------------------
+
+[[token]]
+tag = "12"
+name = "BODY"
+payload_bytes = 24
+note = "logical fixed record length, before escape and large-index shifts"
+section = "4.1"
+anchor = "| 12 | BODY | 24 | 50 | PLANE | 91 |"
+
+[[token]]
+tag = "13"
+name = "SHELL"
+payload_bytes = 24
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 13 | SHELL | 24 | 51 | CYLINDER | 99 |"
+
+[[token]]
+tag = "14"
+name = "FACE"
+payload_bytes = 39
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 14 | FACE | 39 | 52 | CONE | 115 |"
+
+[[token]]
+tag = "15"
+name = "LOOP"
+payload_bytes = 16
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 15 | LOOP | 16 | 53 | SPHERE | 99 |"
+
+[[token]]
+tag = "16"
+name = "EDGE"
+payload_bytes = 32
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 16 | EDGE | 32 | 54 | TORUS | 107 |"
+
+[[token]]
+tag = "17"
+name = "FIN"
+payload_bytes = 23
+note = "logical fixed record length; FIN has no `node_id`"
+section = "4.1"
+anchor = "| 17 | FIN | 23 | 56 | BLEND_SURF | 66 + shift |"
+
+[[token]]
+tag = "18"
+name = "VERTEX"
+payload_bytes = 28
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 18 | VERTEX | 28 | 60 | OFFSET_SURF | 31 |"
+
+[[token]]
+tag = "19"
+name = "REGION"
+payload_bytes = 16
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 19 | REGION | 16 | 124 | B_SURFACE | 23 |"
+
+[[token]]
+tag = "29"
+name = "POINT"
+payload_bytes = 40
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 29 | POINT | 40 | 133 | TRIMMED_CURVE | 85 + shift |"
+
+[[token]]
+tag = "30"
+name = "LINE"
+payload_bytes = 67
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 30 | LINE | 67 | 134 | B_CURVE | 23 |"
+
+[[token]]
+tag = "31"
+name = "CIRCLE"
+payload_bytes = 99
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 31 | CIRCLE | 99 | 137 | SP_CURVE | 33 + shift |"
+
+[[token]]
+tag = "32"
+name = "ELLIPSE"
+payload_bytes = 107
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 32 | ELLIPSE | 107 |"
+
+[[token]]
+tag = "50"
+name = "PLANE"
+payload_bytes = 91
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 12 | BODY | 24 | 50 | PLANE | 91 |"
+
+[[token]]
+tag = "51"
+name = "CYLINDER"
+payload_bytes = 99
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 13 | SHELL | 24 | 51 | CYLINDER | 99 |"
+
+[[token]]
+tag = "52"
+name = "CONE"
+payload_bytes = 115
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 14 | FACE | 39 | 52 | CONE | 115 |"
+
+[[token]]
+tag = "53"
+name = "SPHERE"
+payload_bytes = 99
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 15 | LOOP | 16 | 53 | SPHERE | 99 |"
+
+[[token]]
+tag = "54"
+name = "TORUS"
+payload_bytes = 107
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 16 | EDGE | 32 | 54 | TORUS | 107 |"
+
+[[token]]
+tag = "56"
+name = "BLEND_SURF"
+note = "66 bytes plus escape and large-index shifts"
+section = "4.1"
+anchor = "| 17 | FIN | 23 | 56 | BLEND_SURF | 66 + shift |"
+
+[[token]]
+tag = "60"
+name = "OFFSET_SURF"
+payload_bytes = 31
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 18 | VERTEX | 28 | 60 | OFFSET_SURF | 31 |"
+
+[[token]]
+tag = "124"
+name = "B_SURFACE"
+payload_bytes = 23
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 19 | REGION | 16 | 124 | B_SURFACE | 23 |"
+
+[[token]]
+tag = "133"
+name = "TRIMMED_CURVE"
+note = "85 bytes plus escape and large-index shifts"
+section = "4.1"
+anchor = "| 29 | POINT | 40 | 133 | TRIMMED_CURVE | 85 + shift |"
+
+[[token]]
+tag = "134"
+name = "B_CURVE"
+payload_bytes = 23
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 30 | LINE | 67 | 134 | B_CURVE | 23 |"
+
+[[token]]
+tag = "137"
+name = "SP_CURVE"
+note = "33 bytes plus escape and large-index shifts"
+section = "4.1"
+anchor = "| 31 | CIRCLE | 99 | 137 | SP_CURVE | 33 + shift |"
+
+# --- §5.1 Topology node field maps -----------------------------------------
+
+[[record]]
+name = "analytic_common_header"
+kind = "byte"
+section = "5.1"
+anchor = "**Common header** for analytic curve/surface types 30–32, 50–54: `attributes +8`, `owner +10`, `next +12`, `previous +14`, `group +16`, `sense +18`."
+size = 19
+note = "Record-relative, after shifts. Each extended reference in the five-reference common header shifts the analytic payload and record end by two bytes, and the shifts accumulate."
+
+[[record.field]]
+name = "attributes"
+offset = 8
+type = "xmt_ref"
+source = "spec"
+anchor = "`attributes +8`, `owner +10`"
+
+[[record.field]]
+name = "owner"
+offset = 10
+type = "xmt_ref"
+source = "spec"
+anchor = "`owner +10`, `next +12`"
+
+[[record.field]]
+name = "next"
+offset = 12
+type = "xmt_ref"
+source = "spec"
+anchor = "`next +12`, `previous +14`"
+
+[[record.field]]
+name = "previous"
+offset = 14
+type = "xmt_ref"
+source = "spec"
+anchor = "`previous +14`, `group +16`"
+
+[[record.field]]
+name = "group"
+offset = 16
+type = "xmt_ref"
+source = "spec"
+anchor = "`group +16`, `sense +18`"
+
+[[record.field]]
+name = "sense"
+offset = 18
+type = "u8"
+source = "spec"
+anchor = "`sense +18`"
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "Type tag, XMT index, and (for types carrying one) the `node_id:u32` at record offset +4. The spec states the common header only from +8."
+
+[[record]]
+name = "face_node"
+kind = "byte"
+section = "5.1"
+anchor = "| FACE (14) | `attributes +8`, `tolerance:f64 +10`, `next_face +18`, `prev_face +20`, `loop +22`, `shell +24`, `surface +26`, `sense +28`, `next_on_surface +29`, `prev_on_surface +31`, `next_front +33`, `prev_front +35`, `front_shell +37` |"
+size = 39
+endianness = "big"
+note = "Record-relative, after shifts. Unannotated fields are two-byte XMT references. FACE `tolerance` decodes as the sentinel `-3.14158e13` when unset. Any fixed record may place an envelope escape byte `ff` between its type and XMT fields, shifting every logical payload offset by one."
+
+[[record.field]]
+name = "attributes"
+offset = 8
+type = "xmt_ref"
+source = "spec"
+anchor = "| FACE (14) | `attributes +8`, `tolerance:f64 +10`"
+
+[[record.field]]
+name = "tolerance"
+offset = 10
+type = "f64"
+source = "spec"
+anchor = "`tolerance:f64 +10`, `next_face +18`"
+
+[[record.field]]
+name = "next_face"
+offset = 18
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_face +18`, `prev_face +20`"
+
+[[record.field]]
+name = "prev_face"
+offset = 20
+type = "xmt_ref"
+source = "spec"
+anchor = "`prev_face +20`, `loop +22`"
+
+[[record.field]]
+name = "loop"
+offset = 22
+type = "xmt_ref"
+source = "spec"
+anchor = "`loop +22`, `shell +24`"
+
+[[record.field]]
+name = "shell"
+offset = 24
+type = "xmt_ref"
+source = "spec"
+anchor = "`shell +24`, `surface +26`"
+
+[[record.field]]
+name = "surface"
+offset = 26
+type = "xmt_ref"
+source = "spec"
+anchor = "`surface +26`, `sense +28`"
+
+[[record.field]]
+name = "sense"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "`sense +28`, `next_on_surface +29`"
+
+[[record.field]]
+name = "next_on_surface"
+offset = 29
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_on_surface +29`, `prev_on_surface +31`"
+
+[[record.field]]
+name = "prev_on_surface"
+offset = 31
+type = "xmt_ref"
+source = "spec"
+anchor = "`prev_on_surface +31`, `next_front +33`"
+
+[[record.field]]
+name = "next_front"
+offset = 33
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_front +33`, `prev_front +35`"
+
+[[record.field]]
+name = "prev_front"
+offset = 35
+type = "xmt_ref"
+source = "spec"
+anchor = "`prev_front +35`, `front_shell +37`"
+
+[[record.field]]
+name = "front_shell"
+offset = 37
+type = "xmt_ref"
+source = "spec"
+anchor = "`front_shell +37`"
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "Type tag, XMT index, and the `node_id:u32` at record offset +4 (§5.1 states `Types carrying 'node_id:u32' place it at record offset '+4'`)."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "14 => 39,"
+note = "The parser's fixed length for type 14 matches the declared 39 bytes, which the field list closes exactly."
+
+[[record]]
+name = "edge_node"
+kind = "byte"
+section = "5.1"
+anchor = "| EDGE (16) | `attributes +8`, `tolerance:f64 +10`, `fin +18`, `prev_edge +20`, `next_edge +22`, `curve +24`, `next_on_curve +26`, `prev_on_curve +28`, `owner +30` |"
+size = 32
+endianness = "big"
+
+[[record.field]]
+name = "attributes"
+offset = 8
+type = "xmt_ref"
+source = "spec"
+anchor = "| EDGE (16) | `attributes +8`, `tolerance:f64 +10`"
+
+[[record.field]]
+name = "tolerance"
+offset = 10
+type = "f64"
+source = "spec"
+anchor = "`tolerance:f64 +10`, `fin +18`"
+
+[[record.field]]
+name = "fin"
+offset = 18
+type = "xmt_ref"
+source = "spec"
+anchor = "`fin +18`, `prev_edge +20`"
+
+[[record.field]]
+name = "prev_edge"
+offset = 20
+type = "xmt_ref"
+source = "spec"
+anchor = "`prev_edge +20`, `next_edge +22`"
+
+[[record.field]]
+name = "next_edge"
+offset = 22
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_edge +22`, `curve +24`"
+
+[[record.field]]
+name = "curve"
+offset = 24
+type = "xmt_ref"
+source = "spec"
+anchor = "`curve +24`, `next_on_curve +26`"
+
+[[record.field]]
+name = "next_on_curve"
+offset = 26
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_on_curve +26`, `prev_on_curve +28`"
+
+[[record.field]]
+name = "prev_on_curve"
+offset = 28
+type = "xmt_ref"
+source = "spec"
+anchor = "`prev_on_curve +28`, `owner +30`"
+
+[[record.field]]
+name = "owner"
+offset = 30
+type = "xmt_ref"
+source = "spec"
+anchor = "`owner +30`"
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "Type tag, XMT index, and the `node_id:u32` at record offset +4."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "16 => 32,"
+note = "The parser's fixed length for type 16 matches the declared 32 bytes, which the field list closes exactly."
+
+[[record]]
+name = "fin_node"
+kind = "byte"
+section = "5.1"
+anchor = "| FIN (17)    | `attributes +4`, `loop +6`, `forward_fin +8`, `backward_fin +10`, `vertex +12`, `other_fin +14`, `edge +16`, `curve +18`, `next_at_vertex +20`, `sense +22` |"
+size = 23
+endianness = "big"
+note = "FIN has no `node_id`, so its field block starts at +4 rather than +8."
+
+[[record.field]]
+name = "attributes"
+offset = 4
+type = "xmt_ref"
+source = "spec"
+anchor = "| FIN (17)    | `attributes +4`, `loop +6`"
+
+[[record.field]]
+name = "loop"
+offset = 6
+type = "xmt_ref"
+source = "spec"
+anchor = "`loop +6`, `forward_fin +8`"
+
+[[record.field]]
+name = "forward_fin"
+offset = 8
+type = "xmt_ref"
+source = "spec"
+anchor = "`forward_fin +8`, `backward_fin +10`"
+
+[[record.field]]
+name = "backward_fin"
+offset = 10
+type = "xmt_ref"
+source = "spec"
+anchor = "`backward_fin +10`, `vertex +12`"
+
+[[record.field]]
+name = "vertex"
+offset = 12
+type = "xmt_ref"
+source = "spec"
+anchor = "`vertex +12`, `other_fin +14`"
+
+[[record.field]]
+name = "other_fin"
+offset = 14
+type = "xmt_ref"
+source = "spec"
+anchor = "`other_fin +14`, `edge +16`"
+
+[[record.field]]
+name = "edge"
+offset = 16
+type = "xmt_ref"
+source = "spec"
+anchor = "`edge +16`, `curve +18`"
+
+[[record.field]]
+name = "curve"
+offset = 18
+type = "xmt_ref"
+source = "spec"
+anchor = "`curve +18`, `next_at_vertex +20`"
+
+[[record.field]]
+name = "next_at_vertex"
+offset = 20
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_at_vertex +20`, `sense +22`"
+
+[[record.field]]
+name = "sense"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "`sense +22`"
+
+[[record.gap]]
+offset = 0
+size = 4
+note = "Type tag and XMT index. FIN carries no `node_id`, so its field block starts at +4."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "17 => 23,"
+note = "The parser's fixed length for type 17 matches the declared 23 bytes, which the field list closes exactly."
+
+[[record]]
+name = "vertex_node"
+kind = "byte"
+section = "5.1"
+anchor = "| VERTEX (18) | `attributes +8`, `fin +10`, `prev_vertex +12`, `next_vertex +14`, `point +16`, `tolerance:f64 +18`, `owner +26` |"
+size = 28
+endianness = "big"
+
+[[record.field]]
+name = "attributes"
+offset = 8
+type = "xmt_ref"
+source = "spec"
+anchor = "| VERTEX (18) | `attributes +8`, `fin +10`"
+
+[[record.field]]
+name = "fin"
+offset = 10
+type = "xmt_ref"
+source = "spec"
+anchor = "`fin +10`, `prev_vertex +12`"
+
+[[record.field]]
+name = "prev_vertex"
+offset = 12
+type = "xmt_ref"
+source = "spec"
+anchor = "`prev_vertex +12`, `next_vertex +14`"
+
+[[record.field]]
+name = "next_vertex"
+offset = 14
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_vertex +14`, `point +16`"
+
+[[record.field]]
+name = "point"
+offset = 16
+type = "xmt_ref"
+source = "spec"
+anchor = "`point +16`, `tolerance:f64 +18`"
+
+[[record.field]]
+name = "tolerance"
+offset = 18
+type = "f64"
+source = "spec"
+anchor = "`tolerance:f64 +18`, `owner +26`"
+
+[[record.field]]
+name = "owner"
+offset = 26
+type = "xmt_ref"
+source = "spec"
+anchor = "`owner +26`"
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "Type tag, XMT index, and the `node_id:u32` at record offset +4."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "18 => 28,"
+note = "The parser's fixed length for type 18 matches the declared 28 bytes, which the field list closes exactly."
+
+[[record]]
+name = "loop_node"
+kind = "byte"
+section = "5.1"
+anchor = "| LOOP (15)   | `attributes +8`, `fin +10`, `face +12`, `next_loop +14` |"
+size = 16
+endianness = "big"
+
+[[record.field]]
+name = "attributes"
+offset = 8
+type = "xmt_ref"
+source = "spec"
+anchor = "| LOOP (15)   | `attributes +8`, `fin +10`"
+
+[[record.field]]
+name = "fin"
+offset = 10
+type = "xmt_ref"
+source = "spec"
+anchor = "`fin +10`, `face +12`"
+
+[[record.field]]
+name = "face"
+offset = 12
+type = "xmt_ref"
+source = "spec"
+anchor = "`face +12`, `next_loop +14`"
+
+[[record.field]]
+name = "next_loop"
+offset = 14
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_loop +14`"
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "Type tag, XMT index, and the `node_id:u32` at record offset +4."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "15 => 16,"
+note = "The parser's fixed length for type 15 matches the declared 16 bytes, which the field list closes exactly."
+
+[[record]]
+name = "shell_node"
+kind = "byte"
+section = "5.1"
+anchor = "| SHELL (13)  | `node_id +4`, `attributes +8` (=1), `body_ref +10`, `next_shell +12` (=1), `first_face +14`, sentinels `+16/+18` (=1), `region_ref +20`, `face_anchor +22` (`1` or `first_face`) |"
+size = 24
+endianness = "big"
+
+[[record.field]]
+name = "node_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| SHELL (13)  | `node_id +4`, `attributes +8` (=1)"
+
+[[record.field]]
+name = "attributes"
+offset = 8
+type = "xmt_ref"
+source = "spec"
+anchor = "`attributes +8` (=1), `body_ref +10`"
+
+[[record.field]]
+name = "body_ref"
+offset = 10
+type = "xmt_ref"
+source = "spec"
+anchor = "`body_ref +10`, `next_shell +12` (=1)"
+
+[[record.field]]
+name = "next_shell"
+offset = 12
+type = "xmt_ref"
+source = "spec"
+anchor = "`next_shell +12` (=1), `first_face +14`"
+
+[[record.field]]
+name = "first_face"
+offset = 14
+type = "xmt_ref"
+source = "spec"
+anchor = "`first_face +14`, sentinels `+16/+18` (=1)"
+
+[[record.field]]
+name = "sentinel_16"
+offset = 16
+type = "xmt_ref"
+source = "spec"
+anchor = "sentinels `+16/+18` (=1), `region_ref +20`"
+
+[[record.field]]
+name = "sentinel_18"
+offset = 18
+type = "xmt_ref"
+source = "spec"
+anchor = "sentinels `+16/+18` (=1), `region_ref +20`"
+
+[[record.field]]
+name = "region_ref"
+offset = 20
+type = "xmt_ref"
+source = "spec"
+anchor = "`region_ref +20`, `face_anchor +22`"
+
+[[record.field]]
+name = "face_anchor"
+offset = 22
+type = "xmt_ref"
+source = "spec"
+anchor = "`face_anchor +22` (`1` or `first_face`)"
+
+[[record.gap]]
+offset = 0
+size = 4
+note = "Type tag and XMT index; the spec's field list starts at the `node_id` at +4."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "12 | 13 => 24,"
+note = "The parser's fixed length for type 13 matches the declared 24 bytes, which the field list closes exactly."
+
+[[record]]
+name = "point_node"
+kind = "byte"
+section = "5.1"
+anchor = "| POINT (29)  | `attributes +8`, `owner +10`, `next +12`, `prev +14`, `xyz:3×f64 +16` (meters) |"
+size = 40
+endianness = "big"
+
+[[record.field]]
+name = "attributes"
+offset = 8
+type = "xmt_ref"
+source = "spec"
+anchor = "| POINT (29)  | `attributes +8`, `owner +10`"
+
+[[record.field]]
+name = "owner"
+offset = 10
+type = "xmt_ref"
+source = "spec"
+anchor = "`owner +10`, `next +12`"
+
+[[record.field]]
+name = "next"
+offset = 12
+type = "xmt_ref"
+source = "spec"
+anchor = "`next +12`, `prev +14`"
+
+[[record.field]]
+name = "prev"
+offset = 14
+type = "xmt_ref"
+source = "spec"
+anchor = "`prev +14`, `xyz:3×f64 +16`"
+
+[[record.field]]
+name = "xyz"
+offset = 16
+type = "f64[3]"
+source = "spec"
+anchor = "`xyz:3×f64 +16` (meters)"
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "Type tag, XMT index, and the `node_id:u32` at record offset +4."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "29 => 40,"
+note = "The parser's fixed length for type 29 matches the declared 40 bytes, which the field list closes exactly."
+
+# --- §6.1 Analytic payloads ------------------------------------------------
+
+[[record]]
+name = "line_payload"
+kind = "byte"
+section = "6.1"
+anchor = "| LINE (30)     | point `+19`, direction `+43` |"
+size = 67
+endianness = "big"
+note = "Payload offsets are relative to the record's type tag, after the common header (§5.1). Each point or vector is three f64 BE. The 67-byte total is the §4.1 fixed record length for type 30."
+
+[[record.field]]
+name = "point"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "| LINE (30)     | point `+19`, direction `+43` |"
+
+[[record.field]]
+name = "direction"
+offset = 43
+type = "f64[3]"
+source = "spec"
+anchor = "point `+19`, direction `+43`"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/geometry.rs"
+contains = "(0x1e, 67),  // line"
+note = "The parser pairs tag 0x1e with the 67-byte record length this table closes."
+
+[[record]]
+name = "circle_payload"
+kind = "byte"
+section = "6.1"
+anchor = "| CIRCLE (31)   | center `+19`, normal `+43`, x_axis `+67`, radius `+91` |"
+size = 99
+endianness = "big"
+
+[[record.field]]
+name = "center"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "| CIRCLE (31)   | center `+19`, normal `+43`"
+
+[[record.field]]
+name = "normal"
+offset = 43
+type = "f64[3]"
+source = "spec"
+anchor = "normal `+43`, x_axis `+67`, radius `+91`"
+
+[[record.field]]
+name = "x_axis"
+offset = 67
+type = "f64[3]"
+source = "spec"
+anchor = "x_axis `+67`, radius `+91`"
+
+[[record.field]]
+name = "radius"
+offset = 91
+type = "f64"
+source = "spec"
+anchor = "center `+19`, normal `+43`, x_axis `+67`, radius `+91`"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/geometry.rs"
+contains = "(0x1f, 99),  // circle"
+note = "The parser pairs tag 0x1f with the 99-byte record length this table closes."
+
+[[record]]
+name = "ellipse_payload"
+kind = "byte"
+section = "6.1"
+anchor = "| ELLIPSE (32)  | center `+19`, normal `+43`, x_axis `+67`, major `+91`, minor `+99` |"
+size = 107
+endianness = "big"
+
+[[record.field]]
+name = "center"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "| ELLIPSE (32)  | center `+19`, normal `+43`"
+
+[[record.field]]
+name = "normal"
+offset = 43
+type = "f64[3]"
+source = "spec"
+anchor = "| ELLIPSE (32)  | center `+19`, normal `+43`, x_axis `+67`"
+
+[[record.field]]
+name = "x_axis"
+offset = 67
+type = "f64[3]"
+source = "spec"
+anchor = "x_axis `+67`, major `+91`, minor `+99`"
+
+[[record.field]]
+name = "major"
+offset = 91
+type = "f64"
+source = "spec"
+anchor = "major `+91`, minor `+99`"
+
+[[record.field]]
+name = "minor"
+offset = 99
+type = "f64"
+source = "spec"
+anchor = "minor `+99`"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/geometry.rs"
+contains = "(0x20, 107), // ellipse"
+note = "The parser pairs tag 0x20 with the 107-byte record length this table closes."
+
+[[record]]
+name = "plane_payload"
+kind = "byte"
+section = "6.1"
+anchor = "| PLANE (50)    | origin `+19`, normal `+43`, x_axis `+67` |"
+size = 91
+endianness = "big"
+
+[[record.field]]
+name = "origin"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "| PLANE (50)    | origin `+19`, normal `+43`, x_axis `+67` |"
+
+[[record.field]]
+name = "normal"
+offset = 43
+type = "f64[3]"
+source = "spec"
+anchor = "| PLANE (50)    | origin `+19`, normal `+43`, x_axis `+67` |"
+
+[[record.field]]
+name = "x_axis"
+offset = 67
+type = "f64[3]"
+source = "spec"
+anchor = "| PLANE (50)    | origin `+19`, normal `+43`, x_axis `+67` |"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/geometry.rs"
+contains = "(0x32, 91),  // plane"
+note = "The parser pairs tag 0x32 with the 91-byte record length this table closes."
+
+[[record]]
+name = "cylinder_payload"
+kind = "byte"
+section = "6.1"
+anchor = "| CYLINDER (51) | origin `+19`, axis `+43`, radius `+67`, x_axis `+75` |"
+size = 99
+endianness = "big"
+
+[[record.field]]
+name = "origin"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "| CYLINDER (51) | origin `+19`, axis `+43`"
+
+[[record.field]]
+name = "axis"
+offset = 43
+type = "f64[3]"
+source = "spec"
+anchor = "| CYLINDER (51) | origin `+19`, axis `+43`, radius `+67`"
+
+[[record.field]]
+name = "radius"
+offset = 67
+type = "f64"
+source = "spec"
+anchor = "radius `+67`, x_axis `+75` |"
+
+[[record.field]]
+name = "x_axis"
+offset = 75
+type = "f64[3]"
+source = "spec"
+anchor = "x_axis `+75` |"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/geometry.rs"
+contains = "(0x33, 99),  // cylinder"
+note = "The parser pairs tag 0x33 with the 99-byte record length this table closes."
+
+[[record]]
+name = "cone_payload"
+kind = "byte"
+section = "6.1"
+anchor = "| CONE (52)     | origin `+19`, axis `+43`, radius `+67`, sin_half `+75`, cos_half `+83`, x_axis `+91` |"
+size = 115
+endianness = "big"
+
+[[record.field]]
+name = "origin"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "| CONE (52)     | origin `+19`, axis `+43`"
+
+[[record.field]]
+name = "axis"
+offset = 43
+type = "f64[3]"
+source = "spec"
+anchor = "| CONE (52)     | origin `+19`, axis `+43`, radius `+67`"
+
+[[record.field]]
+name = "radius"
+offset = 67
+type = "f64"
+source = "spec"
+anchor = "radius `+67`, sin_half `+75`"
+
+[[record.field]]
+name = "sin_half"
+offset = 75
+type = "f64"
+source = "spec"
+anchor = "sin_half `+75`, cos_half `+83`"
+
+[[record.field]]
+name = "cos_half"
+offset = 83
+type = "f64"
+source = "spec"
+anchor = "cos_half `+83`, x_axis `+91`"
+
+[[record.field]]
+name = "x_axis"
+offset = 91
+type = "f64[3]"
+source = "spec"
+anchor = "cos_half `+83`, x_axis `+91` |"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/geometry.rs"
+contains = "(0x34, 115), // cone"
+note = "The parser pairs tag 0x34 with the 115-byte record length this table closes."
+
+[[record]]
+name = "sphere_payload"
+kind = "byte"
+section = "6.1"
+anchor = "| SPHERE (53)   | center `+19`, radius `+43`, axis `+51`, x_axis `+75` |"
+size = 99
+endianness = "big"
+note = "Note the slot order: the radius sits between the centre and the axis."
+
+[[record.field]]
+name = "center"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "| SPHERE (53)   | center `+19`, radius `+43`"
+
+[[record.field]]
+name = "radius"
+offset = 43
+type = "f64"
+source = "spec"
+anchor = "radius `+43`, axis `+51`"
+
+[[record.field]]
+name = "axis"
+offset = 51
+type = "f64[3]"
+source = "spec"
+anchor = "axis `+51`, x_axis `+75`"
+
+[[record.field]]
+name = "x_axis"
+offset = 75
+type = "f64[3]"
+source = "spec"
+anchor = "| SPHERE (53)   | center `+19`, radius `+43`, axis `+51`, x_axis `+75` |"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/geometry.rs"
+contains = "(0x35, 99),  // sphere"
+note = "The parser pairs tag 0x35 with the 99-byte record length this table closes."
+
+[[record]]
+name = "torus_payload"
+kind = "byte"
+section = "6.1"
+anchor = "| TORUS (54)    | center `+19`, axis `+43`, major `+67`, minor `+75`, x_axis `+83` |"
+size = 107
+endianness = "big"
+
+[[record.field]]
+name = "center"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "| TORUS (54)    | center `+19`, axis `+43`"
+
+[[record.field]]
+name = "axis"
+offset = 43
+type = "f64[3]"
+source = "spec"
+anchor = "| TORUS (54)    | center `+19`, axis `+43`, major `+67`"
+
+[[record.field]]
+name = "major"
+offset = 67
+type = "f64"
+source = "spec"
+anchor = "major `+67`, minor `+75`"
+
+[[record.field]]
+name = "minor"
+offset = 75
+type = "f64"
+source = "spec"
+anchor = "minor `+75`, x_axis `+83`"
+
+[[record.field]]
+name = "x_axis"
+offset = 83
+type = "f64[3]"
+source = "spec"
+anchor = "x_axis `+83` |"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/geometry.rs"
+contains = "(0x36, 107), // torus"
+note = "The parser pairs tag 0x36 with the 107-byte record length this table closes."
+
+# --- §6.1 / §6.4 Derived carriers ------------------------------------------
+
+[[record]]
+name = "offset_surf_payload"
+kind = "byte"
+section = "6.1"
+anchor = "**OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref `+21`, finite `offset_distance:f64 +23` (meters)."
+size = 31
+endianness = "big"
+note = "The compact partition record ends after `offset_distance`, closing the §4.1 length of 31. The status-framed deltas form continues with one finite `state_scalar:f64 BE` outside this extent."
+
+[[record.field]]
+name = "discriminator"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "discriminator byte `+19` (`V`/`I`/`U`)"
+
+[[record.field]]
+name = "true_offset"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "`true_offset:u8 +20` (`0`/`1`)"
+
+[[record.field]]
+name = "base_surface"
+offset = 21
+type = "xmt_ref"
+source = "spec"
+anchor = "base surface ref `+21`, finite `offset_distance:f64 +23`"
+
+[[record.field]]
+name = "offset_distance"
+offset = 23
+type = "f64"
+source = "spec"
+anchor = "finite `offset_distance:f64 +23` (meters)"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "60 => 31,"
+note = "The parser's fixed length for type 60 matches the declared 31 bytes, which the field list closes exactly."
+
+[[record]]
+name = "trimmed_curve_payload"
+kind = "byte"
+section = "6.4"
+anchor = "**TRIMMED_CURVE (133):** basis_curve ref `+19` (large-index capable → shifts later fields +2), `point_1 +21`, `point_2 +45`, `parm_1:f64 +69`, `parm_2:f64 +77`."
+size = 85
+endianness = "big"
+note = "A large-index basis-curve reference shifts every later field by two bytes."
+
+[[record.field]]
+name = "basis_curve"
+offset = 19
+type = "xmt_ref"
+source = "spec"
+anchor = "basis_curve ref `+19` (large-index capable → shifts later fields +2)"
+
+[[record.field]]
+name = "point_1"
+offset = 21
+type = "f64[3]"
+source = "spec"
+anchor = "`point_1 +21`, `point_2 +45`"
+
+[[record.field]]
+name = "point_2"
+offset = 45
+type = "f64[3]"
+source = "spec"
+anchor = "`point_2 +45`, `parm_1:f64 +69`"
+
+[[record.field]]
+name = "parm_1"
+offset = 69
+type = "f64"
+source = "spec"
+anchor = "`parm_1:f64 +69`, `parm_2:f64 +77`"
+
+[[record.field]]
+name = "parm_2"
+offset = 77
+type = "f64"
+source = "spec"
+anchor = "`parm_2:f64 +77`"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "133 => 85,"
+note = "The parser's fixed length for type 133 matches the declared 85 bytes, which the field list closes exactly."
+
+[[record]]
+name = "sp_curve_payload"
+kind = "byte"
+section = "6.4"
+anchor = "**SP_CURVE (137):** surface ref `+19`, b_curve ref `+21`, original ref `+23`, `tolerance_to_original:f64 +25` (after ref shifts)."
+size = 33
+endianness = "big"
+
+[[record.field]]
+name = "surface"
+offset = 19
+type = "xmt_ref"
+source = "spec"
+anchor = "surface ref `+19`, b_curve ref `+21`"
+
+[[record.field]]
+name = "b_curve"
+offset = 21
+type = "xmt_ref"
+source = "spec"
+anchor = "b_curve ref `+21`, original ref `+23`"
+
+[[record.field]]
+name = "original"
+offset = 23
+type = "xmt_ref"
+source = "spec"
+anchor = "original ref `+23`, `tolerance_to_original:f64 +25`"
+
+[[record.field]]
+name = "tolerance_to_original"
+offset = 25
+type = "f64"
+source = "spec"
+anchor = "`tolerance_to_original:f64 +25` (after ref shifts)"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "137 => 33,"
+note = "The parser's fixed length for type 137 matches the declared 33 bytes, which the field list closes exactly."
+
+[[record]]
+name = "intersection_type_38"
+kind = "byte"
+section = "6.3"
+anchor = "A type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`."
+size = 31
+endianness = "big"
+note = "§4.1's fixed-record table has no row for type 38; the 31-byte total here is the parser's constant, which the six stated reference offsets close exactly. Recorded in the pull request."
+
+[[record.field]]
+name = "ref0_primary_support"
+offset = 19
+type = "xmt_ref"
+source = "spec"
+anchor = "six support xmt references at `+19,+21,+23,+25,+27,+29`"
+
+[[record.field]]
+name = "ref1_second_support_bridge"
+offset = 21
+type = "xmt_ref"
+source = "spec"
+anchor = "six support xmt references at `+19,+21,+23,+25,+27,+29`"
+
+[[record.field]]
+name = "ref2_chart"
+offset = 23
+type = "xmt_ref"
+source = "spec"
+anchor = "| 2   | `0x28` CHART_s seed/control polyline |"
+
+[[record.field]]
+name = "ref3_term_start"
+offset = 25
+type = "xmt_ref"
+source = "spec"
+anchor = "| 3/4 | `0x29` term_use start / end endpoint |"
+
+[[record.field]]
+name = "ref4_term_end"
+offset = 27
+type = "xmt_ref"
+source = "spec"
+anchor = "| 3/4 | `0x29` term_use start / end endpoint |"
+
+[[record.field]]
+name = "ref5_values_array"
+offset = 29
+type = "xmt_ref"
+source = "spec"
+anchor = "| 5   | `0x00cc` values-array (support UV parameters) |"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/topology.rs"
+contains = "38 => 31,"
+note = "The parser's fixed length for type 38, which §4.1 does not state."
+
+[[record]]
+name = "chart_s_preamble"
+kind = "byte"
+section = "6.3"
+anchor = "base_parameter:f64 base_scale:f64 chart_count:u32 chordal_error:f64 angular_error:f64"
+size = 52
+endianness = "big"
+note = "Offsets are relative to `pre`, the end of the `count` and `xmt` fields. The Hvec block always starts at `pre+52`. Field offsets are derived by laying the spec's ordered field list out from `pre`; the stated `pre+52` block start confirms the arithmetic."
+
+[[record.field]]
+name = "base_parameter"
+offset = 0
+type = "f64"
+source = "derived"
+anchor = "base_parameter:f64 base_scale:f64"
+note = "Offset derived by laying the stated ordered field list out from `pre`."
+
+[[record.field]]
+name = "base_scale"
+offset = 8
+type = "f64"
+source = "derived"
+anchor = "base_parameter:f64 base_scale:f64 chart_count:u32"
+note = "Offset derived by laying the stated ordered field list out from `pre`."
+
+[[record.field]]
+name = "chart_count"
+offset = 16
+type = "u32"
+source = "derived"
+anchor = "chart_count:u32 chordal_error:f64"
+note = "Offset derived by laying the stated ordered field list out from `pre`."
+
+[[record.field]]
+name = "chordal_error"
+offset = 20
+type = "f64"
+source = "derived"
+anchor = "chordal_error:f64 angular_error:f64"
+note = "Offset derived by laying the stated ordered field list out from `pre`."
+
+[[record.field]]
+name = "angular_error"
+offset = 28
+type = "f64"
+source = "derived"
+anchor = "angular_error:f64"
+note = "Offset derived by laying the stated ordered field list out from `pre`."
+
+[[record.field]]
+name = "parameter_error"
+offset = 36
+type = "f64[2]"
+source = "derived"
+anchor = "parameter_error[2]:f64 (sentinel pair -31415800000000.0)"
+note = "Offset derived by laying the stated ordered field list out from `pre`; it closes the stated `pre+52` Hvec block start exactly."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-nx/src/intersection.rs"
+contains = "const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;"
+note = "The parser's sentinel matches the stated absent-parameter pair."
+
+# --- Not tabulated ---------------------------------------------------------
+
+[[not_applicable]]
+area = "OM record grammars (§7.1)"
+reason = "About sixty fixed-literal token grammars with sequential field positions but no stated absolute offsets. They are slot layouts over a variable-width compact-index lane, so no byte arithmetic closes."
+section = "3.3"
+anchor = "A compact-index lane is a concatenation of entries."
+
+[[not_applicable]]
+area = "`b5`-style deltas record grammars (§4.2, §9.2-§9.4)"
+reason = "Every reference slot is a variable-width encoded XMT index followed by a status byte, so field positions shift per record. The spec states field order and inline schema-header byte strings, not offsets."
+section = "4.2"
+anchor = "Records are not length-prefixed; they self-delimit by typed decode."
+
+[[not_applicable]]
+area = "Int32 Compressed Data Packet Mk. 2 (§2.3)"
+reason = "A most-significant-bit-first bit stream with `u6` and `u3` sub-fields; there are no byte offsets to state."
+section = "2.3"
+anchor = "An Int32 Compressed Data Packet Mk. 2 begins with `value_count:u32 LE`"
+
+[[not_applicable]]
+area = "B_SURFACE and B_CURVE support records (§6.2)"
+reason = "Types 125-128 and 135-136 carry counted arrays whose element counts drive every later position, and each may place one or two `ff` envelope escapes that shift the remaining fields."
+section = "6.2"
+anchor = "Types 125, 126, 135, and 136 may place an `ff` envelope escape before their xmt."

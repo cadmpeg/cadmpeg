@@ -152,8 +152,10 @@ dependencies = [
  "clap",
  "crc32fast",
  "predicates",
+ "serde",
  "serde_json",
  "tempfile",
+ "toml",
  "zip",
 ]
 

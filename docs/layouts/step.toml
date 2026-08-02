@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: Apache-2.0
+# Record layouts for ISO 10303-21 STEP exchange files.
+schema = 1
+format = "step"
+spec = "docs/formats/step.md"
+note = """
+STEP has no record layout to tabulate. It is an ISO 10303-21 clear-text
+grammar: no magic bytes, no fixed-width fields, no column positions, no
+endianness, and no record sizes anywhere in `docs/formats/step.md` or
+`crates/cadmpeg-step/`. The specification states the rule outright — a lexer
+never assigns line-based meaning to a token — and gives the layout entirely as
+EBNF.
+
+The one bit-level rule in the format is the binary literal's nibble packing,
+recorded below as a slot layout because it is the only place the specification
+fixes a field's position and width. Everything else is listed as not
+applicable, with the reason.
+"""
+
+[[record]]
+name = "binary_literal"
+kind = "slot"
+section = "3"
+anchor = "A binary literal starts with one indicator nibble followed by hexadecimal payload digits."
+note = "Nibble-level, not byte-level: positions are hexadecimal digits inside a quoted literal, not bytes in a record. Recorded because it is the only fixed-position field the format defines."
+
+[[record.field]]
+name = "indicator"
+type = "u8"
+endianness = "n/a"
+source = "spec"
+anchor = "The indicator states the number of unused trailing bits in the final payload digit and is in `0..=3`; those low-order bits are zero."
+note = "One hexadecimal digit, value 0 through 3. Single nibble, so no byte order applies."
+
+[[record.field]]
+name = "payload"
+type = "text"
+source = "spec"
+anchor = "Payload digits pack most-significant nibble first. The decoded bit length is four times the payload digit count minus the indicator."
+note = "Hexadecimal digits, most-significant nibble first. An empty payload uses indicator zero."
+
+# --- Not tabulated -----------------------------------------------------------
+
+[[not_applicable]]
+area = "Exchange structure"
+reason = "N/A, text grammar. The exchange structure is an EBNF production over keyword-delimited sections. Nothing in it has a fixed byte position or width."
+section = "2"
+anchor = "exchange = \"ISO-10303-21;\" header anchor? reference? data+ signature?"
+
+[[not_applicable]]
+area = "Tokens and values"
+reason = "N/A, text grammar. Tokens are whitespace- and comment-separated and case-insensitive, and the specification states that a lexer never assigns line-based meaning to a token."
+section = "3"
+anchor = "A lexer never assigns line-based meaning to a token."
+
+[[not_applicable]]
+area = "Entity parameter slot order"
+reason = "Positional, but not stated in the specification. Each entity's parameter order is an EXPRESS external-mapping fact carried in the per-entity decoders as literal `.parameter(N)` indices; `step.md` states only the rule that makes such a table well-defined, namely that the partial records in a complex instance are ordered alphabetically by entity name. Tabulating it would mean transcribing the parser rather than the specification, so it is left out of this pass and recorded as a gap."
+section = "5"
+anchor = "The partial records in a complex instance are ordered alphabetically by entity name."
+
+[[not_applicable]]
+area = "Header section"
+reason = "N/A, text grammar. The header is a sequence of entity instances with the same token grammar as the data section."
+section = "6"
+anchor = "## 6. Header"
+
+[[not_applicable]]
+area = "Edition 3 sections"
+reason = "N/A, text grammar. The anchor, reference, and signature sections are keyword-delimited entry lists. The edition 3 ZIP container layout and the Part 26 HDF5 layout are both recorded as open items, not as stated layouts."
+section = "7"
+anchor = "## 7. Edition 3 sections"

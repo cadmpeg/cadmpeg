@@ -64,6 +64,7 @@ regex = "1.13"
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+toml = "1"
 encoding_rs = "0.8"
 
 [profile.dev]
