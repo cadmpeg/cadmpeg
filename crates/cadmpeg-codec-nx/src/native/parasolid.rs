@@ -1522,8 +1522,10 @@ pub struct ParasolidEntity51Record {
     pub sequence: u32,
     /// Attribute-class discriminator.
     pub discriminator: u16,
-    /// Ordered stream-local references.
-    pub references: Vec<u32>,
+    /// Five fixed leading stream-local references.
+    pub leading_references: [u32; 5],
+    /// Variable trailing stream-local references counted by `flags`.
+    pub trailing_references: Vec<u32>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1832,7 +1834,8 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
                     flags: record.flags,
                     sequence: record.sequence,
                     discriminator: record.discriminator,
-                    references: record.references,
+                    leading_references: record.leading_references,
+                    trailing_references: record.trailing_references,
                     byte_len: record.byte_len as u64,
                     inflated_offset: record.offset as u64,
                 })
@@ -1947,7 +1950,10 @@ pub fn parasolid_entity_51_numeric_uses(
     }
     let mut uses = Vec::new();
     for entity in entities {
-        for (reference_ordinal, referenced_xmt) in entity.references.iter().copied().enumerate() {
+        for (trailing_ordinal, referenced_xmt) in
+            entity.trailing_references.iter().copied().enumerate()
+        {
+            let reference_ordinal = trailing_ordinal + 5;
             let Some([(kind, value_record)]) = values
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
@@ -1987,7 +1993,10 @@ pub fn parasolid_entity_51_string_uses(
     }
     let mut uses = Vec::new();
     for entity in entities {
-        for (reference_ordinal, referenced_xmt) in entity.references.iter().copied().enumerate() {
+        for (trailing_ordinal, referenced_xmt) in
+            entity.trailing_references.iter().copied().enumerate()
+        {
+            let reference_ordinal = trailing_ordinal + 5;
             let Some([string]) = strings_by_identity
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
@@ -2889,7 +2898,8 @@ mod tests {
             flags: 1,
             sequence: 7,
             discriminator: 0x21,
-            references: vec![60, 61, 1, 62, 63, 64],
+            leading_references: [60, 61, 1, 62, 63],
+            trailing_references: vec![64],
             byte_len: 26,
             inflated_offset: 200,
         };
@@ -2934,6 +2944,54 @@ mod tests {
             &super::parasolid_attribute_class_uses(&[invalid], &[definition]),
         )
         .is_empty());
+    }
+
+    #[test]
+    fn entity_51_value_uses_exclude_fixed_leading_references() {
+        use super::{
+            ParasolidEntity51Record, ParasolidEntity52IntegerRecord, ParasolidEntity54StringRecord,
+        };
+
+        let entity = ParasolidEntity51Record {
+            id: "entity".into(),
+            stream_ordinal: 3,
+            xmt: 50,
+            flags: 2,
+            sequence: 7,
+            discriminator: 0x21,
+            leading_references: [60, 61, 70, 71, 72],
+            trailing_references: vec![70, 71],
+            byte_len: 28,
+            inflated_offset: 200,
+        };
+        let integers = [ParasolidEntity52IntegerRecord {
+            id: "integers".into(),
+            stream_ordinal: 3,
+            xmt: 70,
+            values: vec![1],
+            byte_len: 12,
+            inflated_offset: 300,
+        }];
+        let strings = [ParasolidEntity54StringRecord {
+            id: "string".into(),
+            stream_ordinal: 3,
+            xmt: 71,
+            value: "value".into(),
+            byte_len: 14,
+            inflated_offset: 400,
+        }];
+
+        let numeric_uses =
+            super::parasolid_entity_51_numeric_uses(std::slice::from_ref(&entity), &integers, &[]);
+        assert_eq!(numeric_uses.len(), 1);
+        assert_eq!(numeric_uses[0].reference_ordinal, 5);
+        assert_eq!(numeric_uses[0].referenced_xmt, 70);
+
+        let string_uses =
+            super::parasolid_entity_51_string_uses(std::slice::from_ref(&entity), &strings);
+        assert_eq!(string_uses.len(), 1);
+        assert_eq!(string_uses[0].reference_ordinal, 6);
+        assert_eq!(string_uses[0].referenced_xmt, 71);
     }
 
     #[test]

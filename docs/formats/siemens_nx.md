@@ -1667,6 +1667,8 @@ also be the leading `00` of the immediately following two-byte record tag. The
 shared byte belongs to both record frames and is counted once in the deltas byte
 ledger.
 
+The first five type-81 references form a fixed leading lane. The remaining `flags` references form the trailing payload lane. Only trailing references address type-82, type-83, or type-84 value records; their reference ordinals retain the five leading slots, so the first trailing reference has ordinal five. Leading references remain structural and do not produce attribute values even when their values collide with value-record XMT identities.
+
 The type-81 discriminator selects an attribute class when its value plus one
 equals the XMT of exactly one type-79 attribute definition in the same stream.
 Every matched instance retains the serialized discriminator, matched

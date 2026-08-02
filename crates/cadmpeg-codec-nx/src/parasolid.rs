@@ -100,8 +100,10 @@ pub struct Entity51Record {
     pub sequence: u32,
     /// Attribute-class discriminator.
     pub discriminator: u16,
-    /// Ordered stream-local references.
-    pub references: Vec<u32>,
+    /// Five fixed leading stream-local references.
+    pub leading_references: [u32; 5],
+    /// Variable trailing stream-local references counted by `flags`.
+    pub trailing_references: Vec<u32>,
 }
 
 /// One self-framed printable type-84 string record.
@@ -300,6 +302,8 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
     (xmt > 1 && sequence != 0 && (1..=0x20).contains(&flags)).then_some(())?;
     let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
     let references = entity_51_references(bytes, &mut at, reference_count)?;
+    let leading_references = references.get(..5)?.try_into().ok()?;
+    let trailing_references = references.get(5..)?.to_vec();
     Some(Entity51Record {
         offset,
         byte_len: at - offset,
@@ -307,7 +311,8 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
         xmt,
         sequence,
         discriminator,
-        references,
+        leading_references,
+        trailing_references,
     })
 }
 
