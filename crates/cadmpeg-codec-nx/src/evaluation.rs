@@ -364,6 +364,15 @@ fn rederived_body_census(
                     crate::decode::sew_bodies_definition_is_incomplete(feature),
                 )?;
             }
+            FeatureDefinition::TrimBodies { targets, tools, .. } => {
+                preserve_complete_body_targets(
+                    feature,
+                    &bodies,
+                    targets,
+                    tools,
+                    crate::decode::trim_bodies_definition_is_incomplete(feature),
+                )?;
+            }
             FeatureDefinition::DeleteBody {
                 bodies: selection,
                 mode,
@@ -567,6 +576,40 @@ fn apply_complete_body_retention(
     Ok(())
 }
 
+fn preserve_complete_body_targets(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &BTreeSet<BodyId>,
+    targets: &BodySelection,
+    tools: &BodySelection,
+    incomplete: bool,
+) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    if incomplete {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    }
+    let (Some(targets), Some(tools)) = (
+        explicit_body_selection(targets),
+        explicit_body_selection(tools),
+    ) else {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    };
+    if feature.outputs.as_slice() != targets
+        || targets.iter().any(|target| !bodies.contains(target))
+        || tools.iter().any(|tool| !bodies.contains(tool))
+    {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    }
+    Ok(())
+}
+
 fn explicit_body_selection(selection: &BodySelection) -> Option<&[BodyId]> {
     let bodies = match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
@@ -589,7 +632,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{
-        Angle, BodyRetentionMode, ChamferGroup, ChamferSpec, ConfigurationBodies,
+        Angle, BodyRetentionMode, BodyTrimSide, ChamferGroup, ChamferSpec, ConfigurationBodies,
         ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
@@ -1282,6 +1325,91 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
                 bodies: vec![target]
+            }
+        );
+    }
+
+    #[test]
+    fn trim_bodies_preserves_all_targets_and_tools() {
+        let mut ir = complete_block_ir();
+        let first = ir.model.bodies[0].id.clone();
+        let second = BodyId("second".to_string());
+        let tool = BodyId("tool".to_string());
+        ir.model.bodies.push(model_body(&second.0));
+        ir.model.bodies.push(model_body(&tool.0));
+        ir.model.features[0].outputs = vec![first.clone(), second.clone(), tool.clone()];
+        ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), tool.clone()]),
+        };
+        let mut trim = body_neutral_feature(
+            "trim",
+            1,
+            FeatureDefinition::TrimBodies {
+                targets: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+                tools: BodySelection::Bodies(vec![tool.clone()]),
+                keep: BodyTrimSide::Forward,
+            },
+        );
+        trim.outputs = vec![first.clone(), second.clone()];
+        ir.model.features.push(trim);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![first, second, tool]
+            }
+        );
+    }
+
+    #[test]
+    fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
+        let mut ir = complete_block_ir();
+        let target = ir.model.bodies[0].id.clone();
+        let tool = BodyId("tool".to_string());
+        ir.model.bodies.push(model_body(&tool.0));
+        ir.model.features[0].outputs.push(tool.clone());
+        ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+        };
+        ir.model.features.push(body_preserving_feature(
+            "trim",
+            1,
+            tool.clone(),
+            FeatureDefinition::TrimBodies {
+                targets: BodySelection::Bodies(vec![target]),
+                tools: BodySelection::Bodies(vec![tool]),
+                keep: BodyTrimSide::Reverse,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("trim".to_string())),
+                reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
+            }
+        );
+    }
+
+    #[test]
+    fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
+        let mut ir = complete_block_ir();
+        let target = ir.model.bodies[0].id.clone();
+        ir.model.features.push(body_neutral_feature(
+            "trim",
+            1,
+            FeatureDefinition::TrimBodies {
+                targets: BodySelection::Bodies(vec![target]),
+                tools: BodySelection::Bodies(vec![BodyId("tool".to_string())]),
+                keep: BodyTrimSide::Unresolved,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("trim".to_string())),
+                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
     }

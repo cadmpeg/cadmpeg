@@ -10337,14 +10337,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::SewBodies { .. } if sew_bodies_definition_is_incomplete(feature) => {
                 "sew bodies"
             }
-            FeatureDefinition::TrimBodies {
-                targets,
-                tools,
-                keep,
-            } if body_selection_is_incomplete(targets)
-                || body_selection_is_incomplete(tools)
-                || body_selections_overlap(targets, tools)
-                || matches!(keep, BodyTrimSide::Unresolved) =>
+            FeatureDefinition::TrimBodies { .. }
+                if trim_bodies_definition_is_incomplete(feature) =>
             {
                 "trim bodies"
             }
@@ -10723,6 +10717,21 @@ pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
         || resolved_body_selection_len(target) != Some(1)
         || body_selections_overlap(target, tools)
         || matches!(op, BooleanOp::Unresolved | BooleanOp::NewBody)
+}
+
+pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::TrimBodies {
+        targets,
+        tools,
+        keep,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    body_selection_is_incomplete(targets)
+        || body_selection_is_incomplete(tools)
+        || body_selections_overlap(targets, tools)
+        || matches!(keep, BodyTrimSide::Unresolved)
 }
 
 pub(crate) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
