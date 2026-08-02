@@ -37736,8 +37736,8 @@ fn marker_relation_is_inactive(
 ) -> bool {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, Collinear, Concentric, Coradial, EllipseAngle180,
-        EllipseAngle270, EllipseAngle90, Equal, Horizontal, Parallel, Perpendicular, Tangent,
-        Vertical,
+        EllipseAngle270, EllipseAngle90, Equal, Horizontal, MergePoints, Parallel, Perpendicular,
+        Tangent, Vertical,
     };
 
     let SketchInputKind::Relation(kind) = marker.kind else {
@@ -37822,6 +37822,19 @@ fn marker_relation_is_inactive(
                         SketchGeometry::Point { .. } | SketchGeometry::Native { .. }
                     )
                 })
+        }
+        crate::records::SketchRelationKind::Coincident | MergePoints => {
+            let [SketchEntity {
+                geometry: SketchGeometry::Point { position: first },
+                ..
+            }, SketchEntity {
+                geometry: SketchGeometry::Point { position: second },
+                ..
+            }] = resolved.as_slice()
+            else {
+                return false;
+            };
+            !same_dimension_length(first.u, second.u) || !same_dimension_length(first.v, second.v)
         }
         _ => false,
     }
@@ -47028,6 +47041,48 @@ mod profile_join_tests {
             &relation,
             &definition,
             &entities
+        ));
+    }
+
+    #[test]
+    fn geometrically_contradicted_point_coincidence_is_inactive() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Coincident);
+        let ids = [
+            SketchEntityId("first".into()),
+            SketchEntityId("second".into()),
+        ];
+        let definition = SketchConstraintDefinition::Native {
+            native_kind: "sldprt:marker-relation:9".into(),
+            native_state: None,
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
+            entities: ids.to_vec(),
+            parameter: None,
+            operands: Vec::new(),
+        };
+        let point = |id: SketchEntityId, position| SketchEntity {
+            id,
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point { position },
+        };
+        let first = point(ids[0].clone(), Point2::new(1.0, 2.0));
+        let coincident = point(ids[1].clone(), Point2::new(1.0, 2.0));
+        let distinct = point(ids[1].clone(), Point2::new(1.0, 3.0));
+
+        assert!(!marker_relation_is_inactive(
+            &relation,
+            &definition,
+            &[first.clone(), coincident],
+        ));
+        assert!(marker_relation_is_inactive(
+            &relation,
+            &definition,
+            &[first, distinct],
         ));
     }
 
