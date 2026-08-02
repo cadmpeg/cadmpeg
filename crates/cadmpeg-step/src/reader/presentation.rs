@@ -69,7 +69,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             .collect(),
         products: ir
             .model
-            .products
+            .product_definitions
             .iter()
             .map(|item| item.id.0.clone())
             .collect(),
