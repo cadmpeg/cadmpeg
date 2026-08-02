@@ -25,8 +25,31 @@ fi
 echo "pre-commit: cargo fmt --all --check"
 cargo fmt --all --check
 
-echo "pre-commit: cargo clippy --workspace -- -D warnings -W missing-docs"
-cargo clippy --workspace -- -D warnings -W missing-docs
+# Scope clippy and tests to the staged crates plus their transitive workspace
+# dependents. A leaf-codec commit must not fail on pre-existing lint debt in
+# crates it did not touch, and it must not pay full-workspace latency; a
+# shared-crate commit (cadmpeg-ir, cadmpeg-codec-core) still gates every
+# dependent codec through the reverse-dependency closure. Manifest, lockfile,
+# Cargo-config, and toolchain changes fall back to the full workspace, as does
+# any staged Rust file that no workspace crate owns.
+if git diff --cached --name-only \
+    | grep -qE '(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
+  scope="WORKSPACE"
+else
+  scope=$(python3 scripts/staged-crates.py)
+fi
 
-echo "pre-commit: cargo test-fast"
-cargo test-fast
+if [ "$scope" = "WORKSPACE" ]; then
+  echo "pre-commit: cargo clippy --workspace -- -D warnings -W missing-docs"
+  cargo clippy --workspace -- -D warnings -W missing-docs
+  echo "pre-commit: cargo test-fast"
+  cargo test-fast
+elif [ -n "$scope" ]; then
+  pkg_flags=$(printf ' -p %s' $scope)
+  echo "pre-commit: cargo clippy$pkg_flags -- -D warnings -W missing-docs"
+  cargo clippy $pkg_flags -- -D warnings -W missing-docs
+  echo "pre-commit: cargo test$pkg_flags --lib --bins --tests"
+  cargo test $pkg_flags --lib --bins --tests
+else
+  echo "pre-commit: staged Rust/Cargo files belong to no workspace crate; skipping"
+fi
