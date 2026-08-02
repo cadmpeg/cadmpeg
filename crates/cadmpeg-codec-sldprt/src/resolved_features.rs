@@ -55,6 +55,9 @@ const COMPACT_SCALAR_HEADER: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00,
 ];
+const VALUE_ONLY_SCALAR_HEADER: &[u8] = &[
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
+];
 const SKETCH_POINT_TOLERANCE: f64 = 1.0e-9;
 const SPATIAL_VERTEX_PREFIX: &[u8] = &[
     0xff, 0xfe, 0xff, 0x06, b'V', 0x00, b'e', 0x00, b'r', 0x00, b't', 0x00, b'e', 0x00, b'x', 0x00,
@@ -5024,6 +5027,7 @@ mod marker_tests {
             second_condition: None,
             reference_identity: Some(identity.into()),
             canonical_reference: Some("components:1,2,3".into()),
+            depth_m: None,
         };
         let first = vote("lane-0:100", "components:1,2,3");
         let second = vote("lane-1:200", "components:1,2,3");
@@ -5038,6 +5042,14 @@ mod marker_tests {
             Some(vote("lane-1:200", "components:1,2,4")),
         ])
         .is_none());
+
+        let mut first_depth = vote("lane-0:100", "components:1,2,3");
+        first_depth.depth_m = Some(0.01);
+        let mut second_depth = vote("lane-1:200", "components:1,2,3");
+        second_depth.depth_m = Some(0.02);
+        assert!(
+            super::consensus_termination_vote(&[Some(first_depth), Some(second_depth),]).is_none()
+        );
     }
 
     #[test]
@@ -5864,6 +5876,31 @@ mod marker_tests {
                 (FeatureInputOperandKind::Native(0x8152), 9),
             ]
         );
+    }
+
+    #[test]
+    fn value_only_scalar_header_ends_at_the_value() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(NAME_MARKER);
+        payload.push(2);
+        for unit in "D1".encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(super::VALUE_ONLY_SCALAR_HEADER);
+        payload.extend_from_slice(&0.01f64.to_le_bytes());
+        let trailer = payload.len();
+        payload.resize(trailer + 24, 0);
+        payload[trailer + 3..trailer + 7].copy_from_slice(&132u32.to_le_bytes());
+
+        let names = object_names(&payload, "lane");
+        let scalars = named_scalars(&payload, "lane", &names);
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.value, 0.01);
+        assert_eq!(scalar.object_id, 132);
+        assert_eq!(scalar.role, super::FeatureInputScalarRole::Native);
+        assert!(scalar.operands.is_empty());
     }
 
     #[test]
@@ -15265,12 +15302,16 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize, name: &str) -> Option
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.encode_utf16().count().checked_mul(2)?)?;
-    [SCALAR_HEADER, COMPACT_SCALAR_HEADER]
-        .into_iter()
-        .find_map(|header| {
-            let value_offset = header_offset.checked_add(header.len())?;
-            (payload.get(header_offset..value_offset) == Some(header)).then_some(value_offset)
-        })
+    [
+        SCALAR_HEADER,
+        COMPACT_SCALAR_HEADER,
+        VALUE_ONLY_SCALAR_HEADER,
+    ]
+    .into_iter()
+    .find_map(|header| {
+        let value_offset = header_offset.checked_add(header.len())?;
+        (payload.get(header_offset..value_offset) == Some(header)).then_some(value_offset)
+    })
 }
 
 pub(crate) fn scalar_indices_match(
@@ -25073,7 +25114,7 @@ pub(crate) fn enrich_history_parameters<'a>(
         Length,
         Angle,
     }
-    let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
+    let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit, bool)>>::new();
     for lane in lanes {
         let names_by_id = lane
             .names
@@ -25161,28 +25202,38 @@ pub(crate) fn enrich_history_parameters<'a>(
                     driving
                 };
                 if let [scalar] = candidates_for_name.as_slice() {
+                    let value_only = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
+                        value_only_scalar_offset(&lane.native_payload, name)
+                            == usize::try_from(scalar.offset).ok()
+                    });
+                    let unit = scalar_units
+                        .get(scalar.id.as_str())
+                        .copied()
+                        .unwrap_or(ScalarUnit::Native);
+                    if value_only {
+                        continue;
+                    }
                     candidates
                         .entry((history_index, feature_index, name.to_string()))
                         .or_default()
-                        .push((
-                            scalar.value,
-                            scalar_units
-                                .get(scalar.id.as_str())
-                                .copied()
-                                .unwrap_or(ScalarUnit::Native),
-                        ));
+                        .push((scalar.value, unit, value_only));
                 }
             }
         }
     }
 
     for ((history_index, feature_index, name), values) in candidates {
-        let Some((&(first, unit), rest)) = values.split_first() else {
+        let Some((&(first, unit, value_only), rest)) = values.split_first() else {
             continue;
         };
-        if rest.iter().any(|(value, candidate_unit)| {
-            value.to_bits() != first.to_bits() || *candidate_unit != unit
-        }) {
+        if rest
+            .iter()
+            .any(|(value, candidate_unit, candidate_value_only)| {
+                value.to_bits() != first.to_bits()
+                    || *candidate_unit != unit
+                    || *candidate_value_only != value_only
+            })
+        {
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
@@ -25191,6 +25242,9 @@ pub(crate) fn enrich_history_parameters<'a>(
         });
         if unit == ScalarUnit::Native && source_dimension && feature.parameters.contains_key(&name)
         {
+            continue;
+        }
+        if unit == ScalarUnit::Native && value_only && feature.parameters.contains_key(&name) {
             continue;
         }
         if unit == ScalarUnit::Native
@@ -25216,6 +25270,16 @@ pub(crate) fn enrich_history_parameters<'a>(
             feature.parameters.entry(name).or_insert(expression);
         }
     }
+}
+
+fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
+    let name_offset = usize::try_from(name.offset).ok()?;
+    let header_offset = name_offset
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
+    (payload.get(header_offset..header_offset + VALUE_ONLY_SCALAR_HEADER.len())
+        == Some(VALUE_ONLY_SCALAR_HEADER))
+    .then_some(header_offset + VALUE_ONLY_SCALAR_HEADER.len())
 }
 
 fn native_scalar_matches_discrete_parameter(
@@ -32250,7 +32314,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
         let names_by_id = lane
             .names
             .iter()
-            .map(|name| (name.id.as_str(), name.value.as_str()))
+            .map(|name| (name.id.as_str(), name))
             .collect::<HashMap<_, _>>();
         let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
         for feature in native_features.values() {
@@ -32280,8 +32344,11 @@ pub(crate) fn bind_parameter_scalars<'a>(
                         None => scalar.offset > start && scalar.offset < end,
                     })
                     .filter(|scalar| {
-                        names_by_id.get(scalar.name.as_str()).copied()
-                            == Some(parameter.name.as_str())
+                        names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
+                            name.value == parameter.name
+                                && value_only_scalar_offset(&lane.native_payload, name)
+                                    != usize::try_from(scalar.offset).ok()
+                        })
                     })
                     .collect::<Vec<_>>();
                 let driving = scalars
@@ -33020,6 +33087,7 @@ struct TerminationVote {
     second_condition: Option<String>,
     reference_identity: Option<String>,
     canonical_reference: Option<String>,
+    depth_m: Option<f64>,
 }
 
 pub(crate) fn enrich_history_extrusion_terminations(
@@ -33031,7 +33099,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
         let names_by_id = lane
             .names
             .iter()
-            .map(|name| (name.id.as_str(), name.value.as_str()))
+            .map(|name| (name.id.as_str(), name))
             .collect::<HashMap<_, _>>();
         let blind_offsets = (0..lane.native_payload.len().saturating_sub(103))
             .filter(|offset| compact_extrusion_blind_at(&lane.native_payload, *offset))
@@ -33055,10 +33123,14 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .filter(|feature| is_extrusion_end_spec_owner(feature))
                 .filter(|feature| feature.parameters.len() == 1)
                 .filter(|feature| {
-                    feature.parameters.get(*name).is_some_and(|value| {
-                        crate::history::parse_dimension_length_mm(value)
-                            .is_some_and(|value| (value - scalar.value * 1000.0).abs() <= 1.0e-9)
-                    })
+                    feature
+                        .parameters
+                        .get(name.value.as_str())
+                        .is_some_and(|value| {
+                            crate::history::parse_dimension_length_mm(value).is_some_and(|value| {
+                                (value - scalar.value * 1000.0).abs() <= 1.0e-9
+                            })
+                        })
                 })
                 .collect::<Vec<_>>();
             let [owner] = owners.as_slice() else {
@@ -33073,6 +33145,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     second_condition: None,
                     reference_identity: None,
                     canonical_reference: None,
+                    depth_m: None,
                 });
         }
         let mut objects = histories
@@ -33104,6 +33177,10 @@ pub(crate) fn enrich_history_extrusion_terminations(
             };
             let mut end_index = index + 1;
             while let Some((_, next_id)) = objects.get(end_index) {
+                if next_id == feature_id {
+                    end_index += 1;
+                    continue;
+                }
                 let skip = histories
                     .iter()
                     .flat_map(|history| &history.features)
@@ -33128,12 +33205,31 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let candidates = (start..end.saturating_sub(103))
                 .filter_map(|offset| {
                     if compact_extrusion_blind_at(&lane.native_payload, offset) {
+                        let depth_m = lane
+                            .scalars
+                            .iter()
+                            .filter(|scalar| {
+                                usize::try_from(scalar.offset)
+                                    .is_ok_and(|scalar| scalar > offset && scalar < end)
+                            })
+                            .filter_map(|scalar| {
+                                let name = names_by_id.get(scalar.name.as_str())?;
+                                matches!(name.value.as_str(), "D1" | "Depth")
+                                    .then_some((scalar, *name))
+                            })
+                            .filter(|(scalar, name)| {
+                                value_only_scalar_offset(&lane.native_payload, name)
+                                    == usize::try_from(scalar.offset).ok()
+                            })
+                            .min_by_key(|(scalar, _)| scalar.offset)
+                            .map(|(scalar, _)| scalar.value);
                         return Some(TerminationVote {
                             condition: "Blind".to_string(),
                             reference: None,
                             second_condition: None,
                             reference_identity: None,
                             canonical_reference: None,
+                            depth_m,
                         });
                     }
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
@@ -33143,6 +33239,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             second_condition: None,
                             reference_identity: None,
                             canonical_reference: None,
+                            depth_m: None,
                         });
                     }
                     if let Some(reference) =
@@ -33163,6 +33260,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             second_condition: None,
                             reference_identity: None,
                             canonical_reference: None,
+                            depth_m: None,
                         });
                     }
                     if has_depth
@@ -33177,6 +33275,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             second_condition: Some("ThroughAll".to_string()),
                             reference_identity: None,
                             canonical_reference: None,
+                            depth_m: None,
                         });
                     }
                     if has_depth {
@@ -33189,6 +33288,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             second_condition: None,
                             reference_identity: None,
                             canonical_reference: None,
+                            depth_m: None,
                         })
                     } else if compact_extrusion_through_next_at(&lane.native_payload, offset) {
                         Some(TerminationVote {
@@ -33197,6 +33297,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             second_condition: None,
                             reference_identity: None,
                             canonical_reference: None,
+                            depth_m: None,
                         })
                     } else if let Some((reference, kind)) =
                         compact_extrusion_to_vertex_at(&lane.native_payload, offset)
@@ -33211,6 +33312,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             condition: "ToVertex".to_string(),
                             reference_identity: Some(reference.clone()),
                             canonical_reference: None,
+                            depth_m: None,
                             reference: Some(reference),
                             second_condition: None,
                         })
@@ -33270,6 +33372,14 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .properties
                 .insert("EndCondition2".into(), second.clone());
         }
+        if let Some(depth_m) = vote.depth_m {
+            if !feature.parameters.contains_key("D1") && !feature.parameters.contains_key("Depth") {
+                feature.parameters.insert(
+                    "D1".into(),
+                    crate::history::format_length_mm(depth_m * 1000.0),
+                );
+            }
+        }
     }
 }
 
@@ -33280,6 +33390,7 @@ fn consensus_termination_vote(votes: &[Option<TerminationVote>]) -> Option<Termi
             vote.condition == first.condition
                 && vote.second_condition == first.second_condition
                 && vote.reference_identity == first.reference_identity
+                && vote.depth_m.map(f64::to_bits) == first.depth_m.map(f64::to_bits)
         })
     }) {
         return None;
@@ -33327,6 +33438,7 @@ fn compact_termination_face_vote(
         second_condition: None,
         reference_identity,
         canonical_reference,
+        depth_m: None,
     }
 }
 
