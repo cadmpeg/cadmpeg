@@ -317,11 +317,18 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
 }
 
 /// Materializing a state's record table runs a full B-rep decode, so the
-/// total binding cost is `states × records`. Above this budget the binding
-/// is skipped: the states keep `record_table_complete = false` and no
-/// topology, the same degrade every other early return here produces, and
-/// historical transitions stay unbound.
+/// binding cost is the sum of the materialized state-table lengths. Above
+/// this budget the binding is skipped: the states keep
+/// `record_table_complete = false` and no topology, the same degrade every
+/// other early return here produces, and historical transitions stay unbound.
 const COMPLETE_TABLE_BUDGET: usize = 4_000_000;
+
+fn complete_table_binding_budget_exceeded(table_lengths: impl IntoIterator<Item = usize>) -> bool {
+    table_lengths
+        .into_iter()
+        .try_fold(0_usize, usize::checked_add)
+        .is_none_or(|total| total > COMPLETE_TABLE_BUDGET)
+}
 
 fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width: usize) -> bool {
     let Some(start) = crate::asm_header::record_stream_start(bytes) else {
@@ -330,7 +337,9 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
     let Ok(framed) = crate::sab::frame(bytes, start, bytes.len(), width) else {
         return false;
     };
-    if states.len().saturating_mul(framed.len()) > COMPLETE_TABLE_BUDGET {
+    if complete_table_binding_budget_exceeded(
+        states.iter().map(|state| state.entity_versions.len()),
+    ) {
         return true;
     }
     let Some(active_count) = states
@@ -4575,6 +4584,19 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn history_binding_budget_charges_materialized_state_tables() {
+        assert!(!complete_table_binding_budget_exceeded([
+            COMPLETE_TABLE_BUDGET / 2,
+            COMPLETE_TABLE_BUDGET / 2,
+        ]));
+        assert!(complete_table_binding_budget_exceeded([
+            COMPLETE_TABLE_BUDGET,
+            1,
+        ]));
+        assert!(complete_table_binding_budget_exceeded([usize::MAX, 1,]));
+    }
 
     #[test]
     fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
