@@ -46,6 +46,7 @@ pub(crate) enum DesignFeatureFamily {
     SurfaceExtend,
     SurfaceOffset,
     BoundaryFill,
+    Hole,
     Split,
     Scale,
 }
@@ -78,6 +79,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "SurfaceExtend" => Some(DesignFeatureFamily::SurfaceExtend),
         "SurfaceOffset" => Some(DesignFeatureFamily::SurfaceOffset),
         "BoundaryFill" => Some(DesignFeatureFamily::BoundaryFill),
+        "Hole" => Some(DesignFeatureFamily::Hole),
         "Split" => Some(DesignFeatureFamily::Split),
         "Scale" | "Maßstab" => Some(DesignFeatureFamily::Scale),
         _ => None,

@@ -373,6 +373,10 @@ fn feature_family_tokens_are_localized() {
         Some(DesignFeatureFamily::BoundaryFill)
     );
     assert_eq!(
+        design_feature_family("Hole"),
+        Some(DesignFeatureFamily::Hole)
+    );
+    assert_eq!(
         design_feature_family("Split"),
         Some(DesignFeatureFamily::Split)
     );
@@ -14497,7 +14501,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 }
 
 #[test]
-fn edge_treatments_project_typed_dimensions_and_native_selections() {
+fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection, RadiusSpec};
 
     let parameter = |owner_record_index,
@@ -14607,7 +14611,11 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
     };
-    let scopes = [scope(12, 100, "Fillet"), scope(22, 400, "Chamfer")];
+    let scopes = [
+        scope(12, 100, "Fillet"),
+        scope(22, 400, "Chamfer"),
+        scope(32, 700, "Hole"),
+    ];
     let (features, _) = project_parameter_design(
         &[
             parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
@@ -14684,6 +14692,62 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
                 ..
             }] if distance.0 == 1.6 && angle.0 == 25.0_f64.to_radians())
+    ));
+
+    let mut hole_parameters = [
+        parameter(94, 95, "HoleDepth", "d4", "10 mm", 1.0),
+        parameter(104, 105, "HoleDiameter", "d5", "4 mm", 0.4),
+        parameter(114, 115, "TipAngle", "d6", "180 deg", std::f64::consts::PI),
+    ];
+    hole_parameters[2].unit = Some("deg".into());
+    let (features, _) = project_parameter_design(
+        &hole_parameters,
+        &[
+            owner(94, 32, 95, 0),
+            owner(104, 32, 105, 1),
+            owner(114, 32, 115, 2),
+        ],
+        std::slice::from_ref(&scopes[2]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Hole {
+            face: Some(FaceSelection::Native(selection)),
+            kind: cadmpeg_ir::features::HoleKind::Simple,
+            diameter: Some(Length(4.0)),
+            extent: Some(cadmpeg_ir::features::Termination::Blind { length: Length(10.0) }),
+            bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
+            ..
+        } if selection == &scopes[2].id
+    ));
+
+    hole_parameters[2].evaluated_value = 118.0_f64.to_radians();
+    let (features, _) = project_parameter_design(
+        &hole_parameters,
+        &[
+            owner(94, 32, 95, 0),
+            owner(104, 32, 105, 1),
+            owner(114, 32, 115, 2),
+        ],
+        std::slice::from_ref(&scopes[2]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::SimpleDrilled { drill_point_angle },
+            bottom: None,
+            ..
+        } if drill_point_angle.0 == 118.0_f64.to_radians()
     ));
 
     let (features, _) = project_parameter_design(

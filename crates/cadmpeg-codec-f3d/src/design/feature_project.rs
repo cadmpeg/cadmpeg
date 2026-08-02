@@ -325,6 +325,18 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     })
                 }
+                Some(DesignFeatureFamily::Hole) => {
+                    project_hole(scope, &parameters).unwrap_or_else(|| FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    })
+                }
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
                         FeatureDefinition::Native {
@@ -3121,6 +3133,66 @@ pub(crate) fn project_boundary_fill(
             .iter()
             .map(|cell| BodySelection::Native(cell.id.clone()))
             .collect(),
+    })
+}
+
+fn project_hole(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, HoleBottom, HoleKind, Termination,
+    };
+
+    if scope.kind != "Hole" || parameters.len() != 3 {
+        return None;
+    }
+    let parameter = |source_kind: &str| {
+        let matches = parameters
+            .iter()
+            .filter(|(_, parameter)| parameter.source_kind == source_kind)
+            .map(|(_, parameter)| *parameter)
+            .collect::<Vec<_>>();
+        let [parameter] = matches.as_slice() else {
+            return None;
+        };
+        Some(*parameter)
+    };
+    let depth = design_length(parameter("HoleDepth")?)?;
+    let diameter = design_length(parameter("HoleDiameter")?)?;
+    let tip_angle = design_angle(parameter("TipAngle")?)?;
+    if depth.0 <= 0.0
+        || diameter.0 <= 0.0
+        || tip_angle.0 <= 0.0
+        || tip_angle.0 > std::f64::consts::PI
+    {
+        return None;
+    }
+    let (kind, bottom) = if tip_angle.0 == std::f64::consts::PI {
+        (HoleKind::Simple, Some(HoleBottom::Flat))
+    } else {
+        (
+            HoleKind::SimpleDrilled {
+                drill_point_angle: tip_angle,
+            },
+            None,
+        )
+    };
+    Some(FeatureDefinition::Hole {
+        profile: None,
+        profile_filter: None,
+        face: Some(FaceSelection::Native(scope.id.clone())),
+        position: None,
+        direction: None,
+        placements: Vec::new(),
+        kind,
+        exit_kind: None,
+        diameter: Some(diameter),
+        extent: Some(Termination::Blind { length: depth }),
+        bottom,
+        taper_angle: None,
+        specification: None,
+        allow_multi_profile_faces: None,
     })
 }
 
