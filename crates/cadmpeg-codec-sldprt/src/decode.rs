@@ -169,6 +169,26 @@ fn incomplete_pattern(
     }
 }
 
+fn incomplete_binder_target(
+    target: &cadmpeg_ir::features::BinderTarget,
+    feature_positions: &BTreeMap<&cadmpeg_ir::features::FeatureId, u64>,
+    consumer_ordinal: u64,
+    dependencies: &[cadmpeg_ir::features::FeatureId],
+) -> bool {
+    match target {
+        cadmpeg_ir::features::BinderTarget::Feature { feature } => {
+            feature_positions
+                .get(feature)
+                .is_none_or(|ordinal| *ordinal >= consumer_ordinal)
+                || !dependencies.contains(feature)
+        }
+        cadmpeg_ir::features::BinderTarget::External { document, object } => {
+            document.trim().is_empty() || object.trim().is_empty()
+        }
+        cadmpeg_ir::features::BinderTarget::Native { .. } => true,
+    }
+}
+
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
@@ -1034,6 +1054,40 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::HelicalSweep { construction, op } => {
                 incomplete_profile(&construction.profile) || *op == BooleanOp::Unresolved
             }
+            FeatureDefinition::Binder {
+                sources,
+                construction,
+            } => {
+                sources.is_empty()
+                    || sources.iter().any(|source| {
+                        incomplete_binder_target(
+                            &source.target,
+                            &feature_positions,
+                            state.feature.ordinal,
+                            state.dependencies,
+                        ) || source
+                            .subelements
+                            .iter()
+                            .any(|subelement| subelement.trim().is_empty())
+                    })
+                    || matches!(
+                        construction,
+                        cadmpeg_ir::features::BinderConstruction::Shape { .. }
+                            if sources.len() != 1
+                    )
+                    || matches!(
+                        construction,
+                        cadmpeg_ir::features::BinderConstruction::SubShape {
+                            context: Some(context),
+                            ..
+                        } if incomplete_binder_target(
+                            context,
+                            &feature_positions,
+                            state.feature.ordinal,
+                            state.dependencies,
+                        )
+                    )
+            }
             FeatureDefinition::Loft {
                 sections,
                 guides,
@@ -1306,7 +1360,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::Binder { .. }
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
@@ -3938,6 +3991,101 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "7 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn binder_completeness_requires_resolved_targets_and_shape_arity() {
+        let mut ir = CadIr::empty(Units::default());
+        let source = FeatureId("source".into());
+        let feature = |id: &str, ordinal, dependencies, definition| Feature {
+            id: FeatureId(id.into()),
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies,
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        };
+        ir.model.features.push(feature(
+            "source",
+            0,
+            Vec::new(),
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
+            },
+        ));
+        let shape = |sources| FeatureDefinition::Binder {
+            sources,
+            construction: cadmpeg_ir::features::BinderConstruction::Shape {
+                trace_support: false,
+            },
+        };
+        ir.model.features.push(feature(
+            "complete",
+            1,
+            vec![source.clone()],
+            shape(vec![cadmpeg_ir::features::BinderSource {
+                target: cadmpeg_ir::features::BinderTarget::Feature {
+                    feature: source.clone(),
+                },
+                subelements: vec!["Face1".into()],
+            }]),
+        ));
+        ir.model.features.push(feature(
+            "native",
+            2,
+            Vec::new(),
+            shape(vec![cadmpeg_ir::features::BinderSource {
+                target: cadmpeg_ir::features::BinderTarget::Native {
+                    reference: "source".into(),
+                },
+                subelements: Vec::new(),
+            }]),
+        ));
+        ir.model.features.push(feature(
+            "multiple-shape-sources",
+            3,
+            Vec::new(),
+            shape(vec![
+                cadmpeg_ir::features::BinderSource {
+                    target: cadmpeg_ir::features::BinderTarget::External {
+                        document: "a.FCStd".into(),
+                        object: "Body".into(),
+                    },
+                    subelements: Vec::new(),
+                },
+                cadmpeg_ir::features::BinderSource {
+                    target: cadmpeg_ir::features::BinderTarget::External {
+                        document: "b.FCStd".into(),
+                        object: "Body".into(),
+                    },
+                    subelements: Vec::new(),
+                },
+            ]),
+        ));
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "2 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
