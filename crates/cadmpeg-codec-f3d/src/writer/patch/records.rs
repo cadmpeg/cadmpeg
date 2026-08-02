@@ -191,7 +191,7 @@ pub(crate) fn canonical_guid(value: &str) -> bool {
 pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecError> {
     id.strip_prefix(crate::ids::SCHEME_PREFIX)
         .and_then(|id| id.rsplit_once(delimiter))
-        .map(|(stream, _)| stream.to_owned())
+        .and_then(|(stream, _)| crate::ids::decode_identity_key_component(stream))
         .ok_or_else(|| CodecError::Malformed(format!("invalid native record id {id}")))
 }
 

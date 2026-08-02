@@ -12246,10 +12246,12 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
     else {
         panic!("expected repeated recipe-backed dimension")
     };
-    assert_eq!(
-        projected_parameter.0,
-        format!("f3d:model:parameter#{}:{stream}4", stream.len())
+    let expected_parameter = format!(
+        "f3d:model:parameter#{}:{}4",
+        stream.len() + 2,
+        stream.replace(':', "%3A")
     );
+    assert_eq!(projected_parameter.0, expected_parameter);
     assert_eq!(measurements.len(), 2);
     assert!(measurements.iter().all(|measurement| matches!(
         measurement,
@@ -12499,7 +12501,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             ..
         }] if native_kind == "Linear Dimension-4"
             && entities.is_empty()
-            && actual_parameter.0 == format!("f3d:model:parameter#{}:{stream}4", stream.len())
+            && actual_parameter.0 == expected_parameter
             && native_ref == &companion.id
             && matches!(operands.as_slice(), [cadmpeg_ir::sketches::SketchNativeOperand {
                 native_kind,
@@ -12553,7 +12555,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             native_ref: Some(native_ref),
             ..
         }] if entity == &radial_entity.id
-            && actual_parameter.0 == format!("f3d:model:parameter#{}:{stream}4", stream.len())
+            && actual_parameter.0 == expected_parameter
             && native_ref == &companion.id
     ));
 

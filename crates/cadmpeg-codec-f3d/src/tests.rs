@@ -6607,8 +6607,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     assert_eq!(
         decoded.ir.model.parameters[0].dependencies,
         [cadmpeg_ir::features::ParameterId(format!(
-            "f3d:model:parameter#{}:f3d:{stream}1",
-            format!("f3d:{stream}").len(),
+            "f3d:model:parameter#{}:f3d%3A{stream}1",
+            "f3d%3A".len() + stream.len(),
         ))]
     );
     assert_eq!(

@@ -766,7 +766,11 @@ pub(crate) fn decode_design_assignments(
                 .find(|(_, (suffix, _, _))| *suffix == entity_suffix)
             {
                 out.push(DesignMaterialAssignment {
-                    id: format!("f3d:{}:material-assignment#{entity_offset}", entry.name),
+                    id: crate::ids::native_scoped_id(
+                        &entry.name,
+                        "material-assignment",
+                        entity_offset,
+                    ),
                     asm_body_key,
                     asm_body_key_offset: key_offset as u64,
                     entity_suffix,

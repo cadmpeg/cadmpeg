@@ -117,7 +117,8 @@ pub(crate) fn decode(
         .windows(PREAMBLE.len())
         .position(|window| window == PREAMBLE);
     let history_offset = preamble_offset.unwrap_or(0);
-    let history_id = format!("f3d:{stream}:asm-history#{history_offset:010}");
+    let history_id =
+        crate::ids::native_scoped_id(stream, "asm-history", format_args!("{history_offset:010}"));
     let mut delta_offsets = Vec::new();
     let mut search = 0usize;
     while let Some(relative) = bytes[search..]
@@ -130,7 +131,8 @@ pub(crate) fn decode(
     }
     let mut states = Vec::new();
     for (ordinal, &offset) in delta_offsets.iter().enumerate() {
-        let state_record_id = format!("f3d:{stream}:asm-delta-state#{offset:010}");
+        let state_record_id =
+            crate::ids::native_scoped_id(stream, "asm-delta-state", format_args!("{offset:010}"));
         let mut position = offset + DELTA.len();
         let state_id = take_int(bytes, &mut position, 0x04, width)?;
         let version_flag = take_int(bytes, &mut position, 0x04, width)?;
@@ -4545,9 +4547,10 @@ fn decode_bulletin_boards(
         }
         let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
         let number = take_int(bytes, &mut position, 0x04, width)?;
-        let board_id = format!(
-            "f3d:{stream}:asm-bulletin-board#{state_offset:010}:{:06}",
-            boards.len()
+        let board_id = crate::ids::native_scoped_id(
+            stream,
+            "asm-bulletin-board",
+            format_args!("{state_offset:010}:{:06}", boards.len()),
         );
         let mut changes = Vec::new();
         loop {
@@ -4565,10 +4568,14 @@ fn decode_bulletin_boards(
                 (false, false) => return None,
             };
             changes.push(AsmEntityChange {
-                id: format!(
-                    "f3d:{stream}:asm-entity-change#{state_offset:010}:{:06}:{:06}",
-                    boards.len(),
-                    changes.len()
+                id: crate::ids::native_scoped_id(
+                    stream,
+                    "asm-entity-change",
+                    format_args!(
+                        "{state_offset:010}:{:06}:{:06}",
+                        boards.len(),
+                        changes.len()
+                    ),
                 ),
                 parent: board_id.clone(),
                 byte_offset: change_offset as u64,
@@ -4621,7 +4628,11 @@ fn decode_history_records(
                     })
                     .collect();
                 AsmHistoryRecord {
-                    id: format!("f3d:{stream}:asm-history-record#{:010}", record.offset),
+                    id: crate::ids::native_scoped_id(
+                        stream,
+                        "asm-history-record",
+                        format_args!("{:010}", record.offset),
+                    ),
                     parent: state_id.to_string(),
                     revision_id: None,
                     index: record.index as u64,
@@ -4635,7 +4646,11 @@ fn decode_history_records(
             .collect(),
         Err(error) => {
             vec![AsmHistoryRecord {
-                id: format!("f3d:{stream}:asm-history-record#{start:010}"),
+                id: crate::ids::native_scoped_id(
+                    stream,
+                    "asm-history-record",
+                    format_args!("{start:010}"),
+                ),
                 parent: state_id.to_string(),
                 revision_id: None,
                 index: 0,

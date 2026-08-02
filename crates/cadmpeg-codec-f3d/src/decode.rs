@@ -1043,7 +1043,11 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                     })
                 {
                     body_visibilities.push(crate::records::BodyVisibility {
-                        id: format!("f3d:{}:body-visibility#{body_selector}", candidate.name),
+                        id: crate::ids::native_scoped_id(
+                            &candidate.name,
+                            "body-visibility",
+                            body_selector,
+                        ),
                         body: body.id.clone(),
                         stream: visibility.stream.clone(),
                         byte_offset: visibility.byte_offset,
@@ -3131,7 +3135,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
         }
 
         unknowns.push(UnknownRecord {
-            id: UnknownId(format!("f3d:{}:unknown#0", brep.name)),
+            id: UnknownId(crate::ids::native_scoped_id(&brep.name, "unknown", 0)),
             offset: 0,
             byte_len: brep.uncompressed_len,
             sha256: brep.sha256.clone(),
@@ -3264,9 +3268,10 @@ pub(crate) fn resolve_face_appearance_bindings(
                 // The face id completes the key: one appearance attribute GUID
                 // reaches every face carrying it, so the assignment pair alone
                 // repeats across those faces.
-                id: format!(
-                    "f3d:appearance:face#{}:{}:{}",
-                    assignment.face_guid, assignment.visual_guid, face
+                id: crate::ids::neutral_face_appearance_binding_id(
+                    &assignment.face_guid,
+                    &assignment.visual_guid,
+                    face,
                 ),
                 target,
                 appearance: appearance.id.clone(),
