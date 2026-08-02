@@ -32,13 +32,7 @@ fn uuid(mut canonical: [u8; 16]) -> Uuid {
 
 /// Exercises header, table, record, and EOF framing.
 pub fn container(data: &[u8]) {
-    let arena = cadmpeg_ir::decode::DecodeArena::new();
-    let policy = cadmpeg_ir::decode::DecodePolicy::default();
-    let Ok((ctx, root)) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _ = crate::container::scan(&ctx, root);
+    let _ = crate::container::scan(data);
 }
 
 /// Exercises chunk framing at sequential and arbitrary bounded offsets.
