@@ -20,7 +20,7 @@ use std::rc::Rc;
 use crate::decode::Scan;
 use crate::intersection::{self, CurveScan};
 use crate::parasolid::{Stream, StreamKind};
-use crate::topology::{self, BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
+use crate::topology::{BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
 
 /// The delta-extended semantic bytes per stream: the topology-merged view plus each
 /// unpaired delta stream's semantic residual, with paired delta streams folded into
@@ -156,13 +156,14 @@ impl StreamView {
     /// intersection scan. This is the raw view (`stream.inflated`); it is also the
     /// semantic view whenever the semantic bytes equal the raw bytes.
     fn parse_uniform(bytes: &[u8]) -> Self {
+        let graph = Graph::parse(bytes);
         StreamView {
-            graph: Graph::parse(bytes),
-            offset_surfaces: topology::offset_surfaces(bytes),
-            blend_surfaces: topology::blend_surfaces(bytes),
-            trimmed_curves: topology::trimmed_curves(bytes),
-            surface_curves: topology::surface_curves(bytes),
-            intersections: intersection::scan(bytes),
+            offset_surfaces: graph.offset_surfaces(),
+            blend_surfaces: graph.blend_surfaces(),
+            trimmed_curves: graph.trimmed_curves(),
+            surface_curves: graph.surface_curves(),
+            intersections: intersection::scan_with_graph(bytes, &graph),
+            graph,
         }
     }
 
@@ -175,26 +176,31 @@ impl StreamView {
         scan: &Scan,
         paired_deltas: Option<&Vec<usize>>,
     ) -> Self {
+        let graph = Graph::parse(topology_bytes);
+        let semantic_graph =
+            (semantic_bytes != topology_bytes).then(|| Graph::parse(semantic_bytes));
+        let scan_graph = semantic_graph.as_ref().unwrap_or(&graph);
         let intersections = if let Some(delta_indices) = paired_deltas {
             let replacement_streams = delta_indices
                 .iter()
                 .map(|delta| scan.streams[*delta].inflated.as_slice())
                 .collect::<Vec<_>>();
-            intersection::scan_with_auxiliary_replacements(
+            intersection::scan_with_auxiliary_replacements_and_graph(
                 semantic_bytes,
                 topology_bytes,
                 &replacement_streams,
+                scan_graph,
             )
         } else {
-            intersection::scan(semantic_bytes)
+            intersection::scan_with_graph(semantic_bytes, scan_graph)
         };
         StreamView {
-            graph: Graph::parse(topology_bytes),
-            offset_surfaces: topology::offset_surfaces(semantic_bytes),
-            blend_surfaces: topology::blend_surfaces(semantic_bytes),
-            trimmed_curves: topology::trimmed_curves(semantic_bytes),
-            surface_curves: topology::surface_curves(semantic_bytes),
+            offset_surfaces: scan_graph.offset_surfaces(),
+            blend_surfaces: scan_graph.blend_surfaces(),
+            trimmed_curves: scan_graph.trimmed_curves(),
+            surface_curves: scan_graph.surface_curves(),
             intersections,
+            graph,
         }
     }
 }
