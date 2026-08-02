@@ -6,7 +6,8 @@ use crate::nurbs::reader::{
     is_periodic, marker_at, marker_positions, read_knots, take_tagged_int, INT_WIDTHS,
 };
 use crate::nurbs::subtypes::{
-    decode_cache_resolving_refs, subtype_refs, subtype_span, SubtypeTables,
+    decode_cache_resolving_refs, find_owned_subtype_marker, subtype_refs, subtype_span,
+    SubtypeTables,
 };
 use cadmpeg_codec_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
@@ -31,6 +32,8 @@ pub(crate) struct PcurveCandidate {
     pub(crate) curve: NurbsPcurve,
     /// The same bytes do not also form a 3D NURBS curve block.
     pub(crate) unambiguous_2d: bool,
+    /// This is the first BS2 block owned by an `exp_par_cur` definition.
+    pub(crate) authoritative: bool,
 }
 
 /// Writable value offsets for one 2D pcurve cache.
@@ -218,6 +221,26 @@ pub(crate) fn decode_pcurve_cache_candidates_resolving_refs(
     active_bytes: &[u8],
     tables: &SubtypeTables,
 ) -> Vec<PcurveCandidate> {
+    decode_pcurve_candidates(record_bytes, active_bytes, tables, false)
+}
+
+/// Decode candidates from the interior of an explicitly owned `exp_par_cur`
+/// scope. The scope opener is outside `record_bytes`, so ownership must enter
+/// through this boundary rather than be inferred from the interior bytes.
+pub(crate) fn decode_owned_pcurve_cache_candidates_resolving_refs(
+    record_bytes: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Vec<PcurveCandidate> {
+    decode_pcurve_candidates(record_bytes, active_bytes, tables, true)
+}
+
+fn decode_pcurve_candidates(
+    record_bytes: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+    owns_explicit_pcurve: bool,
+) -> Vec<PcurveCandidate> {
     for int_width in INT_WIDTHS {
         let mut out = Vec::new();
         collect_pcurve_candidates(
@@ -226,6 +249,7 @@ pub(crate) fn decode_pcurve_cache_candidates_resolving_refs(
             tables,
             &mut Vec::new(),
             int_width,
+            owns_explicit_pcurve,
             &mut out,
         );
         if !out.is_empty() {
@@ -241,23 +265,31 @@ fn collect_pcurve_candidates(
     tables: &SubtypeTables,
     seen: &mut Vec<usize>,
     int_width: usize,
+    owns_explicit_pcurve: bool,
     out: &mut Vec<PcurveCandidate>,
 ) {
     // A 3D curve block's bytes can also parse as a 2D block; such ambiguous
     // reads rank after every unambiguous 2D block so an unverified caller
     // taking the first candidate never picks a misread 3D carrier.
     let mut ambiguous = Vec::new();
+    let owns_explicit_pcurve = owns_explicit_pcurve
+        || find_owned_subtype_marker(bytes, &[b"exp_par_cur"], int_width).is_some();
+    let mut claimed_owned_carrier = false;
     for position in marker_positions(bytes) {
         if let Some(pcurve) = decode_pcurve_block(bytes, position, int_width) {
+            let authoritative = owns_explicit_pcurve && !claimed_owned_carrier;
+            claimed_owned_carrier |= authoritative;
             if decode_curve_block(bytes, position, int_width).is_some() {
                 ambiguous.push(PcurveCandidate {
                     curve: pcurve,
                     unambiguous_2d: false,
+                    authoritative,
                 });
             } else {
                 out.push(PcurveCandidate {
                     curve: pcurve,
                     unambiguous_2d: true,
+                    authoritative,
                 });
             }
         }
@@ -275,7 +307,7 @@ fn collect_pcurve_candidates(
         let Some(span) = subtype_span(active_bytes, target, int_width) else {
             continue;
         };
-        collect_pcurve_candidates(span, active_bytes, tables, seen, int_width, out);
+        collect_pcurve_candidates(span, active_bytes, tables, seen, int_width, false, out);
     }
 }
 
@@ -400,6 +432,40 @@ mod width_tests {
             push_f64(&mut b, component);
         }
         b
+    }
+
+    #[test]
+    fn referenced_explicit_pcurve_marks_only_its_owned_bs2_carrier() {
+        for int_width in [4usize, 8] {
+            let mut active = vec![0x0f];
+            push_ident(&mut active, "int_int_cur");
+            active.extend_from_slice(&pcurve_block(int_width));
+            active.push(0x10);
+
+            active.push(0x0f);
+            push_ident(&mut active, "exp_par_cur");
+            active.extend_from_slice(&pcurve_block(int_width));
+            active.push(0x0f);
+            push_ident(&mut active, "ref");
+            push_int(&mut active, 0x04, 0, int_width);
+            active.extend_from_slice(&[0x10, 0x10]);
+
+            let record_start = active.len();
+            active.push(0x0f);
+            push_ident(&mut active, "ref");
+            push_int(&mut active, 0x04, 1, int_width);
+            active.push(0x10);
+            let tables = SubtypeTables::from_stream(&active);
+            let candidates = decode_pcurve_cache_candidates_resolving_refs(
+                &active[record_start..],
+                &active,
+                &tables,
+            );
+
+            assert_eq!(candidates.len(), 2);
+            assert!(candidates[0].authoritative);
+            assert!(!candidates[1].authoritative);
+        }
     }
 
     fn rolling_ball_side(int_width: usize, label: &str) -> Vec<u8> {

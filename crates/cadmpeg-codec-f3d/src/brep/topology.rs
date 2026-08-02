@@ -273,10 +273,12 @@ pub(crate) fn walk_reachable_topology(
                             // a nonzero-discriminator ref form delegates to an
                             // intcurve entity. Decode every referenced candidate
                             // and keep the one whose endpoints land on the edge's
-                            // vertices through the face surface. An inline scope
-                            // owns exactly one BS2 carrier and needs no
-                            // disambiguation.
-                            let (candidates, inline) = match (prec.chunk(3), prec.chunk(4)) {
+                            // vertices through the face surface. An
+                            // `exp_par_cur` scope owns exactly one BS2 carrier,
+                            // including when reached through a subtype ref; its
+                            // nested refs describe support data. Other intcurve
+                            // graphs require dimensional or geometric selection.
+                            let candidates = match (prec.chunk(3), prec.chunk(4)) {
                                 (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                                     if let Some(span) = crate::sab::payload_subtype_span(
                                         bytes,
@@ -285,13 +287,8 @@ pub(crate) fn walk_reachable_topology(
                                         ref_width,
                                         "exp_par_cur",
                                     ) {
-                                        (
-                                            nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-                                                span,
-                                                bytes,
-                                                subtype_tables,
-                                            ),
-                                            true,
+                                        nurbs::pcurve::decode_owned_pcurve_cache_candidates_resolving_refs(
+                                            span, bytes, subtype_tables,
                                         )
                                     } else if crate::sab::payload_subtype_span(
                                         bytes, prec, 5, ref_width, "ref",
@@ -300,44 +297,45 @@ pub(crate) fn walk_reachable_topology(
                                     {
                                         // The resolver needs the `ref N` opener and name,
                                         // not only the scope interior returned above.
-                                        (
-                                            nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-                                                record_slice(prec, bytes),
-                                                bytes,
-                                                subtype_tables,
-                                            ),
-                                            false,
+                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
+                                            record_slice(prec, bytes),
+                                            bytes,
+                                            subtype_tables,
                                         )
                                     } else {
-                                        (Vec::new(), false)
+                                        Vec::new()
                                     }
                                 }
                                 (
                                     Some(Token::Long(1 | 2 | -1 | -2)),
                                     Some(Token::Ref(reference)),
-                                ) => (
-                                    by_index
-                                        .get(reference)
-                                        .filter(|record| record.head == "intcurve")
-                                        .map(|intcurve| {
-                                            nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-                                                record_slice(intcurve, bytes),
-                                                bytes,
-                                                subtype_tables,
-                                            )
-                                        })
-                                        .unwrap_or_default(),
-                                    false,
-                                ),
-                                _ => (Vec::new(), false),
+                                ) => by_index
+                                    .get(reference)
+                                    .filter(|record| record.head == "intcurve")
+                                    .map(|intcurve| {
+                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
+                                            record_slice(intcurve, bytes),
+                                            bytes,
+                                            subtype_tables,
+                                        )
+                                    })
+                                    .unwrap_or_default(),
+                                _ => Vec::new(),
                             };
                             let edge = ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                            let decoded = if inline {
-                                candidates.into_iter().next().and_then(|candidate| {
-                                    pcurve_ranges_on_domain(&candidate.curve, edge)
-                                        .and_then(|ranges| ranges.into_iter().next())
-                                        .map(|range| (candidate.curve, range))
-                                })
+                            let authoritative_count = candidates
+                                .iter()
+                                .filter(|candidate| candidate.authoritative)
+                                .count();
+                            let decoded = if authoritative_count == 1 {
+                                candidates
+                                    .into_iter()
+                                    .find(|candidate| candidate.authoritative)
+                                    .and_then(|candidate| {
+                                        pcurve_ranges_on_domain(&candidate.curve, edge)
+                                            .and_then(|ranges| ranges.into_iter().next())
+                                            .map(|range| (candidate.curve, range))
+                                    })
                             } else if candidates
                                 .iter()
                                 .filter(|candidate| candidate.unambiguous_2d)
