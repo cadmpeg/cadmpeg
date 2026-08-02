@@ -2031,6 +2031,14 @@ fn attach_feature_operations(
                 outputs.push(body.clone());
             }
         }
+        let block_op = if block_projection.is_some()
+            && matches!(outputs.as_slice(), [_])
+            && !body_writer_history.has_primary_writer(native_primary_body, &outputs)
+        {
+            BooleanOp::NewBody
+        } else {
+            BooleanOp::Unresolved
+        };
         body_writer_history.extend_primary_dependencies(
             native_primary_body,
             &outputs,
@@ -2172,7 +2180,7 @@ fn attach_feature_operations(
                                 sketch: Some(sketch),
                             };
                         }
-                        non_boolean_feature_definition_with_parameters(
+                        let mut definition = non_boolean_feature_definition_with_parameters(
                             &label.value,
                             &operation_payload_strings,
                             block_dimension_values,
@@ -2189,7 +2197,11 @@ fn attach_feature_operations(
                                 chamfer: simple_hole_chamfers.get(label.id.as_str()).copied(),
                             },
                             native_parameters,
-                        )
+                        );
+                        if let FeatureDefinition::Block { op, .. } = &mut definition {
+                            *op = block_op;
+                        }
+                        definition
                     })
             },
             |operation| {

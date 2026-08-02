@@ -20,6 +20,13 @@ impl BodyWriterHistory {
         self.native.get(&body)
     }
 
+    pub(crate) fn has_primary_writer(&self, native_body: Option<u32>, outputs: &[BodyId]) -> bool {
+        outputs
+            .iter()
+            .any(|output| self.outputs.contains_key(output))
+            || native_body.is_some_and(|body| self.native.contains_key(&body))
+    }
+
     pub(crate) fn extend_primary_dependencies(
         &self,
         native_body: Option<u32>,
@@ -133,6 +140,9 @@ mod tests {
 
         assert_eq!(dependencies, [first]);
         assert!(history.native_writer(8).is_none());
+        assert!(history.has_primary_writer(Some(7), &[]));
+        assert!(history.has_primary_writer(None, std::slice::from_ref(&body)));
+        assert!(!history.has_primary_writer(Some(8), &[]));
         history.record_writer(Some(8), std::slice::from_ref(&body), &second);
         assert_eq!(history.native_writer(8), Some(&second));
         dependencies.clear();
