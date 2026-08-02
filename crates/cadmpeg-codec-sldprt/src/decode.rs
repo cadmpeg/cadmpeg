@@ -145,11 +145,35 @@ fn decode_result(
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
+fn incomplete_pattern(
+    pattern: &cadmpeg_ir::features::PatternKind,
+    incomplete_path: &dyn Fn(&cadmpeg_ir::features::PathRef) -> bool,
+) -> bool {
+    use cadmpeg_ir::features::{PatternKind, PatternScaleCenter};
+
+    match pattern {
+        PatternKind::Unresolved { .. } => true,
+        PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
+            direction.is_none()
+        }
+        PatternKind::Circular { .. } | PatternKind::Mirror { .. } => false,
+        PatternKind::CircularAngles { angles, .. } => angles.is_empty(),
+        PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
+        PatternKind::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
+        PatternKind::Composite { stages } => {
+            stages.is_empty()
+                || stages
+                    .iter()
+                    .any(|stage| incomplete_pattern(&stage.pattern, incomplete_path))
+        }
+    }
+}
+
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
-        FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, PatternKind, ProfileRef,
-        RadiusSpec, RevolveExtent, Termination,
+        FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, ProfileRef, RadiusSpec,
+        RevolveExtent, Termination,
     };
     use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SpatialSketchGeometry};
 
@@ -1056,9 +1080,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                             incomplete_body_selection(bodies)
                         }
                     })
-                    || matches!(pattern, PatternKind::Unresolved { .. })
-                    || matches!(pattern, PatternKind::Linear { direction: None, .. })
-                    || matches!(pattern, PatternKind::CurveDriven { path: None, .. })
+                    || incomplete_pattern(pattern, &incomplete_path)
             }
             FeatureDefinition::Native { .. } => false,
             // These neutral families have no audited SLDPRT projection contract. Keep the
@@ -3102,8 +3124,8 @@ mod design_loss_tests {
         Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
         ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, FaceSelection,
         Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, Length,
-        ParameterId, ParameterPmi, ParameterValue, PathRef, PmiDimensionSubtype, RadiusSpec,
-        RuledSurfaceMode, SurfaceContinuity,
+        ParameterId, ParameterPmi, ParameterValue, PathRef, PatternKind, PmiDimensionSubtype,
+        RadiusSpec, RuledSurfaceMode, SurfaceContinuity,
     };
     use cadmpeg_ir::ids::{BodyId, EdgeId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -3510,6 +3532,93 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "3 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_recurses_through_pattern_operands() {
+        let mut ir = CadIr::empty(Units::default());
+        let seed = cadmpeg_ir::features::PatternSeed::Feature(FeatureId("seed".into()));
+        for (ordinal, pattern) in [
+            (
+                0,
+                PatternKind::LinearOffsets {
+                    direction: None,
+                    offsets: vec![Length(0.0), Length(10.0)],
+                },
+            ),
+            (
+                1,
+                PatternKind::CurveDriven {
+                    path: Some(PathRef::Native("path".into())),
+                    spacing: Length(10.0),
+                    count: 2,
+                },
+            ),
+            (
+                2,
+                PatternKind::Scale {
+                    center: cadmpeg_ir::features::PatternScaleCenter::Native("center".into()),
+                    final_factor: 2.0,
+                    count: 2,
+                },
+            ),
+            (
+                3,
+                PatternKind::Composite {
+                    stages: vec![cadmpeg_ir::features::PatternStage {
+                        pattern: Box::new(PatternKind::CurveDriven {
+                            path: None,
+                            spacing: Length(10.0),
+                            count: 2,
+                        }),
+                        combination: cadmpeg_ir::features::PatternStageCombination::Initialize,
+                    }],
+                },
+            ),
+            (
+                4,
+                PatternKind::Circular {
+                    axis_origin: Point3::new(0.0, 0.0, 0.0),
+                    axis_dir: Vector3::new(0.0, 0.0, 1.0),
+                    angle: Angle(std::f64::consts::TAU),
+                    count: 4,
+                },
+            ),
+        ] {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("pattern-{ordinal}")),
+                ordinal,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition: FeatureDefinition::Pattern {
+                    seeds: vec![seed.clone()],
+                    pattern,
+                },
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "4 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
