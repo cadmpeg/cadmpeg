@@ -5023,6 +5023,7 @@
                 "datum_csys_construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
                 "datum_csys_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
                 "id": "nx:feature-history:sketch-datum-csys-dependency#0000000000-0000000002",
+                "scalar_aliases": [],
                 "sketch_operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
                 "sketch_point_use": "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0",
                 "source_offset": 321

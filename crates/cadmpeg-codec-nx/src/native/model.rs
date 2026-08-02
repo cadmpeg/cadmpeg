@@ -675,6 +675,7 @@ impl NativeModel {
             &offset_store_named_points,
             &feature_sketch_point_uses,
             &feature_datum_csys_constructions,
+            &feature_datum_csys_payload_scalars,
         );
         let feature_boolean_operations = feature_boolean_operations(container);
         let segment_body_lineage_statuses = segment_body_lineage_statuses(

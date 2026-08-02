@@ -1142,6 +1142,17 @@ pub enum FeatureSketchDatumCsysBlockRelation {
     },
 }
 
+/// One byte-identical scalar shared by a named sketch point and datum-CSYS payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchDatumCsysScalarAlias {
+    /// Zero-based coordinate within the named sketch point.
+    pub sketch_coordinate_ordinal: u8,
+    /// Exact datum-CSYS scalar field occupying the same source bytes.
+    pub datum_csys_scalar: String,
+    /// Absolute source offset of the shared shifted-binary64 encoding.
+    pub value_source_offset: u64,
+}
+
 /// Exact ordered dependency from a sketch point to a datum coordinate system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchDatumCsysDependency {
@@ -1157,6 +1168,8 @@ pub struct FeatureSketchDatumCsysDependency {
     pub datum_csys_construction: String,
     /// Exact block relation between the complete point span and construction.
     pub block_relation: FeatureSketchDatumCsysBlockRelation,
+    /// Scalar encodings occupying the same source bytes in both typed records.
+    pub scalar_aliases: Vec<FeatureSketchDatumCsysScalarAlias>,
     /// Absolute source offset of the first sketch reference witnessing the point identity.
     pub source_offset: u64,
 }
@@ -5112,6 +5125,7 @@ pub fn feature_sketch_datum_csys_dependencies(
     named_points: &[OffsetStoreNamedPoint],
     point_uses: &[FeatureSketchPointUse],
     constructions: &[FeatureDatumCsysConstruction],
+    scalars: &[FeatureDatumCsysPayloadScalar],
 ) -> Vec<FeatureSketchDatumCsysDependency> {
     fn block_key(block: &str) -> Option<(&str, u32)> {
         let (store, ordinal) = block.rsplit_once(":block#")?;
@@ -5190,6 +5204,25 @@ pub fn feature_sketch_datum_csys_dependencies(
         let [(point_use, block_relation)] = candidates.as_slice() else {
             continue;
         };
+        let point = points[point_use.named_point.as_str()];
+        let scalar_aliases = point
+            .value_source_offsets
+            .iter()
+            .enumerate()
+            .flat_map(|(coordinate_ordinal, value_source_offset)| {
+                scalars
+                    .iter()
+                    .filter(move |scalar| {
+                        scalar.operation_label == construction.operation_label
+                            && scalar.source_offset.checked_add(5) == Some(*value_source_offset)
+                    })
+                    .map(move |scalar| FeatureSketchDatumCsysScalarAlias {
+                        sketch_coordinate_ordinal: coordinate_ordinal as u8,
+                        datum_csys_scalar: scalar.id.clone(),
+                        value_source_offset: *value_source_offset,
+                    })
+            })
+            .collect();
         dependencies.push(FeatureSketchDatumCsysDependency {
             id: construction.id.replacen(
                 "datum-csys-construction",
@@ -5201,6 +5234,7 @@ pub fn feature_sketch_datum_csys_dependencies(
             sketch_point_use: point_use.id.clone(),
             datum_csys_construction: construction.id.clone(),
             block_relation: block_relation.clone(),
+            scalar_aliases,
             source_offset: point_use.source_offsets[0],
         });
     }
@@ -8835,7 +8869,7 @@ mod tests {
     #[test]
     fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         use super::{
-            FeatureDatumCsysConstruction, FeatureOperationLabel,
+            FeatureDatumCsysConstruction, FeatureDatumCsysPayloadScalar, FeatureOperationLabel,
             FeatureSketchDatumCsysBlockRelation, FeatureSketchPointUse, OffsetStoreNamedPoint,
         };
 
@@ -8878,12 +8912,24 @@ mod tests {
             data_blocks: blocks,
             source_offsets: [400; 8],
         };
+        let scalar = FeatureDatumCsysPayloadScalar {
+            id: "csys-scalar".to_string(),
+            operation_label: "csys".to_string(),
+            datum_csys_payload: "payload".to_string(),
+            ordinal: 0,
+            field_code: 0x64,
+            value: 2.0,
+            raw_value: shifted_f64_bytes(2.0),
+            payload_offset: 8,
+            source_offset: 215,
+        };
 
         let dependencies = super::feature_sketch_datum_csys_dependencies(
             &labels,
             std::slice::from_ref(&point),
             std::slice::from_ref(&point_use),
             std::slice::from_ref(&construction),
+            std::slice::from_ref(&scalar),
         );
         assert_eq!(dependencies[0].datum_csys_operation_label, "csys");
         assert_eq!(dependencies[0].sketch_operation_label, "sketch");
@@ -8894,6 +8940,27 @@ mod tests {
                 data_block: "shared".to_string()
             }
         );
+        assert_eq!(dependencies[0].scalar_aliases.len(), 1);
+        assert_eq!(
+            dependencies[0].scalar_aliases[0].sketch_coordinate_ordinal,
+            1
+        );
+        assert_eq!(
+            dependencies[0].scalar_aliases[0].datum_csys_scalar,
+            "csys-scalar"
+        );
+        assert_eq!(dependencies[0].scalar_aliases[0].value_source_offset, 220);
+
+        let mut equal_at_another_offset = scalar.clone();
+        equal_at_another_offset.source_offset = 214;
+        let unaliased = super::feature_sketch_datum_csys_dependencies(
+            &labels,
+            std::slice::from_ref(&point),
+            std::slice::from_ref(&point_use),
+            std::slice::from_ref(&construction),
+            std::slice::from_ref(&equal_at_another_offset),
+        );
+        assert!(unaliased[0].scalar_aliases.is_empty());
 
         let consecutive_point = OffsetStoreNamedPoint {
             id: "consecutive-point".to_string(),
@@ -8920,6 +8987,7 @@ mod tests {
             &[consecutive_point],
             &[consecutive_use],
             &[consecutive_construction],
+            &[],
         );
         assert_eq!(
             consecutive_dependencies[0].block_relation,
@@ -8941,6 +9009,7 @@ mod tests {
             &[point.clone(), ambiguous_point],
             &[point_use.clone(), ambiguous_use],
             std::slice::from_ref(&construction),
+            &[],
         )
         .is_empty());
 
@@ -8950,6 +9019,7 @@ mod tests {
             &[point],
             &[point_use],
             &[construction],
+            &[],
         )
         .is_empty());
     }
