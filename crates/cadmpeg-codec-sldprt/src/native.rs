@@ -227,7 +227,7 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
 ];
 
 const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeNamespace, ()> =
-    Catalogue::new(SLDPRT_FAMILIES);
+    Catalogue::new(SLDPRT_FAMILIES, SLDPRT_VERSION_CONTRACT);
 
 /// SOLIDWORKS records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -260,7 +260,7 @@ impl SldprtNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        SLDPRT_VERSION_CONTRACT.check_version(namespace.version)?;
+        SLDPRT_CATALOGUE.check_version(namespace.version)?;
         let mut native = Self {
             version: SLDPRT_NATIVE_VERSION,
             feature_histories: namespace.arena_as("feature_histories")?,

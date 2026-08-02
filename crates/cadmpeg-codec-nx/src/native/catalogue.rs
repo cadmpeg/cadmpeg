@@ -20,7 +20,7 @@
 
 use serde::Serialize;
 
-use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, NativeConvertError, NativeNamespace};
 
 use super::model::NativeModel;
@@ -2914,4 +2914,10 @@ pub(crate) const NATIVE_CATALOGUE: Catalogue<
     AnnotationBuilder,
     NativeNamespace,
     Exactness,
-> = Catalogue::new(CATALOGUE);
+> = Catalogue::new(
+    CATALOGUE,
+    VersionContract {
+        minimum: 0,
+        maximum: u32::MAX,
+    },
+);

@@ -42,17 +42,23 @@ pub struct FamilyRow<M, A, N, E> {
 /// A complete ordered native-family catalogue.
 pub struct Catalogue<'a, M, A, N, E> {
     rows: &'a [FamilyRow<M, A, N, E>],
+    version: VersionContract,
 }
 
 impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
     /// Wraps a statically declared family table.
-    pub const fn new(rows: &'a [FamilyRow<M, A, N, E>]) -> Self {
-        Self { rows }
+    pub const fn new(rows: &'a [FamilyRow<M, A, N, E>], version: VersionContract) -> Self {
+        Self { rows, version }
     }
 
     /// Returns the declared rows in stable order.
     pub const fn rows(&self) -> &'a [FamilyRow<M, A, N, E>] {
         self.rows
+    }
+
+    /// Checks a native namespace version against this catalogue's contract.
+    pub const fn check_version(&self, version: u32) -> Result<(), NativeVersionError> {
+        self.version.check_version(version)
     }
 
     /// Emits every non-empty family through its row function.
