@@ -1649,13 +1649,15 @@ The B-spline form code does not determine whether a control grid is rational. Th
 
 ### 9.4 Attributes and expressions
 
-Parasolid attribute definitions use a two-record catalog entry. `00 4f [ff] name_len:u32 BE, class_xmt:u16 BE, name[name_len]` declares a non-empty printable ASCII class name; `ff` is the optional record-envelope escape. The field record follows immediately as `00 50, field_count:u32 BE, field_xmt:u16 BE, reference[2]:u16 BE, header_word[2]:u16 BE, payload`. Both XMT identities and the ordered references are stream-local. The header words are retained verbatim; their second value includes `2328`, `1f67`, and `1f44`. The header is followed by an exact 26-byte descriptor prefix and `field_count` one-byte field codes. This gives the type-80 record a self-contained length of `42 + field_count` bytes. A truncated descriptor or field-code lane invalidates the declaration pair atomically. Type code `0x05` in the descriptor prefix denotes a component/reference or string field, `0x06` a double field, and `0x00` a void or flag field. The per-field code lane remains ordered independently of the descriptor type code. The primary storage kind is typed only when descriptor bytes four and five are `03 00`, `03 05`, or `03 06`; another marker or type code leaves the storage kind absent without discarding the exact descriptor prefix.
+Parasolid type-79 attribute identifiers are `00 4f [ff], name_len:u32 BE, xmt, name[name_len]`. The name is non-empty printable ASCII. Type-79 records are independent nodes and need not be adjacent to the type-80 definition that references them.
+
+A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[16], field_code[field_count]`. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
 
 A type-81 entity/attribute-list record is `00 51 [ff], flags:u32 BE,
-xmt, sequence:u32 BE, discriminator:u16 BE, references`. XMT fields use the
+xmt, sequence:u32 BE, definition, references`. XMT fields use the
 compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
 `flags` is in `1..=0x20`. The reference count is seven for `flags = 02`, nine
-for `flags = 04`, and in general five plus `flags`. The discriminator does not
+for `flags = 04`, and in general five plus `flags`. The definition reference does not
 affect framing. References are either consecutive XMT values or individually
 binary-status-prefixed XMT values followed by a binary terminal; the two forms
 are atomic. A
@@ -1669,14 +1671,13 @@ ledger.
 
 The first five type-81 references form a fixed leading lane. The remaining `flags` references form the trailing payload lane. Only trailing references address type-82, type-83, or type-84 value records; their reference ordinals retain the five leading slots, so the first trailing reference has ordinal five. Leading references remain structural and do not produce attribute values even when their values collide with value-record XMT identities.
 
-The type-81 discriminator selects an attribute class when its value plus one
-equals the XMT of exactly one type-79 attribute definition in the same stream.
-Every matched instance retains the serialized discriminator, matched
-definition XMT, type-81 instance, and type-79 definition independently of
+The type-81 definition reference selects an attribute class when it equals the
+XMT of exactly one type-80 attribute definition in the same stream.
+Every matched instance retains the definition XMT, type-81 instance, and type-80 definition independently of
 topology ownership. A topology-owned matched instance additionally retains its
 topology ownership relation. A missing, overflowing, or multiply declared
-definition XMT leaves the class unresolved. Definition declaration order and
-type-81 reference values do not participate in class selection.
+definition XMT leaves the class unresolved. Definition declaration order,
+type-79 identifier identity, and type-81 field values do not participate in class selection.
 
 A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
 text[length], 00`. The length is nonzero, xmt is non-null, and every text byte

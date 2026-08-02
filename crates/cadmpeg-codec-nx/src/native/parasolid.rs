@@ -1441,50 +1441,29 @@ pub struct ParasolidAttributeDefinition {
     /// Zero-based embedded stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local definition record identity.
-    pub xmt: u16,
+    pub xmt: u32,
+    /// Stream-local next-definition identity; `1` is null.
+    pub next_definition_xmt: u32,
+    /// Stream-local type-79 identifier identity.
+    pub identifier_xmt: u32,
+    /// Offset of the resolved type-79 identifier in the inflated stream.
+    pub identifier_inflated_offset: u64,
     /// Exact printable attribute class name.
     pub name: String,
+    /// Numeric attribute type identifier.
+    pub type_id: u32,
+    /// Ordered actions for the eight logged event families.
+    pub action_codes: [u8; 8],
+    /// Stream-local field-name-list identity; `1` is null.
+    pub field_names_xmt: u32,
+    /// Ordered legal-owner flags.
+    pub legal_owner_flags: [u8; 16],
     /// Declared number of fields.
     pub field_count: u32,
-    /// Stream-local identity of the following field record.
-    pub field_record_xmt: u16,
-    /// Ordered catalog references in the field-record header.
-    pub field_record_references: [u16; 2],
-    /// Two field-record header words following the catalog references.
-    pub field_record_header_words: [u16; 2],
-    /// Exact 26-byte descriptor prefix following the field-record header.
-    pub field_descriptor_prefix: [u8; 26],
-    /// Typed primary storage declared by the descriptor's `03` atom.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field_storage: Option<ParasolidAttributeFieldStorage>,
     /// One serialized code for every declared field.
     pub field_codes: Vec<u8>,
     /// Offset of the declaration in the inflated stream.
     pub inflated_offset: u64,
-}
-
-/// Primary storage alphabet declared by a Parasolid attribute field descriptor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParasolidAttributeFieldStorage {
-    /// Void or flag storage.
-    Void,
-    /// Component/reference or string storage.
-    Component,
-    /// Binary64 floating-point storage.
-    Double,
-}
-
-pub(crate) fn parasolid_attribute_field_storage(
-    descriptor: &[u8; 26],
-) -> Option<ParasolidAttributeFieldStorage> {
-    (descriptor[4] == 0x03).then_some(())?;
-    match descriptor[5] {
-        0x00 => Some(ParasolidAttributeFieldStorage::Void),
-        0x05 => Some(ParasolidAttributeFieldStorage::Component),
-        0x06 => Some(ParasolidAttributeFieldStorage::Double),
-        _ => None,
-    }
 }
 
 /// Explicit topology-record ownership of one Parasolid attribute list.
@@ -1520,8 +1499,8 @@ pub struct ParasolidEntity51Record {
     pub flags: u32,
     /// Serialized sequence value.
     pub sequence: u32,
-    /// Attribute-class discriminator.
-    pub discriminator: u16,
+    /// Stream-local type-80 attribute-definition identity.
+    pub definition_xmt: u32,
     /// Five fixed leading stream-local references.
     pub leading_references: [u32; 5],
     /// Variable trailing stream-local references counted by `flags`.
@@ -1642,10 +1621,8 @@ pub struct ParasolidAttributeClassUse {
     pub stream_ordinal: u32,
     /// Type-81 attribute-instance record.
     pub entity_51_record: String,
-    /// Class discriminator serialized by the type-81 instance.
-    pub class_discriminator: u16,
-    /// Stream-local XMT of the matched type-79 definition.
-    pub definition_xmt: u16,
+    /// Stream-local XMT of the matched type-80 definition.
+    pub definition_xmt: u32,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
 }
@@ -1684,10 +1661,8 @@ pub struct ParasolidTopologyAttributeClassUse {
     pub topology_attribute_reference: String,
     /// Topology-owned type-81 attribute-instance record.
     pub entity_51_record: String,
-    /// Class discriminator serialized by the type-81 instance.
-    pub class_discriminator: u16,
-    /// Stream-local XMT of the matched type-79 definition.
-    pub definition_xmt: u16,
+    /// Stream-local XMT of the matched type-80 definition.
+    pub definition_xmt: u32,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
 }
@@ -1708,15 +1683,15 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     xmt: definition.xmt,
+                    next_definition_xmt: definition.next_definition_xmt,
+                    identifier_xmt: definition.identifier_xmt,
+                    identifier_inflated_offset: definition.identifier_offset as u64,
                     name: definition.name.to_string(),
+                    type_id: definition.type_id,
+                    action_codes: definition.action_codes,
+                    field_names_xmt: definition.field_names_xmt,
+                    legal_owner_flags: definition.legal_owner_flags,
                     field_count: definition.field_count,
-                    field_record_xmt: definition.field_record_xmt,
-                    field_record_references: definition.field_record_references,
-                    field_record_header_words: definition.field_record_header_words,
-                    field_descriptor_prefix: definition.field_descriptor_prefix,
-                    field_storage: parasolid_attribute_field_storage(
-                        &definition.field_descriptor_prefix,
-                    ),
                     field_codes: definition.field_codes.to_vec(),
                     inflated_offset: definition.offset as u64,
                 })
@@ -1833,7 +1808,7 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
                     xmt: record.xmt,
                     flags: record.flags,
                     sequence: record.sequence,
-                    discriminator: record.discriminator,
+                    definition_xmt: record.definition_xmt,
                     leading_references: record.leading_references,
                     trailing_references: record.trailing_references,
                     byte_len: record.byte_len as u64,
@@ -2021,7 +1996,7 @@ pub fn parasolid_entity_51_string_uses(
     uses
 }
 
-/// Resolve topology-owned attribute instances through their class discriminator.
+/// Resolve topology-owned attribute instances through their type-80 definition.
 pub fn parasolid_topology_attribute_class_uses(
     topology_references: &[ParasolidTopologyAttributeListReference],
     class_uses: &[ParasolidAttributeClassUse],
@@ -2045,7 +2020,6 @@ pub fn parasolid_topology_attribute_class_uses(
             ),
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: class_use.entity_51_record.clone(),
-            class_discriminator: class_use.class_discriminator,
             definition_xmt: class_use.definition_xmt,
             attribute_definition: class_use.attribute_definition.clone(),
         });
@@ -2054,13 +2028,13 @@ pub fn parasolid_topology_attribute_class_uses(
     uses
 }
 
-/// Resolve every type-81 attribute instance through its class discriminator.
+/// Resolve every type-81 attribute instance through its type-80 definition reference.
 pub fn parasolid_attribute_class_uses(
     entities: &[ParasolidEntity51Record],
     definitions: &[ParasolidAttributeDefinition],
 ) -> Vec<ParasolidAttributeClassUse> {
     let mut definitions_by_identity =
-        BTreeMap::<(u32, u16), Vec<&ParasolidAttributeDefinition>>::new();
+        BTreeMap::<(u32, u32), Vec<&ParasolidAttributeDefinition>>::new();
     for definition in definitions {
         definitions_by_identity
             .entry((definition.stream_ordinal, definition.xmt))
@@ -2070,7 +2044,7 @@ pub fn parasolid_attribute_class_uses(
     let mut uses = entities
         .iter()
         .filter_map(|entity| {
-            let definition_xmt = entity.discriminator.checked_add(1)?;
+            let definition_xmt = entity.definition_xmt;
             let [definition] = definitions_by_identity
                 .get(&(entity.stream_ordinal, definition_xmt))?
                 .as_slice()
@@ -2084,7 +2058,6 @@ pub fn parasolid_attribute_class_uses(
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
-                class_discriminator: entity.discriminator,
                 definition_xmt,
                 attribute_definition: definition.id.clone(),
             })
@@ -2656,7 +2629,6 @@ mod tests {
             id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
-            class_discriminator: 8,
             definition_xmt: 9,
             attribute_definition: "definition".into(),
         };
@@ -2691,7 +2663,6 @@ mod tests {
             id: "duplicate".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
-            class_discriminator: 10,
             definition_xmt: 11,
             attribute_definition: "other-definition".into(),
         };
@@ -2871,7 +2842,7 @@ mod tests {
     }
 
     #[test]
-    fn topology_attribute_class_uses_resolve_instance_discriminators_by_xmt() {
+    fn topology_attribute_class_uses_resolve_type_80_definitions_by_xmt() {
         use super::{
             ParasolidAttributeDefinition, ParasolidEntity51Record,
             ParasolidTopologyAttributeListReference,
@@ -2881,13 +2852,15 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 3,
             xmt: 34,
+            next_definition_xmt: 1,
+            identifier_xmt: 35,
+            identifier_inflated_offset: 80,
             name: "UG2/PMARK_ATTRIBUTE".into(),
+            type_id: 9000,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
             field_count: 1,
-            field_record_xmt: 19,
-            field_record_references: [21, 22],
-            field_record_header_words: [0, 9000],
-            field_descriptor_prefix: [0; 26],
-            field_storage: None,
             field_codes: vec![1],
             inflated_offset: 100,
         };
@@ -2897,7 +2870,7 @@ mod tests {
             xmt: 50,
             flags: 1,
             sequence: 7,
-            discriminator: 0x21,
+            definition_xmt: 34,
             leading_references: [60, 61, 1, 62, 63],
             trailing_references: vec![64],
             byte_len: 26,
@@ -2919,7 +2892,6 @@ mod tests {
         );
         assert_eq!(instance_uses.len(), 1);
         assert_eq!(instance_uses[0].entity_51_record, entity.id);
-        assert_eq!(instance_uses[0].class_discriminator, 0x21);
         assert_eq!(instance_uses[0].definition_xmt, 34);
         assert_eq!(instance_uses[0].attribute_definition, definition.id);
 
@@ -2928,12 +2900,11 @@ mod tests {
             &instance_uses,
         );
         assert_eq!(uses.len(), 1);
-        assert_eq!(uses[0].class_discriminator, 0x21);
         assert_eq!(uses[0].definition_xmt, 34);
         assert_eq!(uses[0].attribute_definition, definition.id);
 
         let mut invalid = entity;
-        invalid.discriminator = 0x20;
+        invalid.definition_xmt = 33;
         assert!(super::parasolid_attribute_class_uses(
             std::slice::from_ref(&invalid),
             std::slice::from_ref(&definition),
@@ -2958,7 +2929,7 @@ mod tests {
             xmt: 50,
             flags: 2,
             sequence: 7,
-            discriminator: 0x21,
+            definition_xmt: 34,
             leading_references: [60, 61, 70, 71, 72],
             trailing_references: vec![70, 71],
             byte_len: 28,
@@ -3002,34 +2973,42 @@ mod tests {
         bytes.extend_from_slice(b"SDL/TYSA_DENSITY");
         bytes.extend_from_slice(&[0x00, 0x50, 0x00, 0x00, 0x00, 0x01]);
         bytes.extend_from_slice(&0x012bu16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.extend_from_slice(&0x012au16.to_be_bytes());
+        bytes.extend_from_slice(&9000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0, 1, 2, 3, 4, 5, 6, 0]);
         bytes.extend_from_slice(&0x0030u16.to_be_bytes());
-        bytes.extend_from_slice(&0x0031u16.to_be_bytes());
-        bytes.extend_from_slice(&[0x00, 0x00, 0x23, 0x28]);
-        let descriptor = [
-            0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
-        ];
-        bytes.extend_from_slice(&descriptor);
-        bytes.push(1);
+        bytes.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+        bytes.push(2);
         let definitions = crate::parasolid::attribute_definitions(&bytes);
         assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].offset, 1);
-        assert_eq!(definitions[0].xmt, 0x12a);
+        assert_eq!(definitions[0].offset, 26);
+        assert_eq!(definitions[0].xmt, 0x12b);
+        assert_eq!(definitions[0].identifier_xmt, 0x12a);
+        assert_eq!(definitions[0].identifier_offset, 1);
         assert_eq!(definitions[0].name, "SDL/TYSA_DENSITY");
+        assert_eq!(definitions[0].next_definition_xmt, 1);
+        assert_eq!(definitions[0].type_id, 9000);
+        assert_eq!(definitions[0].action_codes, [0, 1, 2, 3, 4, 5, 6, 0]);
+        assert_eq!(definitions[0].field_names_xmt, 0x30);
+        assert_eq!(definitions[0].legal_owner_flags[4], 1);
+        assert_eq!(definitions[0].legal_owner_flags[12], 1);
         assert_eq!(definitions[0].field_count, 1);
-        assert_eq!(definitions[0].field_record_xmt, 0x12b);
-        assert_eq!(definitions[0].field_record_references, [0x30, 0x31]);
-        assert_eq!(definitions[0].field_record_header_words, [0, 0x2328]);
-        assert_eq!(definitions[0].field_descriptor_prefix, descriptor);
-        assert_eq!(
-            super::parasolid_attribute_field_storage(&definitions[0].field_descriptor_prefix),
-            Some(super::ParasolidAttributeFieldStorage::Double)
-        );
-        assert_eq!(definitions[0].field_codes, [1]);
+        assert_eq!(definitions[0].field_codes, [2]);
 
         let truncated = &bytes[..bytes.len() - 1];
         assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
 
+        let mut duplicate_identifier = bytes.clone();
+        duplicate_identifier.splice(26..26, bytes[1..26].iter().copied());
+        assert!(crate::parasolid::attribute_definitions(&duplicate_identifier).is_empty());
+
+        bytes[42] = 7;
+        assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
+        bytes[42] = 0;
+        bytes[52] = 2;
+        assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
+        bytes[52] = 0;
         bytes[20] = 0;
         assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
     }

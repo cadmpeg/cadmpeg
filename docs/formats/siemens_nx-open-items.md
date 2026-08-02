@@ -546,7 +546,7 @@ by that invariant.
 
 **Question.** How does each Parasolid SDL/TYSA attribute instance assign its referenced value records to the fields declared by its type-79 class definition?
 
-**Known.** The attribute section of `siemens_nx.md` defines attribute-class declarations, type-81 class selection, referenced value records, topology ownership, and neutral source-attribute names. A type-81 instance has five fixed leading structural references and a trailing payload-reference lane counted by `flags`; only the trailing lane addresses type-82, type-83, and type-84 value records. The declaration includes ordered field type codes such as those for `SDL/TYSA_DENSITY` and `SDL/TYSA_BLEND_ID`.
+**Known.** The attribute section of `siemens_nx.md` defines the type-79 identifier/type-80 definition graph, type-81 class selection, referenced value records, topology ownership, and neutral source-attribute names. A type-81 instance has five fixed leading structural references and a trailing field-reference lane counted by `flags`; only the trailing lane addresses type-82 through type-89 value records. The definition includes ordered field type codes such as `[real, character]` for `SDL/TYSA_DENSITY`.
 
 **Need.** We must know the assignment to transfer class-specific material and topology attributes with semantic field names.
 

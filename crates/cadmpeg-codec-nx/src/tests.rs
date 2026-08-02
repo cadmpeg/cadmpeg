@@ -5874,7 +5874,7 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert_eq!(records[0].byte_len, 26);
     assert_eq!(records[0].xmt, 10);
     assert_eq!(records[0].sequence, 2);
-    assert_eq!(records[0].discriminator, 0x21);
+    assert_eq!(records[0].definition_xmt, 0x21);
     assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
     assert_eq!(records[0].trailing_references, [8]);
     assert_eq!(
@@ -5882,6 +5882,24 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
         Some(records[0].clone())
     );
     assert!(crate::parasolid::entity_51_record_at(&bytes[..25], 0).is_none());
+}
+
+#[test]
+fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
+    let mut bytes = vec![0, 0x51];
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&(-7_233i16).to_be_bytes());
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    for reference in 3..=8u16 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
+
+    let record = crate::parasolid::entity_51_record_at(&bytes, 0).unwrap();
+    assert_eq!(record.definition_xmt, 40_000);
+    assert_eq!(record.byte_len, 28);
+    assert!(crate::parasolid::entity_51_record_at(&bytes[..27], 0).is_none());
 }
 
 #[test]

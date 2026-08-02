@@ -9,6 +9,7 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_codec_core::be;
 use cadmpeg_codec_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_codec_core::CodecError;
 use flate2::{Decompress, FlushDecompress, Status};
@@ -62,25 +63,31 @@ pub struct Stream {
     pub schema: Option<String>,
 }
 
-/// One Parasolid attribute-class declaration preceding its field record.
+/// One Parasolid type-80 attribute definition joined to its type-79 identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AttributeDefinition<'a> {
-    /// Inflated-stream offset of the `00 4f` tag.
+    /// Inflated-stream offset of the `00 50` definition tag.
     pub offset: usize,
     /// Stream-local definition record identity.
-    pub xmt: u16,
+    pub xmt: u32,
+    /// Stream-local next-definition identity; `1` is null.
+    pub next_definition_xmt: u32,
+    /// Stream-local type-79 identifier identity.
+    pub identifier_xmt: u32,
+    /// Inflated-stream offset of the resolved `00 4f` identifier tag.
+    pub identifier_offset: usize,
     /// Exact printable class name.
     pub name: &'a str,
-    /// Declared number of fields in the following `00 50` record.
+    /// Numeric attribute type identifier.
+    pub type_id: u32,
+    /// Ordered actions for the eight logged event families.
+    pub action_codes: [u8; 8],
+    /// Stream-local field-name-list identity; `1` is null.
+    pub field_names_xmt: u32,
+    /// Ordered legal-owner flags.
+    pub legal_owner_flags: [u8; 16],
+    /// Declared number of fields in the `00 50` record.
     pub field_count: u32,
-    /// Stream-local identity of the field record.
-    pub field_record_xmt: u16,
-    /// Ordered catalog references in the field-record header.
-    pub field_record_references: [u16; 2],
-    /// Two field-record header words following the catalog references.
-    pub field_record_header_words: [u16; 2],
-    /// Exact 26-byte descriptor prefix following the field-record header.
-    pub field_descriptor_prefix: [u8; 26],
     /// One serialized field code for every declared field.
     pub field_codes: &'a [u8],
 }
@@ -98,8 +105,8 @@ pub struct Entity51Record {
     pub xmt: u32,
     /// Serialized sequence value.
     pub sequence: u32,
-    /// Attribute-class discriminator.
-    pub discriminator: u16,
+    /// Stream-local type-80 attribute-definition identity.
+    pub definition_xmt: u32,
     /// Five fixed leading stream-local references.
     pub leading_references: [u32; 5],
     /// Variable trailing stream-local references counted by `flags`.
@@ -295,10 +302,7 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
         .get(at..at + 4)
         .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))?;
     at += 4;
-    let discriminator = bytes
-        .get(at..at + 2)
-        .map(|value| u16::from_be_bytes(value.try_into().expect("two bytes")))?;
-    at += 2;
+    let definition_xmt = read_xmt(bytes, &mut at)?;
     (xmt > 1 && sequence != 0 && (1..=0x20).contains(&flags)).then_some(())?;
     let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
     let references = entity_51_references(bytes, &mut at, reference_count)?;
@@ -310,7 +314,7 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
         flags,
         xmt,
         sequence,
-        discriminator,
+        definition_xmt,
         leading_references,
         trailing_references,
     })
@@ -343,91 +347,95 @@ fn read_xmt(bytes: &[u8], at: &mut usize) -> Option<u32> {
     Some(u32::from(quotient) * 32_767 + u32::from(first.unsigned_abs()))
 }
 
-/// Decode length-bounded `00 4f` attribute-class declarations.
+#[derive(Debug, Clone, Copy)]
+struct AttributeIdentifier<'a> {
+    offset: usize,
+    xmt: u32,
+    name: &'a str,
+}
+
+fn attribute_identifiers(bytes: &[u8]) -> Vec<AttributeIdentifier<'_>> {
+    (0..bytes.len())
+        .filter_map(|offset| {
+            let mut at = offset.checked_add(2)?;
+            (bytes.get(offset..at) == Some(&[0x00, 0x4f])).then_some(())?;
+            if bytes.get(at) == Some(&0xff) {
+                at += 1;
+            }
+            let name_len = usize::try_from(be::u32_at(bytes, at)?).ok()?;
+            at += 4;
+            let xmt = read_xmt(bytes, &mut at)?;
+            let name_end = at.checked_add(name_len)?;
+            let name_bytes = bytes.get(at..name_end)?;
+            (!name_bytes.is_empty()
+                && name_bytes
+                    .iter()
+                    .all(|byte| byte.is_ascii() && !byte.is_ascii_control()))
+            .then_some(())?;
+            Some(AttributeIdentifier {
+                offset,
+                xmt,
+                name: std::str::from_utf8(name_bytes).ok()?,
+            })
+        })
+        .collect()
+}
+
+/// Decode complete type-80 attribute definitions and resolve their type-79 identifiers.
 pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
-    let mut definitions = Vec::new();
-    let mut at = 0;
-    while at + 9 <= bytes.len() {
-        if bytes.get(at..at + 2) != Some(&[0x00, 0x4f]) {
-            at += 1;
-            continue;
-        }
-        let escaped = bytes.get(at + 2) == Some(&0xff);
-        let header = at + 2 + usize::from(escaped);
-        let Some(length_bytes) = bytes.get(header..header + 4) else {
-            break;
-        };
-        let name_len = u32::from_be_bytes(length_bytes.try_into().expect("four bytes")) as usize;
-        let Some(identity) = bytes.get(header + 4..header + 6) else {
-            break;
-        };
-        let name_start = header + 6;
-        let Some(name_end) = name_start.checked_add(name_len) else {
-            at += 1;
-            continue;
-        };
-        let Some(name_bytes) = bytes.get(name_start..name_end) else {
-            at += 1;
-            continue;
-        };
-        let Some(field_header) = bytes.get(name_end..name_end + 16) else {
-            at += 1;
-            continue;
-        };
-        if name_len == 0
-            || !name_bytes
+    let identifiers = attribute_identifiers(bytes);
+    (0..bytes.len())
+        .filter_map(|offset| {
+            let mut at = offset.checked_add(2)?;
+            (bytes.get(offset..at) == Some(&[0x00, 0x50])).then_some(())?;
+            if bytes.get(at) == Some(&0xff) {
+                at += 1;
+            }
+            let field_count = be::u32_at(bytes, at)?;
+            at += 4;
+            let xmt = read_xmt(bytes, &mut at)?;
+            let next_definition_xmt = read_xmt(bytes, &mut at)?;
+            let identifier_xmt = read_xmt(bytes, &mut at)?;
+            let type_id = be::u32_at(bytes, at)?;
+            at += 4;
+            let action_codes: [u8; 8] = bytes.get(at..at + 8)?.try_into().ok()?;
+            (xmt > 1
+                && identifier_xmt > 1
+                && type_id != 0
+                && action_codes.iter().all(|action| *action <= 6))
+            .then_some(())?;
+            at += 8;
+            let field_names_xmt = read_xmt(bytes, &mut at)?;
+            let legal_owner_flags: [u8; 16] = bytes.get(at..at + 16)?.try_into().ok()?;
+            legal_owner_flags
                 .iter()
-                .all(|byte| byte.is_ascii_graphic() && !byte.is_ascii_control())
-            || field_header.get(0..2) != Some(&[0x00, 0x50])
-        {
-            at += 1;
-            continue;
-        }
-        let Ok(name) = std::str::from_utf8(name_bytes) else {
-            at += 1;
-            continue;
-        };
-        let field_count = u32::from_be_bytes(field_header[2..6].try_into().expect("four bytes"));
-        let descriptor_start = name_end + 16;
-        let Some(descriptor_end) = descriptor_start.checked_add(26) else {
-            at += 1;
-            continue;
-        };
-        let Some(field_codes_end) = descriptor_end.checked_add(field_count as usize) else {
-            at += 1;
-            continue;
-        };
-        let Some(field_descriptor_prefix) = bytes
-            .get(descriptor_start..descriptor_end)
-            .and_then(|value| value.try_into().ok())
-        else {
-            at += 1;
-            continue;
-        };
-        let Some(field_codes) = bytes.get(descriptor_end..field_codes_end) else {
-            at += 1;
-            continue;
-        };
-        definitions.push(AttributeDefinition {
-            offset: at,
-            xmt: u16::from_be_bytes([identity[0], identity[1]]),
-            name,
-            field_count,
-            field_record_xmt: u16::from_be_bytes(field_header[6..8].try_into().expect("two bytes")),
-            field_record_references: [
-                u16::from_be_bytes(field_header[8..10].try_into().expect("two bytes")),
-                u16::from_be_bytes(field_header[10..12].try_into().expect("two bytes")),
-            ],
-            field_record_header_words: [
-                u16::from_be_bytes(field_header[12..14].try_into().expect("two bytes")),
-                u16::from_be_bytes(field_header[14..16].try_into().expect("two bytes")),
-            ],
-            field_descriptor_prefix,
-            field_codes,
-        });
-        at = field_codes_end;
-    }
-    definitions
+                .all(|flag| matches!(flag, 0 | 1))
+                .then_some(())?;
+            at += 16;
+            let field_codes_end = at.checked_add(usize::try_from(field_count).ok()?)?;
+            let field_codes = bytes.get(at..field_codes_end)?;
+            field_codes.iter().all(|code| *code <= 10).then_some(())?;
+            let mut matches = identifiers
+                .iter()
+                .filter(|identifier| identifier.xmt == identifier_xmt);
+            let identifier = matches.next()?;
+            matches.next().is_none().then_some(())?;
+            Some(AttributeDefinition {
+                offset,
+                xmt,
+                next_definition_xmt,
+                identifier_xmt,
+                identifier_offset: identifier.offset,
+                name: identifier.name,
+                type_id,
+                action_codes,
+                field_names_xmt,
+                legal_owner_flags,
+                field_count,
+                field_codes,
+            })
+        })
+        .collect()
 }
 
 /// The minimum inflated length for an unindexed scan candidate to count as a

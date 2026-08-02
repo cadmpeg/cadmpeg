@@ -48,9 +48,8 @@
           "arenas": {
             "parasolid_attribute_class_uses": [
               {
-                "attribute_definition": "nx:s0:attribute-definition#201",
-                "class_discriminator": 200,
-                "definition_xmt": 201,
+                "attribute_definition": "nx:s0:attribute-definition#202",
+                "definition_xmt": 202,
                 "entity_51_record": "nx:s0:entity-51#50-178",
                 "id": "nx:s0:attribute-class-use#50-178",
                 "stream_ordinal": 0
@@ -58,58 +57,54 @@
             ],
             "parasolid_attribute_definitions": [
               {
+                "action_codes": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
                 "field_codes": [
                   1
                 ],
                 "field_count": 1,
-                "field_descriptor_prefix": [
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170
-                ],
-                "field_record_header_words": [
+                "field_names_xmt": 1,
+                "id": "nx:s0:attribute-definition#202",
+                "identifier_inflated_offset": 70,
+                "identifier_xmt": 201,
+                "inflated_offset": 88,
+                "legal_owner_flags": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
                   0,
                   0
                 ],
-                "field_record_references": [
-                  0,
-                  0
-                ],
-                "field_record_xmt": 202,
-                "id": "nx:s0:attribute-definition#201",
-                "inflated_offset": 70,
                 "name": "ATTR_CLASS",
+                "next_definition_xmt": 1,
                 "stream_ordinal": 0,
-                "xmt": 201
+                "type_id": 9000,
+                "xmt": 202
               }
             ],
             "parasolid_entity_51_records": [
               {
                 "byte_len": 26,
-                "discriminator": 200,
+                "definition_xmt": 202,
                 "flags": 1,
                 "id": "nx:s0:entity-51#50-178",
                 "inflated_offset": 178,
@@ -175,10 +170,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "256",
+          "file_size": "266",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "242",
+          "footer_offset": "252",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -207,7 +202,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 242, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 252, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -233,8 +228,8 @@
             "stream": 1,
             "tag": "ATTRIBUTE_CLASS_USE"
           },
-          "nx:s0:attribute-definition#201": {
-            "offset": 70,
+          "nx:s0:attribute-definition#202": {
+            "offset": 88,
             "stream": 1,
             "tag": "ATTRIBUTE_DEFINITION"
           },
@@ -267,10 +262,10 @@
       "retained_records": [
         {
           "byte_len": 206,
-          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AABPAAAACgDJQVRUUl9DTEFTUwBQAAAAAQDKAAAAAAAAAACqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqgEAUgAAAAEAZQAAAAcAUwAAAAEAZj/4AAAAAAAAAFQAAAAKAGRBVFRSX0xBQkVMAABRAAAAAQAyAAAAAgDIAGQAZQBmAJYAlwCYqqo=",
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AABPAAAACgDJQVRUUl9DTEFTUwBQAAAAAQDKAAEAyQAAIygAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAEAUgAAAAEAZQAAAAcAUwAAAAEAZj/4AAAAAAAAAFQAAAAKAGRBVFRSX0xBQkVMAABRAAAAAQAyAAAAAgDKAGQAZQBmAJYAlwCYqqo=",
           "id": "nx:container:parasolid#0",
           "offset": 76,
-          "sha256": "14ddccef2ef0cc815a25947a31a7a201cd2268a0ce8683ebc09230830c18d28e",
+          "sha256": "8409b0937bfb591500bb40c1cabdcc1a32e9cf06718872f27afcb1131dea68dd",
           "stream": "nx:container"
         }
       ],
@@ -285,11 +280,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 166,
+        "compressed_size": 176,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 166
+        "uncompressed_size": 176
       },
       {
         "attributes": {
@@ -322,7 +317,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 242, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 252, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]
