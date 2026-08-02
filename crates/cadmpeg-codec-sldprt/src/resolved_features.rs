@@ -42914,6 +42914,12 @@ fn typed_relation_definition(
             })
         }
         LineLineDistance => {
+            let operand_marker = |index: usize| {
+                relation_operand_marker(relation, index, sketch, markers_by_id).or_else(|| {
+                    relation_line_point_marker(relation, index, markers_by_id)
+                        .map(|marker| marker.id.as_str())
+                })
+            };
             let curve = |index: usize| {
                 let operand = relation.operands.get(index)?;
                 (operand.kind == FeatureInputOperandKind::E1 && operand.entity_ref.is_none())
@@ -42929,7 +42935,7 @@ fn typed_relation_definition(
                             .map(|entity| entity.id.clone())
                     })
                     .or_else(|| {
-                        marker(index).and_then(|marker| {
+                        operand_marker(index).and_then(|marker| {
                             single_marker_line_entity(
                                 marker,
                                 markers_by_id,
@@ -42947,20 +42953,44 @@ fn typed_relation_definition(
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
                     known.clone(),
-                    unique_profile_line_distance_entity(
-                        sketch,
-                        &known,
-                        parameter,
-                        sketch_entities,
-                    )?,
+                    if let Some(marker) = relation_line_point_marker(relation, 1, markers_by_id) {
+                        unique_marker_line_distance_entity(
+                            &marker.id,
+                            sketch,
+                            &known,
+                            parameter,
+                            sketch_entities,
+                            markers_by_id,
+                            loci_by_marker,
+                        )?
+                    } else {
+                        unique_profile_line_distance_entity(
+                            sketch,
+                            &known,
+                            parameter,
+                            sketch_entities,
+                        )?
+                    },
                 ),
                 (None, Some(known)) => (
-                    unique_profile_line_distance_entity(
-                        sketch,
-                        &known,
-                        parameter,
-                        sketch_entities,
-                    )?,
+                    if let Some(marker) = relation_line_point_marker(relation, 0, markers_by_id) {
+                        unique_marker_line_distance_entity(
+                            &marker.id,
+                            sketch,
+                            &known,
+                            parameter,
+                            sketch_entities,
+                            markers_by_id,
+                            loci_by_marker,
+                        )?
+                    } else {
+                        unique_profile_line_distance_entity(
+                            sketch,
+                            &known,
+                            parameter,
+                            sketch_entities,
+                        )?
+                    },
                     known,
                 ),
                 (None, None) => {
@@ -43421,6 +43451,36 @@ fn unique_profile_line_distance_entity(
     })
 }
 
+fn unique_marker_line_distance_entity(
+    marker: &str,
+    sketch: &SketchId,
+    known: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchEntityId> {
+    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let marker_locus = marker_point_locus(marker, markers_by_id, loci_by_marker)?;
+    let marker_point = profile_locus_point(&marker_locus, sketch_entities)?;
+    let known = sketch_entities.iter().find(|entity| entity.id == *known)?;
+    sole_sorted(
+        sketch_entities
+            .iter()
+            .filter(|candidate| candidate.sketch == *sketch && candidate.id != known.id)
+            .filter(|candidate| matches!(candidate.geometry, SketchGeometry::Line { .. }))
+            .filter(|candidate| sketch_entity_contains_point(candidate, marker_point))
+            .filter(|candidate| {
+                line_line_distance(known, candidate)
+                    .is_some_and(|measured| same_dimension_length(measured, distance.0))
+            })
+            .map(|candidate| candidate.id.clone())
+            .collect(),
+    )
+}
+
 fn unique_profile_line_distance_pair(
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
@@ -43751,6 +43811,34 @@ fn relation_operand_marker<'a>(
             .map(|marker| marker.id.as_str());
     }
     operand.entity_ref.as_deref()
+}
+
+fn relation_line_point_marker<'a>(
+    relation: &FeatureInputRelationInstance,
+    index: usize,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+) -> Option<&'a SketchInputEntity> {
+    let operand = relation.operands.get(index)?;
+    if operand.kind != FeatureInputOperandKind::Native(0x8386) || operand.entity_ref.is_some() {
+        return None;
+    }
+    let candidates = markers_by_id
+        .values()
+        .copied()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(&relation.feature_ref))
+        .filter(|marker| marker.local_id == Some(u32::from(operand.entity_index)))
+        .filter(|marker| marker.coordinates_m.is_some())
+        .filter(|marker| {
+            matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        })
+        .collect::<Vec<_>>();
+    let [marker] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*marker)
 }
 
 fn unique_dimensioned_circle_entity(
@@ -47825,6 +47913,109 @@ mod profile_join_tests {
             ),
             Some(SketchConstraintDefinition::Distance { entities: pair, .. })
                 if pair == entities.iter().map(|entity| entity.id.clone()).collect::<Vec<_>>()
+        ));
+    }
+
+    #[test]
+    fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
+        let sketch = SketchId("sketch".into());
+        let line = |id: &str, v| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, v),
+                end: Point2::new(10.0, v),
+            },
+        };
+        let known = line("known", 0.0);
+        let intended = line("intended", 5.0);
+        let distractor = line("distractor", -5.0);
+        let point = SketchEntity {
+            id: SketchEntityId("addressed-point".into()),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: Some("point-marker".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(3.0, 5.0),
+            },
+        };
+        let known_marker = marker("known-marker", None);
+        let mut point_marker = marker("point-marker", Some([0.003, 0.005]));
+        point_marker.local_id = Some(13);
+        let markers = HashMap::from([
+            (known_marker.id.as_str(), &known_marker),
+            (point_marker.id.as_str(), &point_marker),
+        ]);
+        let loci = HashMap::from([
+            (
+                known_marker.id.clone(),
+                vec![SketchLocus::Entity(known.id.clone())],
+            ),
+            (
+                point_marker.id.clone(),
+                vec![SketchLocus::Entity(point.id.clone())],
+            ),
+        ]);
+        let relation = FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::LineLineDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature-native".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: Some("scalar".into()),
+            display_scalar_ref: None,
+            operands: vec![
+                FeatureInputOperand {
+                    offset: 0,
+                    reference_ref: "missing-reference".into(),
+                    kind: FeatureInputOperandKind::Native(0x8386),
+                    entity_index: 13,
+                    entity_ref: None,
+                },
+                FeatureInputOperand {
+                    offset: 1,
+                    reference_ref: "known-reference".into(),
+                    kind: FeatureInputOperandKind::Native(0x8386),
+                    entity_index: 6,
+                    entity_ref: Some(known_marker.id.clone()),
+                },
+            ],
+        };
+        let parameter = DesignParameter {
+            id: ParameterId("distance".into()),
+            owner: Some(FeatureId("feature".into())),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "5mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(5.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("scalar".into()),
+        };
+        let entities = [known.clone(), intended.clone(), distractor, point];
+
+        assert!(matches!(
+            typed_relation_definition(
+                &relation,
+                Some(&parameter),
+                &sketch,
+                &entities,
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Distance { entities: pair, .. })
+                if pair == vec![intended.id, known.id]
         ));
     }
 
