@@ -4729,6 +4729,44 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn configuration_offset_plane_replaces_only_an_unresolved_face() {
+        use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, FeatureDefinition, Length};
+
+        let base = FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Faces(vec!["test:model:face#1".into()]),
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(5.0),
+        };
+        let configured_origin = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
+        let mut configured = FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: configured_origin,
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            }),
+            distance: Length(8.0),
+        };
+
+        inherit_configuration_shared_semantics(&mut configured, &base);
+
+        let FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face { face, origin, .. }),
+            distance,
+        } = configured
+        else {
+            panic!("offset-plane definition retained its face reference");
+        };
+        assert_eq!(face, FaceSelection::Faces(vec!["test:model:face#1".into()]));
+        assert_eq!(origin, configured_origin);
+        assert_eq!(distance, Length(8.0));
+    }
+
+    #[test]
     fn configuration_numeric_override_inherits_parameter_dimension() {
         use cadmpeg_ir::features::{
             ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,
@@ -9171,6 +9209,29 @@ fn inherit_configuration_shared_semantics(
     {
         if reference.is_none() {
             reference.clone_from(base_reference);
+        } else if let (
+            Some(cadmpeg_ir::features::DatumPlaneReference::Face { face, .. }),
+            Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                face: base_face, ..
+            }),
+        ) = (reference, base_reference)
+        {
+            let incomplete = match face {
+                cadmpeg_ir::features::FaceSelection::Faces(faces)
+                | cadmpeg_ir::features::FaceSelection::Resolved { faces, .. } => faces.is_empty(),
+                cadmpeg_ir::features::FaceSelection::Historical { faces, .. } => faces.is_empty(),
+                cadmpeg_ir::features::FaceSelection::Generated { faces, .. } => faces.is_empty(),
+                cadmpeg_ir::features::FaceSelection::HistoricalPartial {
+                    faces,
+                    unresolved,
+                    ..
+                } => faces.is_empty() || !unresolved.is_empty(),
+                cadmpeg_ir::features::FaceSelection::Unresolved
+                | cadmpeg_ir::features::FaceSelection::Native(_) => true,
+            };
+            if incomplete {
+                face.clone_from(base_face);
+            }
         }
         return;
     }
