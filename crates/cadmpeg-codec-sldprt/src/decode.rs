@@ -3698,6 +3698,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4215,6 +4216,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4322,6 +4324,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4417,6 +4420,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4477,6 +4481,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4564,6 +4569,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4648,6 +4654,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4771,6 +4778,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4961,6 +4969,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5514,6 +5523,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5579,6 +5589,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
