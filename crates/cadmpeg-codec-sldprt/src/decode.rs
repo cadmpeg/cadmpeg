@@ -1557,6 +1557,24 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
             *binding_counts.entry((source, class)).or_default() += 1;
         }
     }
+    let mut named_binding_counts = BTreeMap::<(&str, &str, &str), usize>::new();
+    for lane in &native.feature_input_lanes {
+        for feature in native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+        {
+            let (Some(class), Some(name)) = (
+                feature.input_class.as_deref(),
+                crate::resolved_features::feature_object_name(feature, lane),
+            ) else {
+                continue;
+            };
+            *named_binding_counts
+                .entry((lane.id.as_str(), name.id.as_str(), class))
+                .or_default() += 1;
+        }
+    }
     native
         .feature_input_lanes
         .iter()
@@ -1564,19 +1582,24 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
             lane.classes
                 .iter()
                 .filter(|class| class.role == FeatureInputClassRole::Feature)
-                .filter_map(|class| {
+                .filter_map(move |class| {
                     let name_offset = class.offset + 6 + class.name.len() as u64;
                     lane.names
                         .iter()
                         .find(|name| name.offset == name_offset)
-                        .map(|name| (class, name))
+                        .map(|name| (lane, class, name))
                 })
         })
-        .filter(|(class, name)| {
-            name.object_id.is_none_or(|id| {
-                source_counts.get(&id).copied() != Some(1)
-                    || binding_counts.get(&(id, class.name.as_str())).copied() != Some(1)
-            })
+        .filter(|(lane, class, name)| {
+            let source_bound = name.object_id.is_some_and(|id| {
+                source_counts.get(&id).copied() == Some(1)
+                    && binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
+            });
+            let name_bound = named_binding_counts
+                .get(&(lane.id.as_str(), name.id.as_str(), class.name.as_str()))
+                .copied()
+                == Some(1);
+            !(source_bound || name_bound)
         })
         .count()
 }
@@ -5717,6 +5740,8 @@ mod design_loss_tests {
         native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
         assert_eq!(unbound_feature_input_operation_objects(&native), 1);
         native.feature_histories[0].features[0].input_class = Some(class_name.into());
+        native.feature_histories[0].features[0].source_id = None;
+        assert_eq!(unbound_feature_input_operation_objects(&native), 0);
         let mut duplicate = native.feature_histories[0].features[0].clone();
         duplicate.id = "duplicate-feature".into();
         native.feature_histories[0].features.push(duplicate);
