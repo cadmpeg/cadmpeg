@@ -4309,6 +4309,56 @@ mod marker_tests {
     }
 
     #[test]
+    fn line_distance_operand_selects_a_point_coded_linked_line_handle() {
+        let endpoint = |id: &str, local_id, u| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: local_id,
+            offset: u64::from(local_id),
+            object_index: None,
+            local_id: Some(local_id),
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m: Some([u, 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let endpoints = [endpoint("first", 2, 1.0), endpoint("second", 3, 2.0)];
+        let handle = SketchInputEntity {
+            id: "line-handle".into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 16,
+            offset: 16,
+            object_index: None,
+            local_id: Some(16),
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m: Some([9.0, 9.0]),
+            links: endpoints
+                .iter()
+                .map(|endpoint| SketchInputLink {
+                    local_id: u16::try_from(endpoint.local_id.expect("local identity"))
+                        .expect("u16 local identity"),
+                    entity_ref: endpoint.id.clone(),
+                })
+                .collect(),
+            link_selector: Some(0x8386),
+        };
+        let markers = [&endpoints[0], &endpoints[1], &handle];
+
+        assert_eq!(
+            resolve_operand_marker(markers, FeatureInputOperandKind::Native(0x8386), 16,)
+                .map(|marker| marker.id.as_str()),
+            Some("line-handle")
+        );
+        assert!(
+            resolve_operand_marker(markers, FeatureInputOperandKind::Native(0x8dda), 16,).is_none()
+        );
+    }
+
+    #[test]
     fn qualified_operand_selects_one_coordinate_marker_in_a_reused_local_id() {
         let marker = |id: &str, coordinates_m| SketchInputEntity {
             id: id.into(),
@@ -22362,6 +22412,24 @@ fn resolve_operand_marker_excluding<'a>(
     match exact.as_slice() {
         [entity] => Some(*entity),
         [] => {
+            if kind == FeatureInputOperandKind::Native(0x8386) {
+                let entities_by_id = entities
+                    .iter()
+                    .map(|entity| (entity.id.as_str(), *entity))
+                    .collect::<HashMap<_, _>>();
+                let linked_line_handles = entities
+                    .iter()
+                    .copied()
+                    .filter(|entity| entity.local_id == Some(u32::from(address)))
+                    .filter(|entity| !excluded.contains(&entity.id))
+                    .filter(|entity| {
+                        linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
+                    })
+                    .collect::<Vec<_>>();
+                if let [entity] = linked_line_handles.as_slice() {
+                    return Some(*entity);
+                }
+            }
             let mut indirect = if point_operand_uses_link_graph(kind) {
                 linked_point_markers(&entities, address, kind, excluded)
             } else if operand_accepts_link_indirection(kind) {
@@ -22483,6 +22551,35 @@ fn operand_accepts_link_indirection(kind: FeatureInputOperandKind) -> bool {
         FeatureInputOperandKind::E1
             | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87)
     )
+}
+
+fn linked_coordinate_line_endpoints<'a>(
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+) -> Option<[&'a SketchInputEntity; 2]> {
+    if matches!(marker.kind, SketchInputKind::Relation(_)) {
+        return None;
+    }
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| link.entity_ref != marker.id)
+        .collect::<Vec<_>>();
+    let [first, second] = links.as_slice() else {
+        return None;
+    };
+    let endpoints = [first, second].map(|link| {
+        markers_by_id
+            .get(link.entity_ref.as_str())
+            .copied()
+            .filter(|endpoint| {
+                endpoint.feature_ref == marker.feature_ref && endpoint.coordinates_m.is_some()
+            })
+    });
+    let [Some(first), Some(second)] = endpoints else {
+        return None;
+    };
+    (first.id != second.id).then_some([first, second])
 }
 
 fn compact_body_selections(
@@ -35785,10 +35882,13 @@ pub(crate) fn project_relation_point_geometry(
                     .filter(|linked| linked.coordinates_m.is_some())
                     .count()
                     == 1;
+            let linked_curve_handle = curve_operands.contains(marker.id.as_str())
+                && linked_coordinate_line_endpoints(marker, &markers_by_id).is_some();
             if !referenced.contains(marker.id.as_str())
                 || !(marker.kind == SketchInputKind::LineOrCircle
                     || undetailed_arc_line
-                    || self_linked_curve_handle)
+                    || self_linked_curve_handle
+                    || linked_curve_handle)
                 || entities
                     .iter()
                     .any(|entity| entity.native_ref.as_deref() == Some(marker.id.as_str()))
@@ -35807,6 +35907,12 @@ pub(crate) fn project_relation_point_geometry(
                 &markers_by_id,
                 &marker_roster,
             );
+            if endpoints.len() != 2 && linked_curve_handle {
+                endpoints = linked_coordinate_line_endpoints(marker, &markers_by_id)
+                    .into_iter()
+                    .flatten()
+                    .collect();
+            }
             if endpoints.len() != 2 {
                 endpoints = self_linked_curve_handle
                     .then_some(marker)
@@ -51448,6 +51554,19 @@ mod profile_join_tests {
                 entity_ref: endpoint_b.id.clone(),
             },
         ];
+        let mut forward_linked_curve = marker("forward-linked-curve", Some([0.009, 0.009]));
+        forward_linked_curve.offset = 89;
+        forward_linked_curve.kind = SketchInputKind::Arc;
+        forward_linked_curve.links = vec![
+            SketchInputLink {
+                local_id: 10,
+                entity_ref: endpoint_a.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 11,
+                entity_ref: endpoint_b.id.clone(),
+            },
+        ];
         markers.extend([
             endpoint_a,
             endpoint_b,
@@ -51456,6 +51575,7 @@ mod profile_join_tests {
             qualified_curve.clone(),
             coincident_point.clone(),
             self_linked_curve.clone(),
+            forward_linked_curve.clone(),
         ]);
         let mut native_payload = vec![0; 181];
         for offset in [0, 27, 54] {
@@ -51605,6 +51725,34 @@ mod profile_join_tests {
                         },
                     ],
                 },
+                FeatureInputRelationInstance {
+                    id: "forward-linked-curve-relation".into(),
+                    parent: "lane".into(),
+                    ordinal: 5,
+                    offset: 103,
+                    family: FeatureInputRelationFamily::LineLineDistance,
+                    class_ref: "class".into(),
+                    feature_ref: "feature-native".into(),
+                    scalar_refs: Vec::new(),
+                    parameter_scalar_ref: None,
+                    display_scalar_ref: None,
+                    operands: vec![
+                        FeatureInputOperand {
+                            offset: 104,
+                            reference_ref: "forward-linked-curve-reference".into(),
+                            kind: FeatureInputOperandKind::Native(0x8386),
+                            entity_index: 20,
+                            entity_ref: Some(forward_linked_curve.id.clone()),
+                        },
+                        FeatureInputOperand {
+                            offset: 105,
+                            reference_ref: "forward-support-reference".into(),
+                            kind: FeatureInputOperandKind::Native(0x8386),
+                            entity_index: 21,
+                            entity_ref: Some(support_handle.id.clone()),
+                        },
+                    ],
+                },
             ],
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
@@ -51633,6 +51781,13 @@ mod profile_join_tests {
                 && entity.endpoint_refs == ["endpoint-b", "self-linked-curve"]
                 && matches!(entity.geometry, SketchGeometry::Line { start, end }
                     if start == Point2::new(4.0, 7.0) && end == Point2::new(5.0, 6.0))
+        }));
+        assert!(entities.iter().any(|entity| {
+            entity.construction
+                && entity.native_ref.as_deref() == Some("forward-linked-curve")
+                && entity.endpoint_refs == ["endpoint-a", "endpoint-b"]
+                && matches!(entity.geometry, SketchGeometry::Line { start, end }
+                    if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 7.0))
         }));
         assert!(entities.iter().any(|entity| {
             entity.construction
