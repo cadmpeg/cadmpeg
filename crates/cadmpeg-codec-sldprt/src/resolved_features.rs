@@ -13898,7 +13898,7 @@ mod marker_tests {
 
         project_unbound_cosmetic_thread_faces(
             &mut features,
-            &[history],
+            std::slice::from_ref(&history),
             &[lane("lane-a", 40), lane("lane-b", 60)],
             &[],
             &[],
@@ -13919,6 +13919,48 @@ mod marker_tests {
                     && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
         ));
         assert_eq!(features[1].dependencies, [FeatureId("producer".into())]);
+
+        let surface = Surface {
+            id: SurfaceId("cylinder".into()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 4.0,
+            },
+            source_object: None,
+        };
+        let topology_face = Face {
+            id: FaceId("cylinder-face".into()),
+            shell: ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, diameter, .. } =
+            &mut features[1].definition
+        else {
+            panic!("expected cosmetic thread");
+        };
+        *face = cadmpeg_ir::features::FaceSelection::Unresolved;
+        *diameter = Some(Length(8.0));
+        project_unbound_cosmetic_thread_faces(
+            &mut features,
+            std::slice::from_ref(&history),
+            &[],
+            std::slice::from_ref(&topology_face),
+            std::slice::from_ref(&surface),
+        );
+        assert!(matches!(
+            &features[1].definition,
+            cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
+                face: cadmpeg_ir::features::FaceSelection::Faces(faces),
+                ..
+            } if faces == std::slice::from_ref(&topology_face.id)
+        ));
     }
 
     #[test]
@@ -33403,19 +33445,18 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 Some((format!("{lane_key}:{marker}"), components))
             }))
             .collect::<Vec<_>>();
-        if references.is_empty() {
-            continue;
-        }
         let mut native_references = references
             .iter()
             .map(|(reference, _)| reference.clone())
             .collect::<Vec<_>>();
         native_references.sort();
         native_references.dedup();
-        let native = format!(
-            "sldprt:feature-input:cylinder-reference:{}",
-            native_references.join(",")
-        );
+        let native = (!native_references.is_empty()).then(|| {
+            format!(
+                "sldprt:feature-input:cylinder-reference:{}",
+                native_references.join(",")
+            )
+        });
         let generated = references
             .iter()
             .map(|(_, components)| {
@@ -33439,6 +33480,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             })
             .and_then(|mut candidates| candidates.pop());
         if let Some((producer, local_id)) = generated {
+            let Some(native) = native else {
+                continue;
+            };
             *face = cadmpeg_ir::features::FaceSelection::Generated {
                 faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
                     feature: producer.clone(),
@@ -33457,9 +33501,12 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         let Some(selected) = unique_cylindrical_face(*diameter * 0.5, faces, surfaces) else {
             continue;
         };
-        *face = cadmpeg_ir::features::FaceSelection::Resolved {
-            faces: vec![selected],
-            native,
+        *face = match native {
+            Some(native) => cadmpeg_ir::features::FaceSelection::Resolved {
+                faces: vec![selected],
+                native,
+            },
+            None => cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
         };
     }
 }

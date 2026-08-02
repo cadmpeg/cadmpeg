@@ -3141,17 +3141,21 @@ fn sync_active_configuration_face_selections(ir: &mut CadIr) {
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
-                face:
-                    face @ cadmpeg_ir::features::FaceSelection::Resolved {
-                        faces: selected, ..
-                    },
+                face,
                 diameter,
                 extent,
             } = &feature.definition
             else {
                 return None;
             };
-            (!selected.is_empty()).then_some((feature.id.clone(), face.clone(), *diameter, *extent))
+            let complete = match face {
+                cadmpeg_ir::features::FaceSelection::Faces(selected)
+                | cadmpeg_ir::features::FaceSelection::Resolved {
+                    faces: selected, ..
+                } => !selected.is_empty(),
+                _ => false,
+            };
+            complete.then_some((feature.id.clone(), face.clone(), *diameter, *extent))
         })
         .collect::<Vec<_>>();
     let configuration = &mut ir.model.configurations[configuration_index];
