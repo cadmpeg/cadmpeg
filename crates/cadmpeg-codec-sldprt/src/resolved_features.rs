@@ -13344,6 +13344,23 @@ mod marker_tests {
             Some(12)
         );
 
+        for (relative, local_id) in [(62, 13), (90, 14)] {
+            let marker = body_offset + relative;
+            let mut payload = vec![0; marker - 12];
+            payload[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
+            payload[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+            payload[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+            assert_eq!(selection_vector_tail(&mut payload, &[local_id]), marker);
+            let (actual_marker, components) =
+                cosmetic_thread_cylinder_reference_at(&payload, body_offset)
+                    .expect("required invariant");
+            assert_eq!(actual_marker, marker);
+            assert_eq!(
+                components.last().expect("required invariant").local_id,
+                Some(local_id)
+            );
+        }
+
         assert_eq!(
             cosmetic_thread_cylinder_reference_at(&payload, body_offset + 1),
             None
@@ -13704,6 +13721,20 @@ mod marker_tests {
         assert!(compact_sketch_surface_component_path_at(&payload, marker).is_some());
 
         payload[trailer..trailer + 4].fill(0);
+        assert_eq!(
+            compact_sketch_surface_component_path_at(&payload, marker),
+            None
+        );
+
+        payload.truncate(trailer);
+        payload.extend([0; 8]);
+        payload.extend(1u32.to_le_bytes());
+        payload.extend(0u32.to_le_bytes());
+        payload.extend(135u32.to_le_bytes());
+        payload.extend([0; 12]);
+        assert!(compact_sketch_surface_component_path_at(&payload, marker).is_some());
+
+        payload[trailer + 16..trailer + 20].fill(0);
         assert_eq!(
             compact_sketch_surface_component_path_at(&payload, marker),
             None
@@ -23240,7 +23271,7 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
     {
         return None;
     }
-    [46, 66, 70, 94, 102, 106, 110]
+    [46, 62, 66, 70, 90, 94, 102, 106, 110]
         .into_iter()
         .find_map(|relative| {
             let marker = body_offset.checked_add(relative)?;
@@ -23333,7 +23364,14 @@ fn compact_sketch_surface_component_path_at(
                     && trailer[20..24] != [0; 4]
                     && trailer[24..] == [0; 12]
             });
-            (extended || compact).then_some(components)
+            let short = payload.get(end..end + 32).is_some_and(|trailer| {
+                trailer[..8] == [0; 8]
+                    && trailer[8..12] == 1u32.to_le_bytes()
+                    && trailer[12..16] == [0; 4]
+                    && trailer[16..20] != [0; 4]
+                    && trailer[20..] == [0; 12]
+            });
+            (extended || compact || short).then_some(components)
         }
         _ => None,
     }
