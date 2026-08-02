@@ -2172,7 +2172,6 @@ mod tests {
         bytes.extend_from_slice(&[0, 29, 0, 11, 0, 1]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes,
             kind: StreamKind::Deltas,
             schema: None,
@@ -2242,7 +2241,6 @@ mod tests {
         bytes.extend_from_slice(&[0xcc, 0xdd, 0xee]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes,
             kind: StreamKind::Deltas,
             schema: None,
@@ -2281,7 +2279,6 @@ mod tests {
         bytes.extend([0xdd, 0xee]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: None,
@@ -2324,7 +2321,6 @@ mod tests {
         bytes.extend([0xaa, 0xbb]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: Some("SCH_3501171_35102_13006".to_string()),
@@ -2355,7 +2351,6 @@ mod tests {
         bytes.extend_from_slice(&[0, 1, 0, 1, 0, 1, 0, 1]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: None,
@@ -2391,7 +2386,6 @@ mod tests {
         bytes.extend([0xcc, 0xdd]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: None,
@@ -2438,7 +2432,6 @@ mod tests {
         bytes.extend([0xcc, 0xdd, 0xee]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: None,
@@ -2504,7 +2497,6 @@ mod tests {
         bytes.extend(deltas_type_45(11));
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: None,
@@ -2541,7 +2533,6 @@ mod tests {
         bytes.extend([0xcc, 0xdd]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: None,
@@ -2590,7 +2581,6 @@ mod tests {
         bytes.extend([0xcc, 0xdd]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: None,
@@ -2722,7 +2712,6 @@ mod tests {
         bytes.extend([0xcc, 0xdd]);
         let streams = [Stream {
             file_offset: 0,
-            consumed: 0,
             inflated: bytes.clone(),
             kind: StreamKind::Deltas,
             schema: None,

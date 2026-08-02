@@ -14,12 +14,13 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::HashMap;
 
-use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, A8Surface};
+use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, FreeformSurface};
 use crate::families::b2::records::{
     b2_circles, b2_class25_descriptors, b2_cone_point, b2_cones, b2_cylinder_point, b2_cylinders,
-    b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_pcurves, b2_use_metadata,
-    point_distance, B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode,
-    B2EdgeParameters, B2EmbeddedCylinder, B2UseMetadata,
+    b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_pcurves, b2_sphere_geometry,
+    b2_spheres, b2_tori, b2_torus_geometry, b2_use_metadata, point_distance, B2Circle,
+    B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder,
+    B2Sphere, B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{allocation_ref, finite_f64_lane, persistent_ref, read_f64_array};
 use crate::wire::records::{
@@ -238,6 +239,7 @@ pub fn consolidated_edge_definition_data(
             && values[0] == values[6]
             && values[1] == values[4]
             && values[1] == values[7]
+            && values[2] == values[5]
             && values[5] == 1.0)
     {
         return None;
@@ -304,6 +306,16 @@ pub enum ConsolidatedSupportBinding {
         /// Carrier record byte offset.
         pos: usize,
     },
+    /// `b2 03 2a` sphere selected by endpoint lifts.
+    Sphere {
+        /// Carrier record byte offset.
+        pos: usize,
+    },
+    /// `b2 03 2b` torus selected by endpoint lifts through its scaled chart.
+    Torus {
+        /// Carrier record byte offset.
+        pos: usize,
+    },
     /// Consolidated `a5 03 34` NURBS carrier, optionally at a constant normal offset.
     NurbsCarrier {
         /// Carrier record byte offset.
@@ -326,6 +338,15 @@ pub struct ResolvedConsolidatedEdgeBlock {
     /// Unordered 3D endpoint loci when at least one uniquely bound side can be
     /// lifted and every liftable side agrees.
     pub endpoint_loci: Option<[Point3; 2]>,
+}
+
+struct ConsolidatedCarriers<'a> {
+    cylinders: &'a [B2Cylinder],
+    embedded_cylinders: &'a [B2EmbeddedCylinder],
+    cones: &'a [B2Cone],
+    spheres: &'a [B2Sphere],
+    tori: &'a [B2Torus],
+    nurbs_surfaces: &'a [FreeformSurface],
 }
 
 /// Group ordered pairs of same-family class-`0x20` pcurves followed by one
@@ -657,16 +678,26 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 /// Resolve consolidated edge sides against typed cylinder, circle, cone, and
 /// NURBS carriers.
 ///
-/// A carrier wins only when it is the sole chart whose two lifted pcurve endpoints
-/// coincide with serialized `05 08 01` vertices at single-precision tolerance.
+/// A carrier binds only when record identity or chart geometry determines one
+/// solution. Ambiguous candidates remain unresolved.
 #[must_use]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let points = object_stream_vertices(data);
-    let standalone = b2_cylinders(data);
     let embedded = b2_embedded_cylinders(data);
+    let standalone = b2_cylinders(data);
     let circles = b2_circles(data);
     let cones = b2_cones(data);
+    let spheres = b2_spheres(data);
+    let tori = b2_tori(data);
     let surfaces = a5_surfaces(data);
+    let carriers = ConsolidatedCarriers {
+        cylinders: &standalone,
+        embedded_cylinders: &embedded,
+        cones: &cones,
+        spheres: &spheres,
+        tori: &tori,
+        nurbs_surfaces: &surfaces,
+    };
     consolidated_edge_blocks(data)
         .into_iter()
         .map(|block| {
@@ -674,9 +705,7 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                 let pcurve = &block.pcurves[side];
                 let mut winners = Vec::new();
                 for cylinder in &standalone {
-                    if cylinder.geometry.is_some()
-                        && pcurve_endpoints_match_vertices(pcurve, cylinder, &points)
-                    {
+                    if pcurve_endpoints_match_vertices(pcurve, cylinder, &points) {
                         winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
                     }
                 }
@@ -689,13 +718,23 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                     }
                 }
                 if winners.is_empty() {
-                    let mut circle_winners: Vec<_> = circles
+                    let identity_circles: Vec<_> = circles
                         .iter()
-                        .filter(|circle| pcurve_matches_circle(pcurve, circle))
-                        .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos })
+                        .filter(|circle| circle.record_id == pcurve.support_id)
                         .collect();
-                    if circle_winners.len() == 1 {
-                        winners.append(&mut circle_winners);
+                    if let [circle] = identity_circles.as_slice() {
+                        if pcurve_matches_circle(pcurve, circle) {
+                            winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
+                        }
+                    } else if identity_circles.is_empty() {
+                        let geometric_circle_winners: Vec<_> = circles
+                            .iter()
+                            .filter(|circle| pcurve_matches_circle(pcurve, circle))
+                            .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos })
+                            .collect();
+                        if let [winner] = geometric_circle_winners.as_slice() {
+                            winners.push(winner.clone());
+                        }
                     }
                 }
                 if winners.is_empty() {
@@ -708,6 +747,26 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                         winners.append(&mut cone_winners);
                     }
                 }
+                if winners.is_empty() {
+                    let mut sphere_winners: Vec<_> = spheres
+                        .iter()
+                        .filter(|sphere| pcurve_endpoints_match_sphere(pcurve, sphere, &points))
+                        .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos })
+                        .collect();
+                    if sphere_winners.len() == 1 {
+                        winners.append(&mut sphere_winners);
+                    }
+                }
+                if winners.is_empty() {
+                    let mut torus_winners: Vec<_> = tori
+                        .iter()
+                        .filter(|torus| pcurve_endpoints_match_torus(pcurve, torus, &points))
+                        .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos })
+                        .collect();
+                    if torus_winners.len() == 1 {
+                        winners.append(&mut torus_winners);
+                    }
+                }
                 (winners.len() == 1).then(|| winners.remove(0))
             });
             for anchor_side in [0, 1] {
@@ -716,14 +775,7 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                     continue;
                 }
                 let Some(anchor_points) = supports[anchor_side].as_ref().and_then(|binding| {
-                    support_points(
-                        binding,
-                        &block.pcurves[anchor_side],
-                        &standalone,
-                        &embedded,
-                        &cones,
-                        &surfaces,
-                    )
+                    support_points(binding, &block.pcurves[anchor_side], &carriers)
                 }) else {
                     continue;
                 };
@@ -747,8 +799,38 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
                     supports[partner] = Some(winner.clone());
                 }
             }
-            let shared_loci =
-                resolved_support_loci(&block, &supports, &standalone, &embedded, &cones, &surfaces);
+            if supports.iter().all(Option::is_none) {
+                let candidates = block.pcurves.each_ref().map(|pcurve| {
+                    surfaces
+                        .iter()
+                        .filter_map(|surface| {
+                            let binding = ConsolidatedSupportBinding::NurbsCarrier {
+                                pos: surface.pos,
+                                offset: 0.0,
+                            };
+                            let points = support_points(&binding, pcurve, &carriers)?;
+                            Some((binding, points))
+                        })
+                        .collect::<Vec<_>>()
+                });
+                let mut winner = None;
+                'pairs: for (first_binding, first_points) in &candidates[0] {
+                    for (second_binding, second_points) in &candidates[1] {
+                        if !point_sequences_agree(first_points, second_points) {
+                            continue;
+                        }
+                        if winner.is_some() {
+                            winner = None;
+                            break 'pairs;
+                        }
+                        winner = Some([first_binding.clone(), second_binding.clone()]);
+                    }
+                }
+                if let Some(winner) = winner {
+                    supports = winner.map(Some);
+                }
+            }
+            let shared_loci = resolved_support_loci(&block, &supports, &carriers);
             let endpoint_loci = shared_loci
                 .as_ref()
                 .and_then(|points| Some([*points.first()?, *points.last()?]));
@@ -762,53 +844,43 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
         .collect()
 }
 
+fn point_sequences_agree(first: &[Point3], second: &[Point3]) -> bool {
+    !first.is_empty()
+        && first.len() == second.len()
+        && first
+            .iter()
+            .zip(second)
+            .all(|(&left, &right)| point_distance(left, right) <= 2e-3)
+}
+
 fn resolved_support_loci(
     block: &ConsolidatedEdgeBlock,
     supports: &[Option<ConsolidatedSupportBinding>; 2],
-    cylinders: &[B2Cylinder],
-    embedded: &[B2EmbeddedCylinder],
-    cones: &[B2Cone],
-    surfaces: &[A8Surface],
+    carriers: &ConsolidatedCarriers<'_>,
 ) -> Option<Vec<Point3>> {
     let candidates = supports
         .iter()
         .zip(&block.pcurves)
         .filter_map(|(binding, pcurve)| {
-            let points = support_points(
-                binding.as_ref()?,
-                pcurve,
-                cylinders,
-                embedded,
-                cones,
-                surfaces,
-            )?;
+            let points = support_points(binding.as_ref()?, pcurve, carriers)?;
             (!points.is_empty()).then_some(points)
         })
         .collect::<Vec<_>>();
     let first = candidates.first()?;
     candidates
         .iter()
-        .all(|candidate| {
-            candidate.len() == first.len()
-                && first
-                    .iter()
-                    .zip(candidate)
-                    .all(|(&left, &right)| point_distance(left, right) <= 2e-3)
-        })
+        .all(|candidate| point_sequences_agree(first, candidate))
         .then(|| first.clone())
 }
 
 fn support_points(
     binding: &ConsolidatedSupportBinding,
     pcurve: &ConsolidatedPcurve,
-    cylinders: &[B2Cylinder],
-    embedded: &[B2EmbeddedCylinder],
-    cones: &[B2Cone],
-    surfaces: &[A8Surface],
+    carriers: &ConsolidatedCarriers<'_>,
 ) -> Option<Vec<Point3>> {
     match binding {
         ConsolidatedSupportBinding::Cylinder { pos } => {
-            let carrier = cylinders.iter().find(|value| value.pos == *pos)?;
+            let carrier = carriers.cylinders.iter().find(|value| value.pos == *pos)?;
             pcurve
                 .points
                 .iter()
@@ -816,7 +888,11 @@ fn support_points(
                 .collect()
         }
         ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. } => {
-            let carrier = &embedded.iter().find(|value| value.pos == *pos)?.cylinder;
+            let carrier = &carriers
+                .embedded_cylinders
+                .iter()
+                .find(|value| value.pos == *pos)?
+                .cylinder;
             pcurve
                 .points
                 .iter()
@@ -824,15 +900,32 @@ fn support_points(
                 .collect()
         }
         ConsolidatedSupportBinding::Cone { pos } => {
-            let carrier = cones.iter().find(|value| value.pos == *pos)?;
+            let carrier = carriers.cones.iter().find(|value| value.pos == *pos)?;
             pcurve
                 .points
                 .iter()
                 .map(|uv| b2_cone_point(carrier, *uv))
                 .collect()
         }
+        ConsolidatedSupportBinding::Sphere { pos } => {
+            let carrier = carriers.spheres.iter().find(|value| value.pos == *pos)?;
+            pcurve
+                .points
+                .iter()
+                .map(|&[u, v]| cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v))
+                .collect()
+        }
+        ConsolidatedSupportBinding::Torus { pos } => {
+            let carrier = carriers.tori.iter().find(|value| value.pos == *pos)?;
+            pcurve
+                .points
+                .iter()
+                .map(|uv| b2_torus_point(carrier, *uv))
+                .collect()
+        }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
-            let SurfaceGeometry::Nurbs(surface) = &surfaces
+            let SurfaceGeometry::Nurbs(surface) = &carriers
+                .nurbs_surfaces
                 .iter()
                 .find(|surface| surface.pos == *pos)?
                 .geometry
@@ -857,6 +950,14 @@ fn support_points(
     }
 }
 
+fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
+    cadmpeg_ir::eval::surface_point(
+        &b2_torus_geometry(torus),
+        u / torus.major_scale,
+        v / torus.minor_scale,
+    )
+}
+
 fn nurbs_carrier_offset(
     geometry: &SurfaceGeometry,
     parameters: &[[f64; 2]],
@@ -873,33 +974,45 @@ fn nurbs_carrier_offset(
         let partials = nurbs_surface_partials(surface, u, v)?;
         let point = partials.point;
         let residual = Vector3::new(anchor.x - point.x, anchor.y - point.y, anchor.z - point.z);
-        let residual_length = (residual.x.powi(2) + residual.y.powi(2) + residual.z.powi(2)).sqrt();
-        if residual_length < 1e-6 {
+        if residual == Vector3::new(0.0, 0.0, 0.0) {
             offsets.push(0.0);
             continue;
         }
+        let residual_length = residual.x.hypot(residual.y).hypot(residual.z);
         let normal = partials.du.cross(partials.dv).unit()?;
         let distance = residual.x * normal.x + residual.y * normal.y + residual.z * normal.z;
-        let perpendicular_squared = residual_length.powi(2) - distance.powi(2);
-        if perpendicular_squared > 1e-12 {
+        let transverse = Vector3::new(
+            residual.x - normal.x * distance,
+            residual.y - normal.y * distance,
+            residual.z - normal.z * distance,
+        );
+        let transverse_length = transverse.x.hypot(transverse.y).hypot(transverse.z);
+        if transverse_length > 1e-6 * residual_length {
             return None;
         }
         offsets.push(distance);
     }
     let first = offsets[0];
-    if !first.is_finite() || offsets.iter().any(|value| (value - first).abs() > 1e-6) {
+    if !first.is_finite()
+        || offsets
+            .iter()
+            .any(|value| (value - first).abs() > 1e-6 * value.abs().max(first.abs()))
+    {
         return None;
     }
-    Some(if first.abs() < 1e-6 { 0.0 } else { first })
+    Some(first)
 }
 
 fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool {
     let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
         return false;
     };
-    (first[1] - last[1]).abs() <= 1e-6
-        && (first[0].min(last[0]) - circle.range[0]).abs() < 1e-9
-        && (first[0].max(last[0]) - circle.range[1]).abs() < 1e-9
+    let span = circle.range[1] - circle.range[0];
+    span.is_finite()
+        && span > 0.0
+        && (first[1] - last[1]).abs() <= 1e-6 * span
+        && (first[0].min(last[0]) - circle.range[0]).abs() <= 1e-9 * span
+        && (first[0].max(last[0]) - circle.range[1]).abs() <= 1e-9 * span
 }
 
 fn pcurve_endpoints_match_cone(
@@ -912,6 +1025,40 @@ fn pcurve_endpoints_match_cone(
     };
     [*first, *last].into_iter().all(|uv| {
         b2_cone_point(cone, uv).is_some_and(|point| {
+            vertices
+                .iter()
+                .any(|vertex| point_distance(point, *vertex) < 2e-3)
+        })
+    })
+}
+
+fn pcurve_endpoints_match_torus(
+    pcurve: &ConsolidatedPcurve,
+    torus: &B2Torus,
+    vertices: &[Point3],
+) -> bool {
+    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+        return false;
+    };
+    [*first, *last].into_iter().all(|uv| {
+        b2_torus_point(torus, uv).is_some_and(|point| {
+            vertices
+                .iter()
+                .any(|vertex| point_distance(point, *vertex) < 2e-3)
+        })
+    })
+}
+
+fn pcurve_endpoints_match_sphere(
+    pcurve: &ConsolidatedPcurve,
+    sphere: &B2Sphere,
+    vertices: &[Point3],
+) -> bool {
+    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+        return false;
+    };
+    [*first, *last].into_iter().all(|[u, v]| {
+        cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(sphere), u, v).is_some_and(|point| {
             vertices
                 .iter()
                 .any(|vertex| point_distance(point, *vertex) < 2e-3)
@@ -972,4 +1119,101 @@ pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
     }
     vertices.extend(scan_vertex_records(&data[region_start..]));
     vertices
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
+
+    use crate::families::b2::records::B2Circle;
+    use crate::wire::records::ConsolidatedPcurve;
+
+    use super::{nurbs_carrier_offset, pcurve_matches_circle};
+
+    #[test]
+    fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
+        let surface = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let tiny = 1e-200;
+        let offset = nurbs_carrier_offset(
+            &surface,
+            &[[0.25, 0.25], [0.75, 0.75]],
+            &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
+        )
+        .expect("constant normal offset");
+        assert_eq!(offset, tiny);
+
+        assert_eq!(
+            nurbs_carrier_offset(
+                &surface,
+                &[[0.25, 0.25], [0.75, 0.75]],
+                &[
+                    Point3::new(0.25, 0.25, tiny),
+                    Point3::new(0.75, 0.75, 2.0 * tiny),
+                ],
+            ),
+            None
+        );
+        assert_eq!(
+            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],),
+            None
+        );
+    }
+
+    #[test]
+    fn circle_binding_is_relative_to_the_arc_length_span() {
+        let span = 1e-200_f64;
+        let circle = B2Circle {
+            pos: 0,
+            layout: 0x32,
+            record_id: 1,
+            frame_token: 0,
+            center_pair: [0.0; 2],
+            radius: span,
+            range: [0.0, span],
+            full_circle: false,
+            chart_shift: 0.0,
+        };
+        let pcurve = |points| ConsolidatedPcurve {
+            pos: 0,
+            support_id: 1,
+            degree: 1,
+            extrapolation_sites: 0,
+            knots: vec![0.0, span],
+            points,
+            first_derivatives: Vec::new(),
+            second_derivatives: Vec::new(),
+            range: [0.0, span],
+            tail: Vec::new(),
+        };
+
+        assert!(pcurve_matches_circle(
+            &pcurve(vec![[0.0, span], [span, span]]),
+            &circle
+        ));
+        assert!(!pcurve_matches_circle(
+            &pcurve(vec![[0.0, span], [span, 2.0 * span]]),
+            &circle
+        ));
+        assert!(!pcurve_matches_circle(
+            &pcurve(vec![[0.0, span], [2.0 * span, span]]),
+            &circle
+        ));
+    }
 }

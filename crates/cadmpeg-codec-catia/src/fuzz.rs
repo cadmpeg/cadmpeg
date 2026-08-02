@@ -23,11 +23,6 @@ pub fn e5_topology(data: &[u8]) {
     let _ = crate::families::e5::graph::parse_topology(data);
 }
 
-/// Exercise zero-entity `a9 03` topology parsing.
-pub fn zero_entity_parse(data: &[u8]) {
-    let _ = crate::families::zero_entity::graph::parse(data);
-}
-
 /// Exercise standard-family vertex-record scanning.
 pub fn geometry_vertices(data: &[u8]) {
     let _ = crate::wire::records::scan_vertex_records(data);

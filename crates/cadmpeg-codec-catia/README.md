@@ -52,8 +52,9 @@ analytic carrier surfaces and vertices, binds faces when stored senses resolve,
 and emits loops, coedges, edges, and endpoint assignments when the trim,
 support, and vertex tables form a complete unambiguous graph. FBB-only,
 zero-entity, E5, and object-stream layouts can yield analytic or NURBS carriers
-and selected edge bindings. Unresolved native bytes remain attached to the IR
-as unknown records, and the report describes missing geometry, topology, or
+and selected edge bindings. Complete scalar formula graphs transfer typed
+parameters. Unresolved native bytes remain attached to the IR as unknown
+records, and the report describes missing geometry, topology, design intent, or
 attributes.
 
 Use `CatiaCodec::inspect` to identify the storage variant and list catalogued
@@ -61,14 +62,15 @@ logical streams without decoding entities. Set `DecodeOptions::container_only`
 when only source metadata and container diagnostics are needed.
 
 The crate reads parts only. It does not write `.CATPart` files or decode
-assemblies, design history, tessellation, appearances, materials, persistent
-object tags, or general document metadata beyond the embedded JPEG preview. The [format support matrix][support]
-tracks coverage by model layer.
+assemblies, complete design history, tessellation, appearances, materials,
+persistent object tags, or general document metadata beyond the embedded JPEG
+preview. The [format support matrix][support] tracks coverage by model layer.
 
 ## Reference
 
 - [API documentation][docs]
 - [CATIA format model][spec]
+- [CATIA coverage contract][coverage]
 - [Format support matrix][support]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]
@@ -81,6 +83,7 @@ not affiliated with, endorsed by, or sponsored by any CAD vendor. See the
 [clean-room and legal policy][legal].
 
 [docs]: https://docs.rs/cadmpeg-codec-catia
+[coverage]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia-coverage.md
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg
 [spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md

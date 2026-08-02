@@ -51,10 +51,6 @@ impl StreamKind {
 pub struct Stream {
     /// Byte offset of the `78 01` zlib header in the source file.
     pub file_offset: usize,
-    /// Compressed input bytes consumed by the decoder at `file_offset`.
-    ///
-    /// The physical source extent is `[file_offset, file_offset + consumed)`.
-    pub consumed: u64,
     /// Inflated bytes.
     pub inflated: Vec<u8>,
     /// Payload classification.
@@ -476,7 +472,7 @@ pub fn extract_streams<'a>(
             {
                 continue;
             }
-            let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset, 0)? else {
+            let Some((inflated, _)) = inflate_stream(ctx, part_view, offset, 0)? else {
                 return Err(CodecError::Malformed(format!(
                     "invalid indexed zlib member at file offset {}",
                     start + offset
@@ -485,7 +481,6 @@ pub fn extract_streams<'a>(
             let (kind, schema) = classify(&inflated);
             streams.push(Stream {
                 file_offset: start + offset,
-                consumed,
                 inflated,
                 kind,
                 schema,
@@ -501,7 +496,6 @@ pub fn extract_streams<'a>(
                 let (kind, schema) = classify(&inflated);
                 streams.push(Stream {
                     file_offset: start + i,
-                    consumed,
                     inflated,
                     kind,
                     schema,

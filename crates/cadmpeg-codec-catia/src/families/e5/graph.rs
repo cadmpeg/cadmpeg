@@ -351,9 +351,12 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
     for face in raw_faces {
         by_id.get(&face.surface)?;
         let mut resolved_loops = Vec::with_capacity(face.loops.len());
-        for loop_id in face.loops {
+        for (loop_position, loop_id) in face.loops.into_iter().enumerate() {
             let raw = loops.get(&loop_id)?;
             if raw.surface != face.surface {
+                return None;
+            }
+            if raw.outer.is_some_and(|outer| outer != (loop_position == 0)) {
                 return None;
             }
             let reversed = solve_loop_chain(&raw.edges, &edges)?;
@@ -596,12 +599,14 @@ fn parse_jet_pcurve(payload: &[u8], mut position: usize, surface: u32) -> Option
             .chain(std::iter::once(degree + 1))
             .collect()
     };
+    let final_knot = *knots.last()?;
     if position != payload.len()
+        || knots.iter().any(|value| !value.is_finite())
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
         || multiplicities != expected_multiplicities
         || multiplicities.iter().sum::<u32>() != degree + 1 + 3 * u32::try_from(site_count).ok()?
-        || range_values[0].abs() >= 1e-12
-        || (range_values[1] - *knots.last()?).abs() >= 1e-9
+        || range_values[0] != 0.0
+        || (range_values[1] - final_knot).abs() > 1e-9 * final_knot.abs()
         || x.iter()
             .chain(&y)
             .chain(&dx)
@@ -946,10 +951,55 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 #[cfg(test)]
 mod tests {
     use super::{
-        solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds, E5Edge, E5Face,
-        E5Loop, E5Topology,
+        parse_jet_pcurve, solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds,
+        E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
     };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn jet_range_trailer_is_scale_relative_and_knots_are_finite() {
+        let final_knot = 1e-200_f64;
+        let mut payload = Vec::new();
+        for value in [5_u32, 0, 0, 2, 0, 0, 0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&final_knot.to_le_bytes());
+        for value in [6_u32, 6, 2] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for _ in 0..8 {
+            payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        }
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        for _ in 0..4 {
+            payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        }
+        payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        payload.extend_from_slice(&final_knot.to_le_bytes());
+
+        assert!(matches!(
+            parse_jet_pcurve(&payload, 0, 7),
+            Some(E5Pcurve::Jet {
+                range: [0.0, value],
+                ..
+            }) if value == final_knot
+        ));
+
+        let mut nonzero_lower = payload.clone();
+        let lower_offset = nonzero_lower.len() - 16;
+        nonzero_lower[lower_offset..lower_offset + 8]
+            .copy_from_slice(&(0.5 * final_knot).to_le_bytes());
+        assert!(parse_jet_pcurve(&nonzero_lower, 0, 7).is_none());
+
+        let mut wrong_upper = payload.clone();
+        let upper_offset = wrong_upper.len() - 8;
+        wrong_upper[upper_offset..].copy_from_slice(&(2.0 * final_knot).to_le_bytes());
+        assert!(parse_jet_pcurve(&wrong_upper, 0, 7).is_none());
+
+        let mut nonfinite_knot = payload;
+        nonfinite_knot[28..36].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert!(parse_jet_pcurve(&nonfinite_knot, 0, 7).is_none());
+    }
 
     #[test]
     fn digon_uses_forward_first_edge_as_relative_gauge() {

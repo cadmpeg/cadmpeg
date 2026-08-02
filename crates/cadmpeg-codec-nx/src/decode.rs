@@ -135,7 +135,9 @@ fn decode_result(
 fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
-        report.losses.push(NxLossCode::OffsetStoreControlUnclassified.note(format!(
+        report
+            .losses
+            .push(NxLossCode::OffsetStoreControlsUntyped.note(format!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
                 control_count - classified_control_count
             )));
@@ -143,7 +145,9 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     for entry in &scan.container.entries {
         let content = entry.content();
         if content.retains_opaque_payload() {
-            report.losses.push(NxLossCode::ContainerStreamSemanticsUnresolved.note(format!(
+            report
+                .losses
+                .push(NxLossCode::OpaqueContainerStreamRetained.note(format!(
                     "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not typed.",
                     entry.name,
                     content.label()
@@ -6984,12 +6988,12 @@ fn emit_topology(
         })
         .flatten()
         .collect();
-    let mut serialized_branch_pcurves = BTreeSet::new();
     // Emit each loop together with its coedges so the ring's forward-link order
     // (`fin_ring`) drives the builder's next/previous wiring. `ring_resolves`
     // guarantees every FIN in the ring decodes and resolves its edge, so the
     // per-FIN lookups below are infallible.
     let mut registered_coedges: BTreeMap<u32, CoedgeId> = BTreeMap::new();
+    let mut serialized_branch_pcurves = BTreeSet::new();
     for (&loop_xmt, ring) in &valid_loop_rings {
         let ring_resolves = ring.iter().all(|fin_xmt| {
             graph
@@ -7075,6 +7079,7 @@ fn emit_topology(
                     ));
                 }
             }
+            let attached_pcurve_use_range = pcurve.as_ref().and(pcurve_use_range);
             if pcurve.is_none() {
                 let carrier = ir
                     .model
@@ -7121,13 +7126,10 @@ fn emit_topology(
                 sense: sense(Some(fields.sense)),
                 pcurves: pcurve
                     .into_iter()
-                    .map(|pcurve| {
-                        let parameter_range = pcurve_use_range;
-                        cadmpeg_ir::topology::PcurveUse {
-                            pcurve,
-                            isoparametric: None,
-                            parameter_range,
-                        }
+                    .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                        pcurve,
+                        isoparametric: None,
+                        parameter_range: attached_pcurve_use_range,
                     })
                     .collect(),
                 use_curve: None,
@@ -7735,6 +7737,24 @@ fn reverse_pcurve_over_range(
                 weights,
                 periodic: *periodic,
             })
+        }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            plane_slope,
+        } => {
+            let reversed_origin = azimuth_origin + azimuth_rate * reflection;
+            let reversed_rate = -*azimuth_rate;
+            [reversed_origin, reversed_rate, *plane_phase, *plane_slope]
+                .into_iter()
+                .all(f64::is_finite)
+                .then_some(PcurveGeometry::SphericalGreatCircle {
+                    azimuth_origin: reversed_origin,
+                    azimuth_rate: reversed_rate,
+                    plane_phase: *plane_phase,
+                    plane_slope: *plane_slope,
+                })
         }
         PcurveGeometry::Circle {
             center,

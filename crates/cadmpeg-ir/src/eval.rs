@@ -2617,6 +2617,36 @@ fn pcurve_uv_differential_inner(
                 acceleration,
             });
         }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            plane_slope,
+        } => {
+            let azimuth = azimuth_origin + azimuth_rate * t;
+            let phase = azimuth - plane_phase;
+            let cosine = phase.cos();
+            let sine = phase.sin();
+            let latitude = (plane_slope * cosine).atan();
+            let denominator = 1.0 + plane_slope * plane_slope * cosine * cosine;
+            let numerator = -plane_slope * azimuth_rate * sine;
+            let denominator_derivative =
+                -2.0 * plane_slope * plane_slope * azimuth_rate * cosine * sine;
+            let numerator_derivative = -plane_slope * azimuth_rate * azimuth_rate * cosine;
+            let point = Point2::new(azimuth, latitude);
+            let tangent = Point2::new(*azimuth_rate, numerator / denominator);
+            let acceleration = Point2::new(
+                0.0,
+                (numerator_derivative * denominator - numerator * denominator_derivative)
+                    / (denominator * denominator),
+            );
+            return (point.u.is_finite() && point.v.is_finite()).then_some(PcurveDifferential {
+                point,
+                tangent: (tangent.u.is_finite() && tangent.v.is_finite()).then_some(tangent),
+                acceleration: (acceleration.u.is_finite() && acceleration.v.is_finite())
+                    .then_some(acceleration),
+            });
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -3283,6 +3313,19 @@ mod tests {
         assert!((polar.v - 3.0).abs() < 1e-12);
         assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
         assert!((polar_nurbs.v - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn spherical_great_circle_pcurve_preserves_affine_source_parameterization() {
+        let geometry = PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin: 0.25,
+            azimuth_rate: 0.5,
+            plane_phase: 1.0,
+            plane_slope: -0.75,
+        };
+        let point = pcurve_uv(&geometry, 1.5).expect("great-circle pcurve evaluates");
+        assert_eq!(point.u, 1.0);
+        assert_eq!(point.v, (-0.75_f64).atan());
     }
 
     #[test]

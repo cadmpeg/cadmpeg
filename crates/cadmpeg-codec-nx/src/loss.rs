@@ -33,12 +33,12 @@ use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum NxLossCode {
+    /// Some bounded offset-store control blocks lack a complete admitted grammar.
+    OffsetStoreControlsUntyped,
+    /// An opaque named container stream is retained byte-exact without typed fields.
+    OpaqueContainerStreamRetained,
     /// A non-Parasolid preview stream was classified but not transferred.
     NonParasolidStreamOmitted,
-    /// Bounded offset-store control bytes remain outside the admitted grammar.
-    OffsetStoreControlUnclassified,
-    /// An opaque named container stream has no typed field semantics.
-    ContainerStreamSemanticsUnresolved,
     /// Census of the analytic point, surface, and curve carriers decoded.
     CarrierSummary,
     /// Census of the embedded JT display tessellations decoded.
@@ -85,9 +85,9 @@ impl NxLossCode {
     /// Every code, in declaration order. Used by tests to assert stability.
     #[cfg(test)]
     pub(crate) const ALL: &'static [NxLossCode] = &[
+        Self::OffsetStoreControlsUntyped,
+        Self::OpaqueContainerStreamRetained,
         Self::NonParasolidStreamOmitted,
-        Self::OffsetStoreControlUnclassified,
-        Self::ContainerStreamSemanticsUnresolved,
         Self::CarrierSummary,
         Self::TessellationSummary,
         Self::TopologyGraphNotReconstructed,
@@ -115,11 +115,9 @@ impl NxLossCode {
     #[must_use]
     pub(crate) const fn code(self) -> &'static str {
         match self {
+            Self::OffsetStoreControlsUntyped => "container.offset-store-controls-untyped",
+            Self::OpaqueContainerStreamRetained => "container.opaque-stream-retained",
             Self::NonParasolidStreamOmitted => "stream.non-parasolid-omitted",
-            Self::OffsetStoreControlUnclassified => {
-                "design-intent.offset-store-control-unclassified"
-            }
-            Self::ContainerStreamSemanticsUnresolved => "container.stream-semantics-unresolved",
             Self::CarrierSummary => "carrier.summary",
             Self::TessellationSummary => "carrier.tessellation-summary",
             Self::TopologyGraphNotReconstructed => "topology.graph-not-reconstructed",
@@ -158,7 +156,8 @@ impl NxLossCode {
             | Self::DeltasTombstonesUnresolved
             | Self::SubBodyCompositionUnresolved => LossCategory::Topology,
             Self::MaterialMetadataNotTransferred => LossCategory::Attribute,
-            Self::FeatureSuppressionUnresolved
+            Self::OffsetStoreControlsUntyped
+            | Self::FeatureSuppressionUnresolved
             | Self::ConfigurationActivationUnresolved
             | Self::ExpressionParameterIncomplete
             | Self::FeatureNativeOnly
@@ -167,10 +166,9 @@ impl NxLossCode {
             | Self::SketchGraphUnresolved
             | Self::SketchConstraintsUntransferred
             | Self::SketchRecordsNative => LossCategory::DesignIntent,
-            Self::NonParasolidStreamOmitted | Self::ContainerStreamSemanticsUnresolved => {
+            Self::OpaqueContainerStreamRetained | Self::NonParasolidStreamOmitted => {
                 LossCategory::Other
             }
-            Self::OffsetStoreControlUnclassified => LossCategory::DesignIntent,
         }
     }
 
@@ -178,8 +176,8 @@ impl NxLossCode {
     #[must_use]
     pub(crate) const fn severity(self) -> Severity {
         match self {
-            Self::NonParasolidStreamOmitted
-            | Self::ContainerStreamSemanticsUnresolved
+            Self::OpaqueContainerStreamRetained
+            | Self::NonParasolidStreamOmitted
             | Self::CarrierSummary
             | Self::TessellationSummary
             | Self::DeltasApplied
@@ -194,10 +192,10 @@ impl NxLossCode {
     /// The shared IR loss code this variant serializes as.
     const fn shared_code(self) -> LossCode {
         match self {
-            Self::NonParasolidStreamOmitted => LossCode::PassthroughRecordOmitted,
-            Self::OffsetStoreControlUnclassified | Self::ContainerStreamSemanticsUnresolved => {
+            Self::OffsetStoreControlsUntyped | Self::OpaqueContainerStreamRetained => {
                 LossCode::RecordNotTyped
             }
+            Self::NonParasolidStreamOmitted => LossCode::PassthroughRecordOmitted,
             Self::CarrierSummary | Self::TessellationSummary => LossCode::CarrierSummary,
             Self::TopologyGraphNotReconstructed => LossCode::TopologyNotTransferred,
             Self::IntersectionRecordsOpaque => LossCode::ObjectRecordsUntransferred,
@@ -250,9 +248,9 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "container.offset-store-controls-untyped",
+                "container.opaque-stream-retained",
                 "stream.non-parasolid-omitted",
-                "design-intent.offset-store-control-unclassified",
-                "container.stream-semantics-unresolved",
                 "carrier.summary",
                 "carrier.tessellation-summary",
                 "topology.graph-not-reconstructed",

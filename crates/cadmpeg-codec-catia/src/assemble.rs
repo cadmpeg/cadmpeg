@@ -15,7 +15,7 @@ use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::provenance::SourceObjectAssociation;
-use cadmpeg_ir::report::{DecodeReport, LossNote};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::builder::{BodySpec, TopologyBuilder};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::units::Units;
@@ -24,12 +24,15 @@ use cadmpeg_ir::wire::hash::sha256_hex;
 use std::collections::{BTreeMap, HashSet};
 
 use crate::container::{self, ContainerScan};
-use crate::loss::CatiaLossCode;
 
 pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
+    cgm_source_key(kind, format!("{tag:06x}"))
+}
+
+pub(crate) fn cgm_source_key(kind: &str, key: impl std::fmt::Display) -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: "catia".to_string(),
-        object_id: format!("cgm-{kind}:{tag:06x}"),
+        object_id: format!("cgm-{kind}:{key}"),
         name: None,
         color: None,
         visible: None,
@@ -169,9 +172,15 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     }
     losses.insert(
         0,
-        CatiaLossCode::UnresolvedCarriers.note(format!(
-            "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
-        )),
+        LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Blocking,
+            message: format!(
+                "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
+            ),
+            provenance: None,
+        },
     );
 }
 
@@ -256,7 +265,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     let start = angle(start);
     let short_end = unwrap_angle(angle(end), start);
     let delta = short_end - start;
-    if delta.abs() <= 1e-9 {
+    if delta == 0.0 {
         return None;
     }
     let long_end = short_end - delta.signum() * std::f64::consts::TAU;
@@ -286,8 +295,8 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
 }
 
 pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm > f64::EPSILON).then(|| vector.scale(1.0 / norm))
+    let norm = vector.x.hypot(vector.y).hypot(vector.z);
+    (norm.is_finite() && norm != 0.0).then(|| vector.scale(1.0 / norm))
 }
 
 /// Counts of each typed analytic surface kind decoded.
@@ -315,6 +324,12 @@ impl TypedCounts {
     pub(crate) fn total(&self) -> usize {
         self.plane + self.cylinder + self.cone + self.sphere + self.torus
     }
+}
+
+/// Counts of typed surface records that still lack an exact neutral carrier.
+pub(crate) struct UnresolvedSurfaceCounts {
+    pub(crate) face_local_freeform: usize,
+    pub(crate) unbound_revolution: usize,
 }
 
 pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
@@ -398,65 +413,114 @@ pub(crate) fn build_geometry_report(
     typed: &TypedCounts,
     plane_faces: usize,
     analytic_record_count: usize,
-    freeform_record_count: usize,
-    topology_attached: bool,
+    unresolved_surfaces: &UnresolvedSurfaceCounts,
+    topology_failure: Option<&str>,
 ) -> DecodeReport {
     let mut losses = Vec::new();
 
-    losses.push(CatiaLossCode::CarrierSummary.note(format!(
-        "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
-         LE, millimetres, identity world placement) and {} analytic surface carrier(s) were \
-         decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} \
-         sphere, {} torus.",
-        ir.model.vertices.len(),
-        typed.total(),
-        typed.plane,
-        typed.cylinder,
-        typed.cone,
-        typed.sphere,
-        typed.torus
-    )));
+    losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::CarrierSummary,
+        category: LossCategory::Geometry,
+        severity: Severity::Info,
+        message: format!(
+            "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
+             LE, millimetres, identity world placement) and {} analytic surface carrier(s) were \
+             decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} \
+             sphere, {} torus.",
+            ir.model.vertices.len(),
+            typed.total(),
+            typed.plane,
+            typed.cylinder,
+            typed.cone,
+            typed.sphere,
+            typed.torus
+        ),
+        provenance: None,
+    });
 
-    if !topology_attached {
-        losses.push(CatiaLossCode::StandardBoundaryGraphNotEmitted.note(format!(
-            "The B-rep boundary graph was not emitted: {} face outer-bound run(s) were \
-             detected, but a complete trim/spine/support-table parse and unique \
-             surface-constrained logical-vertex assignment were not all available.",
-            scan.census.fbb_runs
-        )));
+    if let Some(topology_failure) = topology_failure {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
+            category: LossCategory::Topology,
+            severity: Severity::Blocking,
+            message: format!(
+                "The B-rep boundary graph was not emitted: {} face outer-bound run(s) were \
+                 detected, but {topology_failure}.",
+                scan.census.fbb_runs,
+            ),
+            provenance: None,
+        });
     }
 
     if plane_faces > 0 {
-        losses.push(CatiaLossCode::PlaneRecordsNotDecoded.note(format!(
-            "{plane_faces} plane surface record(s) were located but not decoded because their \
-             tag-bridged parameter records were absent or invalid."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{plane_faces} plane surface record(s) were located but not decoded because their \
+                 tag-bridged parameter records were absent or invalid."
+            ),
+            provenance: None,
+        });
     }
 
     let invalid_analytic = analytic_record_count.saturating_sub(typed.total() + plane_faces);
     if invalid_analytic > 0 {
-        losses.push(CatiaLossCode::AnalyticRecordsInvalid.note(format!(
-            "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
-             inline payload and were not decoded."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
+                 inline payload and were not decoded."
+            ),
+            provenance: None,
+        });
     }
-    if freeform_record_count > 0 {
-        losses.push(CatiaLossCode::FreeformCarriersRetained.note(format!(
-            "{freeform_record_count} face-local free-form carrier record(s) retain their \
-             tag, bounds, and orientation, but their aliased surface geometry is not yet \
-             transferred."
-        )));
+    if unresolved_surfaces.face_local_freeform > 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} face-local free-form carrier record(s) retain their tag, bounds, and \
+                 orientation, but their aliased surface geometry is not yet transferred.",
+                unresolved_surfaces.face_local_freeform,
+            ),
+            provenance: None,
+        });
+    }
+    if unresolved_surfaces.unbound_revolution > 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} consolidated surface-of-revolution record(s) retain their profile identity, \
+                 orthonormal axis frame, angular chart, and profile interval, but the profile \
+                 identities are not yet bound to directrix curves.",
+                unresolved_surfaces.unbound_revolution,
+            ),
+            provenance: None,
+        });
     }
 
     insert_unresolved_carrier_loss(ir, &mut losses);
 
-    losses.push(CatiaLossCode::StandardAttributesNotTransferred.note(
-        "Standard circles with an exact adjacent-carrier section normal and plane-plane \
-         lines are transferred as curves. Standard spline edges retain exact \
-         two-surface intersection constructions, but their serialized NURBS caches, \
-         persistent cache bindings, materials, and document metadata are not yet \
-         transferred.",
-    ));
+    losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::AttributesNotTransferred,
+        category: LossCategory::Attribute,
+        severity: Severity::Warning,
+        message: "Standard circles with an exact adjacent-carrier section normal or two \
+                  non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or \
+                  cone generators are transferred as curves. Standard spline edges retain exact \
+                  two-surface intersection constructions and their identity-bound support \
+                  pcurves when present, but unbound serialized 3D NURBS caches, materials, and \
+                  document metadata are not yet transferred."
+            .to_string(),
+        provenance: None,
+    });
 
     DecodeReport {
         format: "catia".to_string(),
@@ -562,24 +626,40 @@ pub(crate) fn link_payload_carriers(
 
 pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
-    let mut losses = vec![CatiaLossCode::NoGeometryTransferred.note(format!(
-        "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
-         applicable decoded record families transfer geometry in this codec.",
-        scan.variant.token(),
-        scan.variant.description()
-    ))];
+    let mut losses = vec![LossNote {
+        code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
+        category: LossCategory::Geometry,
+        severity: Severity::Blocking,
+        message: format!(
+            "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
+             applicable decoded record families transfer geometry in this codec.",
+            scan.variant.token(),
+            scan.variant.description()
+        ),
+        provenance: None,
+    }];
 
     if container_only {
-        losses.push(
-            CatiaLossCode::ContainerOnlyRequested
-                .note("Container-only decode requested; entity decode was not attempted."),
-        );
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossCode::ContainerOnly,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: "Container-only decode requested; entity decode was not attempted."
+                .to_string(),
+            provenance: None,
+        });
     }
 
-    losses.push(CatiaLossCode::TopologyGraphNotBuilt.note(
-        "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
-         for this file.",
-    ));
+    losses.push(LossNote {
+        code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
+        category: LossCategory::Topology,
+        severity: Severity::Blocking,
+        message:
+            "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
+                  for this file."
+                .to_string(),
+        provenance: None,
+    });
 
     DecodeReport {
         format: "catia".to_string(),
@@ -592,8 +672,13 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
 }
 
 pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
-    reference + (value - reference + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
-        - std::f64::consts::PI
+    let delta = value - reference;
+    if (-std::f64::consts::PI..std::f64::consts::PI).contains(&delta) {
+        value
+    } else {
+        reference + (delta + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+            - std::f64::consts::PI
+    }
 }
 
 pub(crate) fn rational_pcurve_arc(
@@ -602,7 +687,7 @@ pub(crate) fn rational_pcurve_arc(
     range: [f64; 2],
 ) -> Option<PcurveGeometry> {
     let span = range[1] - range[0];
-    if !radius.is_finite() || radius <= 0.0 || !span.is_finite() || span.abs() <= 1e-12 {
+    if !radius.is_finite() || radius <= 0.0 || !span.is_finite() || span == 0.0 {
         return None;
     }
     let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
@@ -620,7 +705,7 @@ pub(crate) fn rational_pcurve_arc(
         let end = start + step;
         let middle = (start + end) * 0.5;
         let middle_weight = (step * 0.5).cos();
-        if middle_weight.abs() <= 1e-12 {
+        if !middle_weight.is_finite() || middle_weight == 0.0 {
             return None;
         }
         if index == 0 {
@@ -676,21 +761,90 @@ pub(crate) fn quintic_jet_pcurve(
 
 #[cfg(test)]
 mod route_tests {
-    use crate::assemble::{neutral_model_is_admissible, unresolved_carrier_counts};
+    use crate::assemble::{
+        circle_parameter_range_from_surface_branch, neutral_model_is_admissible,
+        rational_pcurve_arc, unresolved_carrier_counts,
+    };
 
     use cadmpeg_ir::document::CadIr;
 
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-        ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+        ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
         CurveId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId,
     };
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use cadmpeg_ir::topology::Shell;
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::unknown::UnknownRecord;
+
+    #[test]
+    fn rational_pcurve_arc_preserves_tiny_nonzero_sweep() {
+        let range = [0.0, 1e-200];
+        let pcurve = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("tiny circular arc");
+        let PcurveGeometry::Nurbs {
+            knots,
+            control_points,
+            weights,
+            ..
+        } = pcurve
+        else {
+            panic!("rational arc must produce NURBS");
+        };
+        assert_eq!(knots.first(), Some(&range[0]));
+        assert_eq!(knots.last(), Some(&range[1]));
+        assert_eq!(control_points.len(), 3);
+        assert_eq!(weights, Some(vec![1.0, 1.0, 1.0]));
+    }
+
+    #[test]
+    fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
+        let sweep = 1e-200_f64;
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let range = circle_parameter_range_from_surface_branch(
+            &surface,
+            Point3::new(0.0, 0.0, 0.0),
+            1.0,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(sweep.cos(), sweep.sin(), 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, sweep),
+        )
+        .expect("tiny circle branch");
+        assert_eq!(range, [0.0, sweep]);
+    }
+
+    #[test]
+    fn angle_unwrap_preserves_tiny_principal_differences() {
+        let tiny = 1e-200;
+        assert_eq!(crate::assemble::unwrap_angle(tiny, 0.0), tiny);
+        assert_eq!(crate::assemble::unwrap_angle(-tiny, 0.0), -tiny);
+        assert_eq!(
+            crate::assemble::unwrap_angle(std::f64::consts::PI, 0.0),
+            -std::f64::consts::PI
+        );
+    }
+
+    #[test]
+    fn unit_vector_preserves_tiny_finite_direction() {
+        assert_eq!(
+            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(1e-200, 0.0, 0.0)),
+            Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+        );
+        assert_eq!(
+            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
+            None
+        );
+    }
 
     #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {

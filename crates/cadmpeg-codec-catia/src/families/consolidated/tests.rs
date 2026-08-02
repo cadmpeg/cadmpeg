@@ -5,9 +5,10 @@
 
 use crate::tests::{
     a5_circle_bound_edge_stream, a5_cone_bound_edge_stream, a5_cylinder_bound_edge_stream,
-    a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream, a5_pcurve_stream,
-    a6_pcurve_stream, append_b5_record, b2_edge_block_stream, b2_edge_parameter_stream_for,
-    b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
+    a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream,
+    a5_nurbs_pair_bound_edge_stream, a5_pcurve_stream, a5_torus_bound_edge_stream,
+    a6_pcurve_stream, append_b5_record, b2_circle_stream, b2_edge_block_stream,
+    b2_edge_parameter_stream_for, b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
 };
 
 #[test]
@@ -95,6 +96,35 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
     assert!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload)
             .is_none()
+    );
+}
+
+#[test]
+fn class23_nine_scalar_definition_requires_three_equal_triples() {
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+
+    let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
+    for value in [0.0_f64, 2.0, 1.0, 0.0, 2.0, 1.0, 0.0, 2.0, 1.0] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(
+        crate::families::consolidated::records::consolidated_edge_definition_data(0x23, &payload),
+        Some(ConsolidatedEdgeDefinitionData::Scalar {
+            operands: [1, 2, 3463],
+            values: vec![0.0, 2.0, 1.0, 0.0, 2.0, 1.0, 0.0, 2.0, 1.0],
+        })
+    );
+
+    let mut unequal_tolerances = payload;
+    for offset in [6 + 2 * 8, 6 + 8 * 8] {
+        unequal_tolerances[offset..offset + 8].copy_from_slice(&2.0_f64.to_le_bytes());
+    }
+    assert!(
+        crate::families::consolidated::records::consolidated_edge_definition_data(
+            0x23,
+            &unequal_tolerances
+        )
+        .is_none()
     );
 }
 
@@ -206,6 +236,39 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
 }
 
 #[test]
+fn a5_edge_binding_jointly_resolves_two_direct_nurbs_carriers() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_nurbs_pair_bound_edge_stream(false),
+    );
+    assert_eq!(blocks.len(), 1);
+    assert!(
+        blocks[0].supports.iter().all(|support| {
+            matches!(
+                support,
+                Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if *offset == 0.0
+            )
+        }),
+        "{:#?}",
+        blocks[0].supports
+    );
+    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
+    assert!(blocks[0].endpoint_loci.is_some());
+}
+
+#[test]
+fn a5_edge_binding_rejects_nonunique_direct_nurbs_carrier_pairs() {
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_nurbs_pair_bound_edge_stream(true),
+    );
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].supports, [None, None]);
+    assert!(blocks[0].shared_loci.is_none());
+    assert!(blocks[0].endpoint_loci.is_none());
+}
+
+#[test]
 fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
     use crate::families::consolidated::records::ConsolidatedSupportBinding;
 
@@ -216,6 +279,46 @@ fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
         blocks[0].supports[0],
         Some(ConsolidatedSupportBinding::Circle { .. })
     ));
+}
+
+#[test]
+fn a5_edge_binding_uses_circle_identity_to_break_geometric_ties() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let mut bytes = a5_circle_bound_edge_stream();
+    let original_circle_offset = bytes.len() - b2_circle_stream().len();
+    let mut duplicate = b2_circle_stream();
+    duplicate[6..8].copy_from_slice(&0x1235_u16.to_le_bytes());
+    bytes.extend_from_slice(&duplicate);
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert!(matches!(
+        blocks[0].supports[0],
+        Some(ConsolidatedSupportBinding::Circle { pos }) if pos == original_circle_offset
+    ));
+}
+
+#[test]
+fn a5_edge_binding_rejects_duplicate_circle_identities() {
+    let mut bytes = a5_circle_bound_edge_stream();
+    bytes.extend_from_slice(&b2_circle_stream());
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert!(blocks[0].supports[0].is_none());
+}
+
+#[test]
+fn a5_edge_binding_rejects_an_identity_with_a_conflicting_circle_chart() {
+    let mut bytes = a5_circle_bound_edge_stream();
+    let original_circle_offset = bytes.len() - b2_circle_stream().len();
+    bytes[original_circle_offset + 6..original_circle_offset + 8]
+        .copy_from_slice(&0x1235_u16.to_le_bytes());
+    let mut conflicting = b2_circle_stream();
+    conflicting[40..48].copy_from_slice(&1.0_f64.to_le_bytes());
+    bytes.extend_from_slice(&conflicting);
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert!(blocks[0].supports[0].is_none());
 }
 
 #[test]
@@ -230,6 +333,58 @@ fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
         Some(ConsolidatedSupportBinding::Cone { .. })
     ));
     assert!(blocks[0].endpoint_loci.is_some());
+}
+
+#[test]
+fn a5_edge_binding_resolves_torus_by_scaled_chart_endpoint_lifts() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &a5_torus_bound_edge_stream(),
+    );
+    assert!(blocks[0]
+        .supports
+        .iter()
+        .all(|support| matches!(support, Some(ConsolidatedSupportBinding::Torus { .. }))));
+    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
+    let endpoints = blocks[0].endpoint_loci.expect("lifted torus endpoints");
+    assert!(endpoints[0].distance_squared(cadmpeg_ir::math::Point3::new(1.0, 11.0, 3.0)) < 1e-24);
+    assert!(endpoints[1].distance_squared(cadmpeg_ir::math::Point3::new(-8.0, 2.0, 3.0)) < 1e-24);
+}
+
+#[test]
+fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &crate::tests::a5_sphere_bound_edge_stream(),
+    );
+    assert!(blocks[0]
+        .supports
+        .iter()
+        .all(|support| matches!(support, Some(ConsolidatedSupportBinding::Sphere { .. }))));
+    assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
+    let endpoints = blocks[0].endpoint_loci.expect("lifted sphere endpoints");
+    assert!(endpoints[0].distance_squared(cadmpeg_ir::math::Point3::new(6.0, 2.0, 3.0)) < 1e-24);
+    assert!(endpoints[1].distance_squared(cadmpeg_ir::math::Point3::new(1.0, 7.0, 3.0)) < 1e-24);
+}
+
+#[test]
+fn a5_edge_binding_rejects_duplicate_sphere_endpoint_lifts() {
+    let mut bytes = crate::tests::a5_sphere_bound_edge_stream();
+    bytes.extend_from_slice(&crate::tests::b2_sphere_stream());
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert_eq!(blocks[0].supports, [None, None]);
+}
+
+#[test]
+fn a5_edge_binding_rejects_duplicate_torus_endpoint_lifts() {
+    let mut bytes = a5_torus_bound_edge_stream();
+    bytes.extend_from_slice(&crate::tests::b2_torus_stream());
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert_eq!(blocks[0].supports, [None, None]);
 }
 
 #[test]

@@ -1795,18 +1795,6 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
     let mut configuration_ordinals = HashSet::new();
     let mut configuration_source_indices = HashSet::new();
     let mut active_configurations = 0;
-    let parameter_values = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.0.as_str(), parameter.value.as_ref()))
-        .collect::<HashMap<_, _>>();
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
-        .collect::<HashMap<_, _>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
@@ -1890,16 +1878,16 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
             }
         }
         for (parameter, value) in &configuration.parameter_values {
-            match parameter_values.get(parameter.0.as_str()) {
+            match index.parameters.get(parameter.0.as_str()) {
                 None => ref_error(
                     findings,
                     &configuration.id.0,
                     "configuration parameter value",
                     &parameter.0,
                 ),
-                Some(baseline)
+                Some(parameter)
                     if !parameter_value_is_valid(value)
-                        || baseline.is_some_and(|baseline| {
+                        || parameter.value.as_ref().is_some_and(|baseline| {
                             std::mem::discriminant(baseline) != std::mem::discriminant(value)
                         }) =>
                 {
@@ -1923,7 +1911,10 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                     entity: Some(configuration.id.0.clone()),
                 });
             }
-            let feature_ordinal = features.get(feature.0.as_str()).copied();
+            let feature_ordinal = index
+                .features
+                .get(feature.0.as_str())
+                .map(|feature| feature.ordinal);
             if feature_ordinal.is_none() {
                 ref_error(
                     findings,
@@ -1934,7 +1925,7 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
             }
             let mut dependencies = HashSet::new();
             for dependency in &state.dependencies {
-                match features.get(dependency.0.as_str()) {
+                match index.features.get(dependency.0.as_str()) {
                     None => ref_error(
                         findings,
                         &configuration.id.0,
@@ -1943,7 +1934,7 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                     ),
                     Some(dependency_ordinal)
                         if feature_ordinal.is_some_and(|feature_ordinal| {
-                            *dependency_ordinal >= feature_ordinal
+                            dependency_ordinal.ordinal >= feature_ordinal
                         }) =>
                     {
                         findings.push(Finding {
@@ -1971,7 +1962,7 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                 }
             }
             for reference in regeneration_references(&state.definition) {
-                match features.get(reference.0.as_str()) {
+                match index.features.get(reference.0.as_str()) {
                     None => ref_error(
                         findings,
                         &configuration.id.0,
@@ -1980,7 +1971,7 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                     ),
                     Some(reference_ordinal)
                         if feature_ordinal.is_some_and(|feature_ordinal| {
-                            *reference_ordinal >= feature_ordinal
+                            reference_ordinal.ordinal >= feature_ordinal
                         }) =>
                     {
                         findings.push(Finding {
@@ -2141,7 +2132,7 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
         .collect::<HashMap<_, _>>();
     let mut topology_owners = HashSet::new();
     for state in &ir.model.feature_input_topologies {
-        if !features.contains_key(state.input_of.as_str()) {
+        if !index.features.contains_key(state.input_of.as_str()) {
             ref_error(
                 findings,
                 state.id.as_str(),
@@ -2207,14 +2198,19 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
             });
         }
         if let Some(parent) = &feature.parent {
-            match features.get(parent.0.as_str()) {
+            match index.features.get(parent.0.as_str()) {
                 None => ref_error(findings, &feature.id.0, "parent feature", &parent.0),
-                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!("parent feature `{}` does not precede its child", parent.0),
-                    entity: Some(feature.id.0.clone()),
-                }),
+                Some(parent_feature) if parent_feature.ordinal >= feature.ordinal => {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "parent feature `{}` does not precede its child",
+                            parent.0
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
                 Some(_) => {}
             }
         }
@@ -2229,17 +2225,19 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                 });
                 continue;
             }
-            match features.get(dependency.0.as_str()) {
+            match index.features.get(dependency.0.as_str()) {
                 None => ref_error(findings, &feature.id.0, "dependency feature", &dependency.0),
-                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!(
-                        "dependency feature `{}` does not precede its consumer",
-                        dependency.0
-                    ),
-                    entity: Some(feature.id.0.clone()),
-                }),
+                Some(dependency_feature) if dependency_feature.ordinal >= feature.ordinal => {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "dependency feature `{}` does not precede its consumer",
+                            dependency.0
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
                 Some(_) => {}
             }
         }
@@ -2282,17 +2280,18 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                             entity: Some(feature.id.0.clone()),
                         });
                     }
-                    match features.get(child.0.as_str()) {
+                    match index.features.get(child.0.as_str()) {
                         None => ref_error(findings, &feature.id.0, "content child", &child.0),
-                        Some(ordinal) if *ordinal <= feature.ordinal => findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "content child `{}` does not follow its parent",
-                                child.0
-                            ),
-                            entity: Some(feature.id.0.clone()),
-                        }),
+                        Some(child_feature) if child_feature.ordinal <= feature.ordinal => findings
+                            .push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "content child `{}` does not follow its parent",
+                                    child.0
+                                ),
+                                entity: Some(feature.id.0.clone()),
+                            }),
                         Some(_) => {}
                     }
                 }
@@ -3220,9 +3219,9 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                 collect_pattern_paths(pattern, &mut paths);
                 for seed in seeds {
                     match seed {
-                        PatternSeed::Feature(seed) => match features.get(seed.0.as_str()) {
+                        PatternSeed::Feature(seed) => match index.features.get(seed.0.as_str()) {
                             None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
-                            Some(ordinal) if *ordinal >= feature.ordinal => {
+                            Some(seed_feature) if seed_feature.ordinal >= feature.ordinal => {
                                 findings.push(Finding {
                                     check: Check::ReferentialIntegrity,
                                     severity: Severity::Error,
@@ -3536,14 +3535,14 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                         })
                 {
                     if let crate::features::BinderTarget::Feature { feature: target } = target {
-                        match features.get(target.0.as_str()) {
+                        match index.features.get(target.0.as_str()) {
                             None => ref_error(
                                 findings,
                                 &feature.id.0,
                                 "binder target feature",
                                 &target.0,
                             ),
-                            Some(ordinal) if *ordinal >= feature.ordinal => {
+                            Some(target_feature) if target_feature.ordinal >= feature.ordinal => {
                                 findings.push(Finding {
                                     check: Check::ReferentialIntegrity,
                                     severity: Severity::Error,
@@ -3776,9 +3775,9 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
             | FeatureDefinition::Native { .. } => {}
             FeatureDefinition::SketchBlockInstance { block, placement } => {
                 if let Some(block) = block {
-                    match features.get(block.0.as_str()) {
+                    match index.features.get(block.0.as_str()) {
                         None => ref_error(findings, &feature.id.0, "sketch block", &block.0),
-                        Some(ordinal) if *ordinal >= feature.ordinal => feature_geometry_error(
+                        Some(block) if block.ordinal >= feature.ordinal => feature_geometry_error(
                             findings,
                             feature,
                             "sketch block does not precede its instance",
@@ -3817,17 +3816,18 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                 }
             }
             FeatureDefinition::DerivedGeometry { source } => {
-                match features.get(source.0.as_str()) {
+                match index.features.get(source.0.as_str()) {
                     None => ref_error(findings, &feature.id.0, "source feature", &source.0),
-                    Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
-                            "source feature `{}` does not precede its derived geometry",
-                            source.0
-                        ),
-                        entity: Some(feature.id.0.clone()),
-                    }),
+                    Some(source_feature) if source_feature.ordinal >= feature.ordinal => findings
+                        .push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "source feature `{}` does not precede its derived geometry",
+                                source.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
                     Some(_) if !feature.dependencies.contains(source) => findings.push(Finding {
                         check: Check::ReferentialIntegrity,
                         severity: Severity::Error,
@@ -3980,10 +3980,10 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                         },
                     );
                 }
-                ProfileRef::Feature(producer) => match features.get(producer.0.as_str()) {
+                ProfileRef::Feature(producer) => match index.features.get(producer.0.as_str()) {
                     None => ref_error(findings, &feature.id.0, "profile feature", &producer.0),
-                    Some(ordinal)
-                        if *ordinal >= feature.ordinal
+                    Some(producer_feature)
+                        if producer_feature.ordinal >= feature.ordinal
                             || !feature.dependencies.contains(producer) =>
                     {
                         feature_geometry_error(
@@ -3999,9 +3999,10 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
                         || native.trim().is_empty()
                         || curves.iter().any(|curve| {
                             curve.local_id.trim().is_empty()
-                                || features
+                                || index
+                                    .features
                                     .get(curve.feature.0.as_str())
-                                    .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                                    .is_none_or(|producer| producer.ordinal >= feature.ordinal)
                                 || !feature.dependencies.contains(&curve.feature)
                         }) =>
                 {
@@ -4095,9 +4096,10 @@ fn check_feature_references(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut V
             {
                 if native.trim().is_empty()
                     || vertex.local_id.trim().is_empty()
-                    || features
+                    || index
+                        .features
                         .get(vertex.feature.0.as_str())
-                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                        .is_none_or(|producer| producer.ordinal >= feature.ordinal)
                     || !feature.dependencies.contains(&vertex.feature)
                 {
                     feature_geometry_error(

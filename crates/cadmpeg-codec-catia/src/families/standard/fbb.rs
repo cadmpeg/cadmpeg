@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 pub(crate) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
@@ -511,11 +512,14 @@ pub(crate) fn parse_edge_tables_scoped_at(
 }
 
 pub(crate) fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Vec<[f64; 3]>> {
-    if bytes.get(position..position + 2)? != [0x01, 0x06] {
+    if !bytes.get(position..)?.starts_with(&[0x01, 0x06]) {
         return None;
     }
     position += 2;
     let count = parse_count(bytes, &mut position)?;
+    if count > bytes.len().saturating_sub(position) / VERTEX_RECORD_BYTES {
+        return None;
+    }
     let mut points = Vec::with_capacity(count);
     for _ in 0..count {
         if bytes.get(position..position + 3)? != [0x05, 0x08, 0x01] {
@@ -795,32 +799,33 @@ fn packet_triangles(
 }
 
 pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
-    let mut counts = HashMap::<(u32, u32), usize>::new();
+    let mut edge_directions = HashMap::<(u32, u32), u8>::new();
     for &[a, b, c] in triangles {
-        for edge in [(a, b), (b, c), (c, a)] {
-            *counts.entry(edge).or_default() += 1;
-        }
-    }
-    let undirected: HashSet<(u32, u32)> = counts
-        .keys()
-        .map(|&(start, end)| (start.min(end), start.max(end)))
-        .collect();
-    for (low, high) in undirected {
-        if low == high {
-            return None;
-        }
-        let forward = counts.get(&(low, high)).copied().unwrap_or(0);
-        let reverse = counts.get(&(high, low)).copied().unwrap_or(0);
-        if !matches!((forward, reverse), (1, 0 | 1) | (0, 1)) {
-            return None;
+        for (start, end) in [(a, b), (b, c), (c, a)] {
+            if start == end {
+                return None;
+            }
+            let (edge, direction) = if start < end {
+                ((start, end), 1)
+            } else {
+                ((end, start), 2)
+            };
+            let directions = edge_directions.entry(edge).or_default();
+            if *directions & direction != 0 {
+                return None;
+            }
+            *directions |= direction;
         }
     }
     let mut successors = HashMap::new();
-    for (&(start, end), &count) in &counts {
-        if count > 0
-            && counts.get(&(end, start)).copied().unwrap_or(0) == 0
-            && successors.insert(start, end).is_some()
-        {
+    for (&(low, high), &directions) in &edge_directions {
+        let boundary = match directions {
+            1 => Some((low, high)),
+            2 => Some((high, low)),
+            3 => None,
+            _ => return None,
+        };
+        if boundary.is_some_and(|(start, end)| successors.insert(start, end).is_some()) {
             return None;
         }
     }
@@ -936,4 +941,21 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         });
     }
     Some(Boundary { coedges })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::boundary_cycles;
+
+    #[test]
+    fn boundary_cycles_cancel_opposite_triangle_edges() {
+        let triangles = [[0, 1, 2], [0, 2, 3]];
+        assert_eq!(boundary_cycles(&triangles), Some(vec![vec![0, 1, 2, 3]]));
+    }
+
+    #[test]
+    fn boundary_cycles_reject_duplicate_directed_edges() {
+        let triangles = [[0, 1, 2], [0, 1, 3]];
+        assert_eq!(boundary_cycles(&triangles), None);
+    }
 }

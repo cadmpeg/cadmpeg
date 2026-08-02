@@ -16,29 +16,11 @@ pub struct ObjectGraph {
     pub total_len: usize,
     /// Byte offset of the immediately associated `7C02` schema catalog.
     pub catalog_pos: Option<usize>,
-    /// Consecutive nested `7C09` records.
+    /// Consecutive `7C09` records.
     pub records: Vec<ObjectRecord>,
 }
 
-impl ObjectGraph {
-    /// Resolve a one-based serialized object ordinal.
-    #[must_use]
-    #[cfg(test)]
-    pub fn record(&self, ordinal: u32) -> Option<&ObjectRecord> {
-        let index = usize::try_from(ordinal.checked_sub(1)?).ok()?;
-        self.records.get(index)
-    }
-
-    /// Return records directly owned by `owner_ordinal`, in serialization order.
-    #[cfg(test)]
-    pub fn children(&self, owner_ordinal: u32) -> impl Iterator<Item = &ObjectRecord> {
-        self.records
-            .iter()
-            .filter(move |record| record.owner_ref == Some(owner_ordinal))
-    }
-}
-
-/// One `7C09` ownership record and its nested `7C0A` payload.
+/// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ObjectRecord {
     /// Zero-based serialized record index.
@@ -51,16 +33,24 @@ pub struct ObjectRecord {
     pub lead: u8,
     /// Decoded head tokens.
     pub head: Vec<HeadToken>,
-    /// First head reference, identifying the owner by one-based record ordinal.
+    /// Complete alternate inline body when the record has no nested `7C0A`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub inline_body: Option<Vec<u8>>,
+    /// First head reference, identifying the owner by stored entity identity.
     pub owner_ref: Option<u32>,
+    /// Literal value occupying a structurally assigned owner slot.
+    pub owner_literal: Option<u8>,
     /// Second head reference, identifying the per-file class.
     pub class_ref: Option<u32>,
     /// UTF-8 class name at `class_ref` in the associated schema catalog.
     pub class_name: Option<String>,
     /// Third head reference, selecting the class-specific storage form.
     pub storage_ref: Option<u32>,
-    /// Decoded nested payload.
+    /// Decoded nested payload, empty for an inline record.
     pub payload: ObjectPayload,
+    /// Counted reference suffix when the payload repeats its reference prefix exactly.
+    pub repeated_reference_suffix: Option<RepeatedReferenceSuffix>,
     /// Structural payload classification.
     pub subtype: PayloadSubtype,
 }
@@ -89,13 +79,57 @@ pub struct ObjectPayload {
     pub fields: Vec<PayloadField>,
 }
 
+/// One counted reference suffix whose reference prefix is serialized twice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RepeatedReferenceSuffix {
+    /// Schema-selection production in the payload prefix before this suffix.
+    pub schema_preamble: Option<ReferenceSchemaPreamble>,
+    /// Ordered entity identities serialized in both vectors.
+    pub repeated_references: Vec<u32>,
+    /// Final reference in the first counted vector.
+    pub terminal_reference: u32,
+    /// Byte offset of the first count atom within the payload.
+    pub first_count_offset: usize,
+    /// Byte offset of the repeated count atom within the payload.
+    pub repeated_count_offset: usize,
+}
+
+/// Schema reference carried by a repeated-reference payload preamble.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReferenceSchemaPreamble {
+    /// `<59-byte blob> <5:atom> <46:atom> <schema-ref:atom>`.
+    BlobThenSchema {
+        /// Per-file schema-catalog ordinal.
+        schema_ref: u32,
+        /// Byte offset of `schema_ref` within the payload.
+        offset: usize,
+    },
+    /// `<schema-ref:atom> <34:atom> <59-byte blob> <5:atom>`.
+    SchemaThenBlob {
+        /// Per-file schema-catalog ordinal.
+        schema_ref: u32,
+        /// Byte offset of `schema_ref` within the payload.
+        offset: usize,
+    },
+}
+
 /// Item within a count-prefixed `0x3b` list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum ListItem {
     /// Referenced object ordinal.
-    Reference(u32),
+    Reference {
+        /// Referenced ordinal.
+        value: u32,
+        /// Byte offset of the item within the payload.
+        offset: usize,
+    },
     /// Untagged atom value.
-    Atom(u32),
+    Atom {
+        /// Decoded atom value.
+        value: u32,
+        /// Byte offset of the item within the payload.
+        offset: usize,
+    },
 }
 
 /// One schema-free field in a `7C0A` payload.
@@ -188,10 +222,27 @@ pub enum AliasLead {
     SurfaceSupportStorage,
     /// Exact value `0x8e`: E5-linked surface storage.
     E5LinkedSurfaceStorage,
+    /// Exact value `0x8f`: ordinal-linked alias storage.
+    OrdinalLinkedStorage8f,
     /// Zero lead: alias-like row outside surface storage.
     NonSurfaceAlias,
     /// Other lead value whose role is not assigned.
     Unclassified(u32),
+}
+
+/// Group-allocation header attached to an outer surface-alias row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AliasGroupMembership {
+    /// `ObjectModeler` node prototype.
+    pub prototype: u32,
+    /// Identity shared by the nodes in one alias group.
+    pub group_id: u32,
+    /// Four-byte allocation slot beginning in F1's third byte.
+    pub target_slot: u32,
+    /// Complete bounded storage prefix between the group header and alias marker.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub storage_prefix: Vec<u8>,
 }
 
 /// Fixed 20-byte core of an outer `01 00 04 00` surface-alias row.
@@ -217,6 +268,8 @@ pub struct SurfaceAlias {
     pub f2: u32,
     /// Second trailing fixed-width field.
     pub f3: u32,
+    /// Group-allocation header immediately preceding this alias core.
+    pub group: Option<AliasGroupMembership>,
 }
 
 /// Literal unresolved `7C D9` marker occurrence and bounded source context.
@@ -269,12 +322,15 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
                 AliasLead::SurfaceSupportStorage
             } else if lead_raw == 0x8e {
                 AliasLead::E5LinkedSurfaceStorage
+            } else if lead_raw == 0x8f {
+                AliasLead::OrdinalLinkedStorage8f
             } else if lead_raw == 0 {
                 AliasLead::NonSurfaceAlias
             } else {
                 AliasLead::Unclassified(lead_raw)
             };
             let f1 = [data[pos + 9], data[pos + 10], data[pos + 11]];
+            let group = alias_group_membership(data, pos);
             Some(SurfaceAlias {
                 pos,
                 lead,
@@ -286,9 +342,45 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
                 entity_record_ordinal: f1[2],
                 f2: u32_le(data, pos + 12)?,
                 f3: u32_le(data, pos + 16)?,
+                group,
             })
         })
         .collect()
+}
+
+fn alias_group_membership(data: &[u8], marker: usize) -> Option<AliasGroupMembership> {
+    let candidates = [3usize, 4, 7, 8]
+        .into_iter()
+        .filter_map(|storage_len| {
+            let start = marker.checked_sub(20 + storage_len)?;
+            let storage = data.get(start + 20..marker)?;
+            (data.get(start..start + 2) == Some(&[0x02, 0x00])
+                && data.get(start + 10..start + 13) == Some(&[0x00, 0x05, 0x00])
+                && data.get(start + 13..start + 17) == Some(&[0x01, 0x00, 0x00, 0x00])
+                && data.get(start + 17..start + 20) == Some(&[0x30, 0x00, 0x00])
+                && is_alias_group_storage_prefix(storage))
+            .then_some((start, storage))
+        })
+        .collect::<Vec<_>>();
+    let [(start, storage)] = candidates.as_slice() else {
+        return None;
+    };
+    Some(AliasGroupMembership {
+        prototype: u32_le(data, start + 2)?,
+        group_id: u32_le(data, start + 6)?,
+        target_slot: u32_le(data, marker + 11)?,
+        storage_prefix: storage.to_vec(),
+    })
+}
+
+pub(crate) fn is_alias_group_storage_prefix(storage: &[u8]) -> bool {
+    matches!(
+        storage,
+        [0..=1, 0x00, 0x00]
+            | [0..=1, 0..=1, 0x00, 0x00]
+            | [0..=1, 0x01, 0x00, _, _, _, _]
+            | [0..=1, 0..=1, 0x01, 0x00, _, _, _, _]
+    )
 }
 
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
@@ -305,20 +397,28 @@ pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
 pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
     let catalogs = catalog::parse(data);
     let value_blocks = value_block::parse(data);
-    let candidates = data
-        .windows(2)
-        .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x08])
-        .filter_map(|(pos, _)| parse_candidate(data, pos))
-        .collect::<Vec<_>>();
     let mut roots = Vec::<ObjectGraph>::new();
-    for graph in candidates {
-        let graph_end = graph.pos + graph.total_len;
-        if roots
-            .iter()
-            .any(|outer| outer.pos < graph.pos && outer.pos + outer.total_len >= graph_end)
-        {
+    let mut enclosing_end = 0usize;
+    for pos in memchr::memchr_iter(0x7c, data) {
+        let Some(marker_tail) = pos.checked_add(1) else {
             continue;
+        };
+        if data.get(marker_tail) != Some(&0x08) {
+            continue;
+        }
+        let declared_end = pos
+            .checked_add(2)
+            .and_then(|length_offset| u32_le(data, length_offset))
+            .and_then(|length| usize::try_from(length).ok())
+            .and_then(|length| pos.checked_add(length));
+        if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
+            continue;
+        }
+        let Some(graph) = parse_candidate(data, pos) else {
+            continue;
+        };
+        if let Some(graph_end) = graph.pos.checked_add(graph.total_len) {
+            enclosing_end = enclosing_end.max(graph_end);
         }
         roots.push(graph);
     }
@@ -388,40 +488,35 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
                 (child_len >= 6 && child.checked_add(child_len) == Some(record_end))
                     .then_some((child, child_len))
             });
-        let (child, _) = children.next()?;
-        if children.next().is_some() {
+        let child = children.next();
+        if child.is_some() && children.next().is_some() {
             return None;
         }
-        let lead = *data.get(head_start..child)?.first()?;
-        let head = decode_head(&data[head_start..child]);
-        let roles = if matches!(head.get(1), Some(HeadToken::Separator)) {
-            &head[2..]
+        let body = data.get(head_start..record_end)?;
+        let (head_bytes, inline_body, payload) = match child {
+            Some((child, _)) => (
+                data.get(head_start..child)?,
+                None,
+                decode_payload(&data[child + 6..record_end])?,
+            ),
+            None if is_inline_body(body) => (
+                &[][..],
+                Some(body.to_vec()),
+                ObjectPayload {
+                    size: 0,
+                    fields: Vec::new(),
+                },
+            ),
+            None => return None,
+        };
+        let lead = if inline_body.is_some() {
+            body[0]
         } else {
-            let native_role_count = match lead {
-                0x02 => 1,
-                0x12 => 2,
-                0x52 => 3,
-                _ => 0,
-            };
-            if head.len() == native_role_count + 1 {
-                &head[1..]
-            } else {
-                &[]
-            }
+            *head_bytes.first()?
         };
-        let owner_ref = match roles.first() {
-            Some(HeadToken::Reference(value)) => Some(*value),
-            _ => None,
-        };
-        let class_ref = owner_ref.and_then(|_| match roles.get(1) {
-            Some(HeadToken::Reference(value)) => Some(*value),
-            _ => None,
-        });
-        let storage_ref = class_ref.and_then(|_| match roles.get(2) {
-            Some(HeadToken::Reference(value)) => Some(*value),
-            _ => None,
-        });
-        let payload = decode_payload(&data[child + 6..record_end])?;
+        let head = decode_head(head_bytes);
+        let roles = head_roles(lead, &head);
+        let repeated_reference_suffix = repeated_reference_suffix(&payload);
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
             index: records.len(),
@@ -429,11 +524,14 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             total_len: record_len,
             lead,
             head,
-            owner_ref,
-            class_ref,
+            inline_body,
+            owner_ref: roles.owner_ref,
+            owner_literal: roles.owner_literal,
+            class_ref: roles.class_ref,
             class_name: None,
-            storage_ref,
+            storage_ref: roles.storage_ref,
             payload,
+            repeated_reference_suffix,
             subtype,
         });
         at = record_end;
@@ -444,6 +542,464 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         catalog_pos: None,
         records,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HeadRoles {
+    pub(crate) owner_ref: Option<u32>,
+    pub(crate) owner_literal: Option<u8>,
+    pub(crate) class_ref: Option<u32>,
+    pub(crate) storage_ref: Option<u32>,
+}
+
+pub(crate) fn head_roles(lead: u8, head: &[HeadToken]) -> HeadRoles {
+    let separator_roles = matches!(head.get(1), Some(HeadToken::Separator));
+    let extended_role_count = extended_compact_role_count(head);
+    let null_lane_roles = matches!(
+        head,
+        [
+            HeadToken::Lead(0x1a),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(owner),
+        ] if *owner != 0
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x1a),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ]
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x1a),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_),
+            HeadToken::Literal(20 | 21 | 22 | 23 | 26 | 27 | 28),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ]
+    );
+    let terminal_null_lane_roles = matches!(
+        head,
+        [
+            HeadToken::Lead(0x5a),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(owner),
+            HeadToken::Reference(3),
+        ] if *owner != 0
+    );
+    let terminal_lane_roles = matches!(
+        head,
+        [
+            HeadToken::Lead(0x56),
+            HeadToken::Reference(_),
+            HeadToken::Reference(_),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(3),
+        ] if *owner != 0
+    );
+    let fixed_role_count = match lead {
+        0x02 => 1,
+        0x12 => 2,
+        0x16 | 0x52 => 3,
+        _ => 0,
+    };
+    let fixed_roles = fixed_role_count != 0 && head.len() == fixed_role_count + 1;
+    let (owner_index, class_index, storage_index, class_first) = if separator_roles {
+        (Some(2), Some(3), Some(4), false)
+    } else if null_lane_roles || terminal_null_lane_roles {
+        (Some(4), Some(1), Some(2), true)
+    } else if terminal_lane_roles {
+        (Some(3), Some(1), Some(2), true)
+    } else if extended_role_count.is_some() || fixed_roles {
+        match lead {
+            0x02 => (Some(1), None, None, false),
+            0x12 => (
+                Some(1),
+                (extended_role_count != Some(1)).then_some(2),
+                None,
+                false,
+            ),
+            0x16 | 0x56 => (Some(3), Some(1), Some(2), true),
+            0x52 => (Some(1), Some(2), Some(3), false),
+            _ => (None, None, None, false),
+        }
+    } else {
+        (None, None, None, false)
+    };
+    let role_reference = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
+        Some(HeadToken::Reference(value)) => Some(*value),
+        _ => None,
+    };
+    let role_literal = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
+        Some(HeadToken::Literal(value)) => Some(*value),
+        _ => None,
+    };
+    if class_first {
+        let class_ref = role_reference(class_index);
+        let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
+        let owner_ref = storage_ref.and_then(|_| role_reference(owner_index));
+        let owner_literal = storage_ref.and_then(|_| role_literal(owner_index));
+        HeadRoles {
+            owner_ref,
+            owner_literal,
+            class_ref,
+            storage_ref,
+        }
+    } else {
+        let owner_ref = role_reference(owner_index);
+        let class_ref = owner_ref.and_then(|_| role_reference(class_index));
+        let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
+        HeadRoles {
+            owner_ref,
+            owner_literal: None,
+            class_ref,
+            storage_ref,
+        }
+    }
+}
+
+fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
+    if matches!(
+        (head.first(), head.last()),
+        (Some(HeadToken::Lead(0x56)), Some(HeadToken::Reference(3)))
+    ) {
+        let mut base_head = head[..head.len() - 1].to_vec();
+        base_head[0] = HeadToken::Lead(0x16);
+        return extended_compact_role_count(&base_head);
+    }
+    if matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(storage),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *storage != 0
+    ) {
+        return Some(3);
+    }
+    if matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            owner_token @ (HeadToken::Reference(_) | HeadToken::Literal(_)),
+            HeadToken::Literal(21 | 23),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(_),
+        ] if !matches!(owner_token, HeadToken::Reference(0))
+    ) {
+        return Some(3);
+    }
+    if matches!(
+        head,
+        [
+            HeadToken::Lead(0x12),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            ..,
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0 && matches!(head.len(), 6 | 7)
+    ) {
+        return Some(1);
+    }
+    if matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(storage),
+            HeadToken::Reference(0),
+            _,
+            HeadToken::Literal(20 | 21),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *storage != 0
+    ) {
+        return Some(3);
+    }
+    if matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_) | HeadToken::Separator,
+            HeadToken::Literal(21 | 22 | 23 | 26 | 27 | 28),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            _,
+            HeadToken::Literal(20 | 21 | 24 | 25 | 28),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ]
+    ) {
+        return Some(3);
+    }
+    let extended_owner_class_storage = matches!(
+        head,
+        [
+            HeadToken::Lead(0x52),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_),
+            HeadToken::Literal(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(3),
+        ] if *owner != 0
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x52),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(3),
+        ] if *owner != 0
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x52),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0 && head[3] == head[7]
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x52),
+            HeadToken::Reference(owner),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_),
+            HeadToken::Literal(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_) | HeadToken::Literal(_),
+            HeadToken::Literal(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0 && head[3] == head[8] && head[4] == head[9]
+    );
+    if extended_owner_class_storage {
+        return Some(3);
+    }
+    let extended_class_storage_owner = matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            owner_token @ (HeadToken::Reference(_) | HeadToken::Literal(_)),
+            HeadToken::Literal(22 | 23),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            HeadToken::Reference(_),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if !matches!(owner_token, HeadToken::Reference(0))
+    ) || matches!(
+        head,
+        [
+            HeadToken::Lead(0x16),
+            HeadToken::Reference(_),
+            HeadToken::Reference(0),
+            HeadToken::Reference(owner),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+            HeadToken::Reference(0),
+            _,
+            HeadToken::Literal(28),
+            HeadToken::Literal(0),
+            HeadToken::Literal(0),
+        ] if *owner != 0
+    );
+    extended_class_storage_owner.then_some(3)
+}
+
+pub(crate) fn is_inline_body(body: &[u8]) -> bool {
+    let Some(rest) = body.strip_prefix(&[0x10, 0xfe]) else {
+        return false;
+    };
+    let Some(rest) = strip_reference(rest) else {
+        return false;
+    };
+    let rest = if let Some(rest) = rest.strip_prefix(&[0x82, 0xf2, 0xf0, 0x82]) {
+        rest
+    } else if rest.len() >= 12
+        && rest[0] == 0x82
+        && rest[1] == 0x32
+        && rest[6] == 0x32
+        && rest[11] == 0x82
+    {
+        &rest[12..]
+    } else {
+        return false;
+    };
+    let Some(rest) = strip_reference(rest) else {
+        return false;
+    };
+    if rest == [0x81, 0x06] {
+        return true;
+    }
+    let Some(rest) = rest.strip_prefix(&[0x82]) else {
+        return false;
+    };
+    strip_reference(rest) == Some(&[0x06][..])
+}
+
+fn strip_reference(bytes: &[u8]) -> Option<&[u8]> {
+    match bytes {
+        [0x80..=0xd0, rest @ ..] => Some(rest),
+        [0xd1..=0xe4, _, rest @ ..] => Some(rest),
+        _ => None,
+    }
+}
+
+pub(crate) fn repeated_reference_suffix(
+    payload: &ObjectPayload,
+) -> Option<RepeatedReferenceSuffix> {
+    let fields = &payload.fields;
+    let mut matches = fields
+        .iter()
+        .enumerate()
+        .filter_map(|(count_index, field)| {
+            let PayloadField::Atom {
+                value: declared_count,
+                offset: first_count_offset,
+            } = field
+            else {
+                return None;
+            };
+            if *declared_count < 2
+                || !matches!(
+                    fields.get(count_index.checked_sub(1)?),
+                    Some(PayloadField::Atom { value: 48, .. })
+                )
+            {
+                return None;
+            }
+            let count = usize::try_from(*declared_count).ok()?;
+            let references_start = count_index.checked_add(1)?;
+            let references_end = references_start.checked_add(count)?;
+            let first = fields
+                .get(references_start..references_end)?
+                .iter()
+                .map(|field| match field {
+                    PayloadField::Reference { value, .. } => Some(*value),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let PayloadField::Atom {
+                value: repeated_count,
+                offset: repeated_count_offset,
+            } = fields.get(references_end)?
+            else {
+                return None;
+            };
+            if repeated_count != declared_count {
+                return None;
+            }
+            let repeated_start = references_end.checked_add(1)?;
+            let repeated_end = repeated_start.checked_add(count.checked_sub(1)?)?;
+            let terminator_start = repeated_end.checked_add(1)?;
+            let repeated = fields
+                .get(repeated_start..repeated_end)?
+                .iter()
+                .map(|field| match field {
+                    PayloadField::Reference { value, .. } => Some(*value),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            if repeated != first[..count - 1]
+                || !matches!(
+                    fields.get(repeated_end),
+                    Some(PayloadField::Atom { value: 129, .. })
+                )
+                || !matches!(
+                    fields.get(terminator_start..),
+                    Some([PayloadField::Terminator])
+                )
+            {
+                return None;
+            }
+            Some(RepeatedReferenceSuffix {
+                schema_preamble: reference_schema_preamble(&fields[..count_index - 1]),
+                repeated_references: repeated,
+                terminal_reference: first[count - 1],
+                first_count_offset: *first_count_offset,
+                repeated_count_offset: *repeated_count_offset,
+            })
+        });
+    let suffix = matches.next()?;
+    matches.next().is_none().then_some(suffix)
+}
+
+fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
+    let mut matches = fields.windows(4).filter_map(|fields| match fields {
+        [
+            PayloadField::Blob {
+                declared_len: 59, ..
+            },
+            PayloadField::Atom { value: 5, .. },
+            PayloadField::Atom { value: 46, .. },
+            PayloadField::Atom {
+                value: schema_ref,
+                offset,
+            },
+        ] => Some(ReferenceSchemaPreamble::BlobThenSchema {
+            schema_ref: *schema_ref,
+            offset: *offset,
+        }),
+        [
+            PayloadField::Atom {
+                value: schema_ref,
+                offset,
+            },
+            PayloadField::Atom { value: 34, .. },
+            PayloadField::Blob {
+                declared_len: 59, ..
+            },
+            PayloadField::Atom { value: 5, .. },
+        ] => Some(ReferenceSchemaPreamble::SchemaThenBlob {
+            schema_ref: *schema_ref,
+            offset: *offset,
+        }),
+        _ => None,
+    });
+    let preamble = matches.next()?;
+    matches.next().is_none().then_some(preamble)
 }
 
 fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
@@ -481,12 +1037,20 @@ fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     match byte {
         0x80..=0xd0 => Some((u32::from(byte - 0x80), 1)),
         0x51..=0x7f => Some((u32::from(byte), 1)),
-        0xd1..=0xe4 => Some((
-            u32::from(byte - 0xd1) * 256 + u32::from(*bytes.get(at + 1)?) + 1,
+        0xd1..=0xe4 if at + 2 < bytes.len() => Some((
+            u32::from(byte - 0xd1) * 256 + u32::from(bytes[at + 1]) + 1,
             2,
         )),
+        0xd1..=0xe4 => None,
         _ => Some((u32::from(byte), 1)),
     }
+}
+
+fn tagged_value(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
+    if matches!(bytes.get(at), Some(0x80 | 0x32)) && at.checked_add(5)? < bytes.len() {
+        return Some((u32_le(bytes, at + 1)?, 5));
+    }
+    atom(bytes, at)
 }
 
 fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
@@ -496,14 +1060,18 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
         let offset = at;
         match bytes[at] {
             0xfe => {
-                fields.push(PayloadField::Terminator);
-                at += 1;
+                while bytes.get(at) == Some(&0xfe) {
+                    fields.push(PayloadField::Terminator);
+                    at += 1;
+                }
                 break;
             }
-            0xe5 if at + 5 <= bytes.len() => {
-                let declared_len = usize::try_from(u32_le(bytes, at + 1).unwrap_or(0)).unwrap_or(0);
+            0xe5 if blob_end(bytes, at).is_some() => {
+                let declared_len =
+                    usize::try_from(u32_le(bytes, at + 1).expect("checked blob header"))
+                        .expect("u32 fits supported usize");
                 let start = at + 5;
-                let end = start.saturating_add(declared_len).min(bytes.len());
+                let end = blob_end(bytes, at).expect("checked blob extent");
                 fields.push(PayloadField::Blob {
                     declared_len,
                     bytes: bytes[start..end].to_vec(),
@@ -511,6 +1079,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 });
                 at = end;
             }
+            0xe5 if blob_declared_end(bytes, at) == Some(bytes.len()) => return None,
             0x3c => {
                 let Some((count, advance)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
@@ -563,8 +1132,10 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     if at >= bytes.len() || bytes[at] == 0xfe {
                         break;
                     }
+                    let item_offset = at;
                     let tagged_reference = bytes[at] == 0x81;
                     let tagged_atom = bytes[at] == 0x80;
+                    let fixed_reference = bytes[at] == 0x32;
                     let value_at = at + usize::from(tagged_reference || tagged_atom);
                     if (tagged_reference || tagged_atom)
                         && (value_at >= bytes.len() || bytes[value_at] == 0xfe)
@@ -572,13 +1143,19 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                         at = value_at;
                         break;
                     }
-                    let Some((value, consumed)) = atom(bytes, value_at) else {
+                    let Some((value, consumed)) = tagged_value(bytes, value_at) else {
                         break;
                     };
-                    items.push(if tagged_reference {
-                        ListItem::Reference(value)
+                    items.push(if tagged_reference || fixed_reference {
+                        ListItem::Reference {
+                            value,
+                            offset: item_offset,
+                        }
                     } else {
-                        ListItem::Atom(value)
+                        ListItem::Atom {
+                            value,
+                            offset: item_offset,
+                        }
                     });
                     at = value_at + consumed;
                 }
@@ -588,7 +1165,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     offset,
                 });
             }
-            0x80 | 0x32 if at + 5 <= bytes.len() => {
+            0x80 | 0x32 if at + 5 < bytes.len() => {
                 let tag = bytes[at];
                 fields.push(if tag == 0x80 {
                     PayloadField::Atom {
@@ -613,7 +1190,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     at += 1;
                     continue;
                 }
-                let Some((value, consumed)) = atom(bytes, at + 1) else {
+                let Some((value, consumed)) = tagged_value(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
                         value: u32::from(tag),
                         offset,
@@ -644,6 +1221,16 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
             fields,
         },
     )
+}
+
+fn blob_end(bytes: &[u8], at: usize) -> Option<usize> {
+    let end = blob_declared_end(bytes, at)?;
+    (end < bytes.len()).then_some(end)
+}
+
+fn blob_declared_end(bytes: &[u8], at: usize) -> Option<usize> {
+    let declared_len = usize::try_from(u32_le(bytes, at + 1)?).ok()?;
+    at.checked_add(5)?.checked_add(declared_len)
 }
 
 fn classify(fields: &[PayloadField]) -> PayloadSubtype {
@@ -686,9 +1273,128 @@ fn classify(fields: &[PayloadField]) -> PayloadSubtype {
     if atom_count >= 2 && triplets == 0 && list_count == 0 {
         return PayloadSubtype::AtomVector;
     }
-    if fields.is_empty() || matches!(fields, [PayloadField::Terminator]) {
+    if fields.is_empty()
+        || fields
+            .iter()
+            .all(|field| matches!(field, PayloadField::Terminator))
+    {
         PayloadSubtype::Empty
     } else {
         PayloadSubtype::Mixed
+    }
+}
+
+#[cfg(test)]
+mod repeated_reference_suffix_tests {
+    use super::{
+        repeated_reference_suffix, ObjectPayload, PayloadField, ReferenceSchemaPreamble,
+        RepeatedReferenceSuffix,
+    };
+
+    fn atom(value: u32, offset: usize) -> PayloadField {
+        PayloadField::Atom { value, offset }
+    }
+
+    fn reference(value: u32, offset: usize) -> PayloadField {
+        PayloadField::Reference { value, offset }
+    }
+
+    #[test]
+    fn repeated_reference_suffix_requires_an_exact_counted_reference_copy() {
+        let payload = ObjectPayload {
+            size: 83,
+            fields: vec![
+                atom(44, 0),
+                PayloadField::Blob {
+                    declared_len: 59,
+                    bytes: vec![0; 59],
+                    offset: 1,
+                },
+                atom(5, 65),
+                atom(46, 66),
+                atom(19, 67),
+                atom(48, 68),
+                atom(3, 69),
+                reference(60, 70),
+                reference(62, 72),
+                reference(49, 74),
+                atom(3, 76),
+                reference(60, 77),
+                reference(62, 79),
+                atom(129, 81),
+                PayloadField::Terminator,
+            ],
+        };
+
+        assert_eq!(
+            repeated_reference_suffix(&payload),
+            Some(RepeatedReferenceSuffix {
+                schema_preamble: Some(ReferenceSchemaPreamble::BlobThenSchema {
+                    schema_ref: 19,
+                    offset: 67,
+                }),
+                repeated_references: vec![60, 62],
+                terminal_reference: 49,
+                first_count_offset: 69,
+                repeated_count_offset: 76,
+            })
+        );
+    }
+
+    #[test]
+    fn repeated_reference_suffix_decodes_schema_then_blob_preamble() {
+        let payload = ObjectPayload {
+            size: 79,
+            fields: vec![
+                atom(33, 0),
+                atom(19, 1),
+                atom(34, 2),
+                PayloadField::Blob {
+                    declared_len: 59,
+                    bytes: vec![0; 59],
+                    offset: 3,
+                },
+                atom(5, 67),
+                atom(48, 68),
+                atom(2, 69),
+                reference(60, 70),
+                reference(49, 72),
+                atom(2, 74),
+                reference(60, 75),
+                atom(129, 77),
+                PayloadField::Terminator,
+            ],
+        };
+
+        assert_eq!(
+            repeated_reference_suffix(&payload)
+                .expect("repeated reference suffix")
+                .schema_preamble,
+            Some(ReferenceSchemaPreamble::SchemaThenBlob {
+                schema_ref: 19,
+                offset: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn repeated_reference_suffix_rejects_a_changed_reference() {
+        let payload = ObjectPayload {
+            size: 16,
+            fields: vec![
+                atom(48, 0),
+                atom(3, 1),
+                reference(60, 2),
+                reference(62, 3),
+                reference(49, 4),
+                atom(3, 5),
+                reference(60, 6),
+                reference(63, 7),
+                atom(129, 8),
+                PayloadField::Terminator,
+            ],
+        };
+
+        assert_eq!(repeated_reference_suffix(&payload), None);
     }
 }

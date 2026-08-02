@@ -26,6 +26,8 @@ anchor   = "ANCHOR;" anchor_entry* "ENDSEC;"
 reference= "REFERENCE;" reference_entry* "ENDSEC;"
 data     = "DATA" data_parameters? ";" entity_instance* "ENDSEC;"
 signature= "SIGNATURE;" signature_content "ENDSEC;"
+anchor_entry    = resource "=" parameter ";"
+reference_entry = resource "=" resource ";"
 ```
 
 Keywords and entity names use ASCII letters, digits, underscore, hyphen, and
@@ -50,6 +52,7 @@ Malformed trailing or inter-token bytes are not opaque records.
 instance_name = "#" digit+
 standard_name = letter (letter | digit | "_")*
 user_name     = "!" standard_name
+resource      = "<" resource_character* ">"
 integer       = sign? digit+
 real          = sign? ((digit+ "." digit*) | ("." digit+)) exponent?
 exponent      = ("E" | "e" | "D" | "d") sign? digit+
@@ -68,7 +71,9 @@ and is in `0..=3`; those low-order bits are zero. Payload digits pack
 most-significant nibble first. The decoded bit length is four times the payload
 digit count minus the indicator. An empty payload uses indicator zero.
 Comma, equals sign, parentheses, and semicolon are individual punctuation
-tokens. A lexer never assigns line-based meaning to a token.
+tokens. A resource token contains a UTF-8 byte sequence between `<` and `>`;
+the sequence does not contain `>`. A lexer never assigns line-based meaning to
+a token.
 
 ## 4. Strings
 
@@ -131,12 +136,13 @@ that differ only by ASCII case compare equal.
 
 ## 7. Edition 3 sections
 
-ANCHOR entries bind an anchor name to an in-file value. An anchor name is
-unique and resolves before schema decoding. REFERENCE entries bind a local
-resource name to a URI. URI targets outside the exchange structure are
-reported as external dependencies and are not fetched implicitly. SIGNATURE
-content is structurally bounded by its section terminator and retained with
-identity when its signature method is not modeled.
+ANCHOR entries bind a resource name to an in-file parameter value. An anchor
+name is unique. Resource values that name anchors resolve recursively before
+schema decoding; a cycle is invalid. REFERENCE entries bind a local resource
+name to a resource URI. Each name and URI is delimited by `<` and `>`. URI
+targets outside the exchange structure are external dependencies. SIGNATURE
+content starts after `SIGNATURE;`, ends at the next `ENDSEC;`, and retains its
+complete byte range.
 
 DATA section parameters name the governing schema and section population.
 Multiple DATA sections share the same instance-name namespace.
