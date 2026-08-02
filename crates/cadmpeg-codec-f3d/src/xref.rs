@@ -14,7 +14,7 @@ use cadmpeg_codec_core::le::u32_at;
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
-    ComponentReference, ExternalDocumentReference, ExternalResolution, Occurrence,
+    ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,
 };
 
 use crate::bytes::{lp_ascii_strict, take_reference};
@@ -242,7 +242,8 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
     table
         .references
         .iter()
-        .map(|reference| {
+        .enumerate()
+        .map(|(ordinal, reference)| {
             let mut transform = reference.transform.unwrap_or([
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -257,7 +258,7 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                     reference.ordinal,
                     reference.occurrence_ordinal,
                 ),
-                prototype: ComponentReference::External {
+                prototype: PrototypeReference::External {
                     document: ExternalDocumentReference {
                         path: Some(reference.relative_path.clone()),
                         document_id: None,
@@ -265,17 +266,12 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                     },
                     object: None,
                 },
-                parent: None,
-                array_index: None,
-                local_transform: transform,
-                prototype_transform: [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
-                resolved_transform: transform,
+                parent: OccurrenceParent::Root,
+                ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+                transform: cadmpeg_ir::transform::Transform { rows: transform },
+                prototype_transform: cadmpeg_ir::transform::Transform::identity(),
                 scale: [1.0; 3],
+                name: None,
                 linked_subelements: Vec::new(),
                 visible: None,
                 element_component: None,
@@ -642,7 +638,7 @@ mod tests {
         assert_eq!(occurrences.len(), 1);
         assert_eq!(occurrences[0].id.0, "f3d:model:occurrence#xref-0-0");
         assert_eq!(
-            occurrences[0].local_transform,
+            occurrences[0].transform.rows,
             [
                 [0.0, -1.0, 0.0, 10.0],
                 [1.0, 0.0, 0.0, 20.0],
@@ -651,13 +647,12 @@ mod tests {
             ]
         );
         assert_eq!(
-            occurrences[0].resolved_transform,
-            occurrences[0].local_transform
+            occurrences[0].parent,
+            cadmpeg_ir::products::OccurrenceParent::Root
         );
-        assert!(occurrences[0].parent.is_none());
         assert_eq!(
             occurrences[0].prototype,
-            cadmpeg_ir::products::ComponentReference::External {
+            cadmpeg_ir::products::PrototypeReference::External {
                 document: cadmpeg_ir::products::ExternalDocumentReference {
                     path: Some("part.f3d".into()),
                     document_id: None,

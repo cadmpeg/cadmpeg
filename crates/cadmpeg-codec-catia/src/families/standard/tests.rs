@@ -30,9 +30,8 @@ use crate::solve::mesh_quotient::{
     mesh_candidates_equivalent_with_edge_classes, mesh_edge_points_compatible,
     mesh_face_endpoint_configurations, possible_face_choices, possible_face_choices_with_limit,
     possible_face_equations, prune_mesh_endpoint_pair_support,
-    prune_mesh_endpoint_pair_support_with_limit, MeshConstraintBudget,
-    MeshPartialEndpointConstraint, MeshQuotient, MeshSelectionSearch,
-    MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
+    prune_mesh_endpoint_pair_support_with_limit, MeshPartialEndpointConstraint, MeshQuotient,
+    MeshSelectionSearch, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,
@@ -42,6 +41,7 @@ use crate::solve::missing_edge::{
     MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
+use cadmpeg_codec_core::decode::WorkBudget;
 
 fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {
     let domain = Arc::new(domain);
@@ -581,7 +581,7 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
     let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let edge_faces = [[0, 0]; 3];
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    let budget = MeshConstraintBudget::new(2);
+    let budget = WorkBudget::new(2);
     let mut visited = false;
     let outcome = visit_incidence_endpoint_pair_solutions(
         &rows,
@@ -648,8 +648,8 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
     let choices = vec![vec![[0, 1], [0, 2]], vec![[0, 2]]];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -695,8 +695,8 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
         supports.insert(1, vec![[0, 1]]);
     }
     let point_support_edges = vec![HashMap::from([(0, vec![0, 1]), (1, vec![0, 1])])];
-    let budget = MeshConstraintBudget::new(16);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(16);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: Some(explicit_point_supports),
@@ -726,7 +726,7 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
     };
 
     assert!(search.candidate_fits(0, [0, 1]));
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
     search.assignment[1] = Some([0, 1]);
     assert!(!search.candidate_fits(0, [0, 1]));
 }
@@ -742,8 +742,8 @@ fn incidence_component_caches_implicit_frontier_support() {
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(2, &choices, None)
         .expect("implicit coordinate domains");
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -784,8 +784,8 @@ fn incidence_degree_support_scan_exhausts_its_component_budget() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
-    let budget = MeshConstraintBudget::new(1);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(1);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -815,7 +815,7 @@ fn incidence_degree_support_scan_exhausts_its_component_budget() {
     };
 
     assert!(!search.candidate_fits(0, [0, 1]));
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
     search.search();
     assert!(search.exhausted);
 }
@@ -825,8 +825,8 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
     let choices = vec![vec![[0, 1]], vec![[1, 2]]];
     let edge_faces = [[0, 0], [0, 1]];
     let face_edges = vec![vec![0, 1], vec![1]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -880,8 +880,8 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
             boundaries: vec![vec![use_(0), use_(1)]],
         },
     ])];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -911,7 +911,7 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
     };
 
     assert!(!search.candidate_fits(0, [0, 0]));
-    assert!(!propagation_budget.exhausted.get());
+    assert!(!propagation_budget.exhausted());
 }
 
 #[test]
@@ -919,8 +919,8 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
     let choices = vec![vec![[0, 2]], vec![[2, 4]]];
     let edge_faces = [[0, 1], [0, 1]];
     let face_edges = vec![vec![0, 1], vec![0, 1]];
-    let budget = MeshConstraintBudget::new(4);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -950,7 +950,7 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
     };
 
     assert_eq!(search.branch_options(None), Some(vec![(0, [0, 2])]));
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -958,8 +958,8 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
     let choices = vec![vec![[0, 2]], vec![[2, 4]]];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1], Vec::new()];
-    let budget = MeshConstraintBudget::new(4);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -989,7 +989,7 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
     };
 
     assert_eq!(search.branch_options(None), Some(vec![(0, [0, 2])]));
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -1006,8 +1006,8 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         .collect::<Vec<_>>();
     let solution_filter =
         |solution: &[(usize, [usize; 2])]| solution.iter().all(|(_, pair)| pair[0] % 2 == 0);
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1050,8 +1050,8 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     let edges = [0, 1];
     let active_edges = [false, true];
     let valid = |_: &[Option<[usize; 2]>]| true;
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1103,8 +1103,8 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     let active_edges = [false; 3];
     let assignment_predecessors = [None, Some(0), Some(0)];
     let valid = |_: &[Option<[usize; 2]>]| true;
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1160,8 +1160,8 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
     let edge_faces = [[0, 0]];
     let face_edges = vec![vec![0]];
     let edges = [0];
-    let budget = MeshConstraintBudget::new(0);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(0);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1211,8 +1211,8 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
             }]],
         },
     ])];
-    let budget = MeshConstraintBudget::new(0);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(0);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1242,7 +1242,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
     };
 
     assert_eq!(search.face_configuration_options(), None);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -1260,8 +1260,8 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
             }]],
         },
     ])];
-    let search_budget = MeshConstraintBudget::new(16);
-    let propagation_budget = MeshConstraintBudget::new(0);
+    let search_budget = WorkBudget::new(16);
+    let propagation_budget = WorkBudget::new(0);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1294,7 +1294,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
 
     assert!(!search.exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
-    assert!(propagation_budget.exhausted.get());
+    assert!(propagation_budget.exhausted());
 }
 
 #[test]
@@ -1319,8 +1319,8 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
             boundaries: vec![vec![use_(1)]],
         }]),
     ];
-    let budget = MeshConstraintBudget::new(4);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1353,7 +1353,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         search.face_configuration_options(),
         Some(vec![vec![(0, [0, 0])]])
     );
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -1379,8 +1379,8 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
             boundaries: vec![vec![use_(1), use_(2)]],
         }]),
     ];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1431,8 +1431,8 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
             boundaries: vec![vec![use_(0), use_(1)]],
         },
     ])];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(2);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(2);
     let prepared =
         prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
             .expect("compiled face factors");
@@ -1476,7 +1476,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
         search.face_configuration_options(),
         Some(vec![vec![(1, [1, 1])]])
     );
-    assert!(!propagation_budget.exhausted.get());
+    assert!(!propagation_budget.exhausted());
 }
 
 #[test]
@@ -1496,8 +1496,8 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
 
     let edge_faces = [[0, 0]; 2];
     let face_edges = vec![vec![0, 1]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let prepared =
         prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
             .expect("compiled face factors");
@@ -1591,23 +1591,23 @@ fn incidence_face_configuration_support_retains_shared_edge_correlations() {
         vec![(0, [4, 5]), (1, [6, 7])],
     ];
     let mut domains = vec![correlated.clone(), vec![vec![(0, [0, 1]), (1, [2, 3])]]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
     assert!(prune_face_configuration_support(&mut domains, &budget));
     assert_eq!(domains[0], vec![correlated[0].clone()]);
 
     let mut incompatible = vec![correlated, vec![vec![(0, [0, 1]), (1, [6, 7])]]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(!prune_face_configuration_support(
         &mut incompatible,
         &budget
     ));
 
     let preserved = incompatible.clone();
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
     assert!(prune_face_configuration_support(&mut incompatible, &budget));
     assert_eq!(incompatible, preserved);
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -1620,7 +1620,7 @@ fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
         ],
         vec![vec![(1, [1, 2])]],
     ];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
     assert!(prune_face_configuration_support(&mut domains, &budget));
     assert_eq!(
@@ -1633,7 +1633,7 @@ fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
     );
 
     let mut optional = vec![vec![vec![(0, [0, 1])]], vec![vec![], vec![(0, [0, 2])]]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(prune_face_configuration_support(&mut optional, &budget));
     assert_eq!(optional[0], vec![vec![(0, [0, 1])]]);
 }
@@ -1651,7 +1651,7 @@ fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
         vec![(0, [1, 1]), (2, [0, 0])],
     ];
     let mut inconsistent = vec![equal(0, 1), equal(1, 2), different];
-    let arc_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let arc_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
     assert!(prune_face_configuration_support(
         &mut inconsistent,
@@ -1659,14 +1659,14 @@ fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
     ));
     assert!(inconsistent.iter().all(|domain| domain.len() == 2));
 
-    let singleton_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let singleton_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(!prune_face_configuration_singleton_support(
         &mut inconsistent,
         &singleton_budget,
     ));
 
     let mut consistent = vec![equal(0, 1), equal(1, 2), equal(2, 0)];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(prune_face_configuration_singleton_support(
         &mut consistent,
         &budget,
@@ -1674,13 +1674,13 @@ fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
     assert!(consistent.iter().all(|domain| domain.len() == 2));
 
     let preserved = consistent.clone();
-    let exhausted = MeshConstraintBudget::new(0);
+    let exhausted = WorkBudget::new(0);
     assert!(prune_face_configuration_singleton_support(
         &mut consistent,
         &exhausted,
     ));
     assert_eq!(consistent, preserved);
-    assert!(exhausted.exhausted.get());
+    assert!(exhausted.exhausted());
 }
 
 #[test]
@@ -1689,7 +1689,7 @@ fn incidence_face_singleton_support_tracks_multiword_configuration_masks() {
         .map(|point| vec![(0, [point, point])])
         .collect::<Vec<_>>();
     let mut domains = vec![wide, vec![vec![(0, [129, 129])]]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
     assert!(prune_face_configuration_singleton_support(
         &mut domains,
@@ -1713,7 +1713,7 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
         },
     ])];
     let mut choices = vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
     assert!(prune_ordered_face_endpoint_support(
         &domains,
@@ -1723,7 +1723,7 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
     assert_eq!(choices, vec![vec![[0, 1], [0, 2]], vec![[0, 1], [0, 2]]]);
 
     let mut unpruned = vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]];
-    let exhausted = MeshConstraintBudget::new(0);
+    let exhausted = WorkBudget::new(0);
     assert!(prune_ordered_face_endpoint_support(
         &domains,
         &mut unpruned,
@@ -1733,7 +1733,7 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
         unpruned,
         vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]]
     );
-    assert!(exhausted.exhausted.get());
+    assert!(exhausted.exhausted());
 }
 
 #[test]
@@ -1755,8 +1755,8 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
             boundaries: vec![vec![use_(1)]],
         }]),
     ];
-    let budget = MeshConstraintBudget::new(1);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(1);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1807,8 +1807,8 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
             boundaries: vec![vec![use_(0), use_(1)]],
         },
     ])];
-    let budget = MeshConstraintBudget::new(1);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(1);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1870,8 +1870,8 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
         domains: repeated_domain(HashSet::from([0]), 2),
         members: vec![vec![0], vec![1]],
     };
-    let budget = MeshConstraintBudget::new(0);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(0);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -1901,11 +1901,11 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
     };
 
     assert!(search.candidate_fits(0, [0, 0]));
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
     search.adjust(0, [0, 0], true);
     search.assignment[0] = Some([0, 0]);
     assert!(search.ordered_faces_feasible([0]));
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -1927,8 +1927,8 @@ fn incidence_selection_validates_only_its_affected_faces() {
         ],
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(1_000);
-    let propagation_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(1_000);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
@@ -2363,7 +2363,7 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
             .expect("initial quotient");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -2402,7 +2402,7 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
             .collect(),
         members: (0..8).map(|node| vec![node]).collect(),
     };
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -2446,7 +2446,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     };
     quotient.merge(0, 1).expect("first closed edge");
     quotient.merge(2, 3).expect("second closed edge");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -2482,7 +2482,7 @@ fn ordered_face_options_preflight_exact_signature_work() {
         domains: vec![broad; 4],
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -2493,7 +2493,7 @@ fn ordered_face_options_preflight_exact_signature_work() {
     .expect("bounded common quotient propagation");
 
     assert_eq!(quotient.root_count(), 4);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -2527,7 +2527,7 @@ fn ordered_cycle_support_propagates_domain_forced_directions() {
         ],
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -2638,7 +2638,7 @@ fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
         domains: repeated_domain(HashSet::from([0]), 16),
         members: (0..16).map(|node| vec![node]).collect(),
     };
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(
         crate::solve::mesh_quotient::bounded_unordered_cycle_assignments(
@@ -2713,7 +2713,7 @@ fn deferred_faces_share_one_endpoint_quotient() {
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
             .expect("initial quotient");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(
         crate::solve::incidence::compact_boundary_domains_jointly_viable(
@@ -2760,7 +2760,7 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
         &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
     )
     .expect("initial quotient");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(
         crate::solve::incidence::compact_boundary_domains_jointly_viable(
@@ -2798,7 +2798,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
             .expect("initial quotient");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
     let first = domain(false);
     let conflicting = domain(true);
     let initial = vec![(quotient.clone(), HashSet::new())];
@@ -3275,7 +3275,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
         members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
     };
     let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
-    let budget = MeshConstraintBudget::new(30);
+    let budget = WorkBudget::new(30);
 
     let options = quotient.assignment_options_limited(
         &assignment,
@@ -3287,7 +3287,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
 
     assert_eq!(options.len(), 1);
     assert_eq!(options[0].0, vec![vec![false; EDGE_COUNT]]);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -3487,12 +3487,12 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
     );
     assert_eq!(visited, vec![[0, 1], [1, 2], [1, 3]]);
 
-    let budget = MeshConstraintBudget::new(2);
+    let budget = WorkBudget::new(2);
     assert_eq!(
         domains.any_implicit_edge_candidate_with_point(0, 1, Some(&budget), |_| false),
         None
     );
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -3561,7 +3561,7 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
                 .collect()],
         },
     ])];
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -3647,10 +3647,10 @@ fn quotient_assignment_declines_when_its_work_budget_is_exhausted() {
             reversed: None,
         }]],
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
 
     assert!(!quotient.assignment_has_option(&assignment, &[vec![[0, 0]]], Some(&budget),));
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -3762,7 +3762,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
             reversed: None,
         }]],
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
 
     let options = quotient.assignment_options_limited(
         &assignment,
@@ -3773,7 +3773,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
     );
 
     assert!(options.is_empty());
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -3806,10 +3806,10 @@ fn quotient_point_existence_declines_when_its_work_budget_is_exhausted() {
         domains: repeated_domain(HashSet::from([0, 1]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
 
     assert!(!quotient.point_assignment_exists(2, &[vec![]], Some(&budget)));
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -4092,7 +4092,7 @@ fn partial_boundary_orientation_constraints_reject_an_odd_parity_cycle() {
 fn partial_face_orientability_rejects_an_odd_open_path_cycle() {
     let edge_faces = [[0, 1], [1, 2], [2, 0]];
     let face_edges = vec![vec![0, 2], vec![0, 1], vec![1, 2]];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let complete = [Some([0, 1]), Some([1, 2]), Some([0, 2])];
 
     assert!(!crate::solve::incidence::partial_face_orientability_viable(
@@ -4108,7 +4108,7 @@ fn partial_face_orientability_rejects_an_odd_open_path_cycle() {
         &face_edges,
         &budget,
     ));
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -4249,7 +4249,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
     let mut quotient =
         initial_mesh_quotient(&edge_candidates, 2, &[[0, 1], [2, 3]]).expect("initial quotient");
     quotient.merge(1, 2).expect("selected face corner");
-    let propagation_budget = MeshConstraintBudget::new(0);
+    let propagation_budget = WorkBudget::new(0);
     let changed_edges = HashSet::from([0]);
 
     let mut prepared = search
@@ -4257,7 +4257,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         .expect("partial quotient remains viable");
 
     assert_eq!(prepared.root_count(), 3);
-    assert!(propagation_budget.exhausted.get());
+    assert!(propagation_budget.exhausted());
 }
 
 #[test]
@@ -4626,8 +4626,8 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         domains,
         members: (0..edge_count * 2).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(5);
-    let propagation_budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(5);
+    let propagation_budget = WorkBudget::new(0);
 
     search.search_from_state(&quotient, true, &budget, &propagation_budget);
 
@@ -5177,12 +5177,12 @@ fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
         domains: repeated_domain(HashSet::from([0]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
 
     assert!(quotient
         .close_coordinate_roots(1, &[vec![]], Some(&budget))
         .is_none());
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -5193,7 +5193,7 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
         domains: repeated_domain(HashSet::from([0]), ROOT_COUNT),
         members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(2 * ROOT_COUNT + 1);
+    let budget = WorkBudget::new(2 * ROOT_COUNT + 1);
 
     let assignment = quotient
         .close_coordinate_roots(1, &[], Some(&budget))
@@ -5201,7 +5201,7 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
 
     assert_eq!(quotient.root_count(), 1);
     assert_eq!(assignment.values().copied().collect::<Vec<_>>(), [0]);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5225,7 +5225,7 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(
         (0..EDGE_COUNT).collect(),
     )];
-    let budget = MeshConstraintBudget::new(45_000);
+    let budget = WorkBudget::new(45_000);
 
     assert!(quotient
         .close_coordinate_roots_for_incidence_with_budget(
@@ -5237,7 +5237,7 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
             Some(&budget),
         )
         .is_some());
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5251,7 +5251,7 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
     let candidates = (0..EDGE_COUNT)
         .map(|edge| vec![[edge % 2, edge % 2]])
         .collect::<Vec<_>>();
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
 
     let assignment = quotient
         .close_coordinate_roots(2, &candidates, Some(&budget))
@@ -5262,7 +5262,7 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
         assignment.values().copied().collect::<HashSet<_>>(),
         HashSet::from([0, 1])
     );
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5274,7 +5274,7 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
     };
     quotient.merge(1, 2).expect("shared relation root");
     let candidates = vec![vec![[0, 0], [1, 1]], vec![[0, 0]], vec![[1, 1]]];
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
 
     let assignment = quotient
         .close_coordinate_roots(2, &candidates, Some(&budget))
@@ -5283,7 +5283,7 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
     assert_eq!(quotient.root_count(), 2);
     assert_eq!(assignment[&quotient.union.find(0)], 0);
     assert_eq!(assignment[&quotient.union.find(4)], 1);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5296,7 +5296,7 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
             .collect(),
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     let assignment = quotient
         .close_coordinate_roots(3, &[Vec::new(), Vec::new()], Some(&budget))
@@ -5306,7 +5306,7 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
     assert_eq!(assignment[&quotient.union.find(0)], 1);
     assert_eq!(assignment[&quotient.union.find(1)], 0);
     assert_eq!(assignment[&quotient.union.find(2)], 2);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5319,12 +5319,12 @@ fn quotient_coordinate_closure_rejects_a_coordinate_support_hall_conflict() {
             .collect(),
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
 
     assert!(quotient
         .close_coordinate_roots(4, &[Vec::new(), Vec::new()], Some(&budget))
         .is_none());
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5388,7 +5388,7 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
     let candidates = vec![Vec::new(); 2];
     let edge_faces = [[0, 0]; 2];
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1])];
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
     open.merge(0, 2).expect("shared endpoint");
 
     assert!(open
@@ -5426,7 +5426,7 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
             &edge_faces,
             1,
             &domains,
-            Some(&MeshConstraintBudget::new(1_000)),
+            Some(&WorkBudget::new(1_000)),
         )
         .is_some());
 }
@@ -5452,7 +5452,7 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
     let candidates = vec![vec![[0, 1]], vec![[0, 1]], vec![[2, 3]], vec![[2, 3]]];
     let edge_faces = [[0, 0]; 4];
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3])];
-    let budget = MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(quotient
         .close_coordinate_roots_for_incidence_with_budget(
@@ -5464,7 +5464,7 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
             Some(&budget),
         )
         .is_none());
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5510,7 +5510,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &edge_faces,
             1,
             &domain([0, 1, 2, 3]),
-            Some(&MeshConstraintBudget::new(10_000)),
+            Some(&WorkBudget::new(10_000)),
         )
         .is_none());
     assert!(quotient()
@@ -5520,7 +5520,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &edge_faces,
             1,
             &domain([0, 2, 1, 3]),
-            Some(&MeshConstraintBudget::new(10_000)),
+            Some(&WorkBudget::new(10_000)),
         )
         .is_some());
 
@@ -5544,7 +5544,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &edge_faces,
             1,
             &fixed,
-            Some(&MeshConstraintBudget::new(10_000)),
+            Some(&WorkBudget::new(10_000)),
         )
         .is_none());
 }
@@ -5638,7 +5638,7 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
             },
         ]));
     }
-    let budget = MeshConstraintBudget::new(20_000);
+    let budget = WorkBudget::new(20_000);
 
     assert!(quotient
         .close_coordinate_roots_for_incidence_with_budget(
@@ -5650,7 +5650,7 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
             Some(&budget),
         )
         .is_some());
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5870,7 +5870,7 @@ fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
             })
             .collect()],
     };
-    let budget = MeshConstraintBudget::new(1_800);
+    let budget = WorkBudget::new(1_800);
 
     assert_eq!(
         crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable_where(
@@ -5881,7 +5881,7 @@ fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
         ),
         Some(true),
     );
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5897,7 +5897,7 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
             })
             .collect()],
     };
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
     let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
         &assignment,
         Some(&budget),
@@ -5913,7 +5913,7 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
     assert_eq!(support[&0], HashSet::from([[0, 1]]));
     assert_eq!(support[&1], HashSet::from([[1, 3]]));
     assert_eq!(support[&2], HashSet::from([[0, 3]]));
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5965,7 +5965,7 @@ fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
             .collect()],
     };
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment])];
-    let budget = MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(
         crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
@@ -5976,7 +5976,7 @@ fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
         )
     );
     assert_eq!(choices[1], vec![[1, 3], [2, 3]]);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -5997,7 +5997,7 @@ fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
         vec![[2, 3], [1, 2]],
         vec![[3, 0]],
     ];
-    let budget = MeshConstraintBudget::new(4_096);
+    let budget = WorkBudget::new(4_096);
     let configurations = mesh_face_endpoint_configurations(
         std::slice::from_ref(&assignment),
         &candidates,
@@ -6011,12 +6011,12 @@ fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
         vec![vec![(0, [0, 1]), (1, [1, 2]), (2, [2, 3]), (3, [0, 3])]],
     );
 
-    let exhausted = MeshConstraintBudget::new(1);
+    let exhausted = WorkBudget::new(1);
     assert!(
         mesh_face_endpoint_configurations(&[assignment], &candidates, &[None; 4], &exhausted)
             .is_none()
     );
-    assert!(exhausted.exhausted.get());
+    assert!(exhausted.exhausted());
 }
 
 #[test]

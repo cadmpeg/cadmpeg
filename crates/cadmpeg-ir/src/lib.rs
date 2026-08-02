@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Format-neutral CAD documents and the codec interfaces that produce them.
 //!
 //! [`CadIr`] stores units, tolerances, and flat entity arenas connected by
@@ -39,6 +40,7 @@ pub mod codec;
 
 pub mod diff;
 pub mod document;
+pub mod draft;
 pub mod drawings;
 pub mod eval;
 pub mod examples;
@@ -47,14 +49,15 @@ pub mod geometry;
 pub mod hash;
 
 pub mod ids;
+pub mod index;
 pub mod math;
 pub mod native;
 pub mod pmi;
 pub mod presentation;
-pub mod product;
 pub mod products;
 mod provenance;
 pub mod report;
+pub mod schema;
 pub mod semantic_annotations;
 pub mod sketches;
 pub mod source_fidelity;
@@ -89,11 +92,10 @@ pub use presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
 };
 pub use presentation::{PresentationItem, PresentationLayer};
-pub use product::{OccurrenceParent, Product, ProductOccurrence};
 pub use products::{
-    AssemblyJoint, Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
+    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChangePolicy,
     ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
-    Occurrence, OccurrenceId,
+    Occurrence, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;

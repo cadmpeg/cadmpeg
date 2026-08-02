@@ -311,15 +311,15 @@ impl Drop for DepthGuard<'_> {
 /// A sticky, context-free local work counter.
 #[derive(Debug)]
 pub struct WorkBudget<'a> {
-    limit: u64,
-    remaining: Cell<u64>,
+    limit: usize,
+    remaining: Cell<usize>,
     exhausted: Cell<bool>,
     session: Option<&'a DecodeBudget>,
 }
 
 impl WorkBudget<'static> {
     /// Creates an independent local work slice.
-    pub const fn new(limit: u64) -> Self {
+    pub const fn new(limit: usize) -> Self {
         Self {
             limit,
             remaining: Cell::new(limit),
@@ -331,6 +331,11 @@ impl WorkBudget<'static> {
 
 impl<'a> WorkBudget<'a> {
     pub(crate) fn for_session(limit: u64, session: &'a DecodeBudget) -> Self {
+        let limit = if limit > usize::MAX as u64 {
+            usize::MAX
+        } else {
+            limit as usize
+        };
         Self {
             limit,
             remaining: Cell::new(limit),
@@ -345,7 +350,7 @@ impl<'a> WorkBudget<'a> {
     }
 
     /// Charges several work units, with sticky exhaustion on refusal.
-    pub fn charge_by(&self, work: u64) -> bool {
+    pub fn charge_by(&self, work: usize) -> bool {
         if self.exhausted.get() {
             return false;
         }
@@ -355,7 +360,7 @@ impl<'a> WorkBudget<'a> {
             false
         } else {
             if let Some(session) = self.session {
-                if session.charge_work(work, "work_budget").is_err() {
+                if session.charge_work(work as u64, "work_budget").is_err() {
                     self.exhausted.set(true);
                     return false;
                 }
@@ -370,19 +375,34 @@ impl<'a> WorkBudget<'a> {
         self.exhausted.get()
     }
 
+    /// Marks this slice exhausted without consuming additional session work.
+    pub fn exhaust(&self) {
+        self.exhausted.set(true);
+    }
+
     /// Returns unconsumed work units.
-    pub fn remaining(&self) -> u64 {
+    pub fn remaining(&self) -> usize {
         self.remaining.get()
     }
 
     /// Returns work units consumed by successful charges.
-    pub fn consumed(&self) -> u64 {
+    pub fn consumed(&self) -> usize {
         self.limit.saturating_sub(self.remaining.get())
     }
 
     /// Creates an independent child slice capped by this budget's remainder.
-    pub fn child_slice(&self, limit: u64) -> WorkBudget<'static> {
+    pub fn child_slice(&self, limit: usize) -> WorkBudget<'static> {
         WorkBudget::new(limit.min(self.remaining()))
+    }
+
+    /// Creates a child slice capped by this budget's remainder and attached to its session.
+    pub fn session_child_slice(&self, limit: usize) -> WorkBudget<'_> {
+        WorkBudget {
+            limit: limit.min(self.remaining()),
+            remaining: Cell::new(limit.min(self.remaining())),
+            exhausted: Cell::new(false),
+            session: self.session,
+        }
     }
 
     /// Charges this budget for work consumed by a child slice.
@@ -397,8 +417,8 @@ impl<'a> WorkBudget<'a> {
         }
         local_limit_error(
             "work_units",
-            self.limit,
-            self.consumed().saturating_add(1),
+            self.limit as u64,
+            self.consumed().saturating_add(1) as u64,
             operation,
             None,
         )

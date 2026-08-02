@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::products::{Component, ComponentKind, ComponentReference, Occurrence};
+use cadmpeg_ir::products::{
+    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+};
 
 use crate::records::{DesignComponentOccurrence, DesignParameterScope};
 
@@ -11,7 +13,7 @@ use crate::records::{DesignComponentOccurrence, DesignParameterScope};
 pub(crate) fn project_local_components(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
-) -> (Vec<Component>, Vec<Occurrence>) {
+) -> (Vec<ProductDefinition>, Vec<Occurrence>) {
     let mut components = BTreeMap::new();
     let mut occurrences = BTreeMap::new();
     let mut native_by_guid = BTreeMap::new();
@@ -99,14 +101,15 @@ pub(crate) fn project_local_components(
         }
     }
 
-    (
-        components.into_values().collect(),
-        occurrences.into_values().collect(),
-    )
+    let mut occurrences = occurrences.into_values().collect::<Vec<_>>();
+    for (ordinal, occurrence) in occurrences.iter_mut().enumerate() {
+        occurrence.ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+    }
+    (components.into_values().collect(), occurrences)
 }
 
 fn project_occurrence(
-    components: &mut BTreeMap<String, Component>,
+    components: &mut BTreeMap<String, ProductDefinition>,
     occurrences: &mut BTreeMap<String, Occurrence>,
     native_by_guid: &BTreeMap<String, Option<&DesignComponentOccurrence>>,
     component_guid: &str,
@@ -121,15 +124,15 @@ fn project_occurrence(
         .entry(occurrence_id.0.clone())
         .or_insert_with(|| Occurrence {
             id: occurrence_id,
-            prototype: ComponentReference::Local {
-                component: component_id,
+            prototype: PrototypeReference::Local {
+                definition: component_id,
             },
-            parent: None,
-            array_index: None,
-            local_transform: transform,
-            prototype_transform: identity_transform(),
-            resolved_transform: transform,
+            parent: OccurrenceParent::Root,
+            ordinal: 0,
+            transform,
+            prototype_transform: cadmpeg_ir::transform::Transform::identity(),
             scale: [1.0; 3],
+            name: None,
             linked_subelements: Vec::new(),
             visible: None,
             element_component: None,
@@ -147,41 +150,28 @@ fn project_occurrence(
         });
 }
 
-fn project_component(components: &mut BTreeMap<String, Component>, component_guid: &str) {
+fn project_component(components: &mut BTreeMap<String, ProductDefinition>, component_guid: &str) {
     let component_id = crate::ids::neutral_component_id(component_guid);
     components
         .entry(component_id.0.clone())
-        .or_insert_with(|| Component {
+        .or_insert_with(|| ProductDefinition {
             id: component_id,
-            kind: ComponentKind::Part,
+            kind: ProductDefinitionKind::Part,
             source_name: None,
             label: None,
             description: None,
             part_number: None,
             bom_properties: BTreeMap::new(),
-            parent: None,
-            local_transform: identity_transform(),
-            resolved_transform: identity_transform(),
-            components: Vec::new(),
-            occurrences: Vec::new(),
+            bodies: Vec::new(),
             native_ref: None,
         });
 }
 
-fn identity_transform() -> [[f64; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-}
-
-fn neutral_transform(mut transform: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
+fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Transform {
     for row in &mut transform[..3] {
         row[3] *= 10.0;
     }
-    transform
+    cadmpeg_ir::transform::Transform { rows: transform }
 }
 
 #[cfg(test)]
@@ -195,7 +185,7 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         assert_eq!(
-            super::neutral_transform(transform),
+            super::neutral_transform(transform).rows,
             [
                 [0.0, -1.0, 0.0, 12.5],
                 [1.0, 0.0, 0.0, -25.0],

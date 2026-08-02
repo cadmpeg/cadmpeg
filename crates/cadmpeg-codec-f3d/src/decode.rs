@@ -1430,7 +1430,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 &native.design_parameter_scopes,
                 &native.design_component_occurrences,
             );
-            ir.model.components.extend(components);
+            ir.model.product_definitions.extend(components);
             ir.model.occurrences.extend(occurrences);
             ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
                 &native.design_parameter_scopes,
@@ -1792,7 +1792,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
     );
-    ir.model.components.extend(components);
+    ir.model.product_definitions.extend(components);
     ir.model.occurrences.extend(occurrences);
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
@@ -3043,6 +3043,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: container::summarize(scan)
             .notes
@@ -3157,6 +3158,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }

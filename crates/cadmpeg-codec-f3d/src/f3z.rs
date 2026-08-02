@@ -95,6 +95,7 @@ pub fn decode(
     root.report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
+    make_sibling_ordinals_unique(&mut root.ir.model.occurrences);
     root.ir.finalize();
     let hash = crate::decode::semantic_hash(&root.ir);
     if let Some(source) = &mut root.ir.source {
@@ -105,6 +106,26 @@ pub fn decode(
         root.report,
         root.source_fidelity,
     ))
+}
+
+fn make_sibling_ordinals_unique(occurrences: &mut [cadmpeg_ir::products::Occurrence]) {
+    use std::collections::{HashMap, HashSet};
+
+    let mut used = HashMap::<Option<String>, HashSet<u32>>::new();
+    for occurrence in occurrences {
+        let parent = match &occurrence.parent {
+            cadmpeg_ir::products::OccurrenceParent::Root => None,
+            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => {
+                Some(occurrence.0.clone())
+            }
+        };
+        let siblings = used.entry(parent).or_default();
+        if !siblings.insert(occurrence.ordinal) {
+            occurrence.ordinal = (0..=u32::MAX)
+                .find(|ordinal| siblings.insert(*ordinal))
+                .expect("an in-memory occurrence population cannot exhaust u32 ordinals");
+        }
+    }
 }
 
 /// Read the two external-reference arenas out of a decoded document.

@@ -8,6 +8,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+pub mod catalogue;
 mod replay;
 
 /// One non-empty native arena reported as an exporter loss.
@@ -24,6 +25,9 @@ pub struct LossCount {
 /// Conversion failure between codec-owned typed records and generic records.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeConvertError {
+    /// Native namespace version lies outside the codec's declared contract.
+    #[error(transparent)]
+    UnsupportedVersion(#[from] catalogue::NativeVersionError),
     /// A serialized typed record has no string `id` field.
     #[error("native record is missing a string id")]
     MissingId,
@@ -231,7 +235,7 @@ impl NativeNamespace {
             .into_iter()
             .map(|record| NativeRecord::from_typed(&record))
             .collect::<Result<Vec<_>, NativeConvertError>>()?;
-        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        converted.sort_by(|left, right| left.id().cmp(right.id()));
         self.arenas.insert(name.into(), converted);
         Ok(())
     }
@@ -279,7 +283,7 @@ impl Native {
     pub(crate) fn finalize(&mut self) {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
-                records.sort_by(|left, right| left.id.cmp(&right.id));
+                records.sort_by(|left, right| left.id().cmp(right.id()));
             }
         }
     }

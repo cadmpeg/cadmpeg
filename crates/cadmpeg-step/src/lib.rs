@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP Part
 //! 21 exchange structures for AP203, AP214, and AP242.
 //!
@@ -60,8 +61,8 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{OccurrenceId, ProductId};
-use cadmpeg_ir::product::OccurrenceParent;
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::report::{ExportReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
@@ -544,7 +545,7 @@ impl<'a> Builder<'a> {
         );
         items.push(origin);
 
-        if self.ir.model.products.is_empty() {
+        if self.ir.model.product_definitions.is_empty() {
             let product_def_shape = self.emit_product_structure();
             self.default_product_definition_shape = Some(product_def_shape);
             let representation_kind = if !has_standalone_geometry
@@ -1032,13 +1033,26 @@ impl<'a> Builder<'a> {
         );
 
         let ir = self.ir;
-        let products = &ir.model.products;
-        let occurrences = &ir.model.product_occurrences;
+        let products = &ir.model.product_definitions;
+        let occurrences = &ir.model.occurrences;
+        let Ok(graph) = AssemblyGraph::new(occurrences) else {
+            self.loss(
+                LossKind::TopologyNotTransferred,
+                Severity::Warning,
+                "assembly occurrence graph is invalid".into(),
+            );
+            return;
+        };
         let occurrence_products = occurrences
             .iter()
-            .map(|occurrence| (occurrence.id.clone(), occurrence.product.clone()))
-            .collect::<HashMap<OccurrenceId, ProductId>>();
-        let mut product_origins = HashMap::<ProductId, Ref>::new();
+            .filter_map(|occurrence| match &occurrence.prototype {
+                PrototypeReference::Local { definition } => {
+                    Some((occurrence.id.clone(), definition.clone()))
+                }
+                PrototypeReference::External { .. } | PrototypeReference::Unresolved => None,
+            })
+            .collect::<HashMap<OccurrenceId, ProductDefinitionId>>();
+        let mut product_origins = HashMap::<ProductDefinitionId, Ref>::new();
         for product in products {
             product_origins.insert(
                 product.id.clone(),
@@ -1050,7 +1064,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let mut representation_placements = HashMap::<ProductId, Vec<Ref>>::new();
+        let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
@@ -1059,13 +1073,21 @@ impl<'a> Builder<'a> {
             let Some(parent_product) = occurrence_products.get(parent) else {
                 continue;
             };
-            let Some(&from) = product_origins.get(&occurrence.product) else {
+            let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 continue;
             };
-            if !is_rigid_transform(&occurrence.transform.rows) {
+            let Some(&from) = product_origins.get(child_product) else {
+                continue;
+            };
+            let transform = if occurrence.link_transform.unwrap_or(false) {
+                occurrence.transform.compose(occurrence.prototype_transform)
+            } else {
+                occurrence.transform
+            };
+            if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 continue;
             }
-            let rows = occurrence.transform.rows;
+            let rows = transform.rows;
             let to = geometry::placement(
                 &mut self.emitter,
                 cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
@@ -1078,15 +1100,24 @@ impl<'a> Builder<'a> {
                 .push(to);
             occurrence_placements.insert(occurrence.id.clone(), (from, to));
         }
-        let mut definitions = HashMap::<ProductId, Ref>::new();
-        let mut representations = HashMap::<ProductId, Ref>::new();
+        let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
+        let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
         for product in products {
-            let name = product.name.as_deref().unwrap_or(&product.product_id);
+            let product_id = product
+                .part_number
+                .as_deref()
+                .or(product.source_name.as_deref())
+                .unwrap_or(product.id.as_str());
+            let name = product
+                .label
+                .as_deref()
+                .or(product.source_name.as_deref())
+                .unwrap_or(product_id);
             let product_ref = self.emitter.emit(
                 "PRODUCT",
                 &format!(
                     "{},{},'',({product_context})",
-                    string(&product.product_id),
+                    string(product_id),
                     string(name)
                 ),
             );
@@ -1096,10 +1127,7 @@ impl<'a> Builder<'a> {
             );
             let definition = self.emitter.emit(
                 "PRODUCT_DEFINITION",
-                &format!(
-                    "{},'',{formation},{definition_context}",
-                    string(&product.product_id)
-                ),
+                &format!("{},'',{formation},{definition_context}", string(product_id)),
             );
             let shape = self
                 .emitter
@@ -1148,11 +1176,25 @@ impl<'a> Builder<'a> {
                 }
                 continue;
             };
-            let Some(parent_product) = occurrence_products.get(parent) else {
+            let Some(parent_occurrence) = graph.occurrence(parent) else {
                 self.loss(
                     LossKind::TopologyNotTransferred,
                     Severity::Warning,
                     format!("occurrence '{}' has an unresolved parent", occurrence.id),
+                );
+                continue;
+            };
+            let Some(parent_product) = occurrence_products.get(&parent_occurrence.id) else {
+                continue;
+            };
+            let Some(child_product) = occurrence_products.get(&occurrence.id) else {
+                self.loss(
+                    LossKind::TopologyNotTransferred,
+                    Severity::Warning,
+                    format!(
+                        "occurrence '{}' has no local product definition",
+                        occurrence.id
+                    ),
                 );
                 continue;
             };
@@ -1163,14 +1205,19 @@ impl<'a> Builder<'a> {
                 &child_representation,
             )) = definitions
                 .get(parent_product)
-                .zip(definitions.get(&occurrence.product))
+                .zip(definitions.get(child_product))
                 .zip(representations.get(parent_product))
-                .zip(representations.get(&occurrence.product))
+                .zip(representations.get(child_product))
                 .map(|(((a, b), c), d)| (a, b, c, d))
             else {
                 continue;
             };
-            if !is_rigid_transform(&occurrence.transform.rows) {
+            let transform = if occurrence.link_transform.unwrap_or(false) {
+                occurrence.transform.compose(occurrence.prototype_transform)
+            } else {
+                occurrence.transform
+            };
+            if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 self.loss(
                     LossKind::BodyTransformNotApplied,
                     Severity::Warning,
@@ -3124,34 +3171,7 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
 }
 
 fn is_rigid_transform(rows: &[[f64; 4]; 4]) -> bool {
-    const EPSILON: f64 = 1.0e-9;
-    if rows.iter().flatten().any(|value| !value.is_finite())
-        || rows[3]
-            .iter()
-            .zip([0.0, 0.0, 0.0, 1.0])
-            .any(|(actual, expected)| (*actual - expected).abs() > EPSILON)
-    {
-        return false;
-    }
-    let columns = (0..3)
-        .map(|column| [rows[0][column], rows[1][column], rows[2][column]])
-        .collect::<Vec<_>>();
-    for left in 0..3 {
-        for right in 0..3 {
-            let dot = (0..3)
-                .map(|row| columns[left][row] * columns[right][row])
-                .sum::<f64>();
-            let expected = if left == right { 1.0 } else { 0.0 };
-            if (dot - expected).abs() > EPSILON {
-                return false;
-            }
-        }
-    }
-    let determinant = columns[0][0]
-        * (columns[1][1] * columns[2][2] - columns[1][2] * columns[2][1])
-        - columns[1][0] * (columns[0][1] * columns[2][2] - columns[0][2] * columns[2][1])
-        + columns[2][0] * (columns[0][1] * columns[1][2] - columns[0][2] * columns[1][1]);
-    (determinant - 1.0).abs() <= EPSILON
+    cadmpeg_ir::transform::Transform { rows: *rows }.is_proper_rigid()
 }
 
 #[cfg(test)]

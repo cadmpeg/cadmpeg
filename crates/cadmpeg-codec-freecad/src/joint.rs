@@ -5,9 +5,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
 use cadmpeg_ir::products::{
-    AssemblyJoint, Component, ComponentReference, JointId, JointKind, JointLimits, JointOperand,
-    Occurrence,
+    AssemblyJoint, JointId, JointKind, JointLimits, JointOperand, Occurrence,
 };
+use cadmpeg_ir::transform::Transform;
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -123,26 +123,13 @@ pub(crate) fn transfer(
 
 pub(crate) fn transfer_neutral(
     records: &[JointRecord],
-    components: &[Component],
     occurrences: &[Occurrence],
 ) -> Vec<AssemblyJoint> {
-    let component_by_native = components
-        .iter()
-        .filter_map(|component| {
-            component
-                .native_ref
-                .as_deref()
-                .map(|native| (native, &component.id))
-        })
-        .collect::<HashMap<_, _>>();
-    let component_by_occurrence_native = occurrences
+    let occurrence_by_native = occurrences
         .iter()
         .filter_map(|occurrence| {
             let native = occurrence.native_ref.as_deref()?;
-            let ComponentReference::Local { component } = &occurrence.prototype else {
-                return None;
-            };
-            Some((native, component))
+            Some((native, &occurrence.id))
         })
         .collect::<HashMap<_, _>>();
     records
@@ -186,15 +173,10 @@ pub(crate) fn transfer_neutral(
                     .references
                     .iter()
                     .map(|reference| JointOperand {
-                        component: reference
+                        occurrence: reference
                             .object
                             .as_deref()
-                            .and_then(|object| {
-                                component_by_native
-                                    .get(object)
-                                    .copied()
-                                    .or_else(|| component_by_occurrence_native.get(object).copied())
-                            })
+                            .and_then(|object| occurrence_by_native.get(object).copied())
                             .cloned(),
                         external_document: reference.document.as_deref().map(|document| {
                             crate::product::external_document_reference(
@@ -206,8 +188,18 @@ pub(crate) fn transfer_neutral(
                         subelements: reference.subelements.clone(),
                     })
                     .collect(),
-                frames: record.placements.clone(),
-                offset_frames: record.offsets.clone(),
+                frames: record
+                    .placements
+                    .iter()
+                    .copied()
+                    .map(|rows| Transform { rows })
+                    .collect(),
+                offset_frames: record
+                    .offsets
+                    .iter()
+                    .copied()
+                    .map(|rows| Transform { rows })
+                    .collect(),
                 suppressed: bool_value("Suppressed").unwrap_or(false),
                 detached: [
                     bool_value("Detach1").unwrap_or(false),

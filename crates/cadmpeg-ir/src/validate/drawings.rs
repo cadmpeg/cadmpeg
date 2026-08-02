@@ -6,7 +6,11 @@ use std::collections::HashSet;
 use crate::document::CadIr;
 use crate::report::{Check, Finding, Severity};
 
-pub(super) fn check_drawings(ir: &CadIr, all_ids: &HashSet<String>, findings: &mut Vec<Finding>) {
+pub(super) fn check_drawings(
+    ir: &CadIr,
+    all_ids: &crate::index::ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
     let mut orders = HashSet::new();
     for drawing in &ir.model.drawings {
         let refs_valid = all_ids.contains(&drawing.object)

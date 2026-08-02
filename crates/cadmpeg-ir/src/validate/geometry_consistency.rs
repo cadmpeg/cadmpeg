@@ -32,6 +32,7 @@ fn allowance(tolerances: &[Option<f64>]) -> f64 {
 /// Embedded support pcurves must map through their surfaces onto the solved
 /// procedural curve at both ends of the construction interval.
 pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let index = crate::index::ModelIndex::new(ir);
     let curves = ir
         .model
         .curves
@@ -54,7 +55,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         {
             let evaluated = parameterization
                 .parameter_range
-                .map(|parameter| model_curve_point_by_id(ir, &procedural.curve, parameter));
+                .map(|parameter| model_curve_point_by_id(&index, &procedural.curve, parameter));
             let [Some(start), Some(end)] = evaluated else {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,

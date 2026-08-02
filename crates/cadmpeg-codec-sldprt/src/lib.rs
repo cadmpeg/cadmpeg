@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(
+        clippy::redundant_field_names,
+        clippy::unreadable_literal,
+        clippy::unwrap_used
+    )
+)]
 //! Read and write `SolidWorks` `.sldprt` part documents.
 //!
 //! [`SldprtCodec`] decodes B-rep topology, analytic and NURBS geometry,

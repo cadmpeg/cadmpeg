@@ -55,20 +55,12 @@ pub(crate) fn annotate(
 }
 
 pub(crate) fn neutral_model_is_admissible(ir: &CadIr, pending_unknowns: &[UnknownRecord]) -> bool {
-    let mut candidate = ir.clone();
-    if candidate
-        .set_native_unknowns_from(
-            "catia",
-            pending_unknowns
-                .iter()
-                .map(cadmpeg_ir::NativeUnknownRecord::from),
-        )
-        .is_err()
-    {
-        return false;
-    }
-    candidate.finalize();
-    cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok()
+    cadmpeg_ir::validate::validate_with_additional_native_identities(
+        ir,
+        pending_unknowns.iter().map(|record| record.id.as_str()),
+        Vec::new(),
+    )
+    .is_ok()
 }
 
 pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
@@ -513,6 +505,7 @@ pub(crate) fn build_geometry_report(
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -645,6 +638,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+use cadmpeg_codec_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -1109,8 +1110,15 @@ fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
     ]
 }
 
-pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> {
+pub(crate) fn try_decode_standard(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Option<FamilyOutput> {
+    let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
+    if !work_budget.charge() {
+        return None;
+    }
     let points = fbb::standard_vertex_points(brep)
         .unwrap_or_default()
         .into_iter()
@@ -1581,6 +1589,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &object_evidence.edge_owner_faces,
         &object_evidence.edge_supports,
         &object_evidence.limit_curves,
+        &work_budget,
         &mut topology_diagnostics,
         &mut bound_standard_limit_curve_count,
     )
@@ -2912,6 +2921,7 @@ fn attach_standard_topology(
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
     native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
     limit_curves: &[NurbsCurve],
+    work_budget: &WorkBudget<'_>,
     diagnostics: &mut StandardTopologyDiagnostics,
     bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
@@ -3581,6 +3591,7 @@ fn attach_standard_topology(
             options,
             &edge_classes,
             &circle_constraint_edges,
+            work_budget,
             |pairs| {
                 standard_curve_branch_assignment_is_ranked(
                     &supports,
@@ -3614,6 +3625,7 @@ fn attach_standard_topology(
                     options,
                     &edge_classes,
                     &unconstrained,
+                    work_budget,
                     |pairs| {
                         standard_curve_branch_assignment_is_ranked(
                             &supports,

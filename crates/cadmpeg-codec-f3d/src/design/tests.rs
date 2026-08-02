@@ -17233,6 +17233,36 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
 
 #[test]
 fn pattern_constructions_require_exact_scalar_and_operand_frames() {
+    fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(b"999");
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: [f64; 3]) {
+        append_header(bytes, record_index);
+        for value in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
     let scope_record_index = 10_u32;
     let count_record_index = 20_u32;
     let angle_record_index = 30_u32;
@@ -17525,34 +17555,6 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
     assert_eq!(rectangular.instances, None);
 
-    fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(b"999");
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-    fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: [f64; 3]) {
-        append_header(bytes, record_index);
-        for value in [
-            1.0,
-            0.0,
-            0.0,
-            translation[0],
-            0.0,
-            1.0,
-            0.0,
-            translation[1],
-            0.0,
-            0.0,
-            1.0,
-            translation[2],
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-    }
     append_transform_record(&mut bytes, 100, [2.0, 3.0, 4.0]);
     for record_index in 50..=53 {
         append_header(&mut bytes, record_index);

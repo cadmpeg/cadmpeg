@@ -39,12 +39,12 @@ pub(crate) fn project_assembly_joints(
             .iter()
             .map(|path| {
                 let root_guid = path.occurrence_guids.first()?;
-                let root = occurrences
+                occurrences
                     .get(&(stream, root_guid.to_ascii_lowercase()))
                     .copied()
                     .flatten()?;
                 Some(JointOperand {
-                    component: Some(crate::ids::neutral_component_id(&root.component_guid)),
+                    occurrence: Some(crate::ids::neutral_component_occurrence_id(root_guid)),
                     external_document: None,
                     object: Some(root_guid.to_ascii_lowercase()),
                     subelements: path.occurrence_guids[1..]
@@ -82,11 +82,11 @@ pub(crate) fn project_assembly_joints(
     joints.into_values().collect()
 }
 
-fn neutral_transform(mut transform: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
+fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Transform {
     for row in &mut transform[..3] {
         row[3] *= 10.0;
     }
-    transform
+    cadmpeg_ir::transform::Transform { rows: transform }
 }
 
 #[cfg(test)]
@@ -100,7 +100,7 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         assert_eq!(
-            super::neutral_transform(transform),
+            super::neutral_transform(transform).rows,
             [
                 [0.0, -1.0, 0.0, 12.5],
                 [1.0, 0.0, 0.0, -25.0],

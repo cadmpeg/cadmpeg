@@ -94,20 +94,23 @@ pub(crate) fn brep_entity_id(index: impl std::fmt::Display) -> String {
 pub(crate) fn neutral_xref_occurrence_id(
     reference_ordinal: u32,
     occurrence_ordinal: u32,
-) -> cadmpeg_ir::products::OccurrenceId {
-    cadmpeg_ir::products::OccurrenceId(format!(
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId(format!(
         "f3d:model:occurrence#xref-{reference_ordinal}-{occurrence_ordinal}"
     ))
 }
 
 /// Neutral local component definition projected from its stable Design GUID.
-pub(crate) fn neutral_component_id(guid: &str) -> cadmpeg_ir::products::ComponentId {
-    cadmpeg_ir::products::ComponentId(format!("f3d:model:component#{}", guid.to_ascii_lowercase()))
+pub(crate) fn neutral_component_id(guid: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId(format!(
+        "f3d:model:component#{}",
+        guid.to_ascii_lowercase()
+    ))
 }
 
 /// Neutral local occurrence projected from its stable Design GUID.
-pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::products::OccurrenceId {
-    cadmpeg_ir::products::OccurrenceId(format!(
+pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId(format!(
         "f3d:model:occurrence#{}",
         guid.to_ascii_lowercase()
     ))

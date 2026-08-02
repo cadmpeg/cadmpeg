@@ -212,20 +212,24 @@ fn scan_decodes_length_prefixed_native_model_name() {
             .map(String::as_str),
         Some("widget.prt ")
     );
-    let [product] = result.ir.model.products.as_slice() else {
+    let [product] = result.ir.model.product_definitions.as_slice() else {
         panic!("one part product");
     };
-    assert_eq!(product.id.as_str(), "creo:model:product#root");
-    assert_eq!(product.product_id, "widget.prt ");
-    assert_eq!(product.name.as_deref(), Some("widget.prt "));
+    assert_eq!(product.id.as_str(), "creo:model:product_definition#root");
+    assert_eq!(product.part_number.as_deref(), Some("widget.prt "));
+    assert_eq!(product.label.as_deref(), Some("widget.prt "));
     assert!(product.bodies.is_empty());
-    let [occurrence] = result.ir.model.product_occurrences.as_slice() else {
+    let [occurrence] = result.ir.model.occurrences.as_slice() else {
         panic!("one root occurrence");
     };
-    assert_eq!(occurrence.product, product.id);
+    assert!(matches!(
+        &occurrence.prototype,
+        cadmpeg_ir::products::PrototypeReference::Local { definition }
+            if definition == &product.id
+    ));
     assert!(matches!(
         occurrence.parent,
-        cadmpeg_ir::product::OccurrenceParent::Root
+        cadmpeg_ir::products::OccurrenceParent::Root
     ));
     assert_eq!(
         occurrence.transform,

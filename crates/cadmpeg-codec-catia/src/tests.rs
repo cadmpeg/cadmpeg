@@ -18724,6 +18724,19 @@ fn native_load_rejects_invalid_source_identities_and_extents() {
 
 #[test]
 fn native_store_paths_write_the_current_schema_version() {
+    let catalogue_names = crate::native::CATIA_FAMILIES
+        .iter()
+        .map(|row| row.arena)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 41);
+    assert_eq!(
+        catalogue_names,
+        crate::native::CATIA_ARENA_NAMES
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
+
     let borrowed = crate::native::CatiaNative {
         version: 1,
         ..crate::native::CatiaNative::default()
@@ -18746,6 +18759,20 @@ fn native_store_paths_write_the_current_schema_version() {
         .store_owned(&mut owned_namespace)
         .expect("store owned CATIA namespace");
     assert_eq!(owned_namespace.version, crate::native::CATIA_NATIVE_VERSION);
+
+    let rich = crate::native::CatiaNative::decode(&standard_catpart());
+    let mut rich_borrowed = cadmpeg_ir::NativeNamespace::default();
+    rich.store(&mut rich_borrowed)
+        .expect("store populated borrowed CATIA namespace");
+    let mut rich_owned = cadmpeg_ir::NativeNamespace::default();
+    rich.clone()
+        .store_owned(&mut rich_owned)
+        .expect("store populated owned CATIA namespace");
+    assert_eq!(rich_borrowed, rich_owned);
+    assert_eq!(
+        crate::native::CatiaNative::load(&rich_borrowed).expect("reload populated namespace"),
+        rich
+    );
 }
 
 #[test]

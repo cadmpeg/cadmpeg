@@ -1387,23 +1387,18 @@ fn nurbs_curve_second_derivative(
 /// Evaluate a curve carrier selected by arena id, including supported
 /// procedural constructions.
 pub fn model_curve_point_by_id(
-    ir: &CadIr,
+    index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     parameter: f64,
 ) -> Option<Point3> {
-    let curve = ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| candidate.id == *curve_id)?;
+    let curve = index.curves(&curve_id.0)?;
     let CurveGeometry::Procedural { construction } = &curve.geometry else {
         return curve_point(&curve.geometry, parameter);
     };
-    let procedural = ir
-        .model
-        .procedural_curves
-        .iter()
-        .find(|candidate| candidate.id == *construction && candidate.curve == *curve_id)?;
+    let procedural = index.procedural_curves(&construction.0)?;
+    if procedural.curve != *curve_id {
+        return None;
+    }
     let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
         supports,
         tolerance,
@@ -1419,7 +1414,7 @@ pub fn model_curve_point_by_id(
     }
     let points = std::array::from_fn(|side| {
         let uv = pcurve_uv(&parameterization.pcurves[side], parameter)?;
-        model_surface_point_by_id(ir, &supports[side], uv.u, uv.v)
+        model_surface_point_by_id(index, &supports[side], uv.u, uv.v)
     });
     let [Some(first), Some(second)] = points else {
         return None;
@@ -1444,11 +1439,8 @@ pub fn model_curve_parameter_near_point(
     point: Point3,
     seed: f64,
 ) -> Option<f64> {
-    let curve = ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| candidate.id == *curve_id)?;
+    let index = crate::index::ModelIndex::new(ir);
+    let curve = index.curves(&curve_id.0)?;
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
         return direct_curve_parameter_near_point(
             &curve.geometry,
@@ -1460,11 +1452,10 @@ pub fn model_curve_parameter_near_point(
     let CurveGeometry::Procedural { construction } = &curve.geometry else {
         unreachable!("direct carriers return before procedural inversion");
     };
-    let procedural = ir
-        .model
-        .procedural_curves
-        .iter()
-        .find(|candidate| candidate.id == *construction && candidate.curve == *curve_id)?;
+    let procedural = index.procedural_curves(&construction.0)?;
+    if procedural.curve != *curve_id {
+        return None;
+    }
     let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
         supports,
         tolerance,
@@ -1480,12 +1471,7 @@ pub fn model_curve_parameter_near_point(
     }
     let mut candidates = Vec::new();
     for (support_id, pcurve) in supports.iter().zip(&parameterization.pcurves) {
-        let Some(surface) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == *support_id)
-        else {
+        let Some(surface) = index.surfaces(&support_id.0) else {
             continue;
         };
         let PcurveGeometry::Line { origin, direction } = pcurve else {
@@ -1493,12 +1479,12 @@ pub fn model_curve_parameter_near_point(
         };
         let parameter = match &surface.geometry {
             SurfaceGeometry::Plane { .. } => {
-                let Some(base) = model_surface_point_by_id(ir, support_id, origin.u, origin.v)
+                let Some(base) = model_surface_point_by_id(&index, support_id, origin.u, origin.v)
                 else {
                     continue;
                 };
                 let Some(next) = model_surface_point_by_id(
-                    ir,
+                    &index,
                     support_id,
                     origin.u + direction.u,
                     origin.v + direction.v,
@@ -1566,7 +1552,7 @@ pub fn model_curve_parameter_near_point(
         } else if parameter < range[0] || parameter > range[1] {
             continue;
         }
-        let Some(evaluated) = model_curve_point_by_id(ir, curve_id, parameter) else {
+        let Some(evaluated) = model_curve_point_by_id(&index, curve_id, parameter) else {
             continue;
         };
         let distance = ((evaluated.x - point.x).powi(2)
@@ -2161,7 +2147,7 @@ pub fn model_surface_point(
 
 /// Evaluate a surface carrier selected by arena id.
 pub fn model_surface_point_by_id(
-    ir: &CadIr,
+    index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
@@ -2172,7 +2158,7 @@ pub fn model_surface_point_by_id(
     }
 
     fn evaluate(
-        ir: &CadIr,
+        index: &crate::index::ModelIndex<'_>,
         surface_id: &crate::ids::SurfaceId,
         u: f64,
         v: f64,
@@ -2182,27 +2168,24 @@ pub fn model_surface_point_by_id(
             return None;
         }
         visiting.push(surface_id.clone());
-        let surface = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|candidate| candidate.id == *surface_id)?;
+        let surface = index.surfaces(&surface_id.0)?;
         let result = if let SurfaceGeometry::Procedural { construction } = &surface.geometry {
-            let procedural = ir.model.procedural_surfaces.iter().find(|candidate| {
-                candidate.id == *construction && candidate.surface == *surface_id
-            })?;
+            let procedural = index.procedural_surfaces(&construction.0)?;
+            if procedural.surface != *surface_id {
+                return None;
+            }
             match &procedural.definition {
                 ProceduralSurfaceDefinition::Offset {
                     support, distance, ..
                 } => {
-                    let support = evaluate(ir, support, u, v, visiting)?;
+                    let support = evaluate(index, support, u, v, visiting)?;
                     let normal = support.oriented_normal?;
                     Some(SurfaceEvaluation {
                         point: offset(support.point, &[(*distance, normal)]),
                         oriented_normal: Some(normal),
                     })
                 }
-                _ => model_surface_point(ir, &surface.geometry, u, v).map(|point| {
+                _ => model_surface_point(index.ir(), &surface.geometry, u, v).map(|point| {
                     SurfaceEvaluation {
                         point,
                         oriented_normal: None,
@@ -2230,7 +2213,7 @@ pub fn model_surface_point_by_id(
         result
     }
 
-    evaluate(ir, surface, u, v, &mut Vec::new()).map(|evaluation| evaluation.point)
+    evaluate(index, surface, u, v, &mut Vec::new()).map(|evaluation| evaluation.point)
 }
 
 /// Evaluate an arena-selected direct or uniform-offset surface and its exact
@@ -2239,7 +2222,7 @@ pub fn model_surface_point_by_id(
 /// Nested offsets share the base surface's oriented unit normal, so their
 /// signed distances combine before differentiating the normal field.
 pub fn model_surface_partials_by_id(
-    ir: &CadIr,
+    index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
@@ -2252,16 +2235,12 @@ pub fn model_surface_partials_by_id(
             return None;
         }
         visiting.push(support.clone());
-        let carrier = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|candidate| candidate.id == *support)?;
+        let carrier = index.surfaces(&support.0)?;
         if let SurfaceGeometry::Procedural { construction } = &carrier.geometry {
-            let procedural =
-                ir.model.procedural_surfaces.iter().find(|candidate| {
-                    candidate.id == *construction && candidate.surface == *support
-                })?;
+            let procedural = index.procedural_surfaces(&construction.0)?;
+            if procedural.surface != *support {
+                return None;
+            }
             let ProceduralSurfaceDefinition::Offset {
                 support: next,
                 distance: increment,
@@ -3197,11 +3176,12 @@ mod tests {
             },
         ];
 
+        let index = crate::index::ModelIndex::new(&ir);
         assert_eq!(
-            model_surface_point_by_id(&ir, &second_id, 1.0e16, -1.0e16),
+            model_surface_point_by_id(&index, &second_id, 1.0e16, -1.0e16),
             Some(Point3::new(1.0e16, -1.0e16, -3.0))
         );
-        let partials = model_surface_partials_by_id(&ir, &second_id, 1.0e16, -1.0e16)
+        let partials = model_surface_partials_by_id(&index, &second_id, 1.0e16, -1.0e16)
             .expect("transformed plane evaluates");
         assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));
         assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));

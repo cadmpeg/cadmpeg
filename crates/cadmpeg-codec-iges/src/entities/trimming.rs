@@ -6,6 +6,7 @@ use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -79,7 +80,7 @@ fn point_position(ir: &CadIr, id: &VertexId) -> Option<Point3> {
 }
 
 fn face_vertex(
-    candidate: &mut CadIr,
+    candidate: &mut ModelDraft,
     vertices: &mut Vec<(Point3, VertexId)>,
     stem: &str,
     boundary: usize,
@@ -94,12 +95,12 @@ fn face_vertex(
     let index = vertices.len();
     let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
     let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
-    candidate.model.points.push(Point {
+    candidate.model_mut().points.push(Point {
         source_object: None,
         id: point_id.clone(),
         position,
     });
-    candidate.model.vertices.push(Vertex {
+    candidate.model_mut().vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
@@ -497,7 +498,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        let checkpoint = super::TopologyAppendCheckpoint::capture(ir);
+        let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
         let region_id = RegionId(format!("iges:model:region#{stem}"));
@@ -625,11 +626,21 @@ pub(super) fn project(
                 let edge_id = EdgeId(format!(
                     "iges:model:edge#{stem}:{boundary_index}:{segment_index}"
                 ));
-                let start_vertex =
-                    face_vertex(ir, &mut local_vertices, &stem, boundary_index, item.start);
-                let end_vertex =
-                    face_vertex(ir, &mut local_vertices, &stem, boundary_index, item.end);
-                ir.model.edges.push(Edge {
+                let start_vertex = face_vertex(
+                    &mut candidate,
+                    &mut local_vertices,
+                    &stem,
+                    boundary_index,
+                    item.start,
+                );
+                let end_vertex = face_vertex(
+                    &mut candidate,
+                    &mut local_vertices,
+                    &stem,
+                    boundary_index,
+                    item.end,
+                );
+                candidate.model_mut().edges.push(Edge {
                     id: edge_id.clone(),
                     curve: Some(item.model_curve),
                     start: start_vertex,
@@ -645,7 +656,7 @@ pub(super) fn project(
                         let id = PcurveId(format!(
                             "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}:{pcurve_index}"
                         ));
-                        ir.model.pcurves.push(Pcurve {
+                        candidate.model_mut().pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
                             wrapper_reversed: None,
@@ -661,7 +672,7 @@ pub(super) fn project(
                     })
                     .collect();
                 let coedge_id = coedge_ids[segment_index].clone();
-                ir.model.coedges.push(Coedge {
+                candidate.model_mut().coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
@@ -675,7 +686,7 @@ pub(super) fn project(
                     use_curve_parameter_range: None,
                 });
             }
-            ir.model.loops.push(Loop {
+            candidate.model_mut().loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary_role: if trimmed_surface {
@@ -694,10 +705,9 @@ pub(super) fn project(
             consumed.push(sequence);
         }
         if !valid {
-            checkpoint.rollback_appended(ir);
             continue;
         }
-        ir.model.faces.push(Face {
+        candidate.model_mut().faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: surface_id,
@@ -707,19 +717,19 @@ pub(super) fn project(
             color: None,
             tolerance: None,
         });
-        ir.model.shells.push(Shell {
+        candidate.model_mut().shells.push(Shell {
             id: shell_id.clone(),
             region: region_id.clone(),
             faces: vec![face_id],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         });
-        ir.model.regions.push(Region {
+        candidate.model_mut().regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id],
         });
-        ir.model.bodies.push(Body {
+        candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: BodyKind::Sheet,
             regions: vec![region_id],
@@ -728,19 +738,14 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        let mut validation = cadmpeg_ir::validate(ir, Vec::new());
-        validation
-            .findings
-            .retain(|finding| finding.check != cadmpeg_ir::report::Check::ArenaOrder);
-        if !validation.is_ok() {
+        candidate.model_mut().finalize();
+        if candidate.commit_model(ir).is_err() {
             losses.push(entity_loss(
                 entry,
                 "trimmed sheet candidate failed neutral validation",
             ));
-            checkpoint.rollback_appended(ir);
             continue;
         }
-        ir.model.finalize();
         decoded.insert(entry.sequence);
         decoded.extend(consumed);
     }

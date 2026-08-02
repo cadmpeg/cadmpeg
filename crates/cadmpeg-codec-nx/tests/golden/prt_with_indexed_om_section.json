@@ -17,7 +17,6 @@
           }
         ],
         "coedges": [],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -96,8 +95,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [
           {
             "body": "nx:derived:point-body#0",

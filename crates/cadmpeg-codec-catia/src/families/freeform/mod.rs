@@ -77,7 +77,10 @@ fn loop_metadata_counts<'a>(
     })
 }
 
-pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<FamilyOutput> {
+pub(crate) fn try_decode_freeform_surfaces(
+    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.faces.iter().fold([0usize; 3], |mut counts, face| {
@@ -490,6 +493,7 @@ pub(crate) fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<Famil
             container_only: false,
             geometry_transferred: true,
             coverage,
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses,
             notes: container::summarize(scan).notes,
         },

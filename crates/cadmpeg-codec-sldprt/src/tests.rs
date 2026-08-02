@@ -223,9 +223,16 @@ fn native_future_version_remains_rejected() {
     let mut future = decoded.ir.native.namespace("sldprt").unwrap().clone();
     future.version = crate::native::SLDPRT_NATIVE_VERSION + 1;
     let error = crate::native::SldprtNative::load(&future).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("unsupported SLDPRT native namespace version"));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::NativeConvertError::UnsupportedVersion(
+            cadmpeg_ir::native::catalogue::NativeVersionError::Unsupported {
+                version,
+                minimum: crate::native::SLDPRT_MIN_NATIVE_VERSION,
+                maximum: crate::native::SLDPRT_NATIVE_VERSION,
+            }
+        ) if version == crate::native::SLDPRT_NATIVE_VERSION + 1
+    ));
 }
 
 /// Nibble-swap a section name into its stored form (the swap is its own inverse,

@@ -17,6 +17,7 @@ use crate::ids::{
 };
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
+use crate::products::{ProductDefinition, ProductDefinitionKind};
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossKind, LossNote, Severity};
 use crate::subd::{
@@ -43,56 +44,84 @@ where
 }
 
 #[test]
-fn product_occurrence_tree_validates_references_and_cycles() {
-    use crate::ids::{OccurrenceId, ProductId};
-    use crate::product::{OccurrenceParent, Product, ProductOccurrence};
-    use crate::transform::Transform;
-    use crate::units::Units;
+fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
+    fn collect_ids(value: &serde_json::Value, ids: &mut std::collections::HashSet<String>) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if let Some(serde_json::Value::String(id)) = fields.get("id") {
+                    ids.insert(id.clone());
+                }
+                for value in fields.values() {
+                    collect_ids(value, ids);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    collect_ids(value, ids);
+                }
+            }
+            _ => {}
+        }
+    }
 
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.products.push(Product {
-        id: ProductId("test:product:product#assembly".into()),
-        product_id: "assembly".into(),
-        name: Some("Assembly".into()),
-        bodies: Vec::new(),
+    assert_eq!(
+        crate::schema::EntityKind::ALL.len(),
+        Model::arena_names().len()
+    );
+    let ir = unit_cube();
+    let mut ids = std::collections::HashSet::new();
+    collect_ids(&serde_json::to_value(&ir.model).unwrap(), &mut ids);
+    let mut missing = Vec::new();
+    ir.model.visit_references(&mut |reference| {
+        if !ids.contains(&reference.target) {
+            missing.push(reference.target);
+        }
     });
-    ir.model.product_occurrences.push(ProductOccurrence {
-        id: OccurrenceId("test:product:occurrence#root".into()),
-        product: ProductId("test:product:product#assembly".into()),
-        parent: OccurrenceParent::Root,
-        transform: Transform::identity(),
-        name: None,
-    });
-    ir.model.product_occurrences.push(ProductOccurrence {
-        id: OccurrenceId("test:product:occurrence#child".into()),
-        product: ProductId("test:product:product#assembly".into()),
-        parent: OccurrenceParent::Occurrence {
-            occurrence: OccurrenceId("test:product:occurrence#root".into()),
-        },
-        transform: Transform::identity(),
-        name: None,
-    });
-    ir.finalize();
-    assert!(crate::validate(&ir, Vec::new()).is_ok());
+    assert!(missing.is_empty(), "unresolved references: {missing:?}");
+}
 
-    ir.model.product_occurrences[1].transform.rows[0][0] = f64::INFINITY;
-    assert!(crate::validate(&ir, Vec::new())
+#[test]
+fn typed_reference_walk_ignores_id_shaped_plain_strings() {
+    let mut ir = crate::CadIr::empty(crate::units::Units::default());
+    let owner = crate::ids::ProductDefinitionId("test:model:product#owner".into());
+    let target = crate::ids::BodyId("test:model:body#missing".into());
+    ir.model.product_definitions.push(ProductDefinition {
+        id: owner.clone(),
+        kind: ProductDefinitionKind::Part,
+        source_name: Some("test:model:name#not-a-reference".into()),
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::new(),
+        bodies: vec![target.clone()],
+        native_ref: None,
+    });
+
+    let mut references = Vec::new();
+    ir.model
+        .visit_references(&mut |reference| references.push(reference.target));
+    assert_eq!(references, vec![target.0.clone()]);
+
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(owner.0.as_str())
+            && finding.message.contains(&target.0)
+    }));
+    assert!(!report
         .findings
         .iter()
-        .any(|finding| {
-            finding.check == crate::report::Check::ProductStructure
-                && finding.message.contains("non-finite")
-        }));
-    ir.model.product_occurrences[1].transform = Transform::identity();
+        .any(|finding| finding.message.contains("not-a-reference")));
+}
 
-    ir.model.product_occurrences[1].parent = OccurrenceParent::Occurrence {
-        occurrence: OccurrenceId("test:product:occurrence#child".into()),
-    };
-    let report = crate::validate(&ir, Vec::new());
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.check == crate::report::Check::ProductStructure));
+#[test]
+fn typed_ids_keep_their_canonical_json_string_shape() {
+    let id = crate::ids::BodyId("test:model:body#1".into());
+    assert_eq!(serde_json::to_string(&id).unwrap(), "\"test:model:body#1\"");
+    assert_eq!(
+        serde_json::from_str::<crate::ids::BodyId>("\"test:model:body#1\"").unwrap(),
+        id
+    );
 }
 
 #[test]
@@ -4771,7 +4800,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         display: None,
         value: Some(ParameterValue::Length(Length(3.0f64.sqrt()))),
         dependencies: Vec::new(),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     });

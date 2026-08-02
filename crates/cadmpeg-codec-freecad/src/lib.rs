@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(
+        clippy::default_trait_access,
+        clippy::doc_markdown,
+        clippy::unwrap_used
+    )
+)]
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 //!
 //! [`FcstdCodec`] implements [`Codec`] and [`Encoder`]. Retained writes preserve
@@ -1294,7 +1302,7 @@ impl Codec for FcstdCodec {
                 .extend(surface_transfer.procedural);
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            topology_transfer::transfer(&mut ir, &shape_payloads, &graph.properties)?;
+            topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(
                 &mut ir,
                 &graph.objects,
@@ -1302,19 +1310,19 @@ impl Codec for FcstdCodec {
                 &shape_payloads,
                 &entry_records,
             )?;
-            let (components, occurrences) = product::transfer_neutral(
+            let (product_definitions, occurrences) = product::transfer_neutral(
+                ctx,
                 &product_nodes,
                 &joint_records,
                 &graph.objects,
                 &graph.properties,
+                &shape_payloads,
+                &ir.model.bodies,
             )?;
-            ir.model.components = components;
+            ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
-            ir.model.assembly_joints = joint::transfer_neutral(
-                &joint_records,
-                &ir.model.components,
-                &ir.model.occurrences,
-            );
+            ir.model.assembly_joints =
+                joint::transfer_neutral(&joint_records, &ir.model.occurrences);
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")
@@ -1417,6 +1425,7 @@ impl Codec for FcstdCodec {
                 container_only: options.container_only,
                 geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
                 losses,
                 notes: container::summarize(&scan).notes,
             },

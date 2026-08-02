@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -55,11 +56,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             built_wire_models.insert(model);
             built.typed.insert(representation);
             result.typed_records.append(&mut built.typed);
-            ir.model.vertices.append(&mut built.vertices);
-            ir.model.edges.append(&mut built.edges);
-            ir.model.shells.append(&mut built.shells);
-            ir.model.regions.push(built.region);
-            ir.model.bodies.push(built.body);
+            if let Err(error) = built.draft.commit_model(ir) {
+                result.warnings.push(format!(
+                    "EDGE_BASED_WIREFRAME_MODEL #{model} conflicts with decoded topology: {error}"
+                ));
+            }
         } else {
             result.warnings.push(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
@@ -95,14 +96,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         }
         if let Some(mut built) = build(id, record, exchange, &vertices, &edges, &oriented) {
             result.typed_records.append(&mut built.typed);
-            ir.model.vertices.append(&mut built.vertices);
-            ir.model.edges.append(&mut built.edges);
-            ir.model.coedges.append(&mut built.coedges);
-            ir.model.loops.append(&mut built.loops);
-            ir.model.faces.append(&mut built.faces);
-            ir.model.shells.append(&mut built.shells);
-            ir.model.regions.push(built.region);
-            ir.model.bodies.push(built.body);
+            if let Err(error) = built.draft.commit_model(ir) {
+                result.warnings.push(format!(
+                    "{} #{id} conflicts with decoded topology: {error}",
+                    record.simple_name().expect("matched simple name")
+                ));
+            }
         } else {
             result.warnings.push(format!(
                 "{} #{id} does not resolve to a complete connected topology graph",
@@ -130,10 +129,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             continue;
         };
         result.typed_records.append(&mut built.typed);
-        ir.model.faces.append(&mut built.faces);
-        ir.model.shells.append(&mut built.shells);
-        ir.model.regions.push(built.region);
-        ir.model.bodies.push(built.body);
+        if let Err(error) = built.draft.commit_model(ir) {
+            result.warnings.push(format!(
+                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} conflicts with decoded topology: {error}"
+            ));
+        }
     }
     for (&id, record) in &exchange.records {
         if !matches!(
@@ -245,26 +245,26 @@ fn build_wire(
     let body = BodyId(format!("step:data:body#{id}"));
     let region = RegionId(format!("step:data:region#{id}"));
     let shell = ShellId(format!("step:data:shell#{id}"));
-    Some(Built {
+    staged_topology(
         typed,
-        vertices: built_vertices,
-        edges: built_edges,
-        coedges: Vec::new(),
-        loops: Vec::new(),
-        faces: Vec::new(),
-        shells: vec![Shell {
+        built_vertices,
+        built_edges,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        vec![Shell {
             id: shell.clone(),
             region: region.clone(),
             faces: Vec::new(),
             wire_edges,
             free_vertices: Vec::new(),
         }],
-        region: Region {
+        Region {
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
         },
-        body: Body {
+        Body {
             id: body,
             kind: BodyKind::Wire,
             regions: vec![region],
@@ -273,7 +273,7 @@ fn build_wire(
             color: None,
             visible: None,
         },
-    })
+    )
 }
 
 fn mark_standalone_geometric_set(
@@ -358,26 +358,26 @@ fn build_geometric_set(
         })
         .collect::<Vec<_>>();
     let face_ids = faces.iter().map(|face| face.id.clone()).collect();
-    Some(Built {
+    staged_topology(
         typed,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        coedges: Vec::new(),
-        loops: Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
         faces,
-        shells: vec![Shell {
+        vec![Shell {
             id: shell.clone(),
             region: region.clone(),
             faces: face_ids,
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         }],
-        region: Region {
+        Region {
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
         },
-        body: Body {
+        Body {
             id: body,
             kind: BodyKind::Sheet,
             regions: vec![region],
@@ -386,7 +386,7 @@ fn build_geometric_set(
             color: None,
             visible: None,
         },
-    })
+    )
 }
 
 struct GeometryIds {
@@ -470,6 +470,12 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
 
 struct Built {
     typed: BTreeSet<u64>,
+    draft: ModelDraft,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn staged_topology(
+    typed: BTreeSet<u64>,
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
     coedges: Vec<Coedge>,
@@ -478,6 +484,29 @@ struct Built {
     shells: Vec<Shell>,
     region: Region,
     body: Body,
+) -> Option<Built> {
+    let mut draft = ModelDraft::new();
+    for vertex in vertices {
+        draft.insert(vertex).ok()?;
+    }
+    for edge in edges {
+        draft.insert(edge).ok()?;
+    }
+    for coedge in coedges {
+        draft.insert(coedge).ok()?;
+    }
+    for loop_ in loops {
+        draft.insert(loop_).ok()?;
+    }
+    for face in faces {
+        draft.insert(face).ok()?;
+    }
+    for shell in shells {
+        draft.insert(shell).ok()?;
+    }
+    draft.insert(region).ok()?;
+    draft.insert(body).ok()?;
+    Some(Built { typed, draft })
 }
 
 fn build(
@@ -504,32 +533,30 @@ fn build(
     };
     let bid = BodyId(format!("step:data:body#{id}"));
     let rid = RegionId(format!("step:data:region#{id}"));
-    let mut built = Built {
-        typed: BTreeSet::from([id]),
-        vertices: vec![],
-        edges: vec![],
-        coedges: vec![],
-        loops: vec![],
-        faces: vec![],
-        shells: vec![],
-        region: Region {
-            id: rid.clone(),
-            body: bid.clone(),
-            shells: vec![],
+    let mut typed = BTreeSet::from([id]);
+    let mut vertices = Vec::new();
+    let mut edges = Vec::new();
+    let mut coedges = Vec::new();
+    let mut loops = Vec::new();
+    let mut faces = Vec::new();
+    let mut shells = Vec::new();
+    let mut region = Region {
+        id: rid.clone(),
+        body: bid.clone(),
+        shells: Vec::new(),
+    };
+    let body = Body {
+        id: bid,
+        kind: if solid {
+            BodyKind::Solid
+        } else {
+            BodyKind::Sheet
         },
-        body: Body {
-            id: bid,
-            kind: if solid {
-                BodyKind::Solid
-            } else {
-                BodyKind::Sheet
-            },
-            regions: vec![rid.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        },
+        regions: vec![rid.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
     };
     let mut used_v = BTreeSet::new();
     let mut used_e = BTreeSet::new();
@@ -537,8 +564,7 @@ fn build(
     let mut used_faces = BTreeSet::new();
     let mut radial = BTreeMap::<u64, Vec<usize>>::new();
     for shell_reference in shell_steps {
-        let (shell_step, shell_forward) =
-            resolve_shell(shell_reference, exchange, &mut built.typed)?;
+        let (shell_step, shell_forward) = resolve_shell(shell_reference, exchange, &mut typed)?;
         if !used_shells.insert(shell_step) {
             continue;
         }
@@ -572,7 +598,7 @@ fn build(
                     if !vdefs.contains_key(&vertex_step) {
                         return None;
                     }
-                    built.loops.push(Loop {
+                    loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
                         boundary_role: if br.simple_name() == Some("FACE_OUTER_BOUND") {
@@ -589,7 +615,7 @@ fn build(
                     });
                     loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
                     used_v.insert(vertex_step);
-                    built.typed.extend([bound_step, loop_step]);
+                    typed.extend([bound_step, loop_step]);
                     continue;
                 }
                 if lr.simple_name() != Some("EDGE_LOOP") {
@@ -609,7 +635,7 @@ fn build(
                     let edge = edefs.get(&o.edge)?;
                     let cid = CoedgeId(format!("step:data:coedge#{use_step}-face-{face_step}"));
                     coedge_ids.push(cid.clone());
-                    built.coedges.push(Coedge {
+                    coedges.push(Coedge {
                         id: cid,
                         owner_loop: lid.clone(),
                         edge: EdgeId(format!("step:data:edge#{}", o.edge)),
@@ -632,21 +658,18 @@ fn build(
                         use_curve: None,
                         use_curve_parameter_range: None,
                     });
-                    radial
-                        .entry(o.edge)
-                        .or_default()
-                        .push(built.coedges.len() - 1);
+                    radial.entry(o.edge).or_default().push(coedges.len() - 1);
                     used_e.insert(o.edge);
                     used_v.extend([edge.start, edge.end]);
-                    built.typed.extend([use_step, o.edge]);
+                    typed.extend([use_step, o.edge]);
                 }
                 let n = coedge_ids.len();
-                let start = built.coedges.len() - n;
+                let start = coedges.len() - n;
                 for i in 0..n {
-                    built.coedges[start + i].next = coedge_ids[(i + 1) % n].clone();
-                    built.coedges[start + i].previous = coedge_ids[(i + n - 1) % n].clone();
+                    coedges[start + i].next = coedge_ids[(i + 1) % n].clone();
+                    coedges[start + i].previous = coedge_ids[(i + n - 1) % n].clone();
                 }
-                built.loops.push(Loop {
+                loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
                     boundary_role: if br.simple_name() == Some("FACE_OUTER_BOUND") {
@@ -658,12 +681,12 @@ fn build(
                     vertex_uses: Vec::new(),
                 });
                 loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
-                built.typed.extend([bound_step, loop_step]);
+                typed.extend([bound_step, loop_step]);
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
             let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
             let face_forward = fr.parameter(3)?.logical()? == shell_forward;
-            built.faces.push(Face {
+            faces.push(Face {
                 id: fid.clone(),
                 shell: sid.clone(),
                 surface: SurfaceId(format!("step:data:surface#{surface_step}")),
@@ -678,17 +701,17 @@ fn build(
                 tolerance: None,
             });
             face_ids.push(fid);
-            built.typed.insert(face_step);
+            typed.insert(face_step);
         }
-        built.shells.push(Shell {
+        shells.push(Shell {
             id: sid.clone(),
             region: rid.clone(),
             faces: face_ids,
             wire_edges: vec![],
             free_vertices: vec![],
         });
-        built.region.shells.push(sid);
-        built.typed.insert(shell_step);
+        region.shells.push(sid);
+        typed.insert(shell_step);
     }
     for edge_id in used_e {
         let e = edefs.get(&edge_id)?;
@@ -697,7 +720,7 @@ fn build(
         } else {
             (e.end, e.start)
         };
-        built.edges.push(Edge {
+        edges.push(Edge {
             id: EdgeId(format!("step:data:edge#{edge_id}")),
             curve: Some(CurveId(format!(
                 "step:data:curve#{}",
@@ -711,22 +734,22 @@ fn build(
     }
     for vertex_id in used_v {
         let v = vdefs.get(&vertex_id)?;
-        built.vertices.push(Vertex {
+        vertices.push(Vertex {
             id: VertexId(format!("step:data:vertex#{vertex_id}")),
             point: PointId(format!("step:data:point#{}", v.point)),
             tolerance: None,
         });
-        built.typed.insert(vertex_id);
+        typed.insert(vertex_id);
     }
     for indices in radial.values() {
         for (position, &index) in indices.iter().enumerate() {
-            built.coedges[index].radial_next = built.coedges
-                [indices[(position + 1) % indices.len()]]
-            .id
-            .clone();
+            coedges[index].radial_next =
+                coedges[indices[(position + 1) % indices.len()]].id.clone();
         }
     }
-    Some(built)
+    staged_topology(
+        typed, vertices, edges, coedges, loops, faces, shells, region, body,
+    )
 }
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {

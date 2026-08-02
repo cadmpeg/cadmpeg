@@ -8,6 +8,7 @@ use std::io::{Cursor, Read, Write};
 
 use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::{LossKind as LossCode, Severity};
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
@@ -217,6 +218,18 @@ fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
 
 #[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
+    let catalogue_names = crate::native::F3D_FAMILIES
+        .iter()
+        .map(|row| row.arena)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 64);
+    assert_eq!(
+        catalogue_names,
+        crate::native::F3D_ARENA_NAMES
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh_and_protein(&synthetic_geometry_smbh())),
@@ -2530,7 +2543,6 @@ fn generated_revision_offset_surface_round_trips() {
     // The revision-gated layout shares byte positions with the pre-revision
     // U/V sense enums but no grammar, so its four-boolean carrier run travels
     // in the revision form and leaves the enum slots empty.
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
     let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&smbh)),
@@ -11915,6 +11927,11 @@ fn generated_design_bulkstream() -> Vec<u8> {
         }
     }
 
+    fn reference(relation: &mut [u8], at: usize, target: u32) {
+        relation[at] = 1;
+        relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
+    }
+
     let mut out = Vec::new();
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&42u64.to_le_bytes());
@@ -11961,10 +11978,6 @@ fn generated_design_bulkstream() -> Vec<u8> {
         relation[7..11].copy_from_slice(&record_index.to_le_bytes());
         relation[19] = 1;
         relation[20..24].copy_from_slice(&2u32.to_le_bytes());
-        fn reference(relation: &mut [u8], at: usize, target: u32) {
-            relation[at] = 1;
-            relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
-        }
         reference(&mut relation, 24, members[0]);
         reference(&mut relation, 39, members[1]);
         reference(&mut relation, 55, 277);
