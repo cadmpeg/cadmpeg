@@ -10953,6 +10953,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,

@@ -22,7 +22,8 @@ use crate::records::{
     DesignFixedFilletParameters, DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignRectangularPatternConstruction, DesignRectangularPatternInstances, DesignScaleOperation,
-    DesignSolidPrimitive, DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
+    DesignSolidPrimitive, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
+    DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
 };
 use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -120,6 +121,8 @@ pub fn decode_parameter_scopes(
             scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
             scope.move_operation = exact_move_operation(bytes, &records, &scope);
             scope.scale_operation = exact_scale_operation(bytes, &scope);
+            scope.surface_extend_operation =
+                exact_surface_extend_operation(bytes, &records, &scope);
             scope.fixed_extrude_parameters =
                 exact_fixed_extrude_parameters(bytes, &records, &scope);
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &records, &scope);
@@ -157,6 +160,126 @@ pub fn decode_parameter_scopes(
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+pub(crate) fn exact_surface_extend_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceExtendOperation> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::SurfaceExtend) {
+        return None;
+    }
+    let [distance_record_index, boundary_record_index, edge_record_indices @ ..] =
+        scope.reference_members.as_slice()
+    else {
+        return None;
+    };
+    if edge_record_indices.is_empty() {
+        return None;
+    }
+    let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
+    if scalar.owner_record_index != Some(scope.record_index)
+        || scalar.ordinal != 0
+        || scalar.value <= 0.0
+        || records
+            .frames(*distance_record_index)
+            .filter(|(start, end)| {
+                end.checked_sub(*start) == Some(104)
+                    && lp_ascii_filtered(bytes, *start, 0..=2000, u8::is_ascii_graphic).is_some_and(
+                        |(class_tag, after_tag)| {
+                            after_tag == *start + 7
+                                && class_tag.len() == 3
+                                && class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                        },
+                    )
+                    && bytes.get(*start + 11..*start + 19) == Some(&[0; 8])
+                    && bytes.get(*start + 19..*start + 24) == Some(&[1, 1, 0, 0, 0])
+                    && marked_record_reference(bytes, *start + 24) == Some(scope.record_index)
+                    && bytes.get(*start + 29..*start + 35) == Some(&[0; 6])
+                    && bytes.get(*start + 35..*start + 40) == Some(&[0; 5])
+                    && marked_record_reference(bytes, *start + 48)
+                        == distance_record_index.checked_sub(1)
+                    && bytes.get(*start + 53..*start + 59) == Some(&[0; 6])
+                    && u32_at(bytes, *start + 59).is_some_and(|value| value != 0)
+                    && bytes.get(*start + 63..*start + 67) == Some(&[0; 4])
+                    && marked_record_reference(bytes, *start + 67) == Some(scope.record_index)
+                    && bytes.get(*start + 72..*start + 78) == Some(&[0; 6])
+                    && bytes.get(*start + 78..*start + 81) == Some(&[1, 0, 0])
+                    && marked_record_reference(bytes, *start + 81)
+                        == distance_record_index.checked_add(1)
+                    && bytes.get(*start + 86..*start + 93) == Some(&[0; 7])
+                    && marked_record_reference(bytes, *start + 93) == Some(scope.record_index)
+                    && bytes.get(*start + 98..*start + 104) == Some(&[0; 6])
+            })
+            .count()
+            != 1
+    {
+        return None;
+    }
+    let candidates = records
+        .frames(*boundary_record_index)
+        .filter_map(|(start, end)| {
+            let member_bytes = edge_record_indices.len().checked_mul(11)?;
+            let tail = start.checked_add(25)?.checked_add(member_bytes)?;
+            (end.checked_sub(start)? == 113usize.checked_add(member_bytes)?).then_some(())?;
+            let (class_tag, after_tag) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+            if after_tag != start + 7
+                || class_tag.len() != 3
+                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                || bytes.get(start + 11..start + 21)? != [0; 10]
+                || u32_at(bytes, start + 21)? != u32::try_from(edge_record_indices.len()).ok()?
+                || edge_record_indices
+                    .iter()
+                    .enumerate()
+                    .any(|(ordinal, record_index)| {
+                        marked_record_reference(bytes, start + 25 + ordinal * 11)
+                            != Some(*record_index)
+                    })
+                || bytes.get(tail..tail + 2)? != [0; 2]
+                || bytes.get(tail + 11..tail + 21)? != [0; 10]
+                || u32_at(bytes, tail + 21)? != 8
+                || bytes.get(tail + 25..tail + 35)? != [0; 10]
+                || u32_at(bytes, tail + 35)? != 210
+                || u32_at(bytes, tail + 47)? != 210
+                || marked_record_reference(bytes, tail + 51) != boundary_record_index.checked_add(2)
+                || bytes.get(tail + 56..tail + 62)? != [0; 6]
+                || bytes.get(tail + 62..tail + 65)? != [1, 0, 0]
+                || marked_record_reference(bytes, tail + 65) != boundary_record_index.checked_add(1)
+                || bytes.get(tail + 70..tail + 77)? != [0; 7]
+                || marked_record_reference(bytes, tail + 77) != Some(scope.record_index)
+                || bytes.get(tail + 82..tail + 88)? != [0; 6]
+            {
+                return None;
+            }
+            let method = match u32_at(bytes, tail + 2)? {
+                0 => DesignSurfaceExtendMethod::Natural,
+                1 => DesignSurfaceExtendMethod::Tangent,
+                2 => DesignSurfaceExtendMethod::Perpendicular,
+                _ => return None,
+            };
+            let boundary_reference_record_index = marked_record_reference(bytes, tail + 6)?;
+            let tolerance = f64_at(bytes, tail + 39)?;
+            (tolerance.is_finite() && tolerance > 0.0).then_some(DesignSurfaceExtendOperation {
+                distance: scalar.value,
+                distance_offset: scalar.value_offset,
+                distance_record_index: *distance_record_index,
+                method,
+                method_offset: u64::try_from(tail + 2).ok()?,
+                boundary_record_index: *boundary_record_index,
+                boundary_reference_record_index,
+                boundary_reference_offset: u64::try_from(tail + 6).ok()?,
+                edge_record_indices: edge_record_indices.to_vec(),
+                tolerance,
+                tolerance_offset: u64::try_from(tail + 39).ok()?,
+            })
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 pub(crate) fn exact_assembly_alignment(
@@ -2899,6 +3022,7 @@ pub(crate) fn parse_parameter_scope(
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation,
+        surface_extend_operation: None,
         surface_patch_boundaries,
         base_flange_operation,
         edge_flange_operation,

@@ -1536,6 +1536,9 @@ pub struct DesignParameterScope {
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
+    /// Exact distance, method, and boundary records carried by a `SurfaceExtend` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_extend_operation: Option<DesignSurfaceExtendOperation>,
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_operation: Option<DesignBaseFlangeOperation>,
@@ -1670,6 +1673,45 @@ pub struct DesignSurfaceStitchOperation {
     pub tolerance_record_index: u32,
     /// Indexed operation-settings record identity.
     pub settings_record_index: u32,
+}
+
+/// Geometric continuation law encoded by a `SurfaceExtend` operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignSurfaceExtendMethod {
+    /// Continue the source surface parameterization.
+    Natural,
+    /// Create faces tangent to the source faces.
+    Tangent,
+    /// Create faces perpendicular to the source faces.
+    Perpendicular,
+}
+
+/// Fixed construction records named by a `SurfaceExtend` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignSurfaceExtendOperation {
+    /// Extension distance in source centimetres.
+    pub distance: f64,
+    /// Byte offset of `distance`.
+    pub distance_offset: u64,
+    /// Indexed scalar record carrying `distance`.
+    pub distance_record_index: u32,
+    /// Geometric continuation law.
+    pub method: DesignSurfaceExtendMethod,
+    /// Byte offset of the method enum.
+    pub method_offset: u64,
+    /// Indexed boundary-carrier record.
+    pub boundary_record_index: u32,
+    /// Additional indexed reference carried by the boundary tail.
+    pub boundary_reference_record_index: u32,
+    /// Byte offset of `boundary_reference_record_index`'s marked reference.
+    pub boundary_reference_offset: u64,
+    /// Ordered edge-recipe records contained by the boundary carrier.
+    pub edge_record_indices: Vec<u32>,
+    /// Positive modelling tolerance in source centimetres.
+    pub tolerance: f64,
+    /// Byte offset of `tolerance`.
+    pub tolerance_offset: u64,
 }
 
 /// Settings a `SurfacePatch` scope carries for one boundary component.

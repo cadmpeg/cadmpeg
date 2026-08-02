@@ -35,8 +35,8 @@ use crate::design::decode::scopes::{
     exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters, exact_fixed_fillet_parameters,
     exact_joint_origin_frame, exact_path_feature_construction,
     exact_rectangular_pattern_construction, exact_scale_operation, exact_solid_primitive,
-    exact_surface_stitch_operation, exact_work_axis_construction, exact_work_plane_frame,
-    exact_work_point_position, parse_parameter_scope,
+    exact_surface_extend_operation, exact_surface_stitch_operation, exact_work_axis_construction,
+    exact_work_plane_frame, exact_work_point_position, parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -118,10 +118,11 @@ use crate::records::{
     DesignFixedFilletParameters, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
     DesignRecipeReference, DesignRecordHeader, DesignScaleOperation, DesignSketchPlacement,
-    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceStitchOperation,
-    DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
-    SketchSurface, DESIGN_MODULE_SKETCH,
+    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceExtendMethod,
+    DesignSurfaceExtendOperation, DesignSurfaceStitchOperation, DesignTopologyRecipeSide,
+    LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
+    DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::{
@@ -4754,6 +4755,133 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         None
     );
 
+    let extend_distance_at = bytes.len();
+    let extend_distance_record_index = 400u32;
+    let extend_boundary_record_index = 500u32;
+    let extend_edge_record_indices = [503u32, 507u32];
+    let mut extend_distance = vec![0; 104];
+    extend_distance[0..4].copy_from_slice(&3u32.to_le_bytes());
+    extend_distance[4..7].copy_from_slice(b"299");
+    extend_distance[7..11].copy_from_slice(&extend_distance_record_index.to_le_bytes());
+    extend_distance[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    extend_distance[24] = 1;
+    extend_distance[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+    extend_distance[35] = 0;
+    extend_distance[40..48].copy_from_slice(&0.04f64.to_le_bytes());
+    extend_distance[48] = 1;
+    extend_distance[49..53].copy_from_slice(&(extend_distance_record_index - 1).to_le_bytes());
+    extend_distance[59..63].copy_from_slice(&1016u32.to_le_bytes());
+    extend_distance[67] = 1;
+    extend_distance[68..72].copy_from_slice(&scope.record_index.to_le_bytes());
+    extend_distance[78..81].copy_from_slice(&[1, 0, 0]);
+    extend_distance[81] = 1;
+    extend_distance[82..86].copy_from_slice(&(extend_distance_record_index + 1).to_le_bytes());
+    extend_distance[93] = 1;
+    extend_distance[94..98].copy_from_slice(&scope.record_index.to_le_bytes());
+    extend_distance.extend_from_slice(&3u32.to_le_bytes());
+    extend_distance.extend_from_slice(b"258");
+    extend_distance.extend_from_slice(&extend_distance_record_index.to_le_bytes());
+    bytes.extend_from_slice(&extend_distance);
+
+    let extend_boundary_at = bytes.len();
+    let extend_boundary_tail = 25 + extend_edge_record_indices.len() * 11;
+    let mut extend_boundary = vec![0; 113 + extend_edge_record_indices.len() * 11];
+    extend_boundary[0..4].copy_from_slice(&3u32.to_le_bytes());
+    extend_boundary[4..7].copy_from_slice(b"290");
+    extend_boundary[7..11].copy_from_slice(&extend_boundary_record_index.to_le_bytes());
+    extend_boundary[21..25]
+        .copy_from_slice(&(extend_edge_record_indices.len() as u32).to_le_bytes());
+    for (ordinal, record_index) in extend_edge_record_indices.iter().enumerate() {
+        let at = 25 + ordinal * 11;
+        extend_boundary[at] = 1;
+        extend_boundary[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+    extend_boundary[extend_boundary_tail + 2..extend_boundary_tail + 6]
+        .copy_from_slice(&1u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 6] = 1;
+    extend_boundary[extend_boundary_tail + 7..extend_boundary_tail + 11]
+        .copy_from_slice(&900u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 21..extend_boundary_tail + 25]
+        .copy_from_slice(&8u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 35..extend_boundary_tail + 39]
+        .copy_from_slice(&210u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 39..extend_boundary_tail + 47]
+        .copy_from_slice(&1.0e-6f64.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 47..extend_boundary_tail + 51]
+        .copy_from_slice(&210u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 51] = 1;
+    extend_boundary[extend_boundary_tail + 52..extend_boundary_tail + 56]
+        .copy_from_slice(&(extend_boundary_record_index + 2).to_le_bytes());
+    extend_boundary[extend_boundary_tail + 62..extend_boundary_tail + 65]
+        .copy_from_slice(&[1, 0, 0]);
+    extend_boundary[extend_boundary_tail + 65] = 1;
+    extend_boundary[extend_boundary_tail + 66..extend_boundary_tail + 70]
+        .copy_from_slice(&(extend_boundary_record_index + 1).to_le_bytes());
+    extend_boundary[extend_boundary_tail + 77] = 1;
+    extend_boundary[extend_boundary_tail + 78..extend_boundary_tail + 82]
+        .copy_from_slice(&scope.record_index.to_le_bytes());
+    extend_boundary.extend_from_slice(&3u32.to_le_bytes());
+    extend_boundary.extend_from_slice(b"258");
+    extend_boundary.extend_from_slice(&extend_boundary_record_index.to_le_bytes());
+    bytes.extend_from_slice(&extend_boundary);
+
+    let mut extend_scope = scope.clone();
+    extend_scope.id = "f3d:native:parameter-scope#12".into();
+    extend_scope.kind = "SurfaceExtend".into();
+    extend_scope.reference_members = vec![
+        extend_distance_record_index,
+        extend_boundary_record_index,
+        extend_edge_record_indices[0],
+        extend_edge_record_indices[1],
+    ];
+    let operation =
+        exact_surface_extend_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
+            .expect("exact SurfaceExtend construction");
+    assert_eq!(
+        operation,
+        DesignSurfaceExtendOperation {
+            distance: 0.04,
+            distance_offset: (extend_distance_at + 40) as u64,
+            distance_record_index: extend_distance_record_index,
+            method: DesignSurfaceExtendMethod::Tangent,
+            method_offset: (extend_boundary_at + extend_boundary_tail + 2) as u64,
+            boundary_record_index: extend_boundary_record_index,
+            boundary_reference_record_index: 900,
+            boundary_reference_offset: (extend_boundary_at + extend_boundary_tail + 6) as u64,
+            edge_record_indices: extend_edge_record_indices.to_vec(),
+            tolerance: 1.0e-6,
+            tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
+        }
+    );
+    extend_scope.surface_extend_operation = Some(operation);
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&extend_scope),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features.as_slice(),
+        [Feature {
+            definition: FeatureDefinition::ExtendSurface {
+                faces: FaceSelection::Native(native),
+                distance: Some(Length(distance)),
+                method: cadmpeg_ir::features::SurfaceExtension::Linear,
+            },
+            ..
+        }] if native.ends_with(":design-record#500") && *distance == 0.4
+    ));
+    bytes[extend_boundary_at + 21..extend_boundary_at + 25]
+        .copy_from_slice(&u32::MAX.to_le_bytes());
+    assert_eq!(
+        exact_surface_extend_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope,),
+        None
+    );
+
     let embedded_default_at = bytes.len();
     for (record_index, ordinal) in [(273u32, 0u8), (274, 1)] {
         let mut scalar = vec![0; 104];
@@ -6130,6 +6258,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -7019,6 +7148,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -7450,6 +7580,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -13063,6 +13194,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -13219,6 +13351,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -13412,6 +13545,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -14256,6 +14390,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -15122,6 +15257,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -15560,6 +15696,7 @@ fn parameter_expressions_project_feature_dependencies() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -15685,6 +15822,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -16718,6 +16856,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -16894,6 +17033,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -17392,6 +17532,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
