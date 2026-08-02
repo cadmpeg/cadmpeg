@@ -8,6 +8,7 @@
 //! limits, loss reporting, and exit-status semantics.
 
 mod commands;
+mod inspect;
 mod loader;
 mod registry;
 
@@ -274,10 +275,15 @@ impl LimitProfile {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// List a native container's entries without decoding its model.
+    /// List a native container's entries, or run a byte-level subcommand.
+    ///
+    /// With a file argument this prints the codec-aware container summary. With
+    /// a subcommand it runs a format-agnostic byte tool over any file.
+    #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
     Inspect {
-        /// Native CAD file to inspect.
-        input: PathBuf,
+        /// Native CAD file to inspect. Omit it when using a byte subcommand.
+        #[arg(required = true)]
+        input: Option<PathBuf>,
         /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
@@ -289,6 +295,9 @@ enum Command {
         limits: LimitProfile,
         #[command(flatten)]
         input_args: InputArgs,
+        /// Byte-level tool to run instead of the container summary.
+        #[command(subcommand)]
+        bytes: Option<inspect::ByteCommand>,
     },
     /// Decode a native CAD file to canonical CADIR JSON.
     Decode {
@@ -423,15 +432,22 @@ fn main() -> ExitCode {
             report,
             limits,
             input_args,
-        } => commands::inspect(
-            &registry,
-            &input,
-            input_args.forced(),
-            json,
-            report.as_deref(),
-            limits.limits(),
-        )
-        .map(|()| ExitCode::SUCCESS),
+            bytes,
+        } => match bytes {
+            Some(byte_command) => inspect::run(byte_command).map(|()| ExitCode::SUCCESS),
+            None => {
+                let input = input.expect("clap requires an input without a subcommand");
+                commands::inspect(
+                    &registry,
+                    &input,
+                    input_args.forced(),
+                    json,
+                    report.as_deref(),
+                    limits.limits(),
+                )
+                .map(|()| ExitCode::SUCCESS)
+            }
+        },
         Command::Decode {
             input,
             output,
