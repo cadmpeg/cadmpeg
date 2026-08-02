@@ -20,6 +20,7 @@ struct Profile {
     format: &'static str,
     fixtures: Vec<FixtureEvidence>,
     totals: EntityCounts,
+    loss_codes: BTreeMap<String, usize>,
     gates: Vec<Gate>,
     highest_passing_gate: Option<String>,
 }
@@ -31,6 +32,7 @@ struct FixtureEvidence {
     native_namespace_version: Option<u32>,
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
+    loss_codes: BTreeMap<String, usize>,
     validation_errors: usize,
     all_bodies_colored: bool,
     all_faces_colored: bool,
@@ -124,6 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut fixtures = Vec::new();
     let mut totals = EntityCounts::default();
+    let mut total_loss_codes = BTreeMap::new();
     for path in paths {
         let bytes = fs::read(&path)?;
         let first = NxCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
@@ -131,9 +134,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let entities = EntityCounts::from_ir(&first.ir);
         totals.add(&entities);
         let mut losses = BTreeMap::new();
+        let mut loss_codes = BTreeMap::new();
         for loss in &first.report.losses {
             if loss.severity >= Severity::Warning {
                 *losses.entry(loss.code.category()).or_insert(0) += 1;
+                *loss_codes
+                    .entry(loss.code.as_str().to_string())
+                    .or_insert(0) += 1;
+                *total_loss_codes
+                    .entry(loss.code.as_str().to_string())
+                    .or_insert(0) += 1;
             }
         }
         let validation_errors = cadmpeg_ir::validate(&first.ir, Vec::new())
@@ -164,6 +174,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && first.ir.model.faces.iter().all(|face| face.color.is_some()),
             entities,
             losses,
+            loss_codes,
             validation_errors,
         });
     }
@@ -175,10 +186,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 1,
+        version: 2,
         format: "nx",
         fixtures,
         totals,
+        loss_codes: total_loss_codes,
         gates,
         highest_passing_gate,
     };
@@ -326,6 +338,7 @@ mod tests {
             native_namespace_version: Some(181),
             entities: EntityCounts::default(),
             losses: BTreeMap::new(),
+            loss_codes: BTreeMap::new(),
             validation_errors: 0,
             all_bodies_colored: false,
             all_faces_colored: false,
