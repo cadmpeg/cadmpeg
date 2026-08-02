@@ -29,52 +29,52 @@ use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 macro_rules! arena_registry {
     ($macro:ident) => {
         $macro! {
-            bodies: Body, "Body arena.", [] => |e| e.id.0.clone();
-            regions: Region, "Region arena.", [] => |e| e.id.0.clone();
-            shells: Shell, "Shell arena.", [] => |e| e.id.0.clone();
-            faces: Face, "Face arena.", [] => |e| e.id.0.clone();
-            loops: Loop, "Loop arena.", [] => |e| e.id.0.clone();
-            coedges: Coedge, "Coedge arena.", [] => |e| e.id.0.clone();
-            edges: Edge, "Edge arena.", [] => |e| e.id.0.clone();
-            vertices: Vertex, "Vertex arena.", [] => |e| e.id.0.clone();
-            points: Point, "Point arena.", [] => |e| e.id.0.clone();
-            surfaces: Surface, "Surface arena.", [] => |e| e.id.0.clone();
-            curves: Curve, "Curve arena.", [] => |e| e.id.0.clone();
-            subds: SubdSurface, "Subdivision surface arena.", [] => |e| e.id.0.clone();
-            pcurves: Pcurve, "Pcurve arena.", [] => |e| e.id.0.clone();
-            procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
-            procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
-            features: Feature, "Feature arena.", [] => |e| e.id.0.clone();
-            feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
-            configurations: DesignConfiguration, "Design configuration arena.", [serde(default)] => |e| e.id.0.clone();
-            parameters: DesignParameter, "Design parameter arena.", [serde(default)] => |e| e.id.0.clone();
-            sketches: Sketch, "Planar sketch arena.", [serde(default)] => |e| e.id.0.clone();
-            sketch_entities: SketchEntity, "Solved sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
-            sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
-            spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)] => |e| e.id.0.clone();
-            spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
-            spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")] => |e| e.id.0.clone();
-            spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
-            product_definitions: ProductDefinition, "Product definition arena.", [serde(default)] => |e| e.id.0.clone();
-            occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
-            assembly_joints: AssemblyJoint, "Assembly joint arena.", [serde(default)] => |e| e.id.0.clone();
-            drawings: Drawing, "Drawing page, resource, view, and annotation arena.", [serde(default)] => |e| e.id.0.clone();
-            semantic_annotations: SemanticAnnotation, "Semantic dimension, note, symbol, and callout arena.", [serde(default)] => |e| e.id.0.clone();
-            presentation_documents: PresentationDocument, "Document presentation arena.", [serde(default)] => |e| e.id.0.clone();
-            view_presentations: ViewPresentation, "View-provider presentation arena.", [serde(default)] => |e| e.id.0.clone();
-            tessellations: Tessellation, "Tessellation arena.", [] => |e| e.id.clone();
-            appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
-            appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();
-            attributes: SourceAttribute, "Attribute arena.", [] => |e| e.id.0.clone();
-            pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)] => |e| e.id.0.clone();
-            presentation_layers: crate::presentation::PresentationLayer, "Presentation layer arena.", [serde(default)] => |e| e.id.0.clone();
+            bodies: Body, "Body arena.", [];
+            regions: Region, "Region arena.", [];
+            shells: Shell, "Shell arena.", [];
+            faces: Face, "Face arena.", [];
+            loops: Loop, "Loop arena.", [];
+            coedges: Coedge, "Coedge arena.", [];
+            edges: Edge, "Edge arena.", [];
+            vertices: Vertex, "Vertex arena.", [];
+            points: Point, "Point arena.", [];
+            surfaces: Surface, "Surface arena.", [];
+            curves: Curve, "Curve arena.", [];
+            subds: SubdSurface, "Subdivision surface arena.", [];
+            pcurves: Pcurve, "Pcurve arena.", [];
+            procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [];
+            procedural_curves: ProceduralCurve, "Procedural curve arena.", [];
+            features: Feature, "Feature arena.", [];
+            feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            configurations: DesignConfiguration, "Design configuration arena.", [serde(default)];
+            parameters: DesignParameter, "Design parameter arena.", [serde(default)];
+            sketches: Sketch, "Planar sketch arena.", [serde(default)];
+            sketch_entities: SketchEntity, "Solved sketch entity arena.", [serde(default)];
+            sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)];
+            spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)];
+            spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)];
+            spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)];
+            product_definitions: ProductDefinition, "Product definition arena.", [serde(default)];
+            occurrences: Occurrence, "Product occurrence arena.", [serde(default)];
+            assembly_joints: AssemblyJoint, "Assembly joint arena.", [serde(default)];
+            drawings: Drawing, "Drawing page, resource, view, and annotation arena.", [serde(default)];
+            semantic_annotations: SemanticAnnotation, "Semantic dimension, note, symbol, and callout arena.", [serde(default)];
+            presentation_documents: PresentationDocument, "Document presentation arena.", [serde(default)];
+            view_presentations: ViewPresentation, "View-provider presentation arena.", [serde(default)];
+            tessellations: Tessellation, "Tessellation arena.", [];
+            appearances: Appearance, "Appearance arena.", [];
+            appearance_bindings: AppearanceBinding, "Appearance binding arena.", [];
+            attributes: SourceAttribute, "Attribute arena.", [];
+            pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)];
+            presentation_layers: crate::presentation::PresentationLayer, "Presentation layer arena.", [serde(default)];
         }
     };
 }
 pub(crate) use arena_registry;
 
 macro_rules! declare_model {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] => $key:expr;)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
         /// Format-neutral entity arenas connected by typed IDs.
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
         pub struct Model {
@@ -96,11 +96,33 @@ macro_rules! declare_model {
                 0 $(+ self.$field.len())*
             }
 
+            /// Visits every typed identity reference in canonical arena order.
+            pub fn visit_references(
+                &self,
+                visitor: &mut dyn FnMut(crate::schema::Reference),
+            ) {
+                $(for entity in &self.$field {
+                    crate::schema::EntitySchema::visit_references(entity, visitor);
+                })*
+            }
+
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
-                $(self.$field.sort_by_key($key);)*
+                $(self.$field.sort_by(|left, right| {
+                    crate::schema::EntitySchema::identity(left)
+                        .cmp(crate::schema::EntitySchema::identity(right))
+                });)*
             }
         }
+    };
+}
+
+macro_rules! assert_entity_schemas {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        const _: fn() = || {
+            fn assert_schema<T: crate::schema::EntitySchema>() {}
+            $(assert_schema::<$ty>();)*
+        };
     };
 }
 
@@ -108,6 +130,7 @@ macro_rules! declare_model {
 pub const IR_VERSION: &str = "5";
 
 arena_registry!(declare_model);
+arena_registry!(assert_entity_schemas);
 
 fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<String, D::Error>
 where

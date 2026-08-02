@@ -10,19 +10,15 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::appearance::{Appearance, AppearanceBinding};
-use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, IR_VERSION};
 use crate::features::Feature;
 use crate::geometry::{
-    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use crate::math::Vector3;
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
 use crate::source_fidelity::SourceFidelity;
-use crate::tessellation::Tessellation;
-use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
+use crate::topology::Coedge;
 use crate::units::LengthUnit;
 
 mod annotations_native;

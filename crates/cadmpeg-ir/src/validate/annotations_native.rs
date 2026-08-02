@@ -3,32 +3,20 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::drawings::Drawing;
-use crate::features::{DesignConfiguration, DesignParameter, FeatureInputTopology};
-use crate::presentation::{PresentationDocument, ViewPresentation};
-use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
-use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{
-    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
-    SpatialSketchEntity,
-};
-use crate::spreadsheets::Spreadsheet;
-use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
         fn model_entity_json(
             ir: &CadIr,
             wanted: &HashSet<&str>,
         ) -> HashMap<String, serde_json::Value> {
             let mut entities = HashMap::new();
             $(
-                let key: fn(&$element) -> String = $key;
                 for entity in &ir.model.$field {
-                    let id = key(entity);
-                    if wanted.contains(id.as_str()) {
+                    let id = crate::schema::EntitySchema::identity(entity);
+                    if wanted.contains(id) {
                         if let Ok(value) = serde_json::to_value(entity) {
-                            entities.insert(id, value);
+                            entities.insert(id.to_owned(), value);
                         }
                     }
                 }

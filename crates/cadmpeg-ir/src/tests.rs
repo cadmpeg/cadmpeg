@@ -42,6 +42,43 @@ where
 }
 
 #[test]
+fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
+    fn collect_ids(value: &serde_json::Value, ids: &mut std::collections::HashSet<String>) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if let Some(serde_json::Value::String(id)) = fields.get("id") {
+                    ids.insert(id.clone());
+                }
+                for value in fields.values() {
+                    collect_ids(value, ids);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    collect_ids(value, ids);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    assert_eq!(
+        crate::schema::EntityKind::ALL.len(),
+        Model::arena_names().len()
+    );
+    let ir = unit_cube();
+    let mut ids = std::collections::HashSet::new();
+    collect_ids(&serde_json::to_value(&ir.model).unwrap(), &mut ids);
+    let mut missing = Vec::new();
+    ir.model.visit_references(&mut |reference| {
+        if !ids.contains(&reference.target) {
+            missing.push(reference.target);
+        }
+    });
+    assert!(missing.is_empty(), "unresolved references: {missing:?}");
+}
+
+#[test]
 fn non_finite_body_transform_is_invalid() {
     let mut ir = unit_cube();
     let mut transform = crate::transform::Transform::identity();
