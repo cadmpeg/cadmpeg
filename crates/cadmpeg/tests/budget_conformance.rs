@@ -21,6 +21,7 @@ const FREECAD: &[u8] =
 enum Starvation {
     Entities,
     CollectionItems,
+    RecursionDepth,
 }
 
 impl Starvation {
@@ -28,6 +29,7 @@ impl Starvation {
         match self {
             Self::Entities => limits.max_entities = 0,
             Self::CollectionItems => limits.max_collection_items = 0,
+            Self::RecursionDepth => limits.max_recursion_depth = 0,
         }
     }
 
@@ -35,6 +37,7 @@ impl Starvation {
         match self {
             Self::Entities => ResourceDimension::Entities,
             Self::CollectionItems => ResourceDimension::CollectionItems,
+            Self::RecursionDepth => ResourceDimension::RecursionDepth,
         }
     }
 }
@@ -50,7 +53,7 @@ static CATIA_CODEC: CatiaCodec = CatiaCodec;
 static CREO_CODEC: CreoCodec = CreoCodec;
 static FREECAD_CODEC: FcstdCodec = FcstdCodec;
 
-fn cases() -> [Case; 3] {
+fn cases() -> [Case; 4] {
     [
         Case {
             name: "catia/entities",
@@ -69,6 +72,12 @@ fn cases() -> [Case; 3] {
             codec: &FREECAD_CODEC,
             bytes: FREECAD,
             starvation: Starvation::CollectionItems,
+        },
+        Case {
+            name: "freecad/recursion_depth",
+            codec: &FREECAD_CODEC,
+            bytes: FREECAD,
+            starvation: Starvation::RecursionDepth,
         },
     ]
 }

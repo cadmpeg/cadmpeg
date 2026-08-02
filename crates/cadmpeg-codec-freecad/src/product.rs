@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{JointRecord, ObjectRecord, ProductNodeRecord, PropertyRecord};
+use cadmpeg_codec_core::decode::DecodeContext;
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
@@ -94,6 +95,7 @@ pub(crate) fn transfer(
 
 /// Project the lossless native product records into reusable definitions and placed uses.
 pub(crate) fn transfer_neutral(
+    ctx: &DecodeContext<'_>,
     records: &[ProductNodeRecord],
     joints: &[JointRecord],
     objects: &[ObjectRecord],
@@ -179,6 +181,7 @@ pub(crate) fn transfer_neutral(
                 element_transform.unwrap_or_else(identity),
             );
             let prototype_transform = linked_prototype_transform(
+                ctx,
                 record,
                 records,
                 &placements_by_object,
@@ -365,16 +368,13 @@ pub(crate) fn transfer_neutral(
 }
 
 fn linked_prototype_transform(
+    ctx: &DecodeContext<'_>,
     record: &ProductNodeRecord,
     records: &[ProductNodeRecord],
     placements: &HashMap<&str, [[f64; 4]; 4]>,
     stack: &mut Vec<String>,
 ) -> Result<[[f64; 4]; 4], CodecError> {
-    if stack.len() >= 256 {
-        return Err(CodecError::Malformed(
-            "nested link transform depth limit exceeded".into(),
-        ));
-    }
+    let _depth = ctx.enter_nested("resolve FCStd nested link transform", None)?;
     if record.link_transform != Some(true) || record.external_document.is_some() {
         return Ok(identity());
     }
@@ -396,7 +396,7 @@ fn linked_prototype_transform(
         .or_else(|| placements.get(prototype).copied())
         .unwrap_or_else(identity);
     let nested = target_record.map_or(Ok(identity()), |target| {
-        linked_prototype_transform(target, records, placements, stack)
+        linked_prototype_transform(ctx, target, records, placements, stack)
     });
     stack.pop();
     nested.map(|nested| multiply(placement, nested))

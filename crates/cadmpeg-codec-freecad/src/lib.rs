@@ -1294,7 +1294,7 @@ impl Codec for FcstdCodec {
                 .extend(surface_transfer.procedural);
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            topology_transfer::transfer(&mut ir, &shape_payloads, &graph.properties)?;
+            topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(
                 &mut ir,
                 &graph.objects,
@@ -1303,6 +1303,7 @@ impl Codec for FcstdCodec {
                 &entry_records,
             )?;
             let (product_definitions, occurrences) = product::transfer_neutral(
+                ctx,
                 &product_nodes,
                 &joint_records,
                 &graph.objects,
