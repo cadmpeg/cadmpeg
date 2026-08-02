@@ -512,7 +512,8 @@ placement, UUID, and state fields.
 
 **Known.** The fast-load component roster preserves each occurrence ordinal and
 its named prototype, including repeated uses. `EXTREFSTREAM` preserves child
-paths and persistent-handle sets independently.
+paths and persistent-handle sets independently. Bounded OM object records retain
+exact adjacent persistent-handle pairs without assigning occurrence semantics.
 
 **Need.** We must know the mapping to preserve multiple occurrences of the same child part.
 

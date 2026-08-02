@@ -244,6 +244,7 @@ pub(crate) struct OmRecords {
     pub(crate) store_headers: Vec<StoreHeader>,
     pub(crate) string_values: Vec<StringValue>,
     pub(crate) object_references: Vec<ObjectReference>,
+    pub(crate) object_record_handle_pairs: Vec<ObjectRecordHandlePair>,
     pub(crate) configurations: Vec<Configuration>,
     pub(crate) part_attributes: Vec<PartAttribute>,
     pub(crate) configuration_attribute_uses: Vec<ConfigurationAttributeUse>,
@@ -736,6 +737,7 @@ impl NativeModel {
         let store_headers = store_headers(container);
         let string_values = string_values(container);
         let object_references = object_references(container);
+        let object_record_handle_pairs = object_record_handle_pairs(&object_references);
         let configurations = configurations(container);
         let part_attributes = part_attributes(container);
         let configuration_attribute_uses =
@@ -981,6 +983,7 @@ impl NativeModel {
                 store_headers,
                 string_values,
                 object_references,
+                object_record_handle_pairs,
                 configurations,
                 part_attributes,
                 configuration_attribute_uses,

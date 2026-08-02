@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`CatalogueRow`] per model field (208 total). Each row names the `nx`
+//! One [`CatalogueRow`] per model field. Each row names the `nx`
 //! namespace arena the family serializes into, and — for families that also emit
 //! source annotations — the tag, exactness, and a `note` fn. Row order is the
 //! observable annotation-emission order for the note-bearing rows;
@@ -415,6 +415,11 @@ impl ContainerNoted for DataBlockControlReference {
     }
 }
 impl ContainerNoted for DataBlockControlHandlePair {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for ObjectRecordHandlePair {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }
@@ -1726,6 +1731,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.om.data_block_control_handle_pairs, r, a)),
         emit: |m, r, ns| emit_arena(&m.om.data_block_control_handle_pairs, r, ns),
         len: |m| m.om.data_block_control_handle_pairs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "object_record_handle_pairs",
+        tag: Some("OM_OBJECT_RECORD_HANDLE_PAIR"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_container(&m.om.object_record_handle_pairs, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.object_record_handle_pairs, r, ns),
+        len: |m| m.om.object_record_handle_pairs.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

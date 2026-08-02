@@ -732,6 +732,27 @@ pub struct ObjectReference {
     pub source_offset: u64,
 }
 
+/// Exact two-token persistent-handle run in one bounded OM object record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectRecordHandlePair {
+    /// Globally unique pair identity.
+    pub id: String,
+    /// Owning entry in the native OM record directory.
+    pub record: String,
+    /// Persistent OM object identifier when the section carries an ID table.
+    pub object_id: Option<u32>,
+    /// First handle-reference occurrence.
+    pub first_reference: String,
+    /// Second handle-reference occurrence.
+    pub second_reference: String,
+    /// First persistent-handle value.
+    pub first_handle: u32,
+    /// Second persistent-handle value.
+    pub second_handle: u32,
+    /// Absolute file offset of the first `e0` marker.
+    pub source_offset: u64,
+}
+
 /// Ordered persistent or tagged reference in an offset-store control block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockControlReference {
@@ -2777,6 +2798,49 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
         .collect()
 }
 
+/// Join maximal two-token adjacent persistent-handle runs within object records.
+pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectRecordHandlePair> {
+    let mut by_record = BTreeMap::<&str, Vec<&ObjectReference>>::new();
+    for reference in references
+        .iter()
+        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
+    {
+        by_record
+            .entry(reference.record.as_str())
+            .or_default()
+            .push(reference);
+    }
+    let mut pairs = Vec::new();
+    for (record, mut record_references) in by_record {
+        record_references.sort_by_key(|reference| reference.source_offset);
+        let mut at = 0;
+        while at < record_references.len() {
+            let start = at;
+            while record_references
+                .get(at + 1)
+                .is_some_and(|next| next.source_offset == record_references[at].source_offset + 5)
+            {
+                at += 1;
+            }
+            let run = &record_references[start..=at];
+            if let [first, second] = run {
+                pairs.push(ObjectRecordHandlePair {
+                    id: format!("nx:om-object-record:handle-pair#{}", first.source_offset),
+                    record: record.to_string(),
+                    object_id: first.object_id,
+                    first_reference: first.id.clone(),
+                    second_reference: second.id.clone(),
+                    first_handle: first.value,
+                    second_handle: second.value,
+                    source_offset: first.source_offset,
+                });
+            }
+            at += 1;
+        }
+    }
+    pairs
+}
+
 /// Group persistent-handle occurrences into cross-record identities.
 pub fn persistent_handles(
     references: &[ObjectReference],
@@ -4730,6 +4794,39 @@ mod tests {
         assert_eq!(pairs[0].second_reference, "reference#1");
         assert_eq!(pairs[0].first_handle, 100);
         assert_eq!(pairs[0].second_handle, 101);
+    }
+
+    #[test]
+    fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
+        let reference = |record: &str, ordinal: u32, offset: u64| super::ObjectReference {
+            id: format!("{record}:reference#{ordinal}"),
+            record: record.into(),
+            object_id: Some(7),
+            ordinal,
+            kind: super::ObjectReferenceKind::PersistentHandle,
+            value: ordinal + 100,
+            target_record: None,
+            source_entry: "om".into(),
+            source_offset: offset,
+        };
+        let references = [
+            reference("record#0", 0, 10),
+            reference("record#0", 1, 15),
+            reference("record#0", 2, 30),
+            reference("record#0", 3, 35),
+            reference("record#0", 4, 40),
+            reference("record#1", 5, 20),
+            reference("record#1", 6, 25),
+        ];
+
+        let pairs = super::object_record_handle_pairs(&references);
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].record, "record#0");
+        assert_eq!(pairs[0].first_reference, "record#0:reference#0");
+        assert_eq!(pairs[0].second_reference, "record#0:reference#1");
+        assert_eq!(pairs[0].object_id, Some(7));
+        assert_eq!(pairs[1].record, "record#1");
+        assert_eq!(pairs[1].source_offset, 20);
     }
 
     #[test]
