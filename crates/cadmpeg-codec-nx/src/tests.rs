@@ -7495,7 +7495,7 @@ fn decode_emits_connected_primitive_brep() {
             .any(|loss| loss.code == kind && loss.message.contains(text)));
     }
     assert!(!result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::ObjectRecordsUntransferred
+        loss.code == LossKind::AssemblyPlacementsNotTransferred
             && loss.message.contains("Assembly occurrence placements")
     }));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
@@ -7519,7 +7519,7 @@ fn decode_reports_missing_assembly_placements_only_for_external_references() {
         .unwrap();
 
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::ObjectRecordsUntransferred
+        loss.code == LossKind::AssemblyPlacementsNotTransferred
             && loss.message.contains("Assembly occurrence placements")
     }));
 }

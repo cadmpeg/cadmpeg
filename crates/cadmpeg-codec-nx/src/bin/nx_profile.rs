@@ -369,4 +369,13 @@ mod tests {
         assert_eq!(assertion.observed, "0/2 fixtures");
         assert!(!gates[3].passed);
     }
+
+    #[test]
+    fn product_losses_do_not_fail_the_l0_through_l6_profile() {
+        let mut evidence = fixture();
+        evidence.losses.insert(LossCategory::Product, 2);
+        let gates = capability_gates(&[evidence]);
+
+        assert!(gates.iter().all(|gate| gate.passed));
+    }
 }

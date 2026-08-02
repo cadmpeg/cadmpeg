@@ -14,6 +14,9 @@ variants are identified and its physical and logical byte ledgers close.
 
 Assemblies remain in the read envelope. Their component geometry contributes to
 the assembly gates, not the single-part body, feature, or sketch gates.
+External component dependencies and unresolved occurrence placements are
+product-domain losses assessed at L7. They do not constitute missing inline
+geometry in the cumulative L0–L6 gates.
 
 ## Capability gates
 

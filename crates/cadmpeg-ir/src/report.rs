@@ -55,6 +55,8 @@ pub enum LossCategory {
     Attribute,
     /// Features, sketches, parameters, configurations, or design history not transferred.
     DesignIntent,
+    /// Product structure, component occurrences, placements, or external dependencies.
+    Product,
     /// Anything else.
     Other,
 }
@@ -69,6 +71,7 @@ impl fmt::Display for LossCategory {
             Self::Units => "units",
             Self::Attribute => "attribute",
             Self::DesignIntent => "design_intent",
+            Self::Product => "product",
             Self::Other => "other",
         })
     }
@@ -127,6 +130,8 @@ pub enum LossKind {
     /// The part is an assembly; component geometry lives in external referenced
     /// files, not inline.
     AssemblyComponentsExternal,
+    /// Assembly component occurrence placements were not transferred.
+    AssemblyPlacementsNotTransferred,
     /// A record was decoded but yielded no typed IR entity.
     RecordNotTyped,
     /// A decode-time diagnostic surfaced as a loss note; detail is in the
@@ -200,6 +205,7 @@ impl LossKind {
             Self::AttributesNotTransferred => "attributes_not_transferred",
             Self::FeatureHistoryRetained => "feature_history_retained",
             Self::AssemblyComponentsExternal => "assembly_components_external",
+            Self::AssemblyPlacementsNotTransferred => "assembly_placements_not_transferred",
             Self::RecordNotTyped => "record_not_typed",
             Self::DecodeDiagnostic => "decode_diagnostic",
             Self::MeshVertexPrecision => "mesh_vertex_precision",
@@ -240,6 +246,9 @@ impl LossKind {
             Self::FeatureHistoryRetained | Self::ParametricRecordOmitted => {
                 LossCategory::DesignIntent
             }
+            Self::AssemblyComponentsExternal | Self::AssemblyPlacementsNotTransferred => {
+                LossCategory::Product
+            }
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
             | Self::AssetNotTransferred
@@ -250,7 +259,6 @@ impl LossKind {
             | Self::GeometryNotTransferred
             | Self::CarrierAxisInferred
             | Self::CarrierSummary
-            | Self::AssemblyComponentsExternal
             | Self::MeshVertexPrecision
             | Self::ObjectRecordsUntransferred
             | Self::UnsupportedObjectFamily
@@ -625,6 +633,22 @@ mod tests {
             LossNote::new(LossKind::PassthroughRecordOmitted, "retained source")
                 .strict_consequence(),
             StrictConsequence::Tolerate
+        );
+    }
+
+    #[test]
+    fn assembly_losses_belong_to_the_product_domain() {
+        assert_eq!(
+            LossKind::AssemblyComponentsExternal.category(),
+            LossCategory::Product
+        );
+        assert_eq!(
+            LossKind::AssemblyPlacementsNotTransferred.category(),
+            LossCategory::Product
+        );
+        assert_eq!(
+            LossKind::AssemblyPlacementsNotTransferred.as_str(),
+            "assembly_placements_not_transferred"
         );
     }
 }

@@ -376,7 +376,7 @@
           "severity": "warning"
         },
         {
-          "code": "object_records_untransferred",
+          "code": "assembly_placements_not_transferred",
           "message": "Assembly occurrence placements were not transferred because their remaining NX object-model field serialization is not decoded.",
           "severity": "warning"
         }

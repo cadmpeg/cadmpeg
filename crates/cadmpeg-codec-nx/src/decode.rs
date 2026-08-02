@@ -10048,7 +10048,7 @@ fn build_geometry_report(
         .any(|entry| entry.content() == EntryContent::ExternalReferences)
     {
         losses.push(LossNote {
-            code: LossKind::ObjectRecordsUntransferred,
+            code: LossKind::AssemblyPlacementsNotTransferred,
             severity: Severity::Warning,
             message: "Assembly occurrence placements were not transferred because their remaining \
                       NX object-model field serialization is not decoded."
