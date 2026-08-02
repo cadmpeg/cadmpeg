@@ -2266,14 +2266,14 @@ mod marker_tests {
         packed_legacy_linked_profile_point_coordinates, patch_spatial_vertex,
         plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
         profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
-        profile_roster_principal_axis_endpoints, radial_dimension_radius,
-        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
-        resolve_scalar_operand_markers, resolve_two_center_semicircle_profile,
-        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
-        roster_curve_endpoint_markers, select_reference_plane_frame_source,
-        sketch_block_identity_normalization_origin, sketch_block_record_origin,
-        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        structured_offset_plane_sources, surface_reference_matches_at,
+        profile_roster_principal_axis_endpoints, project_unbound_cosmetic_thread_faces,
+        radial_dimension_radius, reconcile_reference_plane_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        resolve_two_center_semicircle_profile, revolution_line_reference_inputs,
+        revolution_operation, revolution_temporary_axis, roster_curve_endpoint_markers,
+        select_reference_plane_frame_source, sketch_block_identity_normalization_origin,
+        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, structured_offset_plane_sources, surface_reference_matches_at,
         surface_selection_producer_features, tangent_bounded_curve,
         terminal_extended_profile_point_coordinates, terminal_repeated_radial_circle_pairs,
         unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
@@ -2287,8 +2287,8 @@ mod marker_tests {
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
         FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane,
         FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
-        FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchInputLink,
-        SketchRelationKind,
+        FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind,
+        SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::features::{
         DesignParameter, DimensionDisplay, FeatureId, ParameterId, ParameterValue,
@@ -13663,6 +13663,130 @@ mod marker_tests {
             unique_cylindrical_face(4.0, &[face, duplicate], &[surface]),
             None
         );
+    }
+
+    #[test]
+    fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
+        let native_feature = |id: &str, source_id: &str| Feature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(source_id.into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: id.into(),
+            kind: "Feature".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                native_feature("producer-native", "10"),
+                native_feature("thread-native", "20"),
+            ],
+        };
+        let neutral_feature =
+            |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+                id: FeatureId(id.into()),
+                ordinal: 0,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: Some(native_ref.into()),
+            };
+        let mut features = vec![
+            neutral_feature(
+                "producer",
+                "producer-native",
+                cadmpeg_ir::features::FeatureDefinition::BaseFeature {
+                    bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                },
+            ),
+            neutral_feature(
+                "thread",
+                "thread-native",
+                cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
+                    face: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    diameter: None,
+                    extent: None,
+                },
+            ),
+        ];
+        let mut signature = [0; 12];
+        signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
+        let selection = |parent: &str, offset| FeatureInputSurfaceSelection {
+            id: format!("selection-{parent}"),
+            parent: parent.into(),
+            ordinal: 0,
+            offset,
+            object_name_ref: "name".into(),
+            feature_ref: "thread-native".into(),
+            producer_feature_refs: vec!["producer-native".into()],
+            terminal_feature_ref: Some("producer-native".into()),
+            components: vec![FeatureInputComponentPathEntry {
+                instance: Some(0x8020),
+                type_signature: signature,
+                local_id: Some(7),
+            }],
+        };
+        let lane = |id: &str, offset| FeatureInputLane {
+            id: id.into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: vec![selection(id, offset)],
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        project_unbound_cosmetic_thread_faces(
+            &mut features,
+            &[history],
+            &[lane("lane-a", 40), lane("lane-b", 60)],
+            &[],
+            &[],
+        );
+
+        let cadmpeg_ir::features::FeatureDefinition::CosmeticThread { face, .. } =
+            &features[1].definition
+        else {
+            panic!("expected cosmetic thread");
+        };
+        assert!(matches!(
+            face,
+            cadmpeg_ir::features::FaceSelection::Generated { faces, native }
+                if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
+                    feature: FeatureId("producer".into()),
+                    local_id: "7".into(),
+                }]
+                    && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
+        ));
+        assert_eq!(features[1].dependencies, [FeatureId("producer".into())]);
     }
 
     #[test]
@@ -32993,6 +33117,14 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    let feature_ids_by_native = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
@@ -33000,11 +33132,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         let Some(native_feature) = native_features.get(native_ref).copied() else {
             continue;
         };
-        let FeatureDefinition::CosmeticThread {
-            face,
-            diameter: Some(Length(diameter)),
-            ..
-        } = &mut feature.definition
+        let FeatureDefinition::CosmeticThread { face, diameter, .. } = &mut feature.definition
         else {
             continue;
         };
@@ -33015,7 +33143,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         ) {
             continue;
         }
-        let mut references = lanes
+        let references = lanes
             .iter()
             .flat_map(|lane| {
                 let lane_key = lane
@@ -33025,34 +33153,86 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 lane.surface_selections
                     .iter()
                     .filter(move |selection| selection.feature_ref == native_feature.id)
-                    .map(move |selection| format!("{lane_key}:{}", selection.offset))
+                    .map(move |selection| {
+                        (
+                            format!("{lane_key}:{}", selection.offset),
+                            Some(selection.components.clone()),
+                        )
+                    })
             })
             .chain(lanes.iter().filter_map(|lane| {
                 let mut range = cosmetic_thread_diameter_child_tail(native_feature, lane)?;
-                let marker = range.find_map(|body| {
-                    cosmetic_thread_cylinder_reference_marker_at(&lane.native_payload, body)
+                let (marker, components) = range.find_map(|body| {
+                    let marker =
+                        cosmetic_thread_cylinder_reference_marker_at(&lane.native_payload, body)?;
+                    let components =
+                        cosmetic_thread_cylinder_reference_at(&lane.native_payload, body)
+                            .map(|(_, components)| components);
+                    Some((marker, components))
                 })?;
                 let lane_key = lane
                     .id
                     .rsplit_once('#')
                     .map_or(lane.id.as_str(), |(_, key)| key);
-                Some(format!("{lane_key}:{marker}"))
+                Some((format!("{lane_key}:{marker}"), components))
             }))
             .collect::<Vec<_>>();
-        references.sort();
-        references.dedup();
         if references.is_empty() {
             continue;
         }
+        let mut native_references = references
+            .iter()
+            .map(|(reference, _)| reference.clone())
+            .collect::<Vec<_>>();
+        native_references.sort();
+        native_references.dedup();
+        let native = format!(
+            "sldprt:feature-input:cylinder-reference:{}",
+            native_references.join(",")
+        );
+        let generated = references
+            .iter()
+            .map(|(_, components)| {
+                let components = components.as_ref()?;
+                let (component, producer) = component_path_preceding_feature(
+                    components,
+                    &history_features,
+                    native_feature.id.as_str(),
+                )?;
+                Some((
+                    feature_ids_by_native.get(producer.id.as_str())?.clone(),
+                    component.local_id?.to_string(),
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+            .filter(|candidates| {
+                candidates
+                    .first()
+                    .is_some_and(|first| candidates.iter().all(|candidate| candidate == first))
+            })
+            .and_then(|mut candidates| candidates.pop());
+        if let Some((producer, local_id)) = generated {
+            *face = cadmpeg_ir::features::FaceSelection::Generated {
+                faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                    feature: producer.clone(),
+                    local_id,
+                }],
+                native,
+            };
+            if producer != feature.id && !feature.dependencies.contains(&producer) {
+                feature.dependencies.push(producer);
+            }
+            continue;
+        }
+        let Some(Length(diameter)) = diameter else {
+            continue;
+        };
         let Some(selected) = unique_cylindrical_face(*diameter * 0.5, faces, surfaces) else {
             continue;
         };
         *face = cadmpeg_ir::features::FaceSelection::Resolved {
             faces: vec![selected],
-            native: format!(
-                "sldprt:feature-input:cylinder-reference:{}",
-                references.join(",")
-            ),
+            native,
         };
     }
 }
