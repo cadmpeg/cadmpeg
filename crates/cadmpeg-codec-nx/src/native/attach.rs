@@ -1275,11 +1275,6 @@ fn attach_feature_operations(
             .get(label.id.as_str())
             .copied()
             .map(canonical_body);
-        body_writer_history.extend_primary_dependencies(
-            native_primary_body,
-            &outputs,
-            &mut dependencies,
-        );
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
         }
@@ -2036,6 +2031,11 @@ fn attach_feature_operations(
                 outputs.push(body.clone());
             }
         }
+        body_writer_history.extend_primary_dependencies(
+            native_primary_body,
+            &outputs,
+            &mut dependencies,
+        );
         let block_placement = block_projection.map(|(_, placement)| placement);
         let sew_projection = (label.value == "SEW")
             .then(|| {
