@@ -56,6 +56,8 @@ enum VerificationStatus {
 struct RederivationBoundary {
     feature: Option<String>,
     feature_name: Option<String>,
+    feature_family: Option<String>,
+    feature_ordinal: Option<u64>,
     reason: String,
 }
 
@@ -207,7 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 4,
+        version: 5,
         format: "nx",
         fixtures,
         totals,
@@ -281,17 +283,27 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
             Some(RederivationBoundary {
                 feature: None,
                 feature_name: None,
+                feature_family: None,
+                feature_ordinal: None,
                 reason: "saved_body_census_mismatch".to_string(),
             }),
         ),
         BodyCensusEvaluation::Unsupported { feature, reason } => {
-            let feature_name = feature.as_ref().and_then(|id| {
+            let boundary_feature = feature.as_ref().and_then(|id| {
                 ir.model
                     .features
                     .iter()
                     .find(|candidate| candidate.id == *id)
-                    .and_then(|feature| feature.name.clone())
             });
+            let feature_name = boundary_feature.and_then(|feature| feature.name.clone());
+            let feature_family = boundary_feature.and_then(|feature| {
+                serde_json::to_value(&feature.definition)
+                    .ok()?
+                    .get("definition")?
+                    .as_str()
+                    .map(str::to_string)
+            });
+            let feature_ordinal = boundary_feature.map(|feature| feature.ordinal);
             let reason = match reason {
                 UnsupportedBodyCensusReason::UnresolvedSuppression => "unresolved_suppression",
                 UnsupportedBodyCensusReason::UnsupportedFeatureDefinition => {
@@ -310,6 +322,8 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
                 Some(RederivationBoundary {
                     feature: feature.map(|id| id.0),
                     feature_name,
+                    feature_family,
+                    feature_ordinal,
                     reason: reason.to_string(),
                 }),
             )
@@ -319,6 +333,8 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
             Some(RederivationBoundary {
                 feature: None,
                 feature_name: None,
+                feature_family: None,
+                feature_ordinal: None,
                 reason: "unknown_evaluation_boundary".to_string(),
             }),
         ),
@@ -587,6 +603,45 @@ mod tests {
         assert_eq!(
             neutral_rederivation_evidence(&ir),
             (VerificationStatus::Verified, None)
+        );
+    }
+
+    #[test]
+    fn rederivation_boundary_identifies_feature_family_and_history_position() {
+        use cadmpeg_ir::features::{Feature, FeatureId};
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("block".to_string()),
+            ordinal: 17,
+            name: Some("BLOCK".to_string()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![BodyId("body".to_string())],
+            definition: FeatureDefinition::Block {
+                dimensions: None,
+                placement: None,
+                op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            },
+            native_ref: None,
+        });
+
+        let (status, boundary) = neutral_rederivation_evidence(&ir);
+        assert_eq!(status, VerificationStatus::Missing);
+        assert_eq!(
+            boundary,
+            Some(RederivationBoundary {
+                feature: Some("block".to_string()),
+                feature_name: Some("BLOCK".to_string()),
+                feature_family: Some("block".to_string()),
+                feature_ordinal: Some(17),
+                reason: "incomplete_feature_definition".to_string(),
+            })
         );
     }
 
