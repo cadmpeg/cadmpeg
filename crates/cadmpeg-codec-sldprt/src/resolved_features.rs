@@ -2267,8 +2267,8 @@ mod marker_tests {
         plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
         profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
         profile_roster_principal_axis_endpoints, project_unbound_cosmetic_thread_faces,
-        radial_dimension_radius, reconcile_reference_plane_frame, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        radial_dimension_radius, reconcile_reference_plane_frame, reference_plane_frame_key,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         resolve_two_center_semicircle_profile, revolution_line_reference_inputs,
         revolution_operation, revolution_temporary_axis, roster_curve_endpoint_markers,
         select_reference_plane_frame_source, sketch_block_identity_normalization_origin,
@@ -2793,6 +2793,25 @@ mod marker_tests {
     }
 
     #[test]
+    fn reference_plane_frame_identity_canonicalizes_signed_zero() {
+        let positive = (
+            Point3::new(0.0, 1.0, 2.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        );
+        let negative = (
+            Point3::new(-0.0, 1.0, 2.0),
+            Vector3::new(1.0, -0.0, 0.0),
+            Vector3::new(0.0, -0.0, 1.0),
+        );
+
+        assert_eq!(
+            reference_plane_frame_key(&positive),
+            reference_plane_frame_key(&negative)
+        );
+    }
+
+    #[test]
     fn offset_plane_frame_pair_stores_result_before_reference() {
         let frame = |origin_x: f64| {
             let mut bytes = [0; FIXED_REFERENCE_PLANE_FRAME_LEN];
@@ -2837,6 +2856,12 @@ mod marker_tests {
         payload[65..73].copy_from_slice(&(-1.0_f64).to_le_bytes());
         assert!(offset_reference_plane_frame_pair(&payload, 37.0).is_some());
         assert_eq!(offset_reference_plane_frame_pair(&payload, 38.0), None);
+
+        let mut antiparallel = frame(-37.0).to_vec();
+        antiparallel[24..32].copy_from_slice(&(-1.0_f64).to_le_bytes());
+        antiparallel.extend([0; 13]);
+        antiparallel.extend(frame(0.0));
+        assert!(offset_reference_plane_frame_pair(&antiparallel, 37.0).is_some());
     }
 
     #[test]
@@ -25555,6 +25580,7 @@ pub(crate) fn enrich_history_reference_planes(
     let mut reference_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let mut reference_frame_candidates =
         BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
+    let mut explicit_reference_indices = HashSet::new();
     let mut face_feature_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let mut face_native_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let known_sources = histories
@@ -25642,6 +25668,7 @@ pub(crate) fn enrich_history_reference_planes(
                 &known_reference_plane_sources[history_index],
                 self_source,
             ) {
+                explicit_reference_indices.insert((history_index, feature_index));
                 reference_candidates
                     .entry((history_index, feature_index))
                     .or_default()
@@ -25732,6 +25759,15 @@ pub(crate) fn enrich_history_reference_planes(
                 .push((origin, normal, u_axis));
         }
     }
+    let face_reference_indices = face_native_candidates
+        .keys()
+        .chain(face_feature_candidates.keys())
+        .copied()
+        .collect::<HashSet<_>>();
+    for index in &face_reference_indices {
+        reference_candidates.remove(index);
+        explicit_reference_indices.remove(index);
+    }
     for ((history_index, feature_index), mut native) in face_native_candidates {
         native.sort_unstable();
         native.dedup();
@@ -25810,7 +25846,7 @@ pub(crate) fn enrich_history_reference_planes(
         )
     }));
     for (&index, frames) in &reference_frame_candidates {
-        if reference_candidates.contains_key(&index) {
+        if reference_candidates.contains_key(&index) || face_reference_indices.contains(&index) {
             continue;
         }
         let mut sources = Vec::new();
@@ -25856,7 +25892,10 @@ pub(crate) fn enrich_history_reference_planes(
     }
     for (&index, &frame) in &unique_frames {
         let feature = &histories[index.0].features[index.1];
-        if !feature.parameters.contains_key("D1") || reference_candidates.contains_key(&index) {
+        if !feature.parameters.contains_key("D1")
+            || reference_candidates.contains_key(&index)
+            || face_reference_indices.contains(&index)
+        {
             continue;
         }
         let Some(distance) = feature
@@ -25891,29 +25930,31 @@ pub(crate) fn enrich_history_reference_planes(
     }
     for ((history_index, feature_index), mut sources) in reference_candidates {
         let index = (history_index, feature_index);
-        if let Some(offset) = unique_frames.get(&index) {
-            if let Some(distance) = histories[history_index].features[feature_index]
-                .parameters
-                .get("D1")
-                .and_then(|value| crate::history::parse_dimension_length_mm(value))
-            {
-                let compatible = sources
-                    .iter()
-                    .filter(|source| {
-                        frames_by_reference.iter().any(
-                            |(candidate_source, candidate_index, candidate)| {
-                                candidate_source == *source
-                                    && candidate_index.0 == history_index
-                                    && offset_plane_reference_frame_matches(
-                                        *candidate, *offset, distance,
-                                    )
-                            },
-                        )
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if !compatible.is_empty() {
-                    sources = compatible;
+        if !explicit_reference_indices.contains(&index) {
+            if let Some(offset) = unique_frames.get(&index) {
+                if let Some(distance) = histories[history_index].features[feature_index]
+                    .parameters
+                    .get("D1")
+                    .and_then(|value| crate::history::parse_dimension_length_mm(value))
+                {
+                    let compatible = sources
+                        .iter()
+                        .filter(|source| {
+                            frames_by_reference.iter().any(
+                                |(candidate_source, candidate_index, candidate)| {
+                                    candidate_source == *source
+                                        && candidate_index.0 == history_index
+                                        && offset_plane_reference_frame_matches(
+                                            *candidate, *offset, distance,
+                                        )
+                                },
+                            )
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    if !compatible.is_empty() {
+                        sources = compatible;
+                    }
                 }
             }
         }
@@ -26897,16 +26938,17 @@ fn constraint_reference_plane_frame(
 }
 
 fn reference_plane_frame_key((origin, normal, u_axis): &(Point3, Vector3, Vector3)) -> [u64; 9] {
+    let canonical_bits = |value: f64| if value == 0.0 { 0 } else { value.to_bits() };
     [
-        origin.x.to_bits(),
-        origin.y.to_bits(),
-        origin.z.to_bits(),
-        normal.x.to_bits(),
-        normal.y.to_bits(),
-        normal.z.to_bits(),
-        u_axis.x.to_bits(),
-        u_axis.y.to_bits(),
-        u_axis.z.to_bits(),
+        canonical_bits(origin.x),
+        canonical_bits(origin.y),
+        canonical_bits(origin.z),
+        canonical_bits(normal.x),
+        canonical_bits(normal.y),
+        canonical_bits(normal.z),
+        canonical_bits(u_axis.x),
+        canonical_bits(u_axis.y),
+        canonical_bits(u_axis.z),
     ]
 }
 
@@ -26947,12 +26989,8 @@ fn offset_reference_plane_frame_pair(
     payload: &[u8],
     distance: f64,
 ) -> Option<(ReferencePlaneFrame, ReferencePlaneFrame)> {
-    let dot =
-        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
     let valid_pair = |result: ReferencePlaneFrame, reference: ReferencePlaneFrame| {
-        (distance.is_finite()
-            && offset_plane_reference_frame_matches(reference, result, distance)
-            && (dot(result.1, reference.1) - 1.0).abs() <= 1.0e-9)
+        (distance.is_finite() && offset_plane_reference_frame_matches(reference, result, distance))
             .then_some((result, reference))
     };
     let fixed = payload
@@ -27908,7 +27946,7 @@ fn cosmetic_thread_parameter_shape(feature: &crate::records::Feature) -> bool {
 #[cfg(test)]
 mod idless_history_binding_tests {
     use super::*;
-    use crate::records::{Feature, FeatureContent, FeatureHistory};
+    use crate::records::{Feature, FeatureContent, FeatureHistory, FeatureInputName};
 
     fn feature(ordinal: u32, kind: &str) -> Feature {
         Feature {
@@ -27929,6 +27967,89 @@ mod idless_history_binding_tests {
             text: None,
             content: Vec::new(),
         }
+    }
+
+    #[test]
+    fn face_plane_record_suppresses_embedded_plane_source_candidate() {
+        let mut offset = feature(0, "offset plane");
+        offset.source_id = Some("10".into());
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "0mm".into());
+        let mut principal = feature(1, "principal plane");
+        principal.source_id = Some("3".into());
+        principal.input_class = Some("moRefPlane_c".into());
+
+        let mut payload = Vec::new();
+        payload.extend(3u32.to_le_bytes());
+        payload.extend([0x43, 0xf6, 0x8a, 0x4d]);
+        payload.extend([0; 2]);
+        payload.extend(3u32.to_le_bytes());
+        payload.extend(1u32.to_le_bytes());
+        payload.extend([0; 4]);
+        payload.extend(247u32.to_le_bytes());
+        payload.extend([0; 12]);
+        payload.extend([0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        let face_offset = payload.len();
+        payload.resize(face_offset + 115, 0);
+        payload[face_offset..face_offset + 2].copy_from_slice(&0x802d_u16.to_le_bytes());
+        payload[face_offset + 2..face_offset + 6].copy_from_slice(&2u32.to_le_bytes());
+        payload[face_offset + 45..face_offset + 61].fill(0xff);
+        payload[face_offset + 69..face_offset + 73].copy_from_slice(&2u32.to_le_bytes());
+        payload[face_offset + 73..face_offset + 77].copy_from_slice(&0x4c41_ac95_u32.to_le_bytes());
+        payload[face_offset + 77..face_offset + 83].copy_from_slice(&[0, 0, 3, 0, 0, 0]);
+        payload[face_offset + 83..face_offset + 87].copy_from_slice(&1u32.to_le_bytes());
+        payload[face_offset + 91..face_offset + 95].copy_from_slice(&175u32.to_le_bytes());
+        payload[face_offset + 99..face_offset + 103].copy_from_slice(&3u32.to_le_bytes());
+        payload[face_offset + 107..face_offset + 115]
+            .copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        let end = payload.len() as u64;
+        let mut histories = vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset, principal],
+        }];
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: vec![
+                FeatureInputName {
+                    id: "offset-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: 0,
+                    object_id: Some(10),
+                    value: "name-0".into(),
+                },
+                FeatureInputName {
+                    id: "principal-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 1,
+                    offset: end,
+                    object_id: Some(3),
+                    value: "name-1".into(),
+                },
+            ],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        enrich_history_reference_planes(&mut histories, &[lane]);
+
+        let properties = &histories[0].features[0].properties;
+        assert!(!properties.contains_key("Reference"));
+        assert!(properties.contains_key("ReferenceFaceNative"));
     }
 
     #[test]
