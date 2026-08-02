@@ -584,6 +584,11 @@ impl SldprtNative {
                         });
                 }
             }
+            let mut edge_features = features.clone();
+            crate::resolved_features::enrich_feature_object_sources(
+                &mut edge_features,
+                std::slice::from_ref(lane),
+            );
             if let Some(record) = lane.edge_selections.iter().find(|record| {
                 usize::try_from(record.offset).ok().and_then(|offset| {
                     crate::resolved_features::compact_edge_selection_at(
@@ -608,7 +613,7 @@ impl SldprtNative {
                                 &lane.native_payload,
                                 offset,
                                 &record.components,
-                                &features,
+                                &edge_features,
                                 &record.feature_ref,
                             )
                         })
@@ -619,7 +624,7 @@ impl SldprtNative {
                             &lane.native_payload,
                             offset,
                             &record.components,
-                            &features,
+                            &edge_features,
                             &record.feature_ref,
                         )
                     }) != record.terminal_feature_ref
@@ -822,6 +827,11 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            let mut edge_features = features.clone();
+            crate::resolved_features::enrich_feature_object_sources(
+                &mut edge_features,
+                std::slice::from_ref(lane),
+            );
             if let Some(record) = lane.edge_selections.iter().find(|record| {
                 record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
@@ -850,7 +860,7 @@ impl SldprtNative {
                                 &lane.native_payload,
                                 offset,
                                 &record.components,
-                                &features,
+                                &edge_features,
                                 &record.feature_ref,
                             )
                         })
@@ -861,7 +871,7 @@ impl SldprtNative {
                             &lane.native_payload,
                             offset,
                             &record.components,
-                            &features,
+                            &edge_features,
                             &record.feature_ref,
                         )
                     }) != record.terminal_feature_ref

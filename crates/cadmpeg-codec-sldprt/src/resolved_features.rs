@@ -12933,23 +12933,25 @@ mod marker_tests {
     #[test]
     fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
         let native_feature =
-            |id: &str, name: &str, source_id: u32, ordinal: u32, input_class: &str| Feature {
-                id: id.into(),
-                parent: "history".into(),
-                xml_tag: "Feature".into(),
-                tree_parent: None,
-                source_id: Some(source_id.to_string()),
-                parent_source_id: None,
-                ordinal,
-                name: name.into(),
-                kind: "Feature".into(),
-                input_class: Some(input_class.into()),
-                suppressed: false,
-                parameters: BTreeMap::new(),
-                dimension_properties: BTreeMap::new(),
-                properties: BTreeMap::new(),
-                text: None,
-                content: Vec::new(),
+            |id: &str, name: &str, source_id: Option<u32>, ordinal: u32, input_class: &str| {
+                Feature {
+                    id: id.into(),
+                    parent: "history".into(),
+                    xml_tag: "Feature".into(),
+                    tree_parent: None,
+                    source_id: source_id.map(|source_id| source_id.to_string()),
+                    parent_source_id: None,
+                    ordinal,
+                    name: name.into(),
+                    kind: "Feature".into(),
+                    input_class: Some(input_class.into()),
+                    suppressed: false,
+                    parameters: BTreeMap::new(),
+                    dimension_properties: BTreeMap::new(),
+                    properties: BTreeMap::new(),
+                    text: None,
+                    content: Vec::new(),
+                }
             };
         let history = FeatureHistory {
             id: "history".into(),
@@ -12958,8 +12960,8 @@ mod marker_tests {
             content: Vec::new(),
             configurations: Vec::new(),
             features: vec![
-                native_feature("producer", "Producer", 1, 0, "moExtrusion_c"),
-                native_feature("consumer", "Consumer", 2, 1, "Chamfer_c"),
+                native_feature("producer", "Producer", None, 0, "moExtrusion_c"),
+                native_feature("consumer", "Consumer", Some(2), 1, "Chamfer_c"),
             ],
         };
         let marker = 52;
@@ -22754,11 +22756,7 @@ fn compact_edge_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Vec<FeatureInputEdgeSelection> {
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .cloned()
-        .collect::<Vec<_>>();
+    let history_features = history_features_with_object_sources(histories, lane);
     let mut objects = histories
         .iter()
         .flat_map(|history| &history.features)
