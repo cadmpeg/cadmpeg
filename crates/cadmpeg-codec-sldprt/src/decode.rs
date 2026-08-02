@@ -873,6 +873,17 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::DatumCoordinateSystem { .. }
             | FeatureDefinition::EquationCurve { .. }
             | FeatureDefinition::Helix { .. } => false,
+            FeatureDefinition::BaseFeature { bodies }
+            | FeatureDefinition::InsertBodies { bodies } => incomplete_body_selection(bodies),
+            FeatureDefinition::StoredGeometry => state.outputs.is_empty(),
+            FeatureDefinition::ExtractBody { source } => incomplete_body_selection(source),
+            FeatureDefinition::DerivedGeometry { source } => {
+                feature_positions
+                    .get(source)
+                    .is_none_or(|ordinal| *ordinal >= state.feature.ordinal)
+                    || !state.dependencies.contains(source)
+            }
+            FeatureDefinition::ImportedGeometry { path, .. } => path.trim().is_empty(),
             FeatureDefinition::CosmeticThread {
                 face,
                 diameter,
@@ -1031,6 +1042,32 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || resolve_intersections.is_none()
                     || allow_self_intersections.is_none()
             }
+            FeatureDefinition::OffsetShape { source, .. }
+            | FeatureDefinition::RefineShape { source }
+            | FeatureDefinition::ReverseShape { source } => incomplete_body_selection(source),
+            FeatureDefinition::Compound { members } => incomplete_body_selection(members),
+            FeatureDefinition::RuledBetweenCurves { first, second, .. } => {
+                incomplete_path(first) || incomplete_path(second)
+            }
+            FeatureDefinition::SectionShape {
+                first,
+                second,
+                approximate,
+            } => {
+                incomplete_body_selection(first)
+                    || incomplete_body_selection(second)
+                    || approximate.is_none()
+            }
+            FeatureDefinition::MirrorShape {
+                source,
+                plane_reference,
+                ..
+            } => {
+                incomplete_body_selection(source)
+                    || plane_reference
+                        .as_ref()
+                        .is_some_and(incomplete_face_selection)
+            }
             FeatureDefinition::Thicken {
                 faces,
                 thickness,
@@ -1117,6 +1154,22 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 incomplete_body_selection(targets) || incomplete_face_selection(tools)
             }
+            FeatureDefinition::TrimBodies {
+                targets,
+                tools,
+                keep,
+            } => {
+                incomplete_body_selection(targets)
+                    || incomplete_body_selection(tools)
+                    || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+            }
+            FeatureDefinition::SplitBody { targets, tools } => {
+                incomplete_body_selection(targets) || incomplete_face_selection(tools)
+            }
+            FeatureDefinition::SewBodies {
+                bodies,
+                gap_tolerance,
+            } => incomplete_body_selection(bodies) || gap_tolerance.is_none(),
             FeatureDefinition::DeleteBody { bodies, mode } => {
                 incomplete_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
             }
@@ -1187,9 +1240,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Native { .. } => false,
             // These neutral families have no audited SLDPRT projection contract. Keep the
             // list exhaustive so a new common-IR family cannot silently pass the L6 gate.
-            FeatureDefinition::BaseFeature { .. }
-            | FeatureDefinition::InsertBodies { .. }
-            | FeatureDefinition::Form { .. }
+            FeatureDefinition::Form { .. }
             | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::PointGeometry { .. }
@@ -1206,10 +1257,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::Coil { .. }
             | FeatureDefinition::Sphere { .. }
             | FeatureDefinition::Torus { .. }
-            | FeatureDefinition::StoredGeometry
-            | FeatureDefinition::ExtractBody { .. }
-            | FeatureDefinition::DerivedGeometry { .. }
-            | FeatureDefinition::ImportedGeometry { .. }
             | FeatureDefinition::Primitive { .. }
             | FeatureDefinition::HelicalSweep { .. }
             | FeatureDefinition::Binder { .. }
@@ -1217,19 +1264,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::SheetMetalBaseFlange { .. }
             | FeatureDefinition::FaceBlend { .. }
-            | FeatureDefinition::OffsetShape { .. }
-            | FeatureDefinition::Compound { .. }
-            | FeatureDefinition::RefineShape { .. }
-            | FeatureDefinition::ReverseShape { .. }
-            | FeatureDefinition::RuledBetweenCurves { .. }
-            | FeatureDefinition::SectionShape { .. }
-            | FeatureDefinition::MirrorShape { .. }
-            | FeatureDefinition::SewBodies { .. }
             | FeatureDefinition::BoundarySurfaceUnresolved
             | FeatureDefinition::DraftUnresolved
             | FeatureDefinition::BoundaryFill { .. }
-            | FeatureDefinition::TrimBodies { .. }
-            | FeatureDefinition::SplitBody { .. }
             | FeatureDefinition::PostProcess { .. } => true,
         })
         .count();
@@ -3634,6 +3671,122 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "3 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_audits_direct_body_and_shape_families() {
+        let mut ir = CadIr::empty(Units::default());
+        let body = BodyId("body".into());
+        let source = FeatureId("base".into());
+        let mut push = |id: &str, ordinal, dependencies, outputs, definition| {
+            ir.model.features.push(Feature {
+                id: FeatureId(id.into()),
+                ordinal,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies,
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs,
+                definition,
+                native_ref: None,
+            });
+        };
+        push(
+            "base",
+            0,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Bodies(vec![body.clone()]),
+            },
+        );
+        push(
+            "stored",
+            1,
+            Vec::new(),
+            vec![body.clone()],
+            FeatureDefinition::StoredGeometry,
+        );
+        push(
+            "derived",
+            2,
+            vec![source.clone()],
+            Vec::new(),
+            FeatureDefinition::DerivedGeometry { source },
+        );
+        push(
+            "mirror",
+            3,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::MirrorShape {
+                source: BodySelection::Bodies(vec![body.clone()]),
+                plane_origin: Point3::new(0.0, 0.0, 0.0),
+                plane_normal: Vector3::new(0.0, 0.0, 1.0),
+                plane_reference: Some(FaceSelection::Native("plane".into())),
+            },
+        );
+        push(
+            "sew",
+            4,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::SewBodies {
+                bodies: BodySelection::Bodies(vec![body.clone()]),
+                gap_tolerance: None,
+            },
+        );
+        push(
+            "trim",
+            5,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::TrimBodies {
+                targets: BodySelection::Bodies(vec![body.clone()]),
+                tools: BodySelection::Bodies(vec![body.clone()]),
+                keep: cadmpeg_ir::features::BodyTrimSide::Unresolved,
+            },
+        );
+        push(
+            "import",
+            6,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::ImportedGeometry {
+                path: "  ".into(),
+                format: cadmpeg_ir::features::GeometryImportFormat::Step,
+            },
+        );
+        push(
+            "section",
+            7,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::SectionShape {
+                first: BodySelection::Bodies(vec![body.clone()]),
+                second: BodySelection::Bodies(vec![body]),
+                approximate: None,
+            },
+        );
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "5 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
