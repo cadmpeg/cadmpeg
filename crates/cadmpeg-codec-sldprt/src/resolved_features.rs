@@ -42722,14 +42722,36 @@ fn typed_relation_definition(
             let authoritative = first.is_some() && second.is_some();
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
-                (Some(known), None) => (
-                    known.clone(),
-                    unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
-                ),
-                (None, Some(known)) => (
-                    unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
-                    known,
-                ),
+                (Some(known), None) => doubled_profile_distance_loci(
+                    relation,
+                    0,
+                    1,
+                    sketch,
+                    parameter,
+                    sketch_entities,
+                    markers_by_id,
+                )
+                .or_else(|| {
+                    Some((
+                        known.clone(),
+                        unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
+                    ))
+                })?,
+                (None, Some(known)) => doubled_profile_distance_loci(
+                    relation,
+                    1,
+                    0,
+                    sketch,
+                    parameter,
+                    sketch_entities,
+                    markers_by_id,
+                )
+                .or_else(|| {
+                    Some((
+                        unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
+                        known,
+                    ))
+                })?,
                 (None, None) => {
                     unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)?
                 }
@@ -43266,6 +43288,73 @@ fn unique_profile_distance_locus(
         sketch_entities,
         |known, candidate| (candidate.u - known.u).hypot(candidate.v - known.v),
     )
+}
+
+fn doubled_profile_distance_loci(
+    relation: &FeatureInputRelationInstance,
+    line_operand: usize,
+    center_operand: usize,
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+) -> Option<(SketchLocus, SketchLocus)> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let cadmpeg_ir::features::ParameterValue::Length(expected) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let line_marker_id = relation_operand_marker(relation, line_operand, sketch, markers_by_id)?;
+    let center_marker_id =
+        relation_operand_marker(relation, center_operand, sketch, markers_by_id)?;
+    let line_marker = markers_by_id.get(line_marker_id)?;
+    let center_marker = markers_by_id.get(center_marker_id)?;
+    if line_marker.feature_ref.as_deref() != Some(relation.feature_ref.as_str())
+        || center_marker.feature_ref.as_deref() != Some(relation.feature_ref.as_str())
+    {
+        return None;
+    }
+    let center_is_distance_handle = markers_by_id.values().any(|marker| {
+        marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
+            && marker.kind
+                == SketchInputKind::Relation(crate::records::SketchRelationKind::Distance)
+            && matches!(marker.links.as_slice(), [link] if link.entity_ref == center_marker.id)
+    });
+    if !center_is_distance_handle {
+        return None;
+    }
+    let [line_u, line_v] = line_marker.coordinates_m?;
+    let [center_u, center_v] = center_marker.coordinates_m?;
+    let has_half_dimension = [
+        (center_u - line_u).abs() * NATIVE_TO_IR * 2.0,
+        (center_v - line_v).abs() * NATIVE_TO_IR * 2.0,
+    ]
+    .into_iter()
+    .any(|distance| same_dimension_length(distance, expected.0));
+    if !has_half_dimension {
+        return None;
+    }
+    let candidates = sketch_entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch == *sketch && entity.native_ref.as_deref() == Some(line_marker_id)
+        })
+        .filter_map(|entity| {
+            let SketchGeometry::Line { start, end } = entity.geometry else {
+                return None;
+            };
+            same_dimension_length((end.u - start.u).hypot(end.v - start.v), expected.0).then(|| {
+                (
+                    SketchLocus::Start(entity.id.clone()),
+                    SketchLocus::End(entity.id.clone()),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn unique_repaired_profile_distance_loci_pair(
@@ -45500,8 +45589,8 @@ mod profile_join_tests {
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
         bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
         declared_line_reference_directions, dimensioned_circle_surface_transforms,
-        dimensioned_circle_transform, fitted_marker_circle, implicit_circle_marker,
-        inferred_point_coordinates_by_index, input_owned_edge_selections,
+        dimensioned_circle_transform, doubled_profile_distance_loci, fitted_marker_circle,
+        implicit_circle_marker, inferred_point_coordinates_by_index, input_owned_edge_selections,
         legacy_terminal_profile_indexed_endpoints, line_endpoint_markers, line_reference_direction,
         linear_pattern_display_directions, marker_entities, marker_owns_constraint,
         marker_point_locus, marker_relation_is_inactive, owned_relation_parameters,
@@ -45563,6 +45652,101 @@ mod profile_join_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn doubled_point_distance_constrains_the_owned_profile_line() {
+        let mut corner = marker("corner", Some([0.005, 0.005]));
+        corner.object_index = Some(4);
+        let mut center = marker("center", Some([0.0025, 0.0025]));
+        center.object_index = Some(1);
+        let mut distance_handle = marker("distance-handle", None);
+        distance_handle.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+        distance_handle.links = vec![SketchInputLink {
+            local_id: 2,
+            entity_ref: center.id.clone(),
+        }];
+        let markers = [&corner, &center, &distance_handle]
+            .into_iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        let relation = FeatureInputRelationInstance {
+            id: "dimension".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature-native".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: None,
+            display_scalar_ref: None,
+            operands: ["corner", "center"]
+                .into_iter()
+                .enumerate()
+                .map(|(index, marker)| FeatureInputOperand {
+                    offset: index as u64,
+                    reference_ref: format!("reference-{index}"),
+                    kind: FeatureInputOperandKind::Native(0xbc7c),
+                    entity_index: index as u16,
+                    entity_ref: Some(marker.into()),
+                })
+                .collect(),
+        };
+        let parameter = DesignParameter {
+            id: ParameterId("width".into()),
+            owner: Some(FeatureId("feature".into())),
+            ordinal: 0,
+            name: "width".into(),
+            expression: "5".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(5.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let sketch = SketchId("sketch".into());
+        let line_id = SketchEntityId("line".into());
+        let entities = vec![SketchEntity {
+            id: line_id.clone(),
+            sketch: sketch.clone(),
+            construction: false,
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(5.0, 0.0),
+            },
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            native_ref: Some(corner.id.clone()),
+        }];
+
+        assert_eq!(
+            doubled_profile_distance_loci(
+                &relation, 0, 1, &sketch, &parameter, &entities, &markers,
+            ),
+            Some((
+                SketchLocus::Start(line_id.clone()),
+                SketchLocus::End(line_id.clone()),
+            ))
+        );
+
+        let markers_without_handle = [&corner, &center]
+            .into_iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(
+            doubled_profile_distance_loci(
+                &relation,
+                0,
+                1,
+                &sketch,
+                &parameter,
+                &entities,
+                &markers_without_handle,
+            ),
+            None
+        );
     }
 
     #[test]
