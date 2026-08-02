@@ -129,7 +129,7 @@ pub fn decode_parameter_scopes(
                 exact_fixed_extrude_parameters(bytes, &records, &scope);
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &records, &scope);
             scope.fixed_chamfer_parameters =
-                exact_fixed_chamfer_parameters(bytes, &records, &scope);
+                exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
             scope.path_feature_construction =
                 exact_path_feature_construction(bytes, &records, &scope);
             scope.combine_operation = exact_combine_operation(bytes, &records, &scope);
@@ -2225,8 +2225,17 @@ pub(crate) fn exact_fixed_chamfer_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignFixedChamferParameters> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Chamfer) {
+        return None;
+    }
+    let stream = native_stream(&scope.id);
+    if parameter_owners.iter().any(|owner| {
+        stream.is_some()
+            && native_stream(&owner.id) == stream
+            && owner.scope_record_index == scope.record_index
+    }) {
         return None;
     }
     let lanes = scope

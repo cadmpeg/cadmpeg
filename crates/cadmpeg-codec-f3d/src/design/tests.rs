@@ -5246,7 +5246,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_chamfer_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &chamfer_scope
+            &chamfer_scope,
+            &[],
         ),
         Some(DesignFixedChamferParameters::EqualDistance {
             distance: crate::records::DesignFixedChamferDistance {
@@ -5270,7 +5271,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_chamfer_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &chamfer_scope
+            &chamfer_scope,
+            &[],
         ),
         Some(DesignFixedChamferParameters::TwoDistances {
             first: crate::records::DesignFixedChamferDistance {
@@ -5284,6 +5286,30 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
                 value_offset: (second_chamfer_scalar_start + 40) as u64,
             },
         })
+    );
+    chamfer_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
+    let indexed_owner = DesignParameterOwner {
+        id: "f3d:Design/BulkStream.dat:parameter-owner#97".into(),
+        byte_offset: 0,
+        class_tag: "292".into(),
+        record_index: 97,
+        scope_record_index: chamfer_scope.record_index,
+        local_ordinal: 0,
+        evaluated_value: 0.04,
+        evaluated_value_offset: 0,
+        parameter_record_index: 98,
+        owned_ordinal: 0,
+        variant: Some(0),
+        companion_record_index: 99,
+    };
+    assert_eq!(
+        exact_fixed_chamfer_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &chamfer_scope,
+            std::slice::from_ref(&indexed_owner),
+        ),
+        None
     );
 
     let revolve_start = bytes.len();
@@ -14627,6 +14653,37 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
                 edges: EdgeSelection::Native(selection),
                 spec: ChamferSpec::TwoDistances { first, second },
             }] if selection == &scopes[1].id && first.0 == 1.0 && second.0 == 2.0)
+    ));
+
+    let mut distance_angle_parameters = [
+        parameter(54, 55, "Distance", "d2", "1.6 mm", 0.16),
+        parameter(
+            64,
+            65,
+            "Rotate Angle",
+            "d3",
+            "25 deg",
+            25.0_f64.to_radians(),
+        ),
+    ];
+    distance_angle_parameters[1].unit = Some("deg".into());
+    let (features, _) = project_parameter_design(
+        &distance_angle_parameters,
+        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+        std::slice::from_ref(&scopes[1]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [ChamferGroup {
+                spec: ChamferSpec::DistanceAngle { distance, angle },
+                ..
+            }] if distance.0 == 1.6 && angle.0 == 25.0_f64.to_radians())
     ));
 
     let (features, _) = project_parameter_design(

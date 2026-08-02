@@ -2227,12 +2227,27 @@ fn project_chamfer(
     let second_distances = ordered_parameters("Distance 2");
     let left_distances = ordered_parameters("leftDistance");
     let right_distances = ordered_parameters("rightDistance");
-    let angles = ordered_parameters("Angle");
+    let mut angles = parameters
+        .iter()
+        .filter(|(_, parameter)| matches!(parameter.source_kind.as_str(), "Angle" | "Rotate Angle"))
+        .copied()
+        .collect::<Vec<_>>();
+    angles.sort_by_key(|(local_ordinal, _)| *local_ordinal);
+    let angles = angles
+        .into_iter()
+        .map(|(_, parameter)| parameter)
+        .collect::<Vec<_>>();
 
     if !parameters.iter().all(|(_, parameter)| {
         matches!(
             parameter.source_kind.as_str(),
-            "Distance" | "Distance 1" | "Distance 2" | "leftDistance" | "rightDistance" | "Angle"
+            "Distance"
+                | "Distance 1"
+                | "Distance 2"
+                | "leftDistance"
+                | "rightDistance"
+                | "Angle"
+                | "Rotate Angle"
         )
     }) {
         return None;
