@@ -1003,9 +1003,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(construction.draft, cadmpeg_ir::features::RibDraft::Unresolved)
                     || *op == BooleanOp::Unresolved
             }
-            FeatureDefinition::Fillet { groups } => groups.is_empty() || groups.iter().any(|group| {
-                incomplete_edge_selection(&group.edges) || matches!(group.radius, RadiusSpec::Unresolved { .. })
-            }),
+            FeatureDefinition::Fillet { groups } => {
+                groups.is_empty()
+                    || groups.iter().any(|group| {
+                        incomplete_edge_selection(&group.edges)
+                            || matches!(group.radius, RadiusSpec::Unresolved { .. })
+                            || matches!(group.radius, RadiusSpec::Variable { ref points } if points.is_empty())
+                    })
+            }
             FeatureDefinition::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
                 incomplete_edge_selection(&group.edges) || matches!(group.spec, ChamferSpec::Unresolved { .. })
             }),
@@ -1013,11 +1018,18 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 removed_faces,
                 thickness,
                 outward,
-                ..
+                mode,
+                join,
+                resolve_intersections,
+                allow_self_intersections,
             } => {
                 incomplete_optional_face_selection(removed_faces)
                     || thickness.is_none()
                     || outward.is_none()
+                    || mode.is_none()
+                    || join.is_none()
+                    || resolve_intersections.is_none()
+                    || allow_self_intersections.is_none()
             }
             FeatureDefinition::Thicken {
                 faces,
@@ -1142,16 +1154,20 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || factors.resolved().is_none()
             }
             FeatureDefinition::Hole {
+                profile,
                 face,
                 placements,
                 kind,
+                exit_kind,
                 diameter,
                 extent,
                 ..
             } => {
-                face.as_ref().is_some_and(incomplete_face_selection)
+                profile.as_ref().is_some_and(incomplete_profile)
+                    || face.as_ref().is_some_and(incomplete_face_selection)
                     || placements.is_empty()
                     || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. })
+                    || matches!(exit_kind, Some(cadmpeg_ir::features::HoleKind::Unresolved { .. }))
                     || diameter.is_none()
                     || extent.as_ref().is_none_or(incomplete_termination)
             }
@@ -4001,6 +4017,16 @@ mod design_loss_tests {
                     },
                 },
             ),
+            feature(
+                7,
+                FeatureDefinition::Fillet {
+                    groups: vec![cadmpeg_ir::features::FilletGroup {
+                        edges: EdgeSelection::Edges(vec![EdgeId("edge".into())]),
+                        radius: RadiusSpec::Variable { points: Vec::new() },
+                        tangency_weight: None,
+                    }],
+                },
+            ),
         ]);
         let mut report = DecodeReport {
             format: "sldprt".into(),
@@ -4015,7 +4041,82 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "4 typed feature(s) retain native or unresolved required operation operands."
+                == "6 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn hole_completeness_checks_optional_operands_when_present() {
+        let mut ir = CadIr::empty(Units::default());
+        let hole = |profile, exit_kind| FeatureDefinition::Hole {
+            profile,
+            profile_filter: None,
+            face: None,
+            position: None,
+            direction: None,
+            placements: vec![cadmpeg_ir::features::HolePlacement::Directed {
+                position: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            }],
+            kind: cadmpeg_ir::features::HoleKind::Simple,
+            exit_kind,
+            diameter: Some(Length(5.0)),
+            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
+        };
+        for (ordinal, definition) in [
+            hole(
+                Some(cadmpeg_ir::features::ProfileRef::Native("profile".into())),
+                None,
+            ),
+            hole(
+                None,
+                Some(cadmpeg_ir::features::HoleKind::Unresolved {
+                    form: None,
+                    counterbore_diameter: None,
+                    counterbore_depth: None,
+                    countersink_diameter: None,
+                    countersink_angle: None,
+                }),
+            ),
+            hole(None, None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("hole-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "2 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
