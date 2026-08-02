@@ -27958,14 +27958,14 @@ mod idless_history_binding_tests {
         definition_b.input_class = Some("moSketchBlockDef_c".into());
         definition_b.source_id = Some("27".into());
         let objects = [&definition_a, &instance, &definition_b];
-        assert!(dissectable_profile_owns_objects(
+        assert!(profile_owns_intervening_sketch_blocks(
             &profile,
             objects.iter().copied()
         ));
 
         definition_b.input_class = Some("moRefPlane_c".into());
         let objects = [&definition_a, &instance, &definition_b];
-        assert!(!dissectable_profile_owns_objects(
+        assert!(!profile_owns_intervening_sketch_blocks(
             &profile,
             objects.iter().copied()
         ));
@@ -27974,9 +27974,73 @@ mod idless_history_binding_tests {
         profile
             .properties
             .insert("DissectableChildren".into(), "23,23".into());
-        assert!(!dissectable_profile_owns_objects(
+        assert!(!profile_owns_intervening_sketch_blocks(
             &profile,
             objects.iter().copied()
+        ));
+    }
+
+    #[test]
+    fn closed_block_graph_binds_a_profile_without_an_explicit_child_list() {
+        let profile = feature(0, "sketch");
+        let mut instance = feature(1, "block instance");
+        instance.input_class = Some("moSketchBlockInst_c".into());
+        instance.source_id = Some("25".into());
+        instance
+            .properties
+            .insert("BlockDefinition".into(), "23".into());
+        let mut definition = feature(2, "block");
+        definition.input_class = Some("moSketchBlockDef_c".into());
+        definition.source_id = Some("23".into());
+
+        assert!(profile_owns_intervening_sketch_blocks(
+            &profile,
+            [&instance, &definition]
+        ));
+
+        instance
+            .properties
+            .insert("BlockDefinition".into(), "24".into());
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &profile,
+            [&instance, &definition]
+        ));
+    }
+
+    #[test]
+    fn incomplete_block_graph_does_not_bind_a_profile() {
+        let profile = feature(0, "sketch");
+        let mut instance = feature(1, "block instance");
+        instance.input_class = Some("moSketchBlockInst_c".into());
+        instance.source_id = Some("25".into());
+        instance
+            .properties
+            .insert("BlockDefinition".into(), "23".into());
+        let mut referenced = feature(2, "block");
+        referenced.input_class = Some("moSketchBlockDef_c".into());
+        referenced.source_id = Some("23".into());
+        let mut unused = feature(3, "block");
+        unused.input_class = Some("moSketchBlockDef_c".into());
+        unused.source_id = Some("24".into());
+
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &profile,
+            [&instance, &referenced, &unused]
+        ));
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &profile,
+            [&referenced]
+        ));
+
+        let mut second_instance = feature(4, "block instance");
+        second_instance.input_class = Some("moSketchBlockInst_c".into());
+        second_instance.source_id = Some("26".into());
+        second_instance
+            .properties
+            .insert("BlockDefinition".into(), "23".into());
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &profile,
+            [&instance, &second_instance, &referenced]
         ));
     }
 
@@ -34681,7 +34745,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             let Some(profile) = (0..extrusion_index).rev().find_map(|profile_index| {
                 let (profile_name, profile) = objects[profile_index];
                 (object_kind(profile_name, profile) == NativeClassKind::ProfileFeature
-                    && dissectable_profile_owns_objects(
+                    && profile_owns_intervening_sketch_blocks(
                         profile,
                         objects[profile_index + 1..extrusion_index]
                             .iter()
@@ -34778,26 +34842,32 @@ fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
                 .is_some_and(|source| source != 0))
 }
 
-fn dissectable_profile_owns_objects<'a>(
+fn profile_owns_intervening_sketch_blocks<'a>(
     profile: &crate::records::Feature,
     objects: impl IntoIterator<Item = &'a crate::records::Feature>,
 ) -> bool {
-    let Some(encoded) = profile.properties.get("DissectableChildren") else {
-        return false;
-    };
-    let children = encoded
-        .split(',')
-        .map(str::trim)
-        .map(str::parse::<u32>)
-        .collect::<Result<HashSet<_>, _>>();
-    let Ok(children) = children else {
-        return false;
-    };
-    if children.is_empty() || children.contains(&0) || children.len() != encoded.split(',').count()
-    {
+    let explicit_children = profile
+        .properties
+        .get("DissectableChildren")
+        .map(|encoded| {
+            let children = encoded
+                .split(',')
+                .map(str::trim)
+                .map(str::parse::<u32>)
+                .collect::<Result<HashSet<_>, _>>()
+                .ok()?;
+            (!children.is_empty()
+                && !children.contains(&0)
+                && children.len() == encoded.split(',').count())
+            .then_some(children)
+        });
+    if explicit_children.as_ref().is_some_and(Option::is_none) {
         return false;
     }
     let mut definitions = HashSet::new();
+    let mut referenced_definitions = HashSet::new();
+    let mut object_ids = HashSet::new();
+    let mut instance_count = 0usize;
     for feature in objects {
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
         if !matches!(
@@ -34814,11 +34884,35 @@ fn dissectable_profile_owns_objects<'a>(
         else {
             return false;
         };
-        if kind == NativeClassKind::SketchBlockDefinition && !definitions.insert(source) {
+        if !object_ids.insert(source) {
             return false;
         }
+        match kind {
+            NativeClassKind::SketchBlockDefinition => {
+                definitions.insert(source);
+            }
+            NativeClassKind::SketchBlockInstance => {
+                instance_count += 1;
+                let Some(definition) = feature
+                    .properties
+                    .get("BlockDefinition")
+                    .and_then(|source| source.parse::<u32>().ok())
+                    .filter(|source| *source != 0)
+                else {
+                    if explicit_children.is_none() {
+                        return false;
+                    }
+                    continue;
+                };
+                referenced_definitions.insert(definition);
+            }
+            _ => unreachable!(),
+        }
     }
-    definitions == children
+    if let Some(Some(children)) = explicit_children.as_ref() {
+        return &definitions == children;
+    }
+    instance_count == 1 && definitions.len() == 1 && referenced_definitions == definitions
 }
 
 fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
