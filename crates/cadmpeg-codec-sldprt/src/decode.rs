@@ -248,6 +248,23 @@ fn sketch_constraint_has_complete_neutral_semantics(
     }
 }
 
+fn spatial_sketch_constraint_has_complete_neutral_semantics(
+    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinition,
+) -> bool {
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinition as Constraint;
+
+    match definition {
+        Constraint::Native { .. } => false,
+        Constraint::Coincident { .. }
+        | Constraint::PointOnSurface { .. }
+        | Constraint::Midpoint { .. }
+        | Constraint::Tangent { .. }
+        | Constraint::ParallelLineDistance { .. }
+        | Constraint::ParallelToDirection { .. }
+        | Constraint::SplineGroup { .. } => true,
+    }
+}
+
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
@@ -815,7 +832,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             )));
     }
 
-    let native_constraints = ir
+    let native_planar_constraints = ir
         .model
         .sketch_constraints
         .iter()
@@ -824,9 +841,18 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 && constraint.active != Some(false)
         })
         .count();
+    let native_spatial_constraints = ir
+        .model
+        .spatial_sketch_constraints
+        .iter()
+        .filter(|constraint| {
+            !spatial_sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+        })
+        .count();
+    let native_constraints = native_planar_constraints + native_spatial_constraints;
     if native_constraints > 0 {
         report.losses.push(SldprtLossCode::SketchNativeConstraint.note(format!(
-                "{native_constraints} sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
+                "{native_constraints} planar or spatial sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
             )));
     }
 
@@ -3445,6 +3471,7 @@ mod design_loss_tests {
         append_design_losses, assign_configuration_bodies,
         multiply_projected_sketch_relation_records,
         sketch_constraint_has_complete_neutral_semantics, snapshot_active_configuration,
+        spatial_sketch_constraint_has_complete_neutral_semantics,
         unbound_feature_input_operation_objects, unprojected_sketch_relation_records,
     };
     use crate::native::SldprtNative;
@@ -3465,7 +3492,8 @@ mod design_loss_tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::report::DecodeReport;
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+        SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId,
+        SketchGeometry, SketchId, SpatialSketchConstraint, SpatialSketchConstraintDefinition,
         SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
     };
     use cadmpeg_ir::units::Units;
@@ -3488,6 +3516,53 @@ mod design_loss_tests {
                 operands: Vec::new(),
             }
         ));
+        assert!(spatial_sketch_constraint_has_complete_neutral_semantics(
+            &SpatialSketchConstraintDefinition::Coincident {
+                first: SpatialSketchEntityId("first".into()),
+                second: SpatialSketchEntityId("second".into()),
+            }
+        ));
+        assert!(!spatial_sketch_constraint_has_complete_neutral_semantics(
+            &SpatialSketchConstraintDefinition::Native {
+                native_kind: "unresolved".into(),
+                native_state: None,
+                parameter: None,
+                operands: Vec::new(),
+            }
+        ));
+    }
+
+    #[test]
+    fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .spatial_sketch_constraints
+            .push(SpatialSketchConstraint {
+                id: SketchConstraintId("native-spatial".into()),
+                sketch: SpatialSketchId("spatial-sketch".into()),
+                definition: SpatialSketchConstraintDefinition::Native {
+                    native_kind: "unresolved".into(),
+                    native_state: None,
+                    parameter: None,
+                    operands: Vec::new(),
+                },
+                native_ref: None,
+            });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "1 planar or spatial sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
+        }));
     }
 
     #[test]
