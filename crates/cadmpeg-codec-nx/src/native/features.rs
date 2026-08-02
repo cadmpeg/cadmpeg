@@ -1149,7 +1149,7 @@ pub struct FeatureSketchDatumCsysScalarAlias {
     pub sketch_coordinate_ordinal: u8,
     /// Exact datum-CSYS scalar field occupying the same source bytes.
     pub datum_csys_scalar: String,
-    /// Absolute source offset of the shared shifted-binary64 encoding.
+    /// Absolute source offset of the shared scalar field marker.
     pub value_source_offset: u64,
 }
 
@@ -5214,7 +5214,7 @@ pub fn feature_sketch_datum_csys_dependencies(
                     .iter()
                     .filter(move |scalar| {
                         scalar.operation_label == construction.operation_label
-                            && scalar.source_offset.checked_add(5) == Some(*value_source_offset)
+                            && scalar.source_offset == *value_source_offset
                     })
                     .map(move |scalar| FeatureSketchDatumCsysScalarAlias {
                         sketch_coordinate_ordinal: coordinate_ordinal as u8,
@@ -8921,7 +8921,7 @@ mod tests {
             value: 2.0,
             raw_value: shifted_f64_bytes(2.0),
             payload_offset: 8,
-            source_offset: 215,
+            source_offset: 220,
         };
 
         let dependencies = super::feature_sketch_datum_csys_dependencies(
@@ -8952,7 +8952,7 @@ mod tests {
         assert_eq!(dependencies[0].scalar_aliases[0].value_source_offset, 220);
 
         let mut equal_at_another_offset = scalar.clone();
-        equal_at_another_offset.source_offset = 214;
+        equal_at_another_offset.source_offset = 219;
         let unaliased = super::feature_sketch_datum_csys_dependencies(
             &labels,
             std::slice::from_ref(&point),

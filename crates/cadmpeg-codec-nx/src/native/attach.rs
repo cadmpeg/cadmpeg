@@ -1211,6 +1211,16 @@ fn attach_feature_operations(
                 "sketch_datum_csys_dependency".to_string(),
                 dependency.id.clone(),
             );
+            for (alias_ordinal, alias) in dependency.scalar_aliases.iter().enumerate() {
+                source_properties.insert(
+                    format!("sketch_point_dependency_scalar.{alias_ordinal}"),
+                    alias.datum_csys_scalar.clone(),
+                );
+                source_properties.insert(
+                    format!("sketch_point_dependency_coordinate.{alias_ordinal}"),
+                    alias.sketch_coordinate_ordinal.to_string(),
+                );
+            }
         }
         let deletes_body = label.value == "DELETE";
         let mut outputs = if deletes_body {
