@@ -10589,7 +10589,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     }
 }
 
-fn active_configuration_state_is_incomplete(
+pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {

@@ -109,13 +109,14 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
     let Some(configuration) = active.next() else {
         return false;
     };
+    let Some(configuration_bodies) = configuration.bodies.resolved() else {
+        return false;
+    };
     active.next().is_none()
-        && saved.is_empty()
-        && configuration
-            .bodies
-            .resolved()
-            .is_some_and(<[BodyId]>::is_empty)
-        && configuration.feature_states.is_empty()
+        && configuration_bodies.len() == saved.len()
+        && configuration_bodies.iter().collect::<BTreeSet<_>>()
+            == saved.iter().collect::<BTreeSet<_>>()
+        && !crate::decode::active_configuration_state_is_incomplete(ir, configuration)
 }
 
 fn rederived_body_census(
@@ -344,8 +345,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{
-        Angle, BodyRetentionMode, ChamferGroup, ChamferSpec, EdgeSelection, FaceSelection, Feature,
-        FilletGroup, HoleKind, HolePlacement, RadiusSpec, Termination, ThickenSide,
+        Angle, BodyRetentionMode, ChamferGroup, ChamferSpec, ConfigurationBodies,
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, EdgeSelection,
+        FaceSelection, Feature, FilletGroup, HoleKind, HolePlacement, RadiusSpec, Termination,
+        ThickenSide,
     };
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -388,6 +391,42 @@ mod tests {
             native_ref: None,
         });
         ir
+    }
+
+    fn attach_complete_active_configuration(ir: &mut CadIr) {
+        let feature_states = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| {
+                (
+                    feature.id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: feature.dependencies.clone(),
+                        outputs: feature.outputs.clone(),
+                        definition: feature.definition.clone(),
+                    },
+                )
+            })
+            .collect();
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("active".to_string()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Model".to_string(),
+            material: None,
+            properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            bodies: ConfigurationBodies::Resolved(
+                ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+            ),
+            parameter_values: BTreeMap::new(),
+            feature_states,
+            native_ref: None,
+        });
     }
 
     fn complete_hole(body: BodyId) -> Feature {
@@ -458,6 +497,33 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn complete_active_configuration_admits_the_rederived_model() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        attach_complete_active_configuration(&mut ir);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn incomplete_active_configuration_remains_an_evaluation_boundary() {
+        let mut ir = complete_block_ir();
+        attach_complete_active_configuration(&mut ir);
+        ir.model.configurations[0].feature_states.clear();
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: None,
+                reason: UnsupportedBodyCensusReason::ConfigurationEvaluation,
+            }
         );
     }
 
