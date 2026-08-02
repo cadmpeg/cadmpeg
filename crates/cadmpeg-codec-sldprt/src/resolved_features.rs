@@ -4976,7 +4976,10 @@ mod marker_tests {
 
         let mut lane_token = payload[anchor..].to_vec();
         lane_token[..2].copy_from_slice(&[0x0c, 0x8e]);
-        assert_eq!(compact_extrusion_to_face_at(&lane_token, 0), None);
+        assert_eq!(
+            compact_extrusion_to_face_at(&lane_token, 0),
+            Some(body - anchor)
+        );
 
         let comp_face = b"\xff\xff\x01\x00\x0c\x00moCompFace_c";
         payload[body..body + comp_face.len()].copy_from_slice(comp_face);
@@ -4992,6 +4995,25 @@ mod marker_tests {
 
         payload[body + 4] = 3;
         assert_eq!(compact_extrusion_to_face_at(&payload, anchor), None);
+    }
+
+    #[test]
+    fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
+        let mut payload = vec![0; 240];
+        payload[..2].copy_from_slice(&[0x95, 0x81]);
+        payload[4] = 1;
+        payload[18] = 4;
+        payload[30..33].copy_from_slice(&[1, 1, 0]);
+        payload[33..46]
+            .copy_from_slice(&[0x54, 0x89, 0x30, 0x80, 0x2e, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
+        let marker = 140;
+        payload[marker - 12..marker - 8].copy_from_slice(&6u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(marker));
+        payload[marker - 12..marker - 8].fill(0);
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
     }
 
     #[test]
@@ -5077,6 +5099,21 @@ mod marker_tests {
         payload[18] = 2;
         payload[103] = 1;
         assert!(!compact_extrusion_through_next_at(&payload, 0));
+
+        payload[103] = 0;
+        payload[92] = 0;
+        payload[90] = 1;
+        assert!(compact_extrusion_through_next_at(&payload, 0));
+
+        payload.resize(108, 0);
+        payload[100..102].copy_from_slice(&[0x83, 0x81]);
+        payload[102..106].copy_from_slice(&5u32.to_le_bytes());
+        payload[106..108].copy_from_slice(&[0x74, 0x81]);
+        payload.resize(108 + 16, 0);
+        payload.extend_from_slice(&[0xff, 0xff, 0, 0, 1]);
+        payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+        assert!(compact_extrusion_through_next_at(&payload, 0));
     }
 
     #[test]
@@ -33036,8 +33073,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     .find(|feature| feature.id == *next_id)
                     .is_some_and(|feature| {
                         let class = feature.input_class.as_deref().unwrap_or_default();
-                        native_object_class(class).kind == NativeClassKind::ProfileFeature
-                            || class == "moCosmeticThread_c"
+                        is_profile_feature_object(feature) || class == "moCosmeticThread_c"
                     });
                 if !skip {
                     break;
@@ -33856,15 +33892,28 @@ fn compact_extrusion_traversal_body_from(payload: &[u8], start: usize) -> bool {
         && payload
             .get(start + 4..start + 60)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && payload.get(start + 60..start + 64) == Some(&[0, 0, 1, 0])
+        && payload
+            .get(start + 60..start + 64)
+            .is_some_and(|word| word == [0, 0, 1, 0] || word == [1, 0, 0, 0])
         && payload
             .get(start + 64..start + 70)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && payload.get(start + 70..start + 74).is_some_and(|bytes| {
-            bytes == [0, 0, 0, 0]
-                || (bytes[1] & 0x80 != 0 && bytes[2..4] == [0, 0])
-                || bytes == [0xff, 0xff, 1, 0]
-        })
+        && compact_extrusion_traversal_follow_on_at(payload, start + 70)
+}
+
+fn compact_extrusion_traversal_follow_on_at(payload: &[u8], offset: usize) -> bool {
+    let Some(bytes) = payload.get(offset..offset + 4) else {
+        return false;
+    };
+    if bytes == [0, 0, 0, 0]
+        || (bytes[1] & 0x80 != 0 && bytes[2..4] == [0, 0])
+        || bytes == [0xff, 0xff, 1, 0]
+    {
+        return true;
+    }
+    bytes[1] & 0x80 != 0
+        && payload.get(offset + 2..offset + 6) == Some(&5u32.to_le_bytes())
+        && compact_extrusion_dimension_child_at(payload, offset + 6).is_some()
 }
 
 fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
@@ -34001,10 +34050,6 @@ fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> 
     // two-byte token `03 00`; their remaining header and child grammar is
     // identical. Keep that token scoped to the to-face form whose required
     // single-face child independently validates the interpretation.
-    let direct_end_spec = offset
-        .checked_sub(15)
-        .and_then(|start| payload.get(start..offset + 2))
-        == Some(b"\xff\xff\x01\x00\x0b\x00moEndSpec_c".as_slice());
     let legacy_header = payload.get(offset..offset + 2) == Some(&[3, 0])
         && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
         && payload
@@ -34054,10 +34099,17 @@ fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> 
             // component path uses an unknown layout. Preserve that child as
             // the reference instead of discarding the independently decoded
             // to-face termination.
-            (direct_end_spec
-                && declared
-                && compact_tokenized_single_face_child_at(payload, body_offset))
-            .then_some(body_offset)
+            (declared && compact_tokenized_single_face_child_at(payload, body_offset))
+                .then_some(body_offset)
+        })
+        .or_else(|| {
+            (!declared)
+                .then(|| {
+                    (body_offset..body_offset.saturating_add(240)).find(|marker| {
+                        compact_termination_reference_frame_at(payload, *marker).is_some()
+                    })
+                })
+                .flatten()
         })
 }
 
@@ -34406,20 +34458,8 @@ fn compact_termination_reference_path_at(
     if let Some(components) = compact_single_face_reference_path_at(payload, marker) {
         return Some(components);
     }
-    let count = marker.checked_sub(12).and_then(|offset| {
-        Some(u32::from_le_bytes(
-            payload.get(offset..offset + 4)?.try_into().ok()?,
-        ))
-    })?;
-    let count = usize::try_from(count)
-        .ok()
-        .filter(|count| (1..=64).contains(count))?;
-    if payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || payload.get(marker - 8..marker - 4) != Some(&[0, 2, 0, 0])
-        || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
-    {
-        return None;
-    }
+    let count = compact_termination_reference_frame_at(payload, marker)?;
+    let count = usize::try_from(count).ok()?;
     let entry_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
         let instance = payload.get(offset..offset + 4)?;
         if instance[0..2] == [0, 0]
@@ -34490,6 +34530,22 @@ fn compact_termination_reference_path_at(
         }
     }
     (!entries.is_empty()).then_some(entries)
+}
+
+fn compact_termination_reference_frame_at(payload: &[u8], marker: usize) -> Option<u32> {
+    let count = marker.checked_sub(12).and_then(|offset| {
+        Some(u32::from_le_bytes(
+            payload.get(offset..offset + 4)?.try_into().ok()?,
+        ))
+    })?;
+    if !(1..=64).contains(&count)
+        || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        || !matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
+        || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
+    {
+        return None;
+    }
+    Some(count)
 }
 
 pub(crate) fn compact_surface_selection_value(
