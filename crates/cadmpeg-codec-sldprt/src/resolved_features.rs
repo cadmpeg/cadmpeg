@@ -4995,6 +4995,29 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
+        let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
+        let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
+        let mut payload = vec![0; 360];
+        payload[..end_spec.len()].copy_from_slice(end_spec);
+        let anchor = end_spec.len() - 2;
+        payload[anchor + 4..anchor + 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[anchor + 18..anchor + 22].copy_from_slice(&4u32.to_le_bytes());
+        payload[anchor + 30..anchor + 33].copy_from_slice(&[1, 1, 0]);
+        let child = anchor + 33;
+        payload[child..child + face_ref.len()].copy_from_slice(face_ref);
+        let body = child + face_ref.len();
+        let marker = body + 209;
+        payload.truncate(marker - 12);
+        assert_eq!(selection_vector_tail(&mut payload, &[8, 5, 4]), marker);
+
+        assert_eq!(compact_extrusion_to_face_at(&payload, anchor), Some(marker));
+
+        payload[marker - 8] = 1;
+        assert_eq!(compact_extrusion_to_face_at(&payload, anchor), None);
+    }
+
+    #[test]
     fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
         let mut payload = vec![0; 300];
         payload[..2].copy_from_slice(&[0x34, 0x80]);
@@ -33936,6 +33959,11 @@ fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> 
     }
     (body_offset..body_offset.saturating_add(160))
         .find(|marker| compact_termination_reference_at(payload, *marker))
+        .or_else(|| {
+            body_offset
+                .checked_add(209)
+                .filter(|marker| compact_termination_reference_at(payload, *marker))
+        })
         .or_else(|| {
             // A declared single-face child is still a complete native
             // selection when its compact body header validates but its
