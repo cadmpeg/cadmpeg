@@ -63,6 +63,10 @@ const SPATIAL_VERTEX_PREFIX: &[u8] = &[
     0xff, 0xfe, 0xff, 0x06, b'V', 0x00, b'e', 0x00, b'r', 0x00, b't', 0x00, b'e', 0x00, b'x', 0x00,
 ];
 
+pub(crate) fn is_detached_sketch_lane(lane: &FeatureInputLane) -> bool {
+    lane.id.contains(":config-objects#")
+}
+
 pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
     let sections = scan.sections().collect::<Vec<_>>();
     let has_explicit_lanes = sections.iter().any(|source| {
@@ -81,66 +85,98 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             } {
                 return None;
             }
-            let parent = format!(
-                "sldprt:feature-input:resolved-features#{}",
-                source.ordinal()
-            );
-            let payload = source.payload();
-            let classes = class_declarations(payload, &parent);
-            let names = object_names(payload, &parent);
-            let scalars = named_scalars(payload, &parent, &names);
-            let relation_bindings = relation_bindings(&parent, &classes, &scalars);
-            let references = reference_cells(&scalars);
-            let sketch_entities = sketch_input_entities(payload, &parent);
-            for entity in &sketch_entities {
-                let signature = usize::try_from(entity.offset)
-                    .ok()
-                    .and_then(|offset| payload.get(offset..offset + SKETCH_MARKER.len()))
-                    .map_or("sketch-marker", |prefix| {
-                        if prefix == LEGACY_SKETCH_MARKER {
-                            "ff_ff_07_00_01"
-                        } else if prefix == LEGACY_EXTENDED_SKETCH_MARKER {
-                            "ff_ff_1f_00_01"
-                        } else {
-                            "ff_ff_1f_00_03"
-                        }
-                    });
-                crate::annotations::note(
-                    annotations,
-                    entity.id.clone(),
-                    section,
-                    entity.offset,
-                    signature,
-                    Exactness::ByteExact,
-                );
-            }
-            let id = parent;
-            crate::annotations::note(
-                annotations,
-                id.clone(),
-                section,
-                0,
-                "ResolvedFeatures",
-                Exactness::ByteExact,
-            );
-            Some(FeatureInputLane {
-                id,
-                configuration: configuration(section),
-                native_payload: payload.to_vec(),
-                classes,
-                names,
-                scalars,
-                relation_bindings,
-                relation_instances: Vec::new(),
-                body_selections: Vec::new(),
-                edge_selections: Vec::new(),
-                surface_selections: Vec::new(),
-                generated_surface_identities: Vec::new(),
-                references,
-                sketch_entities,
-            })
+            Some(feature_input_lane(source, "resolved-features", annotations))
         })
         .collect()
+}
+
+pub(crate) fn detached_sketch_lanes(
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+) -> Vec<FeatureInputLane> {
+    let has_explicit_lanes = scan.sections().any(|source| {
+        source
+            .name()
+            .is_some_and(|name| name.to_ascii_lowercase().contains("resolvedfeatures"))
+    });
+    if !has_explicit_lanes {
+        return Vec::new();
+    }
+    scan.sections()
+        .filter(|source| {
+            source.name().is_some_and(legacy_feature_input_section)
+                && legacy_sketch_object_stream(source.payload())
+        })
+        .map(|source| feature_input_lane(source, "config-objects", annotations))
+        .collect()
+}
+
+fn feature_input_lane(
+    source: crate::container::Section<'_>,
+    family: &str,
+    annotations: &mut Annotations,
+) -> FeatureInputLane {
+    let section = source
+        .name()
+        .expect("feature-input sections are selected by name");
+    let parent = format!("sldprt:feature-input:{family}#{}", source.ordinal());
+    let payload = source.payload();
+    let classes = class_declarations(payload, &parent);
+    let names = object_names(payload, &parent);
+    let scalars = named_scalars(payload, &parent, &names);
+    let relation_bindings = relation_bindings(&parent, &classes, &scalars);
+    let references = reference_cells(&scalars);
+    let sketch_entities = sketch_input_entities(payload, &parent);
+    for entity in &sketch_entities {
+        let signature = usize::try_from(entity.offset)
+            .ok()
+            .and_then(|offset| payload.get(offset..offset + SKETCH_MARKER.len()))
+            .map_or("sketch-marker", |prefix| {
+                if prefix == LEGACY_SKETCH_MARKER {
+                    "ff_ff_07_00_01"
+                } else if prefix == LEGACY_EXTENDED_SKETCH_MARKER {
+                    "ff_ff_1f_00_01"
+                } else {
+                    "ff_ff_1f_00_03"
+                }
+            });
+        crate::annotations::note(
+            annotations,
+            entity.id.clone(),
+            section,
+            entity.offset,
+            signature,
+            Exactness::ByteExact,
+        );
+    }
+    crate::annotations::note(
+        annotations,
+        parent.clone(),
+        section,
+        0,
+        if family == "config-objects" {
+            "ConfigObjects"
+        } else {
+            "ResolvedFeatures"
+        },
+        Exactness::ByteExact,
+    );
+    FeatureInputLane {
+        id: parent,
+        configuration: configuration(section),
+        native_payload: payload.to_vec(),
+        classes,
+        names,
+        scalars,
+        relation_bindings,
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references,
+        sketch_entities,
+    }
 }
 
 fn legacy_feature_input_section(section: &str) -> bool {
@@ -152,6 +188,14 @@ fn legacy_feature_input_section(section: &str) -> bool {
         return false;
     };
     !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
+    let classes = class_declarations(payload, "legacy-sketch-probe");
+    classes.iter().any(|class| class.name == "sgSketch")
+        && classes
+            .iter()
+            .any(|class| class.name == "moFeatureDimHandle_c")
 }
 
 /// Project spatial sketches from their model-space marker coordinates or bounded lines.
@@ -18029,6 +18073,7 @@ pub(crate) fn bind_scalar_operands(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
 ) {
+    let represented_sketches = represented_sketch_features(histories, lanes);
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
@@ -18070,86 +18115,229 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some(feature_id.to_string());
             }
         }
-        normalize_indexed_curve_entities(lane);
-        let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
-        for entity in &lane.sketch_entities {
-            if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id) {
-                marker_ids
-                    .entry((feature.clone(), local_id))
-                    .or_default()
-                    .push((entity.id.clone(), entity.coordinates_m.is_some()));
-            }
+        bind_detached_legacy_sketch_objects(histories, &represented_sketches, lane);
+        finalize_lane_bindings(histories, lane);
+    }
+}
+
+fn finalize_lane_bindings(
+    histories: &[crate::records::FeatureHistory],
+    lane: &mut FeatureInputLane,
+) {
+    normalize_indexed_curve_entities(lane);
+    let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
+    for entity in &lane.sketch_entities {
+        if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id) {
+            marker_ids
+                .entry((feature.clone(), local_id))
+                .or_default()
+                .push((entity.id.clone(), entity.coordinates_m.is_some()));
         }
-        for entity in &mut lane.sketch_entities {
-            let Ok(offset) = usize::try_from(entity.offset) else {
-                continue;
-            };
-            let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset)
-                .map(|(links, selector)| (links.to_vec(), selector))
-                .or_else(|| coordinate_marker_local_links(&lane.native_payload, offset))
-            else {
-                continue;
-            };
-            let Some(owner) = &entity.feature_ref else {
-                continue;
-            };
-            let links = local_ids
-                .into_iter()
-                .filter_map(|local_id| {
-                    let entity_ref = unique_marker_candidate(
-                        marker_ids.get(&(owner.clone(), u32::from(local_id)))?,
-                    )?;
-                    Some(SketchInputLink {
-                        local_id,
-                        entity_ref: entity_ref.to_string(),
-                    })
+    }
+    for entity in &mut lane.sketch_entities {
+        let Ok(offset) = usize::try_from(entity.offset) else {
+            continue;
+        };
+        let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset)
+            .map(|(links, selector)| (links.to_vec(), selector))
+            .or_else(|| coordinate_marker_local_links(&lane.native_payload, offset))
+        else {
+            continue;
+        };
+        let Some(owner) = &entity.feature_ref else {
+            continue;
+        };
+        let links = local_ids
+            .into_iter()
+            .filter_map(|local_id| {
+                let entity_ref = unique_marker_candidate(
+                    marker_ids.get(&(owner.clone(), u32::from(local_id)))?,
+                )?;
+                Some(SketchInputLink {
+                    local_id,
+                    entity_ref: entity_ref.to_string(),
                 })
-                .collect::<Vec<_>>();
-            if !links.is_empty() {
-                entity.links = links;
-                entity.link_selector = Some(selector);
-            }
+            })
+            .collect::<Vec<_>>();
+        if !links.is_empty() {
+            entity.links = links;
+            entity.link_selector = Some(selector);
         }
-        bind_resolved_curve_vertices(lane);
-        let entities_by_feature = lane.sketch_entities.iter().fold(
-            HashMap::<&str, Vec<&SketchInputEntity>>::new(),
-            |mut by_feature, entity| {
-                if let Some(feature) = entity.feature_ref.as_deref() {
-                    by_feature.entry(feature).or_default().push(entity);
-                }
-                by_feature
-            },
-        );
-        for scalar in &mut lane.scalars {
-            let Some(entities) = scalar
-                .feature_ref
-                .as_deref()
-                .and_then(|feature| entities_by_feature.get(feature))
-            else {
-                continue;
-            };
-            let resolved =
-                resolve_scalar_operand_markers(entities.iter().copied(), &scalar.operands);
-            for (operand, resolved) in scalar.operands.iter_mut().zip(resolved) {
-                operand.entity_ref = resolved.map(|entity| entity.id.clone());
+    }
+    bind_resolved_curve_vertices(lane);
+    let entities_by_feature = lane.sketch_entities.iter().fold(
+        HashMap::<&str, Vec<&SketchInputEntity>>::new(),
+        |mut by_feature, entity| {
+            if let Some(feature) = entity.feature_ref.as_deref() {
+                by_feature.entry(feature).or_default().push(entity);
             }
+            by_feature
+        },
+    );
+    for scalar in &mut lane.scalars {
+        let Some(entities) = scalar
+            .feature_ref
+            .as_deref()
+            .and_then(|feature| entities_by_feature.get(feature))
+        else {
+            continue;
+        };
+        let resolved = resolve_scalar_operand_markers(entities.iter().copied(), &scalar.operands);
+        for (operand, resolved) in scalar.operands.iter_mut().zip(resolved) {
+            operand.entity_ref = resolved.map(|entity| entity.id.clone());
         }
-        let scalar_owners = lane
-            .scalars
+    }
+    let scalar_owners = lane
+        .scalars
+        .iter()
+        .map(|scalar| (scalar.id.as_str(), scalar.feature_ref.clone()))
+        .collect::<HashMap<_, _>>();
+    for binding in &mut lane.relation_bindings {
+        binding.feature_ref = scalar_owners
+            .get(binding.scalar_ref.as_str())
+            .cloned()
+            .flatten();
+    }
+    lane.relation_instances = relation_instances(histories, lane);
+    lane.body_selections = compact_body_selections(histories, lane);
+    lane.edge_selections = compact_edge_selections(histories, lane);
+    lane.surface_selections = compact_surface_selections(histories, lane);
+    lane.generated_surface_identities = generated_surface_identities(lane);
+}
+
+fn represented_sketch_features(
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> HashSet<String> {
+    let features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    let mut represented = HashSet::new();
+    for lane in lanes {
+        if is_detached_sketch_lane(lane) {
+            continue;
+        }
+        let mut objects = features
             .iter()
-            .map(|scalar| (scalar.id.as_str(), scalar.feature_ref.clone()))
-            .collect::<HashMap<_, _>>();
-        for binding in &mut lane.relation_bindings {
-            binding.feature_ref = scalar_owners
-                .get(binding.scalar_ref.as_str())
-                .cloned()
-                .flatten();
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        for (index, &(start, feature)) in objects.iter().enumerate() {
+            if feature.xml_tag != "Sketch" {
+                continue;
+            }
+            let end = objects.get(index + 1).map_or(u64::MAX, |next| next.0);
+            if lane.sketch_entities.iter().any(|entity| {
+                entity.offset > start && entity.offset < end && entity.coordinates_m.is_some()
+            }) {
+                represented.insert(feature.id.clone());
+            }
         }
-        lane.relation_instances = relation_instances(histories, lane);
-        lane.body_selections = compact_body_selections(histories, lane);
-        lane.edge_selections = compact_edge_selections(histories, lane);
-        lane.surface_selections = compact_surface_selections(histories, lane);
-        lane.generated_surface_identities = generated_surface_identities(lane);
+    }
+    represented
+}
+
+pub(crate) fn bind_unresolved_detached_sketch_objects(
+    model_features: &[cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &mut [FeatureInputLane],
+) {
+    let unresolved = model_features
+        .iter()
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::Sketch { sketch: None, .. } => feature.native_ref.clone(),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let represented = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.xml_tag == "Sketch" && !unresolved.contains(&feature.id))
+        .map(|feature| feature.id.clone())
+        .collect::<HashSet<_>>();
+    for lane in lanes
+        .iter_mut()
+        .filter(|lane| is_detached_sketch_lane(lane))
+    {
+        bind_detached_legacy_sketch_objects(histories, &represented, lane);
+        finalize_lane_bindings(histories, lane);
+    }
+}
+
+fn bind_detached_legacy_sketch_objects(
+    histories: &[crate::records::FeatureHistory],
+    represented: &HashSet<String>,
+    lane: &mut FeatureInputLane,
+) {
+    const OBJECT_GAP: u64 = 4096;
+
+    if !is_detached_sketch_lane(lane) {
+        return;
+    }
+    let Some(limit) = lane
+        .classes
+        .iter()
+        .find(|class| class.name == "moFeatureDimHandle_c")
+        .map(|class| class.offset)
+    else {
+        return;
+    };
+    let markers = lane
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.offset < limit)
+        .map(|entity| entity.offset)
+        .collect::<Vec<_>>();
+    let Some(&first) = markers.first() else {
+        return;
+    };
+    let mut starts = vec![first];
+    starts.extend(
+        markers
+            .windows(2)
+            .filter_map(|pair| (pair[1].saturating_sub(pair[0]) >= OBJECT_GAP).then_some(pair[1])),
+    );
+
+    let mut owners = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.xml_tag == "Sketch")
+        .filter(|feature| {
+            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::OriginProfileFeature
+        })
+        .filter(|feature| !represented.contains(&feature.id))
+        .filter_map(|feature| Some((feature.source_id.as_deref()?.parse::<u32>().ok()?, feature)))
+        .collect::<Vec<_>>();
+    owners.sort_unstable_by_key(|(source, _)| *source);
+    if starts.len() != owners.len() {
+        return;
+    }
+
+    for (index, (&start, (_, owner))) in starts.iter().zip(owners).enumerate() {
+        let end = starts.get(index + 1).copied().unwrap_or(limit);
+        for entity in lane
+            .sketch_entities
+            .iter_mut()
+            .filter(|entity| entity.offset >= start && entity.offset < end)
+        {
+            entity.feature_ref = Some(owner.id.clone());
+        }
+        for reference in lane
+            .references
+            .iter_mut()
+            .filter(|reference| reference.offset >= start && reference.offset < end)
+        {
+            reference.feature_ref = Some(owner.id.clone());
+        }
+        for scalar in lane
+            .scalars
+            .iter_mut()
+            .filter(|scalar| scalar.offset >= start && scalar.offset < end)
+        {
+            scalar.feature_ref = Some(owner.id.clone());
+        }
     }
 }
 
@@ -20692,6 +20880,54 @@ fn feature_input_sketch_frame(
                 ),
             ))
         })
+}
+
+fn sketch_feature_frames(
+    features: &[cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> HashMap<String, (Point3, Vector3, Vector3)> {
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.xml_tag == "Sketch")
+        .collect::<Vec<_>>();
+    let mut candidates = HashMap::<String, Vec<(Point3, Vector3, Vector3)>>::new();
+    for lane in lanes {
+        let ranges = feature_object_byte_ranges(histories, lane);
+        let plane_frames = lane_sketch_plane_frames(features, histories, lane);
+        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        for feature in &native_features {
+            let Some(&(context_start, start, end)) = ranges.get(feature.id.as_str()) else {
+                continue;
+            };
+            let Some(frame) = feature_input_sketch_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            ) else {
+                continue;
+            };
+            candidates
+                .entry(feature.id.clone())
+                .or_default()
+                .push(frame);
+        }
+    }
+    candidates
+        .into_iter()
+        .filter_map(|(feature, mut frames)| {
+            frames.sort_by_key(reference_plane_frame_key);
+            frames.dedup();
+            let [frame] = frames.as_slice() else {
+                return None;
+            };
+            Some((feature, *frame))
+        })
+        .collect()
 }
 
 fn compact_position_relations(
@@ -29275,7 +29511,20 @@ pub(crate) fn project_compact_sketch_profiles(
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
         let mut objects = native_features
             .values()
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .filter_map(|feature| {
+                let start = feature_object_name(feature, lane)
+                    .map(|name| name.offset)
+                    .or_else(|| {
+                        lane.sketch_entities
+                            .iter()
+                            .filter(|marker| {
+                                marker.feature_ref.as_deref() == Some(feature.id.as_str())
+                            })
+                            .map(|marker| marker.offset)
+                            .min()
+                    })?;
+                Some((start, *feature))
+            })
             .collect::<Vec<_>>();
         objects.sort_by_key(|(offset, _)| *offset);
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
@@ -29673,6 +29922,15 @@ pub(crate) fn project_marker_backed_sketches(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
+    let feature_frames = sketch_feature_frames(features, histories, lanes);
+    project_detached_legacy_config_sketches(
+        features,
+        sketches,
+        sketch_entities,
+        &native_features,
+        lanes,
+        &feature_frames,
+    );
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
@@ -29683,7 +29941,20 @@ pub(crate) fn project_marker_backed_sketches(
             .collect::<HashMap<_, _>>();
         let mut objects = native_features
             .values()
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .filter_map(|feature| {
+                let start = feature_object_name(feature, lane)
+                    .map(|name| name.offset)
+                    .or_else(|| {
+                        lane.sketch_entities
+                            .iter()
+                            .filter(|marker| {
+                                marker.feature_ref.as_deref() == Some(feature.id.as_str())
+                            })
+                            .map(|marker| marker.offset)
+                            .min()
+                    })?;
+                Some((start, *feature))
+            })
             .collect::<Vec<_>>();
         objects.sort_by_key(|(offset, _)| *offset);
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
@@ -29748,7 +30019,9 @@ pub(crate) fn project_marker_backed_sketches(
                 start,
                 end,
             );
-            let Some((origin, normal, u_axis)) = frame else {
+            let Some((origin, normal, u_axis)) =
+                frame.or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
+            else {
                 continue;
             };
             let lane_key = lane
@@ -30449,6 +30722,605 @@ pub(crate) fn project_marker_backed_sketches(
                 sketch: Some(sketch_id),
             };
         }
+    }
+}
+
+fn project_detached_legacy_config_sketches(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
+    native_features: &HashMap<&str, &crate::records::Feature>,
+    lanes: &[FeatureInputLane],
+    feature_frames: &HashMap<String, (Point3, Vector3, Vector3)>,
+) {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+
+    for lane in lanes.iter().filter(|lane| is_detached_sketch_lane(lane)) {
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        let detached_frame = {
+            let mut frames = lane
+                .sketch_entities
+                .iter()
+                .filter_map(|marker| marker.feature_ref.as_deref())
+                .filter_map(|feature| feature_frames.get(feature).copied())
+                .collect::<Vec<_>>();
+            frames.sort_by_key(reference_plane_frame_key);
+            frames.dedup();
+            let [frame] = frames.as_slice() else {
+                continue;
+            };
+            *frame
+        };
+        for feature in features.iter_mut() {
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                continue;
+            };
+            if !matches!(
+                feature.definition,
+                FeatureDefinition::Sketch { sketch: None, .. }
+            ) {
+                continue;
+            }
+            let Some(native_feature) = native_features.get(native_ref).copied() else {
+                continue;
+            };
+            let markers = lane
+                .sketch_entities
+                .iter()
+                .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+                .collect::<Vec<_>>();
+            if markers.is_empty() {
+                continue;
+            }
+            let (origin, normal, u_axis) = feature_frames
+                .get(native_ref)
+                .copied()
+                .unwrap_or(detached_frame);
+            let sketch_id = SketchId(format!(
+                "sldprt:model:sketch#legacy-config:{lane_key}:{}",
+                native_feature.ordinal
+            ));
+            let sketch = Sketch {
+                id: sketch_id.clone(),
+                name: Some(native_feature.name.clone()),
+                configuration: lane.configuration.clone(),
+                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                    origin,
+                    normal,
+                    u_axis,
+                },
+                profiles: Vec::new(),
+                native_ref: Some(lane.id.clone()),
+            };
+            let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+                continue;
+            };
+            let project = |coordinates: [f64; 2]| {
+                let native = quantize(
+                    Point2::new(coordinates[0] * NATIVE_TO_IR, coordinates[1] * NATIVE_TO_IR),
+                    QUANTUM,
+                );
+                let point = transform.apply(native)?;
+                Some(Point2::new(
+                    point.0 as f64 * QUANTUM,
+                    point.1 as f64 * QUANTUM,
+                ))
+            };
+
+            let projected = legacy_config_hex_sketch(native_feature, &sketch, &markers, &project)
+                .or_else(|| {
+                    legacy_config_collinear_sketch(
+                        lane,
+                        native_feature,
+                        &sketch,
+                        &markers,
+                        &project,
+                    )
+                });
+            let Some((sketch, mut entities)) = projected else {
+                continue;
+            };
+            if entities
+                .iter()
+                .any(|entity| matches!(entity.geometry, SketchGeometry::Native { .. }))
+            {
+                continue;
+            }
+            sketch_entities.append(&mut entities);
+            sketches.push(sketch.clone());
+            feature.definition = FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: Some(sketch.id),
+            };
+        }
+    }
+}
+
+fn legacy_config_hex_sketch(
+    native_feature: &crate::records::Feature,
+    sketch: &Sketch,
+    markers: &[&SketchInputEntity],
+    project: &impl Fn([f64; 2]) -> Option<Point2>,
+) -> Option<(Sketch, Vec<SketchEntity>)> {
+    let unique_object = |object_index: u32| {
+        let mut candidates = markers.iter().copied().filter(|marker| {
+            marker.object_index == Some(object_index) && marker.coordinates_m.is_some()
+        });
+        let candidate = candidates.next()?;
+        candidates.next().is_none().then_some(candidate)
+    };
+    let vertices = (9..=14).map(&unique_object).collect::<Option<Vec<_>>>()?;
+    let origin = unique_object(3).or_else(|| {
+        let mut candidates = markers.iter().copied().filter(|marker| {
+            marker.object_index.is_none()
+                && marker.coordinates_m.is_some_and(|coordinates| {
+                    same_dimension_length(coordinates[0], 0.0)
+                        && same_dimension_length(coordinates[1], 0.0)
+                })
+        });
+        let candidate = candidates.next()?;
+        candidates.next().is_none().then_some(candidate)
+    })?;
+    let horizontal = [unique_object(4)?, unique_object(5)?];
+    let vertical = [unique_object(7)?, unique_object(8)?];
+    let circle = unique_object(15)?;
+    let circle_radial = unique_object(17)?;
+    let construction_radial = unique_object(16)?;
+    let mut curves = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.coordinates_m.is_none() && marker.kind == SketchInputKind::LineOrCircle
+        })
+        .collect::<Vec<_>>();
+    curves.sort_unstable_by_key(|marker| marker.offset);
+    let [horizontal_curve, vertical_curve, construction_circle, line0, line1, line2, line3, line4, line5] =
+        curves.as_slice()
+    else {
+        return None;
+    };
+    if [horizontal_curve, vertical_curve, construction_circle]
+        .iter()
+        .any(|marker| marker.offset >= line0.offset)
+        || vertices
+            .windows(2)
+            .any(|pair| pair[0].offset >= pair[1].offset)
+    {
+        return None;
+    }
+    let point = |marker: &SketchInputEntity| project(marker.coordinates_m?);
+    let center = point(circle)?;
+    let circle_radius = {
+        let radial = point(circle_radial)?;
+        (radial.u - center.u).hypot(radial.v - center.v)
+    };
+    let construction_center = point(origin)?;
+    let construction_radius = {
+        let radial = point(construction_radial)?;
+        (radial.u - construction_center.u).hypot(radial.v - construction_center.v)
+    };
+    if !circle_radius.is_finite()
+        || circle_radius <= SKETCH_POINT_TOLERANCE
+        || !construction_radius.is_finite()
+        || construction_radius <= SKETCH_POINT_TOLERANCE
+    {
+        return None;
+    }
+    let sketch_key = sketch
+        .id
+        .0
+        .rsplit_once('#')
+        .map_or(sketch.id.0.as_str(), |(_, key)| key);
+    let entity_id = |kind: &str, index: usize| {
+        SketchEntityId(format!(
+            "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
+            native_feature.ordinal
+        ))
+    };
+    let mut entities = Vec::new();
+    for (index, (curve, endpoints)) in
+        [(*horizontal_curve, horizontal), (*vertical_curve, vertical)]
+            .into_iter()
+            .enumerate()
+    {
+        entities.push(SketchEntity {
+            id: entity_id("axis", index),
+            sketch: sketch.id.clone(),
+            construction: true,
+            native_ref: Some(curve.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: endpoints.iter().map(|marker| marker.id.clone()).collect(),
+            geometry: SketchGeometry::Line {
+                start: point(endpoints[0])?,
+                end: point(endpoints[1])?,
+            },
+        });
+    }
+    entities.push(SketchEntity {
+        id: entity_id("circle", 0),
+        sketch: sketch.id.clone(),
+        construction: false,
+        native_ref: Some(circle.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: vec![circle.id.clone(), circle_radial.id.clone()],
+        geometry: SketchGeometry::Circle {
+            center,
+            radius: Length(circle_radius),
+        },
+    });
+    entities.push(SketchEntity {
+        id: entity_id("circle", 1),
+        sketch: sketch.id.clone(),
+        construction: true,
+        native_ref: Some(construction_circle.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: vec![origin.id.clone(), construction_radial.id.clone()],
+        geometry: SketchGeometry::Circle {
+            center: construction_center,
+            radius: Length(construction_radius),
+        },
+    });
+    let line_curves = [line0, line1, line2, line3, line4, line5];
+    let mut outer_profile = Vec::new();
+    for (index, curve) in line_curves.into_iter().enumerate() {
+        let start = vertices[index];
+        let end = vertices[(index + 1) % vertices.len()];
+        let id = entity_id("profile", index);
+        outer_profile.push(SketchEntityUse {
+            entity: id.clone(),
+            reversed: false,
+        });
+        entities.push(SketchEntity {
+            id,
+            sketch: sketch.id.clone(),
+            construction: false,
+            native_ref: Some(curve.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: vec![start.id.clone(), end.id.clone()],
+            geometry: SketchGeometry::Line {
+                start: point(start)?,
+                end: point(end)?,
+            },
+        });
+    }
+    let mut sketch = sketch.clone();
+    sketch.profiles = vec![
+        outer_profile,
+        vec![SketchEntityUse {
+            entity: entity_id("circle", 0),
+            reversed: false,
+        }],
+    ];
+    Some((sketch, entities))
+}
+
+fn legacy_config_collinear_sketch(
+    lane: &FeatureInputLane,
+    native_feature: &crate::records::Feature,
+    sketch: &Sketch,
+    markers: &[&SketchInputEntity],
+    project: &impl Fn([f64; 2]) -> Option<Point2>,
+) -> Option<(Sketch, Vec<SketchEntity>)> {
+    let mut curves = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.coordinates_m.is_none() && marker.kind == SketchInputKind::LineOrCircle
+        })
+        .collect::<Vec<_>>();
+    curves.sort_unstable_by_key(|marker| marker.offset);
+    let [negative_curve, first_curve, second_curve, third_curve] = curves.as_slice() else {
+        return None;
+    };
+    let negative_offset = usize::try_from(negative_curve.offset).ok()?;
+    if lane
+        .native_payload
+        .get(negative_offset + 56..negative_offset + 58)
+        != Some(&[0x1e, 0x00])
+        || lane
+            .native_payload
+            .get(negative_offset + 66..negative_offset + 74)
+            != Some(&0.0f64.to_le_bytes())
+    {
+        return None;
+    }
+    let negative_u = f64::from_le_bytes(
+        lane.native_payload
+            .get(negative_offset + 58..negative_offset + 66)?
+            .try_into()
+            .ok()?,
+    );
+    if !negative_u.is_finite() || negative_u >= 0.0 {
+        return None;
+    }
+    let mut chain = markers
+        .iter()
+        .copied()
+        .filter(|marker| matches!(marker.object_index, Some(18 | 19 | 21)))
+        .filter_map(|marker| Some((marker, marker.coordinates_m?)))
+        .collect::<Vec<_>>();
+    let origin = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.object_index.is_none())
+        .filter_map(|marker| Some((marker, marker.coordinates_m?)))
+        .min_by_key(|(marker, _)| marker.offset)?;
+    chain.push(origin);
+    chain.sort_by(|left, right| left.1[0].total_cmp(&right.1[0]));
+    chain.dedup_by(|left, right| {
+        same_dimension_length(left.1[0], right.1[0]) && same_dimension_length(left.1[1], right.1[1])
+    });
+    if chain.len() != 4
+        || chain.iter().any(|(_, coordinates)| {
+            !same_dimension_length(coordinates[1], origin.1[1]) || coordinates[0] < 0.0
+        })
+    {
+        return None;
+    }
+    let negative = [negative_u, origin.1[1]];
+    let sketch_key = sketch
+        .id
+        .0
+        .rsplit_once('#')
+        .map_or(sketch.id.0.as_str(), |(_, key)| key);
+    let entity_id = |kind: &str, index: usize| {
+        SketchEntityId(format!(
+            "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
+            native_feature.ordinal
+        ))
+    };
+    let line_curves = [negative_curve, first_curve, second_curve, third_curve];
+    let segments = [
+        (negative, origin.1),
+        (chain[0].1, chain[1].1),
+        (chain[1].1, chain[2].1),
+        (chain[2].1, chain[3].1),
+    ];
+    let mut entities = line_curves
+        .into_iter()
+        .zip(segments)
+        .enumerate()
+        .map(|(index, (curve, (start, end)))| {
+            Some(SketchEntity {
+                id: entity_id("line", index),
+                sketch: sketch.id.clone(),
+                construction: false,
+                native_ref: Some(curve.id.clone()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: project(start)?,
+                    end: project(end)?,
+                },
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut points = markers
+        .iter()
+        .copied()
+        .filter_map(|marker| Some((Some(marker), marker.coordinates_m?)))
+        .chain(std::iter::once((None, negative)))
+        .collect::<Vec<_>>();
+    points.sort_by(|left, right| {
+        left.1[0]
+            .total_cmp(&right.1[0])
+            .then_with(|| left.1[1].total_cmp(&right.1[1]))
+    });
+    points.dedup_by(|left, right| {
+        same_dimension_length(left.1[0], right.1[0]) && same_dimension_length(left.1[1], right.1[1])
+    });
+    for (index, (marker, coordinates)) in points.into_iter().enumerate() {
+        entities.push(SketchEntity {
+            id: entity_id("point", index),
+            sketch: sketch.id.clone(),
+            construction: false,
+            native_ref: marker.map(|marker| marker.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: project(coordinates)?,
+            },
+        });
+    }
+    Some((sketch.clone(), entities))
+}
+
+#[cfg(test)]
+mod detached_legacy_sketch_tests {
+    use super::*;
+    use crate::records::Feature;
+
+    fn feature() -> Feature {
+        Feature {
+            id: "feature".into(),
+            parent: "history".into(),
+            xml_tag: "Sketch".into(),
+            tree_parent: None,
+            source_id: Some("30".into()),
+            parent_source_id: None,
+            ordinal: 30,
+            name: "profile".into(),
+            kind: "ProfileFeature".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }
+    }
+
+    fn sketch() -> Sketch {
+        Sketch {
+            id: SketchId("sketch".into()),
+            name: Some("profile".into()),
+            configuration: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: Vec::new(),
+            native_ref: Some("lane".into()),
+        }
+    }
+
+    fn marker(
+        ordinal: u32,
+        object_index: Option<u32>,
+        kind: SketchInputKind,
+        coordinates_m: Option<[f64; 2]>,
+    ) -> SketchInputEntity {
+        SketchInputEntity {
+            id: format!("marker-{ordinal}"),
+            parent: "sldprt:feature-input:config-objects#1".into(),
+            feature_ref: Some("feature".into()),
+            ordinal,
+            offset: u64::from(ordinal) * 100,
+            object_index,
+            local_id: None,
+            kind,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        }
+    }
+
+    #[test]
+    fn hex_profile_accepts_explicit_and_omitted_origin_indices() {
+        for origin_index in [Some(3), None] {
+            let mut markers = vec![
+                marker(0, origin_index, SketchInputKind::Point, Some([0.0, 0.0])),
+                marker(1, Some(4), SketchInputKind::Point, Some([-2.0, 0.0])),
+                marker(2, Some(5), SketchInputKind::Point, Some([2.0, 0.0])),
+                marker(3, Some(7), SketchInputKind::Point, Some([0.0, -2.0])),
+                marker(4, Some(8), SketchInputKind::Point, Some([0.0, 2.0])),
+            ];
+            for (index, coordinates) in [
+                [1.0, 0.0],
+                [0.5, 0.866],
+                [-0.5, 0.866],
+                [-1.0, 0.0],
+                [-0.5, -0.866],
+                [0.5, -0.866],
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                markers.push(marker(
+                    5 + index as u32,
+                    Some(9 + index as u32),
+                    SketchInputKind::Point,
+                    Some(coordinates),
+                ));
+            }
+            markers.extend([
+                marker(11, Some(15), SketchInputKind::Arc, Some([0.0, 0.0])),
+                marker(12, Some(16), SketchInputKind::Point, Some([1.5, 0.0])),
+                marker(13, Some(17), SketchInputKind::Point, Some([0.5, 0.0])),
+            ]);
+            for ordinal in 14..23 {
+                markers.push(marker(ordinal, None, SketchInputKind::LineOrCircle, None));
+            }
+            let refs = markers.iter().collect::<Vec<_>>();
+            let (projected, entities) =
+                legacy_config_hex_sketch(&feature(), &sketch(), &refs, &|coordinates| {
+                    Some(Point2::new(coordinates[0], coordinates[1]))
+                })
+                .expect("exact hex grammar");
+
+            assert_eq!(
+                projected.profiles.iter().map(Vec::len).collect::<Vec<_>>(),
+                [6, 1]
+            );
+            assert_eq!(entities.len(), 10);
+            assert_eq!(
+                entities.iter().filter(|entity| entity.construction).count(),
+                3
+            );
+            assert_eq!(
+                entities
+                    .iter()
+                    .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+                    .count(),
+                8
+            );
+            assert_eq!(
+                entities
+                    .iter()
+                    .filter(|entity| matches!(entity.geometry, SketchGeometry::Circle { .. }))
+                    .count(),
+                2
+            );
+        }
+    }
+
+    #[test]
+    fn collinear_dimension_grammar_projects_four_lines_and_unique_points() {
+        let mut payload = vec![0; 400];
+        payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+        payload[58..66].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[66..74].copy_from_slice(&0.0f64.to_le_bytes());
+        let mut markers = (0..4)
+            .map(|ordinal| marker(ordinal, None, SketchInputKind::LineOrCircle, None))
+            .collect::<Vec<_>>();
+        markers.extend([
+            marker(4, None, SketchInputKind::Point, Some([0.0, 0.0])),
+            marker(5, Some(18), SketchInputKind::Point, Some([1.0, 0.0])),
+            marker(6, Some(19), SketchInputKind::Point, Some([2.0, 0.0])),
+            marker(7, Some(21), SketchInputKind::Point, Some([3.0, 0.0])),
+        ]);
+        for ordinal in 8..14 {
+            markers.push(marker(
+                ordinal,
+                Some(ordinal + 20),
+                SketchInputKind::Point,
+                Some([f64::from(ordinal), 1.0]),
+            ));
+        }
+        let lane = FeatureInputLane {
+            id: "sldprt:feature-input:config-objects#1".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: markers,
+        };
+        let refs = lane.sketch_entities.iter().collect::<Vec<_>>();
+        let (_, entities) =
+            legacy_config_collinear_sketch(&lane, &feature(), &sketch(), &refs, &|coordinates| {
+                Some(Point2::new(coordinates[0], coordinates[1]))
+            })
+            .expect("exact collinear grammar");
+
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+                .count(),
+            4
+        );
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+                .count(),
+            11
+        );
     }
 }
 
@@ -58602,10 +59474,13 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
         }
     }
     let mut expected_histories = native.feature_histories.clone();
-    crate::resolved_features::bind_history_classes(
-        &mut expected_histories,
-        &native.feature_input_lanes,
-    );
+    let history_lanes = native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| !is_detached_sketch_lane(lane))
+        .cloned()
+        .collect::<Vec<_>>();
+    crate::resolved_features::bind_history_classes(&mut expected_histories, &history_lanes);
     for (history, expected_history) in native.feature_histories.iter().zip(&expected_histories) {
         for (feature, expected_feature) in history.features.iter().zip(&expected_history.features) {
             if feature.input_class != expected_feature.input_class {

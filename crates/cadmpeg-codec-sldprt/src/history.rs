@@ -9768,7 +9768,11 @@ pub(crate) fn configuration_lane_assignments(
     lanes: &[crate::records::FeatureInputLane],
 ) -> Vec<(usize, usize)> {
     let mut lanes_by_configuration = BTreeMap::<u32, Vec<usize>>::new();
-    for (lane_index, lane) in lanes.iter().enumerate() {
+    for (lane_index, lane) in lanes
+        .iter()
+        .enumerate()
+        .filter(|(_, lane)| configuration_state_lane(lane))
+    {
         let Some(slot_index) = lane
             .configuration
             .as_deref()
@@ -9835,6 +9839,7 @@ pub(crate) fn unresolved_configuration_lanes(
     let mut occurrences = HashMap::<&str, usize>::new();
     for lane in lanes
         .iter()
+        .filter(|lane| configuration_state_lane(lane))
         .filter_map(|lane| lane.configuration.as_deref())
     {
         *occurrences.entry(lane).or_default() += 1;
@@ -9842,12 +9847,17 @@ pub(crate) fn unresolved_configuration_lanes(
     lanes
         .iter()
         .enumerate()
+        .filter(|(_, lane)| configuration_state_lane(lane))
         .filter(|(lane_index, lane)| {
             lane.configuration.as_deref().is_some_and(|slot| {
                 occurrences.get(slot).copied() != Some(1) || !assigned_lanes.contains(lane_index)
             })
         })
         .count()
+}
+
+fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
+    !crate::resolved_features::is_detached_sketch_lane(lane)
 }
 
 /// Stable hash of native configuration records.

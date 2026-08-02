@@ -1107,10 +1107,13 @@ impl SldprtNative {
             }
         }
         let mut expected_histories = self.feature_histories.clone();
-        crate::resolved_features::bind_history_classes(
-            &mut expected_histories,
-            &self.feature_input_lanes,
-        );
+        let history_lanes = self
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| !crate::resolved_features::is_detached_sketch_lane(lane))
+            .cloned()
+            .collect::<Vec<_>>();
+        crate::resolved_features::bind_history_classes(&mut expected_histories, &history_lanes);
         if self
             .feature_histories
             .iter()

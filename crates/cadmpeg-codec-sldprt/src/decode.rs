@@ -1926,8 +1926,11 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
+    let mut detached_sketch_lanes =
+        crate::resolved_features::detached_sketch_lanes(scan, &mut annotations);
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
+    crate::resolved_features::bind_scalar_operands(&histories, &mut detached_sketch_lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     let (spatial_sketches, spatial_sketch_entities) =
@@ -1970,6 +1973,11 @@ fn build_geometry_ir(
         &lanes,
         &annotations,
     );
+    crate::resolved_features::bind_unresolved_detached_sketch_objects(
+        &ir.model.features,
+        &histories,
+        &mut detached_sketch_lanes,
+    );
     crate::resolved_features::project_compact_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -1977,12 +1985,14 @@ fn build_geometry_ir(
         &histories,
         &lanes,
     );
+    let mut sketch_lanes = lanes.clone();
+    sketch_lanes.extend(detached_sketch_lanes.clone());
     crate::resolved_features::project_marker_backed_sketches(
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
         &histories,
-        &lanes,
+        &sketch_lanes,
     );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::project_dissected_sketches(
@@ -2049,6 +2059,7 @@ fn build_geometry_ir(
     stamp_feature_baseline(&mut ir);
     let mut attributes = crate::metadata::attributes(scan, &mut annotations);
     attributes.extend(crate::history::custom_property_attributes(&histories));
+    lanes.extend(detached_sketch_lanes);
     let mut native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -2669,8 +2680,11 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
+    let mut detached_sketch_lanes =
+        crate::resolved_features::detached_sketch_lanes(scan, &mut annotations);
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
+    crate::resolved_features::bind_scalar_operands(&histories, &mut detached_sketch_lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut annotations);
@@ -2755,6 +2769,11 @@ fn build_metadata_ir(
         &lanes,
         &annotations,
     );
+    crate::resolved_features::bind_unresolved_detached_sketch_objects(
+        &ir.model.features,
+        &histories,
+        &mut detached_sketch_lanes,
+    );
     crate::resolved_features::project_compact_sketch_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -2762,12 +2781,14 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
+    let mut sketch_lanes = lanes.clone();
+    sketch_lanes.extend(detached_sketch_lanes.clone());
     crate::resolved_features::project_marker_backed_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
-        &lanes,
+        &sketch_lanes,
     );
     crate::history::bind_unique_sketch_feature(
         &mut ir.model.features,
@@ -2900,6 +2921,7 @@ fn build_metadata_ir(
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
     stamp_feature_baseline(&mut ir);
+    lanes.extend(detached_sketch_lanes);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -2978,18 +3000,23 @@ fn project_design_history(
 fn parameter_identity_lanes(
     lanes: &[crate::records::FeatureInputLane],
 ) -> Vec<&crate::records::FeatureInputLane> {
+    let lanes = lanes
+        .iter()
+        .filter(|lane| !crate::resolved_features::is_detached_sketch_lane(lane))
+        .collect::<Vec<_>>();
     let has_global = lanes.iter().any(|lane| lane.configuration.is_none());
     let scoped_configurations = lanes
         .iter()
         .filter_map(|lane| lane.configuration.as_deref())
         .collect::<BTreeSet<_>>();
+    let lane_count = lanes.len();
     lanes
-        .iter()
+        .into_iter()
         .filter(|lane| {
             if has_global {
                 lane.configuration.is_none()
             } else {
-                scoped_configurations.len() == 1 && lanes.len() == 1
+                scoped_configurations.len() == 1 && lane_count == 1
             }
         })
         .collect()
