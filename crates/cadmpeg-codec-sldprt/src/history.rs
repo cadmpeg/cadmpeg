@@ -448,6 +448,32 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
     let same_scalar = |left: f64, right: f64| {
         (left - right).abs() <= FRAME_TOLERANCE * left.abs().max(right.abs()).max(1.0)
     };
+    let ordinals = features
+        .iter()
+        .map(|feature| (feature.id.clone(), feature.ordinal))
+        .collect::<HashMap<_, _>>();
+    for feature in features.iter_mut() {
+        let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition else {
+            continue;
+        };
+        let Some(DatumPlaneReference::Feature(reference_id)) = reference.as_ref() else {
+            continue;
+        };
+        let reference_id = reference_id.clone();
+        if ordinals
+            .get(&reference_id)
+            .is_none_or(|reference_ordinal| *reference_ordinal >= feature.ordinal)
+        {
+            *reference = None;
+            feature
+                .dependencies
+                .retain(|dependency| dependency != &reference_id);
+            continue;
+        }
+        if !feature.dependencies.contains(&reference_id) {
+            feature.dependencies.push(reference_id);
+        }
+    }
     let mut frames = features
         .iter()
         .filter_map(|feature| {
@@ -514,13 +540,7 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
                 let history = history_key(feature)?;
                 let mut candidates = features
                     .iter()
-                    .filter(|candidate| {
-                        candidate.ordinal < feature.ordinal
-                            || matches!(
-                                candidate.definition,
-                                FeatureDefinition::DatumPrincipalPlane { .. }
-                            )
-                    })
+                    .filter(|candidate| candidate.ordinal < feature.ordinal)
                     .filter(|candidate| history_key(candidate) == Some(history))
                     .filter_map(|candidate| {
                         let &(candidate_origin, candidate_normal, _) = frames.get(&candidate.id)?;
@@ -569,8 +589,11 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
             else {
                 continue;
             };
-            *slot = Some(DatumPlaneReference::Feature(reference));
+            *slot = Some(DatumPlaneReference::Feature(reference.clone()));
             *stored_distance = Length(distance);
+            if !features[index].dependencies.contains(&reference) {
+                features[index].dependencies.push(reference);
+            }
             changed = true;
         }
         if !changed {
@@ -2316,6 +2339,7 @@ mod history_reference_tests {
                 distance: Length(6.0),
             } if reference == &projected[0].id
         ));
+        assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
     }
 
     #[test]
@@ -2352,6 +2376,7 @@ mod history_reference_tests {
                 distance: Length(6.0),
             } if bound == &projected[0].id
         ));
+        assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
     }
 
     #[test]
@@ -2468,7 +2493,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn offset_plane_frame_can_resolve_a_later_builtin_principal_plane() {
+    fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
         let mut offset = feature("sldprt:history:feature#0:0", None, 0);
         offset.input_class = Some("moRefPlane_c".into());
         offset.parameters.insert("D1".into(), "6mm".into());
@@ -2493,10 +2518,11 @@ mod history_reference_tests {
         assert!(matches!(
             &projected[0].definition,
             FeatureDefinition::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Feature(bound)),
+                reference: None,
                 distance: Length(6.0),
-            } if bound == &projected[1].id
+            }
         ));
+        assert!(projected[0].dependencies.is_empty());
     }
 
     #[test]
