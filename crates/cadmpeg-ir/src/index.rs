@@ -26,6 +26,7 @@ macro_rules! define_model_index {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
         /// One-pass borrowed lookup index for neutral and native identities.
         pub struct ModelIndex<'a> {
+            ir: &'a CadIr,
             $($field: HashMap<&'a str, &'a $element>,)*
             identities: HashSet<&'a str>,
             native_identities: HashSet<&'a str>,
@@ -45,10 +46,16 @@ macro_rules! define_model_index {
                 }).collect::<HashSet<_>>();
                 identities.extend(native_identities.iter().copied());
                 Self {
+                    ir,
                     $($field,)*
                     identities,
                     native_identities,
                 }
+            }
+
+            /// Returns the indexed document.
+            pub fn ir(&self) -> &'a CadIr {
+                self.ir
             }
 
             /// Returns whether any neutral or native entity owns `identity`.

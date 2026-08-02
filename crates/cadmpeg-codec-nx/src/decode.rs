@@ -2342,6 +2342,7 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         let Some(values) = lanes[lane]
             .as_deref()
@@ -2362,7 +2363,7 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
             let Some(uv) = surface_parameters(geometry, *uv) else {
                 return false;
             };
-            model_surface_point_by_id(ir, surface, uv.u, uv.v)
+            model_surface_point_by_id(&index, surface, uv.u, uv.v)
                 .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
         })
     };
@@ -3146,19 +3147,20 @@ pub(crate) fn attach_completed_intersection_pcurves(
 }
 
 fn decoded_surface_point(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
-    decoded_surface_point_inner(ir, surface, u, v, 0)
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    decoded_surface_point_inner(&index, surface, u, v, 0)
 }
 
 fn decoded_surface_point_inner(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     u: f64,
     v: f64,
     depth: usize,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    model_surface_point_by_id(ir, surface, u, v)
-        .or_else(|| blend_surface_point_inner(ir, surface, u, v, depth + 1))
+    model_surface_point_by_id(index, surface, u, v)
+        .or_else(|| blend_surface_point_inner(index.ir(), surface, u, v, depth + 1))
 }
 
 #[cfg(test)]
@@ -3540,6 +3542,7 @@ pub(crate) fn blend_surface_u_derivative(
     v: f64,
     depth: usize,
 ) -> Option<Vector3> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     (depth < 32).then_some(())?;
     let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
     let carrier = ir
@@ -3562,7 +3565,7 @@ pub(crate) fn blend_surface_u_derivative(
         (acceleration.z - tangential_acceleration * tangent.z) / speed,
     );
     let contact_context = BlendContactDerivativeContext {
-        ir,
+        index: &index,
         spine: &spine,
         parameter: u,
         center,
@@ -3646,7 +3649,7 @@ pub(crate) fn blend_surface_u_derivative(
 }
 
 struct BlendContactDerivativeContext<'a> {
-    ir: &'a CadIr,
+    index: &'a cadmpeg_ir::index::ModelIndex<'a>,
     spine: &'a CurveId,
     parameter: f64,
     center: Point3,
@@ -3658,11 +3661,16 @@ struct BlendContactDerivativeContext<'a> {
 impl BlendContactDerivativeContext<'_> {
     fn direction_derivative(&self, support: &SurfaceId) -> Option<(Vector3, Vector3)> {
         (self.depth < 32).then_some(())?;
-        let pcurve =
-            spine_contact_pcurve(self.ir, support, self.spine, self.radius, self.depth + 1)?;
+        let pcurve = spine_contact_pcurve(
+            self.index.ir(),
+            support,
+            self.spine,
+            self.radius,
+            self.depth + 1,
+        )?;
         let uv = pcurve_uv(pcurve, self.parameter)?;
         let uv_derivative = pcurve_tangent(pcurve, self.parameter)?;
-        let support = model_surface_partials_by_id(self.ir, support, uv.u, uv.v)?;
+        let support = model_surface_partials_by_id(self.index, support, uv.u, uv.v)?;
         let contact_derivative = Vector3::new(
             support.du.x * uv_derivative.u + support.dv.x * uv_derivative.v,
             support.du.y * uv_derivative.u + support.dv.y * uv_derivative.v,
@@ -4426,7 +4434,8 @@ fn spine_contact_point(
     (depth < 32).then_some(())?;
     let pcurve = spine_contact_pcurve(ir, support, spine, radius, depth + 1)?;
     let uv = pcurve_uv(pcurve, parameter)?;
-    decoded_surface_point_inner(ir, support, uv.u, uv.v, depth + 1)
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    decoded_surface_point_inner(&index, support, uv.u, uv.v, depth + 1)
 }
 
 fn spine_contact_pcurve<'a>(
@@ -4792,7 +4801,9 @@ fn surface_contact_direction(
             }),
         geometry => analytic_surface_parameters(geometry, center),
     }?;
-    let contact = decoded_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let contact =
+        decoded_surface_point_inner(&index, surface, parameters.u, parameters.v, depth + 1)?;
     unit_vector(Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
@@ -5199,6 +5210,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let carrier = ir
         .model
         .surfaces
@@ -5219,11 +5231,12 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
     let mut parameters = seed
         .or_else(|| initial_surface_parameters(ir, support, point, None, fit_tolerance))
         .or_else(|| {
-            domain.and_then(|domain| coarse_model_surface_parameters(ir, surface, point, domain))
+            domain
+                .and_then(|domain| coarse_model_surface_parameters(&index, surface, point, domain))
         })?;
     clamp_surface_parameters(&mut parameters, domain);
     for _ in 0..32 {
-        let position = model_surface_point_by_id(ir, surface, parameters.u, parameters.v)?;
+        let position = model_surface_point_by_id(&index, surface, parameters.u, parameters.v)?;
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
@@ -5238,10 +5251,24 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
         }
         let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
         let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
-        let du =
-            model_surface_derivative(ir, surface, parameters, u_step, true, domain, [None, None])?;
-        let dv =
-            model_surface_derivative(ir, surface, parameters, v_step, false, domain, [None, None])?;
+        let du = model_surface_derivative(
+            &index,
+            surface,
+            parameters,
+            u_step,
+            true,
+            domain,
+            [None, None],
+        )?;
+        let dv = model_surface_derivative(
+            &index,
+            surface,
+            parameters,
+            v_step,
+            false,
+            domain,
+            [None, None],
+        )?;
         let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
             break;
         };
@@ -5258,7 +5285,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
 }
 
 fn coarse_model_surface_parameters(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     domain: ([f64; 2], [f64; 2]),
@@ -5273,7 +5300,7 @@ fn coarse_model_surface_parameters(
                 v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
             );
             let Some(candidate) =
-                model_surface_point_by_id(ir, surface, parameters.u, parameters.v)
+                model_surface_point_by_id(index, surface, parameters.u, parameters.v)
             else {
                 continue;
             };
@@ -5365,7 +5392,7 @@ fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>) -> f64 {
 }
 
 fn model_surface_derivative(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     parameters: Point2,
     step: f64,
@@ -5373,15 +5400,12 @@ fn model_surface_derivative(
     domain: Option<([f64; 2], [f64; 2])>,
     periods: [Option<f64>; 2],
 ) -> Option<Vector3> {
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let carrier = index.surfaces(&surface.0)?;
     if let Some(partials) = surface_partials(&carrier.geometry, parameters.u, parameters.v) {
         return Some(if along_u { partials.du } else { partials.dv });
     }
-    if let Some(partials) = model_surface_partials_by_id(ir, surface, parameters.u, parameters.v) {
+    if let Some(partials) = model_surface_partials_by_id(index, surface, parameters.u, parameters.v)
+    {
         return Some(if along_u { partials.du } else { partials.dv });
     }
 
@@ -5404,8 +5428,8 @@ fn model_surface_derivative(
     if !width.is_finite() || width == 0.0 {
         return None;
     }
-    let first = model_surface_point_by_id(ir, surface, before.u, before.v)?;
-    let second = model_surface_point_by_id(ir, surface, after.u, after.v)?;
+    let first = model_surface_point_by_id(index, surface, before.u, before.v)?;
+    let second = model_surface_point_by_id(index, surface, after.u, after.v)?;
     Some(Vector3::new(
         (second.x - first.x) / width,
         (second.y - first.y) / width,
@@ -5439,6 +5463,7 @@ fn continue_surface_intersection_parameters_with_seeds(
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     if chart.len() < 2
         || surfaces[0] == surfaces[1]
         || !fit_tolerance.is_finite()
@@ -5482,9 +5507,9 @@ fn continue_surface_intersection_parameters_with_seeds(
         chart[1].y - chart[0].y,
         chart[1].z - chart[0].z,
     );
-    let seed_tangent = intersection_parameter_tangent(ir, surfaces, seed, space, first_chord)?;
+    let seed_tangent = intersection_parameter_tangent(&index, surfaces, seed, space, first_chord)?;
     let mut current = correct_intersection_parameters(
-        ir,
+        &index,
         surfaces,
         seed,
         seed_tangent,
@@ -5492,7 +5517,7 @@ fn continue_surface_intersection_parameters_with_seeds(
         fit_tolerance,
         1.0,
     )?;
-    let first_point = model_surface_point_by_id(ir, surfaces[0], current[0], current[1])?;
+    let first_point = model_surface_point_by_id(&index, surfaces[0], current[0], current[1])?;
     if point_distance(first_point, chart[0]) > fit_tolerance {
         return None;
     }
@@ -5502,13 +5527,13 @@ fn continue_surface_intersection_parameters_with_seeds(
     ];
 
     for chart_pair in chart.windows(2) {
-        let jacobian = intersection_parameter_jacobian(ir, surfaces, current, space)?;
+        let jacobian = intersection_parameter_jacobian(&index, surfaces, current, space)?;
         let chord = Vector3::new(
             chart_pair[1].x - chart_pair[0].x,
             chart_pair[1].y - chart_pair[0].y,
             chart_pair[1].z - chart_pair[0].z,
         );
-        let tangent = intersection_parameter_tangent(ir, surfaces, current, space, chord)?;
+        let tangent = intersection_parameter_tangent(&index, surfaces, current, space, chord)?;
         let spatial_tangent = Vector3::new(
             jacobian[0][0] * tangent[0] + jacobian[0][1] * tangent[1],
             jacobian[1][0] * tangent[0] + jacobian[1][1] * tangent[1],
@@ -5543,7 +5568,7 @@ fn continue_surface_intersection_parameters_with_seeds(
             return None;
         }
         let corrected = correct_intersection_parameters(
-            ir,
+            &index,
             surfaces,
             predictor,
             tangent,
@@ -5551,7 +5576,7 @@ fn continue_surface_intersection_parameters_with_seeds(
             fit_tolerance,
             scale,
         )?;
-        let point = model_surface_point_by_id(ir, surfaces[0], corrected[0], corrected[1])?;
+        let point = model_surface_point_by_id(&index, surfaces[0], corrected[0], corrected[1])?;
         if point_distance(point, chart_pair[1]) > fit_tolerance {
             return None;
         }
@@ -5636,7 +5661,7 @@ fn surface_parameter_periods_inner(
 }
 
 fn correct_intersection_parameters(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     predictor: [f64; 4],
     tangent: [f64; 4],
@@ -5647,8 +5672,8 @@ fn correct_intersection_parameters(
     let mut corrected = predictor;
     clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
-        let first = model_surface_point_by_id(ir, surfaces[0], corrected[0], corrected[1])?;
-        let second = model_surface_point_by_id(ir, surfaces[1], corrected[2], corrected[3])?;
+        let first = model_surface_point_by_id(index, surfaces[0], corrected[0], corrected[1])?;
+        let second = model_surface_point_by_id(index, surfaces[1], corrected[2], corrected[3])?;
         let residual = [
             first.x - second.x,
             first.y - second.y,
@@ -5667,7 +5692,7 @@ fn correct_intersection_parameters(
         {
             return Some(corrected);
         }
-        let jacobian = intersection_parameter_jacobian(ir, surfaces, corrected, space)?;
+        let jacobian = intersection_parameter_jacobian(index, surfaces, corrected, space)?;
         let matrix = [jacobian[0], jacobian[1], jacobian[2], tangent];
         let rhs = residual.map(|value| -value);
         let step =
@@ -5687,13 +5712,13 @@ struct IntersectionParameterSpace {
 }
 
 fn intersection_parameter_tangent(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     parameters: [f64; 4],
     space: IntersectionParameterSpace,
     chord: Vector3,
 ) -> Option<[f64; 4]> {
-    let jacobian = intersection_parameter_jacobian(ir, surfaces, parameters, space)?;
+    let jacobian = intersection_parameter_jacobian(index, surfaces, parameters, space)?;
     if let Some(tangent) = null_vector_3x4(jacobian) {
         return Some(tangent);
     }
@@ -5731,7 +5756,7 @@ fn intersection_parameter_tangent(
 }
 
 fn intersection_parameter_jacobian(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     parameters: [f64; 4],
     space: IntersectionParameterSpace,
@@ -5747,7 +5772,7 @@ fn intersection_parameter_jacobian(
             parameter_derivative_step(pairs[side].v, space.domains[side].map(|value| value.1));
         Some([
             model_surface_derivative(
-                ir,
+                index,
                 surfaces[side],
                 pairs[side],
                 u_step,
@@ -5756,7 +5781,7 @@ fn intersection_parameter_jacobian(
                 space.periods[side],
             )?,
             model_surface_derivative(
-                ir,
+                index,
                 surfaces[side],
                 pairs[side],
                 v_step,
@@ -7632,6 +7657,7 @@ fn orient_tolerant_intersection_pcurve(
     endpoints: [Point3; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let points = range.map(|parameter| {
         let uv = pcurve_uv(pcurve, parameter)?;
         decoded_surface_point(ir, support, uv.u, uv.v)
@@ -7652,7 +7678,7 @@ fn orient_tolerant_intersection_pcurve(
             let alignment = |candidate: &PcurveGeometry| {
                 let uv = pcurve_uv(candidate, range[0])?;
                 let uv_tangent = pcurve_tangent(candidate, range[0])?;
-                let partials = model_surface_partials_by_id(ir, support, uv.u, uv.v)?;
+                let partials = model_surface_partials_by_id(&index, support, uv.u, uv.v)?;
                 let tangent = unit_vector(Vector3::new(
                     uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
                     uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
@@ -11784,8 +11810,13 @@ mod tests {
                     .unwrap();
                 let expected = cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).unwrap();
                 let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
-                let actual =
-                    cadmpeg_ir::eval::model_surface_point_by_id(&ir, surface, uv.u, uv.v).unwrap();
+                let actual = cadmpeg_ir::eval::model_surface_point_by_id(
+                    &cadmpeg_ir::index::ModelIndex::new(&ir),
+                    surface,
+                    uv.u,
+                    uv.v,
+                )
+                .unwrap();
                 assert!(super::point_distance(expected, actual) < 1.0e-12);
             }
         }
@@ -11847,7 +11878,7 @@ mod tests {
                         return false;
                     };
                     let Some(point) = cadmpeg_ir::eval::model_surface_point_by_id(
-                        &ir,
+                        &cadmpeg_ir::index::ModelIndex::new(&ir),
                         &supports[side],
                         uv.u,
                         uv.v,
@@ -11862,8 +11893,12 @@ mod tests {
             }));
         for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
             let curve = &ir.model.procedural_curves[0].curve;
-            let point = cadmpeg_ir::eval::model_curve_point_by_id(&ir, curve, parameter)
-                .expect("closed intersection evaluates");
+            let point = cadmpeg_ir::eval::model_curve_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                curve,
+                parameter,
+            )
+            .expect("closed intersection evaluates");
             let inverse =
                 cadmpeg_ir::eval::model_curve_parameter_near_point(&ir, curve, point, parameter)
                     .unwrap_or_else(|| {
@@ -12434,8 +12469,18 @@ mod tests {
         assert_eq!(parameterization.parameter_range, [0.0, 10.0]);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 10.0]));
         assert_eq!(
-            cadmpeg_ir::eval::model_surface_point_by_id(&ir, &surfaces[0], 5.0, 0.0),
-            cadmpeg_ir::eval::model_surface_point_by_id(&ir, &surfaces[1], 5.0, 0.0)
+            cadmpeg_ir::eval::model_surface_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                &surfaces[0],
+                5.0,
+                0.0
+            ),
+            cadmpeg_ir::eval::model_surface_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                &surfaces[1],
+                5.0,
+                0.0
+            )
         );
 
         let ProceduralCurveDefinition::TolerantIntersection {

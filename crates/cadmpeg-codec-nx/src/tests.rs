@@ -6925,7 +6925,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &ir.model.procedural_curves[0].curve,
             parameter,
         )
@@ -6970,7 +6970,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         direction: Point2::new(1.0, 0.0),
     };
     assert!(cadmpeg_ir::eval::model_curve_point_by_id(
-        &ir,
+        &cadmpeg_ir::index::ModelIndex::new(&ir),
         &ir.model.procedural_curves[0].curve,
         0.5,
     )
@@ -7478,9 +7478,13 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result.ir.model.procedural_surfaces[0].surface.clone();
     let expected = Point2::new(12.0, 7.0);
-    let point =
-        cadmpeg_ir::eval::model_surface_point_by_id(&result.ir, &surface, expected.u, expected.v)
-            .unwrap();
+    let point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
 
     let actual =
         crate::decode::offset_surface_parameters(&result.ir, &surface, point, None).unwrap();
@@ -7496,9 +7500,13 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             origin.z += 1.0e12;
         }
     }
-    let translated_point =
-        cadmpeg_ir::eval::model_surface_point_by_id(&translated, &surface, expected.u, expected.v)
-            .unwrap();
+    let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&translated),
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
     let translated_parameters = crate::decode::offset_surface_parameters_with_tolerance(
         &translated,
         &surface,
@@ -7541,7 +7549,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             record_bounds: None,
         });
     let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
-        &translated,
+        &cadmpeg_ir::index::ModelIndex::new(&translated),
         &nested_surface,
         expected.u,
         expected.v,
@@ -7566,8 +7574,13 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result.ir.model.procedural_surfaces[0].surface.clone();
     let seed = Point2::new(12.0, 7.0);
-    let mut point =
-        cadmpeg_ir::eval::model_surface_point_by_id(&result.ir, &surface, seed.u, seed.v).unwrap();
+    let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &surface,
+        seed.u,
+        seed.v,
+    )
+    .unwrap();
     point.x += 0.01;
 
     let actual = crate::decode::offset_surface_parameters_with_tolerance(
@@ -10875,14 +10888,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     assert_eq!(lanes[0].len(), chart.len());
     for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
         let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &first,
             lanes[0][ordinal].u,
             lanes[0][ordinal].v,
         )
         .unwrap();
         let second_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &second,
             lanes[1][ordinal].u,
             lanes[1][ordinal].v,
@@ -10944,14 +10957,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     .unwrap();
     for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
         let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &cylinder,
             cylinder_uv.u,
             cylinder_uv.v,
         )
         .unwrap();
         let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &section_plane,
             plane_uv.u,
             plane_uv.v,
@@ -12166,9 +12179,12 @@ fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
     };
     assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let point =
-            cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
-                .expect("exact plane intersection evaluates");
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact plane intersection evaluates");
         let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
             &result.ir,
             &procedural.curve,
@@ -12227,9 +12243,12 @@ fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
         )
     }));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let point =
-            cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
-                .expect("exact generator evaluates");
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact generator evaluates");
         let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
             &result.ir,
             &procedural.curve,
@@ -12293,9 +12312,12 @@ fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
     };
     assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
     for parameter in [0.0, 0.5, 1.0] {
-        let point =
-            cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
-                .expect("exact cone generator evaluates");
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact cone generator evaluates");
         let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
             &result.ir,
             &procedural.curve,
@@ -12381,9 +12403,12 @@ fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
             )
         }));
         for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let point =
-                cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
-                    .unwrap_or_else(|| panic!("{family} meridian evaluates"));
+            let point = cadmpeg_ir::eval::model_curve_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+                &procedural.curve,
+                parameter,
+            )
+            .unwrap_or_else(|| panic!("{family} meridian evaluates"));
             let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
                 &result.ir,
                 &procedural.curve,
