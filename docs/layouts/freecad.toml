@@ -1,0 +1,172 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for FreeCAD `.FCStd`.
+schema = 1
+format = "freecad"
+spec = "docs/formats/freecad_fcstd.md"
+endianness = "little"
+note = """
+FCStd is a ZIP of XML plus embedded OCC B-Rep and application side entries. The
+XML layers have no byte layout, but four side entries do, and those are tabled
+here: the mesh-kernel record, the point-kernel record, the packed-colour list,
+and the link-array element list (§11, §9).
+
+The §11 side entries state that both integer byte orders are accepted for the
+mesh record when its magic and version agree; every other stated width in these
+records is little-endian.
+"""
+
+[[record]]
+name = "mesh_kernel_side_entry_header"
+kind = "byte"
+section = "11"
+anchor = "The current typed record begins with the 32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field."
+size = 264
+endianness = "unstated"
+note = "Both integer byte orders are accepted when the magic and version agree, so the header states no single endianness. Two 32-bit counts follow at +264, then ordered float32 XYZ points and facets, then six float32 bounding-box limits."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "the 32-bit magic `a0b0c0d0`"
+note = "The spec states outright that both byte orders are accepted for this word."
+
+[[record.field]]
+name = "version"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the 32-bit version `00010000`"
+note = "The spec states outright that both byte orders are accepted for this word."
+
+[[record.field]]
+name = "information"
+offset = 8
+type = "bytes[256]"
+source = "spec"
+anchor = "and a 256-byte information field"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
+contains = "const MESH_MAGIC: u32 = 0xa0b0_c0d0;"
+note = "The parser's mesh magic matches offset 0."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
+contains = "const MESH_VERSION: u32 = 0x0001_0000;"
+note = "The parser's mesh version matches offset 4."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
+contains = "reader.skip(256, \"mesh information header\")?;"
+note = "The parser skips the stated 256-byte information field."
+
+[[record]]
+name = "mesh_facet"
+kind = "byte"
+section = "11"
+anchor = "Each facet contains three zero-based point indices followed by three stored neighbour indices."
+size = 24
+note = "Six 32-bit indices. The 24-byte stride is derived from the stated field count and the record's 32-bit index width; the spec states no total."
+
+[[record.field]]
+name = "point_indices"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "Each facet contains three zero-based point indices"
+
+[[record.field]]
+name = "neighbour_indices"
+offset = 12
+type = "u32[3]"
+source = "derived"
+anchor = "three zero-based point indices followed by three stored neighbour indices"
+note = "Offset derived from the three preceding 32-bit indices."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-freecad/src/application_geometry.rs"
+contains = "bounded_len(facet_count as u64, 24, reader.remaining())"
+note = "The parser bounds the facet array at 24 bytes per facet, matching the derived stride."
+
+[[record]]
+name = "point_kernel_side_entry_header"
+kind = "byte"
+section = "11"
+anchor = "Point-kernel properties reference a side entry containing a little-endian 32-bit point count followed by ordered float32 XYZ triples."
+size = 4
+note = "Fixed prefix only; `count` float32 XYZ triples follow at +4. The property's `Points` element carries the sixteen finite row-major transform scalars separately, in XML."
+
+[[record.field]]
+name = "point_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a little-endian 32-bit point count followed by ordered float32 XYZ triples"
+
+[[record]]
+name = "packed_color_list_header"
+kind = "byte"
+section = "11"
+anchor = "Each list contains a little-endian count followed by packed-color records."
+size = 4
+note = "Applies to `DiffuseColor`, `LineColorArray`, and `PointColorArray`. A count of one applies its colour to every member of the corresponding element-map group; otherwise the count must equal the number of names in that ordered group."
+
+[[record.field]]
+name = "count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a little-endian count followed by packed-color records"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-freecad/src/gui.rs"
+contains = "u32::from_le_bytes"
+note = "The parser reads the leading count and each packed-colour record as little-endian u32."
+
+[[record]]
+name = "link_array_side_entry_header"
+kind = "byte"
+section = "9"
+anchor = "Each side entry begins with a little-endian element count followed by either all single-precision or all double-precision components; exact entry length selects the precision."
+size = 4
+note = "Fixed prefix only. Placement records carry position plus quaternion (seven components); scale records carry three. The exact entry length selects f32 or f64 components, so no fixed element stride exists."
+
+[[record.field]]
+name = "element_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Each side entry begins with a little-endian element count"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-freecad/src/product.rs"
+contains = "f32::from_le_bytes"
+note = "The parser selects f64 or f32 components by matching the entry length, reading both little-endian."
+
+# --- Not tabulated -----------------------------------------------------------
+
+[[not_applicable]]
+area = "`Document.xml` and `GuiDocument.xml` element and attribute schema"
+reason = "XML, not a byte or column layout. The specification names about ten element and attribute identifiers in prose and tabulates none; the real schema exists only as string literals in the parser (26 tag names, 45 attribute names, with case-sensitive near-duplicates such as `value`/`Value`)."
+section = "2"
+anchor = "An FCStd document is identified by ZIP framing plus a root `Document.xml` entry"
+
+[[not_applicable]]
+area = "Binary OCC B-Rep shape sets"
+reason = "The specification states the accepted header band (text V1-V3, binary V1-V4) and which behaviours the version gates, but no record layout. The binary body is a nested, count-driven table stream with a 256-level depth cap."
+section = "7"
+anchor = "Text shape sets accept the complete declared header band V1 through V3."
+
+[[not_applicable]]
+area = "Element-map and string-table streams"
+reason = "Text streams framed by magic strings and newline counts, with hexadecimal ids and delta encoding. Positional in the line sense, not in the byte or column sense."
+section = "6"
+anchor = "## 6. Byte accounting"
+
+[[not_applicable]]
+area = "ZIP container framing"
+reason = "The outer envelope is a standard ZIP archive. Its local-header layout is the external ZIP specification, not a cadmpeg finding."
+section = "2"
+anchor = "A ZIP signature alone is not an FCStd identity marker."

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Deliberately broken layout table: a field names a type the schema does not define
+# `crates/cadmpeg/tests/layout_tables.rs` asserts the validator rejects it.
+schema = 1
+format = "f3d"
+spec = "docs/formats/f3d.md"
+endianness = "little"
+
+[[record]]
+name = "asmheader_binaryfile8"
+kind = "byte"
+section = "3"
+anchor = "`BinaryFile8` header layout"
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "quadword"
+source = "spec"
+anchor = "`0..15` | magic `ASM BinaryFile8`"

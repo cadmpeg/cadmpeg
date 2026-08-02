@@ -4,6 +4,8 @@
 
 ---
 
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/sldprt.md`](../layouts/sldprt.md), generated from `docs/layouts/sldprt.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+
 ## 1. File container
 
 SLDPRT uses two outer envelopes. The block envelope begins with the header and

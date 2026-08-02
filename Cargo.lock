@@ -154,9 +154,11 @@ dependencies = [
  "crc32fast",
  "memchr",
  "predicates",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+ "toml",
  "zip",
 ]
 

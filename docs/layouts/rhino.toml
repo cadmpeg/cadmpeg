@@ -1,0 +1,449 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for Rhino `.3dm`.
+schema = 1
+format = "rhino"
+spec = "docs/formats/rhino_3dm.md"
+endianness = "little"
+note = """
+§3 states the global rule: all numeric values are little-endian. `ON_Color` and
+the `ON_UUID` `Data4` run are the stated exceptions and are marked `n/a`.
+
+Covers the file header (§2), the primitive width table (§3), the mixed-endian
+UUID wire form (§3.3), chunk framing (§4), the end-of-file record (§5), the
+class-UUID chunk body (§7), the compressed-buffer prologue (§10), and the SubD
+component base (§19.5). Everything else in the specification is an ordered slot
+layout: field order and widths with no stated offsets.
+"""
+
+[[type]]
+name = "on_uuid"
+bytes = 16
+endianness = "little"
+note = "Mixed-endian GUID: `Data1` u32 LE, `Data2` u16 LE, `Data3` u16 LE, `Data4` eight bytes unchanged."
+section = "3.3"
+anchor = "Data1: u32 little-endian"
+
+[[type]]
+name = "on_3d_point"
+bytes = 24
+endianness = "little"
+note = "Three little-endian f64 values, x/y/z."
+section = "3"
+anchor = "| `ON_3dPoint` | three `f64` values, x/y/z |"
+
+[[type]]
+name = "on_interval"
+bytes = 16
+endianness = "little"
+note = "Two little-endian f64 values, lower then upper."
+section = "3"
+anchor = "| `ON_Interval` | two `f64` values, lower/upper |"
+
+[[record]]
+name = "file_header"
+kind = "byte"
+section = "2"
+anchor = "The first 32 bytes are:"
+size = 32
+note = "The version field is right-justified decimal text, not a binary integer: leading ASCII spaces then at least one ASCII digit. Version `5` and version `50` are distinct."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[24]"
+source = "spec"
+anchor = "bytes 0..23   ASCII \"3D Geometry File Format \""
+note = "The trailing space is part of the magic."
+
+[[record.field]]
+name = "archive_version"
+offset = 24
+type = "bytes[8]"
+source = "spec"
+anchor = "bytes 24..31  right-justified decimal archive version"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
+contains = "3D Geometry File Format "
+note = "The parser's 24-byte magic matches offset 0."
+
+[[record]]
+name = "uuid_wire_form"
+kind = "byte"
+section = "3.3"
+anchor = "Data1: u32 little-endian"
+size = 16
+note = "The only mixed-endian primitive in the format. The worked example is canonical `4ED7D4DD-E947-11D3-BFE5-0010830122F0`, wire `DD D4 D7 4E 47 E9 D3 11 BF E5 00 10 83 01 22 F0`."
+
+[[record.field]]
+name = "data1"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Data1: u32 little-endian"
+
+[[record.field]]
+name = "data2"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "Data2: u16 little-endian"
+
+[[record.field]]
+name = "data3"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "Data3: u16 little-endian"
+
+[[record.field]]
+name = "data4"
+offset = 8
+type = "bytes[8]"
+endianness = "unstated"
+source = "spec"
+anchor = "Data4: eight bytes unchanged"
+note = "Not a number: the eight bytes are copied verbatim, so no byte order applies."
+
+[[record]]
+name = "long_chunk_header_v2"
+kind = "byte"
+section = "4"
+anchor = "u32 typecode"
+size = 8
+note = "Archive versions below 50. The length word is `i32` below archive version 50 and `i64` from 50; the 8-byte total here is the below-50 form. `declared_length` bytes of body follow and include the trailing checksum when present."
+
+[[record.field]]
+name = "typecode"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Every chunk begins with a little-endian `u32 typecode`."
+
+[[record.field]]
+name = "declared_length"
+offset = 4
+type = "i32"
+source = "spec"
+anchor = "archive version < 50   i32"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
+contains = "TCODE_SHORT: u32 = 0x8000_0000"
+note = "The parser's short-chunk flag matches the §4 constant that selects between the long and short forms."
+
+[[record]]
+name = "long_chunk_header_v50"
+kind = "byte"
+section = "4"
+anchor = "archive version >= 50  i64"
+size = 12
+note = "Archive versions 50 and above widen the length word to `i64`."
+
+[[record.field]]
+name = "typecode"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Every chunk begins with a little-endian `u32 typecode`."
+
+[[record.field]]
+name = "declared_length"
+offset = 4
+type = "i64"
+source = "spec"
+anchor = "archive version >= 50  i64"
+
+[[record]]
+name = "endoffile_record_v50"
+kind = "byte"
+section = "5"
+anchor = "archive version >= 50  length = 8, u64 file_size"
+size = 20
+note = "`TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk whose declared length is exactly the file-size field width. The stored size includes the 32-byte header, all preceding chunks, the EOF typecode, the EOF value field, and the file-size field. Below archive version 50 the length and size words are four bytes each and the record is 12 bytes. The 20-byte total is derived from the three stated widths; the spec states no total."
+
+[[record.field]]
+name = "typecode"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk"
+
+[[record.field]]
+name = "declared_length"
+offset = 4
+type = "i64"
+source = "spec"
+anchor = "archive version >= 50  length = 8, u64 file_size"
+
+[[record.field]]
+name = "file_size"
+offset = 12
+type = "u64"
+source = "spec"
+anchor = "archive version >= 50  length = 8, u64 file_size"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
+contains = "TCODE_ENDOFFILE: u32 = 0x0000_7fff"
+note = "The parser's end-of-file typecode matches the stated value."
+
+[[record]]
+name = "class_uuid_chunk_body"
+kind = "byte"
+section = "7"
+anchor = "The UUID chunk has declared body length 20 in V2+: sixteen UUID bytes and four checksum bytes."
+size = 20
+note = "One of the two places the specification states a record body size outright."
+
+[[record.field]]
+name = "class_uuid"
+offset = 0
+type = "on_uuid"
+source = "spec"
+anchor = "sixteen UUID bytes and four checksum bytes"
+
+[[record.field]]
+name = "crc32"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "sixteen UUID bytes and four checksum bytes"
+
+[[record]]
+name = "compressed_buffer_prologue"
+kind = "byte"
+section = "10"
+anchor = "u32 uncompressed size"
+size = 9
+note = "A zero size ends the buffer immediately: no CRC, method, or body follows, so the prologue collapses to its first four bytes. Method 0 stores the bytes verbatim; method 1 stores one anonymous long chunk whose body is a complete zlib stream."
+
+[[record.field]]
+name = "uncompressed_size"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 uncompressed size"
+
+[[record.field]]
+name = "crc32"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "u32 CRC32 of uncompressed bytes"
+
+[[record.field]]
+name = "method"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "u8 method"
+
+[[record]]
+name = "on_plane"
+kind = "slot"
+section = "3.2"
+anchor = "An `ON_Plane` is 128 bytes:"
+size = 128
+note = "The plane equation is serialized and is not reconstructed from the axes. Field order and widths are stated; byte offsets are not, but the four 24-byte frames plus the 32-byte equation close the stated 128-byte total."
+
+[[record.field]]
+name = "origin"
+type = "f64[3]"
+source = "spec"
+anchor = "origin: x y z                         3 × f64"
+
+[[record.field]]
+name = "xaxis"
+type = "f64[3]"
+source = "spec"
+anchor = "xaxis:  x y z                         3 × f64"
+
+[[record.field]]
+name = "yaxis"
+type = "f64[3]"
+source = "spec"
+anchor = "yaxis:  x y z                         3 × f64"
+
+[[record.field]]
+name = "zaxis"
+type = "f64[3]"
+source = "spec"
+anchor = "zaxis:  x y z                         3 × f64"
+
+[[record.field]]
+name = "plane_equation"
+type = "f64[4]"
+source = "spec"
+anchor = "plane equation: x y z d               4 × f64"
+
+[[record]]
+name = "on_circle"
+kind = "slot"
+section = "3.2"
+anchor = "ON_Plane plane                         128 bytes"
+note = "Per-field byte widths are stated; the total is not. An `ON_Arc` appends `ON_Interval angle` to the circle. The three consistency points are on the wire in every payload using `ON_Circle`."
+
+[[record.field]]
+name = "plane"
+type = "bytes[128]"
+source = "spec"
+anchor = "ON_Plane plane                         128 bytes"
+
+[[record.field]]
+name = "radius"
+type = "f64"
+source = "spec"
+anchor = "f64 radius                               8 bytes"
+
+[[record.field]]
+name = "point_at_zero"
+type = "on_3d_point"
+source = "spec"
+anchor = "ON_3dPoint point_at_zero                24 bytes"
+
+[[record.field]]
+name = "point_at_half_pi"
+type = "on_3d_point"
+source = "spec"
+anchor = "ON_3dPoint point_at_half_pi             24 bytes"
+
+[[record.field]]
+name = "point_at_pi"
+type = "on_3d_point"
+source = "spec"
+anchor = "ON_3dPoint point_at_pi                 24 bytes"
+
+[[record]]
+name = "subd_component_base"
+kind = "byte"
+section = "19.5"
+anchor = "u32 archive_id"
+size = 10
+endianness = "little"
+note = "The field list is stated in order; the 10-byte total follows from the three stated widths."
+
+[[record.field]]
+name = "archive_id"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 archive_id"
+
+[[record.field]]
+name = "component_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "u32 component_id"
+
+[[record.field]]
+name = "subdivision_level"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "u16 subdivision_level"
+
+[[record]]
+name = "anonymous_version_prefix"
+kind = "byte"
+section = "5"
+anchor = "i32 major"
+size = 8
+endianness = "little"
+note = "The anonymous form. The packed form is one byte with `major = version >> 4` and `minor = version & 0x0f`. The two forms are not interchangeable."
+
+[[record.field]]
+name = "major"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "i32 major"
+
+[[record.field]]
+name = "minor"
+offset = 4
+type = "i32"
+source = "spec"
+anchor = "i32 minor"
+
+# --- Typecode inventory (§6.1, §6.4) ----------------------------------------
+
+[[token]]
+tag = "0x80000000"
+name = "TCODE_SHORT"
+payload_bytes = 0
+note = "flag bit: the chunk's value field is its payload and no body or checksum follows"
+section = "4"
+anchor = "TCODE_SHORT = 0x80000000"
+
+[[token]]
+tag = "0x00008000"
+name = "TCODE_CRC"
+payload_bytes = 0
+note = "flag bit: for V2 and later, the long chunk ends with a four-byte little-endian CRC32"
+section = "4"
+anchor = "TCODE_CRC   = 0x00008000"
+
+[[token]]
+tag = "0x00000001"
+name = "comment block"
+note = "the first post-header chunk"
+section = "6.1"
+anchor = "| comment block | `0x00000001` |"
+
+[[token]]
+tag = "0x00007fff"
+name = "end of file"
+note = "long, unchecksummed; declared length is the file-size field width"
+section = "6.1"
+anchor = "| end of file | `0x00007fff` |"
+
+[[token]]
+tag = "0xffffffff"
+name = "end of table"
+note = "short chunk whose value is zero, closing a table"
+section = "6.1"
+anchor = "| end of table | `0xffffffff` |"
+
+[[token]]
+tag = "0x10000013"
+name = "object table"
+note = "table chunk holding object records"
+section = "6.1"
+anchor = "| object table | `0x10000013` |"
+
+[[token]]
+tag = "0x20008070"
+name = "object record"
+note = "one object record inside the object table"
+section = "6.2"
+anchor = "| object record | `0x20008070` |"
+
+[[token]]
+tag = "0x0002fffb"
+name = "class UUID"
+note = "class-identity chunk; its checksum is forced on regardless of TCODE_CRC"
+section = "6.4"
+anchor = "| class UUID | `0x0002fffb` |"
+
+[[token]]
+tag = "0x0002fffc"
+name = "class data"
+note = "class payload chunk"
+section = "6.4"
+anchor = "| class data | `0x0002fffc` |"
+
+# --- Not tabulated -----------------------------------------------------------
+
+[[not_applicable]]
+area = "Object payload grammars (§7-§20)"
+reason = "Roughly sixty payload layouts. Each states a serialization order and per-field types but no byte offsets and no total size, because version gates and counted arrays move every later field. They are slot layouts, and only the two in §3.2 state a size the slots can be checked against."
+section = "7"
+anchor = "A table is a bounded table chunk containing record chunks followed by a short `TCODE_ENDOFTABLE` whose value is zero."
+
+[[not_applicable]]
+area = "Materials, linetypes, hatch patterns, fonts, dimstyles, and views (§20.2-§20.4)"
+reason = "The specification names the field sets for these classes in prose but gives no serialization order and no widths, so there is nothing to tabulate."
+section = "11"
+anchor = "## 11. Class UUID registry"

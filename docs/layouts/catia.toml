@@ -1,0 +1,1150 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for CATIA V5 `.CATPart`.
+schema = 1
+format = "catia"
+spec = "docs/formats/catia.md"
+endianness = "little"
+note = """
+Covers the container headers and stream directory (§3), the `SurfacicReps`
+roster rows and analytic surface records (§3.5, §5.8), the `0x60` curve-support
+row (§5.5), the consolidated record framing families (§6), the outer schema
+records (§7), the zero-entity `a9 03` framing (§8), and the E5 framing (§9).
+
+§1 states the global rule: all multi-byte integers are little-endian unless
+explicitly marked BE, and float coordinates are in millimetres. Records that use
+the big-endian lane say so per field.
+"""
+
+# --- §3.1 Outer header -----------------------------------------------------
+
+[[record]]
+name = "outer_header"
+kind = "byte"
+section = "3.1"
+anchor = "0x00..0x07 magic = \"V5_CFV2\\0\""
+size = 64
+note = "`directory_offset + directory_length == file_size`. The parser reads only the magic and the two directory words; the fill and flag regions are never read."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "0x00..0x07 magic = \"V5_CFV2\\0\""
+
+[[record.field]]
+name = "directory_offset"
+offset = 8
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "0x08..0x0B directory_offset = u32 BE"
+
+[[record.field]]
+name = "directory_length"
+offset = 12
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "0x0C..0x0F directory_length = u32 BE"
+
+[[record.field]]
+name = "fill_ff"
+offset = 16
+type = "bytes[8]"
+source = "spec"
+anchor = "0x10..0x17 fill_ff = ff * 8"
+
+[[record.field]]
+name = "fill_00"
+offset = 24
+type = "bytes[32]"
+source = "spec"
+anchor = "0x18..0x37 fill_00 = 00 * 32"
+
+[[record.field]]
+name = "hdr_flags"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "0x38..0x3F hdr_flags = 8 raw bytes (not constant)"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/container.rs"
+contains = "pub const OUTER_MAGIC: &[u8; 8] = b\"V5_CFV2\\0\";"
+note = "The parser's magic matches offset 0x00."
+
+[[record]]
+name = "inner_header"
+kind = "byte"
+section = "3.2"
+anchor = "A      = u32be(inner + 8)    # directory offset-delta"
+size = 16
+note = "`inner` is the first `V5_CFV2\\0` after outer byte 8. `diroff = inner + A`."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "inner  = first \"V5_CFV2\\0\" after outer byte 8"
+
+[[record.field]]
+name = "directory_offset_delta"
+offset = 8
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "A      = u32be(inner + 8)    # directory offset-delta"
+
+[[record.field]]
+name = "directory_length"
+offset = 12
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "B      = u32be(inner + 12)   # directory length"
+
+# --- §3.4 Nested-container stream directory --------------------------------
+
+[[record]]
+name = "stream_descriptor_header"
+kind = "byte"
+section = "3.4"
+anchor = "ds+0x0c : logical_stream_length  (u32be)"
+size = 84
+note = "Descriptor-relative. `k` extent structs of 20 bytes each follow at ds+0x54. The stream name is a UTF-16LE ASCII run somewhere in this header; the spec states no offset for it."
+
+[[record.field]]
+name = "logical_stream_length"
+offset = 12
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "ds+0x0c : logical_stream_length  (u32be)"
+
+[[record.field]]
+name = "extent_count"
+offset = 80
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "ds+0x50 : extent_count k         (u32be)"
+
+[[record.gap]]
+offset = 0
+size = 12
+note = "The spec states no field between the descriptor start and the logical stream length at ds+0x0c."
+
+[[record.gap]]
+offset = 16
+size = 64
+note = "The spec states no field between ds+0x10 and the extent count at ds+0x50. The stream name lies somewhere in this region."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/container.rs"
+contains = "The extent count sits at `desc_offset + 0x50`."
+note = "The parser locates the extent count at the same descriptor offset."
+
+[[record]]
+name = "extent_struct"
+kind = "byte"
+section = "3.4"
+anchor = "ds+0x54 : k extent structs, 20 bytes each:"
+size = 20
+endianness = "big"
+note = "`inner + phys_off + phys_len <= filesize`, `phys_len != 0`, `log_off` cumulative from 0, `log_len == phys_len`, and `sum(log_len) == logical_stream_length`."
+
+[[record.field]]
+name = "phys_off"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "phys_off u32be   # measured from the inner magic"
+
+[[record.field]]
+name = "phys_len"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "phys_len u32be"
+
+[[record.field]]
+name = "log_len"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "log_len  u32be"
+
+[[record.field]]
+name = "log_off"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "log_off  u32be"
+
+[[record.field]]
+name = "flags"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "flags    u32be"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/container.rs"
+contains = "pub const DIR_MAGIC: &[u8; 16] = b\"CATIA_V5 CB0001\\0\";"
+note = "The parser's directory magic matches the stated `file[diroff : diroff+16]` value."
+
+# --- §3.5 SurfacicReps roster rows ------------------------------------------
+
+[[record]]
+name = "vertex_roster_row"
+kind = "byte"
+section = "3.5"
+anchor = "trailing run of 7-byte records `54 <tag_u24le> 00 00 00`, with unique, strictly increasing tags"
+size = 7
+note = "The tags are unique and strictly increasing across the run."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "7-byte records `54 <tag_u24le> 00 00 00`"
+
+[[record.field]]
+name = "tag"
+offset = 1
+type = "u24"
+source = "spec"
+anchor = "`54 <tag_u24le> 00 00 00`"
+
+[[record.field]]
+name = "zero_run"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "`54 <tag_u24le> 00 00 00`, with unique, strictly increasing tags"
+
+[[record]]
+name = "freeform_surface_core"
+kind = "byte"
+section = "3.5"
+anchor = "`<tag_u24le> 00 00 00 <10×f32le> <sign_i8>` (47 bytes)"
+size = 47
+note = "`f[0:3]` is the trimmed face's AABB centre, `f[3:6]` its AABB half-extents, `f[6:9]` its bounding-sphere centre, and `f[9]` the bounding-sphere radius. The containment invariant `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` holds."
+
+[[record.field]]
+name = "tag"
+offset = 0
+type = "u24"
+source = "spec"
+anchor = "`<tag_u24le> 00 00 00 <10×f32le> <sign_i8>` (47 bytes)"
+
+[[record.field]]
+name = "zero_run"
+offset = 3
+type = "bytes[3]"
+source = "spec"
+anchor = "`<tag_u24le> 00 00 00 <10×f32le> <sign_i8>` (47 bytes)"
+
+[[record.field]]
+name = "bounds"
+offset = 6
+type = "f32[10]"
+source = "spec"
+anchor = "`<tag_u24le> 00 00 00 <10×f32le> <sign_i8>` (47 bytes)"
+
+[[record.field]]
+name = "sign"
+offset = 46
+type = "i8"
+source = "spec"
+anchor = "`sign ∈ {+1=0x01, −1=0xff}`"
+
+# --- §5.8 Analytic surface records in SurfacicReps --------------------------
+
+[[record]]
+name = "analytic_surface_plane"
+kind = "byte"
+section = "5.8"
+anchor = "| plane    | `0x32` | `0x02`  |     49 | start+48  |"
+size = 49
+note = "Record start is `marker_pos − 5`. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets."
+
+[[record.field]]
+name = "target_tag"
+offset = 0
+type = "u24"
+source = "spec"
+anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`."
+
+[[record.field]]
+name = "zero"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
+
+[[record.field]]
+name = "prebyte"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| plane    | `0x32` | `0x02`  |     49 | start+48  |"
+
+[[record.field]]
+name = "marker"
+offset = 5
+type = "bytes[2]"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "kind"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "| plane    | `0x32` | `0x02`  |     49 | start+48  |"
+
+[[record.field]]
+name = "sign"
+offset = 48
+type = "i8"
+source = "spec"
+anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
+
+[[record.gap]]
+offset = 8
+size = 40
+note = "Parameter payload. §5.8 states the BE f32 slot order per kind but no per-slot offsets; the bounds lane begins at marker-relative +3."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
+contains = "0x32 => Some(0x02), // plane"
+note = "The parser's kind-to-prebyte map matches the spec table row for the plane."
+
+[[record]]
+name = "analytic_surface_cylinder"
+kind = "byte"
+section = "5.8"
+anchor = "| cylinder | `0x33` | `0x1a`  |     73 | start+72  |"
+size = 73
+note = "Cylinder and cone share prebyte and length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32."
+
+[[record.field]]
+name = "target_tag"
+offset = 0
+type = "u24"
+source = "spec"
+anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "zero"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
+
+[[record.field]]
+name = "prebyte"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| cylinder | `0x33` | `0x1a`  |     73 | start+72  |"
+
+[[record.field]]
+name = "marker"
+offset = 5
+type = "bytes[2]"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "kind"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "| cylinder | `0x33` | `0x1a`  |     73 | start+72  |"
+
+[[record.field]]
+name = "sign"
+offset = 72
+type = "i8"
+source = "spec"
+anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
+
+[[record.gap]]
+offset = 8
+size = 64
+note = "Parameter payload `cylinder `00 1a 00 33 33 [px py pz ax ay radius]` as BE f32, plus the LE-f32 witness point. §5.8 gives the slot order and the marker-relative witness offset +27 but no per-slot record offsets, and §3.5 places the bounds lane at the same marker-relative +27."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
+contains = "0x33 => Some(0x1a), // cylinder"
+note = "The parser's kind-to-prebyte map matches the shared cylinder/cone row."
+
+[[record]]
+name = "analytic_surface_cone"
+kind = "byte"
+section = "5.8"
+anchor = "| cone     | `0x34` | `0x1a`  |     73 | start+72  |"
+size = 73
+
+[[record.field]]
+name = "target_tag"
+offset = 0
+type = "u24"
+source = "spec"
+anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "zero"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
+
+[[record.field]]
+name = "prebyte"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| cone     | `0x34` | `0x1a`  |     73 | start+72  |"
+
+[[record.field]]
+name = "marker"
+offset = 5
+type = "bytes[2]"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "kind"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "| cone     | `0x34` | `0x1a`  |     73 | start+72  |"
+
+[[record.field]]
+name = "sign"
+offset = 72
+type = "i8"
+source = "spec"
+anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
+
+[[record.gap]]
+offset = 8
+size = 64
+note = "Parameter payload `[apex_x apex_y apex_z ax ay semi_angle]` as BE f32; §5.8 states the slot order but no per-slot offsets."
+
+[[record]]
+name = "analytic_surface_sphere"
+kind = "byte"
+section = "5.8"
+anchor = "| sphere   | `0x35` | `0x12`  |     65 | start+64  |"
+size = 65
+
+[[record.field]]
+name = "target_tag"
+offset = 0
+type = "u24"
+source = "spec"
+anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "zero"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
+
+[[record.field]]
+name = "prebyte"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| sphere   | `0x35` | `0x12`  |     65 | start+64  |"
+
+[[record.field]]
+name = "marker"
+offset = 5
+type = "bytes[2]"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "kind"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "| sphere   | `0x35` | `0x12`  |     65 | start+64  |"
+
+[[record.field]]
+name = "sign"
+offset = 64
+type = "i8"
+source = "spec"
+anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
+
+[[record.gap]]
+offset = 8
+size = 56
+note = "Parameter payload `[cx cy cz radius]` as BE f32; §5.8 states the slot order but no per-slot offsets."
+
+[[record]]
+name = "analytic_surface_torus"
+kind = "byte"
+section = "5.8"
+anchor = "| torus    | `0x38` | `0x1e`  |     77 | start+76  |"
+size = 77
+
+[[record.field]]
+name = "target_tag"
+offset = 0
+type = "u24"
+source = "spec"
+anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "zero"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
+
+[[record.field]]
+name = "prebyte"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| torus    | `0x38` | `0x1e`  |     77 | start+76  |"
+
+[[record.field]]
+name = "marker"
+offset = 5
+type = "bytes[2]"
+source = "spec"
+anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+
+[[record.field]]
+name = "kind"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "| torus    | `0x38` | `0x1e`  |     77 | start+76  |"
+
+[[record.field]]
+name = "sign"
+offset = 76
+type = "i8"
+source = "spec"
+anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
+
+[[record.gap]]
+offset = 8
+size = 68
+note = "Parameter payload `[cx cy cz ax ay major minor]` as BE f32, plus the LE-f32 witness point at marker-relative +31; §5.8 states the slot order but no per-slot offsets."
+
+# --- §6 Consolidated record framing -----------------------------------------
+
+[[record]]
+name = "a_family_frame"
+kind = "byte"
+section = "6"
+anchor = "A-family (u32 length):  byte0 = 0xA4 + W  (a5/a6/a7 for W=1/2/3), flag 0x03/0x13/0x83"
+size = 7
+note = "Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The header token is a small repeating type code, not a per-record object id."
+
+[[record.field]]
+name = "family"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "byte0 = 0xA4 + W  (a5/a6/a7 for W=1/2/3)"
+
+[[record.field]]
+name = "flag"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "flag 0x03/0x13/0x83"
+
+[[record.field]]
+name = "class"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "+2 class  +3 payload_len:u32le  +7 header_token (W bytes)"
+
+[[record.field]]
+name = "payload_len"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "+3 payload_len:u32le  +7 header_token (W bytes)  payload @ +7+W"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/wire/records.rs"
+contains = "0xa4"
+note = "The parser derives the family width from `data[pos] - 0xa4`, matching the stated `0xA4 + W` rule."
+
+[[record]]
+name = "b_family_frame"
+kind = "byte"
+section = "6"
+anchor = "B-family (u8 length):   byte0 = 0xB1 + W  (b2/b3/b4), flag bytes 0x03/0x13/0x83"
+size = 4
+note = "Header only; the width-`W` header token occupies +4..+4+W and the payload starts at +4+W. `next = +4+W+payload_len`."
+
+[[record.field]]
+name = "family"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "byte0 = 0xB1 + W  (b2/b3/b4)"
+
+[[record.field]]
+name = "flag"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "flag bytes 0x03/0x13/0x83"
+
+[[record.field]]
+name = "class"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "+2 class  +3 payload_len:u8  +4 header_token (W bytes)"
+
+[[record.field]]
+name = "payload_len"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "+3 payload_len:u8  +4 header_token (W bytes)  payload @ +4+W"
+
+[[record]]
+name = "a8_object_stream_frame"
+kind = "byte"
+section = "6.6"
+anchor = "Frame: `a8 <frame_flag> <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`"
+size = 11
+note = "`frame_flag` is `03`, `13`, or `83`. References inside the payload are compact tokens selecting an id width (`18` selects u16, `38` selects u24)."
+
+[[record.field]]
+name = "family"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Frame: `a8 <frame_flag> <cls>"
+
+[[record.field]]
+name = "frame_flag"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "where `frame_flag` is `03`, `13`, or `83`"
+
+[[record.field]]
+name = "class"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "`a8 <frame_flag> <cls> <payload_len:u32le @+3>"
+
+[[record.field]]
+name = "payload_len"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "<payload_len:u32le @+3> <object_id:u32le @+7>"
+
+[[record.field]]
+name = "object_id"
+offset = 7
+type = "u32"
+source = "spec"
+anchor = "<object_id:u32le @+7> <payload @+11>"
+
+# --- §5.15 Surface of revolution --------------------------------------------
+
+[[record]]
+name = "surface_of_revolution_b2_03_2d"
+kind = "byte"
+section = "5.15"
+anchor = "geometry is a dedicated 174-byte `b2 03 2d` record: `+5` reference token (`08` or `0a`), `+6` profile allocation identity (u16le), `+8` 12×f64le (axis origin XYZ + three basis vectors), `+104` 4×f64le angular/profile bounds, then scale/flag tail."
+size = 174
+note = "Three normalized relations hold to f64 bit-equality: `angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, and `mean/scale==π+0.5`."
+
+[[record.field]]
+name = "reference_token"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "`+5` reference token (`08` or `0a`)"
+
+[[record.field]]
+name = "profile_allocation_identity"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "`+6` profile allocation identity (u16le)"
+
+[[record.field]]
+name = "frame"
+offset = 8
+type = "f64[12]"
+source = "spec"
+anchor = "`+8` 12×f64le (axis origin XYZ + three basis vectors)"
+
+[[record.field]]
+name = "bounds"
+offset = 104
+type = "f64[4]"
+source = "spec"
+anchor = "`+104` 4×f64le angular/profile bounds, then scale/flag tail"
+
+[[record.gap]]
+offset = 0
+size = 5
+note = "`b2 03 2d` family, class, and length bytes; the spec's offsets are stated from the record start."
+
+[[record.gap]]
+offset = 136
+size = 38
+note = "Scale and flag tail. The spec names it but states no field offsets; the parser asserts constants inside it at payload-relative +131..133, +141, +149, +157, +165, and +166."
+
+# --- §8 Zero-entity `a9 03` --------------------------------------------------
+
+[[record]]
+name = "a9_03_frame"
+kind = "byte"
+section = "8"
+anchor = "Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`"
+size = 4
+note = "Header only; the payload of `YY + 8` bytes follows at +4, so the record length is `YY + 12`. Records reference each other by one-based global record ordinal into the `a9 03` stream."
+
+[[record.field]]
+name = "family"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "Record framing `a9 03 XX YY <payload[YY+8]>`"
+
+[[record.field]]
+name = "tag_hi"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "`a9 03 XX YY <payload[YY+8]>`"
+
+[[record.field]]
+name = "tag_lo_length_driver"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "`record_length = YY + 12`"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
+contains = "+ 12"
+note = "The parser derives the nominal record end as `position + data[position + 3] + 12`, matching the stated `YY + 12`."
+
+[[record]]
+name = "zero_entity_edge_stride_5e1a"
+kind = "byte"
+section = "8"
+anchor = "A `5e1a` edge-stride record contains the fixed tagged-one prefix `10 01 00 00 00` at `+7`, five nonzero tagged `u32le` allocation values `[T,X,Y,T−1,T−2]` at `+12,+17,+22,+27,+32`, and terminal byte `21` at `+37`."
+size = 38
+note = "Each tagged allocation value is one tag byte plus a little-endian u32, so the five values run at stride 5."
+
+[[record.field]]
+name = "tagged_one_prefix"
+offset = 7
+type = "bytes[5]"
+source = "spec"
+anchor = "the fixed tagged-one prefix `10 01 00 00 00` at `+7`"
+
+[[record.field]]
+name = "allocations"
+offset = 12
+type = "bytes[25]"
+source = "spec"
+anchor = "five nonzero tagged `u32le` allocation values `[T,X,Y,T−1,T−2]` at `+12,+17,+22,+27,+32`"
+
+[[record.field]]
+name = "terminal"
+offset = 37
+type = "u8"
+source = "spec"
+anchor = "terminal byte `21` at `+37`"
+
+[[record.gap]]
+offset = 0
+size = 7
+note = "`a9 03 5e 1a` framing bytes and the region before the tagged-one prefix; the spec states no field here."
+
+[[record]]
+name = "zero_entity_vertex_owner_5d06"
+kind = "byte"
+section = "8"
+anchor = "an 18-byte `5d06` vertex-owner record containing tagged-one values at `+7` and `+12` and terminal byte zero at `+17`"
+size = 18
+
+[[record.field]]
+name = "tagged_one_a"
+offset = 7
+type = "bytes[5]"
+source = "spec"
+anchor = "containing tagged-one values at `+7` and `+12`"
+
+[[record.field]]
+name = "tagged_one_b"
+offset = 12
+type = "bytes[5]"
+source = "spec"
+anchor = "tagged-one values at `+7` and `+12` and terminal byte zero at `+17`"
+
+[[record.field]]
+name = "terminal"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "terminal byte zero at `+17`"
+
+[[record.gap]]
+offset = 0
+size = 7
+note = "`a9 03 5d 06` framing bytes and the region before the first tagged-one value."
+
+# --- §8 Inline support-pcurve family table ----------------------------------
+
+[[record]]
+name = "zero_entity_pcurve_2171"
+kind = "byte"
+section = "8"
+anchor = "| `2171` | `+67,+75` | `+83,+88` | `+93` | 1 / 2 | none |"
+size = 125
+note = "One row of the §8 inline support-pcurve family table. Distinct f64 knots are followed by equally many tagged u32 multiplicities; `degree = first_multiplicity - 1` and `control_count = sum(multiplicities) - degree - 1`. The 125-byte total is the parser's required end for this tag; §8 states logical lengths only for `2145`, `2172`, and `219f`."
+
+[[record.field]]
+name = "knots"
+offset = 67
+type = "f64[2]"
+source = "spec"
+anchor = "| `2171` | `+67,+75` | `+83,+88` | `+93` | 1 / 2 | none |"
+
+[[record.field]]
+name = "multiplicities"
+offset = 83
+type = "bytes[10]"
+source = "spec"
+anchor = "| `2171` | `+67,+75` | `+83,+88` | `+93` | 1 / 2 | none |"
+
+[[record.field]]
+name = "poles"
+offset = 93
+type = "f64[4]"
+source = "spec"
+anchor = "The `2171` f64 tail stores `(u0,v0,u1,v1)` at `+93`, `+101`, `+109`, and `+117`."
+note = "The same four f64 slots the family table lists as the pole start at +93; §8 names them `(u0,v0,u1,v1)` and states each of the four offsets."
+
+[[record.gap]]
+offset = 0
+size = 67
+note = "`a9 03 21 71` framing and the record head. The spec's family table starts at the first distinct knot at +67 and states nothing before it."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
+contains = "[0x21, 0x71]"
+note = "The parser's family table carries the same knot, multiplicity, and pole offsets for this tag."
+
+# --- §9 E5 framing -----------------------------------------------------------
+
+[[record]]
+name = "e5_record_frame"
+kind = "byte"
+section = "9"
+anchor = "Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <payload>`, stride `payload_size + 13`"
+size = 13
+endianness = "little"
+note = "Declared size is the spec's stated stride base. The enumerated fields sum to 14 bytes, one more than the stated stride base; the mismatch is recorded below."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[3]"
+source = "spec"
+anchor = "Framing `E5 0D 03 <cls> <sub>"
+
+[[record.field]]
+name = "class"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "`E5 0D 03 <cls> <sub> <payload_size_u16le>"
+
+[[record.field]]
+name = "sub"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "<cls> <sub> <payload_size_u16le> 00 00 00"
+
+[[record.field]]
+name = "payload_size"
+offset = 5
+type = "u16"
+source = "spec"
+anchor = "<payload_size_u16le> 00 00 00 <record_id_u32le>"
+
+[[record.field]]
+name = "zero_run"
+offset = 7
+type = "bytes[3]"
+source = "spec"
+anchor = "<payload_size_u16le> 00 00 00 <record_id_u32le> <payload>"
+
+[[record.field]]
+name = "record_id"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "<record_id_u32le> <payload>`, stride `payload_size + 13`"
+
+[[record.discrepancy]]
+kind = "size_mismatch"
+computed = 14
+declared = 13
+note = "The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/e5/records.rs"
+contains = "const MARKER"
+note = "The parser's E5 marker constant; its stride arithmetic is `pos + size + 13`, matching the stated stride and not the enumerated field total."
+
+# --- §7 Outer schema records -------------------------------------------------
+
+[[record]]
+name = "value_block_7c0b"
+kind = "byte"
+section = "7.4"
+anchor = "value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ..."
+size = 6
+note = "Header only. `declared_len` measures from the `7C0B` marker through the byte before the terminator, so the complete block occupies `declared_len + 1` bytes: payload of `declared_len - 6` bytes at +6, the `FE` terminator at `+declared_len`, then the associated `7C02` catalog."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "value_block := 7C 0B <declared_len:u32le>"
+
+[[record.field]]
+name = "declared_len"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/value_block.rs"
+contains = "0xfe"
+note = "The parser checks the `FE` terminator at `pos + declared_len` and requires `7C 02` immediately after it."
+
+[[record]]
+name = "outer_alias_row"
+kind = "byte"
+section = "7.5"
+anchor = "alias_row := <lead:u32le> 01 00 04 00 <tag:u32le> <flag:u8> <f1:3B> <f2:u32le> <f3:u32le>"
+size = 24
+note = "Offsets are row-relative; the `01 00 04 00` marker sits at row offset 4. The low 24 bits of `tag` are the persistent roster tag and the high byte remains part of the stored word. Exact lead values `0x8e` and `0x8f` are ordinal-linked storage forms."
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "alias_row := <lead:u32le> 01 00 04 00"
+
+[[record.field]]
+name = "marker"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "<lead:u32le> 01 00 04 00 <tag:u32le>"
+
+[[record.field]]
+name = "tag"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "01 00 04 00 <tag:u32le> <flag:u8>"
+
+[[record.field]]
+name = "flag"
+offset = 12
+type = "u8"
+source = "spec"
+anchor = "<tag:u32le> <flag:u8> <f1:3B>"
+
+[[record.field]]
+name = "f1"
+offset = 13
+type = "bytes[3]"
+source = "spec"
+anchor = "<flag:u8> <f1:3B> <f2:u32le> <f3:u32le>"
+
+[[record.field]]
+name = "f2"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "<f1:3B> <f2:u32le> <f3:u32le>"
+
+[[record.field]]
+name = "f3"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "<f2:u32le> <f3:u32le>"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/object_graph.rs"
+contains = "0x00ff_ffff"
+note = "The parser masks the stored tag word to its low 24 bits, matching the stated persistent-roster-tag rule."
+
+# --- §4 Marker inventory -----------------------------------------------------
+
+[[token]]
+tag = "FINJPL  "
+name = "named stream block"
+note = "starts named stream blocks after the outer preamble; two trailing spaces are part of the marker"
+section = "4"
+anchor = "| `FINJPL  ` | after outer preamble | starts named stream blocks |"
+
+[[token]]
+tag = "7C 02"
+name = "source-schema string catalog"
+note = "total-length-framed source-schema string catalog in the outer preamble"
+section = "4"
+anchor = "| `7C 02` | outer preamble | total-length-framed source-schema string catalog |"
+
+[[token]]
+tag = "7C D9"
+name = "literal float data"
+note = "literal float-data bytes; not a framed record family"
+section = "4"
+anchor = "| `7C D9` | outer preamble | literal float-data bytes (not a framed record family) |"
+
+[[token]]
+tag = "10 24 04 ff ff 00 00 00"
+name = "standard edge-table delimiter"
+payload_bytes = 0
+note = "delimits the standard edge table in the inner body"
+section = "4"
+anchor = "| `10 24 04 ff ff 00 00 00` | inner body | standard edge-table delimiter |"
+
+[[token]]
+tag = "05 08 01"
+name = "vertex XYZ record"
+payload_bytes = 12
+note = "15-byte vertex XYZ record: the three-byte marker plus three little-endian f32 coordinates"
+section = "4"
+anchor = "| `05 08 01` | inner body / E5 areas | 15-byte vertex XYZ record (3×f32le) |"
+
+[[token]]
+tag = "a9 03"
+name = "zero-entity record family"
+note = "zero-entity native record family in the outer preamble"
+section = "4"
+anchor = "| `a9 03` | outer preamble | zero-entity native record family |"
+
+[[token]]
+tag = "E5 0D 03"
+name = "E5 record family"
+note = "E5 native record family in the preamble or a FINJPL segment"
+section = "4"
+anchor = "| `E5 0D 03` | preamble or FINJPL segment | E5 native record family |"
+
+[[record]]
+name = "fbb_face_row"
+kind = "byte"
+section = "7.4"
+anchor = "Each eight-byte standard FBB face row stores that face's effective color as `marker[4] A B G R`"
+size = 8
+note = "The leading byte of a colour-bearing FBB marker can set bit 7 without changing its face-row role. §5.2 gives the row's marker form as `(30|b0) 04 04 ff` at stride 8."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "stores that face's effective color as `marker[4] A B G R`"
+
+[[record.field]]
+name = "alpha"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "`marker[4] A B G R`"
+
+[[record.field]]
+name = "blue"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "`marker[4] A B G R`"
+
+[[record.field]]
+name = "green"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "`marker[4] A B G R`"
+
+[[record.field]]
+name = "red"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "`marker[4] A B G R`"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/standard/fbb.rs"
+contains = "row[7], row[6], row[5], row[4]"
+note = "The parser reads the colour channels from the last four bytes of the eight-byte row in the stated A B G R order."
+
+# --- Not tabulated -----------------------------------------------------------
+
+[[not_applicable]]
+area = "`b5 03` frame header (§6.7)"
+reason = "§6.7 states payload grammars for about twenty `b5 03` classes but never states the frame header layout; it only says to advance by the declared frame length. The parser asserts an 8-byte header with `payload_len:u8` at +3 and `object_id:u32le` at +4, which the spec does not corroborate. Recorded in the pull request."
+section = "6.7"
+anchor = "Starting at a frame boundary, advance by the declared frame length"
+
+[[not_applicable]]
+area = "Trim records and the standard spine (§5.2, §5.3)"
+reason = "Every count in a trim packet is a variable-width `count()` atom and the spine tables are count-driven, so no field sits at a fixed offset. The stride-8 FBB row and the 15-byte vertex record are the exceptions and are tabled."
+section = "5.3"
+anchor = "count(x) := <x:u8> | ff <x:u32le>"
+
+[[not_applicable]]
+area = "Analytic payload slots of `b2 03 19/28/29/2a/2b` (§5.9-§5.14)"
+reason = "These records state a total payload length and an ordered f64 slot list, but no per-slot byte offsets, and the leading compact record id has variable width in the circle case. They are slot layouts rather than byte layouts."
+section = "5.9"
+anchor = "Payload layouts `0x32..=0x34` store"
+
+[[not_applicable]]
+area = "`7C09` inline object records and `7C0A` atom payloads (§7.3)"
+reason = "Reference tokens are one or two bytes depending on value, and the head forms vary in arity, so every later field position depends on preceding values."
+section = "7.3"
+anchor = "Its ordinary references use `80..d0 → byte−80`"
+
+[[not_applicable]]
+area = "Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2)"
+reason = "Knot counts and pole grids drive every later position. The two fixed tails the spec states (141 bytes for an `a8 03 34` elided-pole record and 59 bytes for an `a8 03 32` jet) sit at count-dependent offsets."
+section = "6.1"
+anchor = "### 6.1 `a5 03 34` freeform surface (consolidated class)"

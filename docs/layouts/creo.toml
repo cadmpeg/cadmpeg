@@ -1,0 +1,459 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for Creo `.prt`.
+schema = 1
+format = "creo"
+spec = "docs/formats/creo_prt.md"
+note = """
+Creo `.prt` is a token stream, not a fixed-record format. `creo_prt.md` states
+literal byte offsets in exactly two places — the two type-24 bounded-round
+surface bodies in §3.3 — plus three ASCII or magic framings in §1. Those five
+are tabled as byte layouts.
+
+The rest of what is tabulatable is the PSB primitive encoding: the compact
+integer, structural token, and three-byte IEEE-fill tables of §2. Those are
+recorded as token inventories. Slot layouts (records that are a fixed ordered
+sequence of variable-width tokens) are recorded for the two cleanest cases;
+about twenty-five more exist in the specification and are not covered in this
+pass.
+
+Endianness: §2.1 states the compact integer is big-endian and §8.4 states the
+`92`/`da` DICT forms store big-endian integers. Elsewhere the scalar tokens are
+described as reconstructing IEEE-754 byte images without an explicit byte-order
+statement, so those fields carry `unstated`.
+"""
+
+# --- §1 Container framing ---------------------------------------------------
+
+[[record]]
+name = "unix_compress_header"
+kind = "byte"
+section = "1"
+anchor = "A section payload beginning `1f 9d <flags>` uses Unix `compress` LZW framing."
+size = 3
+note = "The low five flag bits give the maximum code width from 9 through 16; bit 7 enables block mode and code 256 clears the dictionary. Codes are packed least significant bit first in code-width-sized byte blocks."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "A section payload beginning `1f 9d <flags>`"
+
+[[record.field]]
+name = "flags"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "The low five flag bits give the maximum code width from 9 through 16; bit 7 enables block mode"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-creo/src/compress.rs"
+contains = "0x1f, 0x9d"
+note = "The parser matches the same two magic bytes and reads the flag byte at offset 2."
+
+[[record]]
+name = "cmnm_model_name_record"
+kind = "byte"
+section = "1"
+anchor = "`hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after those bytes is not part of the name."
+size = 11
+note = "Fixed prefix only; `hhh` bytes of ASCII name follow at +11, then trailing ASCII space padding. Exactly one record establishes model identity; an absent or repeated record leaves model identity undefined."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[8]"
+source = "derived"
+anchor = "The header record `#- CMNM <hhh><name>` stores the native model filename."
+note = "Width derived from the length of the stated literal `#- CMNM ` including its trailing space."
+
+[[record.field]]
+name = "name_length_hex"
+offset = 8
+type = "bytes[3]"
+source = "spec"
+anchor = "The three ASCII hexadecimal digits give the filename byte length."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-creo/src/container.rs"
+contains = "b\"#- CMNM \""
+note = "The parser's prefix is the same eight-byte literal, and it reads the three hexadecimal digits immediately after it."
+
+# --- §3.2 The two records with stated byte offsets --------------------------
+
+[[record]]
+name = "type24_first_coordinate_bounded_round"
+kind = "byte"
+section = "3.3"
+anchor = "The first-coordinate bounded round form is 50 bytes."
+size = 50
+endianness = "unstated"
+note = "The two diameter endpoints and five extent scalars use the tabulated-cylinder first-coordinate lane, including its positive eight-byte `2d` form. Terminal `18` at offset 49 is the zero-valued sixth extent coordinate."
+
+[[record.field]]
+name = "opener"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "It begins with `4c b7`"
+
+[[record.field]]
+name = "first_diameter_endpoint"
+offset = 7
+type = "bytes[8]"
+source = "derived"
+anchor = "stores the first diameter endpoint at offset 7, `12` at offset 15"
+note = "Width derived from the two stated offsets: the endpoint occupies 7 through 15."
+
+[[record.field]]
+name = "separator"
+offset = 15
+type = "u8"
+source = "spec"
+anchor = "`12` at offset 15, the second diameter endpoint at offset 16"
+
+[[record.field]]
+name = "second_diameter_endpoint"
+offset = 16
+type = "bytes[8]"
+source = "derived"
+anchor = "the second diameter endpoint at offset 16, and five contiguous first-coordinate-lane extent scalars at offset 24"
+note = "Width derived from the two stated offsets: the endpoint occupies 16 through 24."
+
+[[record.field]]
+name = "extent_scalars"
+offset = 24
+type = "bytes[25]"
+source = "derived"
+anchor = "five contiguous first-coordinate-lane extent scalars at offset 24"
+note = "Width derived from the stated offset 24 and the stated terminal at 49; the five scalars therefore occupy five bytes each in this lane."
+
+[[record.field]]
+name = "terminal"
+offset = 49
+type = "u8"
+source = "spec"
+anchor = "Terminal `18` at offset 49 is the zero-valued sixth extent coordinate."
+
+[[record.gap]]
+offset = 2
+size = 5
+note = "Bytes 2 through 7. The specification states no field between the `4c b7` opener and the first diameter endpoint at offset 7."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-creo/src/surface.rs"
+contains = "is_type24_first_coordinate_round_body"
+note = "The parser gates on length 50, the `4c b7` opener, `0x12` at 15, and `0x18` at 49, matching every stated offset."
+
+[[record]]
+name = "type24_segmented_first_coordinate_bounded_round"
+kind = "byte"
+section = "3.3"
+anchor = "The segmented first-coordinate bounded round form is 56 bytes."
+size = 56
+endianness = "unstated"
+note = "Both diameter endpoints and all six extent coordinates use the tabulated-cylinder first-coordinate lane. Every byte range in this record is stated outright, so the table tiles it with no gap."
+
+[[record.field]]
+name = "opener"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Byte zero is `18`"
+
+[[record.field]]
+name = "first_diameter_endpoint"
+offset = 1
+type = "bytes[8]"
+source = "spec"
+anchor = "the first diameter endpoint occupies bytes 1 through 8"
+
+[[record.field]]
+name = "literal_run"
+offset = 9
+type = "bytes[7]"
+source = "spec"
+anchor = "bytes 9 through 15 are `70 bf e3 4f 05 11 10`"
+
+[[record.field]]
+name = "second_diameter_endpoint"
+offset = 16
+type = "bytes[8]"
+source = "spec"
+anchor = "the second diameter endpoint occupies bytes 16 through 23"
+
+[[record.field]]
+name = "extent_coordinates"
+offset = 24
+type = "bytes[30]"
+source = "spec"
+anchor = "six contiguous extent coordinates occupy bytes 24 through 53"
+
+[[record.field]]
+name = "trailer"
+offset = 54
+type = "bytes[2]"
+source = "spec"
+anchor = "The body ends with `f7 19`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-creo/src/surface.rs"
+contains = "is_type24_segmented_first_coordinate_round_body"
+note = "The parser gates on length 56, `0x18` at 0, the seven-byte literal at 9..16, and `f7 19` at 54..56, matching every stated range."
+
+# --- §2 PSB primitive encoding ----------------------------------------------
+
+[[token]]
+tag = "00..7f"
+name = "one-byte direct integer"
+payload_bytes = 0
+note = "the byte itself is the value"
+section = "2.1"
+anchor = "| `00..7f`    | One-byte direct integer.                                   |"
+
+[[token]]
+tag = "80..bf"
+name = "two-byte big-endian integer"
+payload_bytes = 1
+note = "value is `((head - 0x80) << 8) | XX`"
+section = "2.1"
+anchor = "| `80..bf XX` | Two-byte big-endian integer: `((head - 0x80) << 8) \\| XX`. |"
+
+[[token]]
+tag = "c0..ff"
+name = "control or special-token range"
+note = "control or special-token range on typed paths; in `segtab`, `order_table`, and `ent_tab` these are single-byte null sentinels"
+section = "2.1"
+anchor = "| `c0..ff`    | Control or special-token range on typed paths.             |"
+
+[[token]]
+tag = "e0"
+name = "named-record header"
+note = "`e0 <type> <name>\\0`"
+section = "2.2"
+anchor = "| `e0 <type> <name>\\0` | Named-record header.                                    |"
+
+[[token]]
+tag = "f8"
+name = "array opener"
+note = "`f8 <count>`"
+section = "2.2"
+anchor = "| `f8 <count>`         | Array opener.                                           |"
+
+[[token]]
+tag = "f9"
+name = "count-bounded scalar body"
+note = "`f9 <ndim> <count>`; the field declares exactly `dimensions * count` scalar slots"
+section = "2.2"
+anchor = "| `f9 <ndim> <count>`  | Count-bounded scalar body.                              |"
+
+[[token]]
+tag = "f7"
+name = "entity reference"
+note = "`f7 <id>`"
+section = "2.2"
+anchor = "| `f7 <id>`            | Entity reference.                                       |"
+
+[[token]]
+tag = "fb"
+name = "array close"
+payload_bytes = 0
+note = "closes an `f8` array"
+section = "2.2"
+anchor = "| `fb`                 | Array close.                                            |"
+
+[[token]]
+tag = "e2"
+name = "nested compound-body opener or continuation"
+payload_bytes = 0
+note = "opens or continues a nested compound body"
+section = "2.2"
+anchor = "| `e2`                 | Nested compound-body opener or continuation.            |"
+
+[[token]]
+tag = "e3"
+name = "compound close or row terminator"
+payload_bytes = 0
+note = "meaning depends on context"
+section = "2.2"
+anchor = "| `e3`                 | Compound close or row terminator, depending on context. |"
+
+[[token]]
+tag = "29"
+name = "IEEE-fill, byte0 3F, repeated fill"
+payload_bytes = 2
+note = "three-byte form: `29 XX YY` reconstructs `(0x3F, XX, YY repeated 6 times)`"
+section = "Three-byte IEEE-fill form"
+anchor = "| `29`   | `3F`    | `YY` repeated 6 times |"
+
+[[token]]
+tag = "2a"
+name = "IEEE-fill, byte0 3F, zero fill"
+payload_bytes = 2
+note = "three-byte form: `2a XX YY` reconstructs `(0x3F, XX, YY 00 00 00 00 00)`"
+section = "Three-byte IEEE-fill form"
+anchor = "| `2a`   | `3F`    | `YY 00 00 00 00 00`   |"
+
+[[token]]
+tag = "2e"
+name = "IEEE-fill, byte0 40, repeated fill"
+payload_bytes = 2
+note = "three-byte form; `2f 43 00` is 38.0 and `2f 20 00` is 8.0 in the sibling row"
+section = "Three-byte IEEE-fill form"
+anchor = "| `2e`   | `40`    | `YY` repeated 6 times |"
+
+[[token]]
+tag = "2f"
+name = "IEEE-fill, byte0 40, zero fill"
+payload_bytes = 2
+note = "three-byte form"
+section = "Three-byte IEEE-fill form"
+anchor = "| `2f`   | `40`    | `YY 00 00 00 00 00`   |"
+
+[[token]]
+tag = "42"
+name = "IEEE-fill, byte0 BF, repeated fill"
+payload_bytes = 2
+note = "three-byte form"
+section = "Three-byte IEEE-fill form"
+anchor = "| `42`   | `BF`    | `YY` repeated 6 times |"
+
+[[token]]
+tag = "43"
+name = "IEEE-fill, byte0 BF, zero fill"
+payload_bytes = 2
+note = "three-byte form"
+section = "Three-byte IEEE-fill form"
+anchor = "| `43`   | `BF`    | `YY 00 00 00 00 00`   |"
+
+[[token]]
+tag = "47"
+name = "IEEE-fill, byte0 C0, repeated fill"
+payload_bytes = 2
+note = "three-byte form"
+section = "Three-byte IEEE-fill form"
+anchor = "| `47`   | `C0`    | `YY` repeated 6 times |"
+
+[[token]]
+tag = "48"
+name = "IEEE-fill, byte0 C0, zero fill"
+payload_bytes = 2
+note = "three-byte form; `48 22 00` is -9.0"
+section = "Three-byte IEEE-fill form"
+anchor = "| `48`   | `C0`    | `YY 00 00 00 00 00`   |"
+
+# --- Slot layouts ------------------------------------------------------------
+
+[[record]]
+name = "pcurve_endpoint_body"
+kind = "slot"
+section = "4.1"
+anchor = "A direct curve body consisting of exactly eight scalar slots and no references has this layout."
+note = "A scalar token occupies one slot and a standalone `12` occupies one zero-valued slot; no other unclaimed byte is permitted. All eight values are finite parameter coordinates in the corresponding face spaces. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size."
+
+[[record.field]]
+name = "endpoint_a_f0"
+type = "f64[2]"
+endianness = "unstated"
+source = "spec"
+anchor = "| `0..1` | Endpoint A in face `F0` parameters |"
+note = "The specification describes the scalar tokens as reconstructing IEEE-754 byte images but does not state a byte order for this lane."
+
+[[record.field]]
+name = "endpoint_a_f1"
+type = "f64[2]"
+endianness = "unstated"
+source = "spec"
+anchor = "| `2..3` | Endpoint A in face `F1` parameters |"
+note = "The specification states no byte order for this lane."
+
+[[record.field]]
+name = "endpoint_b_f0"
+type = "f64[2]"
+endianness = "unstated"
+source = "spec"
+anchor = "| `4..5` | Endpoint B in face `F0` parameters |"
+note = "The specification states no byte order for this lane."
+
+[[record.field]]
+name = "endpoint_b_f1"
+type = "f64[2]"
+endianness = "unstated"
+source = "spec"
+anchor = "| `6..7` | Endpoint B in face `F1` parameters |"
+note = "The specification states no byte order for this lane."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-creo/src/curve.rs"
+contains = "values.len() == 8"
+note = "The parser gates the pcurve endpoint body on exactly eight decoded slots."
+
+[[record]]
+name = "local_sys_support_frame"
+kind = "slot"
+section = "3.4"
+anchor = "`local_sys` has twelve scalar slots:"
+note = "Reused by plane, cylinder, cone, and torus prototypes, by curve-equation frames, and by coordinate-system records. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size."
+
+[[record.field]]
+name = "direction_0"
+type = "f64[3]"
+endianness = "unstated"
+source = "spec"
+anchor = "slots 0..2    support direction or [0, 0, 0]"
+note = "The specification states no byte order for this lane."
+
+[[record.field]]
+name = "direction_1"
+type = "f64[3]"
+endianness = "unstated"
+source = "spec"
+anchor = "slots 3..5    support direction or [0, 0, 0]"
+note = "The specification states no byte order for this lane."
+
+[[record.field]]
+name = "direction_2"
+type = "f64[3]"
+endianness = "unstated"
+source = "spec"
+anchor = "slots 6..8    support direction or [0, 0, 0]"
+note = "The specification states no byte order for this lane."
+
+[[record.field]]
+name = "origin"
+type = "f64[3]"
+endianness = "unstated"
+source = "spec"
+anchor = "slots 9..11   support-frame origin"
+note = "The specification states no byte order for this lane."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-creo/src/scalar.rs"
+contains = "values.len() == 12"
+note = "The parser gates the local-system frame on exactly twelve decoded slots."
+
+# --- Not tabulated -----------------------------------------------------------
+
+[[not_applicable]]
+area = "UGC container header and TOC rows (§1, §1.2)"
+reason = "ASCII, whitespace-delimited. The TOC header declares a fixed row width, but the specification states the field order inside a row rather than its column positions, so neither a byte nor a column layout can be stated."
+section = "1.2"
+anchor = "### 1.2 Section map"
+
+[[not_applicable]]
+area = "Surface bodies of §3.2 and §3.3 other than the two type-24 bounded rounds"
+reason = "About twenty positional cylinder variants plus plane and type-26 forms. The specification identifies them by opener bytes and arithmetic invariants over decoded scalars, not by field offsets; they are recognition predicates rather than layouts."
+section = "3.3"
+anchor = "Decoded positional parameter scalars retain their source offset and token length."
+
+[[not_applicable]]
+area = "Seven-byte DICT scalar forms (§2.3, Seven-byte DICT form)"
+reason = "About ninety prefix-to-IEEE-prefix mappings stated as prose rather than a table, and the specification states outright that each record grammar defines the DICT lane for its scalar slots, so a single flat table would be unsound."
+section = "Seven-byte DICT form"
+anchor = "A decoder must not apply DICT sign rules across unrelated record grammars."
+
+[[not_applicable]]
+area = "Section, feature, and DEPDB record grammars (§5-§8)"
+reason = "Variable-length token grammars over self-delimiting fields. About twenty-five of them state a complete ordered slot list and are transcribable as slot layouts; they are not covered in this pass. The rest are named but unspecified, and their gaps are already tracked in `creo_prt-open-items.md`."
+section = "5"
+anchor = "## 5. Topology and section records"

@@ -1,5 +1,7 @@
 # STEP Part 21 clear-text format
 
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/step.md`](../layouts/step.md), generated from `docs/layouts/step.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+
 ## 1. Envelope
 
 The STEP codec reads ISO 10303-21 clear-text exchange structures whose

@@ -4,6 +4,8 @@
 
 ---
 
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/nx.md`](../layouts/nx.md), generated from `docs/layouts/nx.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+
 ## 1. Format overview
 
 `.prt` is the native part format of Siemens NX. NX uses the **SPLMSSTR** (Siemens PLM Software Master Storage) hierarchical name-to-stream container. Geometry uses zlib-compressed Parasolid neutral-binary streams.
