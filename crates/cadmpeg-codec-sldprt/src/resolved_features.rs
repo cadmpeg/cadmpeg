@@ -13329,6 +13329,21 @@ mod marker_tests {
             Some(11)
         );
 
+        let extended_marker = body_offset + 110;
+        let mut extended = vec![0; extended_marker - 12];
+        extended[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
+        extended[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+        extended[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(selection_vector_tail(&mut extended, &[12]), extended_marker);
+        let (actual_marker, components) =
+            cosmetic_thread_cylinder_reference_at(&extended, body_offset)
+                .expect("required invariant");
+        assert_eq!(actual_marker, extended_marker);
+        assert_eq!(
+            components.last().expect("required invariant").local_id,
+            Some(12)
+        );
+
         assert_eq!(
             cosmetic_thread_cylinder_reference_at(&payload, body_offset + 1),
             None
@@ -23225,21 +23240,24 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
     {
         return None;
     }
-    [46, 66, 70, 94, 102, 106].into_iter().find_map(|relative| {
-        let marker = body_offset.checked_add(relative)?;
-        let count = u32::from_le_bytes(
-            payload
-                .get(marker.checked_sub(12)?..marker - 8)?
-                .try_into()
-                .ok()?,
-        );
-        ((1..=64).contains(&count)
-            && matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
-            && payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
-                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-            && payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..marker + 18) == Some(&[0, 0]))
-        .then_some(marker)
-    })
+    [46, 66, 70, 94, 102, 106, 110]
+        .into_iter()
+        .find_map(|relative| {
+            let marker = body_offset.checked_add(relative)?;
+            let count = u32::from_le_bytes(
+                payload
+                    .get(marker.checked_sub(12)?..marker - 8)?
+                    .try_into()
+                    .ok()?,
+            );
+            ((1..=64).contains(&count)
+                && matches!(payload.get(marker - 8..marker - 4), Some([0, 2 | 3, 0, 0]))
+                && payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                    == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+                && payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..marker + 18)
+                    == Some(&[0, 0]))
+            .then_some(marker)
+        })
 }
 
 fn component_face_reference_at(
