@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate deterministic, conservative NX capability-gate evidence.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -11,8 +11,6 @@ use std::process::Command;
 
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
-use cadmpeg_ir::features::{FeatureDefinition, Length};
-use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::{Deserialize, Serialize};
@@ -261,86 +259,11 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
 fn neutral_rederivation_status(ir: &CadIr) -> VerificationStatus {
-    let Some(rederived_bodies) = rederived_body_census(ir) else {
-        return VerificationStatus::Missing;
-    };
-    let saved_bodies = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<BTreeSet<_>>();
-    if saved_bodies.len() != ir.model.bodies.len() || rederived_bodies != saved_bodies {
-        return VerificationStatus::Missing;
+    if cadmpeg_codec_nx::evaluation::evaluate_saved_body_census(ir).is_verified() {
+        VerificationStatus::Verified
+    } else {
+        VerificationStatus::Missing
     }
-
-    if ir.model.configurations.is_empty() {
-        return VerificationStatus::Verified;
-    }
-    let mut active = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| configuration.active);
-    let Some(configuration) = active.next() else {
-        return VerificationStatus::Missing;
-    };
-    if active.next().is_some()
-        || !saved_bodies.is_empty()
-        || configuration
-            .bodies
-            .resolved()
-            .is_none_or(|bodies| bodies.iter().cloned().collect::<BTreeSet<_>>() != saved_bodies)
-        || !configuration.feature_states.is_empty()
-    {
-        return VerificationStatus::Missing;
-    }
-    VerificationStatus::Verified
-}
-
-fn rederived_body_census(ir: &CadIr) -> Option<BTreeSet<BodyId>> {
-    let mut bodies = BTreeSet::new();
-    for feature in &ir.model.features {
-        match feature.suppressed {
-            None => return None,
-            Some(true) => continue,
-            Some(false) => {}
-        }
-        match &feature.definition {
-            FeatureDefinition::TreeNode { .. }
-            | FeatureDefinition::DatumPrincipalPlane { .. }
-            | FeatureDefinition::DatumPlane { .. }
-            | FeatureDefinition::DatumPlaneUnresolved
-            | FeatureDefinition::DatumOffsetPlane { .. }
-            | FeatureDefinition::DatumAxis { .. }
-            | FeatureDefinition::DatumPoint { .. }
-            | FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::DatumCoordinateSystem { .. }
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::Sketch { .. } => {
-                if !feature.outputs.is_empty() {
-                    return None;
-                }
-            }
-            FeatureDefinition::Block {
-                dimensions: Some(dimensions),
-                placement: Some(placement),
-            } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
-                let [output] = feature.outputs.as_slice() else {
-                    return None;
-                };
-                if !bodies.insert(output.clone()) {
-                    return None;
-                }
-            }
-            _ => return None,
-        }
-    }
-    Some(bodies)
-}
-
-fn positive_length(length: Length) -> bool {
-    length.0.is_finite() && length.0 > 0.0
 }
 
 fn canonical_sha256(ir: &CadIr) -> Result<String, serde_json::Error> {
@@ -525,6 +448,8 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::ids::BodyId;
 
     fn fixture() -> FixtureEvidence {
         FixtureEvidence {

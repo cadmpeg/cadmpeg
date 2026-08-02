@@ -25,10 +25,10 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference, EdgeSelection,
-    ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureId, HoleKind, Length,
-    LoftPointSection, LoftSection, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, SketchSpace, SweepMode,
-    SweepOrientation, Termination, TrimRegion, VertexSelection,
+    ExtrudeExtent, ExtrudeStart, FaceSelection, Feature, FeatureDefinition, FeatureId, HoleKind,
+    Length, LoftPointSection, LoftSection, ParameterId, PathRef, PatternKind, ProfileRef,
+    RadiusSpec, RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, SketchSpace,
+    SweepMode, SweepOrientation, Termination, TrimRegion, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -10344,42 +10344,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "extend surface"
             }
-            FeatureDefinition::Hole {
-                profile,
-                profile_filter,
-                face,
-                position,
-                direction,
-                placements,
-                kind,
-                exit_kind,
-                diameter,
-                extent,
-                bottom,
-                taper_angle,
-                specification,
-                ..
-            } if hole_feature_is_incomplete(
-                profile.as_ref(),
-                face.as_ref(),
-                (*position, *direction),
-                placements,
-                (kind, exit_kind.as_ref()),
-                *diameter,
-                extent.as_ref(),
-            ) || hole_auxiliary_semantics_are_incomplete(
-                profile_filter.as_ref(),
-                bottom.as_ref(),
-                *taper_angle,
-                specification.as_deref(),
-            ) || extent.as_ref().is_some_and(|extent| {
-                termination_dependency_is_incomplete(extent, &feature.dependencies)
-            }) || profile.as_ref().is_some_and(|profile| {
-                profile_dependency_is_incomplete(profile, &feature.dependencies)
-            }) =>
-            {
-                "hole"
-            }
+            FeatureDefinition::Hole { .. } if hole_definition_is_incomplete(feature) => "hole",
             FeatureDefinition::Rib { construction, op }
                 if rib_feature_is_incomplete(construction, *op)
                     || construction.profile.as_ref().is_some_and(|profile| {
@@ -10890,6 +10855,47 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
         }
     }
     incomplete
+}
+
+pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Hole {
+        profile,
+        profile_filter,
+        face,
+        position,
+        direction,
+        placements,
+        kind,
+        exit_kind,
+        diameter,
+        extent,
+        bottom,
+        taper_angle,
+        specification,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    hole_feature_is_incomplete(
+        profile.as_ref(),
+        face.as_ref(),
+        (*position, *direction),
+        placements,
+        (kind, exit_kind.as_ref()),
+        *diameter,
+        extent.as_ref(),
+    ) || hole_auxiliary_semantics_are_incomplete(
+        profile_filter.as_ref(),
+        bottom.as_ref(),
+        *taper_angle,
+        specification.as_deref(),
+    ) || extent
+        .as_ref()
+        .is_some_and(|extent| termination_dependency_is_incomplete(extent, &feature.dependencies))
+        || profile
+            .as_ref()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
 }
 
 pub(crate) fn hole_feature_is_incomplete(
