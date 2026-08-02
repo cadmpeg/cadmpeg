@@ -26,8 +26,7 @@ use crate::topology::{self, BlendSurface, Graph, OffsetSurface, SurfaceCurve, Tr
 /// unpaired delta stream's semantic residual, with paired delta streams folded into
 /// their partition and then cleared. This is the byte view the decode geometry path's
 /// scanners read.
-pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
-    let mut semantic = topology_streams(scan);
+fn semantic_streams(scan: &Scan, mut semantic: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     let pairs = paired_delta_streams(scan);
     let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
     for (delta, stream) in scan.streams.iter().enumerate() {
@@ -234,8 +233,8 @@ impl ParsedStreams {
     /// views share one parse when the topology-merged and delta-extended byte views
     /// both equal `stream.inflated` and the stream has no auxiliary-replacement deltas.
     pub(crate) fn parse(scan: &Scan) -> Self {
-        let semantic_streams = semantic_streams(scan);
         let topology_streams = topology_streams(scan);
+        let semantic_streams = semantic_streams(scan, topology_streams.clone());
         let delta_pairs = paired_delta_streams(scan);
 
         let per_stream = scan
