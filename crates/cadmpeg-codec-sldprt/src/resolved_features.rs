@@ -42835,7 +42835,8 @@ fn typed_relation_definition(
             };
             let first = curve(0);
             let second = curve(1);
-            let authoritative = first.is_some() && second.is_some();
+            let authoritative =
+                matches!((&first, &second), (Some(first), Some(second)) if first != second);
             let (mut first, mut second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -42861,7 +42862,18 @@ fn typed_relation_definition(
                 }
             };
             if first == second {
-                return None;
+                let [first_operand, second_operand] = relation.operands.as_slice() else {
+                    return None;
+                };
+                if first_operand.entity_index == second_operand.entity_index {
+                    return None;
+                }
+                second = unique_profile_line_distance_entity(
+                    sketch,
+                    &first,
+                    parameter,
+                    sketch_entities,
+                )?;
             }
             let cadmpeg_ir::features::ParameterValue::Length(expected) =
                 parameter.value.as_ref()?
@@ -47428,6 +47440,78 @@ mod profile_join_tests {
                 second: SketchLocus::Entity(second),
                 ..
             }) if first == exact_entities[0].id && second == exact_entities[1].id
+        ));
+    }
+
+    #[test]
+    fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
+        let sketch = SketchId("sketch".into());
+        let line = |id: &str, v| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, v),
+                end: Point2::new(10.0, v),
+            },
+        };
+        let entities = [line("resolved", 0.0), line("unique-partner", 5.0)];
+        let marker = marker("collapsed-marker", None);
+        let markers = HashMap::from([(marker.id.as_str(), &marker)]);
+        let loci = HashMap::from([(
+            marker.id.clone(),
+            vec![SketchLocus::Entity(entities[0].id.clone())],
+        )]);
+        let relation = FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::LineLineDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: Some("scalar".into()),
+            display_scalar_ref: None,
+            operands: [7, 10]
+                .into_iter()
+                .map(|entity_index| FeatureInputOperand {
+                    offset: u64::from(entity_index),
+                    reference_ref: format!("reference-{entity_index}"),
+                    kind: FeatureInputOperandKind::Native(0x8386),
+                    entity_index,
+                    entity_ref: Some(marker.id.clone()),
+                })
+                .collect(),
+        };
+        let parameter = DesignParameter {
+            id: ParameterId("distance".into()),
+            owner: Some(FeatureId("feature".into())),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "5mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(5.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("scalar".into()),
+        };
+
+        assert!(matches!(
+            typed_relation_definition(
+                &relation,
+                Some(&parameter),
+                &sketch,
+                &entities,
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Distance { entities: pair, .. })
+                if pair == entities.iter().map(|entity| entity.id.clone()).collect::<Vec<_>>()
         ));
     }
 
