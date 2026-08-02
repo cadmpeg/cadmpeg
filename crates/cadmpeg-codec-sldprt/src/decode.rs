@@ -884,6 +884,48 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || !state.dependencies.contains(source)
             }
             FeatureDefinition::ImportedGeometry { path, .. } => path.trim().is_empty(),
+            FeatureDefinition::Form { cages } => cages.is_empty(),
+            FeatureDefinition::PointGeometry { .. }
+            | FeatureDefinition::LineSegment { .. }
+            | FeatureDefinition::CircularArc { .. }
+            | FeatureDefinition::EllipticArc { .. }
+            | FeatureDefinition::PlanarPatch { .. } => false,
+            FeatureDefinition::Polyline { points, .. } => points.len() < 2,
+            FeatureDefinition::RegularPolygonCurve { sides, .. } => *sides < 3,
+            FeatureDefinition::FaceFromShapes {
+                sources,
+                face_maker_class,
+            } => incomplete_body_selection(sources) || face_maker_class.trim().is_empty(),
+            FeatureDefinition::Block {
+                dimensions,
+                placement,
+            } => dimensions.is_none() || placement.is_none(),
+            FeatureDefinition::ProjectOnSurface {
+                sources,
+                support_face,
+                ..
+            } => incomplete_path(sources) || incomplete_face_selection(support_face),
+            FeatureDefinition::Coil {
+                construction,
+                result,
+            } => {
+                matches!(
+                    construction.placement,
+                    cadmpeg_ir::features::CoilPlacement::Native { .. }
+                ) || match result {
+                    cadmpeg_ir::features::CoilResult::NewBody => false,
+                    cadmpeg_ir::features::CoilResult::Boolean {
+                        operation,
+                        targets,
+                    } => {
+                        *operation == BooleanOp::Unresolved
+                            || incomplete_body_selection(targets)
+                    }
+                }
+            }
+            FeatureDefinition::Sphere { op, .. }
+            | FeatureDefinition::Torus { op, .. }
+            | FeatureDefinition::Primitive { op, .. } => *op == BooleanOp::Unresolved,
             FeatureDefinition::CosmeticThread {
                 face,
                 diameter,
@@ -989,6 +1031,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)
             }
+            FeatureDefinition::HelicalSweep { construction, op } => {
+                incomplete_profile(&construction.profile) || *op == BooleanOp::Unresolved
+            }
             FeatureDefinition::Loft {
                 sections,
                 guides,
@@ -1014,6 +1059,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(construction.draft, cadmpeg_ir::features::RibDraft::Unresolved)
                     || *op == BooleanOp::Unresolved
             }
+            FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
+                incomplete_profile(profile)
+            }
             FeatureDefinition::Fillet { groups } => {
                 groups.is_empty()
                     || groups.iter().any(|group| {
@@ -1025,6 +1073,16 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
                 incomplete_edge_selection(&group.edges) || matches!(group.spec, ChamferSpec::Unresolved { .. })
             }),
+            FeatureDefinition::FaceBlend {
+                first_faces,
+                second_faces,
+                radius,
+            } => {
+                incomplete_face_selection(first_faces)
+                    || incomplete_face_selection(second_faces)
+                    || matches!(radius, RadiusSpec::Unresolved { .. })
+                    || matches!(radius, RadiusSpec::Variable { points } if points.is_empty())
+            }
             FeatureDefinition::Shell {
                 removed_faces,
                 thickness,
@@ -1151,6 +1209,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || incomplete_body_selection(tools)
                     || *op == BooleanOp::Unresolved
             }
+            FeatureDefinition::BoundaryFill { tools, cells } => {
+                incomplete_body_selection(tools)
+                    || cells.is_empty()
+                    || cells.iter().any(incomplete_body_selection)
+            }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 incomplete_body_selection(targets) || incomplete_face_selection(tools)
             }
@@ -1240,33 +1303,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Native { .. } => false,
             // These neutral families have no audited SLDPRT projection contract. Keep the
             // list exhaustive so a new common-IR family cannot silently pass the L6 gate.
-            FeatureDefinition::Form { .. }
-            | FeatureDefinition::DatumPlaneUnresolved
+            FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::PointGeometry { .. }
-            | FeatureDefinition::LineSegment { .. }
-            | FeatureDefinition::CircularArc { .. }
-            | FeatureDefinition::EllipticArc { .. }
-            | FeatureDefinition::Polyline { .. }
-            | FeatureDefinition::RegularPolygonCurve { .. }
-            | FeatureDefinition::PlanarPatch { .. }
-            | FeatureDefinition::FaceFromShapes { .. }
             | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::Block { .. }
-            | FeatureDefinition::ProjectOnSurface { .. }
-            | FeatureDefinition::Coil { .. }
-            | FeatureDefinition::Sphere { .. }
-            | FeatureDefinition::Torus { .. }
-            | FeatureDefinition::Primitive { .. }
-            | FeatureDefinition::HelicalSweep { .. }
             | FeatureDefinition::Binder { .. }
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
-            | FeatureDefinition::SheetMetalBaseFlange { .. }
-            | FeatureDefinition::FaceBlend { .. }
             | FeatureDefinition::BoundarySurfaceUnresolved
             | FeatureDefinition::DraftUnresolved
-            | FeatureDefinition::BoundaryFill { .. }
             | FeatureDefinition::PostProcess { .. } => true,
         })
         .count();
@@ -3787,6 +3831,113 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "5 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_audits_typed_construction_families() {
+        let mut ir = CadIr::empty(Units::default());
+        let body = BodyId("body".into());
+        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]);
+        let definitions = [
+            FeatureDefinition::PointGeometry {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+            FeatureDefinition::Primitive {
+                solid: cadmpeg_ir::features::PrimitiveSolid::Box {
+                    length: Length(1.0),
+                    width: Length(2.0),
+                    height: Length(3.0),
+                },
+                op: BooleanOp::NewBody,
+            },
+            FeatureDefinition::SheetMetalBaseFlange {
+                profile: cadmpeg_ir::features::ProfileRef::Sketch(sketch),
+                thickness: Length(1.0),
+                side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
+            },
+            FeatureDefinition::Polyline {
+                points: vec![Point3::new(0.0, 0.0, 0.0)],
+                closed: false,
+            },
+            FeatureDefinition::Block {
+                dimensions: None,
+                placement: None,
+            },
+            FeatureDefinition::ProjectOnSurface {
+                sources: PathRef::Native("sources".into()),
+                support_face: face.clone(),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+                mode: cadmpeg_ir::features::SurfaceProjectionMode::All,
+                height: Length(0.0),
+                offset: Length(0.0),
+            },
+            FeatureDefinition::Coil {
+                construction: cadmpeg_ir::features::CoilConstruction {
+                    placement: cadmpeg_ir::features::CoilPlacement::Native {
+                        native_ref: "placement".into(),
+                    },
+                    diameter: Length(10.0),
+                    extent: cadmpeg_ir::features::CoilExtent::RevolutionsHeight {
+                        revolutions: 2.0,
+                        height: Length(5.0),
+                    },
+                    section: cadmpeg_ir::features::CoilSection::Circular {
+                        diameter: Length(1.0),
+                    },
+                    section_placement: cadmpeg_ir::features::CoilSectionPlacement::Center,
+                    clockwise: false,
+                    taper: Angle(0.0),
+                },
+                result: cadmpeg_ir::features::CoilResult::NewBody,
+            },
+            FeatureDefinition::Sphere {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: Length(1.0),
+                op: BooleanOp::Unresolved,
+            },
+            FeatureDefinition::FaceBlend {
+                first_faces: face.clone(),
+                second_faces: face.clone(),
+                radius: RadiusSpec::Variable { points: Vec::new() },
+            },
+            FeatureDefinition::BoundaryFill {
+                tools: BodySelection::Bodies(vec![body]),
+                cells: Vec::new(),
+            },
+        ];
+        for (ordinal, definition) in definitions.into_iter().enumerate() {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("construction-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "7 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
