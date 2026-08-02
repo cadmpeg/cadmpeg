@@ -107,7 +107,12 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// `bytes` carries no `delta_state` record (the stream is a construction
 /// snapshot with no history tail) or a malformed history body. `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
-pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHistory> {
+pub(crate) fn decode(
+    bytes: &[u8],
+    stream: &str,
+    width: usize,
+    limits: &cadmpeg_codec_core::decode::ResourceLimits,
+) -> Option<AsmHistory> {
     let preamble_offset = bytes
         .windows(PREAMBLE.len())
         .position(|window| window == PREAMBLE);
@@ -171,7 +176,7 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
     bind_snapshot_revision_ids(&mut states);
     bind_historical_entity_versions(&mut states);
     let record_table_binding_budget_exceeded =
-        bind_complete_record_tables(&mut states, bytes, width);
+        bind_complete_record_tables(&mut states, bytes, width, limits);
     if states.is_empty() {
         return None;
     }
@@ -316,21 +321,40 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
     }
 }
 
-/// Materializing a state's record table runs a full B-rep decode, so the
-/// binding cost is the sum of the materialized state-table lengths. Above
-/// this budget the binding is skipped: the states keep
+/// Historical topology caches retain normalized records, topology entities,
+/// incidence links, and geometry measurements while Design projection runs.
+/// This conservative per-entry charge bounds that temporary cache against the
+/// caller's materialization policy. Above the resulting budget the binding is
+/// skipped: the states keep
 /// `record_table_complete = false` and no topology, the same degrade every
 /// other early return here produces, and historical transitions stay unbound.
-const COMPLETE_TABLE_BUDGET: usize = 4_000_000;
+// One live entity can retain its 16-byte version pair, one 8-byte family slot,
+// one 48-byte coedge link (the largest topology link), one 56-byte curve-axis
+// measurement (the largest geometry measurement), one 8-byte ownership member,
+// and one 32-byte relation allocation. The remaining 24 bytes cover the parent
+// vector allocation and alignment. Mutually exclusive entity families make
+// this an upper bound, not an average observed size.
+const HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY: u64 = 192;
 
-fn complete_table_binding_budget_exceeded(table_lengths: impl IntoIterator<Item = usize>) -> bool {
+fn complete_table_binding_budget_exceeded(
+    table_lengths: impl IntoIterator<Item = usize>,
+    limits: &cadmpeg_codec_core::decode::ResourceLimits,
+) -> bool {
     table_lengths
         .into_iter()
-        .try_fold(0_usize, usize::checked_add)
-        .is_none_or(|total| total > COMPLETE_TABLE_BUDGET)
+        .try_fold(0_u64, |total, length| {
+            total.checked_add(u64::try_from(length).ok()?)
+        })
+        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY))
+        .is_none_or(|bytes| bytes > limits.max_materialized_bytes)
 }
 
-fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width: usize) -> bool {
+fn bind_complete_record_tables(
+    states: &mut [AsmDeltaState],
+    bytes: &[u8],
+    width: usize,
+    limits: &cadmpeg_codec_core::decode::ResourceLimits,
+) -> bool {
     let Some(start) = crate::asm_header::record_stream_start(bytes) else {
         return false;
     };
@@ -339,6 +363,7 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
     };
     if complete_table_binding_budget_exceeded(
         states.iter().map(|state| state.entity_versions.len()),
+        limits,
     ) {
         return true;
     }
@@ -357,24 +382,31 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
     let Some(archive) = historical_record_archive(states, active_records, bytes, width) else {
         return false;
     };
-    let topology = states
-        .iter()
-        .map(|state| {
-            let records = materialize_record_table(state, &archive)?;
-            historical_topology(&crate::brep::decode(&records, bytes, "history"))
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(topology) = topology {
-        for (state, topology) in states.iter_mut().zip(topology) {
-            state.record_table_complete = true;
-            state.topology = Some(topology);
-        }
+    let complete = states.iter_mut().all(|state| {
+        let Some(records) = materialize_record_table(state, &archive) else {
+            return false;
+        };
+        let Some(topology) =
+            historical_topology(&crate::brep::decode_history_topology(&records, bytes))
+        else {
+            return false;
+        };
+        state.record_table_complete = true;
+        state.topology = Some(topology);
+        true
+    });
+    if complete {
         bind_historical_transitions(states);
         // Version tables are the reconstruction workspace for the sparse
         // transitions. Keeping every cumulative table after the transitions
         // exist makes history memory quadratic in states × active entities.
         for state in states {
             state.entity_versions.clear();
+        }
+    } else {
+        for state in states {
+            state.record_table_complete = false;
+            state.topology = None;
         }
     }
     false
@@ -2925,110 +2957,123 @@ fn treatment_radius_candidates(
     preceding: &AsmHistoricalTopology,
     deleted_edges: &[i64],
 ) -> Vec<crate::records::DesignEdgeTreatmentRadiusCandidate> {
-    let boundary = |face, topology: &AsmHistoricalTopology| {
-        face_boundary_contexts_for_slots(&[face], topology)
-            .into_iter()
-            .flat_map(|context| context.loops)
-            .flat_map(|loop_| loop_.edge_slots)
-            .collect::<HashSet<_>>()
-    };
-    let mut out = Vec::new();
+    treatment_edge_candidates(
+        result_candidate_faces,
+        inserted_faces,
+        result,
+        preceding,
+        deleted_edges,
+    )
+    .0
+}
+
+fn treatment_edge_candidates(
+    result_candidate_faces: Option<&[cadmpeg_ir::ids::FaceId]>,
+    inserted_faces: &[i64],
+    result: &AsmHistoricalTopology,
+    preceding: &AsmHistoricalTopology,
+    deleted_edges: &[i64],
+) -> (
+    Vec<crate::records::DesignEdgeTreatmentRadiusCandidate>,
+    Vec<i64>,
+) {
+    let result_boundaries = face_boundary_edge_index(result);
+    let preceding_boundaries = face_boundary_edge_index(preceding);
+    let supports = treatment_face_supports(inserted_faces, result, preceding, &result_boundaries);
+    let deleted_edges = deleted_edges.iter().copied().collect::<HashSet<_>>();
     let candidate_edges = result_candidate_faces
         .into_iter()
         .flatten()
         .filter_map(|face| stable_ref(&face.0))
-        .flat_map(|face| boundary(face, result))
+        .filter_map(|face| result_boundaries.get(&face))
+        .flatten()
+        .copied()
         .collect::<HashSet<_>>();
-    for (inserted, carrier, supports) in treatment_face_supports(inserted_faces, result, preceding)
-    {
-        let inserted_boundary = boundary(inserted, result);
-        if !candidate_edges.is_empty() && inserted_boundary.is_disjoint(&candidate_edges) {
+    let mut radii_out = Vec::new();
+    let mut transitions_out = Vec::new();
+    for (inserted, carrier, supports) in supports {
+        let Some(inserted_boundary) = result_boundaries.get(&inserted) else {
             continue;
-        }
+        };
         let mut radii = result
             .surface_radii
             .iter()
             .filter(|candidate| candidate.surface == carrier);
-        let Some(radius) = radii.next().map(|candidate| candidate.radius) else {
-            continue;
-        };
-        if radii.next().is_some() || !radius.is_finite() || radius <= 0.0 {
-            continue;
-        }
+        let radius = radii
+            .next()
+            .map(|candidate| candidate.radius)
+            .filter(|radius| radii.next().is_none() && radius.is_finite() && *radius > 0.0)
+            .filter(|_| {
+                candidate_edges.is_empty() || !inserted_boundary.is_disjoint(&candidate_edges)
+            });
         for (ordinal, left) in supports.iter().enumerate() {
-            let left_edges = boundary(*left, preceding);
+            let Some(left_edges) = preceding_boundaries.get(left) else {
+                continue;
+            };
             for right in supports.iter().skip(ordinal + 1) {
-                let right_edges = boundary(*right, preceding);
-                out.extend(
-                    left_edges
-                        .intersection(&right_edges)
-                        .filter(|edge| deleted_edges.contains(edge))
-                        .map(|edge| crate::records::DesignEdgeTreatmentRadiusCandidate {
+                let Some(right_edges) = preceding_boundaries.get(right) else {
+                    continue;
+                };
+                for edge in left_edges
+                    .intersection(right_edges)
+                    .filter(|edge| deleted_edges.contains(edge))
+                {
+                    transitions_out.push(*edge);
+                    if let Some(radius) = radius {
+                        radii_out.push(crate::records::DesignEdgeTreatmentRadiusCandidate {
                             edge_slot: *edge,
                             radius,
-                        }),
-                );
+                        });
+                    }
+                }
             }
         }
     }
-    out.sort_by(|left, right| {
+    radii_out.sort_by(|left, right| {
         left.radius
             .total_cmp(&right.radius)
             .then(left.edge_slot.cmp(&right.edge_slot))
     });
-    out.dedup_by(|left, right| left.radius == right.radius && left.edge_slot == right.edge_slot);
-    out
+    radii_out
+        .dedup_by(|left, right| left.radius == right.radius && left.edge_slot == right.edge_slot);
+    transitions_out.sort_unstable();
+    transitions_out.dedup();
+    (radii_out, transitions_out)
 }
 
 fn treatment_face_supports(
     inserted_faces: &[i64],
     result: &AsmHistoricalTopology,
     preceding: &AsmHistoricalTopology,
+    result_boundaries: &HashMap<i64, HashSet<i64>>,
 ) -> Vec<(i64, i64, Vec<i64>)> {
-    let boundary = |face, topology: &AsmHistoricalTopology| {
-        face_boundary_contexts_for_slots(&[face], topology)
-            .into_iter()
-            .flat_map(|context| context.loops)
-            .flat_map(|loop_| loop_.edge_slots)
-            .collect::<HashSet<_>>()
-    };
     let preceding_faces = preceding.faces.iter().copied().collect::<HashSet<_>>();
     let preceding_surfaces = preceding.surfaces.iter().copied().collect::<HashSet<_>>();
-    let support = |result_face| {
-        let mut bindings = result
-            .face_surfaces
-            .iter()
-            .filter(|binding| binding.entity == result_face);
-        let carrier = bindings.next()?.carrier;
-        if bindings.next().is_some() {
-            return None;
+    let result_carriers = unique_face_carriers(result);
+    let preceding_carrier_faces = unique_carrier_faces(preceding, &preceding_faces);
+    let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
+    for (face, edges) in result_boundaries {
+        for edge in edges {
+            adjacent_faces.entry(*edge).or_default().push(*face);
         }
-        let mut matches = preceding.face_surfaces.iter().filter(|binding| {
-            binding.carrier == carrier && preceding_faces.contains(&binding.entity)
-        });
-        let face = matches.next()?.entity;
-        matches.next().is_none().then_some(face)
-    };
+    }
     inserted_faces
         .iter()
         .copied()
         .filter_map(|inserted| {
-            let mut bindings = result
-                .face_surfaces
-                .iter()
-                .filter(|binding| binding.entity == inserted);
-            let carrier = bindings.next()?.carrier;
-            if bindings.next().is_some() || preceding_surfaces.contains(&carrier) {
+            let carrier = result_carriers.get(&inserted).copied().flatten()?;
+            if preceding_surfaces.contains(&carrier) {
                 return None;
             }
-            let inserted_boundary = boundary(inserted, result);
-            let mut supports = result
-                .faces
+            let inserted_boundary = result_boundaries.get(&inserted)?;
+            let mut supports = inserted_boundary
                 .iter()
+                .filter_map(|edge| adjacent_faces.get(edge))
+                .flatten()
                 .copied()
                 .filter(|face| *face != inserted)
-                .filter(|face| !boundary(*face, result).is_disjoint(&inserted_boundary))
-                .filter_map(support)
+                .filter_map(|face| result_carriers.get(&face).copied().flatten())
+                .filter_map(|carrier| preceding_carrier_faces.get(&carrier).copied().flatten())
                 .collect::<Vec<_>>();
             supports.sort_unstable();
             supports.dedup();
@@ -3037,37 +3082,78 @@ fn treatment_face_supports(
         .collect()
 }
 
+fn face_boundary_edge_index(topology: &AsmHistoricalTopology) -> HashMap<i64, HashSet<i64>> {
+    fn unique_relations(relations: &[AsmHistoricalRelation]) -> HashMap<i64, Option<&[i64]>> {
+        let mut out = HashMap::<i64, Option<&[i64]>>::new();
+        for relation in relations {
+            out.entry(relation.owner_ref)
+                .and_modify(|members| *members = None)
+                .or_insert(Some(&relation.member_refs));
+        }
+        out
+    }
+    let face_loops = unique_relations(&topology.face_loops);
+    let loop_coedges = unique_relations(&topology.loop_coedges);
+    let mut coedge_edges = HashMap::<i64, Option<i64>>::new();
+    for coedge in &topology.coedge_topology {
+        coedge_edges
+            .entry(coedge.coedge)
+            .and_modify(|edge| *edge = None)
+            .or_insert(Some(coedge.edge));
+    }
+    topology
+        .faces
+        .iter()
+        .filter_map(|face| {
+            let loops = face_loops.get(face).copied().flatten()?;
+            let edges = loops
+                .iter()
+                .map(|loop_| loop_coedges.get(loop_).copied().flatten())
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .map(|coedge| coedge_edges.get(coedge).copied().flatten())
+                .collect::<Option<HashSet<_>>>()?;
+            Some((*face, edges))
+        })
+        .collect()
+}
+
+fn unique_face_carriers(topology: &AsmHistoricalTopology) -> HashMap<i64, Option<i64>> {
+    let mut out = HashMap::new();
+    for binding in &topology.face_surfaces {
+        out.entry(binding.entity)
+            .and_modify(|carrier| *carrier = None)
+            .or_insert(Some(binding.carrier));
+    }
+    out
+}
+
+fn unique_carrier_faces(
+    topology: &AsmHistoricalTopology,
+    included_faces: &HashSet<i64>,
+) -> HashMap<i64, Option<i64>> {
+    let mut out = HashMap::new();
+    for binding in topology
+        .face_surfaces
+        .iter()
+        .filter(|binding| included_faces.contains(&binding.entity))
+    {
+        out.entry(binding.carrier)
+            .and_modify(|face| *face = None)
+            .or_insert(Some(binding.entity));
+    }
+    out
+}
+
+#[cfg(test)]
 fn treatment_transition_edge_candidates(
     inserted_faces: &[i64],
     result: &AsmHistoricalTopology,
     preceding: &AsmHistoricalTopology,
     deleted_edges: &[i64],
 ) -> Vec<i64> {
-    let boundary = |face, topology: &AsmHistoricalTopology| {
-        face_boundary_contexts_for_slots(&[face], topology)
-            .into_iter()
-            .flat_map(|context| context.loops)
-            .flat_map(|loop_| loop_.edge_slots)
-            .collect::<HashSet<_>>()
-    };
-    let mut out = Vec::new();
-    for (_, _, supports) in treatment_face_supports(inserted_faces, result, preceding) {
-        for (ordinal, left) in supports.iter().enumerate() {
-            let left_edges = boundary(*left, preceding);
-            for right in supports.iter().skip(ordinal + 1) {
-                let right_edges = boundary(*right, preceding);
-                out.extend(
-                    left_edges
-                        .intersection(&right_edges)
-                        .filter(|edge| deleted_edges.contains(edge))
-                        .copied(),
-                );
-            }
-        }
-    }
-    out.sort_unstable();
-    out.dedup();
-    out
+    treatment_edge_candidates(None, inserted_faces, result, preceding, deleted_edges).1
 }
 
 fn boundary_edges_in_changes(boundary_edges: &[i64], changes: &[i64]) -> Vec<i64> {
@@ -3721,6 +3807,13 @@ pub(crate) fn bind_edge_identity_history(
             .and_modify(|unique| *unique = None)
             .or_insert(Some(state));
     }
+    let mut treatment_candidates_by_transition = HashMap::<
+        (i64, i64),
+        (
+            Vec<crate::records::DesignEdgeTreatmentRadiusCandidate>,
+            Vec<i64>,
+        ),
+    >::new();
     for operand in operands {
         operand.historical_entity_kind = None;
         operand.historical_entity_ref = None;
@@ -3768,37 +3861,44 @@ pub(crate) fn bind_edge_identity_history(
         };
         if let Some(current_state_id) = current_state_id {
             if history_state_chain_reaches(&states_by_id, current_state_id, previous_state_id) {
-                if let Some(result) = states_by_id
+                let key = (current_state_id, previous_state_id);
+                if let Some(candidates) = treatment_candidates_by_transition.get(&key) {
+                    operand
+                        .treatment_radius_candidates
+                        .clone_from(&candidates.0);
+                    operand.transition_edge_candidates.clone_from(&candidates.1);
+                } else if let Some(result) = states_by_id
                     .get(&current_state_id)
                     .copied()
                     .flatten()
                     .and_then(|state| state.topology.as_ref())
                 {
+                    let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
                     let inserted_faces = result
                         .faces
                         .iter()
                         .copied()
-                        .filter(|face| !topology.faces.contains(face))
+                        .filter(|face| !preceding_faces.contains(face))
                         .collect::<Vec<_>>();
+                    let result_edges = result.edges.iter().copied().collect::<HashSet<_>>();
                     let deleted_edges = topology
                         .edges
                         .iter()
                         .copied()
-                        .filter(|edge| !result.edges.contains(edge))
+                        .filter(|edge| !result_edges.contains(edge))
                         .collect::<Vec<_>>();
-                    operand.treatment_radius_candidates = treatment_radius_candidates(
+                    let candidates = treatment_edge_candidates(
                         None,
                         &inserted_faces,
                         result,
                         topology,
                         &deleted_edges,
                     );
-                    operand.transition_edge_candidates = treatment_transition_edge_candidates(
-                        &inserted_faces,
-                        result,
-                        topology,
-                        &deleted_edges,
-                    );
+                    operand
+                        .treatment_radius_candidates
+                        .clone_from(&candidates.0);
+                    operand.transition_edge_candidates.clone_from(&candidates.1);
+                    treatment_candidates_by_transition.insert(key, candidates);
                 }
             }
         }
@@ -4168,7 +4268,7 @@ fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
         .collect()
 }
 
-fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology> {
+pub(crate) fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology> {
     fn entity_ref(id: &str) -> Option<i64> {
         id.rsplit_once('#')?
             .1
@@ -4587,15 +4687,25 @@ mod tests {
 
     #[test]
     fn history_binding_budget_charges_materialized_state_tables() {
-        assert!(!complete_table_binding_budget_exceeded([
-            COMPLETE_TABLE_BUDGET / 2,
-            COMPLETE_TABLE_BUDGET / 2,
-        ]));
-        assert!(complete_table_binding_budget_exceeded([
-            COMPLETE_TABLE_BUDGET,
-            1,
-        ]));
-        assert!(complete_table_binding_budget_exceeded([usize::MAX, 1,]));
+        let mut limits = cadmpeg_codec_core::decode::ResourceLimits::desktop();
+        limits.max_materialized_bytes = 1920;
+        assert!(!complete_table_binding_budget_exceeded([5, 5], &limits));
+        assert!(complete_table_binding_budget_exceeded([10, 1], &limits));
+        assert!(complete_table_binding_budget_exceeded(
+            [usize::MAX, 1],
+            &limits,
+        ));
+
+        let desktop = cadmpeg_codec_core::decode::ResourceLimits::desktop();
+        let service = cadmpeg_codec_core::decode::ResourceLimits::service();
+        assert!(!complete_table_binding_budget_exceeded(
+            [18_000_000],
+            &desktop,
+        ));
+        assert!(complete_table_binding_budget_exceeded(
+            [18_000_000],
+            &service,
+        ));
     }
 
     #[test]

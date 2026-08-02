@@ -618,6 +618,30 @@ pub(crate) struct WireShellTopology {
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `f3d:brep:entity#<record-index>`, unique across the `RecordTable`.
 pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
+    decode_with_purpose(records, bytes, stream, DecodePurpose::Model)
+}
+
+/// Decode only the topology and analytic measurements used to bind ASM
+/// history. Free-form carrier shapes are not materialized because historical
+/// binding consumes their stable record identities, not their control data.
+pub(crate) fn decode_history_topology(records: &[Record], bytes: &[u8]) -> Brep {
+    decode_with_purpose(records, bytes, "history", DecodePurpose::History)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DecodePurpose {
+    /// Transfer complete neutral geometry and retained native records.
+    Model,
+    /// Transfer stable topology plus measurements used by history binding.
+    History,
+}
+
+fn decode_with_purpose(
+    records: &[Record],
+    bytes: &[u8],
+    stream: &str,
+    purpose: DecodePurpose,
+) -> Brep {
     let mut out = Brep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
@@ -644,6 +668,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         &subtype_tables,
         &mut carriers,
         &mut reach,
+        purpose,
     );
     walk_reachable_topology(
         &mut out,
@@ -653,6 +678,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         &subtype_tables,
         &mut carriers,
         &mut reach,
+        purpose,
     );
     let wire = collect_wire_topology(
         &mut out,
@@ -662,6 +688,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         &subtype_tables,
         &mut carriers,
         &mut reach,
+        purpose,
     );
 
     let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach);
@@ -713,13 +740,15 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         header_scale,
     );
     project_subshell_faces(&mut out, records, &by_index);
-    let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach);
-    emit_passthrough_unknowns(&mut out, records, bytes, &reach);
-    count_other_records(&mut out, records, &reach, &emitted_attributes);
-    emit_annotation_records(&mut out, records, &by_index, stream);
+    if purpose == DecodePurpose::Model {
+        let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach);
+        emit_passthrough_unknowns(&mut out, records, bytes, &reach);
+        count_other_records(&mut out, records, &reach, &emitted_attributes);
+        emit_annotation_records(&mut out, records, &by_index, stream);
 
-    classify_body_kinds(&mut out);
-    clamp_edge_ranges_to_carrier_domains(&mut out);
+        classify_body_kinds(&mut out);
+        clamp_edge_ranges_to_carrier_domains(&mut out);
+    }
 
     out
 }

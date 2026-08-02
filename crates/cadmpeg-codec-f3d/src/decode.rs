@@ -1037,7 +1037,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             report.losses.extend(subd_losses);
             native.body_visibilities = body_visibilities;
             for history_brep in container::history_breps(&scan) {
-                if let Some(history) = decode_asm_history(&scan, history_brep)? {
+                if let Some(history) = decode_asm_history(ctx, &scan, history_brep)? {
                     native.asm_histories.push(history);
                 }
             }
@@ -1448,7 +1448,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let (mut ir, unknowns) = build_metadata_ir(&scan);
     let mut native = F3dNative::default();
     for history_brep in container::history_breps(&scan) {
-        if let Some(history) = decode_asm_history(&scan, history_brep)? {
+        if let Some(history) = decode_asm_history(ctx, &scan, history_brep)? {
             native.asm_histories.push(history);
         }
     }
@@ -2241,6 +2241,7 @@ fn trailing_offset(id: &str) -> u64 {
 }
 
 fn decode_asm_history(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     history_brep: &BrepFacts,
 ) -> Result<Option<crate::history_records::AsmHistory>, CodecError> {
@@ -2249,7 +2250,12 @@ fn decode_asm_history(
         .as_ref()
         .map_or(8, |header| usize::from(header.width));
     let bytes = scan.entry_bytes(&history_brep.name)?;
-    Ok(crate::history::decode(bytes, &history_brep.name, width))
+    Ok(crate::history::decode(
+        bytes,
+        &history_brep.name,
+        width,
+        &ctx.policy().limits,
+    ))
 }
 
 fn extend_related_design_records(

@@ -1330,11 +1330,16 @@ fn historical_selection_regions(
             .or_insert(Some(state));
     }
     let mut state_ids = members
+        .first()?
+        .historical_state_ids
         .iter()
-        .flat_map(|member| member.historical_state_ids.iter().copied())
-        .collect::<Vec<_>>();
+        .copied()
+        .collect::<HashSet<_>>();
+    for member in &members[1..] {
+        state_ids.retain(|state_id| member.historical_state_ids.contains(state_id));
+    }
+    let mut state_ids = state_ids.into_iter().collect::<Vec<_>>();
     state_ids.sort_unstable();
-    state_ids.dedup();
     let state_selections = state_ids
         .into_iter()
         .filter_map(|state_id| {

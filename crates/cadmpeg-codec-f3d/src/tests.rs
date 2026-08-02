@@ -13207,6 +13207,28 @@ fn decode_builds_valid_topology_and_geometry() {
 }
 
 #[test]
+fn history_topology_decode_matches_full_brep_graph() {
+    for bytes in [
+        synthetic_geometry_with_pcurve_smbh(),
+        synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
+    ] {
+        let start = asm_header::record_stream_start(&bytes).expect("record stream start");
+        let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
+        let records = crate::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
+
+        let full =
+            crate::history::historical_topology(&crate::brep::decode(&records, &bytes, "full"))
+                .expect("full topology");
+        let history = crate::history::historical_topology(&crate::brep::decode_history_topology(
+            &records, &bytes,
+        ))
+        .expect("history topology");
+
+        assert_eq!(history, full);
+    }
+}
+
+#[test]
 fn decode_transfers_generated_wire_body_topology() {
     let mut result = F3dCodec
         .decode(
