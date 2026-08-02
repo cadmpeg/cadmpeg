@@ -4978,6 +4978,18 @@ mod marker_tests {
         lane_token[..2].copy_from_slice(&[0x0c, 0x8e]);
         assert_eq!(compact_extrusion_to_face_at(&lane_token, 0), None);
 
+        let comp_face = b"\xff\xff\x01\x00\x0c\x00moCompFace_c";
+        payload[body..body + comp_face.len()].copy_from_slice(comp_face);
+        let nested = body + comp_face.len();
+        payload[nested..nested + 16].copy_from_slice(&[
+            0x86, 0x81, 2, 0, 0x88, 0x81, 0, 0, 0x8a, 0x81, 1, 0, 0, 0, 0x8c, 0x81,
+        ]);
+        assert_eq!(compact_extrusion_to_face_at(&payload, anchor), Some(body));
+
+        payload[nested + 2] = 3;
+        assert_eq!(compact_extrusion_to_face_at(&payload, anchor), None);
+        payload[nested + 2] = 2;
+
         payload[body + 4] = 3;
         assert_eq!(compact_extrusion_to_face_at(&payload, anchor), None);
     }
@@ -33741,20 +33753,34 @@ fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> 
 }
 
 fn compact_tokenized_single_face_child_at(payload: &[u8], offset: usize) -> bool {
-    let Some(body) = payload.get(offset..offset + 18) else {
+    if compact_tokenized_face_body_at(payload, offset, 2) {
+        return true;
+    }
+    let declaration = b"\xff\xff\x01\x00\x0c\x00moCompFace_c";
+    payload.get(offset..offset + declaration.len()) == Some(declaration)
+        && compact_tokenized_face_body_at(payload, offset + declaration.len(), 1)
+}
+
+fn compact_tokenized_face_body_at(
+    payload: &[u8],
+    offset: usize,
+    leading_class_tokens: usize,
+) -> bool {
+    let word_count = leading_class_tokens + 7;
+    let Some(body) = payload.get(offset..offset + word_count * 2) else {
         return false;
     };
-    let token_at = |index: usize| u16::from_le_bytes([body[index], body[index + 1]]);
+    let token_at = |index: usize| u16::from_le_bytes([body[index * 2], body[index * 2 + 1]]);
     let is_class_token = |token: u16| token & 0x8000 != 0 && token != 0xffff;
-    is_class_token(token_at(0))
-        && is_class_token(token_at(2))
-        && token_at(4) == 2
-        && is_class_token(token_at(6))
-        && token_at(8) == 0
-        && is_class_token(token_at(10))
-        && token_at(12) == 1
-        && token_at(14) == 0
-        && is_class_token(token_at(16))
+    (1..=2).contains(&leading_class_tokens)
+        && (0..leading_class_tokens).all(|index| is_class_token(token_at(index)))
+        && token_at(leading_class_tokens) == 2
+        && is_class_token(token_at(leading_class_tokens + 1))
+        && token_at(leading_class_tokens + 2) == 0
+        && is_class_token(token_at(leading_class_tokens + 3))
+        && token_at(leading_class_tokens + 4) == 1
+        && token_at(leading_class_tokens + 5) == 0
+        && is_class_token(token_at(leading_class_tokens + 6))
 }
 
 fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
