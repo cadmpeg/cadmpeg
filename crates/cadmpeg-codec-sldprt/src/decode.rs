@@ -337,9 +337,15 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 .any(|body| !bodies.insert(body) || !model_body_ids.contains(body))
         })
         .count();
-    if incoherent_configuration_bodies > 0 {
+    let unresolved_configuration_bodies = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.bodies.is_unresolved())
+        .count();
+    if unresolved_configuration_bodies > 0 || incoherent_configuration_bodies > 0 {
         report.losses.push(SldprtLossCode::ConfigIncoherentBodyRefs.note(format!(
-                "{incoherent_configuration_bodies} configuration record(s) contain missing or repeated body references."
+                "{unresolved_configuration_bodies} configuration record(s) have unresolved body membership; {incoherent_configuration_bodies} configuration record(s) contain missing or repeated body references."
             )));
     }
 
@@ -353,7 +359,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .parameters
         .iter()
-        .filter(|parameter| parameter.value.is_some())
         .map(|parameter| &parameter.id)
         .collect::<std::collections::HashSet<_>>();
     let incomplete_configuration_feature_snapshots = ir
@@ -362,7 +367,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .iter()
         .filter(|configuration| {
             !configuration_source_needs_update(ir, configuration)
-                && !feature_ids.is_empty()
                 && (configuration.feature_states.len() != feature_ids.len()
                     || configuration
                         .feature_states
@@ -376,7 +380,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .iter()
         .filter(|configuration| {
             !configuration_source_needs_update(ir, configuration)
-                && !parameter_ids.is_empty()
                 && (configuration.parameter_values.len() != parameter_ids.len()
                     || configuration
                         .parameter_values
@@ -5116,6 +5119,7 @@ mod design_loss_tests {
                 1,
                 cadmpeg_ir::ConfigurationBodies::Resolved(vec![BodyId("missing-body".into())]),
             ),
+            configuration("unresolved", 2, cadmpeg_ir::ConfigurationBodies::Unresolved),
         ];
         let mut report = DecodeReport {
             format: "sldprt".into(),
@@ -5129,7 +5133,57 @@ mod design_loss_tests {
         append_design_losses(&ir, &mut report);
 
         assert!(report.losses.iter().any(|loss| {
-            loss.message == "2 configuration record(s) contain missing or repeated body references."
+            loss.message == "1 configuration record(s) have unresolved body membership; 2 configuration record(s) contain missing or repeated body references."
+        }));
+    }
+
+    #[test]
+    fn configuration_values_complete_parameters_without_baseline_values() {
+        let mut ir = CadIr::empty(Units::default());
+        let parameter = ParameterId("configured-parameter".into());
+        ir.model.parameters.push(DesignParameter {
+            id: parameter.clone(),
+            owner: None,
+            ordinal: 0,
+            name: "Configured".into(),
+            expression: "12mm".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::from([(parameter, ParameterValue::Length(Length(12.0)))]),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: Some("native:configuration".into()),
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(!report.losses.iter().any(|loss| {
+            loss.message
+                .contains("complete evaluated parameter snapshot")
+                || loss.message.contains("lack an evaluated scalar")
         }));
     }
 
