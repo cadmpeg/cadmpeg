@@ -148,7 +148,9 @@ fn rederived_body_census(
         previous_ordinal = Some(feature.ordinal);
         seen_features.insert(feature.id.clone());
         match feature.suppressed {
-            None if !is_body_neutral_feature(feature) => {
+            None if !is_body_neutral_feature(feature)
+                && !suppression_is_body_census_invariant(feature, &bodies) =>
+            {
                 return Err((
                     feature.id.clone(),
                     UnsupportedBodyCensusReason::UnresolvedSuppression,
@@ -455,6 +457,27 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
                 if kind == "DELETE"
                     && !feature.source_properties.contains_key("primary_body_object_index")
         ))
+}
+
+fn suppression_is_body_census_invariant(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &BTreeSet<BodyId>,
+) -> bool {
+    (feature.outputs.is_empty()
+        || (feature.outputs.len() == 1 && bodies.contains(&feature.outputs[0])))
+        && matches!(
+            feature.definition,
+            FeatureDefinition::TrimSurface { .. }
+                | FeatureDefinition::ExtendSurface { .. }
+                | FeatureDefinition::Hole { .. }
+                | FeatureDefinition::Chamfer { .. }
+                | FeatureDefinition::Fillet { .. }
+                | FeatureDefinition::FaceBlend { .. }
+                | FeatureDefinition::OffsetSurface { .. }
+                | FeatureDefinition::Thicken { .. }
+                | FeatureDefinition::Draft { .. }
+                | FeatureDefinition::ReplaceFace { .. }
+        )
 }
 
 fn preserve_complete_single_output(
@@ -1984,6 +2007,41 @@ mod tests {
             BodyCensusEvaluation::Unsupported {
                 feature: Some(FeatureId("block".to_string())),
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
+            }
+        );
+    }
+
+    #[test]
+    fn unresolved_suppression_does_not_block_a_complete_in_place_edit() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut hole = complete_hole(body.clone());
+        hole.suppressed = None;
+        ir.model.features.push(hole);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn suppression_invariance_does_not_hide_incomplete_edit_semantics() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut hole = complete_hole(body);
+        hole.suppressed = None;
+        if let FeatureDefinition::Hole { placements, .. } = &mut hole.definition {
+            placements.clear();
+        }
+        hole.outputs.clear();
+        ir.model.features.push(hole);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("hole".to_string())),
+                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
     }

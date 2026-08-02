@@ -530,8 +530,12 @@ mod tests {
     fn streaming_canonical_hash_matches_the_canonical_document() {
         let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         assert_eq!(
-            canonical_sha256(&ir).unwrap(),
-            cadmpeg_ir::hash::sha256_hex(ir.to_canonical_json().unwrap().as_bytes())
+            canonical_sha256(&ir).expect("test IR must serialize through the profile writer"),
+            cadmpeg_ir::hash::sha256_hex(
+                ir.to_canonical_json()
+                    .expect("test IR must serialize canonically")
+                    .as_bytes(),
+            )
         );
     }
 
