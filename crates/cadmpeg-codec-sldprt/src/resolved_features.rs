@@ -5017,6 +5017,30 @@ mod marker_tests {
     }
 
     #[test]
+    fn termination_consensus_uses_stable_reference_identity_across_lanes() {
+        let vote = |reference: &str, identity: &str| super::TerminationVote {
+            condition: "ToFace".into(),
+            reference: Some(reference.into()),
+            second_condition: None,
+            reference_identity: Some(identity.into()),
+            canonical_reference: Some("components:1,2,3".into()),
+        };
+        let first = vote("lane-0:100", "components:1,2,3");
+        let second = vote("lane-1:200", "components:1,2,3");
+        let consensus =
+            super::consensus_termination_vote(&[Some(first.clone()), Some(second)]).unwrap();
+        assert_eq!(consensus.reference.as_deref(), Some("components:1,2,3"));
+
+        let exact = super::consensus_termination_vote(&[Some(first.clone())]).unwrap();
+        assert_eq!(exact.reference, first.reference);
+        assert!(super::consensus_termination_vote(&[
+            Some(first),
+            Some(vote("lane-1:200", "components:1,2,4")),
+        ])
+        .is_none());
+    }
+
+    #[test]
     fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
         let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
         let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
@@ -32989,11 +33013,19 @@ fn unique_cylindrical_face(radius: f64, faces: &[Face], surfaces: &[Surface]) ->
 }
 
 /// Add semantic termination forms carried by compact extrusion end-spec children.
+#[derive(Clone)]
+struct TerminationVote {
+    condition: String,
+    reference: Option<String>,
+    second_condition: Option<String>,
+    reference_identity: Option<String>,
+    canonical_reference: Option<String>,
+}
+
 pub(crate) fn enrich_history_extrusion_terminations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    type TerminationVote = (String, Option<String>, Option<String>);
     let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
     for lane in lanes {
         let names_by_id = lane
@@ -33032,11 +33064,16 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let [owner] = owners.as_slice() else {
                 continue;
             };
-            grouped_blind.entry(owner.id.clone()).or_default().push((
-                "Blind".to_string(),
-                None,
-                None,
-            ));
+            grouped_blind
+                .entry(owner.id.clone())
+                .or_default()
+                .push(TerminationVote {
+                    condition: "Blind".to_string(),
+                    reference: None,
+                    second_condition: None,
+                    reference_identity: None,
+                    canonical_reference: None,
+                });
         }
         let mut objects = histories
             .iter()
@@ -33091,24 +33128,42 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let candidates = (start..end.saturating_sub(103))
                 .filter_map(|offset| {
                     if compact_extrusion_blind_at(&lane.native_payload, offset) {
-                        return Some(("Blind".to_string(), None, None));
+                        return Some(TerminationVote {
+                            condition: "Blind".to_string(),
+                            reference: None,
+                            second_condition: None,
+                            reference_identity: None,
+                            canonical_reference: None,
+                        });
                     }
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
-                        return Some(("Symmetric".to_string(), None, None));
+                        return Some(TerminationVote {
+                            condition: "Symmetric".to_string(),
+                            reference: None,
+                            second_condition: None,
+                            reference_identity: None,
+                            canonical_reference: None,
+                        });
                     }
                     if let Some(reference) =
                         compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
                     {
-                        return Some((
-                            "OffsetFromFace".to_string(),
-                            Some(format!(
-                                "sldprt:feature-input:single-face-ref:{lane_key}:{reference}"
-                            )),
-                            None,
+                        return Some(compact_termination_face_vote(
+                            "OffsetFromFace",
+                            lane,
+                            feature_id,
+                            lane_key,
+                            reference,
                         ));
                     }
                     if compact_extrusion_through_all_both_at(&lane.native_payload, offset) {
-                        return Some(("ThroughAllBoth".to_string(), None, None));
+                        return Some(TerminationVote {
+                            condition: "ThroughAllBoth".to_string(),
+                            reference: None,
+                            second_condition: None,
+                            reference_identity: None,
+                            canonical_reference: None,
+                        });
                     }
                     if has_depth
                         && compact_extrusion_blind_through_all_second_at(
@@ -33116,15 +33171,33 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             offset,
                         )
                     {
-                        return Some(("Blind".to_string(), None, Some("ThroughAll".to_string())));
+                        return Some(TerminationVote {
+                            condition: "Blind".to_string(),
+                            reference: None,
+                            second_condition: Some("ThroughAll".to_string()),
+                            reference_identity: None,
+                            canonical_reference: None,
+                        });
                     }
                     if has_depth {
                         return None;
                     }
                     if compact_extrusion_through_all_at(&lane.native_payload, offset) {
-                        Some(("ThroughAll".to_string(), None, None))
+                        Some(TerminationVote {
+                            condition: "ThroughAll".to_string(),
+                            reference: None,
+                            second_condition: None,
+                            reference_identity: None,
+                            canonical_reference: None,
+                        })
                     } else if compact_extrusion_through_next_at(&lane.native_payload, offset) {
-                        Some(("ThroughNext".to_string(), None, None))
+                        Some(TerminationVote {
+                            condition: "ThroughNext".to_string(),
+                            reference: None,
+                            second_condition: None,
+                            reference_identity: None,
+                            canonical_reference: None,
+                        })
                     } else if let Some((reference, kind)) =
                         compact_extrusion_to_vertex_at(&lane.native_payload, offset)
                     {
@@ -33132,22 +33205,20 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             CompactPointReferenceKind::Point => "point-ref",
                             CompactPointReferenceKind::EdgeEndpoint => "edge-endpoint-ref",
                         };
-                        Some((
-                            "ToVertex".to_string(),
-                            Some(format!(
-                                "sldprt:feature-input:{prefix}:{lane_key}:{reference}"
-                            )),
-                            None,
-                        ))
+                        let reference =
+                            format!("sldprt:feature-input:{prefix}:{lane_key}:{reference}");
+                        Some(TerminationVote {
+                            condition: "ToVertex".to_string(),
+                            reference_identity: Some(reference.clone()),
+                            canonical_reference: None,
+                            reference: Some(reference),
+                            second_condition: None,
+                        })
                     } else {
                         compact_extrusion_to_face_at(&lane.native_payload, offset).map(
                             |reference| {
-                                (
-                                    "ToFace".to_string(),
-                                    Some(format!(
-                                    "sldprt:feature-input:single-face-ref:{lane_key}:{reference}"
-                                )),
-                                    None,
+                                compact_termination_face_vote(
+                                    "ToFace", lane, feature_id, lane_key, reference,
                                 )
                             },
                         )
@@ -33180,31 +33251,82 @@ pub(crate) fn enrich_history_extrusion_terminations(
         let Some(votes) = terminations.get(&feature.id) else {
             continue;
         };
-        let Some(Some(first)) = votes.first() else {
+        let Some(vote) = consensus_termination_vote(votes) else {
             continue;
         };
-        if !votes.iter().all(|vote| vote.as_ref() == Some(first)) {
-            continue;
-        }
         feature
             .properties
-            .insert("EndCondition".into(), first.0.clone());
-        if let Some(reference) = &first.1 {
-            let key = if first.0 == "ToVertex" {
+            .insert("EndCondition".into(), vote.condition.clone());
+        if let Some(reference) = vote.reference {
+            let key = if vote.condition == "ToVertex" {
                 "Vertex"
             } else {
                 "Face"
             };
-            feature
-                .properties
-                .entry(key.into())
-                .or_insert_with(|| reference.clone());
+            feature.properties.entry(key.into()).or_insert(reference);
         }
-        if let Some(second) = &first.2 {
+        if let Some(second) = &vote.second_condition {
             feature
                 .properties
                 .insert("EndCondition2".into(), second.clone());
         }
+    }
+}
+
+fn consensus_termination_vote(votes: &[Option<TerminationVote>]) -> Option<TerminationVote> {
+    let first = votes.first()?.as_ref()?;
+    if !votes.iter().all(|vote| {
+        vote.as_ref().is_some_and(|vote| {
+            vote.condition == first.condition
+                && vote.second_condition == first.second_condition
+                && vote.reference_identity == first.reference_identity
+        })
+    }) {
+        return None;
+    }
+    let mut consensus = first.clone();
+    if !votes
+        .iter()
+        .filter_map(Option::as_ref)
+        .all(|vote| vote.reference == first.reference)
+    {
+        consensus.reference.clone_from(&first.canonical_reference);
+    }
+    Some(consensus)
+}
+
+fn compact_termination_face_vote(
+    condition: &str,
+    lane: &FeatureInputLane,
+    feature_ref: &str,
+    lane_key: &str,
+    offset: usize,
+) -> TerminationVote {
+    let reference = format!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}");
+    let selection = lane.surface_selections.iter().find(|selection| {
+        selection.feature_ref == feature_ref
+            && usize::try_from(selection.offset).ok() == Some(offset)
+    });
+    let canonical_reference =
+        selection.map(|selection| compact_surface_selection_value(&selection.components));
+    let reference_identity = selection.map(|selection| {
+        format!(
+            "{}|{}|{}",
+            canonical_reference.as_deref().unwrap_or_default(),
+            selection.producer_feature_refs.join(","),
+            selection
+                .terminal_feature_ref
+                .as_deref()
+                .unwrap_or_default()
+        )
+    });
+    let reference_identity = reference_identity.or_else(|| Some(reference.clone()));
+    TerminationVote {
+        condition: condition.to_string(),
+        reference: Some(reference),
+        second_condition: None,
+        reference_identity,
+        canonical_reference,
     }
 }
 
