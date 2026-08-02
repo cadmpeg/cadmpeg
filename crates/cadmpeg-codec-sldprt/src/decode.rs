@@ -1061,13 +1061,58 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(pattern, PatternKind::CurveDriven { path: None, .. })
             }
             FeatureDefinition::Native { .. } => false,
-            _ => false,
+            // These neutral families have no audited SLDPRT projection contract. Keep the
+            // list exhaustive so a new common-IR family cannot silently pass the L6 gate.
+            FeatureDefinition::BaseFeature { .. }
+            | FeatureDefinition::InsertBodies { .. }
+            | FeatureDefinition::Form { .. }
+            | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::PointGeometry { .. }
+            | FeatureDefinition::LineSegment { .. }
+            | FeatureDefinition::CircularArc { .. }
+            | FeatureDefinition::EllipticArc { .. }
+            | FeatureDefinition::Polyline { .. }
+            | FeatureDefinition::RegularPolygonCurve { .. }
+            | FeatureDefinition::PlanarPatch { .. }
+            | FeatureDefinition::FaceFromShapes { .. }
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::Block { .. }
+            | FeatureDefinition::ProjectOnSurface { .. }
+            | FeatureDefinition::Coil { .. }
+            | FeatureDefinition::Sphere { .. }
+            | FeatureDefinition::Torus { .. }
+            | FeatureDefinition::StoredGeometry
+            | FeatureDefinition::ExtractBody { .. }
+            | FeatureDefinition::DerivedGeometry { .. }
+            | FeatureDefinition::ImportedGeometry { .. }
+            | FeatureDefinition::Primitive { .. }
+            | FeatureDefinition::HelicalSweep { .. }
+            | FeatureDefinition::Binder { .. }
+            | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::FreeformSurfaceUnresolved
+            | FeatureDefinition::SheetMetalBaseFlange { .. }
+            | FeatureDefinition::FaceBlend { .. }
+            | FeatureDefinition::OffsetShape { .. }
+            | FeatureDefinition::Compound { .. }
+            | FeatureDefinition::RefineShape { .. }
+            | FeatureDefinition::ReverseShape { .. }
+            | FeatureDefinition::RuledBetweenCurves { .. }
+            | FeatureDefinition::SectionShape { .. }
+            | FeatureDefinition::MirrorShape { .. }
+            | FeatureDefinition::SewBodies { .. }
+            | FeatureDefinition::BoundarySurfaceUnresolved
+            | FeatureDefinition::DraftUnresolved
+            | FeatureDefinition::BoundaryFill { .. }
+            | FeatureDefinition::TrimBodies { .. }
+            | FeatureDefinition::SplitBody { .. }
+            | FeatureDefinition::PostProcess { .. } => true,
         })
         .count();
     if incomplete_typed_features > 0 {
         report.losses.push(SldprtLossCode::FeatureTypedOperandIncomplete.note(format!(
-                "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
-            )));
+            "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
+        )));
     }
 
     let unresolved_body_modes = evaluated_feature_states
@@ -3397,7 +3442,7 @@ mod design_loss_tests {
     }
 
     #[test]
-    fn every_typed_family_participates_in_design_completeness_accounting() {
+    fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         let mut ir = CadIr::empty(Units::default());
         let feature = |id: &str, ordinal, definition| Feature {
             id: FeatureId(id.into()),
@@ -3441,6 +3486,16 @@ mod design_loss_tests {
                 reverse: None,
             },
         ));
+        ir.model.features.push(feature(
+            "unresolved-plane",
+            2,
+            FeatureDefinition::DatumPlaneUnresolved,
+        ));
+        ir.model.features.push(feature(
+            "unaudited-stored-geometry",
+            3,
+            FeatureDefinition::StoredGeometry,
+        ));
         let mut report = DecodeReport {
             format: "sldprt".into(),
             container_only: false,
@@ -3454,7 +3509,7 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "1 typed feature(s) retain native or unresolved required operation operands."
+                == "3 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
