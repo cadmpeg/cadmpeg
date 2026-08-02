@@ -68,22 +68,30 @@ fn nonpositive(x: f64) -> bool {
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
 fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
+    let index = crate::index::ModelIndex::new(ir);
+    validate_model_with_index(ir, losses, &index)
+}
+
+fn validate_model_with_index(
+    ir: &CadIr,
+    losses: Vec<LossNote>,
+    ids: &crate::index::ModelIndex<'_>,
+) -> ValidationReport {
     let mut findings = Vec::new();
 
-    let ids = crate::index::ModelIndex::new(ir);
     check_version(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);
     check_units(ir, &mut findings);
-    check_references(ir, &ids, &mut findings);
+    check_references(ir, ids, &mut findings);
     check_pmi(ir, &mut findings);
-    check_loops(ir, &ids, &mut findings);
+    check_loops(ir, ids, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
-    check_native_links(ir, &ids, &mut findings);
+    check_native_links(ir, ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
@@ -96,16 +104,26 @@ fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);
     check_products(ir, &mut findings);
-    check_presentation(ir, &ids, &mut findings);
-    check_drawings(ir, &ids, &mut findings);
-    check_semantic_annotations(ir, &ids, &mut findings);
-    check_typed_references(ir, &ids, &mut findings);
+    check_presentation(ir, ids, &mut findings);
+    check_drawings(ir, ids, &mut findings);
+    check_semantic_annotations(ir, ids, &mut findings);
+    check_typed_references(ir, ids, &mut findings);
 
     ValidationReport {
         entity_counts: entity_counts(ir),
         findings,
         losses,
     }
+}
+
+/// Validates a model while treating staged retained-record identities as native entities.
+pub fn validate_with_additional_native_identities<'a>(
+    ir: &'a CadIr,
+    additional: impl IntoIterator<Item = &'a str>,
+    losses: Vec<LossNote>,
+) -> ValidationReport {
+    let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
+    validate_model_with_index(ir, losses, &index)
 }
 
 /// Validate one neutral product model.

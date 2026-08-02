@@ -35,15 +35,24 @@ macro_rules! define_model_index {
         impl<'a> ModelIndex<'a> {
             /// Builds every typed lookup and the global identity universe once.
             pub fn new(ir: &'a CadIr) -> Self {
+                Self::with_additional_native_identities(ir, std::iter::empty())
+            }
+
+            /// Builds the index with native identities staged outside the document.
+            pub fn with_additional_native_identities(
+                ir: &'a CadIr,
+                additional: impl IntoIterator<Item = &'a str>,
+            ) -> Self {
                 let mut identities = HashSet::with_capacity(ir.model.entity_count());
                 $(let $field = ir.model.$field.iter().map(|entity| {
                     let identity = entity.identity();
                     identities.insert(identity);
                     (identity, entity)
                 }).collect();)*
-                let native_identities = ir.native.0.values().flat_map(|namespace| {
+                let mut native_identities = ir.native.0.values().flat_map(|namespace| {
                     namespace.arenas.values().flatten().map(|record| record.id.as_str())
                 }).collect::<HashSet<_>>();
+                native_identities.extend(additional);
                 identities.extend(native_identities.iter().copied());
                 Self {
                     ir,
