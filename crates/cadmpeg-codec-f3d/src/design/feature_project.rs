@@ -3063,7 +3063,7 @@ pub(crate) fn project_split(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
 
-    if scope.kind != "Split" || scope.frame_length != 325 || scope.reference_members.len() != 4 {
+    if scope.kind != "Split" || scope.reference_members.len() < 4 {
         return None;
     }
     let stream = native_stream(&scope.id)?;
@@ -3078,41 +3078,58 @@ pub(crate) fn project_split(
     let [tool_group, targets] = groups.as_slice() else {
         return None;
     };
+    let target_ordinal = tool_group.members.len().checked_add(1)?;
+    let tool_members = scope.reference_members.get(1..target_ordinal)?;
+    let target_record_index = *scope.reference_members.get(target_ordinal)?;
+    let target_members = scope
+        .reference_members
+        .get(target_ordinal.checked_add(1)?..)?;
     if tool_group.scope_reference_ordinal != 0
         || tool_group.record_index != scope.reference_members[0]
-        || tool_group.role != ROLE_0X9
-        || tool_group.members.as_slice() != &scope.reference_members[1..2]
-        || targets.scope_reference_ordinal != 2
-        || targets.record_index != scope.reference_members[2]
+        || tool_group.members.is_empty()
+        || tool_group.members.as_slice() != tool_members
+        || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
+        || targets.record_index != target_record_index
         || targets.role != ROLE_0X4
-        || targets.members.as_slice() != &scope.reference_members[3..4]
+        || targets.members.is_empty()
+        || targets.members.as_slice() != target_members
     {
         return None;
     }
-    let matching_tools = face_operands
-        .iter()
-        .filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == scope.record_index
-                && operand.scope_reference_ordinal == 1
-                && operand.record_index == scope.reference_members[1]
-                && operand.recipe_kind == ConstructionRecipeKind::Face
-                && operand.recipe_program.as_slice() == [0, -1]
-                && operand.recipe_nodes.is_empty()
-        })
-        .collect::<Vec<_>>();
-    let [tool] = matching_tools.as_slice() else {
-        return None;
+    let tools = match tool_group.role {
+        ROLE_0X9 => {
+            let [tool_record_index] = tool_group.members.as_slice() else {
+                return None;
+            };
+            let matching_tools = face_operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && operand.scope_reference_ordinal == 1
+                        && operand.record_index == *tool_record_index
+                        && operand.recipe_kind == ConstructionRecipeKind::Face
+                        && operand.recipe_program.as_slice() == [0, -1]
+                        && operand.recipe_nodes.is_empty()
+                })
+                .collect::<Vec<_>>();
+            let [tool] = matching_tools.as_slice() else {
+                return None;
+            };
+            let mut tools = direct_face_selection(scope, face_operands)
+                .unwrap_or_else(|| FaceSelection::Native(tool.id.clone()));
+            match &mut tools {
+                FaceSelection::Resolved { native, .. }
+                | FaceSelection::Historical { native, .. }
+                | FaceSelection::HistoricalPartial { native, .. } => native.clone_from(&tool.id),
+                FaceSelection::Native(native) => native.clone_from(&tool.id),
+                _ => {}
+            }
+            tools
+        }
+        0x0000_0021_0000_0000 => FaceSelection::Native(tool_group.id.clone()),
+        _ => return None,
     };
-    let mut tools = direct_face_selection(scope, face_operands)
-        .unwrap_or_else(|| FaceSelection::Native(tool.id.clone()));
-    match &mut tools {
-        FaceSelection::Resolved { native, .. }
-        | FaceSelection::Historical { native, .. }
-        | FaceSelection::HistoricalPartial { native, .. } => native.clone_from(&tool.id),
-        FaceSelection::Native(native) => native.clone_from(&tool.id),
-        _ => {}
-    }
     Some(FeatureDefinition::SplitBody {
         targets: BodySelection::Native(targets.id.clone()),
         tools,

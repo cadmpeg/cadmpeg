@@ -6439,8 +6439,45 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }) if targets.ends_with("#400") && tool.ends_with("#200")
     ));
 
+    let mut multiple_targets_scope = split_body_scope.clone();
+    multiple_targets_scope.frame_length = 358;
+    multiple_targets_scope.reference_members = vec![100, 200, 400, 500, 501];
+    let mut multiple_targets = split_target_group.clone();
+    multiple_targets.members = vec![500, 501];
+    assert!(matches!(
+        project_split(
+            &multiple_targets_scope,
+            &[split_tool_group.clone(), multiple_targets],
+            std::slice::from_ref(&split_tool)
+        ),
+        Some(FeatureDefinition::SplitBody { .. })
+    ));
+
+    let mut construction_tool_scope = split_body_scope.clone();
+    construction_tool_scope.frame_length = 347;
+    construction_tool_scope.reference_members = vec![100, 200, 201, 400, 500];
+    let mut construction_tool = split_tool_group.clone();
+    construction_tool.role = 0x0000_0021_0000_0000;
+    construction_tool.members = vec![200, 201];
+    split_target_group.scope_reference_ordinal = 3;
+    assert!(matches!(
+        project_split(
+            &construction_tool_scope,
+            &[split_target_group.clone(), construction_tool],
+            &[]
+        ),
+        Some(FeatureDefinition::SplitBody {
+            tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
+            ..
+        }) if tool.ends_with("#100")
+    ));
+    split_target_group.scope_reference_ordinal = 2;
+
     let mut invalid_groups = Vec::new();
     invalid_groups.push(vec![split_target_group.clone()]);
+    let mut oversized_tool = split_tool_group.clone();
+    oversized_tool.members = vec![200, 201, 202, 203];
+    invalid_groups.push(vec![oversized_tool, split_target_group.clone()]);
     for mutate in 0..4 {
         let mut tool = split_tool_group.clone();
         match mutate {

@@ -1673,8 +1673,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Split) => {
-                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0009_0000_0000)
-                            && group.extrude_role.is_none()
+                        matches!(
+                            group.role,
+                            0x0000_0004_0000_0000 | 0x0000_0009_0000_0000 | 0x0000_0021_0000_0000
+                        ) && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Scale) => {
