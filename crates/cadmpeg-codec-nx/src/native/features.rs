@@ -918,6 +918,37 @@ pub struct FeatureSketchPayloadFixedPair {
     pub value_source_offsets: [u64; 2],
 }
 
+/// One exactly framed mixed Q1.55/binary32 pair in a reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSketchPayloadMixedPair {
+    /// Globally unique mixed-pair identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Reconstructed sketch payload carrying the frame.
+    pub construction_payload: String,
+    /// Zero-based frame order within the payload.
+    pub ordinal: u32,
+    /// Dimensionless signed Q1.55 value.
+    pub fixed_value: f64,
+    /// Finite shifted-IEEE binary32 value widened exactly to binary64.
+    pub binary32_value: f64,
+    /// Exact seven-byte two's-complement Q1.55 payload.
+    pub fixed_raw_value: [u8; 7],
+    /// Exact four-byte shifted-binary32 encoding.
+    pub binary32_raw_value: [u8; 4],
+    /// Exact discriminator selecting the mixed pair layout.
+    pub discriminator: Vec<u8>,
+    /// Payload-relative offset of the discriminator.
+    pub payload_offset: u64,
+    /// Payload-relative offsets of the two atom markers.
+    pub value_payload_offsets: [u64; 2],
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the two atom markers.
+    pub value_source_offsets: [u64; 2],
+}
+
 /// Exact framed scalar retained from one reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSketchPayloadScalar {
@@ -989,6 +1020,9 @@ pub struct FeatureSketchPayloadNamedRecord {
     pub scalar_fields: Vec<String>,
     /// Ordered fixed-pair fields before the next complete name field.
     pub fixed_pairs: Vec<String>,
+    /// Mixed Q1.55/binary32 pairs contained by this interval in payload order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mixed_pairs: Vec<String>,
     /// Payload-relative offset of the opening name marker.
     pub payload_start_offset: u64,
     /// Payload-relative exclusive end at the next name or payload boundary.
@@ -4499,6 +4533,58 @@ pub fn feature_sketch_payload_fixed_pairs(
         .collect()
 }
 
+/// Decode exact mixed Q1.55/binary32 pair frames from reconstructed sketch payloads.
+pub fn feature_sketch_payload_mixed_pairs(
+    container: &Container,
+    payloads: &[FeatureSketchConstructionPayload],
+) -> Vec<FeatureSketchPayloadMixedPair> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            let source_offset =
+                |relative: usize| {
+                    let relative = relative as u64;
+                    starts.iter().zip(&lengths).zip(&sources).find_map(
+                        |((start, length), source)| {
+                            (relative >= *start && relative < start.saturating_add(*length))
+                                .then_some(source + relative - start)
+                        },
+                    )
+                };
+            crate::om::sketch_payload_mixed_pairs(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, pair)| {
+                    Some(FeatureSketchPayloadMixedPair {
+                        id: format!("{}-mixed-pair-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        fixed_value: pair.fixed_value,
+                        binary32_value: pair.binary32_value,
+                        fixed_raw_value: pair.fixed_raw_value,
+                        binary32_raw_value: pair.binary32_raw_value,
+                        discriminator: pair.discriminator,
+                        payload_offset: pair.offset as u64,
+                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                        source_offset: source_offset(pair.offset)?,
+                        value_source_offsets: [
+                            source_offset(pair.value_offsets[0])?,
+                            source_offset(pair.value_offsets[1])?,
+                        ],
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
 pub(crate) fn offset_data_block_bytes_for_section<'a>(
     section_ordinal: usize,
     entry_offset: u64,
@@ -4682,6 +4768,7 @@ pub fn feature_sketch_payload_named_records(
     names: &[FeatureSketchPayloadName],
     scalars: &[FeatureSketchPayloadScalar],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
+    mixed_pairs: &[FeatureSketchPayloadMixedPair],
 ) -> Vec<FeatureSketchPayloadNamedRecord> {
     let mut records = Vec::new();
     for payload in payloads {
@@ -4712,6 +4799,15 @@ pub fn feature_sketch_payload_named_records(
                 })
                 .collect::<Vec<_>>();
             record_fixed_pairs.sort_by_key(|pair| pair.payload_offset);
+            let mut record_mixed_pairs = mixed_pairs
+                .iter()
+                .filter(|pair| {
+                    pair.construction_payload == payload.id
+                        && pair.payload_offset > name.payload_offset
+                        && pair.payload_offset < end
+                })
+                .collect::<Vec<_>>();
+            record_mixed_pairs.sort_by_key(|pair| pair.payload_offset);
             records.push(FeatureSketchPayloadNamedRecord {
                 id: format!(
                     "nx:feature-history:sketch-payload-record#{}-{ordinal:010}",
@@ -4728,6 +4824,10 @@ pub fn feature_sketch_payload_named_records(
                     .map(|scalar| scalar.id.clone())
                     .collect(),
                 fixed_pairs: record_fixed_pairs
+                    .into_iter()
+                    .map(|pair| pair.id.clone())
+                    .collect(),
+                mixed_pairs: record_mixed_pairs
                     .into_iter()
                     .map(|pair| pair.id.clone())
                     .collect(),
@@ -4795,7 +4895,7 @@ pub fn feature_sketch_fixed_points(
     records
         .iter()
         .filter_map(|record| {
-            if !record.scalar_fields.is_empty() {
+            if !record.scalar_fields.is_empty() || !record.mixed_pairs.is_empty() {
                 return None;
             }
             let [fixed_pair_id] = record.fixed_pairs.as_slice() else {
@@ -9727,7 +9827,7 @@ mod tests {
 
         let names = [name("first", 0, 10), name("second", 1, 50)];
         let pairs = [pair];
-        let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs);
+        let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs, &[]);
         assert_eq!(records[0].fixed_pairs, ["pair"]);
         assert!(records[1].fixed_pairs.is_empty());
         let points = feature_sketch_fixed_points(&records, &names, &pairs);

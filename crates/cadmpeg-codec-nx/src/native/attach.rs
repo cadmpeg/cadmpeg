@@ -522,6 +522,7 @@ fn attach_feature_operations(
     let sketch_construction_payloads = features.feature_sketch_construction_payloads.as_slice();
     let sketch_coordinate_pairs = features.feature_sketch_payload_coordinate_pairs.as_slice();
     let sketch_fixed_pairs = features.feature_sketch_payload_fixed_pairs.as_slice();
+    let sketch_mixed_pairs = features.feature_sketch_payload_mixed_pairs.as_slice();
     let sketch_fixed_points = features.feature_sketch_fixed_points.as_slice();
     let block_constructions = features.feature_block_constructions.as_slice();
     let block_construction_payloads = features.feature_block_construction_payloads.as_slice();
@@ -864,6 +865,14 @@ fn attach_feature_operations(
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadFixedPair>>::new();
     for pair in sketch_fixed_pairs {
         sketch_fixed_pairs_by_operation
+            .entry(pair.operation_label.as_str())
+            .or_default()
+            .push(pair);
+    }
+    let mut sketch_mixed_pairs_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadMixedPair>>::new();
+    for pair in sketch_mixed_pairs {
+        sketch_mixed_pairs_by_operation
             .entry(pair.operation_label.as_str())
             .or_default()
             .push(pair);
@@ -1291,6 +1300,16 @@ fn attach_feature_operations(
         {
             source_properties.insert(
                 format!("sketch_fixed_pair.{}", pair.ordinal),
+                pair.id.clone(),
+            );
+        }
+        for pair in sketch_mixed_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("sketch_mixed_pair.{}", pair.ordinal),
                 pair.id.clone(),
             );
         }

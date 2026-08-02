@@ -1235,6 +1235,25 @@ pub struct SketchPayloadFixedPair {
     pub discriminator: Vec<u8>,
 }
 
+/// Exact mixed Q1.55 and shifted-binary32 pair in a sketch payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchPayloadMixedPair {
+    /// Payload-relative offset of the discriminator.
+    pub offset: usize,
+    /// Dimensionless signed Q1.55 value.
+    pub fixed_value: f64,
+    /// Finite shifted-IEEE binary32 value widened exactly to binary64.
+    pub binary32_value: f64,
+    /// Exact seven-byte two's-complement Q1.55 payload.
+    pub fixed_raw_value: [u8; 7],
+    /// Exact four-byte shifted-binary32 encoding.
+    pub binary32_raw_value: [u8; 4],
+    /// Payload-relative offsets of the two atom markers.
+    pub value_offsets: [usize; 2],
+    /// Exact discriminator selecting the mixed pair layout.
+    pub discriminator: Vec<u8>,
+}
+
 /// Exact pair of signed Q1.55 atoms following a datum-CSYS branch discriminator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatumCsysPayloadFixedPair {
@@ -4080,6 +4099,49 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
         }
     }
     pairs.sort_by_key(|pair| pair.offset);
+    pairs
+}
+
+/// Decode every exactly framed mixed Q1.55/binary32 pair in a sketch payload.
+pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
+    const DISCRIMINATOR: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    let mut pairs = Vec::new();
+    for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
+        if window != DISCRIMINATOR {
+            continue;
+        }
+        let fixed_offset = offset + DISCRIMINATOR.len();
+        let binary32_offset = fixed_offset + 9;
+        if bytes.get(fixed_offset) != Some(&0x30) || bytes.get(fixed_offset + 8) != Some(&0x00) {
+            continue;
+        }
+        let Some(fixed_raw_value) = bytes
+            .get(fixed_offset + 1..fixed_offset + 8)
+            .and_then(|raw| raw.try_into().ok())
+        else {
+            continue;
+        };
+        let Some(binary32_raw_value): Option<[u8; 4]> = bytes
+            .get(binary32_offset..binary32_offset + 4)
+            .and_then(|raw| raw.try_into().ok())
+        else {
+            continue;
+        };
+        let Some((binary32_value, PayloadScalarEncoding::Binary32, 4)) =
+            payload_scalar(&binary32_raw_value)
+        else {
+            continue;
+        };
+        pairs.push(SketchPayloadMixedPair {
+            offset,
+            fixed_value: decode_q1_55(fixed_raw_value),
+            binary32_value,
+            fixed_raw_value,
+            binary32_raw_value,
+            value_offsets: [fixed_offset, binary32_offset],
+            discriminator: DISCRIMINATOR.to_vec(),
+        });
+    }
     pairs
 }
 

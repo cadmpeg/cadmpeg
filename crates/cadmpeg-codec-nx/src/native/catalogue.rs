@@ -339,6 +339,11 @@ impl ContainerNoted for FeatureSketchPayloadFixedPair {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for FeatureSketchPayloadMixedPair {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for FeatureSketchFixedPoint {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1588,6 +1593,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.features.feature_sketch_payload_fixed_pairs, r, a)),
         emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_fixed_pairs, r, ns),
         len: |m| m.features.feature_sketch_payload_fixed_pairs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_sketch_payload_mixed_pairs",
+        tag: Some("FEATURE_SKETCH_MIXED_PAIR"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_container(&m.features.feature_sketch_payload_mixed_pairs, r, a)),
+        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_mixed_pairs, r, ns),
+        len: |m| m.features.feature_sketch_payload_mixed_pairs.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

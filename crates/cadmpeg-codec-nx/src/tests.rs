@@ -2775,6 +2775,28 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
 }
 
 #[test]
+fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
+    let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0x00);
+    let mut shifted = 3.25_f32.to_be_bytes();
+    shifted[0] += 0x10;
+    bytes.extend_from_slice(&shifted);
+
+    let pairs = crate::om::sketch_payload_mixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].fixed_value, 0.5);
+    assert_eq!(pairs[0].binary32_value, 3.25);
+    assert_eq!(pairs[0].fixed_raw_value, [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].binary32_raw_value, shifted);
+    assert_eq!(pairs[0].value_offsets, [8, 17]);
+
+    let mut malformed = bytes;
+    malformed[16] = 1;
+    assert!(crate::om::sketch_payload_mixed_pairs(&malformed).is_empty());
+}
+
+#[test]
 fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
     let mut bytes = vec![
         0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
@@ -13930,6 +13952,7 @@ mod golden {
         "feature_sketch_named_point_block_uses",
         "feature_sketch_payload_coordinate_pairs",
         "feature_sketch_payload_fixed_pairs",
+        "feature_sketch_payload_mixed_pairs",
         "feature_sketch_payload_named_records",
         "feature_sketch_payload_names",
         "feature_sketch_payload_scalars",
@@ -14698,7 +14721,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (211), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (212), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -14707,7 +14730,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 211, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 212, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",
