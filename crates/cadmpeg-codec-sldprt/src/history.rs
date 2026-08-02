@@ -371,13 +371,27 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                 .iter()
                 .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
                 .collect::<HashMap<_, _>>();
+            let source_ordered = history.features.iter().any(|feature| {
+                feature.input_class.is_none()
+                    && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
+                    && feature.parameters.len() == 1
+                    && feature
+                        .source_id
+                        .as_deref()
+                        .and_then(|source| source.parse::<u32>().ok())
+                        .is_some_and(|source| source > 0)
+            });
             history
                 .features
                 .iter()
                 .filter(|feature| !is_history_metadata_record(feature, &history.features))
                 .map(move |feature| cadmpeg_ir::features::Feature {
                     id: neutral_feature_id(&feature.id),
-                    ordinal: u64::from(feature.ordinal),
+                    ordinal: source_ordered
+                        .then(|| feature.source_id.as_deref()?.parse::<u64>().ok())
+                        .flatten()
+                        .filter(|source| *source > 0)
+                        .unwrap_or(u64::from(feature.ordinal)),
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                     suppressed: Some(feature.suppressed),
                     parent: feature
@@ -2738,7 +2752,7 @@ mod history_reference_tests {
 
         assert!(native_parameter_is_length(&feature, "s", Some("2.1")));
         assert!(matches!(
-            project_extrude(&feature, &HashMap::new()),
+            project_extrude(&feature, &HashMap::new(), &HashMap::new()),
             Some(FeatureDefinition::Extrude {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
@@ -2750,6 +2764,51 @@ mod history_reference_tests {
                 },
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn legacy_history_extrusion_uses_preceding_profile_and_sole_depth() {
+        let mut profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
+        profile.xml_tag = "Sketch".into();
+        profile.kind = "Sketch".into();
+        let mut extrusion = feature("sldprt:history:feature#1:1", Some("20"), 1);
+        extrusion.xml_tag = "Extrusion".into();
+        extrusion.kind = "localized-boss-kind".into();
+        extrusion.input_class = None;
+        extrusion.parameters.insert("m".into(), "6.8".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![extrusion, profile],
+        };
+
+        let projected = project_features(&[history]);
+        let extrusion = projected
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:1"))
+            .expect("legacy extrusion feature");
+        let profile = projected
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:0"))
+            .expect("legacy extrusion profile");
+        assert!(profile.ordinal < extrusion.ordinal);
+        assert!(matches!(
+            &extrusion.definition,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Feature(profile_ref),
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Blind { length: Length(6.8) },
+                        ..
+                    }
+                },
+                op: BooleanOp::Join,
+                ..
+            } if profile_ref == &profile.id
         ));
     }
 
@@ -5945,7 +6004,8 @@ fn project_definition(
             .unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::Extrude) {
-        project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
+        project_extrude(feature, native_by_source, features_by_source)
+            .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Fillet) {
         project_fillet(feature)
     } else if class == Some(FeatureClass::Chamfer) {
@@ -6485,12 +6545,32 @@ fn principal_plane_in_history(
 fn project_extrude(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
+    features_by_source: &HashMap<&str, &Feature>,
 ) -> Option<FeatureDefinition> {
+    let legacy_profile = (feature.input_class.is_none()
+        && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
+        && feature.parameters.len() == 1)
+        .then(|| {
+            let source = feature.source_id.as_deref()?.parse::<i64>().ok()?;
+            features_by_source
+                .iter()
+                .filter_map(|(candidate_source, candidate)| {
+                    let candidate_source = candidate_source.parse::<i64>().ok()?;
+                    (candidate_source < source
+                        && classify(candidate) == Some(FeatureClass::Sketch)
+                        && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c"))
+                    .then_some((candidate_source, candidate.id.as_str()))
+                })
+                .max_by_key(|candidate| candidate.0)
+                .map(|(_, profile)| profile.to_string())
+        })
+        .flatten();
     let op = feature
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
         .or_else(|| extrude_feature_op(feature))
+        .or_else(|| legacy_profile.is_some().then_some(BooleanOp::Join))
         .unwrap_or(BooleanOp::Unresolved);
     let sole_length = || {
         let mut values = feature.parameters.values();
@@ -6523,9 +6603,11 @@ fn project_extrude(
             offset: None,
         },
     };
+    let legacy_history_extrusion = legacy_profile.is_some();
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
-            && !feature.parameters.contains_key("D1") =>
+            && !feature.parameters.contains_key("D1")
+            && !legacy_history_extrusion =>
         {
             one_sided(Termination::Unresolved)
         }
@@ -6608,6 +6690,8 @@ fn project_extrude(
             [profile] => ProfileRef::Native(profile.clone()),
             _ => ProfileRef::Unresolved(feature.id.clone()),
         }
+    } else if let Some(profile) = legacy_profile {
+        ProfileRef::Native(profile)
     } else {
         ProfileRef::Unresolved(feature.id.clone())
     };
