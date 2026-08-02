@@ -10415,6 +10415,40 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             ["first", "second"]
         );
+
+        payload.resize(96 + SKETCH_MARKER.len(), 0);
+        payload[72..82].fill(0);
+        payload[82..84].copy_from_slice(&2u16.to_le_bytes());
+        payload[84..88].fill(0);
+        payload[88..92].copy_from_slice(&2u32.to_le_bytes());
+        payload[92..96].copy_from_slice(&1u32.to_le_bytes());
+        payload[96..].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
+        assert_eq!(
+            roster_curve_endpoint_markers(&payload, &curve, &markers)
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+
+        payload.resize(104 + SKETCH_MARKER.len(), 0);
+        payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+        payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+        for relative in [78, 82, 86, 90] {
+            payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[94..96].fill(0);
+        payload[96..104].copy_from_slice(&[2, 0, 0, 0, 3, 0, 0, 0]);
+        payload[104..].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
+        assert_eq!(
+            roster_curve_endpoint_markers(&payload, &curve, &markers)
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
     }
 
     #[test]
@@ -43369,7 +43403,14 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
         return if current_compact_104_indexed_line_endpoint_indices(payload, offset).is_some() {
             Some(64)
         } else if compact_indexed_curve_endpoint_indices(payload, offset).is_some()
-            && sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+            && matches!(
+                compact_indexed_curve_record_end(payload, offset),
+                Some(
+                    CompactIndexedCurveRecordEnd::Marker84
+                        | CompactIndexedCurveRecordEnd::Marker96
+                        | CompactIndexedCurveRecordEnd::Marker104
+                )
+            )
         {
             Some(56)
         } else {
