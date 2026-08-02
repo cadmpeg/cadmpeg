@@ -59,6 +59,10 @@ impl BodyCensusEvaluation {
 
 /// Evaluate admitted neutral feature effects and compare their body identities
 /// with the saved current model.
+///
+/// The caller must validate the IR first. This evaluator checks replay order,
+/// operation completeness, and body lineage; it does not repeat topology or
+/// selection-target validation.
 pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
     let rederived = match rederived_body_census(ir) {
         Ok(bodies) => bodies,
@@ -225,38 +229,61 @@ fn rederived_body_census(
                 }
                 bodies.extend(feature.outputs.iter().cloned());
             }
-            FeatureDefinition::Hole { .. }
-                if !crate::decode::hole_definition_is_incomplete(feature) =>
-            {
-                preserve_single_output(feature, &bodies)?;
-            }
             FeatureDefinition::Hole { .. } => {
-                return Err((
-                    feature.id.clone(),
-                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-                ));
-            }
-            FeatureDefinition::Chamfer { .. }
-                if !crate::decode::chamfer_definition_is_incomplete(feature) =>
-            {
-                preserve_single_output(feature, &bodies)?;
+                preserve_complete_single_output(
+                    feature,
+                    &bodies,
+                    crate::decode::hole_definition_is_incomplete(feature),
+                )?;
             }
             FeatureDefinition::Chamfer { .. } => {
-                return Err((
-                    feature.id.clone(),
-                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-                ));
-            }
-            FeatureDefinition::Fillet { .. }
-                if !crate::decode::fillet_definition_is_incomplete(feature) =>
-            {
-                preserve_single_output(feature, &bodies)?;
+                preserve_complete_single_output(
+                    feature,
+                    &bodies,
+                    crate::decode::chamfer_definition_is_incomplete(feature),
+                )?;
             }
             FeatureDefinition::Fillet { .. } => {
-                return Err((
-                    feature.id.clone(),
-                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-                ));
+                preserve_complete_single_output(
+                    feature,
+                    &bodies,
+                    crate::decode::fillet_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::FaceBlend { .. } => {
+                preserve_complete_single_output(
+                    feature,
+                    &bodies,
+                    crate::decode::face_blend_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::OffsetSurface { .. } => {
+                preserve_complete_single_output(
+                    feature,
+                    &bodies,
+                    crate::decode::offset_surface_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::Thicken { .. } => {
+                preserve_complete_single_output(
+                    feature,
+                    &bodies,
+                    crate::decode::thicken_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::Draft { .. } => {
+                preserve_complete_single_output(
+                    feature,
+                    &bodies,
+                    crate::decode::draft_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::ReplaceFace { .. } => {
+                preserve_complete_single_output(
+                    feature,
+                    &bodies,
+                    crate::decode::replace_face_definition_is_incomplete(feature),
+                )?;
             }
             _ => {
                 return Err((
@@ -269,10 +296,17 @@ fn rederived_body_census(
     Ok(bodies)
 }
 
-fn preserve_single_output(
+fn preserve_complete_single_output(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
+    incomplete: bool,
 ) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    if incomplete {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    }
     let [output] = feature.outputs.as_slice() else {
         return Err((
             feature.id.clone(),
@@ -310,9 +344,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{
-        BodyRetentionMode, ChamferGroup, ChamferSpec, EdgeSelection, Feature, FilletGroup,
-        HoleKind, HolePlacement, RadiusSpec, Termination,
+        Angle, BodyRetentionMode, ChamferGroup, ChamferSpec, EdgeSelection, FaceSelection, Feature,
+        FilletGroup, HoleKind, HolePlacement, RadiusSpec, Termination, ThickenSide,
     };
+    use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::{Body, BodyKind};
 
@@ -648,6 +683,80 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: Some(FeatureId("chamfer".to_string())),
+                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+            }
+        );
+    }
+
+    #[test]
+    fn complete_single_body_dress_up_families_preserve_identity() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let first = FaceSelection::Faces(vec![FaceId("first".to_string())]);
+        let second = FaceSelection::Faces(vec![FaceId("second".to_string())]);
+        let definitions = [
+            FeatureDefinition::FaceBlend {
+                first_faces: first.clone(),
+                second_faces: second.clone(),
+                radius: RadiusSpec::Constant {
+                    radius: Length(0.2),
+                },
+            },
+            FeatureDefinition::OffsetSurface {
+                faces: first.clone(),
+                distance: Some(Length(0.1)),
+            },
+            FeatureDefinition::Thicken {
+                faces: first.clone(),
+                thickness: Some(Length(0.3)),
+                side: Some(ThickenSide::Forward),
+            },
+            FeatureDefinition::Draft {
+                faces: first.clone(),
+                neutral_plane: second.clone(),
+                pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+                angle: Some(Angle(0.1)),
+                outward: Some(false),
+            },
+            FeatureDefinition::ReplaceFace {
+                targets: first,
+                replacements: second,
+            },
+        ];
+        for (index, definition) in definitions.into_iter().enumerate() {
+            ir.model.features.push(body_preserving_feature(
+                &format!("dress-up-{index}"),
+                u64::try_from(index).expect("five dress-up fixtures") + 1,
+                body.clone(),
+                definition,
+            ));
+        }
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn overlapping_replace_face_operands_are_incomplete() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let faces = FaceSelection::Faces(vec![FaceId("face".to_string())]);
+        ir.model.features.push(body_preserving_feature(
+            "replace-face",
+            1,
+            body,
+            FeatureDefinition::ReplaceFace {
+                targets: faces.clone(),
+                replacements: faces,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("replace-face".to_string())),
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );

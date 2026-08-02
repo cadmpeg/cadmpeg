@@ -10359,15 +10359,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Fillet { .. } if fillet_definition_is_incomplete(feature) => {
                 "fillet"
             }
-            FeatureDefinition::FaceBlend {
-                first_faces,
-                second_faces,
-                radius,
-            } if face_selection_is_incomplete(first_faces)
-                || face_selection_is_incomplete(second_faces)
-                || face_selections_overlap(first_faces, second_faces)
-                || radius_spec_is_incomplete(radius) =>
-            {
+            FeatureDefinition::FaceBlend { .. } if face_blend_definition_is_incomplete(feature) => {
                 "face blend"
             }
             FeatureDefinition::SewBodies {
@@ -10464,36 +10456,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "sweep"
             }
-            FeatureDefinition::OffsetSurface { faces, distance }
-                if face_selection_is_incomplete(faces)
-                    || distance.is_none_or(|distance| !distance.0.is_finite()) =>
+            FeatureDefinition::OffsetSurface { .. }
+                if offset_surface_definition_is_incomplete(feature) =>
             {
                 "offset surface"
             }
-            FeatureDefinition::Thicken {
-                faces,
-                thickness,
-                side,
-            } if face_selection_is_incomplete(faces)
-                || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
-                || side.is_none() =>
-            {
+            FeatureDefinition::Thicken { .. } if thicken_definition_is_incomplete(feature) => {
                 "thicken"
             }
-            FeatureDefinition::Draft {
-                faces,
-                neutral_plane,
-                pull_direction,
-                angle,
-                outward,
-            } if face_selection_is_incomplete(faces)
-                || face_selection_is_incomplete(neutral_plane)
-                || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
-                || angle.is_none_or(|angle| !valid_draft_angle(angle))
-                || outward.is_none() =>
-            {
-                "draft"
-            }
+            FeatureDefinition::Draft { .. } if draft_definition_is_incomplete(feature) => "draft",
             FeatureDefinition::Pattern { seeds, pattern }
                 if pattern_feature_is_incomplete(seeds, pattern, &feature.dependencies) =>
             {
@@ -10525,12 +10496,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "delete body"
             }
-            FeatureDefinition::ReplaceFace {
-                targets,
-                replacements,
-            } if face_selection_is_incomplete(targets)
-                || face_selection_is_incomplete(replacements)
-                || face_selections_overlap(targets, replacements) =>
+            FeatureDefinition::ReplaceFace { .. }
+                if replace_face_definition_is_incomplete(feature) =>
             {
                 "replace face"
             }
@@ -10905,6 +10872,73 @@ pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
                     .tangency_weight
                     .is_some_and(|weight| !weight.is_finite())
         })
+}
+
+pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::FaceBlend {
+        first_faces,
+        second_faces,
+        radius,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(first_faces)
+        || face_selection_is_incomplete(second_faces)
+        || face_selections_overlap(first_faces, second_faces)
+        || radius_spec_is_incomplete(radius)
+}
+
+pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
+        return true;
+    };
+    face_selection_is_incomplete(faces) || distance.is_none_or(|distance| !distance.0.is_finite())
+}
+
+pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Thicken {
+        faces,
+        thickness,
+        side,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
+        || side.is_none()
+}
+
+pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Draft {
+        faces,
+        neutral_plane,
+        pull_direction,
+        angle,
+        outward,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || face_selection_is_incomplete(neutral_plane)
+        || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
+        || angle.is_none_or(|angle| !valid_draft_angle(angle))
+        || outward.is_none()
+}
+
+pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::ReplaceFace {
+        targets,
+        replacements,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(targets)
+        || face_selection_is_incomplete(replacements)
+        || face_selections_overlap(targets, replacements)
 }
 
 pub(crate) fn hole_feature_is_incomplete(
