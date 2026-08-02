@@ -1307,6 +1307,8 @@ impl Codec for FcstdCodec {
                 &joint_records,
                 &graph.objects,
                 &graph.properties,
+                &shape_payloads,
+                &ir.model.bodies,
             )?;
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;

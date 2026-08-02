@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use crate::brep::ShapePayloadRecord;
 use crate::native::{JointRecord, ObjectRecord, ProductNodeRecord, PropertyRecord};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
@@ -10,6 +11,7 @@ use cadmpeg_ir::products::{
     CopyOnChangePolicy, ExternalDocumentReference, ExternalResolution, Occurrence,
     OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
+use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
 
 pub(crate) fn transfer(
@@ -96,6 +98,8 @@ pub(crate) fn transfer_neutral(
     joints: &[JointRecord],
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+    bodies: &[Body],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), CodecError> {
     let mut component_objects = records
         .iter()
@@ -258,6 +262,18 @@ pub(crate) fn transfer_neutral(
             map
         },
     );
+    let property_owner = properties
+        .iter()
+        .map(|property| (property.id.as_str(), property.owner.as_str()))
+        .collect::<HashMap<_, _>>();
+    let body_owners = payloads
+        .iter()
+        .filter_map(|payload| {
+            property_owner
+                .get(payload.property.as_str())
+                .map(|owner| (crate::native::model_id("body", &payload.id, ""), *owner))
+        })
+        .collect::<Vec<_>>();
     let definitions = component_objects
         .iter()
         .map(|object| {
@@ -285,7 +301,15 @@ pub(crate) fn transfer_neutral(
                 description: scalar(owned, "Description").map(str::to_owned),
                 part_number: scalar(owned, "PartNumber").map(str::to_owned),
                 bom_properties,
-                bodies: Vec::new(),
+                bodies: bodies
+                    .iter()
+                    .filter(|body| {
+                        body_owners.iter().any(|(prefix, owner)| {
+                            *owner == object.as_str() && body.id.0.starts_with(prefix)
+                        })
+                    })
+                    .map(|body| body.id.clone())
+                    .collect(),
                 native_ref: Some(object.clone()),
             }
         })
