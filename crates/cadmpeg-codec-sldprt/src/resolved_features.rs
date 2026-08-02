@@ -2281,17 +2281,17 @@ mod marker_tests {
         constraint_reference_plane_frame, coordinate_centered_line_endpoints,
         coordinate_circle_radius, coordinate_marker_local_links, coordinate_roster_arc_center,
         coordinate_roster_curve_endpoint_markers, coordinate_roster_endpoint_offset,
-        coordinate_roster_full_circle, cosmetic_thread_cylinder_reference_at,
-        cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
-        current_compact_104_indexed_line_endpoint_indices, current_compact_104_profile_line,
-        current_coordinate_linked_line_endpoints, current_direct_92_profile_line_endpoint_indices,
-        current_geometry_locus_profile_vertex, current_indexed_arc_reverses_center_sweep,
-        current_linked_semicircle_record, current_long_full_circle_radial_index,
-        current_reverse_incidence_endpoint_offsets, current_wide_arc_direct_markers,
-        current_wide_undetailed_line, direct_indexed_curve_endpoint_indices,
-        enrich_history_revolution_inputs, equal_index_coordinate_roster_full_circle,
-        explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_compact_84_construction_line_endpoint_indices,
+        coordinate_roster_full_circle, cosmetic_thread_cylinder_marker_reference,
+        cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
+        cosmetic_thread_diameter_child_tail, current_compact_104_indexed_line_endpoint_indices,
+        current_compact_104_profile_line, current_coordinate_linked_line_endpoints,
+        current_direct_92_profile_line_endpoint_indices, current_geometry_locus_profile_vertex,
+        current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
+        current_long_full_circle_radial_index, current_reverse_incidence_endpoint_offsets,
+        current_wide_arc_direct_markers, current_wide_undetailed_line,
+        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
+        equal_index_coordinate_roster_full_circle, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, extended_compact_84_construction_line_endpoint_indices,
         extended_compact_96_selected_axis_endpoint_indices, extended_compact_endpoint_markers,
         extended_declared_inline_line_endpoints, extended_direct_object_line_endpoint_ids,
         extended_direct_object_line_endpoints, extended_identity_inline_line_endpoints,
@@ -2340,11 +2340,12 @@ mod marker_tests {
         terminal_extended_profile_point_coordinates, terminal_repeated_radial_circle_pairs,
         unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
         unique_locus, unique_marker_candidate, unique_planar_face,
-        wide_direct_line_endpoint_markers, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
-        CompactPointReferenceKind, CompactReferencePlaneIndex, ComponentPathEnd, Length,
-        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
-        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, MINIMAL_REFERENCE_PLANE_FRAME_LEN,
-        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
+        unique_topological_cylindrical_face, wide_direct_line_endpoint_markers,
+        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind,
+        CompactReferencePlaneIndex, ComponentPathEnd, Length, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER,
+        LEGACY_SKETCH_MARKER, MINIMAL_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -13624,6 +13625,63 @@ mod marker_tests {
     }
 
     #[test]
+    fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
+        let body_offset = 30;
+        let marker = body_offset + 94;
+        let mut payload = vec![0; marker - 12];
+        payload[body_offset..body_offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
+        payload[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+        payload[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(selection_vector_tail(&mut payload, &[3]), marker);
+        payload.truncate(marker + 18);
+        let feature = Feature {
+            id: "thread".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("20".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "thread".into(),
+            kind: "Feature".into(),
+            input_class: Some("moCosmeticThread_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        assert_eq!(
+            cosmetic_thread_cylinder_marker_reference(
+                &feature,
+                &lane,
+                0,
+                lane.native_payload.len(),
+                &HashSet::from([0x802f]),
+            ),
+            Some((marker, None))
+        );
+    }
+
+    #[test]
     fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         let body_offset = 220;
         let marker = body_offset + 94;
@@ -13773,10 +13831,21 @@ mod marker_tests {
             ),
             None
         );
+        assert_eq!(
+            unique_topological_cylindrical_face(
+                std::slice::from_ref(&face),
+                std::slice::from_ref(&surface)
+            ),
+            Some(face.id.clone())
+        );
         let mut duplicate = face.clone();
         duplicate.id = FaceId("other-face".into());
         assert_eq!(
-            unique_cylindrical_face(4.0, &[face, duplicate], &[surface]),
+            unique_cylindrical_face(4.0, &[face.clone(), duplicate.clone()], &[surface.clone()]),
+            None
+        );
+        assert_eq!(
+            unique_topological_cylindrical_face(&[face, duplicate], &[surface]),
             None
         );
     }
@@ -23848,6 +23917,39 @@ fn cosmetic_thread_cylinder_references(
         .collect()
 }
 
+fn cosmetic_thread_cylinder_marker_reference(
+    feature: &crate::records::Feature,
+    lane: &FeatureInputLane,
+    object_start: usize,
+    object_end: usize,
+    cylinder_reference_tokens: &HashSet<u16>,
+) -> Option<(usize, Option<Vec<FeatureInputComponentPathEntry>>)> {
+    let diameter_tail = cosmetic_thread_diameter_child_tail(feature, lane);
+    let mut markers = std::iter::once(object_start..object_end)
+        .chain(diameter_tail)
+        .flatten()
+        .filter(|offset| {
+            lane.native_payload
+                .get(*offset..*offset + 2)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u16::from_le_bytes)
+                .is_some_and(|token| cylinder_reference_tokens.contains(&token))
+        })
+        .filter_map(|body| {
+            cosmetic_thread_cylinder_reference_marker_layout_at(&lane.native_payload, body)
+        })
+        .collect::<Vec<_>>();
+    markers.sort_unstable();
+    markers.dedup();
+    let [marker] = markers.as_slice() else {
+        return None;
+    };
+    let components = compact_sketch_surface_component_path_at(&lane.native_payload, *marker)
+        .or_else(|| compact_termination_reference_path_at(&lane.native_payload, *marker))
+        .or_else(|| compact_edge_component_path_at(&lane.native_payload, *marker));
+    Some((*marker, components))
+}
+
 fn cosmetic_thread_diameter_child_tail(
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
@@ -23896,18 +23998,6 @@ fn cosmetic_thread_cylinder_reference_at(
         .or_else(|| compact_termination_reference_path_at(payload, marker))
         .or_else(|| compact_edge_component_path_at(payload, marker))
         .map(|components| (marker, components))
-}
-
-fn cosmetic_thread_cylinder_reference_marker_at(
-    payload: &[u8],
-    body_offset: usize,
-) -> Option<usize> {
-    let class_token =
-        u16::from_le_bytes(payload.get(body_offset..body_offset + 2)?.try_into().ok()?);
-    if class_token & 0x8000 == 0 || class_token == 0xffff {
-        return None;
-    }
-    cosmetic_thread_cylinder_reference_marker_layout_at(payload, body_offset)
 }
 
 fn cosmetic_thread_cylinder_reference_marker_layout_at(
@@ -34301,15 +34391,30 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     })
             })
             .chain(lanes.iter().filter_map(|lane| {
-                let mut range = cosmetic_thread_diameter_child_tail(native_feature, lane)?;
-                let (marker, components) = range.find_map(|body| {
-                    let marker =
-                        cosmetic_thread_cylinder_reference_marker_at(&lane.native_payload, body)?;
-                    let components =
-                        cosmetic_thread_cylinder_reference_at(&lane.native_payload, body)
-                            .map(|(_, components)| components);
-                    Some((marker, components))
-                })?;
+                let (_, start, end) = feature_object_byte_ranges(histories, lane)
+                    .get(native_feature.id.as_str())
+                    .copied()?;
+                let cylinder_tokens = lane
+                    .classes
+                    .iter()
+                    .filter(|class| class.name == "moCylinderRef_w")
+                    .filter_map(|class| {
+                        let body = usize::try_from(class.offset)
+                            .ok()?
+                            .checked_add(6 + class.name.len())?;
+                        let token = u16::from_le_bytes(
+                            lane.native_payload.get(body..body + 2)?.try_into().ok()?,
+                        );
+                        (token & 0x8000 != 0 && token != 0xffff).then_some(token)
+                    })
+                    .collect::<HashSet<_>>();
+                let (marker, components) = cosmetic_thread_cylinder_marker_reference(
+                    native_feature,
+                    lane,
+                    start,
+                    end,
+                    &cylinder_tokens,
+                )?;
                 let lane_key = lane
                     .id
                     .rsplit_once('#')
@@ -34370,7 +34475,12 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         let Some(Length(diameter)) = diameter else {
             continue;
         };
-        let Some(selected) = unique_cylindrical_face(*diameter * 0.5, faces, surfaces) else {
+        let selected = unique_cylindrical_face(*diameter * 0.5, faces, surfaces).or_else(|| {
+            native
+                .as_ref()
+                .and_then(|_| unique_topological_cylindrical_face(faces, surfaces))
+        });
+        let Some(selected) = selected else {
             continue;
         };
         *face = match native {
@@ -34395,6 +34505,21 @@ fn unique_cylindrical_face(radius: f64, faces: &[Face], surfaces: &[Surface]) ->
                 radius: candidate, ..
             } if (candidate - radius).abs() <= tolerance => Some(&surface.id),
             _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let mut candidates = faces
+        .iter()
+        .filter(|face| cylindrical.contains(&face.surface))
+        .map(|face| face.id.clone());
+    let selected = candidates.next()?;
+    candidates.next().is_none().then_some(selected)
+}
+
+fn unique_topological_cylindrical_face(faces: &[Face], surfaces: &[Surface]) -> Option<FaceId> {
+    let cylindrical = surfaces
+        .iter()
+        .filter_map(|surface| {
+            matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }).then_some(&surface.id)
         })
         .collect::<HashSet<_>>();
     let mut candidates = faces
