@@ -1166,6 +1166,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         extent,
                         extent_discriminator_offsets: extent_offsets,
                         direction_reversed_offset,
+                        solid_operation_offset,
                         start_offset,
                         ..
                     }),
@@ -1194,6 +1195,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             operation_offset.saturating_add(8),
                         ]
                         && start_offset == operation_offset.saturating_add(14)
+                        && solid_operation_offset == operation_offset.saturating_add(13)
                         && direction_reversed_offset == operation_offset.saturating_add(12)
                         && extent_offsets[1] < scope.reference_count_offset
                 }
@@ -1205,6 +1207,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         extent,
                         extent_discriminator_offsets: extent_offsets,
                         direction_reversed_offset,
+                        solid_operation_offset,
                         start_offset,
                         ..
                     }),
@@ -1231,6 +1234,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 operation_offset.saturating_add(8),
                             ]
                         && start_offset == operation_offset.saturating_add(14)
+                        && solid_operation_offset == operation_offset.saturating_add(13)
                         && direction_reversed_offset == operation_offset.saturating_add(12)
                         && extent_offsets[1] < scope.reference_count_offset
                 }

@@ -813,6 +813,10 @@ pub enum DesignExtrudePrologue {
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
         direction_reversed_offset: u64,
+        /// Whether the operation creates solid rather than sheet geometry.
+        solid_operation: bool,
+        /// Byte offset of `solid_operation`.
+        solid_operation_offset: u64,
         /// Starting support.
         start: DesignExtrudeStart,
         /// Byte offset of `start`.
@@ -835,6 +839,10 @@ pub enum DesignExtrudePrologue {
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
         direction_reversed_offset: u64,
+        /// Whether the operation creates solid rather than sheet geometry.
+        solid_operation: bool,
+        /// Byte offset of `solid_operation`.
+        solid_operation_offset: u64,
         /// Starting support.
         start: DesignExtrudeStart,
         /// Byte offset of `start`.
@@ -869,6 +877,18 @@ impl DesignExtrudePrologue {
             | Self::LegacyShifted {
                 direction_reversed, ..
             } => direction_reversed,
+        }
+    }
+
+    /// Whether the operation creates solid rather than sheet geometry.
+    pub fn solid_operation(self) -> bool {
+        match self {
+            Self::ReferenceAware {
+                solid_operation, ..
+            }
+            | Self::LegacyShifted {
+                solid_operation, ..
+            } => solid_operation,
         }
     }
 

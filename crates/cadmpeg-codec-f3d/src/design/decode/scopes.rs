@@ -2968,7 +2968,7 @@ fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignEx
                         (Some(1), Some(1 | 2)) | (Some(2), Some(0)) | (Some(3), Some(2))
                     )
                     && matches!(bytes.get(operation_offset.saturating_add(12)), Some(0 | 1))
-                    && bytes.get(operation_offset.saturating_add(13)) == Some(&1)
+                    && matches!(bytes.get(operation_offset.saturating_add(13)), Some(0 | 1))
                     && matches!(bytes.get(operation_offset.saturating_add(14)), Some(0..=2))
             })
             .collect::<Vec<_>>();
@@ -3017,9 +3017,12 @@ fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignEx
         1 => true,
         _ => return None,
     };
-    if bytes.get(operation_offset.checked_add(13)?)? != &1 {
-        return None;
-    }
+    let solid_operation_offset = operation_offset.checked_add(13)?;
+    let solid_operation = match bytes.get(solid_operation_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let start_offset = operation_offset.checked_add(14)?;
     let start = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
@@ -3036,6 +3039,8 @@ fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignEx
         extent_discriminator_offsets: [side_offset as u64, termination_offset as u64],
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,
+        solid_operation,
+        solid_operation_offset: solid_operation_offset as u64,
         start,
         start_offset: start_offset as u64,
     })
@@ -3072,9 +3077,12 @@ fn exact_legacy_shifted_extrude_prologue(
         1 => true,
         _ => return None,
     };
-    if bytes.get(operation_offset.checked_add(13)?)? != &1 {
-        return None;
-    }
+    let solid_operation_offset = operation_offset.checked_add(13)?;
+    let solid_operation = match bytes.get(solid_operation_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let start_offset = operation_offset.checked_add(14)?;
     let start = match bytes.get(start_offset)? {
         0 => DesignExtrudeStart::ProfilePlane,
@@ -3090,6 +3098,8 @@ fn exact_legacy_shifted_extrude_prologue(
         extent_discriminator_offsets: [first_extent_offset as u64, second_extent_offset as u64],
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,
+        solid_operation,
+        solid_operation_offset: solid_operation_offset as u64,
         start,
         start_offset: start_offset as u64,
     })

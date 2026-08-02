@@ -3267,11 +3267,18 @@ pub(crate) fn project_extrude(
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
-    let profile_groups = scope_groups
+    let mut profile_groups = scope_groups
         .iter()
         .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Profile))
         .copied()
         .collect::<Vec<_>>();
+    profile_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    if profile_groups
+        .windows(2)
+        .any(|groups| groups[0].scope_reference_ordinal == groups[1].scope_reference_ordinal)
+    {
+        return None;
+    }
     let profile_ref = match scope.extrude_profile.as_ref() {
         Some(profile) => {
             let placement = placements.iter().find(|placement| {
@@ -3281,11 +3288,57 @@ pub(crate) fn project_extrude(
             ProfileRef::Sketch(neutral_sketch_id(placement))
         }
         None => {
-            let [group] = profile_groups.as_slice() else {
+            let [first, rest @ ..] = profile_groups.as_slice() else {
                 return None;
             };
-            resolved_profile_face_group(scope, group, face_operands)
-                .unwrap_or_else(|| ProfileRef::Native(group.id.clone()))
+            if rest.is_empty() {
+                resolved_profile_face_group(scope, first, face_operands)
+                    .unwrap_or_else(|| ProfileRef::Native(first.id.clone()))
+            } else {
+                let resolved = profile_groups
+                    .iter()
+                    .map(|group| resolved_profile_face_group(scope, group, face_operands))
+                    .collect::<Option<Vec<_>>>();
+                match resolved {
+                    Some(selections) => {
+                        let mut state = None;
+                        let mut faces = Vec::new();
+                        let mut native = Vec::new();
+                        let complete = selections.into_iter().all(|selection| {
+                            let ProfileRef::HistoricalFaces {
+                                state: selected_state,
+                                faces: selected_faces,
+                                native: selected_native,
+                            } = selection
+                            else {
+                                return false;
+                            };
+                            if state.as_ref().is_some_and(|state| state != &selected_state) {
+                                return false;
+                            }
+                            state = Some(selected_state);
+                            for face in selected_faces {
+                                if !faces.contains(&face) {
+                                    faces.push(face);
+                                }
+                            }
+                            native.extend(selected_native);
+                            true
+                        });
+                        match (complete, state) {
+                            (true, Some(state)) if !faces.is_empty() => {
+                                ProfileRef::HistoricalFaces {
+                                    state,
+                                    faces,
+                                    native,
+                                }
+                            }
+                            _ => ProfileRef::Native(scope.id.clone()),
+                        }
+                    }
+                    None => ProfileRef::Native(scope.id.clone()),
+                }
+            }
         }
     };
     let face_groups = scope_groups
@@ -3544,7 +3597,7 @@ pub(crate) fn project_extrude(
         extent,
         op,
         direction_source: None,
-        solid: None,
+        solid: Some(prologue.solid_operation()),
         face_maker: None,
         inner_wire_taper: None,
         length_along_profile_normal: None,

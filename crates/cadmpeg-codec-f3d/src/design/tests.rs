@@ -4698,6 +4698,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         extent_discriminator_offsets: [32, 36],
         direction_reversed: false,
         direction_reversed_offset: 40,
+        solid_operation: true,
+        solid_operation_offset: 41,
         start: DesignExtrudeStart::ProfilePlane,
         start_offset: 42,
     });
@@ -5677,6 +5679,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             extent_discriminator_offsets: [32, 36],
             direction_reversed: false,
             direction_reversed_offset: 40,
+            solid_operation: true,
+            solid_operation_offset: 41,
             start: DesignExtrudeStart::ProfilePlane,
             start_offset: 42,
         })
@@ -5697,6 +5701,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             extent_discriminator_offsets: [42, 46],
             direction_reversed: false,
             direction_reversed_offset: 50,
+            solid_operation: true,
+            solid_operation_offset: 51,
             start: DesignExtrudeStart::OffsetProfilePlane,
             start_offset: 52,
         })
@@ -5748,6 +5754,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             extent_discriminator_offsets: [31, 35],
             direction_reversed: false,
             direction_reversed_offset: 39,
+            solid_operation: true,
+            solid_operation_offset: 40,
             start: DesignExtrudeStart::ProfilePlane,
             start_offset: 41,
         })
@@ -5760,10 +5768,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         scope("Extrude", 2, (3, 0), 2, 1, 0, None, true).extrude_prologue,
         None
     );
-    assert_eq!(
-        scope("Extrude", 2, (3, 0), 0, 0, 0, None, true).extrude_prologue,
-        None
-    );
+    let sheet = scope("Extrude", 2, (3, 0), 0, 0, 0, None, true)
+        .extrude_prologue
+        .expect("sheet Extrude prologue");
+    assert!(!sheet.solid_operation());
     assert_eq!(
         scope("Extrude", 2, (3, 0), 0, 1, 3, None, true).extrude_prologue,
         None
@@ -12989,6 +12997,8 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             extent_discriminator_offsets: [132, 136],
             direction_reversed: false,
             direction_reversed_offset: 140,
+            solid_operation: true,
+            solid_operation_offset: 141,
             start: DesignExtrudeStart::ProfilePlane,
             start_offset: 142,
         }),
@@ -13336,6 +13346,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             extent_discriminator_offsets: [132, 136],
             direction_reversed: false,
             direction_reversed_offset: 140,
+            solid_operation: true,
+            solid_operation_offset: 141,
             start: DesignExtrudeStart::ProfilePlane,
             start_offset: 142,
         }),
@@ -13459,8 +13471,31 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
             },
             op: BooleanOp::NewBody,
+            solid: Some(true),
             ..
         } if profile == &neutral_sketch_id(&placement)
+    ));
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        solid_operation, ..
+    }) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("reference-aware Extrude prologue");
+    };
+    *solid_operation = false;
+    let sheet = project_extrude(
+        &scope,
+        &[(0, &along), (1, &taper)],
+        &[],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .expect("typed sheet Extrude");
+    assert!(matches!(
+        sheet,
+        FeatureDefinition::Extrude {
+            solid: Some(false),
+            ..
+        }
     ));
     scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
         operation: DesignExtrudeOperation::NewBody,
@@ -13470,6 +13505,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         extent_discriminator_offsets: [131, 135],
         direction_reversed: false,
         direction_reversed_offset: 139,
+        solid_operation: true,
+        solid_operation_offset: 140,
         start: DesignExtrudeStart::ProfilePlane,
         start_offset: 141,
     });
@@ -13741,6 +13778,46 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         }
     ));
+
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
+    let sketch_profile = scope.extrude_profile.clone();
+    scope.extrude_profile = None;
+    let mut first_profile_group = body_group.clone();
+    first_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
+    first_profile_group.record_index = 102;
+    first_profile_group.scope_reference_ordinal = 0;
+    first_profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
+    let mut second_profile_group = first_profile_group.clone();
+    second_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
+    second_profile_group.record_index = 103;
+    second_profile_group.scope_reference_ordinal = 1;
+    let multiple_profiles = project_extrude(
+        &scope,
+        &[(0, &along), (1, &taper)],
+        &[first_profile_group.clone(), second_profile_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .expect("typed multi-profile Extrude");
+    assert!(matches!(
+        multiple_profiles,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(ref native),
+            op: BooleanOp::NewBody,
+            ..
+        } if native == &scope.id
+    ));
+    second_profile_group.scope_reference_ordinal = 0;
+    assert!(project_extrude(
+        &scope,
+        &[(0, &along), (1, &taper)],
+        &[first_profile_group, second_profile_group],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .is_none());
+    scope.extrude_profile = sketch_profile;
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
 
     let mut profile_group = body_group.clone();
     profile_group.id = "f3d:Design/BulkStream.dat:operand-group#104".into();

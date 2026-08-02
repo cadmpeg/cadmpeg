@@ -10924,6 +10924,8 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             extent_discriminator_offsets: [132, 136],
             direction_reversed: false,
             direction_reversed_offset: 140,
+            solid_operation: true,
+            solid_operation_offset: 141,
             start: DesignExtrudeStart::ProfilePlane,
             start_offset: 142,
         }),
