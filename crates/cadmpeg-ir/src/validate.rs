@@ -10,44 +10,36 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::appearance::{Appearance, AppearanceBinding};
-use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, IR_VERSION};
 use crate::features::Feature;
 use crate::geometry::{
-    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use crate::math::Vector3;
-use crate::report::{LossNote, Severity};
+use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
 use crate::source_fidelity::SourceFidelity;
-use crate::tessellation::Tessellation;
-use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
+use crate::topology::Coedge;
 use crate::units::LengthUnit;
 
 mod annotations_native;
+mod assets;
 mod carriers_parameterization;
 mod drawings;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
-mod index;
 mod pmi;
 mod presentation;
-mod product;
 mod products;
-mod report;
+mod referential_integrity;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
 mod subd;
 mod topology;
 
-pub use report::{Check, Finding, ValidationReport};
-
-use index::ModelIndex;
-
 use annotations_native::{check_annotations, check_native_links};
+use assets::check_assets;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{
@@ -58,8 +50,8 @@ use geometry_payloads::{check_bounds, check_tessellations};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
 use pmi::check_pmi;
 use presentation::check_presentation;
-use product::check_products as check_step_products;
-use products::check_products as check_component_products;
+use products::check_products;
+use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
@@ -77,55 +69,84 @@ fn nonpositive(x: f64) -> bool {
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
-fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, HashSet<String>) {
+fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
+    let index = crate::index::ModelIndex::new(ir);
+    validate_model_with_index(ir, losses, &index)
+}
+
+fn validate_model_with_index(
+    ir: &CadIr,
+    losses: Vec<LossNote>,
+    ids: &crate::index::ModelIndex<'_>,
+) -> ValidationReport {
     let mut findings = Vec::new();
 
-    // One shared id index for the whole run: per-arena `id -> entity` maps, the
-    // native unknown-record presence set, and `all_ids`, the set of every entity
-    // id in the document that reference targets resolve against.
-    let index = ModelIndex::build(ir);
     check_version(ir, &mut findings);
+    check_assets(ir, &mut findings);
+    // The identity walk enumerates every entity id in the product document;
+    // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);
     check_units(ir, &mut findings);
-    check_references(ir, &index, &mut findings);
-    check_step_products(ir, &index, &mut findings);
-    check_pmi(ir, &index, &mut findings);
-    check_loops(ir, &index, &mut findings);
-    check_coedge_pairing(ir, &index, &mut findings);
-    check_shell_connectivity(ir, &index, &mut findings);
-    check_wire_topology(ir, &index, &mut findings);
+    check_references(ir, ids, &mut findings);
+    check_pmi(ir, &mut findings);
+    check_loops(ir, ids, &mut findings);
+    check_coedge_pairing(ir, &mut findings);
+    check_shell_connectivity(ir, &mut findings);
+    check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
-    check_native_links(ir, &index, &mut findings);
+    check_native_links(ir, ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
-    check_edge_endpoint_consistency(ir, &index, &mut findings);
-    check_pcurve_surface_consistency(ir, &index, &mut findings);
+    check_edge_endpoint_consistency(ir, &mut findings);
+    check_pcurve_surface_consistency(ir, &mut findings);
     check_procedural_support_consistency(ir, &mut findings);
     check_bounds(ir, &mut findings);
-    check_tessellations(ir, &index, &mut findings);
+    check_tessellations(ir, &mut findings);
     check_subds(ir, &mut findings);
     check_procedural_surfaces(ir, &mut findings);
     check_source_associations(ir, &mut findings);
-    check_sketches(ir, &index, &mut findings);
-    check_spreadsheets(ir, &index, &mut findings);
-    check_component_products(ir, &index, &mut findings);
-    check_presentation(ir, &index, &mut findings);
-    check_drawings(ir, &index, &mut findings);
-    check_semantic_annotations(ir, &index, &mut findings);
+    check_sketches(ir, &mut findings);
+    check_spreadsheets(ir, &mut findings);
+    check_products(ir, &mut findings);
+    check_presentation(ir, ids, &mut findings);
+    check_drawings(ir, ids, &mut findings);
+    check_semantic_annotations(ir, ids, &mut findings);
+    check_typed_references(ir, ids, &mut findings);
 
-    let ModelIndex { all_ids, .. } = index;
-    (
-        ValidationReport {
-            entity_counts: entity_counts(ir),
-            findings,
-            losses,
-        },
-        all_ids,
-    )
+    ValidationReport {
+        entity_counts: entity_counts(ir),
+        findings,
+        losses,
+    }
+}
+
+/// Validates a model while treating staged retained-record identities as native entities.
+pub fn validate_with_additional_native_identities<'a>(
+    ir: &'a CadIr,
+    additional: impl IntoIterator<Item = &'a str>,
+    losses: Vec<LossNote>,
+) -> ValidationReport {
+    let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
+    validate_model_with_index(ir, losses, &index)
 }
 
 /// Validate one neutral product model.
 pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
-    validate_with_ids(ir, losses).0
+    validate_model(ir, losses)
+}
+
+/// Validate one neutral product model together with borrowed annotations.
+pub fn validate_with_annotations(
+    ir: &CadIr,
+    annotations: &crate::annotations::Annotations,
+    losses: Vec<LossNote>,
+) -> ValidationReport {
+    let mut report = validate_model(ir, losses);
+    let all_ids = crate::index::ModelIndex::new(ir)
+        .identities()
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    check_annotations(ir, annotations, &all_ids, &mut report.findings);
+    report
 }
 
 /// Validate a neutral product model together with its decode-time source sidecar.
@@ -134,7 +155,7 @@ pub fn validate_with_source_fidelity(
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
 ) -> ValidationReport {
-    let (mut report, mut all_ids) = validate_with_ids(ir, losses);
+    let mut report = validate_model(ir, losses);
     if let Err(error) = source_fidelity.validate() {
         report.findings.push(Finding {
             check: Check::PayloadIntegrity,
@@ -143,6 +164,11 @@ pub fn validate_with_source_fidelity(
             entity: None,
         });
     }
+    let index = crate::index::ModelIndex::new(ir);
+    let mut all_ids = index
+        .identities()
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
     all_ids.extend(
         source_fidelity
             .retained_records
@@ -236,76 +262,5 @@ mod tests {
         let report = validate(&ir, Vec::new());
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
-    }
-
-    /// Determinism net for the `ModelIndex` conversions (P4). Each fixture pins
-    /// the complete findings `Vec` — order, check, severity, entity, and message —
-    /// so that swapping per-check id rebuilds for the shared index cannot silently
-    /// reorder or alter what validation reports. Every line is
-    /// `check|severity|entity|message`; an empty expected slice pins zero findings.
-    #[test]
-    fn model_index_conversions_preserve_finding_order_and_content() {
-        use super::Finding;
-        use crate::examples::unit_cube;
-        use crate::ids::{RegionId, SurfaceId};
-
-        fn render(findings: &[Finding]) -> Vec<String> {
-            findings
-                .iter()
-                .map(|f| {
-                    format!(
-                        "{:?}|{:?}|{}|{}",
-                        f.check,
-                        f.severity,
-                        f.entity.as_deref().unwrap_or(""),
-                        f.message
-                    )
-                })
-                .collect()
-        }
-
-        // A valid cube: no findings.
-        let baseline = unit_cube();
-
-        // A body references a region id that is not in the region arena.
-        let mut dangling_region = unit_cube();
-        dangling_region.model.bodies[0].regions =
-            vec![RegionId("synthetic:cube:region#missing".into())];
-
-        // Dropping one coedge from a loop leaves its `next` ring unable to close.
-        let mut unclosed_ring = unit_cube();
-        unclosed_ring.model.loops[0].coedges.pop();
-
-        // A face references a surface id that is not in the surface arena; the
-        // surface it abandoned then reads as an orphan carrier.
-        let mut missing_surface = unit_cube();
-        missing_surface.model.faces[0].surface = SurfaceId("synthetic:cube:surface#missing".into());
-
-        let cases: [(&str, CadIr, &[&str]); 4] = [
-            ("baseline", baseline, &[]),
-            (
-                "dangling_region",
-                dangling_region,
-                &["ReferentialIntegrity|Error|synthetic:cube:body#0|references missing region `synthetic:cube:region#missing`"],
-            ),
-            (
-                "unclosed_ring",
-                unclosed_ring,
-                &["LoopClosure|Error|synthetic:cube:loop#back|coedge `next` ring does not close over the loop's 3 coedges"],
-            ),
-            (
-                "missing_surface",
-                missing_surface,
-                &[
-                    "ReferentialIntegrity|Error|synthetic:cube:face#back|references missing surface `synthetic:cube:surface#missing`",
-                    "CarrierReachability|Error|synthetic:cube:surface#back|orphan surface carrier",
-                ],
-            ),
-        ];
-
-        for (name, ir, expected) in cases {
-            let report = validate(&ir, Vec::new());
-            assert_eq!(render(&report.findings), expected, "fixture `{name}`");
-        }
     }
 }

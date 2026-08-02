@@ -18,12 +18,14 @@ default = []
 fuzzing = []
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 flate2.workspace = true
 crc32fast.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 serde.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

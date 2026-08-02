@@ -642,6 +642,7 @@ pub(super) fn project(
                 parameter_interval: Some(interval),
                 direction,
                 native_position: Some(target),
+                revision_form: None,
             },
             cache_fit_tolerance: None,
             record_bounds: None,

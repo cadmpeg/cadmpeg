@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-level readers, markers, and integer/float payload primitives shared across the NURBS decoders.
 
+use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_int, u16_at, u32_at};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::wire::le::{f64_at as read_f64, int_at as read_int, u16_at, u32_at};
 
 /// Millimetres per ASM model-space length unit (centimetres).
 pub(crate) const LEN_TO_MM: f64 = 10.0;
@@ -58,6 +58,35 @@ pub(crate) fn marker_positions(b: &[u8]) -> Vec<usize> {
     for pos in 0..=b.len() - NUBS_MARKER.len() {
         if marker_at(b, pos).is_some() {
             out.push(pos);
+        }
+    }
+    out
+}
+
+/// Positions of the `nubs`/`nurbs` markers `b` itself owns, in order: those
+/// outside every construction nested within `b`. A leading `0x0f` is `b`'s own
+/// scope opening and is not counted as nesting.
+///
+/// A scope's members and the members of the constructions it nests are
+/// indistinguishable to a raw byte scan, so a scan that ignores nesting reports
+/// a nested support's cache as the scope's own.
+pub(crate) fn owned_marker_positions(b: &[u8], int_width: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut pos = usize::from(b.first() == Some(&0x0f));
+    while pos < b.len() {
+        match b[pos] {
+            0x0f => depth += 1,
+            0x10 => depth = depth.saturating_sub(1),
+            _ => {
+                if depth == 0 && marker_at(b, pos).is_some() {
+                    out.push(pos);
+                }
+            }
+        }
+        match crate::nurbs::subtypes::next_token(b, pos, int_width) {
+            Some(next) => pos = next,
+            None => break,
         }
     }
     out

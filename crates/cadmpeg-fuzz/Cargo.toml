@@ -15,17 +15,19 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+cadmpeg-codec-core = { path = "../cadmpeg-codec-core" }
+cadmpeg-container = { path = "../cadmpeg-container" }
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
 cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt", features = ["fuzzing"] }
-cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia", features = ["fuzz"] }
+cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia", features = ["fuzzing"] }
 cadmpeg-codec-creo = { path = "../cadmpeg-codec-creo" }
 cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }
 cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
-cadmpeg-ir = { path = "../cadmpeg-ir", features = ["test-support"] }
+cadmpeg-ir = { path = "../cadmpeg-ir" }
 cadmpeg-step = { path = "../cadmpeg-step" }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 flate2 = "1"
 crc32fast = "1"
 

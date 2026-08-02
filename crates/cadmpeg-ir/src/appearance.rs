@@ -20,6 +20,10 @@ pub struct Appearance {
     /// Asset GUID stored in the Protein record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_guid: Option<String>,
+    /// External library holding the preset named by `name`: a GUID for a shipped
+    /// library, a path for a user library.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library_id: Option<String>,
     /// Visual asset GUID stored in the source, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visual_guid: Option<String>,

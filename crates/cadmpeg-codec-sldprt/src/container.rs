@@ -10,10 +10,10 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{DecodeContext, View};
-use cadmpeg_ir::wire::hash::sha256_hex;
-use cadmpeg_ir::wire::le::u32_at as u32_le;
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::le::u32_at as u32_le;
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_ir::hash::sha256_hex;
 
 /// Marker shared by block, cache-cell, and directory frames.
 pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
@@ -178,9 +178,9 @@ pub struct CompoundStream {
 }
 
 /// Complete result of an outer-container scan.
-pub struct ContainerScan {
+pub struct ContainerScan<'a> {
     /// Complete source image for exact passthrough writing.
-    pub source_image: Vec<u8>,
+    pub source_image: &'a [u8],
     /// Big-endian outer version word.
     pub version: u32,
     /// CRC-validated compressed blocks, in file order.
@@ -255,7 +255,7 @@ impl<'a> Section<'a> {
     }
 }
 
-impl ContainerScan {
+impl ContainerScan<'_> {
     pub(crate) fn sections(&self) -> impl Iterator<Item = Section<'_>> {
         self.blocks
             .iter()
@@ -298,51 +298,19 @@ fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
     contains(haystack, &encoded)
 }
 
-/// Scan a `.sldprt` decode root into its container structure.
-///
-/// `_ctx` is taken for parity with the other container codecs' `scan(ctx, root)`
-/// entry points; the block scan is a pure function of the source bytes gated by
-/// per-block CRC validation, so it charges no decode budget.
-pub fn scan(_ctx: &DecodeContext<'_>, root: View<'_>) -> ContainerScan {
-    scan_image(root.window())
-}
-
 /// Scan an in-memory `.sldprt` image.
-///
-/// The byte-slice entry to the same core as [`scan`], for the writer paths that
-/// scan a retained source image rather than a decode root.
 ///
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
-pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
-    scan_image(bytes)
-}
-
-fn scan_image(bytes: &[u8]) -> ContainerScan {
+pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = crate::compound::streams(bytes)
             .unwrap_or_default()
             .into_iter()
-            .map(|stream| {
-                let located_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes);
-                let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
-                let ps_streams = located_streams
-                    .into_iter()
-                    .map(|(_, payload)| payload)
-                    .collect();
-                CompoundStream {
-                    path: stream.path,
-                    directory_id: stream.directory_id,
-                    start_sector: stream.start_sector,
-                    payload: stream.bytes,
-                    decoded_payload: stream.decoded_bytes,
-                    ps_streams,
-                    ps_stream_offsets,
-                }
-            })
+            .map(compound_stream)
             .collect();
         return ContainerScan {
-            source_image: bytes.to_vec(),
+            source_image: bytes,
             version: 0,
             blocks: Vec::new(),
             directory: Vec::new(),
@@ -350,7 +318,7 @@ fn scan_image(bytes: &[u8]) -> ContainerScan {
             compound_streams,
         };
     }
-    let version = cadmpeg_ir::wire::be::u32_at(bytes, 4).unwrap_or(0);
+    let version = cadmpeg_codec_core::be::u32_at(bytes, 4).unwrap_or(0);
 
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
@@ -378,13 +346,51 @@ fn scan_image(bytes: &[u8]) -> ContainerScan {
     }
 
     ContainerScan {
-        source_image: bytes.to_vec(),
+        source_image: bytes,
         version,
         blocks,
         directory,
         cache_cells,
         compound_streams: Vec::new(),
     }
+}
+
+fn compound_stream(stream: crate::compound::Stream) -> CompoundStream {
+    let located_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes);
+    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
+    let ps_streams = located_streams
+        .into_iter()
+        .map(|(_, payload)| payload)
+        .collect();
+    CompoundStream {
+        path: stream.path,
+        directory_id: stream.directory_id,
+        start_sector: stream.start_sector,
+        payload: stream.bytes,
+        decoded_payload: stream.decoded_bytes,
+        ps_streams,
+        ps_stream_offsets,
+    }
+}
+
+/// Scans an in-memory image while routing CFB expansion through the decode budget.
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
+    if !root.window().starts_with(&COMPOUND_FILE_MAGIC) {
+        return Ok(scan_bytes(root.window()));
+    }
+    let compound_streams = crate::compound::streams_budgeted(ctx, root)?
+        .unwrap_or_default()
+        .into_iter()
+        .map(compound_stream)
+        .collect();
+    Ok(ContainerScan {
+        source_image: root.window(),
+        version: 0,
+        blocks: Vec::new(),
+        directory: Vec::new(),
+        cache_cells: Vec::new(),
+        compound_streams,
+    })
 }
 
 /// A block plus the preamble length needed to advance past it.
@@ -482,11 +488,20 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
 /// decompression error (the CRC/round-trip gate rejects the marker hit).
 fn raw_inflate(data: &[u8], hint: usize) -> Option<Vec<u8>> {
     use flate2::read::DeflateDecoder;
-    let mut out = Vec::with_capacity(hint.min(1 << 20));
+    let mut out = Vec::new();
+    out.try_reserve(hint.min(1 << 20)).ok()?;
     let mut dec = DeflateDecoder::new(data);
-    match dec.read_to_end(&mut out) {
-        Ok(_) => Some(out),
-        Err(_) => None,
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = dec.read(&mut chunk).ok()?;
+        if read == 0 {
+            return Some(out);
+        }
+        if read > hint.saturating_sub(out.len()) {
+            return None;
+        }
+        out.try_reserve(read).ok()?;
+        out.extend_from_slice(&chunk[..read]);
     }
 }
 
@@ -548,7 +563,7 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
 }
 
 /// Convert a scan into the generic container inventory returned by
-/// [`cadmpeg_ir::codec::Codec::inspect`].
+/// [`cadmpeg_ir::Codec::inspect`].
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut entries = Vec::new();
 
@@ -698,9 +713,9 @@ pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
 /// Ranking favors larger partition streams, then deltas streams. Ghost and
 /// `ResolvedFeatures` sections receive a penalty. The return value includes the
 /// parsed stream header.
-pub fn select_active_parasolid(
-    scan: &ContainerScan,
-) -> Option<(&Block, crate::parasolid::StreamHeader)> {
+pub fn select_active_parasolid<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Option<(&'a Block, crate::parasolid::StreamHeader)> {
     let active_configuration = active_configuration_index(scan);
     let mut best: Option<(i64, &Block, crate::parasolid::StreamHeader)> = None;
     for b in &scan.blocks {

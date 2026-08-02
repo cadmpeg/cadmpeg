@@ -5,10 +5,10 @@
 //! Families that also drive a full decode pipeline own a `decode` module whose
 //! entry point is registered in [`ROUTES`].
 
-use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_codec_core::decode::DecodeContext;
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{Annotations, CadIr};
 
 use crate::container::ContainerScan;
 use crate::variant::Variant;
@@ -43,7 +43,7 @@ pub(crate) struct FamilyOutput {
 /// applicable route.
 pub(crate) struct Route {
     pub(crate) applicable: fn(Variant) -> bool,
-    pub(crate) decode: fn(&ContainerScan) -> Option<FamilyOutput>,
+    pub(crate) decode: fn(&DecodeContext<'_>, &ContainerScan) -> Option<FamilyOutput>,
 }
 
 /// Ordered decode routes tried by the orchestrator.

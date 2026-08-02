@@ -6,10 +6,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use flate2::read::ZlibDecoder;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::wire::hash::sha256_hex;
+use cadmpeg_ir::AnnotationBuilder;
 
 use crate::container::Container;
 use crate::decode::Scan;
@@ -24,7 +24,9 @@ mod model;
 mod om;
 mod parasolid;
 mod segments;
+mod structure;
 mod substrate;
+mod toggle;
 pub(crate) mod vector;
 
 // The record families, extractors, and enums each domain module owns stay
@@ -50,6 +52,6 @@ pub(crate) fn attach_annotations(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     attach::attach(ir, model, scan, annotations, unknowns)
 }

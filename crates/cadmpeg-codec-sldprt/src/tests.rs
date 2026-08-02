@@ -5,11 +5,33 @@
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::decode::InspectOptions;
-use cadmpeg_ir::report::LossCode;
+
+use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_ir::LossKind;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
+
+#[test]
+fn source_record_join_borrows_the_retained_source_image() {
+    let payload = vec![0x5a; 4096];
+    let payload_ptr = payload.as_ptr();
+    let fidelity = cadmpeg_ir::SourceFidelity {
+        retained_records: vec![cadmpeg_ir::source_fidelity::RetainedSourceRecord {
+            id: "sldprt:file:source-image#0".into(),
+            stream: "source".into(),
+            offset: 0,
+            byte_len: payload.len() as u64,
+            sha256: cadmpeg_ir::hash::sha256_hex(&payload),
+            data: Some(payload),
+        }],
+        ..Default::default()
+    };
+
+    let records = crate::source_records(&cadmpeg_ir::examples::unit_cube(), &fidelity).unwrap();
+    let retained = records[0].data.expect("retained source bytes");
+    assert_eq!(retained.as_ptr(), payload_ptr);
+}
 
 fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> crate::native::SldprtNative {
     crate::native::SldprtNative::load(
@@ -40,7 +62,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     let original = decoded.ir.native.namespace("sldprt").unwrap();
     let typed = crate::native::SldprtNative::load(original).unwrap();
-    let mut round_trip = cadmpeg_ir::native::NativeNamespace::default();
+    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(
         typed,
@@ -58,7 +80,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     for records in round_trip.arenas.values() {
         for record in records {
             let json = serde_json::to_value(record).unwrap();
-            assert_eq!(json["id"], record.id);
+            assert_eq!(json["id"], record.id());
             assert!(json.as_object().unwrap().len() > 1);
         }
     }
@@ -82,7 +104,7 @@ fn native_version_one_migrates_the_body_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.body_selections.is_empty()));
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current.arenas.contains_key("feature_input_body_selections"));
@@ -116,7 +138,7 @@ fn native_version_two_migrates_the_edge_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.edge_selections.is_empty()));
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current.arenas.contains_key("feature_input_edge_selections"));
@@ -138,7 +160,7 @@ fn native_version_three_migrates_the_surface_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.surface_selections.is_empty()));
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current
@@ -160,7 +182,9 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
     let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
     legacy.version = 4;
     for record in legacy.arenas.get_mut("sketch_input_entities").unwrap() {
-        record.fields.remove("object_index");
+        let mut fields = record.fields();
+        fields.remove("object_index");
+        *record = cadmpeg_ir::NativeRecord::new(record.id().to_string(), fields);
     }
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
     assert!(migrated.feature_input_lanes.iter().all(|lane| {
@@ -170,15 +194,17 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
             }) == entity.object_index
         })
     }));
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
 
     let mut sentinel = decoded.ir.native.namespace("sldprt").unwrap().clone();
     sentinel.version = 6;
-    sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0]
-        .fields
-        .insert("object_index".into(), serde_json::json!(u32::MAX));
+    let sentinel_entity = &mut sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0];
+    let mut sentinel_fields = sentinel_entity.fields();
+    sentinel_fields.insert("object_index".into(), serde_json::json!(u32::MAX));
+    *sentinel_entity =
+        cadmpeg_ir::NativeRecord::new(sentinel_entity.id().to_string(), sentinel_fields);
     let migrated = crate::native::SldprtNative::load(&sentinel).unwrap();
     assert_eq!(
         migrated.feature_input_lanes[0].sketch_entities[0].object_index,
@@ -197,9 +223,16 @@ fn native_future_version_remains_rejected() {
     let mut future = decoded.ir.native.namespace("sldprt").unwrap().clone();
     future.version = crate::native::SLDPRT_NATIVE_VERSION + 1;
     let error = crate::native::SldprtNative::load(&future).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("unsupported SLDPRT native namespace version"));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::NativeConvertError::UnsupportedVersion(
+            cadmpeg_ir::native::catalogue::NativeVersionError::Unsupported {
+                version,
+                minimum: crate::native::SLDPRT_MIN_NATIVE_VERSION,
+                maximum: crate::native::SLDPRT_NATIVE_VERSION,
+            }
+        ) if version == crate::native::SLDPRT_NATIVE_VERSION + 1
+    ));
 }
 
 /// Nibble-swap a section name into its stored form (the swap is its own inverse,
@@ -2065,7 +2098,13 @@ fn encoder_writes_source_less_ir() {
         .for_each(|edge| edge.param_range = None);
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.directory.len(), 1);
@@ -2123,7 +2162,13 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         native_ref: None,
     });
 
-    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    let error = SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("requires retained extrusion profile data"));
@@ -2300,7 +2345,7 @@ fn encoder_writes_source_less_line_sketches() {
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
-            profile: Some(profile.clone()),
+            section: cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
             sections: Vec::new(),
             path: Some(path.clone()),
             mode: cadmpeg_ir::features::SweepMode::Solid {
@@ -2312,6 +2357,9 @@ fn encoder_writes_source_less_line_sketches() {
             path_tangent: false,
             linearize: false,
             twist: Some(Angle(0.3)),
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
             scale: Some(1.5),
             allow_multi_profile_faces: None,
         },
@@ -2397,7 +2445,13 @@ fn encoder_writes_source_less_line_sketches() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
@@ -2656,7 +2710,13 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -2779,10 +2839,16 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         native_ref: None,
     });
 
-    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    let error = SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
     assert!(error
         .to_string()
@@ -3289,7 +3355,13 @@ fn encoder_writes_source_less_curved_sketches() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -3568,7 +3640,13 @@ fn encoder_writes_source_less_curved_sketches() {
         .expect("source distance parameter");
     parameter.expression = "5mm".into();
     parameter.value = Some(ParameterValue::Length(Length(5.0)));
-    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    let error = SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(error
         .to_string()
         .contains("not satisfied by measured geometry"));
@@ -3633,7 +3711,13 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -3727,6 +3811,7 @@ fn encoder_writes_source_less_native_features() {
             flip_direction: false,
         },
         FeatureDefinition::Shell {
+            bodies: None,
             removed_faces: FaceSelection::Resolved {
                 faces: vec![ir.model.faces[0].id.clone()],
                 native: "face-a".into(),
@@ -3752,6 +3837,7 @@ fn encoder_writes_source_less_native_features() {
             },
             tools: BodySelection::Native("body-b,body-c".into()),
             op: BooleanOp::Join,
+            keep_tools: false,
         },
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Native("face-d".into()),
@@ -3857,7 +3943,13 @@ fn encoder_writes_source_less_native_features() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
@@ -4643,7 +4735,13 @@ fn encoder_writes_source_less_datum_features() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -4681,9 +4779,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Metric".into(),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
-        bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(vec![ir.model.bodies[0]
-            .id
-            .clone()]),
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![ir.model.bodies[0].id.clone()]),
         parameter_values: BTreeMap::new(),
         suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
@@ -4698,7 +4794,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: "Empty".into(),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(Vec::new()),
+        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
@@ -4708,7 +4804,13 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.finalize();
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert!(scan
         .blocks
@@ -4834,7 +4936,7 @@ fn decode_preserves_unresolved_active_configuration() {
         loss.message
             == "active configuration identity is unresolved; 0 of 2 configuration records are active."
     }));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -4875,7 +4977,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .unwrap()
         .ir;
     ir.source = None;
-    ir.native = cadmpeg_ir::native::Native::default();
+    ir.native = cadmpeg_ir::Native::default();
     ir.model.bodies.iter_mut().for_each(|body| body.name = None);
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     let body_ids = ir
@@ -4925,7 +5027,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}"),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::features::ConfigurationBodies::Resolved(vec![body.clone()]),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
             parameter_values: BTreeMap::new(),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
@@ -4936,7 +5038,13 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     ir.model.configurations[1].active = true;
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let scan = container::scan_bytes(&encoded);
     assert!(scan
         .blocks
@@ -5325,7 +5433,13 @@ fn encoder_writes_source_less_neutral_parameters() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -5377,7 +5491,13 @@ fn encoder_bakes_rigid_body_transform() {
     let expected_normal = Vector3::new(-original_normal.y, original_normal.x, original_normal.z);
 
     let mut encoded = Vec::new();
-    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -5439,7 +5559,13 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     prepare(&mut base);
     base.model.bodies[0].transform = None;
     let mut base_bytes = Vec::new();
-    SldprtCodec.encode(&base, &mut base_bytes).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &base,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut base_bytes))
+        .unwrap();
     let reference = SldprtCodec
         .decode(&mut Cursor::new(base_bytes), &DecodeOptions::default())
         .unwrap();
@@ -5456,7 +5582,13 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         prepare(&mut moved);
         moved.model.bodies[0].transform = Some(Transform { rows });
         let mut bytes = Vec::new();
-        SldprtCodec.encode(&moved, &mut bytes).unwrap();
+        SldprtCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &moved,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .unwrap();
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
@@ -5492,7 +5624,11 @@ fn decode_encode_decode_reaches_fixpoint() {
 
     let mut reencoded = Vec::new();
     SldprtCodec
-        .encode_with_source_fidelity(&first.ir, Some(&first.source_fidelity), &mut reencoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &first.ir,
+            fidelity: Some(&first.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut reencoded))
         .expect("re-encode");
 
     let second = SldprtCodec
@@ -5758,7 +5894,7 @@ fn decode_builds_valid_topology_and_plane() {
 }
 
 fn strict_options() -> DecodeOptions {
-    use cadmpeg_ir::decode::{DecodeMode, DecodePolicy};
+    use cadmpeg_codec_core::decode::{DecodeMode, DecodePolicy};
     DecodeOptions {
         container_only: false,
         policy: DecodePolicy {
@@ -5780,7 +5916,7 @@ fn strict_accepts_operator_requested_container_only() {
 
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let fixture = synthetic_sldprt();
 
@@ -5792,21 +5928,21 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::GeometryNotTransferred));
+        .any(|note| note.code == LossKind::GeometryNotTransferred));
     assert!(salvaged
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::TopologyNotTransferred));
+        .any(|note| note.code == LossKind::TopologyNotTransferred));
     assert!(salvaged
         .report
         .losses
         .iter()
-        .any(|note| note.code.strict_consequence() == StrictConsequence::Reject));
+        .any(|note| note.strict_consequence() == StrictConsequence::Reject));
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_ir::codec::CodecError::Malformed(message)) => {
+        Err(cadmpeg_codec_core::CodecError::Malformed(message)) => {
             assert!(
                 message.contains("strict mode rejects geometry_not_transferred"),
                 "unexpected message: {message}"
@@ -5818,7 +5954,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
     let strict = SldprtCodec
@@ -5829,12 +5965,12 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .report
         .losses
         .iter()
-        .all(|note| note.code.strict_consequence() == StrictConsequence::Tolerate));
+        .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
     assert!(strict
         .report
         .losses
         .iter()
-        .any(|note| note.code == LossCode::TopologyGaugeSubstituted));
+        .any(|note| note.code == LossKind::TopologyGaugeSubstituted));
 }
 
 #[test]
@@ -5899,7 +6035,7 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -6111,7 +6247,10 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
             &mut Vec::new(),
         )
         .unwrap_err();
-    assert!(matches!(error, cadmpeg_ir::codec::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_codec_core::CodecError::Malformed(_)
+    ));
 }
 
 #[test]
@@ -6132,7 +6271,7 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
 }
 
@@ -6144,9 +6283,9 @@ fn semantic_writer_rejects_subds() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.subds.push(cadmpeg_ir::subd::SubdSurface {
+    decoded.ir.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId("test:sldprt:subd#0".into()),
-        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
+        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
@@ -6162,7 +6301,7 @@ fn semantic_writer_rejects_subds() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+        cadmpeg_codec_core::CodecError::NotImplemented(message)
             if message.contains("does not support SubD surfaces")
     ));
 }
@@ -6188,7 +6327,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
     ] {
         assert!(matches!(
             crate::writer::curve_values(&geometry, 0.001),
-            Err(cadmpeg_ir::codec::CodecError::NotImplemented(_))
+            Err(cadmpeg_codec_core::CodecError::NotImplemented(_))
         ));
     }
 }
@@ -6218,7 +6357,7 @@ fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("ellipse major radius is smaller than its minor radius")
     ));
 }
@@ -6247,7 +6386,7 @@ fn semantic_writer_rejects_nonfinite_analytic_carriers() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("circle center is not finite")
     ));
 }
@@ -6318,7 +6457,7 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
 
         assert!(matches!(
             error,
-            cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            cadmpeg_codec_core::CodecError::NotImplemented(message)
                 if message.contains(&surface_id) && message.contains(expected)
         ));
     }
@@ -6485,7 +6624,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
             ..
         } if center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0)
     ));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -6531,7 +6670,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
             && radial_sin.u.abs() < 1e-9
             && (radial_sin.v - 1000.0).abs() < 1e-9
     ));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -6567,7 +6706,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     assert!(origin.u.abs() < 1e-12);
     assert!((origin.v - 1000.0).abs() < 1e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -6603,7 +6742,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     assert!(origin.u.abs() < 1e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
-    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -7709,7 +7848,7 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -7748,7 +7887,7 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
-    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -7773,7 +7912,7 @@ fn partition_point_refs_do_not_select_deltas_framing() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.points.len(), 3);
-    assert!(cadmpeg_ir::validate::validate(&result.ir, result.report.losses).is_ok());
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -8148,7 +8287,11 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     decoded.ir.model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec
-        .encode_with_source_fidelity(&decoded.ir, Some(&decoded.source_fidelity), &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -8534,18 +8677,26 @@ fn native_validation_rejects_orphan_history_records() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded
+    let orphan = decoded
         .ir
         .native
         .namespace_mut("sldprt")
         .arenas
         .get_mut("features")
         .unwrap()[0]
-        .fields
-        .insert(
-            "parent".into(),
-            serde_json::Value::String("missing-history".into()),
-        );
+        .clone();
+    let mut orphan_fields = orphan.fields();
+    orphan_fields.insert(
+        "parent".into(),
+        serde_json::Value::String("missing-history".into()),
+    );
+    decoded
+        .ir
+        .native
+        .namespace_mut("sldprt")
+        .arenas
+        .get_mut("features")
+        .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
     assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
         finding.message.contains("invalid owner") && finding.message.contains("missing-history")
     }));
@@ -8691,7 +8842,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
     });
-    decoded.source_fidelity.annotations = cadmpeg_ir::annotations::Annotations::default();
+    decoded.source_fidelity.annotations = cadmpeg_ir::Annotations::default();
 
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -8719,7 +8870,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.source_fidelity.annotations = cadmpeg_ir::annotations::Annotations::default();
+    decoded.source_fidelity.annotations = cadmpeg_ir::Annotations::default();
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_input_lanes[0].sketch_entities[0].kind =
             crate::records::SketchInputKind::Native(9);
@@ -9375,7 +9526,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
             .ordinal
     };
     assert!(ordinal("Later") < ordinal("Forward"));
-    assert!(!cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
+    assert!(!cadmpeg_ir::validate(&decoded.ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("parameter dependency")));
@@ -10790,7 +10941,7 @@ fn decode_resolves_feature_topology_selections() {
     assert!(matches!(
         &decoded.ir.model.features[5].definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Faces(faces)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Faces(faces)),
             path: Some(PathRef::Edges(edges)),
             ..
         } if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)
@@ -12356,11 +12507,13 @@ fn semantic_writer_round_trips_typed_combine() {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             op: BooleanOp::Join,
+            keep_tools: false,
         } if target == "body:1" && tools == "body:2,body:3"
     ));
 
-    let FeatureDefinition::Combine { target, tools, op } =
-        &mut decoded.ir.model.features[0].definition
+    let FeatureDefinition::Combine {
+        target, tools, op, ..
+    } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed combine");
     };
@@ -12385,6 +12538,7 @@ fn semantic_writer_round_trips_typed_combine() {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             op: BooleanOp::Intersect,
+            keep_tools: false,
         } if target == "body:4" && tools == "body:5,body:6"
     ));
 }
@@ -12413,6 +12567,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             op: BooleanOp::Unresolved,
+            keep_tools: false,
         }
     ));
 
@@ -12430,6 +12585,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
             target: BodySelection::Unresolved,
             tools: BodySelection::Unresolved,
             op: BooleanOp::Unresolved,
+            keep_tools: false,
         }
     ));
 }
@@ -13833,7 +13989,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
         loss.message
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
-    let findings = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
     let FeatureDefinition::HelixNativeAxis {
@@ -15653,7 +15809,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(profile)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile)),
             path: Some(PathRef::Native(path_ref)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
                 op: BooleanOp::NewBody,
@@ -15667,7 +15823,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     ));
 
     let FeatureDefinition::Sweep {
-        profile,
+        section,
         mode,
         twist,
         scale,
@@ -15676,7 +15832,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     else {
         panic!("typed sweep");
     };
-    *profile = Some(ProfileRef::Feature(profile_b.clone()));
+    *section = cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile_b.clone()));
     *mode = cadmpeg_ir::features::SweepMode::Solid {
         op: BooleanOp::Join,
     };
@@ -15726,7 +15882,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: None,
@@ -15757,7 +15913,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: Some(Angle(0.5)),
@@ -15789,7 +15945,7 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
             mode: SweepMode::Solid {
                 op: BooleanOp::Unresolved
@@ -16040,7 +16196,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     assert!(matches!(
         &sweep.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(feature)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(feature)),
             ..
         } if feature == &helix.id
     ));
@@ -16070,7 +16226,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
             .find(|feature| feature.name.as_deref() == Some("Renamed surface sweep"))
             .map(|feature| &feature.definition),
         Some(FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Feature(_)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_)),
             ..
         })
     ));
@@ -16145,7 +16301,10 @@ fn decode_projects_generated_surface_sweep_profile_path() {
     assert!(matches!(
         &second.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Generated { curves, native }),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
+                curves,
+                native,
+            }),
             ..
         } if curves.len() == 1
             && curves[0].feature == first.id
@@ -17358,6 +17517,18 @@ fn decode_projects_feature_input_extrusion_operations() {
             "moICE_c",
             &[(true, 8), (true, 4)][..],
         ),
+        (
+            0,
+            cadmpeg_ir::features::BooleanOp::Cut,
+            "moICE_c",
+            &[(true, 8), (true, 4)][..],
+        ),
+        (
+            22_993,
+            cadmpeg_ir::features::BooleanOp::Cut,
+            "moICE_c",
+            &[(true, 8), (true, 4)][..],
+        ),
     ] {
         for &(direct_class, padding) in layouts {
             let mut source = sldprt_with_body(&triangle_body());
@@ -17393,7 +17564,7 @@ fn decode_projects_feature_input_extrusion_operations() {
         }
     }
 
-    for code in [0, 4, 20] {
+    for code in [4, 20] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
             0x42,
@@ -17790,7 +17961,7 @@ fn decode_projects_owned_native_sketch_relation() {
             && operands[1].object_index == 2
             && operands[1].native_ref.is_none()
     ));
-    let findings = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
     SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -17819,7 +17990,7 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
         .expect("sketch marker")
         .feature_ref = Some("sldprt:history:feature#missing".into());
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -17845,7 +18016,7 @@ fn native_store_rejects_edited_history_feature_class() {
     let mut native = sldprt_native(&decoded.ir);
     native.feature_histories[0].features[0].input_class = Some("moRefPlane_c".into());
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -17871,7 +18042,7 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
     }];
     entity.link_selector = Some(0);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error.to_string().contains("missing local-link target"));
 }
@@ -17922,7 +18093,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         }
     }
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).unwrap();
     let stored = crate::native::SldprtNative::load(&namespace).unwrap();
     assert_eq!(
@@ -18414,7 +18585,7 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
         .is_some());
     native.feature_input_lanes[0].relation_bindings[0].feature_ref = None;
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -18438,7 +18609,7 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         .scalar_refs
         .push(duplicate);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
@@ -18491,7 +18662,7 @@ fn native_store_rejects_relation_instance_operand_disagreement() {
     let mut native = sldprt_native(&decoded.ir);
     native.feature_input_lanes[0].relation_instances[0].operands[0].entity_index += 1;
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
@@ -18520,7 +18691,7 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
     native.feature_input_lanes[0].scalars[0].operands[1].entity_ref = Some(wrong_target.clone());
     native.feature_input_lanes[0].relation_instances[0].operands[1].entity_ref = Some(wrong_target);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error.to_string().contains("inconsistent sketch marker"));
 }
@@ -18547,7 +18718,7 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     assert!(lane.scalars[0].operands[0].entity_ref.is_some());
     lane.sketch_entities[1].local_id = lane.sketch_entities[0].local_id;
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).unwrap();
 }
 
@@ -18615,7 +18786,9 @@ fn decode_and_validate_compact_delete_body_selection() {
         .get_mut("feature_input_body_selections")
         .unwrap()
     {
-        record.fields.remove("mode");
+        let mut fields = record.fields();
+        fields.remove("mode");
+        *record = cadmpeg_ir::NativeRecord::new(record.id().to_string(), fields);
     }
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
     assert_eq!(
@@ -18730,7 +18903,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     native.feature_input_lanes[0].body_selections[0]
         .body_state_ids
         .push(287);
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")
@@ -18740,7 +18913,7 @@ fn decode_and_validate_compact_delete_body_selection() {
 
     native.feature_input_lanes[0].body_selections[0].mode =
         Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected);
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")
@@ -18750,7 +18923,7 @@ fn decode_and_validate_compact_delete_body_selection() {
         Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected);
 
     native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")
@@ -19273,7 +19446,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     assert!(sketch.native_ref.as_deref().is_some_and(|native_ref| {
         native_ref.starts_with("sldprt:feature-input:resolved-features#")
     }));
-    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 
@@ -19340,7 +19513,7 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
     assert!(matches!(
         &feature.definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Sketch(id)),
+            section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(id)),
             ..
         } if id == &sketch.id
     ));
@@ -19369,7 +19542,10 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
         .expect("sweep history feature");
     assert!(matches!(
         &feature.definition,
-        FeatureDefinition::Sweep { profile: None, .. }
+        FeatureDefinition::Sweep {
+            section: cadmpeg_ir::features::SweepSection::Unresolved(_),
+            ..
+        }
     ));
 }
 
@@ -19497,11 +19673,15 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     );
 
     let error = SldprtCodec
-        .encode_with_source_fidelity(&decoded.ir, Some(&decoded.source_fidelity), &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
     assert!(error
         .to_string()
@@ -19539,7 +19719,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
             ..
         } if value == &sketch_id
     )));
-    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let mut written = Vec::new();
     SldprtCodec
@@ -19738,7 +19918,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .iter()
         .find_map(|feature| match &feature.definition {
             FeatureDefinition::Sweep {
-                profile: Some(ProfileRef::Sketch(profile)),
+                section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Sketch(profile)),
                 path: Some(PathRef::Sketch(path)),
                 ..
             } => Some((profile, path)),
@@ -19747,7 +19927,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .expect("bound sweep");
     assert_ne!(sweep.0, sweep.1);
     assert!(bound.contains(sweep.0) && bound.contains(sweep.1));
-    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 
@@ -20045,7 +20225,7 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("conflicting positions")
     ));
 }
@@ -20553,14 +20733,14 @@ fn face_on_untyped_surface_keeps_topology() {
         .report
         .losses
         .iter()
-        .any(|l| l.code == LossCode::GeometryNotTransferred));
+        .any(|l| l.code == LossKind::GeometryNotTransferred));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -20587,9 +20767,9 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .report
         .losses
         .iter()
-        .find(|l| l.code == LossCode::GeometryNotTransferred)
+        .find(|l| l.code == LossKind::GeometryNotTransferred)
         .expect("untyped support surface raises a census note");
-    assert_eq!(census.code.strict_consequence(), StrictConsequence::Reject);
+    assert_eq!(census.strict_consequence(), StrictConsequence::Reject);
 
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
@@ -20757,7 +20937,7 @@ fn native_patch_requires_point_provenance_annotation() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("requires provenance annotation") && message.contains(&point_id)
     ));
 }
@@ -21150,7 +21330,10 @@ fn source_less_cube() -> cadmpeg_ir::CadIr {
 
 fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec::DecodeResult {
     let mut encoded = Vec::new();
-    SldprtCodec.encode(ir, &mut encoded).unwrap();
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap()
@@ -21241,805 +21424,5 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
     );
 }
 
-/// Truth table for the write-plan gate adopted in `write_container`: the
-/// `record × integrity × hash` cross product over the retained source image.
-///
-/// `plan_write` resolves `Replay` only when the source-image record is present,
-/// its bytes pass `verify_retained_bytes`, and the recorded baseline equals the
-/// current semantic hash. A differing baseline over an intact record is `Patch`
-/// (a records-fed semantic write); every other cell — a missing record, a corrupt
-/// record, or an absent baseline — is `Generate`, a source-less regeneration. The
-/// three cells `(corrupt, match)`, `(corrupt, differ)`, and `(absent, match)`
-/// replace the pre-gate `Malformed`/`NotImplemented` write refusals; delta (a) of
-/// the `write_plan` module docs is `(corrupt, differ)`, where the pre-gate writer
-/// fed the corrupt image into the semantic writer instead of regenerating.
-#[test]
-fn write_plan_gate_truth_table() {
-    enum Integrity {
-        Intact,
-        Corrupt,
-        Absent,
-    }
-
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let real_baseline = decoded
-        .ir
-        .source
-        .as_ref()
-        .unwrap()
-        .attributes
-        .get("semantic_sha256")
-        .cloned()
-        .expect("decode records a semantic baseline");
-    let bogus_baseline = "0".repeat(64);
-    assert_ne!(real_baseline, bogus_baseline);
-
-    // Replay reference: the retained source image, written back verbatim.
-    let source_image = decoded
-        .source_fidelity
-        .retained_record(crate::SOURCE_IMAGE_ID)
-        .and_then(|record| record.data.clone())
-        .expect("intact sidecar retains the source image");
-
-    // Set the recorded baseline, optionally corrupt or drop the retained source
-    // image, then write and return the produced bytes.
-    let write = |baseline: &str, integrity: Integrity| -> Vec<u8> {
-        let mut ir = decoded.ir.clone();
-        ir.source
-            .as_mut()
-            .unwrap()
-            .attributes
-            .insert("semantic_sha256".into(), baseline.to_string());
-        let mut sidecar = decoded.source_fidelity.clone();
-        match integrity {
-            Integrity::Intact => {}
-            Integrity::Corrupt => {
-                // Flip a byte without updating `sha256`: fails verify_retained_bytes.
-                sidecar
-                    .retained_records
-                    .iter_mut()
-                    .find(|record| record.id == crate::SOURCE_IMAGE_ID)
-                    .and_then(|record| record.data.as_mut())
-                    .expect("intact sidecar retains the source image")[0] ^= 0xff;
-            }
-            Integrity::Absent => sidecar
-                .retained_records
-                .retain(|record| record.id != crate::SOURCE_IMAGE_ID),
-        }
-        let mut out = Vec::new();
-        SldprtCodec
-            .write_preserved_with_source_fidelity(&ir, &sidecar, &mut out)
-            .expect("write-plan gate never refuses");
-        out
-    };
-
-    // present, intact, match → Replay: the source image, verbatim.
-    assert_eq!(write(&real_baseline, Integrity::Intact), source_image);
-
-    // present, intact, differ → Patch: a records-fed semantic write, neither the
-    // verbatim image nor the source-less regeneration.
-    let patch = write(&bogus_baseline, Integrity::Intact);
-    assert_ne!(patch, source_image, "patch is not a verbatim replay");
-
-    // Generate reference: no sidecar image reaches the writer.
-    let generate = write(&bogus_baseline, Integrity::Absent);
-    assert_ne!(
-        patch, generate,
-        "patch retains source structure a regenerate drops"
-    );
-
-    // Every remaining cell is Generate, byte-identical to the source-less
-    // regeneration. Three replace pre-gate write refusals.
-    // present, corrupt, match  (was Malformed: failed integrity validation)
-    assert_eq!(write(&real_baseline, Integrity::Corrupt), generate);
-    // present, corrupt, differ (was a corrupt-image semantic write — delta (a))
-    assert_eq!(write(&bogus_baseline, Integrity::Corrupt), generate);
-    // absent, match            (was NotImplemented: no retained source image)
-    assert_eq!(write(&real_baseline, Integrity::Absent), generate);
-}
-
-/// The write-plan seam's `ExportReport`: the note each branch emits, and the
-/// `degraded` marker separating a fallback `Generate` — a retained source image
-/// was present but unusable — from a clean one with no retained image at all.
-///
-/// The sibling [`write_plan_gate_truth_table`] pins the produced bytes through
-/// `write_preserved_with_source_fidelity`, whose signature discards the report;
-/// this pins the report the encoder seam builds around the same gate. It also
-/// reaches the three `Generate` cells that entry cannot express: an absent
-/// baseline, a retained record whose bytes were dropped, and no sidecar at all.
-#[test]
-fn write_plan_gate_export_report() {
-    fn run(
-        ir: &cadmpeg_ir::CadIr,
-        sidecar: Option<&cadmpeg_ir::source_fidelity::SourceFidelity>,
-    ) -> (Vec<u8>, cadmpeg_ir::report::ExportReport) {
-        let mut out = Vec::new();
-        let report = SldprtCodec
-            .encode_with_source_fidelity(ir, sidecar, &mut out)
-            .expect("the write-plan gate never refuses");
-        (out, report)
-    }
-
-    fn degraded(report: &cadmpeg_ir::report::ExportReport) -> bool {
-        report
-            .notes
-            .iter()
-            .any(|note| note.contains("unusable for replay or patch"))
-    }
-
-    fn has_note(report: &cadmpeg_ir::report::ExportReport, text: &str) -> bool {
-        report.notes.iter().any(|note| note.contains(text))
-    }
-
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let real_baseline = decoded
-        .ir
-        .source
-        .as_ref()
-        .unwrap()
-        .attributes
-        .get("semantic_sha256")
-        .cloned()
-        .expect("decode records a semantic baseline");
-    let bogus_baseline = "0".repeat(64);
-
-    // No sidecar → a clean, source-less Generate; its bytes are the reference
-    // every degraded Generate cell below must reproduce.
-    let (regenerated, report) = run(&decoded.ir, None);
-    assert!(has_note(&report, "regenerated from IR"));
-    assert!(!degraded(&report), "no sidecar is a clean generate");
-
-    // A clone of the decoded IR carrying `baseline` as its recorded hash.
-    let with_baseline = |baseline: &str| {
-        let mut ir = decoded.ir.clone();
-        ir.source
-            .as_mut()
-            .unwrap()
-            .attributes
-            .insert("semantic_sha256".into(), baseline.to_string());
-        ir
-    };
-
-    // record ✓  integrity ✓  baseline = current  → Replay (not degraded).
-    let (_, report) = run(
-        &with_baseline(&real_baseline),
-        Some(&decoded.source_fidelity),
-    );
-    assert!(has_note(&report, "replayed verbatim"));
-    assert!(!degraded(&report));
-
-    // record ✓  integrity ✓  baseline ≠ current  → Patch (not degraded).
-    let (out, report) = run(
-        &with_baseline(&bogus_baseline),
-        Some(&decoded.source_fidelity),
-    );
-    assert!(has_note(&report, "patched into the container"));
-    assert!(!degraded(&report));
-    assert_ne!(
-        out, regenerated,
-        "a patch retains structure a regenerate drops"
-    );
-
-    // record ✓  integrity ✓  baseline absent  → Generate (degraded).
-    let mut no_baseline = decoded.ir.clone();
-    no_baseline
-        .source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove("semantic_sha256");
-    let (out, report) = run(&no_baseline, Some(&decoded.source_fidelity));
-    assert_eq!(out, regenerated, "absent baseline regenerates from the IR");
-    assert!(degraded(&report));
-
-    // record ✓  bytes dropped (data = None)  → Generate (degraded).
-    let mut no_data = decoded.source_fidelity.clone();
-    no_data
-        .retained_records
-        .iter_mut()
-        .find(|record| record.id == crate::SOURCE_IMAGE_ID)
-        .expect("source image present")
-        .data = None;
-    let (out, report) = run(&with_baseline(&real_baseline), Some(&no_data));
-    assert_eq!(
-        out, regenerated,
-        "a record without bytes regenerates from the IR"
-    );
-    assert!(degraded(&report));
-
-    // record ✗ (image removed)  → Generate (clean, not degraded).
-    let mut no_record = decoded.source_fidelity.clone();
-    no_record
-        .retained_records
-        .retain(|record| record.id != crate::SOURCE_IMAGE_ID);
-    let (out, report) = run(&with_baseline(&real_baseline), Some(&no_record));
-    assert_eq!(out, regenerated, "an absent record regenerates from the IR");
-    assert!(!degraded(&report));
-}
-
-/// Golden-snapshot harness pinning the SLDPRT codec before the deep-module
-/// refactor. Each fixture is a full `.sldprt` image committed under
-/// `tests/golden/fixtures/`. From the committed bytes the harness freezes the
-/// decode surface (canonical IR + [`DecodeReport`] + [`SourceFidelity`] sidecar),
-/// the container inspection ([`ContainerSummary`]), and one artifact per writer
-/// branch (`replay/`, `semantic/`, `generate/`). The committed `.sldprt` is the
-/// pinned input, so the goldens do not depend on the byte-builders staying
-/// constant across the refactor.
-///
-/// Build-config sensitivity: the byte-builders and the semantic writer both
-/// `flate2`-DEFLATE their block payloads. An isolated `cargo test -p
-/// cadmpeg-codec-sldprt` build resolves `flate2` to `miniz_oxide`; a
-/// workspace-unified build resolves it to `zlib-rs` (pulled in transitively by
-/// `zip`), which sizes the same input differently. The committed goldens are the
-/// canonical **workspace** (`zlib-rs`) bytes, which is what the commit hook and
-/// CI compare against. The frozen fixtures make `decode/`, `inspect/`, and
-/// `replay/` pure functions of the committed bytes — those pass under either
-/// backend. Only `semantic/` and `generate/`, which re-DEFLATE at write time,
-/// are backend-specific and can diverge under an isolated `-p` run; regenerate
-/// them with the workspace feature set, never `-p`:
-///
-///   `cargo test --workspace --no-run`
-///   `UPDATE_GOLDEN=1 <sldprt test binary> golden`
-///
-/// [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
-/// [`SourceFidelity`]: cadmpeg_ir::source_fidelity::SourceFidelity
-/// [`ContainerSummary`]: cadmpeg_ir::codec::ContainerSummary
-#[cfg(test)]
-mod golden {
-    use std::path::{Path, PathBuf};
-
-    use cadmpeg_ir::codec::{CodecError, DecodeResult};
-
-    use super::*;
-
-    /// Build the covering fixture set: `(golden name, full `.sldprt` bytes)`.
-    /// Each entry wraps a Parasolid body (or a whole synthetic container) exactly
-    /// as its originating white-box test does, so the bytes drive the real decode
-    /// path. The set spans container/directory/cache-cell inspection, analytic and
-    /// NURBS B-rep, derived pcurves, appearances, tessellation, feature history and
-    /// feature-input lanes, sketches, PMI, document metadata, deltas streams, and
-    /// multi-configuration partitions.
-    fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
-        vec![
-            // Container without a resolvable B-rep: exercises the block/cache-cell/
-            // directory scan and the metadata-only decode path.
-            ("container_metadata", synthetic_sldprt()),
-            // Analytic B-rep carriers.
-            ("analytic_planar", sldprt_with_body(&triangle_body())),
-            (
-                "analytic_cylinder",
-                sldprt_with_body(&closed_cylinder_body()),
-            ),
-            ("analytic_sphere", sldprt_with_body(&sphere_patch_body())),
-            // NURBS carriers: a NURBS surface, and a NURBS surface beside a NURBS
-            // edge curve.
-            ("nurbs_surface", sldprt_with_body(&nurbs_surface_body())),
-            (
-                "nurbs_curve_surface",
-                sldprt_with_body(&nurbs_curve_and_surface_body()),
-            ),
-            // Appearances: a body-scoped material block.
-            (
-                "body_material",
-                sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]),
-            ),
-            // Tessellation: a display-list block.
-            (
-                "body_display_list",
-                sldprt_with_body_and_display_list(&triangle_body()),
-            ),
-            // Feature history from a Keywords tree.
-            (
-                "body_history",
-                sldprt_with_body_and_history(&triangle_body()),
-            ),
-            // Resolved-feature lanes.
-            (
-                "resolved_features",
-                sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1, 1, 1]),
-            ),
-            // Nested feature-input sketch profiles across geometry kinds.
-            (
-                "nested_sketch_profile",
-                sldprt_with_nested_sketch_profile(&triangle_body()),
-            ),
-            (
-                "nested_circular_sketch",
-                sldprt_with_nested_circular_sketch(&triangle_body()),
-            ),
-            (
-                "nested_arc_sketch",
-                sldprt_with_nested_arc_sketch(&triangle_body()),
-            ),
-            (
-                "nested_elliptical_sketch",
-                sldprt_with_nested_elliptical_sketch(&triangle_body()),
-            ),
-            (
-                "nested_nurbs_sketches",
-                sldprt_with_nested_nurbs_sketches(&triangle_body()),
-            ),
-            // A zlib-wrapped feature-input sketch: the compressed feature-input path.
-            (
-                "compressed_nested_sketch",
-                sldprt_with_compressed_nested_sketch_profile(&triangle_body()),
-            ),
-            // Document metadata: bounding box, reference planes, configuration
-            // manager, and units.
-            (
-                "document_envelope",
-                sldprt_with_body_and_envelope(&triangle_body()),
-            ),
-            // Partition paired with an equal-schema deltas stream carrying a face
-            // colour binding.
-            ("partition_and_deltas", partition_and_deltas_doc()),
-            // Two configuration partitions in one container.
-            ("colliding_sites", sldprt_with_colliding_sites()),
-            // PMI semantic dimension database beside a sketch.
-            ("pmi_semantic_dimension", pmi_semantic_dimension_doc()),
-        ]
-    }
-
-    /// A triangle body carrying a NURBS surface on its bridged face. Mirrors the
-    /// `faces_decode_nurbs_surface` white-box construction.
-    fn nurbs_surface_body() -> Vec<u8> {
-        let mut body = triangle_body();
-        body.extend(nurbs_surface_carrier(180, 181, 10));
-        let bridge = body
-            .windows(2)
-            .position(|window| window == [0x00, 0x0e])
-            .expect("bridge marker");
-        body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
-        body
-    }
-
-    /// A triangle body whose face carries a NURBS surface and whose edge carries a
-    /// NURBS curve. Mirrors the `semantic_writer_regenerates_modified_nurbs_carriers`
-    /// construction.
-    fn nurbs_curve_and_surface_body() -> Vec<u8> {
-        let mut body = triangle_body();
-        let bridge = body
-            .windows(2)
-            .position(|window| window == [0x00, 0x0e])
-            .expect("bridge marker");
-        body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
-        let edge = body
-            .windows(2)
-            .position(|window| window == [0x00, 0x10])
-            .expect("edge marker");
-        body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
-        body.extend(nurbs_curve_carrier(170, 171));
-        body.extend(nurbs_surface_carrier(180, 181, 10));
-        body
-    }
-
-    /// A partition stream and an equal-schema deltas stream that both bind a face
-    /// colour, mirroring `decode_deduplicates_partition_and_deltas_face_bindings`.
-    fn partition_and_deltas_doc() -> Vec<u8> {
-        let mut partition = Vec::new();
-        partition.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
-        partition.extend(entity53_color(900, [0.25, 0.5, 0.75]));
-        partition.extend(owned_triangle(0, 700, 0.0));
-        let mut deltas = Vec::new();
-        deltas.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
-        deltas.extend(entity53_color(900, [0.25, 0.5, 0.75]));
-        sldprt_with_partition_and_deltas(&partition, &deltas)
-    }
-
-    /// A part with a PMI semantic-dimension database and the sketch its dimension
-    /// references, mirroring `decode_extracts_pmi_semantic_dimension`.
-    fn pmi_semantic_dimension_doc() -> Vec<u8> {
-        let mut source = sldprt_with_body(&triangle_body());
-        source.extend(make_block(
-            0x42,
-            "Contents/Keywords",
-            br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
-        ));
-        source.extend(make_block(
-            0x49,
-            "Contents/PMISemanticDataDB",
-            &pmi_semantic_payload(),
-        ));
-        source
-    }
-
-    fn decode_result(bytes: &[u8]) -> Result<DecodeResult, CodecError> {
-        SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    }
-
-    /// Canonical decode snapshot: the finalized IR, the decode report, and the
-    /// source-fidelity sidecar. The sidecar is required — the writer gate reads
-    /// `brep_semantic_sha256` and the retained source-image record from it. A
-    /// refused decode freezes its error string; that refusal is contract-relevant
-    /// behavior, so this never panics on codec output.
-    fn decode_snapshot(bytes: &[u8]) -> String {
-        let value = match decode_result(bytes) {
-            Ok(result) => serde_json::json!({
-                "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
-                "report": serde_json::to_value(&result.report).expect("serialize report"),
-                "source_fidelity": serde_json::to_value(&result.source_fidelity)
-                    .expect("serialize source_fidelity"),
-            }),
-            Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
-        };
-        let mut text = serde_json::to_string_pretty(&value).expect("serialize decode snapshot");
-        text.push('\n');
-        text
-    }
-
-    /// Container inspection snapshot: the [`ContainerSummary`] through the sealed
-    /// inspect entry point, or the inspect error.
-    fn inspect_snapshot(bytes: &[u8]) -> String {
-        let value = match SldprtCodec
-            .inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
-        {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
-            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
-        };
-        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
-        text.push('\n');
-        text
-    }
-
-    /// Replay branch: unchanged decoded IR with an intact sidecar. When the source
-    /// image is retained and the semantic hash still matches, the encoder replays
-    /// the source container byte for byte.
-    fn replay_outcome(decoded: &DecodeResult) -> Result<Vec<u8>, String> {
-        let mut out = Vec::new();
-        SldprtCodec
-            .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut out)
-            .map(|()| out)
-            .map_err(|err| err.to_string())
-    }
-
-    /// Patch branch: an intact sidecar with a baseline that differs from the
-    /// current semantic hash drives a record-based semantic write. Overwriting the
-    /// `semantic_sha256` attribute with a non-matching digest is the write-plan
-    /// gate's `Patch` trigger — a document edited in supported ways — so the
-    /// writer takes `write_semantic_with_records` while keeping the retained
-    /// source-image record and `brep_semantic_sha256`, re-emitting the native
-    /// partition inside a regenerated container. The geometry is untouched and the
-    /// writer ignores `semantic_sha256`, so these bytes match the pre-gate
-    /// semantic golden exactly.
-    fn semantic_outcome(decoded: &DecodeResult) -> Result<Vec<u8>, String> {
-        let mut ir = decoded.ir.clone();
-        if let Some(source) = ir.source.as_mut() {
-            source
-                .attributes
-                .insert("semantic_sha256".into(), "0".repeat(64));
-        }
-        let mut out = Vec::new();
-        SldprtCodec
-            .write_preserved_with_source_fidelity(&ir, &decoded.source_fidelity, &mut out)
-            .map(|()| out)
-            .map_err(|err| err.to_string())
-    }
-
-    /// Generate branch: no sidecar. Dropping the source metadata takes the plain
-    /// [`Encoder::encode`] entry through the source-less write path, which
-    /// regenerates the container from the IR alone.
-    fn generate_outcome(decoded: &DecodeResult) -> Result<Vec<u8>, String> {
-        let mut ir = decoded.ir.clone();
-        ir.source = None;
-        let mut out = Vec::new();
-        SldprtCodec
-            .encode(&ir, &mut out)
-            .map(|_| out)
-            .map_err(|err| err.to_string())
-    }
-
-    fn golden_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
-    }
-
-    fn update_requested() -> bool {
-        std::env::var_os("UPDATE_GOLDEN").is_some()
-    }
-
-    /// First differing line, 1-based, both sides truncated for readable failure.
-    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
-        let mut exp = expected.lines();
-        let mut act = actual.lines();
-        let mut line = 0usize;
-        loop {
-            line += 1;
-            match (exp.next(), act.next()) {
-                (Some(e), Some(a)) if e == a => {}
-                (e, a) => {
-                    let trunc = |s: Option<&str>| match s {
-                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
-                        Some(s) => s.to_string(),
-                        None => "<end of file>".to_string(),
-                    };
-                    return (line, trunc(e), trunc(a));
-                }
-            }
-        }
-    }
-
-    fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
-        let offset = expected
-            .iter()
-            .zip(actual)
-            .position(|(e, a)| e != a)
-            .unwrap_or_else(|| expected.len().min(actual.len()));
-        let describe = |bytes: &[u8]| match bytes.get(offset) {
-            Some(byte) => format!("0x{byte:02x}"),
-            None => "<end of file>".to_string(),
-        };
-        format!(
-            "first byte difference at offset {offset}: golden {}, actual {} (lengths: {} and {})",
-            describe(expected),
-            describe(actual),
-            expected.len(),
-            actual.len(),
-        )
-    }
-
-    fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<String>) {
-        if update {
-            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
-                .expect("create golden dir");
-            std::fs::write(path, actual.as_bytes())
-                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
-            return;
-        }
-        match std::fs::read_to_string(path) {
-            Ok(expected) if expected == actual => {}
-            Ok(expected) => {
-                let (line, exp, act) = first_line_diff(&expected, actual);
-                failures.push(format!(
-                    "{}: diverged at line {line}\n    golden: {exp}\n    actual: {act}",
-                    path.display()
-                ));
-            }
-            Err(e) => failures.push(format!(
-                "{}: cannot read golden ({e}); regenerate with a workspace UPDATE_GOLDEN run",
-                path.display()
-            )),
-        }
-    }
-
-    fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
-        if update {
-            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
-                .expect("create golden dir");
-            std::fs::write(path, actual)
-                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
-            return;
-        }
-        match std::fs::read(path) {
-            Ok(expected) if expected == actual => {}
-            Ok(expected) => failures.push(format!(
-                "{}: {}",
-                path.display(),
-                first_byte_diff(&expected, actual)
-            )),
-            Err(e) => failures.push(format!(
-                "{}: cannot read golden ({e}); regenerate with a workspace UPDATE_GOLDEN run",
-                path.display()
-            )),
-        }
-    }
-
-    fn remove_if_exists(path: &Path) {
-        if path.exists() {
-            std::fs::remove_file(path).unwrap_or_else(|e| panic!("remove {}: {e}", path.display()));
-        }
-    }
-
-    /// Freeze one writer branch: its `Ok` bytes as `<dir>/<name>.bin`, or its
-    /// refusal string as `<dir>/<name>.err.txt`, and delete the stale sibling on
-    /// update so only one artifact per branch persists.
-    fn compare_branch(
-        update: bool,
-        root: &Path,
-        dir: &str,
-        name: &str,
-        outcome: &Result<Vec<u8>, String>,
-        failures: &mut Vec<String>,
-    ) {
-        let bin_path = root.join(dir).join(format!("{name}.bin"));
-        let err_path = root.join(dir).join(format!("{name}.err.txt"));
-        match outcome {
-            Ok(bytes) => {
-                if update {
-                    remove_if_exists(&err_path);
-                }
-                compare_bytes(update, &bin_path, bytes, failures);
-            }
-            Err(message) => {
-                if update {
-                    remove_if_exists(&bin_path);
-                }
-                compare_text(update, &err_path, &format!("{message}\n"), failures);
-            }
-        }
-    }
-
-    /// Read the committed fixture bytes, or on update return the builder bytes
-    /// directly. Only [`golden_snapshots_are_byte_identical`] writes the
-    /// `fixtures/` file, so the writer-branch test reads it here without a
-    /// concurrent-write race under `UPDATE_GOLDEN`.
-    fn committed_input(
-        update: bool,
-        root: &Path,
-        name: &str,
-        bytes: &[u8],
-        failures: &mut Vec<String>,
-    ) -> Option<Vec<u8>> {
-        if update {
-            return Some(bytes.to_vec());
-        }
-        let path = root.join("fixtures").join(format!("{name}.sldprt"));
-        match std::fs::read(&path) {
-            Ok(value) => Some(value),
-            Err(e) => {
-                failures.push(format!(
-                    "fixture `{name}`: cannot read {} ({e}); regenerate with a workspace UPDATE_GOLDEN run",
-                    path.display()
-                ));
-                None
-            }
-        }
-    }
-
-    /// Read side: freeze each committed `.sldprt`, then pin its decode surface
-    /// (`decode/`) and container inspection (`inspect/`). Every artifact here is a
-    /// pure function of the committed bytes — the codec reads the frozen stream
-    /// and never re-DEFLATEs — so this test is backend-independent and passes
-    /// under both an isolated `-p` build and a workspace-unified one.
-    #[test]
-    fn golden_snapshots_are_byte_identical() {
-        let update = update_requested();
-        let root = golden_root();
-        let mut failures = Vec::new();
-        for (name, bytes) in fixtures() {
-            // The committed `.sldprt` is the frozen decode input. On update, rewrite
-            // it from the builder; then snapshot the exact committed bytes so the
-            // pin does not depend on the builder staying constant.
-            if update {
-                let fixture_path = root.join("fixtures").join(format!("{name}.sldprt"));
-                std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
-                    .expect("create fixtures dir");
-                std::fs::write(&fixture_path, &bytes)
-                    .unwrap_or_else(|e| panic!("write fixture {name}: {e}"));
-            }
-            let Some(input) = committed_input(update, &root, name, &bytes, &mut failures) else {
-                continue;
-            };
-
-            compare_text(
-                update,
-                &root.join("decode").join(format!("{name}.json")),
-                &decode_snapshot(&input),
-                &mut failures,
-            );
-            compare_text(
-                update,
-                &root.join("inspect").join(format!("{name}.json")),
-                &inspect_snapshot(&input),
-                &mut failures,
-            );
-        }
-        assert!(
-            failures.is_empty(),
-            "{} golden artifact(s) drifted; if the change is intended regenerate with a workspace `UPDATE_GOLDEN=1` run and review the diff:\n\n{}",
-            failures.len(),
-            failures.join("\n\n"),
-        );
-    }
-
-    /// Write side: pin one artifact per writer branch — `replay/`, `semantic/`,
-    /// `generate/` — as `<name>.bin` on success or `<name>.err.txt` on refusal.
-    ///
-    /// `replay/` copies the retained source image verbatim and is
-    /// backend-independent. `semantic/` and `generate/` run the semantic writer,
-    /// which re-DEFLATEs each block; their `.bin` bytes are therefore the
-    /// canonical workspace (`zlib-rs`) output and diverge under an isolated `-p`
-    /// (`miniz_oxide`) build — regenerate them with the workspace feature set, not
-    /// `-p`. The `.err.txt` refusals are decoded-IR properties and stay
-    /// backend-independent.
-    #[test]
-    fn writer_branch_goldens_are_byte_identical() {
-        let update = update_requested();
-        let root = golden_root();
-        let mut failures = Vec::new();
-        for (name, bytes) in fixtures() {
-            let Some(input) = committed_input(update, &root, name, &bytes, &mut failures) else {
-                continue;
-            };
-            // Absent an IR (a refused decode) no branch is drivable, so clear any
-            // stale artifacts on update and pin nothing.
-            match decode_result(&input) {
-                Ok(decoded) => {
-                    compare_branch(
-                        update,
-                        &root,
-                        "replay",
-                        name,
-                        &replay_outcome(&decoded),
-                        &mut failures,
-                    );
-                    compare_branch(
-                        update,
-                        &root,
-                        "semantic",
-                        name,
-                        &semantic_outcome(&decoded),
-                        &mut failures,
-                    );
-                    compare_branch(
-                        update,
-                        &root,
-                        "generate",
-                        name,
-                        &generate_outcome(&decoded),
-                        &mut failures,
-                    );
-                }
-                Err(_) if update => {
-                    for dir in ["replay", "semantic", "generate"] {
-                        remove_if_exists(&root.join(dir).join(format!("{name}.bin")));
-                        remove_if_exists(&root.join(dir).join(format!("{name}.err.txt")));
-                    }
-                }
-                Err(_) => {}
-            }
-        }
-        assert!(
-            failures.is_empty(),
-            "{} writer-branch golden(s) drifted; `semantic/` and `generate/` are workspace (`zlib-rs`) canonical and will diverge under an isolated `-p` build. If the change is intended regenerate with a workspace `UPDATE_GOLDEN=1` run and review the diff:\n\n{}",
-            failures.len(),
-            failures.join("\n\n"),
-        );
-    }
-
-    /// Guards against nondeterministic output (hash-map iteration order,
-    /// timestamps, addresses): every snapshot and every writer branch must be a
-    /// pure function of the committed input bytes.
-    #[test]
-    fn golden_output_is_deterministic() {
-        for (name, bytes) in fixtures() {
-            let decode_first = decode_snapshot(&bytes);
-            let decode_second = decode_snapshot(&bytes);
-            if decode_first != decode_second {
-                let (line, a, b) = first_line_diff(&decode_first, &decode_second);
-                panic!("fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {a}\n    run 2: {b}");
-            }
-            let inspect_first = inspect_snapshot(&bytes);
-            let inspect_second = inspect_snapshot(&bytes);
-            if inspect_first != inspect_second {
-                let (line, a, b) = first_line_diff(&inspect_first, &inspect_second);
-                panic!("fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {a}\n    run 2: {b}");
-            }
-            if let Ok(decoded) = decode_result(&bytes) {
-                assert_eq!(
-                    replay_outcome(&decoded),
-                    replay_outcome(&decoded),
-                    "fixture `{name}`: nondeterministic replay write"
-                );
-                assert_eq!(
-                    semantic_outcome(&decoded),
-                    semantic_outcome(&decoded),
-                    "fixture `{name}`: nondeterministic semantic write"
-                );
-                assert_eq!(
-                    generate_outcome(&decoded),
-                    generate_outcome(&decoded),
-                    "fixture `{name}`: nondeterministic generate write"
-                );
-            }
-        }
-    }
-}
+#[path = "integration_tests.rs"]
+mod integration_tests;

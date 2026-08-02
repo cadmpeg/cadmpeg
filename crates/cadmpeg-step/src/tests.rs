@@ -3,9 +3,11 @@
 //! fixtures or inline), and expected STEP fragments are asserted inline. No test
 //! depends on an external STEP consumer.
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::default_trait_access)]
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
-use cadmpeg_ir::decode::InspectOptions;
+
+use cadmpeg_codec_core::decode::InspectOptions;
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -14,6 +16,7 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
+use std::fmt::Write as _;
 use std::io::Cursor;
 
 use crate::{
@@ -97,11 +100,8 @@ fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
 fn parser_bounds_exponential_anchor_expansion() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..40 {
-        anchors.push_str(&format!(
-            "<a{index}>=(<a{}>,<a{}>);\n",
-            index - 1,
-            index - 1
-        ));
+        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
+            .expect("write anchor fixture");
     }
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
@@ -114,15 +114,13 @@ fn parser_bounds_exponential_anchor_expansion() {
 fn parser_bounds_aggregate_anchor_materialization() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..18 {
-        anchors.push_str(&format!(
-            "<a{index}>=(<a{}>,<a{}>);\n",
-            index - 1,
-            index - 1
-        ));
+        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
+            .expect("write anchor fixture");
     }
-    let records = (1..=8)
-        .map(|id| format!("#{id}=ITEM(<a17>);"))
-        .collect::<String>();
+    let records = (1..=8).fold(String::new(), |mut records, id| {
+        write!(records, "#{id}=ITEM(<a17>);").expect("write anchor record fixture");
+        records
+    });
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
@@ -186,7 +184,7 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_err();
         assert!(
-            matches!(error, cadmpeg_ir::codec::CodecError::NotImplemented(message) if message == reason)
+            matches!(error, cadmpeg_codec_core::CodecError::NotImplemented(message) if message == reason)
         );
     }
     assert_eq!(
@@ -280,7 +278,7 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .native
         .namespace("step")
         .unwrap()
-        .arena_as::<cadmpeg_ir::unknown::UnknownRecord>("unknowns")
+        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
         .unwrap();
     assert_eq!(unknowns.len(), 2);
     assert_eq!(unknowns[0].id.0, "step:data:example_record#1");
@@ -798,7 +796,7 @@ fn decode_and_write_singular_vertex_loops() {
         .loops
         .iter()
         .all(|loop_| loop_.coedges.is_empty() && loop_.vertex_uses.len() == 1));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let mut encoded = Vec::new();
     write_step(&result.ir, &mut encoded, &StepWriteOptions::default()).expect("write vertex loops");
@@ -890,9 +888,9 @@ fn decode_builds_a_valid_connected_sheet_brep() {
     );
     assert!(matches!(
         result.ir.model.presentation_layers[0].items.as_slice(),
-        [cadmpeg_ir::presentation::PresentationItem::Face { .. }]
+        [cadmpeg_ir::PresentationItem::Face { .. }]
     ));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -983,7 +981,7 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
             } if support.as_str() == "step:data:surface#28"
                 && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
         )));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -1052,7 +1050,7 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
         result.ir.model.faces[0].surface.as_str(),
         "step:data:surface#11"
     );
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1072,7 +1070,7 @@ fn reader_recovers_a_valid_solid_from_writer_output() {
     assert_eq!(result.ir.model.faces.len(), 6);
     assert_eq!(result.ir.model.edges.len(), 12);
     assert_eq!(result.ir.model.vertices.len(), 8);
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1230,22 +1228,42 @@ fn step_color_assets_round_trip_names_and_tessellation_targets_strictly() {
 #[test]
 fn writer_round_trips_product_body_ownership() {
     let mut ir = unit_cube();
-    let product = cadmpeg_ir::ids::ProductId("product-0".into());
-    ir.model.products.push(cadmpeg_ir::product::Product {
-        id: product.clone(),
-        product_id: "PART-001".into(),
-        name: Some("Cube part".into()),
-        bodies: vec![ir.model.bodies[0].id.clone()],
-    });
+    let product = cadmpeg_ir::ids::ProductDefinitionId("product-0".into());
     ir.model
-        .product_occurrences
-        .push(cadmpeg_ir::product::ProductOccurrence {
-            id: cadmpeg_ir::ids::OccurrenceId("root-0".into()),
-            product,
-            parent: cadmpeg_ir::product::OccurrenceParent::Root,
-            transform: cadmpeg_ir::transform::Transform::identity(),
-            name: Some("Cube root".into()),
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: product.clone(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            source_name: Some("Cube part".into()),
+            label: Some("Cube part".into()),
+            description: None,
+            part_number: Some("PART-001".into()),
+            bom_properties: std::collections::BTreeMap::default(),
+            bodies: vec![ir.model.bodies[0].id.clone()],
+            native_ref: None,
         });
+    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
+        id: cadmpeg_ir::ids::OccurrenceId("root-0".into()),
+        prototype: cadmpeg_ir::products::PrototypeReference::Local {
+            definition: product,
+        },
+        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        ordinal: 0,
+        transform: cadmpeg_ir::transform::Transform::identity(),
+        prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+        scale: [1.0; 3],
+        name: Some("Cube root".into()),
+        linked_subelements: Vec::new(),
+        visible: None,
+        element_component: None,
+        claim_child: None,
+        copy_on_change: None,
+        copy_on_change_source: None,
+        copy_on_change_group: None,
+        copy_on_change_touched: None,
+        link_transform: None,
+        native_ref: None,
+    });
     let options = StepWriteOptions {
         schema: StepSchema::Ap242Edition3,
         unsupported: StepUnsupportedPolicy::Reject,
@@ -1256,10 +1274,15 @@ fn writer_round_trips_product_body_ownership() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode product-owned body");
-    assert_eq!(decoded.ir.model.products.len(), 1);
-    assert_eq!(decoded.ir.model.products[0].product_id, "PART-001");
-    assert_eq!(decoded.ir.model.products[0].bodies.len(), 1);
-    assert_eq!(decoded.ir.model.product_occurrences.len(), 1);
+    assert_eq!(decoded.ir.model.product_definitions.len(), 1);
+    assert_eq!(
+        decoded.ir.model.product_definitions[0]
+            .part_number
+            .as_deref(),
+        Some("PART-001")
+    );
+    assert_eq!(decoded.ir.model.product_definitions[0].bodies.len(), 1);
+    assert_eq!(decoded.ir.model.occurrences.len(), 1);
 }
 
 #[test]
@@ -1307,7 +1330,7 @@ fn writer_round_trips_edge_based_wire_bodies() {
     );
     assert_eq!(decoded.ir.model.edges.len(), 1);
     assert_eq!(decoded.ir.model.shells[0].wire_edges.len(), 1);
-    let validation = cadmpeg_ir::validate::validate(&decoded.ir, decoded.report.losses);
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses);
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1337,19 +1360,19 @@ fn writer_round_trips_standalone_points_and_curves() {
 
 #[test]
 fn decode_builds_product_occurrences_with_relative_placement() {
-    use cadmpeg_ir::product::OccurrenceParent;
+    use cadmpeg_ir::products::OccurrenceParent;
 
     let bytes = include_bytes!("../tests/fixtures/ap242_assembly.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 assembly");
 
-    assert_eq!(result.ir.model.products.len(), 2);
-    assert_eq!(result.ir.model.product_occurrences.len(), 2);
+    assert_eq!(result.ir.model.product_definitions.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 2);
     let child = result
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .unwrap();
@@ -1357,7 +1380,7 @@ fn decode_builds_product_occurrences_with_relative_placement() {
     assert_eq!(child.transform.rows[0][3], 25.0);
     assert_eq!(child.transform.rows[1][3], 0.0);
     assert_eq!(child.transform.rows[2][3], 0.0);
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let options = StepWriteOptions {
@@ -1369,12 +1392,12 @@ fn decode_builds_product_occurrences_with_relative_placement() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written product graph");
-    assert_eq!(roundtrip.ir.model.products.len(), 2);
-    assert_eq!(roundtrip.ir.model.product_occurrences.len(), 2);
+    assert_eq!(roundtrip.ir.model.product_definitions.len(), 2);
+    assert_eq!(roundtrip.ir.model.occurrences.len(), 2);
     let child = roundtrip
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("round-tripped child occurrence");
@@ -1392,13 +1415,13 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
     let child = result
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
         .unwrap();
     assert_eq!(child.transform.rows[0][3], 40.0);
     assert_eq!(child.transform.rows[1][3], 5.0);
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1417,7 +1440,7 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.normals.len(), 3);
     assert_eq!(
-        mesh.body.as_ref().map(|body| body.as_str()),
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     let complex = result
@@ -1455,7 +1478,7 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert!(!result.report.losses.iter().any(|loss| loss
         .message
         .contains("does not match transferred tessellation")));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1530,17 +1553,17 @@ fn decode_transfers_ap242_semantic_pmi() {
         tolerance.definition,
         PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::Flatness,
-            magnitude: cadmpeg_ir::pmi::PmiValue {
+            magnitude: cadmpeg_ir::PmiValue {
                 value: 0.05,
                 quantity: PmiQuantity::Length,
             },
             datum_system: None,
         }
     ));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
-    result.ir.model.pmi.push(cadmpeg_ir::pmi::PmiAnnotation {
+    result.ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
         id: cadmpeg_ir::ids::PmiId("test:pmi:presentation".into()),
         name: Some("width note".into()),
         targets: Vec::new(),
@@ -1578,12 +1601,12 @@ fn decode_transfers_ap242_semantic_pmi() {
     assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            nominal: Some(cadmpeg_ir::pmi::PmiValue {
+            nominal: Some(cadmpeg_ir::PmiValue {
                 value: 12.0,
                 quantity: PmiQuantity::Length,
             }),
-            lower_deviation: Some(cadmpeg_ir::pmi::PmiValue { value: -0.1, .. }),
-            upper_deviation: Some(cadmpeg_ir::pmi::PmiValue { value: 0.2, .. }),
+            lower_deviation: Some(cadmpeg_ir::PmiValue { value: -0.1, .. }),
+            upper_deviation: Some(cadmpeg_ir::PmiValue { value: 0.2, .. }),
             ..
         }
     )));
@@ -1612,7 +1635,7 @@ fn decode_transfers_ap242_presentation_pmi() {
     assert_eq!(transform.rows[0][3], 10.0);
     assert_eq!(transform.rows[1][3], 20.0);
     assert_eq!(transform.rows[2][3], 30.0);
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let options = StepWriteOptions {
@@ -1658,6 +1681,63 @@ fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 #[test]
+fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(17.,23.,13.));
+#2=CARTESIAN_POINT('',(21.8769469654,17.9785073637,13.));
+#3=CARTESIAN_POINT('',(21.8769469654,28.0214926363,13.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#4,$);
+#6=CIRCLE('',#5,7.);
+#7=TRIMMED_CURVE('',#6,(#2),(#3),.T.,.CARTESIAN.);
+#8=COMPOSITE_CURVE_SEGMENT(.DISCONTINUOUS.,.T.,#7);
+#9=COMPOSITE_CURVE('',(#8),.U.);
+#10=GEOMETRIC_SET('NONE',(#9));
+#11=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#10),#12);
+#12=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    let composite = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "step:data:curve#9")
+        .expect("composite curve");
+    let source = composite
+        .source_object
+        .as_ref()
+        .expect("geometric-set owner");
+    assert_eq!(source.format, "step");
+    assert_eq!(source.object_id, "#9");
+    assert_eq!(source.name, None);
+
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,1.,0.));
+#3=CARTESIAN_POINT('',(2.,0.,0.));
+#4=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#2,#3),.UNSPECIFIED.,.F.,.U.,(3,3),(0.,2.),.UNSPECIFIED.);
+#5=TRIMMED_CURVE('',#4,(#1),(#3),.T.,.CARTESIAN.);
+#6=COMPOSITE_CURVE_SEGMENT(.DISCONTINUOUS.,.T.,#5);
+#7=COMPOSITE_CURVE('',(#6),.U.);
+#8=GEOMETRIC_SET('NONE',(#7));
+#9=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#8),#10);
+#10=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    assert_eq!(result.ir.model.curves.len(), 3);
+    assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn excessive_nurbs_degree_is_rejected_before_knot_allocation() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
@@ -1693,23 +1773,27 @@ fn mapped_representation_dag_is_memoized() {
         let map = 1_000 + level;
         let first = 2_000 + level * 2;
         let second = first + 1;
-        records.push_str(&format!(
+        write!(
+            records,
             "#{representation}=SHAPE_REPRESENTATION('',(#{first},#{second}),$);\n\
 #{map}=REPRESENTATION_MAP($,#{next});\n\
 #{first}=MAPPED_ITEM('',#{map},$);\n\
 #{second}=MAPPED_ITEM('',#{map},$);\n"
-        ));
+        )
+        .expect("write mapped representation fixture");
     }
-    records.push_str(&format!(
+    write!(
+        records,
         "#{}=SHAPE_REPRESENTATION('',(#9000),$);\n#9000=MANIFOLD_SOLID_BREP('',#9001);\n#9001=CLOSED_SHELL('',());",
         100 + depth
-    ));
+    )
+    .expect("write terminal representation fixture");
 
     let result = decode_inline(&records);
-    assert_eq!(result.ir.model.products.len(), 1);
-    assert_eq!(result.ir.model.products[0].bodies.len(), 1);
+    assert_eq!(result.ir.model.product_definitions.len(), 1);
+    assert_eq!(result.ir.model.product_definitions[0].bodies.len(), 1);
     assert_eq!(
-        result.ir.model.products[0].bodies[0].as_str(),
+        result.ir.model.product_definitions[0].bodies[0].as_str(),
         "step:data:body#9000"
     );
 }
@@ -1774,7 +1858,7 @@ fn unresolved_lower_tolerance_does_not_shift_upper_deviation() {
         annotation.definition,
         PmiDefinition::Dimension {
             lower_deviation: None,
-            upper_deviation: Some(cadmpeg_ir::pmi::PmiValue { value, .. }),
+            upper_deviation: Some(cadmpeg_ir::PmiValue { value, .. }),
             ..
         } if (value - 0.2).abs() < 1.0e-12
     )));
@@ -1800,7 +1884,7 @@ fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
     assert!(result.ir.model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            nominal: Some(cadmpeg_ir::pmi::PmiValue { value, .. }),
+            nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
             ..
         } if (value - 127.0).abs() < 1.0e-12
     )));
@@ -1808,7 +1892,7 @@ fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
 
 #[test]
 fn repeated_subassembly_instances_each_receive_the_subtree() {
-    use cadmpeg_ir::product::OccurrenceParent;
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
@@ -1827,13 +1911,19 @@ fn repeated_subassembly_instances_each_receive_the_subtree() {
 #21=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u2','sub two','',#6,#9,$);
 #22=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u3','leaf','',#9,#12,$);",
     );
-    assert_eq!(result.ir.model.product_occurrences.len(), 5);
+    assert_eq!(result.ir.model.occurrences.len(), 5);
     let subassemblies = result
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
-        .filter(|occurrence| occurrence.product.as_str() == "step:product:product#7")
+        .filter(|occurrence| {
+            matches!(
+                &occurrence.prototype,
+                PrototypeReference::Local { definition }
+                    if definition.as_str() == "step:product:product#7"
+            )
+        })
         .collect::<Vec<_>>();
     assert_eq!(subassemblies.len(), 2);
     for subassembly in subassemblies {
@@ -1841,7 +1931,7 @@ fn repeated_subassembly_instances_each_receive_the_subtree() {
             result
                 .ir
                 .model
-                .product_occurrences
+                .occurrences
                 .iter()
                 .filter(|occurrence| matches!(
                     &occurrence.parent,
@@ -1869,14 +1959,18 @@ fn ap203_specified_source_formations_build_occurrence_tree() {
 #10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u1','part instance','',#6,#9,$);",
     );
 
-    assert_eq!(result.ir.model.products.len(), 2);
-    assert_eq!(result.ir.model.product_occurrences.len(), 2);
+    assert_eq!(result.ir.model.product_definitions.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 2);
     assert!(result
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
-        .any(|occurrence| occurrence.product.as_str() == "step:product:product#7"));
+        .any(|occurrence| matches!(
+            &occurrence.prototype,
+            cadmpeg_ir::products::PrototypeReference::Local { definition }
+                if definition.as_str() == "step:product:product#7"
+        )));
     assert!(!result
         .ir
         .native_unknowns("step")
@@ -1943,7 +2037,7 @@ fn ap203e1_does_not_emit_invisibility_entities() {
 
 #[test]
 fn rigid_transform_rejects_reflections() {
-    assert!(!crate::build::is_rigid_transform(&[
+    assert!(!crate::is_rigid_transform(&[
         [-1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
@@ -2053,11 +2147,11 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     });
     let output = export(&ir);
     assert!(!output.contains("COMPOSITE_CURVE("));
-    let mut builder = crate::build::Builder::new(&ir, StepSchema::Ap242Edition3);
+    let mut builder = crate::Builder::new(&ir, StepSchema::Ap242Edition3);
     assert!(builder.emit_curve("composite").is_none());
-    assert!(builder.geom.active_curves.is_empty());
+    assert!(builder.active_curves.is_empty());
     assert!(builder.emit_curve("composite").is_none());
-    assert!(builder.geom.active_curves.is_empty());
+    assert!(builder.active_curves.is_empty());
 }
 
 #[test]
@@ -2177,9 +2271,9 @@ fn every_region_of_a_body_is_retained_as_a_shape_item() {
     region.id.0 = "zzzz:test:region#second".into();
     ir.model.bodies[0].regions.push(region.id.clone());
     ir.model.regions.push(region);
-    let mut builder = crate::build::Builder::new(&ir, StepSchema::Ap242Edition3);
+    let mut builder = crate::Builder::new(&ir, StepSchema::Ap242Edition3);
     builder.build();
-    assert_eq!(builder.links.body_item_refs[body.as_str()].len(), 2);
+    assert_eq!(builder.body_item_refs[body.as_str()].len(), 2);
 }
 
 #[test]
@@ -2223,9 +2317,9 @@ fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     unsupported.id = PmiId("test:pmi:tolerance#other".into());
     unsupported.definition = PmiDefinition::GeometricTolerance {
         tolerance: GeometricToleranceKind::Other("vendor_tolerance".into()),
-        magnitude: cadmpeg_ir::pmi::PmiValue {
+        magnitude: cadmpeg_ir::PmiValue {
             value: 0.1,
-            quantity: cadmpeg_ir::pmi::PmiQuantity::Length,
+            quantity: cadmpeg_ir::PmiQuantity::Length,
         },
         datum_system: None,
     };
@@ -2322,7 +2416,7 @@ fn common_datum_compartment_round_trips_as_one_precedence() {
             modifiers: vec!["least_material_requirement".into()],
         },
     ];
-    let validation = cadmpeg_ir::validate::validate(&ir, Vec::new());
+    let validation = cadmpeg_ir::validate(&ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -2439,7 +2533,7 @@ fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
         PmiDefinition::DatumSystem { references }
             if references.len() == 1 && references[0].common_group.is_none()
     )));
-    let validation = cadmpeg_ir::validate::validate(&result.ir, result.report.losses.clone());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -2656,9 +2750,9 @@ fn every_reference_resolves() {
 fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     let mut buf = Vec::new();
     let report = write_step(&unit_cube(), &mut buf, &StepWriteOptions::default()).unwrap();
-    assert_eq!(report.total_entities, buf_line_count(&buf));
-    assert_eq!(report.entity_counts.get("ADVANCED_FACE"), Some(&6));
-    assert_eq!(report.entity_counts.get("VERTEX_POINT"), Some(&8));
+    assert_eq!(report.census.total(), buf_line_count(&buf));
+    assert_eq!(report.census.counts.get("ADVANCED_FACE"), Some(&6));
+    assert_eq!(report.census.counts.get("VERTEX_POINT"), Some(&8));
     // The cube is fully representable: no error/blocking losses.
     assert_eq!(report.error_count(), 0);
 }
@@ -2884,7 +2978,7 @@ fn edge_without_curve_is_reported_and_omitted() {
 
 #[test]
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
-    let source_object = cadmpeg_ir::provenance::SourceObjectAssociation {
+    let source_object = cadmpeg_ir::SourceObjectAssociation {
         format: "test".into(),
         object_id: "object-0".into(),
         name: None,
@@ -2894,9 +2988,9 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         instance_path: Vec::new(),
     };
     let mut ir = unit_cube();
-    ir.model.subds.push(cadmpeg_ir::subd::SubdSurface {
+    ir.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId("test:step:subd#0".into()),
-        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
+        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
@@ -2919,21 +3013,21 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 
     let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default()).unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message
                 .contains("1 subdivision surface(s) were omitted")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message
                 .contains("1 tessellation(s) require an AP242 target")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Metadata
+        loss.code.category() == cadmpeg_ir::LossCategory::Metadata
             && loss
                 .message
                 .contains("2 source-object association(s) were not represented")
@@ -2993,7 +3087,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     let report = write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
         .expect("polygonal face is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("unknown or STEP-unsupported surface")
     }));
 
@@ -3016,7 +3110,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     )
     .expect("transformed unknown curve is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("STEP-unsupported transform")
     }));
 }
@@ -3035,7 +3129,7 @@ fn signed_analytic_radius_normalization_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("normalized to positive STEP radii")
     }));
 }
@@ -3056,7 +3150,7 @@ fn elliptical_cone_reduction_is_reported() {
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("elliptical cone surface(s)")
     }));
 }
@@ -3096,10 +3190,10 @@ fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::native::NativeRecord {
-            id: "asm-history-0".into(),
-            fields: Default::default(),
-        }],
+        vec![cadmpeg_ir::NativeRecord::new(
+            "asm-history-0",
+            Default::default(),
+        )],
     );
     ir.finalize();
 
@@ -3115,10 +3209,10 @@ fn strict_writer_rejects_before_emitting_bytes() {
     let mut ir = unit_cube();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
-        vec![cadmpeg_ir::native::NativeRecord {
-            id: "asm-history-0".into(),
-            fields: Default::default(),
-        }],
+        vec![cadmpeg_ir::NativeRecord::new(
+            "asm-history-0",
+            Default::default(),
+        )],
     );
     ir.finalize();
     let options = StepWriteOptions {
@@ -3249,6 +3343,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
         id: AppearanceId("test:appearance#black".to_string()),
         name: None,
         asset_guid: None,
+        library_id: None,
         visual_guid: None,
         physical_token: None,
         schema: None,
@@ -3259,7 +3354,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
             b: 0.125,
             a: 1.0,
         }),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -3268,7 +3363,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
@@ -3308,6 +3403,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         id: AppearanceId("test:appearance#black".to_string()),
         name: None,
         asset_guid: None,
+        library_id: None,
         visual_guid: None,
         physical_token: None,
         schema: None,
@@ -3318,7 +3414,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
             b: 0.0,
             a: 1.0,
         }),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -3327,7 +3423,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
 
     let s = export(&ir);
@@ -3339,7 +3435,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Each color's style chain is emitted once and shared; grouping the styled
     // items by their style ref must yield exactly two groups sized 1 and
     // face_count - 1 (the lone override plus every inherited face).
-    let mut per_style: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut per_style = std::collections::BTreeMap::<String, usize>::default();
     for item in &styled {
         // STYLED_ITEM('color',(#psa),#face)
         let psa = item
@@ -3354,554 +3450,5 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     assert_eq!(counts, vec![1, face_count - 1]);
 }
 
-/// S0 golden net: SHA-256-pinned STEP writer output. The deep-modules refactor
-/// moves code across module boundaries inside `cadmpeg-step`; a behavior-
-/// preserving refactor needs an anchor independent of the internal structure
-/// being changed. This freezes `write_step` output as sha256 digests pinned
-/// in-source, so every later writer diff is a byte-exact regression gate rather
-/// than a re-review.
-///
-/// Two surfaces are pinned. `WRITER_GOLDENS` freezes the two IR example fixtures
-/// (`unit_cube`, `directed_subd_sum`) across all six `StepSchema` targets under
-/// otherwise-default `StepWriteOptions` (empty timestamp is written as the fixed
-/// `1970-01-01T00:00:00` epoch, so output is deterministic). `ROUNDTRIP_GOLDENS`
-/// freezes every `tests/fixtures/*.p21` fixture decoded and re-written under
-/// `Ap242Edition3` and `Ap214`; a fixture that cannot round-trip (decode
-/// refuses, or a write refuses) pins the refusal string instead of a hash, which
-/// freezes the success/refusal boundary as coverage.
-///
-/// Digests use `cadmpeg_ir::wire::hash::sha256_hex` (the workspace sha256 helper the
-/// freecad golden harness uses) rather than a fresh `sha2` dev-dependency, so no
-/// `Cargo.toml`/`Cargo.lock` change is needed. Regenerate the pinned tables with
-/// `cargo test -p cadmpeg-step golden::print_goldens -- --ignored --nocapture`
-/// and paste the printed rows back into the two `const` tables.
-mod golden {
-    use std::io::Cursor;
-
-    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
-    use cadmpeg_ir::wire::hash::sha256_hex;
-    use cadmpeg_ir::CadIr;
-
-    use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
-
-    /// The six application-protocol targets, paired with the label used as the
-    /// table key. Covers `Ap203Edition1..=Ap242Edition3`.
-    const SCHEMAS: [(&str, StepSchema); 6] = [
-        ("Ap203Edition1", StepSchema::Ap203Edition1),
-        ("Ap203Edition2", StepSchema::Ap203Edition2),
-        ("Ap214", StepSchema::Ap214),
-        ("Ap242Edition1", StepSchema::Ap242Edition1),
-        ("Ap242Edition2", StepSchema::Ap242Edition2),
-        ("Ap242Edition3", StepSchema::Ap242Edition3),
-    ];
-
-    /// Round-trip schema targets: the AP242 edition-3 long form and AP214.
-    const ROUNDTRIP_SCHEMAS: [(&str, StepSchema); 2] = [
-        ("Ap242Edition3", StepSchema::Ap242Edition3),
-        ("Ap214", StepSchema::Ap214),
-    ];
-
-    /// Default writer options with only `schema` overridden. The empty default
-    /// timestamp pins the header epoch, so digests are stable across runs.
-    fn options(schema: StepSchema) -> StepWriteOptions {
-        StepWriteOptions {
-            schema,
-            ..StepWriteOptions::default()
-        }
-    }
-
-    /// The two IR example fixtures, paired with the label used as the table key.
-    fn examples() -> [(&'static str, CadIr); 2] {
-        [
-            ("unit_cube", cadmpeg_ir::examples::unit_cube()),
-            (
-                "directed_subd_sum",
-                cadmpeg_ir::examples::directed_subd_sum(),
-            ),
-        ]
-    }
-
-    /// Every `tests/fixtures/*.p21` fixture, embedded, paired with its stem.
-    fn fixtures() -> Vec<(&'static str, &'static [u8])> {
-        macro_rules! fixture {
-            ($name:literal) => {
-                (
-                    $name,
-                    include_bytes!(concat!("../tests/fixtures/", $name, ".p21")) as &'static [u8],
-                )
-            };
-        }
-        vec![
-            fixture!("ap203_sheet"),
-            fixture!("ap214_sheet"),
-            fixture!("ap242_assembly"),
-            fixture!("ap242_conversion_units"),
-            fixture!("ap242_degree_cone"),
-            fixture!("ap242_ed3_sections"),
-            fixture!("ap242_external_documents"),
-            fixture!("ap242_geometric_set"),
-            fixture!("ap242_geometry"),
-            fixture!("ap242_mapped_assembly"),
-            fixture!("ap242_minimal"),
-            fixture!("ap242_presentation_pmi"),
-            fixture!("ap242_semantic_pmi"),
-            fixture!("ap242_tessellation"),
-            fixture!("ap242_vertex_loop"),
-            fixture!("complex_instance"),
-            fixture!("strings"),
-        ]
-    }
-
-    /// sha256 of `write_step(ir, opts(schema))`. Under the default `Report`
-    /// policy with a `Vec` sink, `write_step` cannot refuse, so an example golden
-    /// is always a hash.
-    fn writer_hash(ir: &CadIr, schema: StepSchema) -> String {
-        let mut buf = Vec::new();
-        write_step(ir, &mut buf, &options(schema))
-            .expect("writer golden: write_step under Report policy with a Vec sink cannot fail");
-        sha256_hex(&buf)
-    }
-
-    /// A round-trip outcome: either a sha256 of the re-written STEP bytes, or the
-    /// decode/write refusal that stands in for it. A pinned refusal freezes the
-    /// success/refusal boundary and counts as coverage.
-    enum Outcome {
-        Hash(String),
-        Refusal(String),
-    }
-
-    impl Outcome {
-        /// Compares a computed outcome against a pinned row.
-        fn matches(&self, pin: &Pin) -> bool {
-            match (self, pin) {
-                (Outcome::Hash(a), Pin::Hash(b)) => a == b,
-                (Outcome::Refusal(a), Pin::Refusal(b)) => a == b,
-                _ => false,
-            }
-        }
-
-        /// Renders a computed outcome as the `Pin` source literal it should pin to.
-        fn as_pin_literal(&self) -> String {
-            match self {
-                Outcome::Hash(hash) => format!("Pin::Hash(\"{hash}\")"),
-                Outcome::Refusal(message) => format!("Pin::Refusal({message:?})"),
-            }
-        }
-    }
-
-    /// A pinned round-trip row: a fixed hash or a fixed refusal string. Every
-    /// current fixture round-trips under both schemas, so `ROUNDTRIP_GOLDENS`
-    /// holds only `Hash` rows today; `Refusal` is retained because pinning a
-    /// decode/write refusal is the designed way to freeze the success/refusal
-    /// boundary, and `print_goldens` emits it verbatim if a fixture starts
-    /// refusing.
-    #[allow(dead_code)]
-    enum Pin {
-        Hash(&'static str),
-        Refusal(&'static str),
-    }
-
-    impl Pin {
-        fn describe(&self) -> String {
-            match self {
-                Pin::Hash(hash) => format!("Hash({hash})"),
-                Pin::Refusal(message) => format!("Refusal({message})"),
-            }
-        }
-    }
-
-    /// Decodes `bytes` with `StepCodec`, then re-writes under `schema`. Decode or
-    /// write failure becomes a pinned refusal.
-    fn roundtrip_outcome(bytes: &[u8], schema: StepSchema) -> Outcome {
-        let decoded =
-            match StepCodec::default().decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
-                Ok(result) => result,
-                Err(err) => return Outcome::Refusal(format!("decode: {err}")),
-            };
-        let mut buf = Vec::new();
-        match write_step(&decoded.ir, &mut buf, &options(schema)) {
-            Ok(_) => Outcome::Hash(sha256_hex(&buf)),
-            Err(err) => Outcome::Refusal(format!("write: {err}")),
-        }
-    }
-
-    /// `(example, schema, sha256)`. 2 examples x 6 schemas = 12 rows.
-    const WRITER_GOLDENS: &[(&str, &str, &str)] = &[
-        (
-            "unit_cube",
-            "Ap203Edition1",
-            "41fb7c0805b8dcf80c2c0f9621e3e43135870db45579272563055498ea75fafb",
-        ),
-        (
-            "unit_cube",
-            "Ap203Edition2",
-            "7044a4af4816496d1dec2814a3ab131d532de414347b8cc6d3ebe3619a6e2d41",
-        ),
-        (
-            "unit_cube",
-            "Ap214",
-            "a4443f1d97cdc9bb4651cbe046e70f8cf899de1980aaeeeeb16a6adecbea7e7d",
-        ),
-        (
-            "unit_cube",
-            "Ap242Edition1",
-            "3e6180609d599f91d36ba6a248c271a868efa98b198d769cf75d4cd6f415c35f",
-        ),
-        (
-            "unit_cube",
-            "Ap242Edition2",
-            "a4f4bd0c26045bf3685c7a3c657588d1650fff3f6862c79aef5e921dc1bbed0c",
-        ),
-        (
-            "unit_cube",
-            "Ap242Edition3",
-            "007928e140281aa1f057901c28c685f67bf70601ac1d8eeb41404c75500a2a14",
-        ),
-        (
-            "directed_subd_sum",
-            "Ap203Edition1",
-            "e16ed09b646d497d74f4f9b87f2abc2f69897b6b7362942cd984d2798e476b2a",
-        ),
-        (
-            "directed_subd_sum",
-            "Ap203Edition2",
-            "9fe1e2bc775ad9875d85f020d5e81cf05056b9a9a0e0daed4874044fca0e25a8",
-        ),
-        (
-            "directed_subd_sum",
-            "Ap214",
-            "9eb3590fc989eee82af4345cde4ffabbbc510bfc10e0879fabd9bb7a03849abb",
-        ),
-        (
-            "directed_subd_sum",
-            "Ap242Edition1",
-            "553d717fe73dc6e7757b587187c2c8b91b6dfed0ce100243064686f926f70453",
-        ),
-        (
-            "directed_subd_sum",
-            "Ap242Edition2",
-            "dc24c76c432a1764e8abd1e0330256f266fa8b8598cdd62bbbaa1f14094de91e",
-        ),
-        (
-            "directed_subd_sum",
-            "Ap242Edition3",
-            "8f564ebb79d21a4ca349482128c95b5f53e816d1413a4d03a1f61f96fccf4e02",
-        ),
-    ];
-
-    /// `(fixture, schema, pin)`. 17 fixtures x 2 schemas = 34 rows.
-    const ROUNDTRIP_GOLDENS: &[(&str, &str, Pin)] = &[
-        (
-            "ap203_sheet",
-            "Ap242Edition3",
-            Pin::Hash("bc2b6db905a538aa009ce570bb5e25ec15a9f716afb9ef23a2e44884d608921c"),
-        ),
-        (
-            "ap203_sheet",
-            "Ap214",
-            Pin::Hash("262733db93517ea047fc0fd2c455846f9dbb1d91809f38f9ff95510a808eb60a"),
-        ),
-        (
-            "ap214_sheet",
-            "Ap242Edition3",
-            Pin::Hash("cd15a680903ef1d2031efef28a3261c762aaae8e508a925f0d1d247b80ef9312"),
-        ),
-        (
-            "ap214_sheet",
-            "Ap214",
-            Pin::Hash("8ca5515e58ff53da0d8eb25bdabb1593122d5db85b57562ad64e385e3825aa16"),
-        ),
-        (
-            "ap242_assembly",
-            "Ap242Edition3",
-            Pin::Hash("6c39aea7adb6f31a91e3ba40a3452920fd9659186723cea703a12b082ea448db"),
-        ),
-        (
-            "ap242_assembly",
-            "Ap214",
-            Pin::Hash("0bc6646678bdc298e713a68d76b72ae0bf70d19cdc24650bcca8d67bc6fc34ba"),
-        ),
-        (
-            "ap242_conversion_units",
-            "Ap242Edition3",
-            Pin::Hash("0f916b8c468b0fa312fc83c587b8ede9173785cb6cd55cee485d31552259f6c2"),
-        ),
-        (
-            "ap242_conversion_units",
-            "Ap214",
-            Pin::Hash("d88626987d4667b6bdb5c1c2927406b94dab6fa95b320660d1e6187c8964e045"),
-        ),
-        (
-            "ap242_degree_cone",
-            "Ap242Edition3",
-            Pin::Hash("443cb87a8b42437ee254121b43e1aeaf6b173519ccfaf0309ae7f6dbc0775056"),
-        ),
-        (
-            "ap242_degree_cone",
-            "Ap214",
-            Pin::Hash("1436652fc776210992355d0e16ea962aed363a00c0d8f55447a7302bf78b4a07"),
-        ),
-        (
-            "ap242_ed3_sections",
-            "Ap242Edition3",
-            Pin::Hash("e13df86a5c42928f02c07765d14d7be70b749941f794b025adc9b330b0dbe1c6"),
-        ),
-        (
-            "ap242_ed3_sections",
-            "Ap214",
-            Pin::Hash("aeb71ec93a835d9d4dfeba55496f4a1297ac6d27df9e8db68bc5cce27c4cdbbc"),
-        ),
-        (
-            "ap242_external_documents",
-            "Ap242Edition3",
-            Pin::Hash("44bd5837446ba4d2130193bb75ed4b3c3a02b7eb4fec175e2762e46829f707ea"),
-        ),
-        (
-            "ap242_external_documents",
-            "Ap214",
-            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
-        ),
-        (
-            "ap242_geometric_set",
-            "Ap242Edition3",
-            Pin::Hash("c55f54e3aa8cbd32e703b756d7d8f758e106bad2da6dd8924e97fcbdb4b5d253"),
-        ),
-        (
-            "ap242_geometric_set",
-            "Ap214",
-            Pin::Hash("97cc2e43c94b59ea9c1b28d0aa283bc252a71cd84de1839d5112b61294da30d5"),
-        ),
-        (
-            "ap242_geometry",
-            "Ap242Edition3",
-            Pin::Hash("c20f42e2a26c9950c5d2d867968794dab8f681fc127ade6832ab0411bbee9d74"),
-        ),
-        (
-            "ap242_geometry",
-            "Ap214",
-            Pin::Hash("9424c1de3c6984ffe03843993011056beefd6c91797b19c887e16e20c3e84f18"),
-        ),
-        (
-            "ap242_mapped_assembly",
-            "Ap242Edition3",
-            Pin::Hash("780615c9429e279473cfa093946da505d35a3b2cb0f39261969ffc3b9e2f11e7"),
-        ),
-        (
-            "ap242_mapped_assembly",
-            "Ap214",
-            Pin::Hash("fe15af32959595f507ce2f02093f01decf3108faf30510e37b8626b4887d165b"),
-        ),
-        (
-            "ap242_minimal",
-            "Ap242Edition3",
-            Pin::Hash("44bd5837446ba4d2130193bb75ed4b3c3a02b7eb4fec175e2762e46829f707ea"),
-        ),
-        (
-            "ap242_minimal",
-            "Ap214",
-            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
-        ),
-        (
-            "ap242_presentation_pmi",
-            "Ap242Edition3",
-            Pin::Hash("7b7fe445171424c4a93d23b1bd34f03e8ac64dd2cf071e1a7aeadf3b9001f3fa"),
-        ),
-        (
-            "ap242_presentation_pmi",
-            "Ap214",
-            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
-        ),
-        (
-            "ap242_semantic_pmi",
-            "Ap242Edition3",
-            Pin::Hash("75fd6f1c55b7a82b4d2e308bf048df440d50a3272a002234b82d4d3534e7663d"),
-        ),
-        (
-            "ap242_semantic_pmi",
-            "Ap214",
-            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
-        ),
-        (
-            "ap242_tessellation",
-            "Ap242Edition3",
-            Pin::Hash("bf2c4d3cf5498c8782b7fd41e83fd79be47a941a9908c9501f6ed026582429b4"),
-        ),
-        (
-            "ap242_tessellation",
-            "Ap214",
-            Pin::Hash("2fc86fb810cd276ee64b01ba556c1315c093621b3a132a2061dfcf046763cbb9"),
-        ),
-        (
-            "ap242_vertex_loop",
-            "Ap242Edition3",
-            Pin::Hash("33bb68af326308714d6708f0c2ae06f66f7e27b92a26df084319068ff02dd7e6"),
-        ),
-        (
-            "ap242_vertex_loop",
-            "Ap214",
-            Pin::Hash("6172340a047123bdfa087bde94e80cb38af22ca3d534c5c45676cd0c91a32495"),
-        ),
-        (
-            "complex_instance",
-            "Ap242Edition3",
-            Pin::Hash("887b2574d978a876af85956c6ddf34a28767b56bfbcdd08361f0e81f773ee6a4"),
-        ),
-        (
-            "complex_instance",
-            "Ap214",
-            Pin::Hash("79f93adfa3955c0e8a961aa93f0f999162ea938cd9c4c8d4fcbc56ab1e93754d"),
-        ),
-        (
-            "strings",
-            "Ap242Edition3",
-            Pin::Hash("44bd5837446ba4d2130193bb75ed4b3c3a02b7eb4fec175e2762e46829f707ea"),
-        ),
-        (
-            "strings",
-            "Ap214",
-            Pin::Hash("2f9030385592bb5f892d40d5cd20a29afa64871e9c37c161238ac0fca05d053a"),
-        ),
-    ];
-
-    fn writer_pin(example: &str, schema: &str) -> Option<&'static str> {
-        WRITER_GOLDENS
-            .iter()
-            .find(|(e, s, _)| *e == example && *s == schema)
-            .map(|(_, _, hash)| *hash)
-    }
-
-    fn roundtrip_pin(fixture: &str, schema: &str) -> Option<&'static Pin> {
-        ROUNDTRIP_GOLDENS
-            .iter()
-            .find(|(f, s, _)| *f == fixture && *s == schema)
-            .map(|(_, _, pin)| pin)
-    }
-
-    /// Every example x schema must hash to its pinned writer digest.
-    #[test]
-    fn writer_goldens_match() {
-        assert_eq!(
-            WRITER_GOLDENS.len(),
-            examples().len() * SCHEMAS.len(),
-            "writer golden table size must equal examples x schemas"
-        );
-        let mut failures = Vec::new();
-        for (example, ir) in examples() {
-            for (label, schema) in SCHEMAS {
-                let actual = writer_hash(&ir, schema);
-                match writer_pin(example, label) {
-                    Some(expected) if expected == actual => {}
-                    Some(expected) => failures.push(format!(
-                        "writer `{example}` / `{label}`: pinned {expected} != actual {actual}"
-                    )),
-                    None => failures.push(format!("writer `{example}` / `{label}`: no pinned row")),
-                }
-            }
-        }
-        assert!(
-            failures.is_empty(),
-            "{} writer golden(s) drifted; regenerate with `cargo test -p cadmpeg-step golden::print_goldens -- --ignored --nocapture`:\n{}",
-            failures.len(),
-            failures.join("\n")
-        );
-    }
-
-    /// Every fixture x schema must match its pinned round-trip outcome (hash or
-    /// refusal).
-    #[test]
-    fn roundtrip_goldens_match() {
-        assert_eq!(
-            ROUNDTRIP_GOLDENS.len(),
-            fixtures().len() * ROUNDTRIP_SCHEMAS.len(),
-            "round-trip golden table size must equal fixtures x schemas"
-        );
-        let mut failures = Vec::new();
-        for (fixture, bytes) in fixtures() {
-            for (label, schema) in ROUNDTRIP_SCHEMAS {
-                let actual = roundtrip_outcome(bytes, schema);
-                match roundtrip_pin(fixture, label) {
-                    Some(pin) if actual.matches(pin) => {}
-                    Some(pin) => failures.push(format!(
-                        "roundtrip `{fixture}` / `{label}`: pinned {} != actual {}",
-                        pin.describe(),
-                        actual.as_pin_literal()
-                    )),
-                    None => {
-                        failures.push(format!("roundtrip `{fixture}` / `{label}`: no pinned row"))
-                    }
-                }
-            }
-        }
-        assert!(
-            failures.is_empty(),
-            "{} round-trip golden(s) drifted; regenerate with `cargo test -p cadmpeg-step golden::print_goldens -- --ignored --nocapture`:\n{}",
-            failures.len(),
-            failures.join("\n")
-        );
-    }
-
-    /// `write_step` output must be byte-identical across two runs with identical
-    /// options. Covers the pure-writer path (example IR, no decode) and the
-    /// decoded-fixture path (decode once, write twice) so the check isolates
-    /// writer nondeterminism from decode nondeterminism.
-    #[test]
-    fn write_step_output_is_deterministic() {
-        for (example, ir) in examples() {
-            for (label, schema) in SCHEMAS {
-                let mut first = Vec::new();
-                let mut second = Vec::new();
-                write_step(&ir, &mut first, &options(schema)).expect("first write");
-                write_step(&ir, &mut second, &options(schema)).expect("second write");
-                assert!(
-                    first == second,
-                    "writer `{example}` / `{label}`: write_step is nondeterministic across two runs"
-                );
-            }
-        }
-        for (fixture, bytes) in fixtures() {
-            let Ok(decoded) =
-                StepCodec::default().decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            else {
-                continue;
-            };
-            for (label, schema) in ROUNDTRIP_SCHEMAS {
-                let mut first = Vec::new();
-                let mut second = Vec::new();
-                if write_step(&decoded.ir, &mut first, &options(schema)).is_err() {
-                    continue;
-                }
-                write_step(&decoded.ir, &mut second, &options(schema)).expect("second write");
-                assert!(
-                    first == second,
-                    "roundtrip `{fixture}` / `{label}`: write_step is nondeterministic across two runs"
-                );
-            }
-        }
-    }
-
-    /// Regeneration path (not run by default). Prints both pinned tables with
-    /// freshly computed values, ready to paste into the `const` tables above.
-    #[test]
-    #[ignore = "regeneration helper; run with --ignored --nocapture"]
-    fn print_goldens() {
-        println!("\n// ==== WRITER_GOLDENS ====");
-        for (example, ir) in examples() {
-            for (label, schema) in SCHEMAS {
-                println!(
-                    "        (\"{example}\", \"{label}\", \"{}\"),",
-                    writer_hash(&ir, schema)
-                );
-            }
-        }
-        println!("\n// ==== ROUNDTRIP_GOLDENS ====");
-        for (fixture, bytes) in fixtures() {
-            for (label, schema) in ROUNDTRIP_SCHEMAS {
-                println!(
-                    "        (\"{fixture}\", \"{label}\", {}),",
-                    roundtrip_outcome(bytes, schema).as_pin_literal()
-                );
-            }
-        }
-        println!();
-    }
-}
+#[path = "integration_tests.rs"]
+mod integration_tests;

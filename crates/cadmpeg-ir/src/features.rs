@@ -3,11 +3,13 @@
 
 use std::collections::BTreeMap;
 
+use crate::assets::AssetId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, HistoricalBodyId, HistoricalEdgeId,
-    HistoricalFaceId, SubdId, VertexId,
+    HistoricalFaceId, OccurrenceId, SubdId, VertexId,
 };
-use crate::math::{Point3, Vector3};
+use crate::math::{Point2, Point3, Vector3};
+use crate::products::JointId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +18,7 @@ use serde::{Deserialize, Serialize};
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct FeatureId(pub String);
+pub struct FeatureId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
 
 impl FeatureId {
     /// Borrow the underlying id string.
@@ -42,7 +44,9 @@ impl<S: Into<String>> From<S> for FeatureId {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct ConfigurationId(pub String);
+pub struct ConfigurationId(
+    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+);
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -158,7 +162,9 @@ pub struct ConfigurationFeatureState {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct ParameterId(pub String);
+pub struct ParameterId(
+    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+);
 
 /// A named design expression, optionally owned by a construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -390,6 +396,16 @@ pub enum FeatureDefinition {
         /// Newly created body copies in source order.
         bodies: BodySelection,
     },
+    /// External component occurrence introduced into an assembly timeline.
+    InsertComponent {
+        /// Placed occurrence created by this history operation.
+        occurrence: OccurrenceId,
+    },
+    /// Assembly constraint introduced into the product structure.
+    AssemblyJoint {
+        /// Joint created by this history operation.
+        joint: JointId,
+    },
     /// Freeform modeling session represented by its final subdivision cages.
     Form {
         /// Ordered control cages committed by the session.
@@ -405,6 +421,22 @@ pub enum FeatureDefinition {
         /// Axial extent of the annotation, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extent: Option<CosmeticThreadExtent>,
+    },
+    /// Raster reference image placed in model space.
+    ReferenceImage {
+        /// Embedded or external raster resource.
+        asset: AssetId,
+        /// Origin of the image plane in model space.
+        origin: Point3,
+        /// Unit direction of increasing image u coordinate.
+        u_axis: Vector3,
+        /// Unit direction of increasing image v coordinate.
+        v_axis: Vector3,
+        /// Opposite corners of the image rectangle in plane-local millimeters.
+        bounds: [Point2; 2],
+        /// Normalized image opacity.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opacity: Option<f64>,
     },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {
@@ -533,6 +565,8 @@ pub enum FeatureDefinition {
         dimensions: Option<[Length; 3]>,
         /// Local-to-model placement, when resolved.
         placement: Option<crate::transform::Transform>,
+        /// Whether the primitive creates or combines material.
+        op: BooleanOp,
     },
     /// Parametric model-space curve defined by coordinate expressions.
     EquationCurve {
@@ -772,14 +806,13 @@ pub enum FeatureDefinition {
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
-    /// Sweep of a profile along a path.
+    /// Sweep of a referenced or generated cross-section along a path.
     Sweep {
-        /// Cross-section swept along the path, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        profile: Option<ProfileRef>,
+        /// Primary cross-section swept along the path.
+        section: SweepSection,
         /// Additional cross-sections after the primary profile, in path order.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        sections: Vec<ProfileRef>,
+        sections: Vec<SweepSection>,
         /// Trajectory followed by the profile, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<PathRef>,
@@ -803,6 +836,15 @@ pub enum FeatureDefinition {
         /// Total profile twist along the path, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         twist: Option<Angle>,
+        /// Fractions of the selected path swept on either side of the profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path_extent: Option<SweepPathExtent>,
+        /// Guide rail and its independently consumed extent, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guide_rail: Option<SweepGuideRail>,
+        /// Profile taper angle over the swept extent, when specified.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taper: Option<Angle>,
         /// End-to-start profile scale ratio, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scale: Option<f64>,
@@ -900,6 +942,9 @@ pub enum FeatureDefinition {
     },
     /// Thin-wall shell operation.
     Shell {
+        /// Bodies explicitly selected as shell inputs, when the source names them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bodies: Option<BodySelection>,
         /// Faces removed to open the shell.
         removed_faces: FaceSelection,
         /// Wall thickness left after shelling, when resolved.
@@ -1090,6 +1135,9 @@ pub enum FeatureDefinition {
         tools: BodySelection,
         /// Join, cut, or intersection operation.
         op: BooleanOp,
+        /// Whether tool bodies remain present after the Boolean result is created.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        keep_tools: bool,
     },
     /// Creates solid bodies from selected cells enclosed by boundary bodies.
     BoundaryFill {
@@ -1123,6 +1171,14 @@ pub enum FeatureDefinition {
         targets: BodySelection,
         /// Surface faces extended as necessary to partition the targets.
         tools: FaceSelection,
+    },
+    /// Partitions selected faces along selected sketch curves while retaining
+    /// every resulting face region.
+    SplitFace {
+        /// Faces partitioned by the operation.
+        targets: FaceSelection,
+        /// Sketch curves projected onto the target faces.
+        tool: PathRef,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
@@ -1359,6 +1415,8 @@ pub enum PatternSeed {
     Faces(FaceSelection),
     /// Selected bodies, including bodies in an intermediate regenerated result.
     Bodies(BodySelection),
+    /// Selected placed component occurrences.
+    Occurrences(Vec<OccurrenceId>),
 }
 
 /// External model format consumed by an imported-geometry feature.
@@ -2081,6 +2139,16 @@ pub enum BodySelection {
         /// Format-native selection expression.
         native: String,
     },
+    /// Bodies resolved in the containing feature's input topology from
+    /// independently retained native selection members.
+    HistoricalSet {
+        /// Input topology containing every selected body.
+        state: FeatureInputTopologyId,
+        /// State-local body identities in native member order.
+        bodies: Vec<HistoricalBodyId>,
+        /// Ordered format-native selection members.
+        native: Vec<String>,
+    },
     /// Bodies in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.
     Generated {
@@ -2098,6 +2166,9 @@ pub enum BodySelection {
     },
     /// Format-native selection expression.
     Native(String),
+    /// Ordered format-native selection members that have no enclosing native
+    /// group record.
+    NativeSet(Vec<String>),
 }
 
 /// Persistent identity of a body in one regenerated feature result.
@@ -2502,6 +2573,68 @@ pub enum SweepMode {
     Surface,
 }
 
+/// Directed fractions of a sweep path consumed from the profile location.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SweepPathExtent {
+    /// Fraction consumed in the path's forward traversal direction.
+    pub along_fraction: f64,
+    /// Fraction consumed in the path's reverse traversal direction.
+    pub against_fraction: f64,
+}
+
+/// Guide rail controlling a sweep, with its directed consumed extent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SweepGuideRail {
+    /// Ordered guide trajectory.
+    pub path: PathRef,
+    /// Fractions consumed on either side of the profile location.
+    pub extent: SweepPathExtent,
+}
+
+/// Cross-section owned or referenced by a sweep construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SweepSection {
+    /// The source requires a cross-section, but its carrier is unresolved.
+    Unresolved(Option<String>),
+    /// Cross-section supplied by referenced profile geometry.
+    Profile(ProfileRef),
+    /// Cross-section generated by the sweep construction itself.
+    Generated(GeneratedSweepSection),
+}
+
+impl SweepSection {
+    /// Returns the referenced profile when this section does not own its geometry.
+    pub fn referenced_profile(&self) -> Option<&ProfileRef> {
+        match self {
+            Self::Profile(profile) => Some(profile),
+            Self::Unresolved(_) | Self::Generated(_) => None,
+        }
+    }
+
+    /// Returns the mutable referenced profile when this section does not own its geometry.
+    pub fn referenced_profile_mut(&mut self) -> Option<&mut ProfileRef> {
+        match self {
+            Self::Profile(profile) => Some(profile),
+            Self::Unresolved(_) | Self::Generated(_) => None,
+        }
+    }
+}
+
+/// Cross-section geometry generated and owned by a sweep construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "shape", rename_all = "snake_case")]
+pub enum GeneratedSweepSection {
+    /// Filled or hollow circular region centered on the sweep path.
+    CircularRegion {
+        /// Outer radius of the circular region.
+        outer_radius: Length,
+        /// Inward radial wall thickness. Absence selects a filled disk.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wall_thickness: Option<Length>,
+    },
+}
+
 /// One directed use of a solved sketch curve in an arrangement boundary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchProfileBoundaryUse {
@@ -2795,6 +2928,13 @@ pub enum ProfileRef {
         /// Connected regions in source selection order.
         regions: Vec<SketchProfileRegion>,
     },
+    /// Exact ordered sketch entities forming an open or closed profile.
+    SketchEntities {
+        /// Sketch containing every selected entity.
+        sketch: crate::sketches::SketchId,
+        /// Selected entities in source order.
+        entities: Vec<crate::sketches::SketchEntityId>,
+    },
     /// Source-native selection within a known neutral sketch.
     SketchSelection {
         /// Sketch containing the unresolved selected geometry.
@@ -2881,6 +3021,13 @@ pub enum PathRef {
     Native(String),
     /// Ordered geometry from a neutral sketch.
     Sketch(crate::sketches::SketchId),
+    /// Ordered selected curves from one neutral planar sketch.
+    SketchCurves {
+        /// Sketch containing every selected curve.
+        sketch: crate::sketches::SketchId,
+        /// Selected curve identities in source order.
+        curves: Vec<crate::sketches::SketchEntityId>,
+    },
     /// Source-native curve selection within a known neutral spatial sketch.
     SpatialSketchSelection {
         /// Spatial sketch containing the selected curves.

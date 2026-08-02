@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native Rhino 3DM archive writing.
 
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use sha2::{Digest, Sha256};
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
+
+pub(crate) trait WriteSeek: Write + Seek {}
+impl<T: Write + Seek> WriteSeek for T {}
 
 const TCODE_PROPERTIES_TABLE: u32 = 0x1000_0014;
 const TCODE_SETTINGS_TABLE: u32 = 0x1000_0015;
@@ -76,45 +79,56 @@ const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
-    let plan = prepare_write(ir)?;
-    let mut objects = plan
-        .breps
-        .iter()
-        .map(|prepared| {
-            let scope = &prepared.scope;
-            brep_object_record(
-                &prepared.payload,
-                &scope.body.id.0,
-                scope.body.name.as_deref(),
-                scope.body.color,
-                scope.body.visible,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut staged = tempfile::tempfile()?;
+    write_seekable(ir, version, &mut staged)?;
+    staged.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut staged, output)?;
+    Ok(())
+}
 
-    objects.extend(
-        ir.model
-            .points
-            .iter()
-            .filter(|point| !plan.topology_points.contains(&point.id.0))
-            .map(|point| {
-                let position = point.position;
-                let mut payload = vec![0x10];
-                payload.extend(position.x.to_le_bytes());
-                payload.extend(position.y.to_le_bytes());
-                payload.extend(position.z.to_le_bytes());
-                attributed_object_record(1, POINT_CLASS, &payload, &point.id.0, None, None, None)
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-    for group in plan.point_groups {
+pub(crate) fn write_seekable(
+    ir: &CadIr,
+    version: u64,
+    output: &mut dyn WriteSeek,
+) -> Result<(), CodecError> {
+    let mut plan = prepare_write(ir)?;
+    write_archive_prefix(ir, version, output)?;
+    let table_start = output.stream_position()?;
+    output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
+    output.write_all(&0_i64.to_le_bytes())?;
+    let body_start = output.stream_position()?;
+
+    plan.brep_records.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut plan.brep_records, output)?;
+    for point in ir
+        .model
+        .points
+        .iter()
+        .filter(|point| !plan.topology_points.contains(&point.id.0))
+    {
+        let position = point.position;
+        let mut payload = vec![0x10];
+        payload.extend(position.x.to_le_bytes());
+        payload.extend(position.y.to_le_bytes());
+        payload.extend(position.z.to_le_bytes());
+        output.write_all(&attributed_object_record(
+            1,
+            POINT_CLASS,
+            &payload,
+            &point.id.0,
+            None,
+            None,
+            None,
+        )?)?;
+    }
+    for group in &plan.point_groups {
         if group.points.len() == 1 {
             let point = group.points[0];
             let mut payload = vec![0x10];
             payload.extend(point.x.to_le_bytes());
             payload.extend(point.y.to_le_bytes());
             payload.extend(point.z.to_le_bytes());
-            objects.push(attributed_object_record(
+            output.write_all(&attributed_object_record(
                 1,
                 POINT_CLASS,
                 &payload,
@@ -122,9 +136,9 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
                 group.name.as_deref(),
                 group.color,
                 group.visible,
-            )?);
+            )?)?;
         } else {
-            objects.push(attributed_object_record(
+            output.write_all(&attributed_object_record(
                 2,
                 POINT_CLOUD_CLASS,
                 &point_cloud_payload(&group.points),
@@ -132,15 +146,11 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
                 group.name.as_deref(),
                 group.color,
                 group.visible,
-            )?);
+            )?)?;
         }
     }
     for curve in &ir.model.curves {
-        if plan
-            .breps
-            .iter()
-            .any(|prepared| prepared.scope.curves.contains(&curve.id.0))
-        {
+        if plan.topology_curves.contains(&curve.id.0) {
             continue;
         }
         let (class, payload) = match &curve.geometry {
@@ -156,7 +166,7 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             CurveGeometry::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
             _ => unreachable!("representability checked before serialization"),
         };
-        objects.push(attributed_object_record(
+        output.write_all(&attributed_object_record(
             4,
             class,
             &payload,
@@ -164,14 +174,10 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             None,
             None,
             None,
-        )?);
+        )?)?;
     }
     for surface in &ir.model.surfaces {
-        if plan
-            .breps
-            .iter()
-            .any(|prepared| prepared.scope.surfaces.contains(&surface.id.0))
-        {
+        if plan.topology_surfaces.contains(&surface.id.0) {
             continue;
         }
         let (class, payload) = match &surface.geometry {
@@ -186,7 +192,7 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
             _ => unreachable!("representability checked before serialization"),
         };
-        objects.push(attributed_object_record(
+        output.write_all(&attributed_object_record(
             8,
             class,
             &payload,
@@ -194,32 +200,44 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             None,
             None,
             None,
-        )?);
+        )?)?;
     }
     for mesh in &ir.model.tessellations {
         let payload = mesh_payload(mesh, version);
-        objects.push(mesh_object_record(&payload, &mesh.id)?);
+        output.write_all(&mesh_object_record(&payload, &mesh.id)?)?;
     }
 
-    write_archive(ir, version, &objects, output)
+    output.write_all(&short_chunk(TCODE_ENDOFTABLE, 0))?;
+    let table_end = output.stream_position()?;
+    let body_len = i64::try_from(table_end - body_start)
+        .map_err(|_| CodecError::Malformed("3DM object table size overflow".into()))?;
+    output.seek(SeekFrom::Start(table_start + 4))?;
+    output.write_all(&body_len.to_le_bytes())?;
+    output.seek(SeekFrom::Start(table_end))?;
+    output.write_all(&table(TCODE_HISTORY_RECORD_TABLE, &[]))?;
+    let final_size = output
+        .stream_position()?
+        .checked_add(20)
+        .ok_or_else(|| CodecError::Malformed("3DM output size overflow".into()))?;
+    output.write_all(&long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes()))?;
+    Ok(())
 }
 
-fn write_archive(
+fn write_archive_prefix(
     ir: &CadIr,
     version: u64,
-    objects: &[Vec<u8>],
-    output: &mut dyn Write,
+    output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
-    let mut bytes = header(version)?;
-    bytes.extend(long_chunk(1, b"cadmpeg"));
-    bytes.extend(table(
+    output.write_all(&header(version)?)?;
+    output.write_all(&long_chunk(1, b"cadmpeg"))?;
+    output.write_all(&table(
         TCODE_PROPERTIES_TABLE,
         &[short_chunk(TCODE_PROPERTIES_OPENNURBS_VERSION, 200_712_190)],
-    ));
-    bytes.extend(table(
+    ))?;
+    output.write_all(&table(
         TCODE_SETTINGS_TABLE,
         &[units_record(ir.tolerances.linear, ir.tolerances.angular)],
-    ));
+    ))?;
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -232,43 +250,26 @@ fn write_archive(
         TCODE_HATCH_PATTERN_TABLE,
         TCODE_INSTANCE_DEFINITION_TABLE,
     ] {
-        bytes.extend(table(typecode, &[]));
+        output.write_all(&table(typecode, &[]))?;
         if typecode == TCODE_LINETYPE_TABLE {
-            bytes.extend(table(
+            output.write_all(&table(
                 TCODE_LAYER_TABLE,
                 &[zero_crc_chunk(
                     TCODE_LAYER_RECORD,
                     &class_wrapper(LAYER_CLASS, &default_layer_payload()),
                 )],
-            ));
+            ))?;
         }
     }
-    bytes.extend(table(TCODE_OBJECT_TABLE, objects));
-    bytes.extend(table(TCODE_HISTORY_RECORD_TABLE, &[]));
-    let final_size = bytes
-        .len()
-        .checked_add(20)
-        .ok_or_else(|| CodecError::Malformed("3DM output size overflow".into()))?;
-    bytes.extend(long_chunk(
-        TCODE_ENDOFFILE,
-        &(final_size as u64).to_le_bytes(),
-    ));
-    output.write_all(&bytes)?;
     Ok(())
 }
 
 struct BrepScope {
     ir: CadIr,
-    body: cadmpeg_ir::topology::Body,
     points: std::collections::BTreeSet<String>,
     surfaces: std::collections::BTreeSet<String>,
     curves: std::collections::BTreeSet<String>,
     pcurves: std::collections::BTreeSet<String>,
-}
-
-struct PreparedBrep {
-    scope: BrepScope,
-    payload: BrepPayload,
 }
 
 struct BrepPayload {
@@ -277,8 +278,10 @@ struct BrepPayload {
 }
 
 struct WritePlan {
-    breps: Vec<PreparedBrep>,
+    brep_records: std::fs::File,
     topology_points: std::collections::BTreeSet<String>,
+    topology_curves: std::collections::BTreeSet<String>,
+    topology_surfaces: std::collections::BTreeSet<String>,
     point_groups: Vec<PointGroup>,
 }
 
@@ -397,59 +400,77 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             }
         }
 
-        let mut scoped = ir.clone();
-        scoped
-            .model
-            .bodies
-            .retain(|candidate| candidate.id == body.id);
-        scoped
-            .model
+        let mut scoped = CadIr::empty(ir.units.clone());
+        scoped.tolerances = ir.tolerances;
+        scoped.model.bodies.push(body.clone());
+        scoped.model.regions = model
             .regions
-            .retain(|entity| regions.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| regions.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.shells = model
             .shells
-            .retain(|entity| shells.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| shells.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.faces = model
             .faces
-            .retain(|entity| faces.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| faces.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.loops = model
             .loops
-            .retain(|entity| loops.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| loops.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.coedges = model
             .coedges
-            .retain(|entity| coedges.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| coedges.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.edges = model
             .edges
-            .retain(|entity| edges.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| edges.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.vertices = model
             .vertices
-            .retain(|entity| vertices.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| vertices.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.points = model
             .points
-            .retain(|entity| points.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| points.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.surfaces = model
             .surfaces
-            .retain(|entity| surfaces.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| surfaces.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.curves = model
             .curves
-            .retain(|entity| curves.contains(&entity.id.0));
-        scoped
-            .model
+            .iter()
+            .filter(|entity| curves.contains(&entity.id.0))
+            .cloned()
+            .collect();
+        scoped.model.pcurves = model
             .pcurves
-            .retain(|entity| pcurves.contains(&entity.id.0));
-        scoped.model.tessellations.clear();
+            .iter()
+            .filter(|entity| pcurves.contains(&entity.id.0))
+            .cloned()
+            .collect();
         scopes.push(BrepScope {
             ir: scoped,
-            body: body.clone(),
             points,
             surfaces,
             curves,
@@ -463,45 +484,67 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
     use cadmpeg_ir::topology::BodyKind;
     use std::collections::BTreeSet;
 
-    let mut scoped = ir.clone();
-    scoped
+    let mut scoped = CadIr::empty(ir.units.clone());
+    scoped.tolerances = ir.tolerances;
+    scoped.model.bodies = ir
         .model
         .bodies
-        .retain(|body| body.kind == BodyKind::General);
+        .iter()
+        .filter(|body| body.kind == BodyKind::General)
+        .cloned()
+        .collect();
     let bodies = scoped
         .model
         .bodies
         .iter()
         .map(|body| body.id.0.clone())
         .collect::<BTreeSet<_>>();
-    scoped
+    scoped.model.regions = ir
         .model
         .regions
-        .retain(|region| bodies.contains(&region.body.0));
+        .iter()
+        .filter(|region| bodies.contains(&region.body.0))
+        .cloned()
+        .collect();
     let regions = scoped
         .model
         .regions
         .iter()
         .map(|region| region.id.0.clone())
         .collect::<BTreeSet<_>>();
-    scoped
+    scoped.model.shells = ir
         .model
         .shells
-        .retain(|shell| regions.contains(&shell.region.0));
+        .iter()
+        .filter(|shell| regions.contains(&shell.region.0))
+        .cloned()
+        .collect();
     let vertices = scoped
         .model
         .shells
         .iter()
         .flat_map(|shell| shell.free_vertices.iter().map(|id| id.0.clone()))
         .collect::<BTreeSet<_>>();
-    scoped
+    scoped.model.vertices = ir
         .model
         .vertices
-        .retain(|vertex| vertices.contains(&vertex.id.0));
-    scoped.model.faces.clear();
-    scoped.model.loops.clear();
-    scoped.model.coedges.clear();
-    scoped.model.edges.clear();
+        .iter()
+        .filter(|vertex| vertices.contains(&vertex.id.0))
+        .cloned()
+        .collect();
+    let points = scoped
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.0.as_str())
+        .collect::<BTreeSet<_>>();
+    scoped.model.points = ir
+        .model
+        .points
+        .iter()
+        .filter(|point| points.contains(point.id.0.as_str()))
+        .cloned()
+        .collect();
     scoped
 }
 
@@ -565,32 +608,28 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
         ));
     }
     let breps = brep_scopes(ir)?;
-    let prepared_breps = breps
-        .into_iter()
-        .map(|scope| {
-            let payload = planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "body {} topology is not a writable Brep",
-                    scope.body.id.0
-                ))
-            })?;
-            Ok(PreparedBrep { scope, payload })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let used_pcurves = prepared_breps
+    let used_pcurves = breps
         .iter()
-        .flat_map(|prepared| prepared.scope.pcurves.iter())
+        .flat_map(|scope| scope.pcurves.iter())
         .collect::<std::collections::BTreeSet<_>>();
     if used_pcurves.len() != model.pcurves.len() {
         return Err(CodecError::NotImplemented(
             "pcurves without writable Brep coedge ownership are not writable".into(),
         ));
     }
+    let topology_curves = breps
+        .iter()
+        .flat_map(|scope| scope.curves.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>();
+    let topology_surfaces = breps
+        .iter()
+        .flat_map(|scope| scope.surfaces.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>();
     let general = general_topology_ir(ir);
     let scoped_count = |select: fn(&cadmpeg_ir::document::Model) -> usize| {
-        prepared_breps
+        breps
             .iter()
-            .map(|prepared| select(&prepared.scope.ir.model))
+            .map(|scope| select(&scope.ir.model))
             .sum::<usize>()
             + select(&general.model)
     };
@@ -608,14 +647,11 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
         ));
     }
     let (mut topology_points, point_groups) = free_vertex_groups(&general)?;
-    for prepared in &prepared_breps {
-        topology_points.extend(prepared.scope.points.iter().cloned());
+    for scope in &breps {
+        topology_points.extend(scope.points.iter().cloned());
     }
     for curve in &model.curves {
-        if prepared_breps
-            .iter()
-            .any(|prepared| prepared.scope.curves.contains(&curve.id.0))
-        {
+        if topology_curves.contains(&curve.id.0) {
             continue;
         }
         if curve.source_object.is_some() {
@@ -661,10 +697,7 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
         }
     }
     for surface in &model.surfaces {
-        if prepared_breps
-            .iter()
-            .any(|prepared| prepared.scope.surfaces.contains(&surface.id.0))
-        {
+        if topology_surfaces.contains(&surface.id.0) {
             continue;
         }
         if surface.source_object.is_some() {
@@ -693,14 +726,33 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
     for mesh in &model.tessellations {
         check_mesh(mesh)?;
     }
+    let mut brep_records = tempfile::tempfile()?;
+    for scope in &breps {
+        let body = &scope.ir.model.bodies[0];
+        let payload = planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "body {} topology is not a writable Brep",
+                body.id.0
+            ))
+        })?;
+        brep_records.write_all(&brep_object_record(
+            &payload,
+            &body.id.0,
+            body.name.as_deref(),
+            body.color,
+            body.visible,
+        )?)?;
+    }
     Ok(WritePlan {
-        breps: prepared_breps,
+        brep_records,
         topology_points,
+        topology_curves,
+        topology_surfaces,
         point_groups,
     })
 }
 
-fn rewritable_generated_namespace(namespace: &cadmpeg_ir::native::NativeNamespace) -> bool {
+fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bool {
     const REGENERATED: &[&str] = &[
         "byte_spans",
         "document_settings",
@@ -722,16 +774,10 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::native::NativeNamespac
     let opaque = namespace.arenas.get("opaque_records");
     let generated_comment = opaque.is_some_and(|records| {
         records.iter().any(|record| {
-            record.id == "rhino:source:opaque#comment"
-                && record
-                    .fields
-                    .get("typecode")
-                    .and_then(serde_json::Value::as_str)
-                    == Some("0x00000001")
-                && record
-                    .fields
-                    .get("data")
-                    .and_then(serde_json::Value::as_str)
+            let fields = record.fields();
+            record.id() == "rhino:source:opaque#comment"
+                && fields.get("typecode").and_then(serde_json::Value::as_str) == Some("0x00000001")
+                && fields.get("data").and_then(serde_json::Value::as_str)
                     == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw==")
         })
     });
@@ -740,8 +786,8 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::native::NativeNamespac
             records.iter().any(|record| {
                 !matches!(
                     record
-                        .fields
-                        .get("typecode")
+                        .field("typecode")
+                        .as_ref()
                         .and_then(serde_json::Value::as_str),
                     Some("0x00000001" | "0xa0000026" | "0x20008031" | "0x20008050")
                 )
@@ -771,8 +817,8 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::native::NativeNamespac
     namespace.arenas.get("unknowns").is_none_or(|records| {
         records.iter().all(|record| {
             record
-                .fields
-                .get("links")
+                .field("links")
+                .as_ref()
                 .and_then(serde_json::Value::as_array)
                 .is_some_and(|links| {
                     !links.is_empty()
@@ -794,46 +840,49 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::native::NativeNamespac
     })
 }
 
-fn default_native_layer(record: &cadmpeg_ir::native::NativeRecord) -> bool {
-    json_i64(record, "archive_index") == Some(0)
-        && json_i64(record, "linetype_index") == Some(-1)
-        && json_i64(record, "material_index") == Some(-1)
-        && json_str(record, "name") == Some("Default")
-        && json_bool(record, "visible") == Some(true)
-        && json_bool(record, "locked") == Some(false)
-        && json_array_empty(record, "rendering_materials")
+fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
+    let fields = record.fields();
+    json_i64(&fields, "archive_index") == Some(0)
+        && json_i64(&fields, "linetype_index") == Some(-1)
+        && json_i64(&fields, "material_index") == Some(-1)
+        && json_str(&fields, "name") == Some("Default")
+        && json_bool(&fields, "visible") == Some(true)
+        && json_bool(&fields, "locked") == Some(false)
+        && json_array_empty(&fields, "rendering_materials")
 }
 
-fn default_native_presentation(record: &cadmpeg_ir::native::NativeRecord) -> bool {
-    json_i64(record, "layer_index") == Some(0)
-        && json_i64(record, "material_index") == Some(-1)
-        && json_i64(record, "linetype_index") == Some(-1)
-        && json_i64(record, "hatch_pattern_index") == Some(-1)
-        && json_i64(record, "object_mode") == Some(0)
-        && json_str(record, "name") == Some("")
-        && json_str(record, "url") == Some("")
-        && json_bool(record, "visible") == Some(true)
-        && json_array_empty(record, "group_indexes")
-        && json_array_empty(record, "display_materials")
-        && json_array_empty(record, "rendering_materials")
-        && json_array_empty(record, "clipping_plane_uuids")
+fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
+    let fields = record.fields();
+    json_i64(&fields, "layer_index") == Some(0)
+        && json_i64(&fields, "material_index") == Some(-1)
+        && json_i64(&fields, "linetype_index") == Some(-1)
+        && json_i64(&fields, "hatch_pattern_index") == Some(-1)
+        && json_i64(&fields, "object_mode") == Some(0)
+        && json_str(&fields, "name") == Some("")
+        && json_str(&fields, "url") == Some("")
+        && json_bool(&fields, "visible") == Some(true)
+        && json_array_empty(&fields, "group_indexes")
+        && json_array_empty(&fields, "display_materials")
+        && json_array_empty(&fields, "rendering_materials")
+        && json_array_empty(&fields, "clipping_plane_uuids")
 }
 
-fn json_i64(record: &cadmpeg_ir::native::NativeRecord, name: &str) -> Option<i64> {
-    record.fields.get(name)?.as_i64()
+type NativeFields = serde_json::Map<String, serde_json::Value>;
+
+fn json_i64(fields: &NativeFields, name: &str) -> Option<i64> {
+    fields.get(name)?.as_i64()
 }
 
-fn json_str<'a>(record: &'a cadmpeg_ir::native::NativeRecord, name: &str) -> Option<&'a str> {
-    record.fields.get(name)?.as_str()
+fn json_str<'a>(fields: &'a NativeFields, name: &str) -> Option<&'a str> {
+    fields.get(name)?.as_str()
 }
 
-fn json_bool(record: &cadmpeg_ir::native::NativeRecord, name: &str) -> Option<bool> {
-    record.fields.get(name)?.as_bool()
+fn json_bool(fields: &NativeFields, name: &str) -> Option<bool> {
+    fields.get(name)?.as_bool()
 }
 
-fn json_array_empty(record: &cadmpeg_ir::native::NativeRecord, name: &str) -> bool {
-    record
-        .fields
+fn json_array_empty(fields: &NativeFields, name: &str) -> bool {
+    fields
         .get(name)
         .and_then(serde_json::Value::as_array)
         .is_some_and(Vec::is_empty)
@@ -3474,6 +3523,7 @@ mod tests {
     use std::io::Cursor;
 
     use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::PointId;
     use cadmpeg_ir::math::Point3;
@@ -3503,7 +3553,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             assert_eq!(
                 std::str::from_utf8(&bytes[24..32])
@@ -3534,7 +3588,11 @@ mod tests {
 
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("coarse absolute tolerance is writable");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3561,9 +3619,16 @@ mod tests {
             ir.tolerances.angular = angular;
             let mut output = vec![0xaa];
             let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-                .encode(&ir, &mut output)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut output))
                 .expect_err("invalid tolerance must not be serialized");
-            assert!(matches!(error, cadmpeg_ir::codec::CodecError::Malformed(_)));
+            assert!(matches!(
+                error,
+                cadmpeg_codec_core::CodecError::Malformed(_)
+            ));
             assert_eq!(output, [0xaa]);
         }
     }
@@ -3580,7 +3645,11 @@ mod tests {
         });
         let mut output = vec![0xaa];
         assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .is_err());
         assert_eq!(output, [0xaa]);
     }
@@ -3600,7 +3669,11 @@ mod tests {
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3646,7 +3719,11 @@ mod tests {
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3729,7 +3806,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3774,7 +3855,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3819,7 +3904,11 @@ mod tests {
             });
         let mut v5 = Vec::new();
         let v5_report = RhinoEncoder::new(RhinoArchiveVersion::V5)
-            .encode(&ir, &mut v5)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut v5))
             .expect("required invariant");
         assert_eq!(v5_report.losses.len(), 1);
         let decoded_v5 = RhinoCodec
@@ -3828,7 +3917,11 @@ mod tests {
         assert_ne!(decoded_v5.ir.model.tessellations[0].vertices[0].x, 0.1);
         let mut v8 = Vec::new();
         let v8_report = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut v8)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut v8))
             .expect("required invariant");
         assert!(v8_report.losses.is_empty());
         let decoded = RhinoCodec
@@ -3878,7 +3971,11 @@ mod tests {
             });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3925,7 +4022,11 @@ mod tests {
 
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("channel bytes are opaque to chunk framing");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -3987,7 +4088,11 @@ mod tests {
         }
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4013,7 +4118,11 @@ mod tests {
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&source, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let mut decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4023,7 +4132,11 @@ mod tests {
 
         let mut output = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&decoded.ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &decoded.ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect("required invariant");
         let rewritten = RhinoCodec
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
@@ -4044,7 +4157,11 @@ mod tests {
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&source, &mut bytes)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
         let mut decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4056,14 +4173,18 @@ mod tests {
             .arenas
             .entry("materials".into())
             .or_default()
-            .push(cadmpeg_ir::native::NativeRecord {
-                id: "rhino:presentation:material#unsupported".into(),
-                fields: serde_json::Map::new(),
-            });
+            .push(cadmpeg_ir::NativeRecord::new(
+                "rhino:presentation:material#unsupported",
+                serde_json::Map::new(),
+            ));
 
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&decoded.ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &decoded.ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("survival handling"));
         assert_eq!(output, [0xaa]);
@@ -4091,7 +4212,11 @@ mod tests {
         });
         let mut output = vec![0xaa];
         assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .is_err());
         assert_eq!(output, [0xaa]);
     }
@@ -4140,7 +4265,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4183,7 +4312,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4232,7 +4365,7 @@ mod tests {
             assert_ne!(uses[0].sense, uses[1].sense);
             assert_eq!(uses[0].radial_next, uses[1].id);
             assert_eq!(uses[1].radial_next, uses[0].id);
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4262,7 +4395,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4306,7 +4443,7 @@ mod tests {
                     cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
                 ));
             }
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4365,7 +4502,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4386,7 +4527,7 @@ mod tests {
                         cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
                     )
             }));
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4416,7 +4557,11 @@ mod tests {
         }];
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("does not exactly match"));
         assert_eq!(output, [0xaa]);
@@ -4454,7 +4599,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4492,7 +4641,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4522,7 +4675,7 @@ mod tests {
                 .pcurves
                 .iter()
                 .all(|pcurve| pcurve.fit_tolerance == Some(0.001)));
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4538,7 +4691,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4595,7 +4752,7 @@ mod tests {
                 planar_shared_pcurve.geometry,
                 cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
             ));
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4654,7 +4811,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4669,7 +4830,7 @@ mod tests {
                 .pcurves
                 .iter()
                 .all(|pcurve| pcurve.fit_tolerance == Some(0.0001)));
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4689,7 +4850,11 @@ mod tests {
         direction.v += 0.25;
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("misses directed edge curve"));
         assert_eq!(output, [0xaa]);
@@ -4704,7 +4869,11 @@ mod tests {
         }
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("explicit pcurve"));
         assert_eq!(output, [0xaa]);
@@ -4721,7 +4890,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4758,7 +4931,7 @@ mod tests {
                 .coedges
                 .iter()
                 .all(|coedge| coedge.radial_next != coedge.id));
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4791,7 +4964,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4808,7 +4985,7 @@ mod tests {
             assert_eq!(decoded.ir.model.bodies.len(), 2, "{version:?}");
             assert_eq!(decoded.ir.model.faces.len(), 3, "{version:?}");
             assert_eq!(decoded.ir.model.edges.len(), 10, "{version:?}");
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4856,7 +5033,11 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(&ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &ir,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4878,7 +5059,7 @@ mod tests {
                 surface.geometry,
                 SurfaceGeometry::Plane { origin, .. } if origin.z == 3.0
             )));
-            assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
         }
     }
 
@@ -4888,7 +5069,11 @@ mod tests {
         ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
         let mut output = vec![0xaa];
         let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
-            .encode(&ir, &mut output)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut output))
             .expect_err("expected error");
         assert!(error.to_string().contains("incidence"));
         assert_eq!(output, [0xaa]);
@@ -4903,7 +5088,8 @@ mod tests {
         ] {
             let mut bytes = Vec::new();
             RhinoEncoder::new(version)
-                .encode(ir, &mut bytes)
+                .plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })
+                .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("required invariant");
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -4932,7 +5118,7 @@ mod tests {
                 assert_eq!(actual.param_range, expected.param_range, "{version:?}");
             }
             assert!(
-                cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok(),
+                cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok(),
                 "{version:?}"
             );
         }

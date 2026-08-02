@@ -10,11 +10,11 @@
 //!
 //! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
-use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
@@ -25,10 +25,10 @@ use cadmpeg_ir::eval::{
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
     CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference, EdgeSelection,
-    ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureId, HoleKind, Length,
-    LoftPointSection, LoftSection, ParameterId, PathRef, PatternKind, ProfileRef, RadiusSpec,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, SketchSpace, SweepMode,
-    SweepOrientation, Termination, TrimRegion, VertexSelection,
+    ExtrudeExtent, ExtrudeStart, FaceSelection, Feature, FeatureDefinition, FeatureId, HoleKind,
+    Length, LoftPointSection, LoftSection, ParameterId, PathRef, PatternKind, ProfileRef,
+    RadiusSpec, RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, SketchSpace,
+    SweepMode, SweepOrientation, Termination, TrimRegion, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -37,36 +37,36 @@ use cadmpeg_ir::geometry::{
     SurfaceCurveFamily, SurfaceGeometry, SurfaceParameterAxis,
     TolerantIntersectionParameterization,
 };
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::provenance::{Exactness, SourceObjectAssociation};
-use cadmpeg_ir::report::{DecodeReport, LossNote};
-use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{BodyKind, Edge, Point, Sense, Vertex};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::wire::hash::sha256_hex;
+use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
-use crate::container::{self, Container};
+use crate::container::{self, Container, EntryContent};
 use crate::geometry;
-use crate::loss::NxLossCode;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::parasolid::{self, Stream, StreamKind};
 use crate::topology::{Graph, Node};
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 /// Parsed container data shared by inspection and entity decoding.
-pub struct Scan {
+pub struct Scan<'a> {
     /// Parsed SPLMSSTR container.
-    pub container: Container,
+    pub container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
     pub streams: Vec<Stream>,
 }
 
-impl Scan {
+impl Scan<'_> {
     /// Count streams with the requested classification.
     pub fn count(&self, kind: StreamKind) -> usize {
         self.streams.iter().filter(|s| s.kind == kind).count()
@@ -81,8 +81,8 @@ impl Scan {
 }
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecError> {
-    let container = container::scan(ctx, root)?;
+pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+    let container = container::scan_bytes(root.window())?;
     let streams = parasolid::extract_streams(ctx, root, &container)?;
     Ok(Scan { container, streams })
 }
@@ -98,70 +98,75 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let scan = scan(ctx, root)?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report);
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
-    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
-        return decode_result(ir, report, annotations, &unknowns);
+    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(ctx, root, &scan) {
+        return decode_result(ir, report, annotations, unknowns);
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
-    decode_result(ir, report, annotations, &unknowns)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn decode_result(
     mut ir: CadIr,
     report: DecodeReport,
-    annotations: cadmpeg_ir::annotations::Annotations,
-    unknowns: &[UnknownRecord],
+    annotations: cadmpeg_ir::Annotations,
+    unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
-        ..cadmpeg_ir::source_fidelity::SourceFidelity::default()
+        ..cadmpeg_ir::SourceFidelity::default()
     };
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
 fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
-        report
-            .losses
-            .push(NxLossCode::OffsetStoreControlsUntyped.note(format!(
+        report.losses.push(LossNote {
+            code: LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
                 control_count - classified_control_count
-            )));
+            ),
+            provenance: None,
+        });
     }
     for entry in &scan.container.entries {
         let content = entry.content();
         if content.retains_opaque_payload() {
-            report
-                .losses
-                .push(NxLossCode::OpaqueContainerStreamRetained.note(format!(
-                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not typed.",
+            report.losses.push(LossNote {
+                code: LossKind::RecordNotTyped,
+                severity: Severity::Info,
+                message: format!(
+                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                     entry.name,
                     content.label()
-                )));
+                ),
+                provenance: None,
+            });
         }
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
-            report
-                .losses
-                .push(NxLossCode::NonParasolidStreamOmitted.note(format!(
+            report.losses.push(LossNote {
+                code: LossKind::PassthroughRecordOmitted,
+                severity: Severity::Info,
+                message: format!(
                     "Non-Parasolid {} stream #{index} was classified but not transferred.",
                     stream.kind.label()
-                )));
+                ),
+                provenance: None,
+            });
         }
     }
 }
@@ -961,11 +966,13 @@ fn positive_weights(weights: Option<&[f64]>) -> bool {
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 fn try_decode_geometry(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     scan: &Scan,
 ) -> Option<(
     CadIr,
     DecodeReport,
-    cadmpeg_ir::annotations::Annotations,
+    cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
 )> {
     let mut ir = CadIr::empty(Units::default());
@@ -1613,7 +1620,8 @@ fn try_decode_geometry(
     // bytes for the seven feature/segment families body selection consumes.
     // This moves extraction slightly earlier on the geometry path — the RFC's
     // accepted memory-high-water cost.
-    let model = crate::native::NativeModel::extract(&scan.container, &scan.streams, &parsed);
+    let model =
+        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
     let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
@@ -1642,6 +1650,7 @@ fn try_decode_geometry(
         !ir.model.faces.is_empty(),
         ir.model.bodies.len() > 1 && !active_body_selection,
         ir.model.tessellations.len(),
+        &model,
     );
     report_untransferred_streams(scan, &mut report);
     Some((ir, report, annotations, unknowns))
@@ -1750,7 +1759,7 @@ fn unmatched_delta_tombstone_counts(scan: &Scan) -> BTreeMap<&'static str, usize
 fn retain_live_annotations(
     ir: &CadIr,
     unknowns: &[UnknownRecord],
-    annotations: &mut cadmpeg_ir::annotations::Annotations,
+    annotations: &mut cadmpeg_ir::Annotations,
 ) {
     let mut ids = BTreeSet::new();
     macro_rules! add_ids {
@@ -2187,38 +2196,41 @@ fn finalize_point_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) 
         annotations.exactness(id, Exactness::Inferred);
     }
 
-    let mut builder = TopologyBuilder::new();
-    builder
-        .body(
-            body_id.clone(),
-            BodySpec {
-                kind: BodyKind::General,
-                ..BodySpec::default()
-            },
-        )
-        .expect("derived point-body id is unique");
-    builder
-        .region(region_id.clone(), &body_id)
-        .expect("derived point-region id is unique");
-    builder
-        .shell(shell_id.clone(), &region_id)
-        .expect("derived point-shell id is unique");
+    let mut free_vertices = Vec::with_capacity(ir.model.points.len());
     for (index, point) in ir.model.points.iter().enumerate() {
         let vertex_id = VertexId(format!("nx:derived:point-vertex#{index}"));
         annotations
             .note(&vertex_id, stream, 0)
             .tag("derived_point_topology");
         annotations.exactness(&vertex_id, Exactness::Inferred);
-        builder
-            .vertex(vertex_id.clone(), point.id.clone(), None)
-            .expect("derived point-vertex id is unique");
-        builder
-            .free_vertex(&shell_id, vertex_id)
-            .expect("derived shell owns its free vertices");
+        ir.model.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point.id.clone(),
+            tolerance: None,
+        });
+        free_vertices.push(vertex_id);
     }
-    builder
-        .finish(&mut ir.model)
-        .expect("derived point topology appends without conflicts");
+    ir.model.shells.push(Shell {
+        id: shell_id.clone(),
+        region: region_id.clone(),
+        faces: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices,
+    });
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id.clone(),
+        shells: vec![shell_id],
+    });
+    ir.model.bodies.push(Body {
+        id: body_id,
+        kind: BodyKind::General,
+        regions: vec![region_id],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
 }
 
 fn classify_body_kinds(ir: &mut CadIr) {
@@ -2331,6 +2343,7 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         let Some(values) = lanes[lane]
             .as_deref()
@@ -2351,7 +2364,7 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
             let Some(uv) = surface_parameters(geometry, *uv) else {
                 return false;
             };
-            model_surface_point_by_id(ir, surface, uv.u, uv.v)
+            model_surface_point_by_id(&index, surface, uv.u, uv.v)
                 .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
         })
     };
@@ -3135,19 +3148,20 @@ pub(crate) fn attach_completed_intersection_pcurves(
 }
 
 fn decoded_surface_point(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
-    decoded_surface_point_inner(ir, surface, u, v, 0)
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    decoded_surface_point_inner(&index, surface, u, v, 0)
 }
 
 fn decoded_surface_point_inner(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     u: f64,
     v: f64,
     depth: usize,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    model_surface_point_by_id(ir, surface, u, v)
-        .or_else(|| blend_surface_point_inner(ir, surface, u, v, depth + 1))
+    model_surface_point_by_id(index, surface, u, v)
+        .or_else(|| blend_surface_point_inner(index.ir(), surface, u, v, depth + 1))
 }
 
 #[cfg(test)]
@@ -3217,26 +3231,6 @@ fn blend_surface_parameters_inner(
             return Some(parameters);
         }
     }
-    if let Some(fit_tolerance) = fit_tolerance {
-        let boundary_parameters = [0usize, 1usize].map(|boundary| {
-            blend_boundary_parameter(
-                ir,
-                surface,
-                point,
-                boundary,
-                seed.map(|seed| seed.u),
-                fit_tolerance,
-                depth + 1,
-            )
-        });
-        if let Some((parameter, boundary)) = match boundary_parameters {
-            [Some(parameter), None] => Some((parameter, 0usize)),
-            [None, Some(parameter)] => Some((parameter, 1usize)),
-            _ => None,
-        } {
-            return Some(Point2::new(parameter, boundary as f64));
-        }
-    }
     let angular =
         closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u)).and_then(|u| {
             let (center, tangent, first, second, _) =
@@ -3286,17 +3280,40 @@ fn blend_surface_parameters_inner(
     let initial = match grid {
         BlendParameterGrid::Build => coarse_blend_surface_parameters(ir, surface, point, depth + 1),
         BlendParameterGrid::Disabled => None,
-    }?;
-    let parameters =
-        refine_blend_surface_parameters(ir, surface, point, initial, depth + 1).unwrap_or(initial);
-    if !(0.0..=1.0).contains(&parameters.v) {
-        return None;
+    };
+    if let Some(initial) = initial {
+        let parameters = refine_blend_surface_parameters(ir, surface, point, initial, depth + 1)
+            .unwrap_or(initial);
+        if (0.0..=1.0).contains(&parameters.v) {
+            let candidate =
+                blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
+            let distance = point_distance(candidate, point);
+            if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
+                return Some(parameters);
+            }
+        }
     }
-    let candidate = blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
-    let distance = point_distance(candidate, point);
-    fit_tolerance
-        .is_none_or(|tolerance| distance <= tolerance)
-        .then_some(parameters)
+    if let Some(fit_tolerance) = fit_tolerance {
+        let boundary_parameters = [0usize, 1usize].map(|boundary| {
+            blend_boundary_parameter(
+                ir,
+                surface,
+                point,
+                boundary,
+                seed.map(|seed| seed.u),
+                fit_tolerance,
+                depth + 1,
+            )
+        });
+        if let Some((parameter, boundary)) = match boundary_parameters {
+            [Some(parameter), None] => Some((parameter, 0usize)),
+            [None, Some(parameter)] => Some((parameter, 1usize)),
+            _ => None,
+        } {
+            return Some(Point2::new(parameter, boundary as f64));
+        }
+    }
+    None
 }
 
 pub(crate) fn coarse_blend_surface_parameters(
@@ -3529,6 +3546,7 @@ pub(crate) fn blend_surface_u_derivative(
     v: f64,
     depth: usize,
 ) -> Option<Vector3> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     (depth < 32).then_some(())?;
     let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
     let carrier = ir
@@ -3551,7 +3569,7 @@ pub(crate) fn blend_surface_u_derivative(
         (acceleration.z - tangential_acceleration * tangent.z) / speed,
     );
     let contact_context = BlendContactDerivativeContext {
-        ir,
+        index: &index,
         spine: &spine,
         parameter: u,
         center,
@@ -3635,7 +3653,7 @@ pub(crate) fn blend_surface_u_derivative(
 }
 
 struct BlendContactDerivativeContext<'a> {
-    ir: &'a CadIr,
+    index: &'a cadmpeg_ir::index::ModelIndex<'a>,
     spine: &'a CurveId,
     parameter: f64,
     center: Point3,
@@ -3647,11 +3665,16 @@ struct BlendContactDerivativeContext<'a> {
 impl BlendContactDerivativeContext<'_> {
     fn direction_derivative(&self, support: &SurfaceId) -> Option<(Vector3, Vector3)> {
         (self.depth < 32).then_some(())?;
-        let pcurve =
-            spine_contact_pcurve(self.ir, support, self.spine, self.radius, self.depth + 1)?;
+        let pcurve = spine_contact_pcurve(
+            self.index.ir(),
+            support,
+            self.spine,
+            self.radius,
+            self.depth + 1,
+        )?;
         let uv = pcurve_uv(pcurve, self.parameter)?;
         let uv_derivative = pcurve_tangent(pcurve, self.parameter)?;
-        let support = model_surface_partials_by_id(self.ir, support, uv.u, uv.v)?;
+        let support = model_surface_partials_by_id(self.index, support, uv.u, uv.v)?;
         let contact_derivative = Vector3::new(
             support.du.x * uv_derivative.u + support.dv.x * uv_derivative.v,
             support.du.y * uv_derivative.u + support.dv.y * uv_derivative.v,
@@ -3697,9 +3720,9 @@ fn blend_surface_frame(
     let center = model_curve_point(ir, &spine, u)?;
     let tangent = model_curve_tangent(ir, &spine, u)?;
     let first = spine_contact_direction(ir, &supports[0], &spine, u, center, radius, depth + 1)
-        .or_else(|| surface_contact_direction(ir, &supports[0], center, depth + 1))?;
+        .or_else(|| surface_contact_direction(ir, &supports[0], center, radius, depth + 1))?;
     let second = spine_contact_direction(ir, &supports[1], &spine, u, center, radius, depth + 1)
-        .or_else(|| surface_contact_direction(ir, &supports[1], center, depth + 1))?;
+        .or_else(|| surface_contact_direction(ir, &supports[1], center, radius, depth + 1))?;
     Some((center, tangent, first, second, radius))
 }
 
@@ -3749,27 +3772,13 @@ fn blend_boundary_parameter(
     depth: usize,
 ) -> Option<f64> {
     (depth < 32).then_some(())?;
-    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
-    let support = supports.get(boundary)?;
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == support)?;
-    let uv = match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, point, None, Some(fit_tolerance))
-        }
-        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, support, point, None),
-        geometry => analytic_surface_parameters(geometry, point),
-    }?;
-    let pcurve = spine_contact_pcurve(ir, support, &spine, radius, depth + 1)?;
-    closest_pcurve_parameters(pcurve, uv, seed)?
-        .into_iter()
-        .find(|parameter| {
-            blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
-                .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
-        })
+    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    // A circular blend's u parameter is its spine parameter. Invert that
+    // defining carrier directly, then certify the requested boundary point.
+    closest_spine_parameter(ir, &spine, point, seed).filter(|parameter| {
+        blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
+            .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -4415,7 +4424,8 @@ fn spine_contact_point(
     (depth < 32).then_some(())?;
     let pcurve = spine_contact_pcurve(ir, support, spine, radius, depth + 1)?;
     let uv = pcurve_uv(pcurve, parameter)?;
-    decoded_surface_point_inner(ir, support, uv.u, uv.v, depth + 1)
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    decoded_surface_point_inner(&index, support, uv.u, uv.v, depth + 1)
 }
 
 fn spine_contact_pcurve<'a>(
@@ -4754,6 +4764,7 @@ fn surface_contact_direction(
     ir: &CadIr,
     surface: &SurfaceId,
     center: Point3,
+    radius: f64,
     depth: usize,
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
@@ -4765,28 +4776,55 @@ fn surface_contact_direction(
         .surfaces
         .iter()
         .find(|candidate| &candidate.id == surface)?;
+    let tolerance = ir.tolerances.linear;
+    if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
+        return None;
+    }
+    let requires_radius_certificate = matches!(
+        &carrier.geometry,
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Procedural { .. }
+    );
     let parameters = match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, center, None),
-        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, surface, center, None)
-            .or_else(|| {
-                blend_surface_parameters_inner(
-                    ir,
-                    surface,
-                    center,
-                    None,
-                    None,
-                    BlendParameterGrid::Disabled,
-                    depth + 1,
-                )
-            }),
+        // The blend definition asks for a support contact at `radius` from the
+        // spine center. A tolerance-bounded inverse can stop as soon as it has
+        // constructed a point inside the enclosing radius band; the radial
+        // check below then certifies the actual contact shell. A global
+        // closest-point proof is neither required nor sufficient for this
+        // incidence question.
+        SurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_parameters_with_tolerance(nurbs, center, None, Some(radius + tolerance))
+        }
+        SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance(
+            ir,
+            surface,
+            center,
+            None,
+            Some(radius + tolerance),
+        )
+        .or_else(|| {
+            blend_surface_parameters_inner(
+                ir,
+                surface,
+                center,
+                None,
+                None,
+                BlendParameterGrid::Disabled,
+                depth + 1,
+            )
+        }),
         geometry => analytic_surface_parameters(geometry, center),
     }?;
-    let contact = decoded_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
-    unit_vector(Vector3::new(
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let contact =
+        decoded_surface_point_inner(&index, surface, parameters.u, parameters.v, depth + 1)?;
+    let offset = Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
-    ))
+    );
+    (!requires_radius_certificate || (offset.norm() - radius).abs() <= tolerance)
+        .then(|| unit_vector(offset))
+        .flatten()
 }
 
 fn blend_surface_contact_direction(
@@ -5172,6 +5210,7 @@ fn rodrigues_rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn offset_surface_parameters(
     ir: &CadIr,
     surface: &SurfaceId,
@@ -5188,6 +5227,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let carrier = ir
         .model
         .surfaces
@@ -5201,18 +5241,30 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
         .procedural_surfaces
         .iter()
         .find(|candidate| &candidate.id == construction && &candidate.surface == surface)?;
-    let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+    let ProceduralSurfaceDefinition::Offset {
+        support, distance, ..
+    } = &procedural.definition
+    else {
         return None;
     };
     let domain = surface_parameter_domain(ir, support);
+    // The target lies on the offset carrier, so its distance from the base
+    // carrier may be the full offset distance even for an exact fit. Enlarge
+    // only the base-surface seed search; the iterations and final caller-side
+    // evaluation still certify the requested tolerance on the offset itself.
+    let support_fit_tolerance = fit_tolerance.and_then(|tolerance| {
+        let tolerance = tolerance + distance.abs();
+        tolerance.is_finite().then_some(tolerance)
+    });
     let mut parameters = seed
-        .or_else(|| initial_surface_parameters(ir, support, point, None, fit_tolerance))
+        .or_else(|| initial_surface_parameters(ir, support, point, None, support_fit_tolerance))
         .or_else(|| {
-            domain.and_then(|domain| coarse_model_surface_parameters(ir, surface, point, domain))
+            domain
+                .and_then(|domain| coarse_model_surface_parameters(&index, surface, point, domain))
         })?;
     clamp_surface_parameters(&mut parameters, domain);
     for _ in 0..32 {
-        let position = model_surface_point_by_id(ir, surface, parameters.u, parameters.v)?;
+        let position = model_surface_point_by_id(&index, surface, parameters.u, parameters.v)?;
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
@@ -5227,10 +5279,24 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
         }
         let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
         let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
-        let du =
-            model_surface_derivative(ir, surface, parameters, u_step, true, domain, [None, None])?;
-        let dv =
-            model_surface_derivative(ir, surface, parameters, v_step, false, domain, [None, None])?;
+        let du = model_surface_derivative(
+            &index,
+            surface,
+            parameters,
+            u_step,
+            true,
+            domain,
+            [None, None],
+        )?;
+        let dv = model_surface_derivative(
+            &index,
+            surface,
+            parameters,
+            v_step,
+            false,
+            domain,
+            [None, None],
+        )?;
         let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
             break;
         };
@@ -5247,7 +5313,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
 }
 
 fn coarse_model_surface_parameters(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     domain: ([f64; 2], [f64; 2]),
@@ -5262,7 +5328,7 @@ fn coarse_model_surface_parameters(
                 v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
             );
             let Some(candidate) =
-                model_surface_point_by_id(ir, surface, parameters.u, parameters.v)
+                model_surface_point_by_id(index, surface, parameters.u, parameters.v)
             else {
                 continue;
             };
@@ -5354,7 +5420,7 @@ fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>) -> f64 {
 }
 
 fn model_surface_derivative(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     parameters: Point2,
     step: f64,
@@ -5362,15 +5428,12 @@ fn model_surface_derivative(
     domain: Option<([f64; 2], [f64; 2])>,
     periods: [Option<f64>; 2],
 ) -> Option<Vector3> {
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let carrier = index.surfaces(&surface.0)?;
     if let Some(partials) = surface_partials(&carrier.geometry, parameters.u, parameters.v) {
         return Some(if along_u { partials.du } else { partials.dv });
     }
-    if let Some(partials) = model_surface_partials_by_id(ir, surface, parameters.u, parameters.v) {
+    if let Some(partials) = model_surface_partials_by_id(index, surface, parameters.u, parameters.v)
+    {
         return Some(if along_u { partials.du } else { partials.dv });
     }
 
@@ -5393,8 +5456,8 @@ fn model_surface_derivative(
     if !width.is_finite() || width == 0.0 {
         return None;
     }
-    let first = model_surface_point_by_id(ir, surface, before.u, before.v)?;
-    let second = model_surface_point_by_id(ir, surface, after.u, after.v)?;
+    let first = model_surface_point_by_id(index, surface, before.u, before.v)?;
+    let second = model_surface_point_by_id(index, surface, after.u, after.v)?;
     Some(Vector3::new(
         (second.x - first.x) / width,
         (second.y - first.y) / width,
@@ -5428,6 +5491,7 @@ fn continue_surface_intersection_parameters_with_seeds(
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     if chart.len() < 2
         || surfaces[0] == surfaces[1]
         || !fit_tolerance.is_finite()
@@ -5471,9 +5535,9 @@ fn continue_surface_intersection_parameters_with_seeds(
         chart[1].y - chart[0].y,
         chart[1].z - chart[0].z,
     );
-    let seed_tangent = intersection_parameter_tangent(ir, surfaces, seed, space, first_chord)?;
+    let seed_tangent = intersection_parameter_tangent(&index, surfaces, seed, space, first_chord)?;
     let mut current = correct_intersection_parameters(
-        ir,
+        &index,
         surfaces,
         seed,
         seed_tangent,
@@ -5481,7 +5545,7 @@ fn continue_surface_intersection_parameters_with_seeds(
         fit_tolerance,
         1.0,
     )?;
-    let first_point = model_surface_point_by_id(ir, surfaces[0], current[0], current[1])?;
+    let first_point = model_surface_point_by_id(&index, surfaces[0], current[0], current[1])?;
     if point_distance(first_point, chart[0]) > fit_tolerance {
         return None;
     }
@@ -5491,13 +5555,13 @@ fn continue_surface_intersection_parameters_with_seeds(
     ];
 
     for chart_pair in chart.windows(2) {
-        let jacobian = intersection_parameter_jacobian(ir, surfaces, current, space)?;
+        let jacobian = intersection_parameter_jacobian(&index, surfaces, current, space)?;
         let chord = Vector3::new(
             chart_pair[1].x - chart_pair[0].x,
             chart_pair[1].y - chart_pair[0].y,
             chart_pair[1].z - chart_pair[0].z,
         );
-        let tangent = intersection_parameter_tangent(ir, surfaces, current, space, chord)?;
+        let tangent = intersection_parameter_tangent(&index, surfaces, current, space, chord)?;
         let spatial_tangent = Vector3::new(
             jacobian[0][0] * tangent[0] + jacobian[0][1] * tangent[1],
             jacobian[1][0] * tangent[0] + jacobian[1][1] * tangent[1],
@@ -5532,7 +5596,7 @@ fn continue_surface_intersection_parameters_with_seeds(
             return None;
         }
         let corrected = correct_intersection_parameters(
-            ir,
+            &index,
             surfaces,
             predictor,
             tangent,
@@ -5540,7 +5604,7 @@ fn continue_surface_intersection_parameters_with_seeds(
             fit_tolerance,
             scale,
         )?;
-        let point = model_surface_point_by_id(ir, surfaces[0], corrected[0], corrected[1])?;
+        let point = model_surface_point_by_id(&index, surfaces[0], corrected[0], corrected[1])?;
         if point_distance(point, chart_pair[1]) > fit_tolerance {
             return None;
         }
@@ -5625,7 +5689,7 @@ fn surface_parameter_periods_inner(
 }
 
 fn correct_intersection_parameters(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     predictor: [f64; 4],
     tangent: [f64; 4],
@@ -5636,8 +5700,8 @@ fn correct_intersection_parameters(
     let mut corrected = predictor;
     clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
-        let first = model_surface_point_by_id(ir, surfaces[0], corrected[0], corrected[1])?;
-        let second = model_surface_point_by_id(ir, surfaces[1], corrected[2], corrected[3])?;
+        let first = model_surface_point_by_id(index, surfaces[0], corrected[0], corrected[1])?;
+        let second = model_surface_point_by_id(index, surfaces[1], corrected[2], corrected[3])?;
         let residual = [
             first.x - second.x,
             first.y - second.y,
@@ -5656,7 +5720,7 @@ fn correct_intersection_parameters(
         {
             return Some(corrected);
         }
-        let jacobian = intersection_parameter_jacobian(ir, surfaces, corrected, space)?;
+        let jacobian = intersection_parameter_jacobian(index, surfaces, corrected, space)?;
         let matrix = [jacobian[0], jacobian[1], jacobian[2], tangent];
         let rhs = residual.map(|value| -value);
         let step =
@@ -5676,13 +5740,13 @@ struct IntersectionParameterSpace {
 }
 
 fn intersection_parameter_tangent(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     parameters: [f64; 4],
     space: IntersectionParameterSpace,
     chord: Vector3,
 ) -> Option<[f64; 4]> {
-    let jacobian = intersection_parameter_jacobian(ir, surfaces, parameters, space)?;
+    let jacobian = intersection_parameter_jacobian(index, surfaces, parameters, space)?;
     if let Some(tangent) = null_vector_3x4(jacobian) {
         return Some(tangent);
     }
@@ -5720,7 +5784,7 @@ fn intersection_parameter_tangent(
 }
 
 fn intersection_parameter_jacobian(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     parameters: [f64; 4],
     space: IntersectionParameterSpace,
@@ -5736,7 +5800,7 @@ fn intersection_parameter_jacobian(
             parameter_derivative_step(pairs[side].v, space.domains[side].map(|value| value.1));
         Some([
             model_surface_derivative(
-                ir,
+                index,
                 surfaces[side],
                 pairs[side],
                 u_step,
@@ -5745,7 +5809,7 @@ fn intersection_parameter_jacobian(
                 space.periods[side],
             )?,
             model_surface_derivative(
-                ir,
+                index,
                 surfaces[side],
                 pairs[side],
                 v_step,
@@ -5953,6 +6017,38 @@ struct RationalBezierSurfacePatch {
     u_degree: usize,
     v_degree: usize,
     controls: Vec<[f64; 4]>,
+}
+
+struct SurfacePatchQueueEntry {
+    lower_bound: f64,
+    diameter: f64,
+    sequence: usize,
+    patch: RationalBezierSurfacePatch,
+}
+
+impl PartialEq for SurfacePatchQueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.sequence == other.sequence
+    }
+}
+
+impl Eq for SurfacePatchQueueEntry {}
+
+impl PartialOrd for SurfacePatchQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SurfacePatchQueueEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // BinaryHeap is a max-heap; reverse the distance order so the patch
+        // with the strongest minimum-distance promise is examined first.
+        other
+            .lower_bound
+            .total_cmp(&self.lower_bound)
+            .then_with(|| other.sequence.cmp(&self.sequence))
+    }
 }
 
 fn rational_surface_residual_patches(
@@ -6213,7 +6309,7 @@ fn complete_nurbs_surface_starts(
 ) -> Option<Vec<Point2>> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let mut patches = rational_surface_residual_patches(surface, point)?;
+    let patches = rational_surface_residual_patches(surface, point)?;
     let coordinate_scale =
         patches
             .iter()
@@ -6312,14 +6408,39 @@ fn complete_nurbs_surface_starts(
         }
     }
     best_distance.is_finite().then_some(())?;
+    // A tolerance-bounded inverse asks for a parameter whose evaluated point
+    // reproduces the target within that tolerance, not a proof of the global
+    // minimum. The refined span seeds above are evaluated on the surface, so a
+    // fitting candidate is already a constructive certificate. Preserve the
+    // exhaustive branch-and-bound search for exact closest-point inversion.
+    if fit_tolerance.is_some() && best_distance <= squared_tolerance {
+        return (!best_upper_parameters.is_empty()).then_some(best_upper_parameters);
+    }
+    let mut queue = BinaryHeap::new();
+    let mut sequence = 0usize;
+    for patch in patches {
+        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        queue.push(SurfacePatchQueueEntry {
+            lower_bound,
+            diameter,
+            sequence,
+            patch,
+        });
+        sequence += 1;
+    }
     let mut terminal = Vec::<(Point2, f64)>::new();
     let mut examined = 0usize;
-    while let Some(patch) = patches.pop() {
+    while let Some(entry) = queue.pop() {
         examined += 1;
         if examined > MAX_PATCHES {
             return None;
         }
-        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        let SurfacePatchQueueEntry {
+            lower_bound,
+            diameter,
+            patch,
+            ..
+        } = entry;
         let comparison_tolerance = 128.0
             * f64::EPSILON
             * lower_bound
@@ -6327,11 +6448,14 @@ fn complete_nurbs_surface_starts(
                 .max(best_distance.abs())
                 .max(squared_tolerance);
         if lower_bound > best_distance + comparison_tolerance {
-            continue;
+            break;
         }
         let parameters = center(&patch);
         let (upper_parameters, center_distance) =
             refined_upper(parameters, patch.u_domain, patch.v_domain)?;
+        if fit_tolerance.is_some() && center_distance <= squared_tolerance {
+            return Some(vec![upper_parameters]);
+        }
         let upper_tolerance = 128.0
             * f64::EPSILON
             * center_distance
@@ -6386,7 +6510,16 @@ fn complete_nurbs_surface_starts(
             .fold(0.0_f64, f64::max);
         let split_u = u_variation >= v_variation;
         let children = split_rational_surface_patch(&patch, split_u)?;
-        patches.extend(children);
+        for patch in children {
+            let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+            queue.push(SurfacePatchQueueEntry {
+                lower_bound,
+                diameter,
+                sequence,
+                patch,
+            });
+            sequence += 1;
+        }
     }
     let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(squared_tolerance);
     let mut starts = terminal
@@ -6399,6 +6532,7 @@ fn complete_nurbs_surface_starts(
     (!starts.is_empty()).then_some(starts)
 }
 
+#[cfg(test)]
 pub(crate) fn nurbs_parameters(
     surface: &NurbsSurface,
     point: Point3,
@@ -6681,7 +6815,6 @@ fn emit_topology(
         .iter()
         .filter_map(|shell| shell.shell_fields().map(|fields| fields.body))
         .collect();
-    let mut builder = TopologyBuilder::new();
     let mut bodies = BTreeMap::new();
     for body_xmt in body_xmts {
         let id = BodyId(format!("{prefix}:body#{body_xmt}"));
@@ -6698,15 +6831,15 @@ fn emit_topology(
             annotations.exactness(&id, Exactness::Unknown);
         }
         bodies.insert(body_xmt, id.clone());
-        builder
-            .body(
-                id,
-                BodySpec {
-                    kind: BodyKind::Solid,
-                    ..BodySpec::default()
-                },
-            )
-            .expect("body id is unique per source ordinal");
+        ir.model.bodies.push(Body {
+            id,
+            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
     }
 
     let mut regions: BTreeMap<u32, (RegionId, BodyId)> = BTreeMap::new();
@@ -6734,17 +6867,39 @@ fn emit_topology(
                 annotations.exactness(&region, Exactness::Unknown);
             }
             annotations.derived(&region, "body");
-            builder
-                .region(region.clone(), &body)
-                .expect("region id is unique under a registered body");
+            ir.model.regions.push(Region {
+                id: region.clone(),
+                body: body.clone(),
+                shells: Vec::new(),
+            });
+            if let Some(parent) = ir
+                .model
+                .bodies
+                .iter_mut()
+                .find(|candidate| candidate.id == body)
+            {
+                parent.regions.push(region.clone());
+            }
             regions.insert(fields.region, (region.clone(), body.clone()));
             region
         };
         let shell_id = ShellId(format!("{prefix}:shell#{}", node.xmt));
         annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
-        builder
-            .shell(shell_id.clone(), &region_id)
-            .expect("shell id is unique under a registered region");
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        if let Some(parent) = ir
+            .model
+            .regions
+            .iter_mut()
+            .find(|candidate| candidate.id == region_id)
+        {
+            parent.shells.push(shell_id.clone());
+        }
         shells.insert(node.xmt, shell_id);
     }
 
@@ -6950,22 +7105,77 @@ fn emit_topology(
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
         }
-        builder
-            .face(
-                id.clone(),
-                &shell,
-                FaceSpec {
-                    surface,
-                    sense: sense(Some(fields.sense)),
-                    name: None,
-                    color: None,
-                    tolerance: decoded_tolerance(fields.tolerance),
-                },
-            )
-            .expect("face id is unique under a registered shell");
+        ir.model.faces.push(Face {
+            id: id.clone(),
+            shell: shell.clone(),
+            surface,
+            sense: sense(Some(fields.sense)),
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: decoded_tolerance(fields.tolerance),
+        });
+        if let Some(parent) = ir
+            .model
+            .shells
+            .iter_mut()
+            .find(|candidate| candidate.id == shell)
+        {
+            parent.faces.push(id.clone());
+        }
         faces.insert(node.xmt, id);
     }
 
+    let mut loops = BTreeMap::new();
+    for &loop_xmt in valid_loop_rings.keys() {
+        let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
+            graph
+                .get(17, *fin_xmt)
+                .and_then(Node::fin_fields)
+                .is_some_and(|fields| edges.contains_key(&fields.edge))
+        });
+        if !ring_resolves {
+            continue;
+        }
+        let Some(node) = graph.get(15, loop_xmt) else {
+            continue;
+        };
+        let Some(fields) = node.loop_fields() else {
+            continue;
+        };
+        let Some(face) = faces.get(&fields.face).cloned() else {
+            continue;
+        };
+        let id = LoopId(format!("{prefix}:loop#{}", node.xmt));
+        annotate_node(annotations, &id, source_stream, node, "LOOP");
+        ir.model.loops.push(Loop {
+            id: id.clone(),
+            face: face.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+            coedges: Vec::new(),
+            vertex_uses: Vec::new(),
+        });
+        if let Some(parent) = ir
+            .model
+            .faces
+            .iter_mut()
+            .find(|candidate| candidate.id == face)
+        {
+            parent.loops.push(id.clone());
+        }
+        loops.insert(node.xmt, id);
+    }
+
+    let fin_ids: BTreeMap<u32, CoedgeId> = valid_fin_xmts
+        .iter()
+        .filter(|xmt| {
+            graph
+                .get(17, **xmt)
+                .and_then(Node::fin_fields)
+                .is_some_and(|fields| loops.contains_key(&fields.loop_xmt))
+        })
+        .map(|xmt| (*xmt, CoedgeId(format!("{prefix}:fin#{xmt}"))))
+        .collect();
     let intersection_pcurves: BTreeMap<_, _> = ir
         .model
         .procedural_curves
@@ -6988,183 +7198,149 @@ fn emit_topology(
         })
         .flatten()
         .collect();
-    // Emit each loop together with its coedges so the ring's forward-link order
-    // (`fin_ring`) drives the builder's next/previous wiring. `ring_resolves`
-    // guarantees every FIN in the ring decodes and resolves its edge, so the
-    // per-FIN lookups below are infallible.
-    let mut registered_coedges: BTreeMap<u32, CoedgeId> = BTreeMap::new();
     let mut serialized_branch_pcurves = BTreeSet::new();
-    for (&loop_xmt, ring) in &valid_loop_rings {
-        let ring_resolves = ring.iter().all(|fin_xmt| {
-            graph
-                .get(17, *fin_xmt)
-                .and_then(Node::fin_fields)
-                .is_some_and(|fields| edges.contains_key(&fields.edge))
+    for &fin_xmt in fin_ids.keys() {
+        let Some(node) = graph.get(17, fin_xmt) else {
+            continue;
+        };
+        let Some(fields) = node.fin_fields() else {
+            continue;
+        };
+        let Some(loop_id) = loops.get(&fields.loop_xmt).cloned() else {
+            continue;
+        };
+        let Some(edge) = edges.get(&fields.edge).cloned() else {
+            continue;
+        };
+        let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
+        annotate_node(annotations, &id, source_stream, node, "FIN");
+        let next = fin_ids
+            .get(&fields.forward)
+            .cloned()
+            .expect("validated FIN ring resolves forward link");
+        let previous = fin_ids
+            .get(&fields.backward)
+            .cloned()
+            .expect("validated FIN ring resolves backward link");
+        let partner = fin_ids.get(&fields.other).cloned();
+        let radial_next = partner.clone().unwrap_or_else(|| id.clone());
+        let support = graph
+            .get(15, fields.loop_xmt)
+            .and_then(Node::loop_fields)
+            .and_then(|loop_| graph.get(14, loop_.face))
+            .and_then(Node::face_fields)
+            .and_then(|face| surfaces.get(&face.surface))
+            .cloned();
+        let pcurve_use_range = trim_ranges
+            .get(&fields.curve_xmt)
+            .copied()
+            .and_then(ordered_parameter_range);
+        let mut pcurve = pcurves.get(&fields.curve_xmt).cloned().filter(|id| {
+            let Some((carrier, support)) = ir
+                .model
+                .pcurves
+                .iter()
+                .find(|carrier| &carrier.id == id)
+                .zip(support.as_ref())
+            else {
+                return false;
+            };
+            pcurve_matches_edge_range(
+                ir,
+                &edge,
+                support,
+                &carrier.geometry,
+                pcurve_use_range.or(carrier.parameter_range),
+                carrier.fit_tolerance,
+            )
         });
-        if !ring_resolves {
-            continue;
+        let edge_curve = ir
+            .model
+            .edges
+            .iter()
+            .find(|candidate| candidate.id == edge)
+            .and_then(|edge| edge.curve.as_ref());
+        if let (Some(pcurve), Some(edge_curve), Some(support)) =
+            (pcurve.as_ref(), edge_curve, support.as_ref())
+        {
+            if curves.get(&fields.curve_xmt) == Some(edge_curve)
+                && pcurve_supports.get(&fields.curve_xmt) == Some(support)
+            {
+                serialized_branch_pcurves.insert((
+                    edge_curve.clone(),
+                    support.clone(),
+                    pcurve.clone(),
+                ));
+            }
         }
-        let Some(loop_node) = graph.get(15, loop_xmt) else {
-            continue;
-        };
-        let Some(loop_fields) = loop_node.loop_fields() else {
-            continue;
-        };
-        let Some(face) = faces.get(&loop_fields.face).cloned() else {
-            continue;
-        };
-        let loop_id = LoopId(format!("{prefix}:loop#{loop_xmt}"));
-        annotate_node(annotations, &loop_id, source_stream, loop_node, "LOOP");
-
-        let mut coedges = Vec::with_capacity(ring.len());
-        for &fin_xmt in ring {
-            let node = graph
-                .get(17, fin_xmt)
-                .expect("ring_resolves guarantees the FIN node decodes");
-            let fields = node
-                .fin_fields()
-                .expect("ring_resolves guarantees FIN fields decode");
-            let edge = edges
-                .get(&fields.edge)
-                .cloned()
-                .expect("ring_resolves guarantees the FIN edge was emitted");
-            let id = CoedgeId(format!("{prefix}:fin#{fin_xmt}"));
-            annotate_node(annotations, &id, source_stream, node, "FIN");
-            let support = graph
-                .get(15, fields.loop_xmt)
-                .and_then(Node::loop_fields)
-                .and_then(|loop_| graph.get(14, loop_.face))
-                .and_then(Node::face_fields)
-                .and_then(|face| surfaces.get(&face.surface))
-                .cloned();
-            let pcurve_use_range = trim_ranges
-                .get(&fields.curve_xmt)
-                .copied()
-                .and_then(ordered_parameter_range);
-            let mut pcurve = pcurves.get(&fields.curve_xmt).cloned().filter(|id| {
-                let Some((carrier, support)) = ir
-                    .model
-                    .pcurves
-                    .iter()
-                    .find(|carrier| &carrier.id == id)
-                    .zip(support.as_ref())
-                else {
-                    return false;
-                };
-                pcurve_matches_edge_range(
-                    ir,
-                    &edge,
-                    support,
-                    &carrier.geometry,
-                    pcurve_use_range.or(carrier.parameter_range),
-                    carrier.fit_tolerance,
-                )
-            });
-            let edge_curve = ir
+        let attached_pcurve_use_range = pcurve.as_ref().and(pcurve_use_range);
+        if pcurve.is_none() {
+            let carrier = ir
                 .model
                 .edges
                 .iter()
                 .find(|candidate| candidate.id == edge)
-                .and_then(|edge| edge.curve.as_ref());
-            if let (Some(pcurve), Some(edge_curve), Some(support)) =
-                (pcurve.as_ref(), edge_curve, support.as_ref())
+                .and_then(|edge| edge.curve.clone());
+            if let Some((_support, geometry, parameter_range, fit_tolerance)) = carrier
+                .zip(support)
+                .and_then(|key| {
+                    intersection_pcurves
+                        .get(&key)
+                        .cloned()
+                        .map(|value| (key.1, value.0, value.1, value.2))
+                })
+                .filter(|(support, geometry, _, fit_tolerance)| {
+                    pcurve_matches_edge(ir, &edge, support, geometry, *fit_tolerance)
+                })
             {
-                if curves.get(&fields.curve_xmt) == Some(edge_curve)
-                    && pcurve_supports.get(&fields.curve_xmt) == Some(support)
-                {
-                    serialized_branch_pcurves.insert((
-                        edge_curve.clone(),
-                        support.clone(),
-                        pcurve.clone(),
-                    ));
+                let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve#{fin_xmt}"));
+                annotations
+                    .note(&pcurve_id, source_stream, node.pos as u64)
+                    .tag("INTERSECTION_PCURVE");
+                annotations.derived(&pcurve_id, "geometry");
+                annotations.derived(&pcurve_id, "parameter_range");
+                if fit_tolerance.is_some() {
+                    annotations.derived(&pcurve_id, "fit_tolerance");
                 }
-            }
-            let attached_pcurve_use_range = pcurve.as_ref().and(pcurve_use_range);
-            if pcurve.is_none() {
-                let carrier = ir
-                    .model
-                    .edges
-                    .iter()
-                    .find(|candidate| candidate.id == edge)
-                    .and_then(|edge| edge.curve.clone());
-                if let Some((_support, geometry, parameter_range, fit_tolerance)) = carrier
-                    .zip(support)
-                    .and_then(|key| {
-                        intersection_pcurves
-                            .get(&key)
-                            .cloned()
-                            .map(|value| (key.1, value.0, value.1, value.2))
-                    })
-                    .filter(|(support, geometry, _, fit_tolerance)| {
-                        pcurve_matches_edge(ir, &edge, support, geometry, *fit_tolerance)
-                    })
-                {
-                    let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve#{fin_xmt}"));
-                    annotations
-                        .note(&pcurve_id, source_stream, node.pos as u64)
-                        .tag("INTERSECTION_PCURVE");
-                    annotations.derived(&pcurve_id, "geometry");
-                    annotations.derived(&pcurve_id, "parameter_range");
-                    if fit_tolerance.is_some() {
-                        annotations.derived(&pcurve_id, "fit_tolerance");
-                    }
-                    ir.model.pcurves.push(Pcurve {
-                        id: pcurve_id.clone(),
-                        geometry,
-                        wrapper_reversed: None,
-                        native_tail_flags: None,
-                        parameter_range: Some(parameter_range),
-                        fit_tolerance,
-                    });
-                    pcurve = Some(pcurve_id);
-                }
-            }
-            registered_coedges.insert(fin_xmt, id.clone());
-            coedges.push(CoedgeSpec {
-                id,
-                edge,
-                sense: sense(Some(fields.sense)),
-                pcurves: pcurve
-                    .into_iter()
-                    .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
-                        pcurve,
-                        isoparametric: None,
-                        parameter_range: attached_pcurve_use_range,
-                    })
-                    .collect(),
-                use_curve: None,
-                use_curve_parameter_range: None,
-            });
-        }
-        builder
-            .ring(
-                loop_id,
-                &face,
-                cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                coedges,
-                Vec::new(),
-            )
-            .expect("loop ring registers under a registered face");
-    }
-
-    // A FIN's explicit `other` is its sole radial partner. Link each pair once,
-    // driven by the lower xmt, so the builder wires both `radial_next` arcs; a
-    // FIN with no registered partner keeps the builder's laminar self-default.
-    for (&fin_xmt, id) in &registered_coedges {
-        let other = graph
-            .get(17, fin_xmt)
-            .and_then(Node::fin_fields)
-            .map_or(1, |fields| fields.other);
-        if other > 1 && fin_xmt < other {
-            if let Some(partner) = registered_coedges.get(&other) {
-                builder.radial_ring(&[id.clone(), partner.clone()]);
+                ir.model.pcurves.push(Pcurve {
+                    id: pcurve_id.clone(),
+                    geometry,
+                    wrapper_reversed: None,
+                    native_tail_flags: None,
+                    parameter_range: Some(parameter_range),
+                    fit_tolerance,
+                });
+                pcurve = Some(pcurve_id);
             }
         }
+        ir.model.coedges.push(Coedge {
+            id: id.clone(),
+            owner_loop: loop_id.clone(),
+            edge,
+            next,
+            previous,
+            radial_next,
+            sense: sense(Some(fields.sense)),
+            pcurves: pcurve
+                .into_iter()
+                .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                    pcurve,
+                    isoparametric: None,
+                    parameter_range: attached_pcurve_use_range,
+                })
+                .collect(),
+            use_curve: None,
+            use_curve_parameter_range: None,
+        });
+        if let Some(parent) = ir
+            .model
+            .loops
+            .iter_mut()
+            .find(|candidate| candidate.id == loop_id)
+        {
+            parent.coedges.push(id);
+        }
     }
-
-    builder
-        .finish(&mut ir.model)
-        .expect("topology appends without id or owner conflicts");
 
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
@@ -7579,6 +7755,7 @@ fn orient_tolerant_intersection_pcurve(
     endpoints: [Point3; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let points = range.map(|parameter| {
         let uv = pcurve_uv(pcurve, parameter)?;
         decoded_surface_point(ir, support, uv.u, uv.v)
@@ -7599,7 +7776,7 @@ fn orient_tolerant_intersection_pcurve(
             let alignment = |candidate: &PcurveGeometry| {
                 let uv = pcurve_uv(candidate, range[0])?;
                 let uv_tangent = pcurve_tangent(candidate, range[0])?;
-                let partials = model_surface_partials_by_id(ir, support, uv.u, uv.v)?;
+                let partials = model_surface_partials_by_id(&index, support, uv.u, uv.v)?;
                 let tangent = unit_vector(Vector3::new(
                     uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
                     uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
@@ -9729,58 +9906,80 @@ fn build_geometry_report(
     has_topology: bool,
     has_unresolved_sub_bodies: bool,
     tessellation_count: usize,
+    model: &crate::native::NativeModel,
 ) -> DecodeReport {
+    let has_untransferred_material_assets = model.has_untransferred_material_assets();
+    let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
 
-    losses.push(NxLossCode::CarrierSummary.note(format!(
-        "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
-         metres → millimetres), {} analytic surface carrier(s) ({} plane, {} cylinder, {} \
-         cone, {} sphere, {} torus), and {} analytic curve carrier(s) ({} line, {} circle, {} \
-         ellipse). All parameters are byte-exact at the document's millimetre scale.",
-        counts.points,
-        counts.surfaces(),
-        counts.planes,
-        counts.cylinders,
-        counts.cones,
-        counts.spheres,
-        counts.tori,
-        counts.curves(),
-        counts.lines,
-        counts.circles,
-        counts.ellipses,
-    )));
+    losses.push(LossNote {
+        code: LossKind::CarrierSummary,
+        severity: Severity::Info,
+        message: format!(
+            "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
+             metres → millimetres), {} analytic surface carrier(s) ({} plane, {} cylinder, {} \
+             cone, {} sphere, {} torus), and {} analytic curve carrier(s) ({} line, {} circle, {} \
+             ellipse). All parameters are byte-exact at the document's millimetre scale.",
+            counts.points,
+            counts.surfaces(),
+            counts.planes,
+            counts.cylinders,
+            counts.cones,
+            counts.spheres,
+            counts.tori,
+            counts.curves(),
+            counts.lines,
+            counts.circles,
+            counts.ellipses,
+        ),
+        provenance: None,
+    });
 
     if tessellation_count != 0 {
-        losses.push(NxLossCode::TessellationSummary.note(format!(
-            "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
-        )));
+        losses.push(LossNote {
+            code: LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
+                "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
+            ),
+            provenance: None,
+        });
     }
 
     if !has_topology {
-        losses.push(NxLossCode::TopologyGraphNotReconstructed.note(
-            "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
-             reconstructed because the surviving typed records did not form a complete \
-             connected ownership graph. Exact-key supported partition↔deltas replacements \
-             and deletions were applied before graph construction. Required unresolved \
-             records prevent their dependent incidence from being emitted; decoded geometry \
-             then remains unattached.",
-        ));
+        losses.push(LossNote {
+            code: LossKind::TopologyNotTransferred,
+            severity: Severity::Blocking,
+            message: "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
+                      reconstructed because the surviving typed records did not form a complete \
+                      connected ownership graph. Exact-key supported partition↔deltas replacements \
+                      and deletions were applied before graph construction. Required unresolved \
+                      records prevent their dependent incidence from being emitted; decoded geometry \
+                      then remains unattached."
+                .to_string(),
+            provenance: None,
+        });
     }
 
     if counts.intersection_rejections.total() > 0 {
-        losses.push(NxLossCode::IntersectionRecordsOpaque.note(format!(
-            "{} surface-intersection record(s) without a complete validated CHART_s and \
-             term-endpoint witness remain opaque constructions. Support-UV values govern \
-             optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
-             Parasolid stream is preserved verbatim as an unknown passthrough record so the \
-             unresolved source bytes remain available. Rejections: {} missing chart, {} missing \
-             start term, {} missing end term, {} endpoint mismatch.",
-            counts.intersection_rejections.total(),
-            counts.intersection_rejections.missing_chart,
-            counts.intersection_rejections.missing_start_term,
-            counts.intersection_rejections.missing_end_term,
-            counts.intersection_rejections.endpoint_mismatch,
-        )));
+        losses.push(LossNote {
+            code: LossKind::ObjectRecordsUntransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{} surface-intersection record(s) without a complete validated CHART_s and \
+                 term-endpoint witness remain opaque constructions. Support-UV values govern \
+                 optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
+                 Parasolid stream is preserved verbatim as an unknown passthrough record so the \
+                 unresolved source bytes remain available. Rejections: {} missing chart, {} missing \
+                 start term, {} missing end term, {} endpoint mismatch.",
+                counts.intersection_rejections.total(),
+                counts.intersection_rejections.missing_chart,
+                counts.intersection_rejections.missing_start_term,
+                counts.intersection_rejections.missing_end_term,
+                counts.intersection_rejections.endpoint_mismatch,
+            ),
+            provenance: None,
+        });
     }
 
     if scan.count(StreamKind::Deltas) > 0 {
@@ -9791,9 +9990,16 @@ fn build_geometry_report(
             .map(|(family, count)| format!("{family} {count}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let note = if unmatched_tombstones == 0 {
-            NxLossCode::DeltasApplied.note(format!(
-                "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
+        losses.push(LossNote {
+            code: LossKind::DecodeDiagnostic,
+            severity: if unmatched_tombstones == 0 {
+                Severity::Info
+            } else {
+                Severity::Warning
+            },
+            message: if unmatched_tombstones == 0 {
+                format!(
+                    "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
@@ -9815,43 +10021,82 @@ fn build_geometry_report(
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
-                scan.count(StreamKind::Deltas)
-            ))
-        } else {
-            NxLossCode::DeltasTombstonesUnresolved.note(format!(
-                "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
+                    scan.count(StreamKind::Deltas)
+                )
+            } else {
+                format!(
+                    "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key revisions were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
-                scan.count(StreamKind::Deltas)
-            ))
-        };
-        losses.push(note);
+                    scan.count(StreamKind::Deltas)
+                )
+            },
+            provenance: None,
+        });
     }
 
     if has_unresolved_sub_bodies {
-        losses.push(NxLossCode::SubBodyCompositionUnresolved.note(format!(
-            "This part is composed of {} sub-body partition(s); its decoded feature-history \
-             Booleans do not resolve every intermediate body object to a partition image. \
-             Carriers from all sub-bodies are emitted without the unresolved composition that \
-             would remove interior/construction faces.",
-            scan.count(StreamKind::Partition)
-        )));
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "This part is composed of {} sub-body partition(s); its decoded feature-history \
+                 Booleans do not resolve every intermediate body object to a partition image. \
+                 Carriers from all sub-bodies are emitted without the unresolved composition that \
+                 would remove interior/construction faces.",
+                scan.count(StreamKind::Partition)
+            ),
+            provenance: None,
+        });
     }
 
     append_design_intent_losses(ir, &mut losses);
 
-    losses.push(NxLossCode::MaterialMetadataNotTransferred.note(
-        "Material and appearance assignment, class-specific entity attribute fields, and \
-         assembly occurrence placements were not transferred: their remaining NX \
-         object-model and Parasolid field serialization is not decoded.",
-    ));
+    if has_untransferred_material_assets {
+        losses.push(LossNote {
+            code: LossKind::MaterialNotTransferred,
+            severity: Severity::Warning,
+            message: "Embedded material texture assets were retained without material or \
+                      appearance assignment because their binding fields are not decoded."
+                .to_string(),
+            provenance: None,
+        });
+    }
+
+    if has_untransferred_attribute_fields {
+        losses.push(LossNote {
+            code: LossKind::AttributesNotTransferred,
+            severity: Severity::Warning,
+            message: "A referenced Parasolid attribute value or field-name record was not \
+                      transferred because its complete value relation did not resolve."
+                .to_string(),
+            provenance: None,
+        });
+    }
+
+    if scan
+        .container
+        .entries
+        .iter()
+        .any(|entry| entry.content() == EntryContent::ExternalReferences)
+    {
+        losses.push(LossNote {
+            code: LossKind::AssemblyPlacementsNotTransferred,
+            severity: Severity::Warning,
+            message: "Assembly occurrence placements were not transferred because their remaining \
+                      NX object-model field serialization is not decoded."
+                .to_string(),
+            provenance: None,
+        });
+    }
 
     DecodeReport {
         format: "nx".to_string(),
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary_notes(scan),
     }
@@ -9865,10 +10110,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|feature| feature.suppressed.is_none())
         .count();
     if unresolved_suppression_count != 0 {
-        losses.push(NxLossCode::FeatureSuppressionUnresolved.note(format!(
-            "Suppression state remains unresolved for {unresolved_suppression_count} NX \
-             feature history operation(s)."
-        )));
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "Suppression state remains unresolved for {unresolved_suppression_count} NX \
+                 feature history operation(s)."
+            ),
+            provenance: None,
+        });
     }
 
     let active_configuration_count = ir
@@ -9900,19 +10150,29 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if incomplete_configuration_count != 0 {
-        losses.push(NxLossCode::ConfigurationActivationUnresolved.note(format!(
-            "Activation, complete body membership, evaluated feature state, or evaluated \
-             parameter state remains unresolved for {incomplete_configuration_count} NX \
-             design configuration(s)."
-        )));
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "Activation, complete body membership, evaluated feature state, or evaluated \
+                 parameter state remains unresolved for {incomplete_configuration_count} NX \
+                 design configuration(s)."
+            ),
+            provenance: None,
+        });
     }
 
     let incomplete_expression_count = incomplete_expression_parameters(ir).len();
     if incomplete_expression_count != 0 {
-        losses.push(NxLossCode::ExpressionParameterIncomplete.note(format!(
-            "Neutral evaluation or dependency semantics remain incomplete for \
-             {incomplete_expression_count} NX expression parameter(s)."
-        )));
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "Neutral evaluation or dependency semantics remain incomplete for \
+                 {incomplete_expression_count} NX expression parameter(s)."
+            ),
+            provenance: None,
+        });
     }
 
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
@@ -9927,10 +10187,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .map(|(kind, count)| format!("{kind} ({count})"))
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(NxLossCode::FeatureNativeOnly.note(format!(
-            "NX feature-history operation(s) remain native-only because their complete neutral \
-             operation semantics are not decoded: {kinds}."
-        )));
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "NX feature-history operation(s) remain native-only because their complete neutral \
+                 operation semantics are not decoded: {kinds}."
+            ),
+            provenance: None,
+        });
     }
 
     let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
@@ -9952,12 +10217,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .map(|(family, count)| format!("{family} ({count})"))
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(
-            NxLossCode::FeatureFamilyConstructionUnresolved.note(format!(
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "NX feature family identities were transferred, but their neutral construction \
-             semantics remain unresolved: {families}."
-            )),
-        );
+                 semantics remain unresolved: {families}."
+            ),
+            provenance: None,
+        });
     }
 
     let mut incomplete_feature_families = BTreeMap::<&str, usize>::new();
@@ -9983,11 +10251,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::Block {
                 dimensions,
                 placement,
+                op,
             } if dimensions.is_none_or(|dimensions| {
                 dimensions
                     .into_iter()
                     .any(|dimension| !positive_feature_length(dimension))
-            }) || placement.is_none_or(|placement| !placement.is_proper_rigid()) =>
+            }) || placement.is_none_or(|placement| !placement.is_proper_rigid())
+                || matches!(op, BooleanOp::Unresolved) =>
             {
                 "block"
             }
@@ -10050,30 +10320,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "sketch"
             }
-            FeatureDefinition::Loft {
-                sections,
-                centerline,
-                guides,
-                op,
-                max_degree,
-                ..
-            } if sections.len() < 2
-                || sections.iter().any(loft_section_is_incomplete)
-                || sections.iter().any(|section| {
-                    matches!(
-                        section,
-                        LoftSection::Profile(profile)
-                            if profile_dependency_is_incomplete(profile, &feature.dependencies)
-                    )
-                })
-                || centerline.as_ref().is_some_and(path_ref_is_incomplete)
-                || guides.iter().any(path_ref_is_incomplete)
-                || (centerline.is_some() && !guides.is_empty())
-                || max_degree.is_some_and(|degree| degree == 0)
-                || matches!(op, BooleanOp::Unresolved) =>
-            {
-                "loft"
-            }
+            FeatureDefinition::Loft { .. } if loft_definition_is_incomplete(feature) => "loft",
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
@@ -10086,223 +10333,51 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "projected curve"
             }
-            FeatureDefinition::TrimSurface { faces, tool, keep }
-                if face_selection_is_incomplete(faces)
-                    || path_ref_is_incomplete(tool)
-                    || matches!(keep, TrimRegion::Unresolved) =>
+            FeatureDefinition::TrimSurface { .. }
+                if trim_surface_definition_is_incomplete(feature) =>
             {
                 "trim surface"
             }
-            FeatureDefinition::ExtendSurface {
-                faces,
-                distance,
-                method,
-            } if face_selection_is_incomplete(faces)
-                || distance.is_none_or(|distance| !positive_feature_length(distance))
-                || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved) =>
+            FeatureDefinition::ExtendSurface { .. }
+                if extend_surface_definition_is_incomplete(feature) =>
             {
                 "extend surface"
             }
-            FeatureDefinition::Hole {
-                profile,
-                profile_filter,
-                face,
-                position,
-                direction,
-                placements,
-                kind,
-                exit_kind,
-                diameter,
-                extent,
-                bottom,
-                taper_angle,
-                specification,
-                ..
-            } if hole_feature_is_incomplete(
-                profile.as_ref(),
-                face.as_ref(),
-                (*position, *direction),
-                placements,
-                (kind, exit_kind.as_ref()),
-                *diameter,
-                extent.as_ref(),
-            ) || hole_auxiliary_semantics_are_incomplete(
-                profile_filter.as_ref(),
-                bottom.as_ref(),
-                *taper_angle,
-                specification.as_deref(),
-            ) || extent.as_ref().is_some_and(|extent| {
-                termination_dependency_is_incomplete(extent, &feature.dependencies)
-            }) || profile.as_ref().is_some_and(|profile| {
-                profile_dependency_is_incomplete(profile, &feature.dependencies)
-            }) =>
-            {
-                "hole"
-            }
-            FeatureDefinition::Rib { construction, op }
-                if rib_feature_is_incomplete(construction, *op)
-                    || construction.profile.as_ref().is_some_and(|profile| {
-                        profile_dependency_is_incomplete(profile, &feature.dependencies)
-                    }) =>
-            {
-                "rib"
-            }
-            FeatureDefinition::Chamfer { groups, .. }
-                if groups.is_empty()
-                    || groups.iter().any(|group| {
-                        edge_selection_is_incomplete(&group.edges)
-                            || chamfer_spec_is_incomplete(&group.spec)
-                    }) =>
-            {
+            FeatureDefinition::Hole { .. } if hole_definition_is_incomplete(feature) => "hole",
+            FeatureDefinition::Rib { .. } if rib_definition_is_incomplete(feature) => "rib",
+            FeatureDefinition::Chamfer { .. } if chamfer_definition_is_incomplete(feature) => {
                 "chamfer"
             }
-            FeatureDefinition::Fillet { groups }
-                if groups.is_empty()
-                    || groups.iter().any(|group| {
-                        edge_selection_is_incomplete(&group.edges)
-                            || radius_spec_is_incomplete(&group.radius)
-                            || group
-                                .tangency_weight
-                                .is_some_and(|weight| !weight.is_finite())
-                    }) =>
-            {
+            FeatureDefinition::Fillet { .. } if fillet_definition_is_incomplete(feature) => {
                 "fillet"
             }
-            FeatureDefinition::FaceBlend {
-                first_faces,
-                second_faces,
-                radius,
-            } if face_selection_is_incomplete(first_faces)
-                || face_selection_is_incomplete(second_faces)
-                || face_selections_overlap(first_faces, second_faces)
-                || radius_spec_is_incomplete(radius) =>
-            {
+            FeatureDefinition::FaceBlend { .. } if face_blend_definition_is_incomplete(feature) => {
                 "face blend"
             }
-            FeatureDefinition::SewBodies {
-                bodies,
-                gap_tolerance,
-            } if body_selection_is_incomplete(bodies)
-                || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
-                || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance)) =>
-            {
+            FeatureDefinition::SewBodies { .. } if sew_bodies_definition_is_incomplete(feature) => {
                 "sew bodies"
             }
-            FeatureDefinition::TrimBodies {
-                targets,
-                tools,
-                keep,
-            } if body_selection_is_incomplete(targets)
-                || body_selection_is_incomplete(tools)
-                || body_selections_overlap(targets, tools)
-                || matches!(keep, BodyTrimSide::Unresolved) =>
+            FeatureDefinition::TrimBodies { .. }
+                if trim_bodies_definition_is_incomplete(feature) =>
             {
                 "trim bodies"
             }
-            FeatureDefinition::Extrude {
-                profile,
-                direction,
-                start,
-                extent,
-                op,
-                solid,
-                direction_source,
-                face_maker,
-                ..
-            } if profile_ref_is_incomplete(profile)
-                || profile_dependency_is_incomplete(profile, &feature.dependencies)
-                || matches!(
-                    direction,
-                    cadmpeg_ir::features::ExtrudeDirection::Unresolved
-                )
-                || matches!(
-                    direction,
-                    cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
-                        if !valid_feature_direction(*direction)
-                )
-                || extrude_start_is_incomplete(start)
-                || extrude_extent_is_incomplete(extent, &feature.dependencies)
-                || matches!(op, BooleanOp::Unresolved)
-                || solid.is_none()
-                || direction_source.as_ref().is_some_and(|source| {
-                    matches!(
-                        source,
-                        cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
-                            if path_ref_is_incomplete(reference)
-                    )
-                })
-                || face_maker
-                    .as_ref()
-                    .is_some_and(|maker| maker.class.trim().is_empty()) =>
-            {
+            FeatureDefinition::Extrude { .. } if extrude_definition_is_incomplete(feature) => {
                 "extrude"
             }
-            FeatureDefinition::Revolve { construction, op }
-                if revolve_feature_is_incomplete(construction, *op, &feature.dependencies) =>
-            {
+            FeatureDefinition::Revolve { .. } if revolve_definition_is_incomplete(feature) => {
                 "revolve"
             }
-            FeatureDefinition::Sweep {
-                profile,
-                sections,
-                path,
-                mode,
-                orientation,
-                transition,
-                transformation,
-                twist,
-                scale,
-                ..
-            } if profile.as_ref().is_none_or(profile_ref_is_incomplete)
-                || profile.as_ref().is_some_and(|profile| {
-                    profile_dependency_is_incomplete(profile, &feature.dependencies)
-                })
-                || sections.iter().any(profile_ref_is_incomplete)
-                || sections.iter().any(|profile| {
-                    profile_dependency_is_incomplete(profile, &feature.dependencies)
-                })
-                || path.as_ref().is_none_or(path_ref_is_incomplete)
-                || sweep_mode_is_incomplete(*mode)
-                || orientation
-                    .as_ref()
-                    .is_none_or(sweep_orientation_is_incomplete)
-                || transition.is_none()
-                || transformation.is_none()
-                || twist.is_some_and(|twist| !twist.0.is_finite())
-                || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) =>
-            {
-                "sweep"
-            }
-            FeatureDefinition::OffsetSurface { faces, distance }
-                if face_selection_is_incomplete(faces)
-                    || distance.is_none_or(|distance| !distance.0.is_finite()) =>
+            FeatureDefinition::Sweep { .. } if sweep_definition_is_incomplete(feature) => "sweep",
+            FeatureDefinition::OffsetSurface { .. }
+                if offset_surface_definition_is_incomplete(feature) =>
             {
                 "offset surface"
             }
-            FeatureDefinition::Thicken {
-                faces,
-                thickness,
-                side,
-            } if face_selection_is_incomplete(faces)
-                || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
-                || side.is_none() =>
-            {
+            FeatureDefinition::Thicken { .. } if thicken_definition_is_incomplete(feature) => {
                 "thicken"
             }
-            FeatureDefinition::Draft {
-                faces,
-                neutral_plane,
-                pull_direction,
-                angle,
-                outward,
-            } if face_selection_is_incomplete(faces)
-                || face_selection_is_incomplete(neutral_plane)
-                || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
-                || angle.is_none_or(|angle| !valid_draft_angle(angle))
-                || outward.is_none() =>
-            {
-                "draft"
-            }
+            FeatureDefinition::Draft { .. } if draft_definition_is_incomplete(feature) => "draft",
             FeatureDefinition::Pattern { seeds, pattern }
                 if pattern_feature_is_incomplete(seeds, pattern, &feature.dependencies) =>
             {
@@ -10319,27 +10394,16 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "section"
             }
-            FeatureDefinition::Combine { target, tools, op }
-                if body_selection_is_incomplete(target)
-                    || body_selection_is_incomplete(tools)
-                    || resolved_body_selection_len(target) != Some(1)
-                    || body_selections_overlap(target, tools)
-                    || matches!(op, BooleanOp::Unresolved) =>
-            {
+            FeatureDefinition::Combine { .. } if combine_definition_is_incomplete(feature) => {
                 "body combine"
             }
-            FeatureDefinition::DeleteBody { bodies, mode }
-                if body_selection_is_incomplete(bodies)
-                    || matches!(mode, BodyRetentionMode::Unresolved) =>
+            FeatureDefinition::DeleteBody { .. }
+                if delete_body_definition_is_incomplete(feature) =>
             {
                 "delete body"
             }
-            FeatureDefinition::ReplaceFace {
-                targets,
-                replacements,
-            } if face_selection_is_incomplete(targets)
-                || face_selection_is_incomplete(replacements)
-                || face_selections_overlap(targets, replacements) =>
+            FeatureDefinition::ReplaceFace { .. }
+                if replace_face_definition_is_incomplete(feature) =>
             {
                 "replace face"
             }
@@ -10353,11 +10417,16 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             .map(|(family, count)| format!("{family} ({count})"))
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(NxLossCode::FeatureFamilyLineageUnresolved.note(format!(
-            "NX feature families were transferred as typed neutral operations, but \
-             construction fields or output lineage remain unresolved or native-only: \
-             {families}."
-        )));
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "NX feature families were transferred as typed neutral operations, but \
+                 construction fields or output lineage remain unresolved or native-only: \
+                 {families}."
+            ),
+            provenance: None,
+        });
     }
 
     let sketch_feature_count = ir
@@ -10378,17 +10447,16 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if unresolved_sketch_feature_count != 0 {
-        losses.push(NxLossCode::SketchGraphUnresolved.note(format!(
-            "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
-             {unresolved_sketch_feature_count} have no neutral sketch graph because complete \
-             sketch placement and entity semantics are unresolved."
-        )));
-    } else if sketch_feature_count != 0 && ir.model.sketch_constraints.is_empty() {
-        losses.push(NxLossCode::SketchConstraintsUntransferred.note(format!(
-            "Decoded {} NX sketch record(s), but no sketch constraints were transferred because \
-             their object-model field serialization and operand roles are unresolved.",
-            ir.model.sketches.len()
-        )));
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
+                 {unresolved_sketch_feature_count} have no neutral sketch graph because complete \
+                 sketch placement and entity semantics are unresolved."
+            ),
+            provenance: None,
+        });
     }
 
     let native_sketch_entity_count = ir
@@ -10414,15 +10482,20 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
-        losses.push(NxLossCode::SketchRecordsNative.note(format!(
-            "Neutral semantics remain unresolved for {native_sketch_entity_count} NX sketch \
-             geometry record(s) and {native_sketch_constraint_count} sketch constraint \
-             record(s)."
-        )));
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "Neutral semantics remain unresolved for {native_sketch_entity_count} NX sketch \
+                 geometry record(s) and {native_sketch_constraint_count} sketch constraint \
+                 record(s)."
+            ),
+            provenance: None,
+        });
     }
 }
 
-fn active_configuration_state_is_incomplete(
+pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
@@ -10640,6 +10713,343 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
         }
     }
     incomplete
+}
+
+pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::TrimSurface { faces, tool, keep } = &feature.definition else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || path_ref_is_incomplete(tool)
+        || matches!(keep, TrimRegion::Unresolved)
+}
+
+pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::ExtendSurface {
+        faces,
+        distance,
+        method,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || distance.is_none_or(|distance| !positive_feature_length(distance))
+        || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved)
+}
+
+pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::SewBodies {
+        bodies,
+        gap_tolerance,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    body_selection_is_incomplete(bodies)
+        || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
+        || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance))
+}
+
+pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Combine {
+        target, tools, op, ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    body_selection_is_incomplete(target)
+        || body_selection_is_incomplete(tools)
+        || resolved_body_selection_len(target) != Some(1)
+        || body_selections_overlap(target, tools)
+        || matches!(op, BooleanOp::Unresolved | BooleanOp::NewBody)
+}
+
+pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::TrimBodies {
+        targets,
+        tools,
+        keep,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    body_selection_is_incomplete(targets)
+        || body_selection_is_incomplete(tools)
+        || body_selections_overlap(targets, tools)
+        || matches!(keep, BodyTrimSide::Unresolved)
+}
+
+pub(crate) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+        return true;
+    };
+    body_selection_is_incomplete(bodies) || matches!(mode, BodyRetentionMode::Unresolved)
+}
+
+pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Hole {
+        profile,
+        profile_filter,
+        face,
+        position,
+        direction,
+        placements,
+        kind,
+        exit_kind,
+        diameter,
+        extent,
+        bottom,
+        taper_angle,
+        specification,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    hole_feature_is_incomplete(
+        profile.as_ref(),
+        face.as_ref(),
+        (*position, *direction),
+        placements,
+        (kind, exit_kind.as_ref()),
+        *diameter,
+        extent.as_ref(),
+    ) || hole_auxiliary_semantics_are_incomplete(
+        profile_filter.as_ref(),
+        bottom.as_ref(),
+        *taper_angle,
+        specification.as_deref(),
+    ) || extent
+        .as_ref()
+        .is_some_and(|extent| termination_dependency_is_incomplete(extent, &feature.dependencies))
+        || profile
+            .as_ref()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+}
+
+pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Chamfer { groups, .. } = &feature.definition else {
+        return true;
+    };
+    groups.is_empty()
+        || groups.iter().any(|group| {
+            edge_selection_is_incomplete(&group.edges) || chamfer_spec_is_incomplete(&group.spec)
+        })
+}
+
+pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Fillet { groups } = &feature.definition else {
+        return true;
+    };
+    groups.is_empty()
+        || groups.iter().any(|group| {
+            edge_selection_is_incomplete(&group.edges)
+                || radius_spec_is_incomplete(&group.radius)
+                || group
+                    .tangency_weight
+                    .is_some_and(|weight| !weight.is_finite())
+        })
+}
+
+pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::FaceBlend {
+        first_faces,
+        second_faces,
+        radius,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(first_faces)
+        || face_selection_is_incomplete(second_faces)
+        || face_selections_overlap(first_faces, second_faces)
+        || radius_spec_is_incomplete(radius)
+}
+
+pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
+        return true;
+    };
+    face_selection_is_incomplete(faces) || distance.is_none_or(|distance| !distance.0.is_finite())
+}
+
+pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Thicken {
+        faces,
+        thickness,
+        side,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
+        || side.is_none()
+}
+
+pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Draft {
+        faces,
+        neutral_plane,
+        pull_direction,
+        angle,
+        outward,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || face_selection_is_incomplete(neutral_plane)
+        || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
+        || angle.is_none_or(|angle| !valid_draft_angle(angle))
+        || outward.is_none()
+}
+
+pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::ReplaceFace {
+        targets,
+        replacements,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(targets)
+        || face_selection_is_incomplete(replacements)
+        || face_selections_overlap(targets, replacements)
+}
+
+pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Loft {
+        sections,
+        centerline,
+        guides,
+        op,
+        max_degree,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    sections.len() < 2
+        || sections.iter().any(loft_section_is_incomplete)
+        || sections.iter().any(|section| {
+            matches!(
+                section,
+                LoftSection::Profile(profile)
+                    if profile_dependency_is_incomplete(profile, &feature.dependencies)
+            )
+        })
+        || centerline.as_ref().is_some_and(path_ref_is_incomplete)
+        || guides.iter().any(path_ref_is_incomplete)
+        || (centerline.is_some() && !guides.is_empty())
+        || max_degree.is_some_and(|degree| degree == 0)
+        || matches!(op, BooleanOp::Unresolved)
+}
+
+pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Extrude {
+        profile,
+        direction,
+        start,
+        extent,
+        op,
+        solid,
+        direction_source,
+        face_maker,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    profile_ref_is_incomplete(profile)
+        || profile_dependency_is_incomplete(profile, &feature.dependencies)
+        || matches!(
+            direction,
+            cadmpeg_ir::features::ExtrudeDirection::Unresolved
+        )
+        || matches!(
+            direction,
+            cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
+                if !valid_feature_direction(*direction)
+        )
+        || extrude_start_is_incomplete(start)
+        || extrude_extent_is_incomplete(extent, &feature.dependencies)
+        || matches!(op, BooleanOp::Unresolved)
+        || solid.is_none()
+        || direction_source.as_ref().is_some_and(|source| {
+            matches!(
+                source,
+                cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
+                    if path_ref_is_incomplete(reference)
+            )
+        })
+        || face_maker
+            .as_ref()
+            .is_some_and(|maker| maker.class.trim().is_empty())
+}
+
+pub(crate) fn revolve_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Revolve { construction, op } = &feature.definition else {
+        return true;
+    };
+    revolve_feature_is_incomplete(construction, *op, &feature.dependencies)
+}
+
+pub(crate) fn rib_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Rib { construction, op } = &feature.definition else {
+        return true;
+    };
+    rib_feature_is_incomplete(construction, *op)
+        || construction
+            .profile
+            .as_ref()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+}
+
+pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Sweep {
+        section,
+        sections,
+        path,
+        mode,
+        orientation,
+        transition,
+        transformation,
+        twist,
+        scale,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+        || section
+            .referenced_profile()
+            .is_some_and(profile_ref_is_incomplete)
+        || section
+            .referenced_profile()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || sections.iter().any(|section| {
+            matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                || section
+                    .referenced_profile()
+                    .is_some_and(profile_ref_is_incomplete)
+        })
+        || sections.iter().any(|section| {
+            section.referenced_profile().is_some_and(|profile| {
+                profile_dependency_is_incomplete(profile, &feature.dependencies)
+            })
+        })
+        || path.as_ref().is_none_or(path_ref_is_incomplete)
+        || sweep_mode_is_incomplete(*mode)
+        || orientation
+            .as_ref()
+            .is_none_or(sweep_orientation_is_incomplete)
+        || transition.is_none()
+        || transformation.is_none()
+        || twist.is_some_and(|twist| !twist.0.is_finite())
+        || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0)
 }
 
 pub(crate) fn hole_feature_is_incomplete(
@@ -10964,7 +11374,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             direction.is_none_or(|direction| !valid_feature_direction(direction))
                 || !positive_feature_length(*spacing)
-                || *count == 0
+                || *count < 2
                 || second.as_ref().is_some_and(|second| {
                     !valid_feature_direction(second.direction)
                         || !positive_feature_length(second.spacing)
@@ -10973,6 +11383,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         }
         PatternKind::LinearOffsets { direction, offsets } => {
             direction.is_none_or(|direction| !valid_feature_direction(direction))
+                || offsets.len() < 2
                 || !valid_increasing_locations(offsets.iter().map(|offset| offset.0))
         }
         PatternKind::Circular {
@@ -10985,7 +11396,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
                 || !valid_feature_direction(*axis_dir)
                 || !angle.0.is_finite()
                 || angle.0 <= 0.0
-                || *count == 0
+                || *count < 2
         }
         PatternKind::CircularAngles {
             axis_origin,
@@ -10994,6 +11405,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             !finite_feature_point(*axis_origin)
                 || !valid_feature_direction(*axis_dir)
+                || angles.len() < 2
                 || !valid_increasing_locations(angles.iter().map(|angle| angle.0))
         }
         PatternKind::Mirror {
@@ -11007,7 +11419,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
         } => {
             path.as_ref().is_none_or(path_ref_is_incomplete)
                 || !positive_feature_length(*spacing)
-                || *count == 0
+                || *count < 2
         }
         PatternKind::Scale {
             center,
@@ -11055,6 +11467,7 @@ pub(crate) fn pattern_feature_is_incomplete(
             cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
                 body_selection_is_incomplete(bodies)
             }
+            cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => occurrences.is_empty(),
         })
         || seeds
             .iter()
@@ -11143,7 +11556,7 @@ fn pattern_composition_is_incomplete(stages: &[cadmpeg_ir::features::PatternStag
     })
 }
 
-fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
+pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
     match pattern {
         PatternKind::Linear { count, .. }
         | PatternKind::Circular { count, .. }
@@ -11152,7 +11565,26 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
         PatternKind::Mirror { .. } => Some(2),
-        PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
+        PatternKind::Composite { stages } => {
+            stages
+                .iter()
+                .try_fold(None::<usize>, |occurrences, stage| {
+                    let stage_count = pattern_occurrence_count(&stage.pattern)?;
+                    match stage.combination {
+                        cadmpeg_ir::features::PatternStageCombination::Initialize => {
+                            occurrences.is_none().then_some(Some(stage_count))
+                        }
+                        cadmpeg_ir::features::PatternStageCombination::CartesianProduct => {
+                            Some(Some(occurrences?.checked_mul(stage_count)?))
+                        }
+                        cadmpeg_ir::features::PatternStageCombination::AlignedSlices => {
+                            let occurrences = occurrences?;
+                            (occurrences % stage_count == 0).then_some(Some(occurrences))
+                        }
+                    }
+                })?
+        }
+        PatternKind::Unresolved { .. } => None,
     }
 }
 
@@ -11168,8 +11600,10 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
         }
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
-        | BodySelection::Native(_) => true,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => true,
     }
 }
 
@@ -11191,9 +11625,11 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
-        | BodySelection::Native(_) => None,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => None,
     }
 }
 
@@ -11205,8 +11641,10 @@ fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
+        | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
-        | BodySelection::Native(_) => None,
+        | BodySelection::Native(_)
+        | BodySelection::NativeSet(_) => None,
     }
 }
 
@@ -11264,6 +11702,7 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
         | ProfileRef::SketchSelection { .. }
         | ProfileRef::SpatialSketchSelection { .. } => true,
         ProfileRef::Sketch(_) => false,
+        ProfileRef::SketchEntities { entities, .. } => selection_ids_are_incomplete(entities),
         ProfileRef::SketchProfiles { profiles, .. }
         | ProfileRef::SpatialSketchProfiles { profiles, .. } => {
             selection_ids_are_incomplete(profiles)
@@ -11321,21 +11760,17 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
         }
         PathRef::HistoricalEdges { edges, .. } => selection_ids_are_incomplete(edges),
         PathRef::Sketch(_) => false,
+        PathRef::SketchCurves { curves, .. } => selection_ids_are_incomplete(curves),
         PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
         PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
     }
 }
 
 fn build_metadata_ir(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
     scan: &Scan,
-) -> Result<
-    (
-        CadIr,
-        cadmpeg_ir::annotations::Annotations,
-        Vec<UnknownRecord>,
-    ),
-    CodecError,
-> {
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -11352,7 +11787,8 @@ fn build_metadata_ir(
         }
     }
     let parsed = crate::native::ParsedStreams::parse(scan);
-    let model = crate::native::NativeModel::extract(&scan.container, &scan.streams, &parsed);
+    let model =
+        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
     crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     Ok((ir, annotations.build(), unknowns))
@@ -11369,26 +11805,37 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         && !scan.has_parasolid();
 
     if assembly {
-        losses.push(NxLossCode::AssemblyComponentsExternal.note(
-            "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
-             lives in external child .prt files named in EXTREFSTREAM, and the assembled \
-             solid's inputs (child partitions + constraint solve) are absent from this \
-             file. This is an external-dependency boundary, not a decode gap.",
-        ));
+        losses.push(LossNote {
+            code: LossKind::AssemblyComponentsExternal,
+            severity: Severity::Blocking,
+            message: "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
+                      lives in external child .prt files named in EXTREFSTREAM, and the assembled \
+                      solid's inputs (child partitions + constraint solve) are absent from this \
+                      file. This is an external-dependency boundary, not a decode gap."
+                .to_string(),
+            provenance: None,
+        });
     } else {
-        losses.push(NxLossCode::GeometryNotTransferred.note(
-            "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
-             in the embedded Parasolid streams (they may hold only B-spline/procedural \
-             geometry this codec does not yet type). The streams are preserved verbatim as \
-             unknown passthrough records.",
-        ));
+        losses.push(LossNote {
+            code: LossKind::GeometryNotTransferred,
+            severity: Severity::Blocking,
+            message: "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
+                      in the embedded Parasolid streams (they may hold only B-spline/procedural \
+                      geometry this codec does not yet type). The streams are preserved verbatim as \
+                      unknown passthrough records."
+                .to_string(),
+            provenance: None,
+        });
     }
 
     if container_only {
-        losses.push(
-            NxLossCode::ContainerOnlyDecode
-                .note("Container-only decode requested; entity decode was not attempted."),
-        );
+        losses.push(LossNote {
+            code: LossKind::ContainerOnly,
+            severity: Severity::Info,
+            message: "Container-only decode requested; entity decode was not attempted."
+                .to_string(),
+            provenance: None,
+        });
     }
 
     DecodeReport {
@@ -11396,6 +11843,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary_notes(scan),
     }
@@ -11498,7 +11946,6 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::annotations::AnnotationBuilder;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,
@@ -11511,6 +11958,7 @@ mod tests {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex};
+    use cadmpeg_ir::AnnotationBuilder;
 
     #[test]
     fn analytic_closed_isocurves_retain_the_native_full_turn() {
@@ -11645,8 +12093,13 @@ mod tests {
                     .unwrap();
                 let expected = cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).unwrap();
                 let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
-                let actual =
-                    cadmpeg_ir::eval::model_surface_point_by_id(&ir, surface, uv.u, uv.v).unwrap();
+                let actual = cadmpeg_ir::eval::model_surface_point_by_id(
+                    &cadmpeg_ir::index::ModelIndex::new(&ir),
+                    surface,
+                    uv.u,
+                    uv.v,
+                )
+                .unwrap();
                 assert!(super::point_distance(expected, actual) < 1.0e-12);
             }
         }
@@ -11708,7 +12161,7 @@ mod tests {
                         return false;
                     };
                     let Some(point) = cadmpeg_ir::eval::model_surface_point_by_id(
-                        &ir,
+                        &cadmpeg_ir::index::ModelIndex::new(&ir),
                         &supports[side],
                         uv.u,
                         uv.v,
@@ -11723,8 +12176,12 @@ mod tests {
             }));
         for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
             let curve = &ir.model.procedural_curves[0].curve;
-            let point = cadmpeg_ir::eval::model_curve_point_by_id(&ir, curve, parameter)
-                .expect("closed intersection evaluates");
+            let point = cadmpeg_ir::eval::model_curve_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                curve,
+                parameter,
+            )
+            .expect("closed intersection evaluates");
             let inverse =
                 cadmpeg_ir::eval::model_curve_parameter_near_point(&ir, curve, point, parameter)
                     .unwrap_or_else(|| {
@@ -12088,6 +12545,23 @@ mod tests {
     }
 
     #[test]
+    fn nurbs_blend_contact_requires_the_declared_radius_shell() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let surface = SurfaceId("nx:test:contact-support".into());
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+        let center = Point3::new(1.2, 0.7, 2.0);
+
+        let direction = super::surface_contact_direction(&ir, &surface, center, 2.0, 0)
+            .expect("the support contains one contact at the blend radius");
+        assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
+        assert!(super::surface_contact_direction(&ir, &surface, center, 1.0, 0).is_none());
+    }
+
+    #[test]
     fn saved_offset_cache_retains_its_procedural_lineage() {
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let support = SurfaceId("nx:test:support".into());
@@ -12295,8 +12769,18 @@ mod tests {
         assert_eq!(parameterization.parameter_range, [0.0, 10.0]);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 10.0]));
         assert_eq!(
-            cadmpeg_ir::eval::model_surface_point_by_id(&ir, &surfaces[0], 5.0, 0.0),
-            cadmpeg_ir::eval::model_surface_point_by_id(&ir, &surfaces[1], 5.0, 0.0)
+            cadmpeg_ir::eval::model_surface_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                &surfaces[0],
+                5.0,
+                0.0
+            ),
+            cadmpeg_ir::eval::model_surface_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&ir),
+                &surfaces[1],
+                5.0,
+                0.0
+            )
         );
 
         let ProceduralCurveDefinition::TolerantIntersection {

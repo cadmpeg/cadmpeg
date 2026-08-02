@@ -3,14 +3,18 @@
 //!
 //! [`NativeModel::extract`] runs the full extraction dependency DAG in the same
 //! hand-ordered topological order the decode tier previously inlined, grouping
-//! the resulting record vectors into five domain sub-structs. Extraction is
+//! the resulting record vectors into domain sub-structs. Extraction is
 //! infallible: malformed data is omitted, never surfaced as an error.
 
 use crate::container::Container;
 use crate::parasolid::Stream;
+use cadmpeg_codec_core::decode::{DecodeContext, View};
 
 #[allow(clippy::wildcard_imports)]
-use super::{display_jt::*, features::*, om::*, parasolid::*, segments::*, substrate::*};
+use super::{
+    display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, substrate::*,
+    toggle::*,
+};
 
 /// Records extracted from the `display_jt` domain.
 #[allow(clippy::struct_field_names)]
@@ -74,14 +78,21 @@ pub(crate) struct ParasolidRecords {
     pub(crate) parasolid_support_uv_records: Vec<ParasolidSupportUvRecord>,
     pub(crate) parasolid_chart_records: Vec<ParasolidChartRecord>,
     pub(crate) parasolid_attribute_definitions: Vec<ParasolidAttributeDefinition>,
+    pub(crate) parasolid_field_names_records: Vec<ParasolidFieldNamesRecord>,
+    pub(crate) parasolid_attribute_field_names: Vec<ParasolidAttributeFieldNames>,
     pub(crate) parasolid_entity_51_records: Vec<ParasolidEntity51Record>,
     pub(crate) parasolid_entity_52_integer_records: Vec<ParasolidEntity52IntegerRecord>,
     pub(crate) parasolid_entity_53_double_records: Vec<ParasolidEntity53DoubleRecord>,
     pub(crate) parasolid_entity_54_string_records: Vec<ParasolidEntity54StringRecord>,
+    pub(crate) parasolid_entity_vector_records: Vec<ParasolidEntityVectorRecord>,
+    pub(crate) parasolid_entity_57_axis_records: Vec<ParasolidEntity57AxisRecord>,
+    pub(crate) parasolid_entity_58_tag_records: Vec<ParasolidEntity58TagRecord>,
+    pub(crate) parasolid_entity_62_unicode_records: Vec<ParasolidEntity62UnicodeRecord>,
     pub(crate) parasolid_entity_51_numeric_uses: Vec<ParasolidEntity51NumericUse>,
     pub(crate) parasolid_entity_51_string_uses: Vec<ParasolidEntity51StringUse>,
+    pub(crate) parasolid_entity_51_structured_uses: Vec<ParasolidEntity51StructuredUse>,
     pub(crate) parasolid_attribute_class_uses: Vec<ParasolidAttributeClassUse>,
-    pub(crate) parasolid_attribute_numeric_class_uses: Vec<ParasolidAttributeNumericClassUse>,
+    pub(crate) parasolid_attribute_field_uses: Vec<ParasolidAttributeFieldUse>,
     pub(crate) parasolid_topology_attribute_list_references:
         Vec<ParasolidTopologyAttributeListReference>,
     pub(crate) parasolid_topology_attribute_class_uses: Vec<ParasolidTopologyAttributeClassUse>,
@@ -95,6 +106,20 @@ pub(crate) struct SegmentRecords {
     pub(crate) segment_stream_links: Vec<SegmentStreamLink>,
     pub(crate) segment_body_bindings: Vec<SegmentBodyBinding>,
     pub(crate) segment_body_lineage_statuses: Vec<SegmentBodyLineageStatus>,
+}
+
+/// Records extracted from the fast-load `structure` domain.
+pub(crate) struct StructureRecords {
+    pub(crate) prototypes: Vec<FastLoadComponentPrototype>,
+    pub(crate) uuids: Vec<FastLoadComponentUuid>,
+    pub(crate) occurrences: Vec<FastLoadComponentOccurrence>,
+    pub(crate) object_groups: Vec<FastLoadComponentObjectGroup>,
+}
+
+/// Records extracted from the saved toggle-information stream.
+pub(crate) struct ToggleRecords {
+    pub(crate) streams: Vec<SavedToggleStream>,
+    pub(crate) entries: Vec<SavedToggleEntry>,
 }
 
 /// Records extracted from the `features` domain.
@@ -111,6 +136,10 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_simple_hole_repeated_scalar_lane_block_references:
         Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>,
     pub(crate) feature_simple_hole_construction_groups: Vec<FeatureSimpleHoleConstructionGroup>,
+    pub(crate) feature_hole_package_construction_group_lanes:
+        Vec<FeatureHolePackageConstructionGroupLane>,
+    pub(crate) feature_hole_package_construction_group_uses:
+        Vec<FeatureHolePackageConstructionGroupUse>,
     pub(crate) feature_body_references: Vec<FeatureBodyReference>,
     pub(crate) feature_body_segment_uses: Vec<FeatureBodySegmentUse>,
     pub(crate) feature_body_data_block_uses: Vec<FeatureBodyDataBlockUse>,
@@ -187,6 +216,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_sketch_construction_payloads: Vec<FeatureSketchConstructionPayload>,
     pub(crate) feature_sketch_payload_coordinate_pairs: Vec<FeatureSketchPayloadCoordinatePair>,
     pub(crate) feature_sketch_payload_fixed_pairs: Vec<FeatureSketchPayloadFixedPair>,
+    pub(crate) feature_sketch_payload_mixed_pairs: Vec<FeatureSketchPayloadMixedPair>,
     pub(crate) feature_sketch_payload_scalars: Vec<FeatureSketchPayloadScalar>,
     pub(crate) feature_sketch_payload_names: Vec<FeatureSketchPayloadName>,
     pub(crate) feature_sketch_payload_named_records: Vec<FeatureSketchPayloadNamedRecord>,
@@ -233,7 +263,9 @@ pub(crate) struct OmRecords {
     pub(crate) data_block_column_index_tables: Vec<DataBlockColumnIndexTable>,
     pub(crate) store_headers: Vec<StoreHeader>,
     pub(crate) string_values: Vec<StringValue>,
+    pub(crate) object_uuid_values: Vec<ObjectUuidValue>,
     pub(crate) object_references: Vec<ObjectReference>,
+    pub(crate) object_record_handle_pairs: Vec<ObjectRecordHandlePair>,
     pub(crate) configurations: Vec<Configuration>,
     pub(crate) part_attributes: Vec<PartAttribute>,
     pub(crate) configuration_attribute_uses: Vec<ConfigurationAttributeUse>,
@@ -256,16 +288,35 @@ pub(crate) struct NativeModel {
     pub(crate) display_jt: DisplayJtRecords,
     pub(crate) parasolid: ParasolidRecords,
     pub(crate) segments: SegmentRecords,
+    pub(crate) structure: StructureRecords,
+    pub(crate) toggle: ToggleRecords,
     pub(crate) features: FeatureRecords,
     pub(crate) om: OmRecords,
 }
 
 impl NativeModel {
+    pub(crate) fn has_untransferred_material_assets(&self) -> bool {
+        !self.om.material_texture_assets.is_empty()
+            || !self.om.material_texture_catalog_entries.is_empty()
+    }
+
+    pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
+        parasolid_attribute_definitions_have_untransferred_fields(
+            &self.parasolid.parasolid_attribute_definitions,
+            &self.parasolid.parasolid_attribute_field_names,
+            &self.parasolid.parasolid_entity_51_records,
+            &self.parasolid.parasolid_attribute_field_uses,
+            &self.parasolid.parasolid_topology_attribute_class_uses,
+        )
+    }
+
     /// Runs the full extraction dependency DAG in the original hand-ordered
     /// sequence. The ordering is load-bearing: several families feed later ones
     /// and some record ids embed positional information, so the `let` order here
     /// is fixed to match the legacy wiring block byte-for-byte.
     pub(crate) fn extract(
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
         container: &Container,
         streams: &[Stream],
         parsed: &ParsedStreams,
@@ -289,6 +340,17 @@ impl NativeModel {
         let parasolid_entity_52_integer_records = parasolid_entity_52_integer_records(streams);
         let parasolid_entity_53_double_records = parasolid_entity_53_double_records(streams);
         let parasolid_entity_54_string_records = parasolid_entity_54_string_records(streams);
+        let parasolid_entity_vector_records = parasolid_entity_vector_records(streams);
+        let parasolid_entity_57_axis_records = parasolid_entity_57_axis_records(streams);
+        let parasolid_entity_58_tag_records = parasolid_entity_58_tag_records(streams);
+        let parasolid_entity_62_unicode_records = parasolid_entity_62_unicode_records(streams);
+        let parasolid_field_names_records = parasolid_field_names_records(streams);
+        let parasolid_attribute_field_names = parasolid_attribute_field_names(
+            &parasolid_attribute_definitions,
+            &parasolid_field_names_records,
+            &parasolid_entity_54_string_records,
+            &parasolid_entity_62_unicode_records,
+        );
         let parasolid_entity_51_numeric_uses = parasolid_entity_51_numeric_uses(
             &parasolid_entity_51_records,
             &parasolid_entity_52_integer_records,
@@ -298,13 +360,23 @@ impl NativeModel {
             &parasolid_entity_51_records,
             &parasolid_entity_54_string_records,
         );
+        let parasolid_entity_51_structured_uses = parasolid_entity_51_structured_uses(
+            &parasolid_entity_51_records,
+            &parasolid_entity_vector_records,
+            &parasolid_entity_57_axis_records,
+            &parasolid_entity_58_tag_records,
+            &parasolid_entity_62_unicode_records,
+        );
         let parasolid_attribute_class_uses = parasolid_attribute_class_uses(
             &parasolid_entity_51_records,
             &parasolid_attribute_definitions,
         );
-        let parasolid_attribute_numeric_class_uses = parasolid_attribute_numeric_class_uses(
+        let parasolid_attribute_field_uses = parasolid_attribute_field_uses(
             &parasolid_attribute_class_uses,
+            &parasolid_attribute_definitions,
             &parasolid_entity_51_numeric_uses,
+            &parasolid_entity_51_string_uses,
+            &parasolid_entity_51_structured_uses,
         );
         let parasolid_topology_attribute_list_references =
             parasolid_topology_attribute_list_references(parsed, &parasolid_entity_51_records);
@@ -334,6 +406,13 @@ impl NativeModel {
             &feature_simple_hole_repeated_scalar_lanes,
             &feature_simple_hole_repeated_scalar_lane_block_references,
         );
+        let feature_hole_package_construction_group_lanes =
+            feature_hole_package_construction_group_lanes(container);
+        let feature_hole_package_construction_group_uses =
+            feature_hole_package_construction_group_uses(
+                &feature_hole_package_construction_group_lanes,
+                &feature_simple_hole_construction_groups,
+            );
         let feature_body_references = feature_body_references(container);
         let data_blocks = data_blocks(container);
         let feature_body_reference_occurrences = feature_body_reference_occurrences(container);
@@ -352,7 +431,8 @@ impl NativeModel {
             feature_input_block_identity_groups(&feature_input_blocks);
         let display_jt_indices = display_jt_indices(container);
         let display_jt_documents = display_jt_documents(container, &display_jt_indices);
-        let display_jt_segments = display_jt_segments(container, &display_jt_documents);
+        let budget = Some((ctx, root));
+        let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents);
         let display_jt_shape_lod_elements =
             display_jt_shape_lod_elements(container, &display_jt_segments);
         let display_jt_tri_strip_lod_headers =
@@ -401,27 +481,49 @@ impl NativeModel {
             &display_jt_coordinate_array_headers,
         );
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
-            display_jt_compressed_element_sequences(container, &display_jt_segments);
+            display_jt_compressed_element_sequences(budget, container, &display_jt_segments);
         let display_jt_string_property_atoms =
-            display_jt_string_property_atoms(container, &display_jt_segments);
+            display_jt_string_property_atoms(budget, container, &display_jt_segments);
         let display_jt_shape_lod_bindings =
-            display_jt_shape_lod_bindings(container, &display_jt_segments);
-        let display_jt_base_node_data =
-            display_jt_base_node_data(container, &display_jt_segments, &display_jt_documents);
-        let display_jt_group_node_data =
-            display_jt_group_node_data(container, &display_jt_segments, &display_jt_documents);
-        let display_jt_instance_nodes =
-            display_jt_instance_nodes(container, &display_jt_segments, &display_jt_documents);
-        let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
+            display_jt_shape_lod_bindings(budget, container, &display_jt_segments);
+        let display_jt_base_node_data = display_jt_base_node_data(
+            budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
         );
-        let display_jt_partition_nodes =
-            display_jt_partition_nodes(container, &display_jt_segments, &display_jt_documents);
-        let display_jt_range_lod_nodes =
-            display_jt_range_lod_nodes(container, &display_jt_segments, &display_jt_documents);
+        let display_jt_group_node_data = display_jt_group_node_data(
+            budget,
+            container,
+            &display_jt_segments,
+            &display_jt_documents,
+        );
+        let display_jt_instance_nodes = display_jt_instance_nodes(
+            budget,
+            container,
+            &display_jt_segments,
+            &display_jt_documents,
+        );
+        let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
+            budget,
+            container,
+            &display_jt_segments,
+            &display_jt_documents,
+        );
+        let display_jt_partition_nodes = display_jt_partition_nodes(
+            budget,
+            container,
+            &display_jt_segments,
+            &display_jt_documents,
+        );
+        let display_jt_range_lod_nodes = display_jt_range_lod_nodes(
+            budget,
+            container,
+            &display_jt_segments,
+            &display_jt_documents,
+        );
         let display_jt_tri_strip_shape_nodes = display_jt_tri_strip_shape_nodes(
+            budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
@@ -596,6 +698,8 @@ impl NativeModel {
         );
         let feature_sketch_payload_fixed_pairs =
             feature_sketch_payload_fixed_pairs(container, &feature_sketch_construction_payloads);
+        let feature_sketch_payload_mixed_pairs =
+            feature_sketch_payload_mixed_pairs(container, &feature_sketch_construction_payloads);
         let feature_sketch_payload_scalars =
             feature_sketch_payload_scalars(container, &feature_sketch_construction_inputs);
         let feature_sketch_payload_names =
@@ -605,6 +709,7 @@ impl NativeModel {
             &feature_sketch_payload_names,
             &feature_sketch_payload_scalars,
             &feature_sketch_payload_fixed_pairs,
+            &feature_sketch_payload_mixed_pairs,
         );
         let feature_sketch_fixed_points = feature_sketch_fixed_points(
             &feature_sketch_payload_named_records,
@@ -636,6 +741,7 @@ impl NativeModel {
             &offset_store_named_points,
             &feature_sketch_point_uses,
             &feature_datum_csys_constructions,
+            &feature_datum_csys_payload_scalars,
         );
         let feature_boolean_operations = feature_boolean_operations(container);
         let segment_body_lineage_statuses = segment_body_lineage_statuses(
@@ -699,7 +805,9 @@ impl NativeModel {
         );
         let store_headers = store_headers(container);
         let string_values = string_values(container);
+        let object_uuid_values = object_uuid_values(container);
         let object_references = object_references(container);
+        let object_record_handle_pairs = object_record_handle_pairs(&object_references);
         let configurations = configurations(container);
         let part_attributes = part_attributes(container);
         let configuration_attribute_uses =
@@ -730,6 +838,17 @@ impl NativeModel {
             &external_reference_records,
             &external_reference_tail_reference_pairs,
         );
+        let (
+            fast_load_component_prototypes,
+            fast_load_component_uuids,
+            fast_load_component_occurrences,
+        ) = fast_load_component_roster(container);
+        let fast_load_component_object_groups = fast_load_component_object_groups(
+            &fast_load_component_uuids,
+            &fast_load_component_occurrences,
+            &object_uuid_values,
+        );
+        let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
 
         NativeModel {
             display_jt: DisplayJtRecords {
@@ -788,14 +907,21 @@ impl NativeModel {
                 parasolid_support_uv_records,
                 parasolid_chart_records,
                 parasolid_attribute_definitions,
+                parasolid_field_names_records,
+                parasolid_attribute_field_names,
                 parasolid_entity_51_records,
                 parasolid_entity_52_integer_records,
                 parasolid_entity_53_double_records,
                 parasolid_entity_54_string_records,
+                parasolid_entity_vector_records,
+                parasolid_entity_57_axis_records,
+                parasolid_entity_58_tag_records,
+                parasolid_entity_62_unicode_records,
                 parasolid_entity_51_numeric_uses,
                 parasolid_entity_51_string_uses,
+                parasolid_entity_51_structured_uses,
                 parasolid_attribute_class_uses,
-                parasolid_attribute_numeric_class_uses,
+                parasolid_attribute_field_uses,
                 parasolid_topology_attribute_list_references,
                 parasolid_topology_attribute_class_uses,
             },
@@ -805,6 +931,16 @@ impl NativeModel {
                 segment_stream_links,
                 segment_body_bindings,
                 segment_body_lineage_statuses,
+            },
+            structure: StructureRecords {
+                prototypes: fast_load_component_prototypes,
+                uuids: fast_load_component_uuids,
+                occurrences: fast_load_component_occurrences,
+                object_groups: fast_load_component_object_groups,
+            },
+            toggle: ToggleRecords {
+                streams: saved_toggle_streams,
+                entries: saved_toggle_entries,
             },
             features: FeatureRecords {
                 feature_operation_labels,
@@ -817,6 +953,8 @@ impl NativeModel {
                 feature_simple_hole_repeated_scalar_lanes,
                 feature_simple_hole_repeated_scalar_lane_block_references,
                 feature_simple_hole_construction_groups,
+                feature_hole_package_construction_group_lanes,
+                feature_hole_package_construction_group_uses,
                 feature_body_references,
                 feature_body_segment_uses,
                 feature_body_data_block_uses,
@@ -890,6 +1028,7 @@ impl NativeModel {
                 feature_sketch_construction_payloads,
                 feature_sketch_payload_coordinate_pairs,
                 feature_sketch_payload_fixed_pairs,
+                feature_sketch_payload_mixed_pairs,
                 feature_sketch_payload_scalars,
                 feature_sketch_payload_names,
                 feature_sketch_payload_named_records,
@@ -934,7 +1073,9 @@ impl NativeModel {
                 data_block_column_index_tables,
                 store_headers,
                 string_values,
+                object_uuid_values,
                 object_references,
+                object_record_handle_pairs,
                 configurations,
                 part_attributes,
                 configuration_attribute_uses,
@@ -954,10 +1095,10 @@ impl NativeModel {
 
     /// Whether every emptiness-counting record family is empty. Derived from
     /// [`CATALOGUE`](super::catalogue::CATALOGUE): the fold visits
-    /// exactly the rows whose `counts_toward_emptiness` flag is set (133 of the
-    /// 179 families), reproducing the operand set of the legacy hand-written
-    /// all-empty guard. The 46 non-counting families are documented on
-    /// [`CatalogueRow::counts_toward_emptiness`](super::catalogue::CatalogueRow::counts_toward_emptiness).
+    /// exactly the rows whose `counts_toward_emptiness` flag is set, reproducing
+    /// the operand set of the legacy hand-written all-empty guard. The
+    /// non-counting families are documented on
+    /// [`FamilyRow::counts_toward_emptiness`](cadmpeg_ir::native::catalogue::FamilyRow::counts_toward_emptiness).
     /// The fold is order-insensitive — the legacy guard was a pure `&&` of
     /// `is_empty()` calls on plain `Vec`s — so it is behavior-identical to the
     /// conjunction it replaces.
@@ -965,9 +1106,6 @@ impl NativeModel {
     /// The caller additionally checks `object_sections`, the sole non-model
     /// operand of the legacy guard, which this method does not cover.
     pub(crate) fn is_empty(&self) -> bool {
-        super::catalogue::CATALOGUE
-            .iter()
-            .filter(|row| row.counts_toward_emptiness)
-            .all(|row| (row.len)(self) == 0)
+        super::catalogue::NATIVE_CATALOGUE.is_empty(self)
     }
 }

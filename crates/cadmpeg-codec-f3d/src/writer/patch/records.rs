@@ -6,14 +6,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::records::{
     ActEntity, ActRootComponent, DesignMaterialAssignment, LostEdgeReference, SketchCurveGeometry,
 };
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::Point3;
 
 use super::edits::{
-    ActGuidEdit, BodyMemberEdit, ConstructionRecipeEdit, DesignObjectEdit, EntityHeaderEdit,
+    ActGuidEdit, BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
     HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
 };
-use super::geometry::{active_ref_width, patch_integer_field, required_payload_field};
+use super::geometry::{patch_integer_field, required_payload_field};
+use crate::asm_header::stream_ref_width;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::native_bool;
 use crate::{asm_header, sab};
@@ -209,18 +210,18 @@ fn patch_bytes_at(
     Ok(())
 }
 
-pub(crate) fn patch_design_objects(
+pub(crate) fn patch_design_types(
     bytes: &mut [u8],
-    edits: &[DesignObjectEdit],
+    edits: &[DesignTypeEdit],
 ) -> Result<(), CodecError> {
     for edit in edits {
         for (offset, encoded) in edit.integers.iter().chain(&edit.strings) {
             let start = usize::try_from(*offset).map_err(|_| {
-                CodecError::Malformed("design-object offset exceeds address space".into())
+                CodecError::Malformed("design-type offset exceeds address space".into())
             })?;
             bytes
                 .get_mut(start..start + encoded.len())
-                .ok_or_else(|| CodecError::Malformed("design-object field is truncated".into()))?
+                .ok_or_else(|| CodecError::Malformed("design-type field is truncated".into()))?
                 .copy_from_slice(encoded);
         }
     }
@@ -321,8 +322,8 @@ pub(crate) fn patch_body_native_keys(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, key) in edits {
@@ -351,8 +352,8 @@ pub(crate) fn patch_transform_hints(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let ref_width = active_ref_width(bytes);
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, flags) in edits {
@@ -397,8 +398,8 @@ pub(crate) fn patch_tolerant_coedge_parameters(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let ref_width = active_ref_width(bytes);
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, range) in edits {
@@ -433,8 +434,8 @@ pub(crate) fn patch_wire_topologies(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let ref_width = active_ref_width(bytes);
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, side) in edits {
@@ -475,8 +476,8 @@ pub(crate) fn patch_edge_ownerships(
     }
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let ref_width = active_ref_width(bytes);
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, owner) in edits {
@@ -697,9 +698,6 @@ pub(crate) fn patch_sketch_curves(
             patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, weights, control_points)?;
             continue;
         }
-        let payload = bytes.get_mut(start..start + 96).ok_or_else(|| {
-            CodecError::Malformed("sketch-curve analytic payload is outside BulkStream".into())
-        })?;
         let values = match geometry {
             SketchCurveGeometry::Line {
                 start,
@@ -743,11 +741,57 @@ pub(crate) fn patch_sketch_curves(
             ],
             SketchCurveGeometry::Nurbs { .. } => unreachable!("NURBS handled before fixed payload"),
         };
-        for (ordinal, value) in values.into_iter().enumerate() {
+        let scalar_count = match geometry {
+            SketchCurveGeometry::Line { normal, .. } => {
+                let scalar_count = line_scalar_count(bytes, start)?;
+                if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
+                    return Err(CodecError::NotImplemented(
+                        "F3D compact planar-line edits require the implicit +Z normal".into(),
+                    ));
+                }
+                scalar_count
+            }
+            SketchCurveGeometry::Arc { .. } => 12,
+            SketchCurveGeometry::Nurbs { .. } => unreachable!("NURBS handled before fixed payload"),
+        };
+        let payload = bytes
+            .get_mut(start..start + scalar_count * 8)
+            .ok_or_else(|| {
+                CodecError::Malformed("sketch-curve analytic payload is outside BulkStream".into())
+            })?;
+        for (ordinal, value) in values.into_iter().take(scalar_count).enumerate() {
             payload[ordinal * 8..ordinal * 8 + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
     Ok(())
+}
+
+fn line_scalar_count(bytes: &[u8], values_at: usize) -> Result<usize, CodecError> {
+    let Some(marker_at) = values_at.checked_add(9 * 8) else {
+        return Err(CodecError::Malformed(
+            "sketch-line scalar offset exceeds address space".into(),
+        ));
+    };
+    let full_normal = bytes.get(marker_at..marker_at + 24).and_then(|bytes| {
+        Some([
+            f64::from_le_bytes(bytes[0..8].try_into().ok()?),
+            f64::from_le_bytes(bytes[8..16].try_into().ok()?),
+            f64::from_le_bytes(bytes[16..24].try_into().ok()?),
+        ])
+    });
+    if let Some(normal) = full_normal {
+        let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+        if normal.iter().all(|value| value.is_finite()) && (length - 1.0).abs() <= 1.0e-9 {
+            return Ok(12);
+        }
+    }
+    if bytes.get(marker_at) == Some(&1) && bytes.get(marker_at + 5..marker_at + 11) == Some(&[0; 6])
+    {
+        return Ok(9);
+    }
+    Err(CodecError::Malformed(
+        "sketch-line payload matches neither full nor compact planar layout".into(),
+    ))
 }
 
 fn patch_sketch_nurbs(

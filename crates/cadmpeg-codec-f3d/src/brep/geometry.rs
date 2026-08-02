@@ -293,6 +293,11 @@ pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedg
     }
 }
 
+/// Whether a record head belongs to the topology or geometry vocabulary.
+///
+/// Carrier heads remain known even when no active topology references that
+/// particular record. Reachability determines transfer; it does not turn an
+/// unreferenced carrier into an application/refinement record.
 pub(crate) fn is_known_record_head(head: &str) -> bool {
     matches!(
         head,
@@ -311,6 +316,7 @@ pub(crate) fn is_known_record_head(head: &str) -> bool {
         "coedge" | "tcoedge" | "edge" | "tedge" | "vertex" | "tvertex"
     ) || is_analytic_surface(head)
         || is_analytic_curve(head)
+        || matches!(head, "spline" | "intcurve" | "pcurve")
 }
 
 pub(crate) fn is_asm_stream_delimiter(name: &str) -> bool {
@@ -625,6 +631,15 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
             construction.shape,
             EmbeddedScaledCompoundLoftShape::None { .. }
         ),
+        // Tail form `2` stores no solved cache, so every surface block a blend
+        // record holds is a support of its construction.
+        DecodedProceduralSurfaceDefinition::Blend {
+            native: Some(construction),
+            ..
+        } => construction.tail_enum == 2,
+        DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
+            construction.tail_enum == 2
+        }
         _ => false,
     }
 }

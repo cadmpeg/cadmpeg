@@ -6,8 +6,10 @@
 
 use std::io::{Cursor, Read, Write};
 
+use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
+use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::report::{LossKind as LossCode, Severity};
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
@@ -16,31 +18,22 @@ use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
 use crate::F3dCodec;
 
-/// Test adapter expressing the replay/patch pinning tests against a *required*
-/// sidecar returning `Result<()>`, the shape those tests were written to before
-/// the codec adopted the shared `plan_write` gate. It delegates to the
-/// production [`Encoder::encode_with_source_fidelity`], so it exercises the real
-/// gate; the source-fidelity gate's own error-to-`Generate` behavior (missing
-/// record, tampered integrity, record-without-data, absent baseline) is pinned
-/// directly by `source_fidelity_gate_truth_table`.
-trait EncodePreserving {
-    fn encode_preserving(
+trait TestEncode {
+    fn encode(
         &self,
-        ir: &cadmpeg_ir::document::CadIr,
-        source_fidelity: &cadmpeg_ir::source_fidelity::SourceFidelity,
-        writer: &mut dyn Write,
-    ) -> Result<(), cadmpeg_ir::codec::CodecError>;
+        ir: &cadmpeg_ir::CadIr,
+        output: &mut dyn Write,
+    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_codec_core::CodecError>;
 }
 
-impl EncodePreserving for F3dCodec {
-    fn encode_preserving(
+impl TestEncode for F3dCodec {
+    fn encode(
         &self,
-        ir: &cadmpeg_ir::document::CadIr,
-        source_fidelity: &cadmpeg_ir::source_fidelity::SourceFidelity,
-        writer: &mut dyn Write,
-    ) -> Result<(), cadmpeg_ir::codec::CodecError> {
-        self.encode_with_source_fidelity(ir, Some(source_fidelity), writer)
-            .map(|_| ())
+        ir: &cadmpeg_ir::CadIr,
+        output: &mut dyn Write,
+    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_codec_core::CodecError> {
+        self.plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })?
+            .write_to(output)
     }
 }
 
@@ -57,7 +50,7 @@ fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerScan<'_>) -> T
 fn synthetic_smbh() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"ASM BinaryFile8"); // 0..15 magic
-    b.extend_from_slice(&23100u32.to_le_bytes()); // 15..19 release word
+    b.extend_from_slice(&23100u32.to_le_bytes()); // 15..19 save-format version
     b.extend_from_slice(&[0u8; 12]); // 19..31 zero
     b.extend_from_slice(&7u64.to_le_bytes()); // 31..39 entity-count word
     b.extend_from_slice(&3u64.to_le_bytes()); // 39..47 flags: history partition
@@ -72,13 +65,16 @@ fn synthetic_smbh() -> Vec<u8> {
     b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
     let active_len = b.len();
 
-    // History boundary: 0x11 0x0d 0x0b "delta_state" ... ([spec §4a](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#2-b-rep-streams-and-history-partition)).
-    b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
+    // History boundary: the preceding record's `0x11` terminator is followed
+    // by the exact `0x0d 0x0b "delta_state"` record-name token.
+    b.extend_from_slice(&[0x0d, 0x0b]);
     b.extend_from_slice(b"delta_state");
     b.extend_from_slice(&[0u8; 16]);
 
-    // Sanity: the delta_state string starts at active_len + 3.
-    assert_eq!(&b[active_len + 3..active_len + 3 + 11], b"delta_state");
+    // Sanity: the delta-state identifier starts immediately after the solved
+    // record sequence.
+    assert_eq!(&b[active_len..active_len + 2], &[0x0d, 0x0b]);
+    assert_eq!(&b[active_len + 2..active_len + 13], b"delta_state");
     b
 }
 
@@ -101,7 +97,7 @@ fn push_u8_string(b: &mut Vec<u8>, s: &str) {
 fn smbh_header_prefix() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"ASM BinaryFile8");
-    b.extend_from_slice(&23100u32.to_le_bytes()); // release word
+    b.extend_from_slice(&23100u32.to_le_bytes()); // save-format version
     b.extend_from_slice(&[0u8; 12]); // zero region
     b.extend_from_slice(&5u64.to_le_bytes()); // entity-count word
     b.extend_from_slice(&3u64.to_le_bytes()); // flags: history partition
@@ -222,6 +218,18 @@ fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
 
 #[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
+    let catalogue_names = crate::native::F3D_FAMILIES
+        .iter()
+        .map(|row| row.arena)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 64);
+    assert_eq!(
+        catalogue_names,
+        crate::native::F3D_ARENA_NAMES
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh_and_protein(&synthetic_geometry_smbh())),
@@ -230,9 +238,21 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     let original = decoded.ir.native.namespace("f3d").unwrap();
     let typed = crate::native::F3dNative::load(original).unwrap();
-    let mut round_trip = cadmpeg_ir::native::NativeNamespace::default();
+    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
+    // Storing what was loaded reproduces the stored arenas exactly, including
+    // the construction-history tree that `load` grafts across five arenas and
+    // `store` splits apart again. `f3z` merging depends on it: it appends a
+    // member's stored records onto the root's rather than routing the merged
+    // population through the typed form.
+    for name in crate::native::F3D_ARENA_NAMES {
+        assert_eq!(
+            round_trip.arenas.get(*name),
+            original.arenas.get(*name),
+            "native arena {name} did not survive a typed round trip"
+        );
+    }
     assert_eq!(round_trip.version, crate::native::F3D_NATIVE_VERSION);
     assert_eq!(
         round_trip
@@ -245,7 +265,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     for records in round_trip.arenas.values() {
         for record in records {
             let json = serde_json::to_value(record).unwrap();
-            assert_eq!(json["id"], record.id);
+            assert_eq!(json["id"], record.id());
             assert!(json.as_object().unwrap().len() > 1);
         }
     }
@@ -260,15 +280,16 @@ fn diff_reports_design_material_assignment_changes() {
         )
         .unwrap();
     let mut edited = decoded.ir.clone();
-    edited
+    let assignment = &mut edited
         .native
         .namespace_mut("f3d")
         .arenas
         .get_mut("design_material_assignments")
-        .unwrap()[0]
-        .fields
-        .insert("entity_suffix".into(), serde_json::json!(123456));
-    let report = cadmpeg_ir::diff::diff(&decoded.ir, &edited);
+        .unwrap()[0];
+    let mut assignment_fields = assignment.fields();
+    assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
+    *assignment = cadmpeg_ir::NativeRecord::new(assignment.id().to_string(), assignment_fields);
+    let report = cadmpeg_ir::diff(&decoded.ir, &edited);
     let arena = report
         .per_arena
         .iter()
@@ -508,7 +529,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
     });
     let mut edited = Vec::new();
     F3dCodec
-        .encode_preserving(&decoded.ir, &decoded.source_fidelity, &mut edited)
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut edited)
         .expect("tolerant coedge sense edit");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(edited), &DecodeOptions::default())
@@ -524,7 +545,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
 }
 
 #[test]
-fn decode_selects_tolerant_coedge_extension_from_asm_release() {
+fn decode_selects_tolerant_coedge_extension_from_save_format() {
     for (release, fixed_tail, expected) in [
         (
             23000u32,
@@ -669,7 +690,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut preserved)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut preserved)
         .expect("embedded use-curve edit");
     let preserved = F3dCodec
         .decode(&mut Cursor::new(preserved), &DecodeOptions::default())
@@ -704,7 +725,11 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         }];
     let mut generated = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut generated)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut generated))
         .expect("source-less embedded use curves");
     let generated = F3dCodec
         .decode(&mut Cursor::new(generated), &DecodeOptions::default())
@@ -738,7 +763,7 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
         t_subident(&mut smbh, name);
     }
     t_ident(&mut smbh, "data"); // no trailing 0x11
-    assert!(crate::asm_header::first_delta_state_offset(&smbh).is_none());
+    assert!(crate::asm_header::solved_record_limit(&smbh).is_none());
 
     let decoded = F3dCodec
         .decode(
@@ -817,7 +842,7 @@ fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let body = &records[1];
@@ -844,7 +869,7 @@ fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let body = &records[1];
@@ -867,7 +892,7 @@ fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let face = &records[4];
@@ -890,7 +915,7 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::first_delta_state_offset(&bytes).expect("history boundary");
+    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let plane = records
@@ -951,9 +976,39 @@ fn synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh() -> Vec<u8> {
     replace_generated_face_with_nurbs_surface(synthetic_geometry_with_pcurve_smbh())
 }
 
+fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let asmheader_end = records[0].offset + records[0].len - 1;
+
+    let mut target = vec![0x0f];
+    t_ident(&mut target, "int_int_cur");
+    target.extend_from_slice(&generated_pcurve_block());
+    target.push(0x10);
+    bytes.splice(asmheader_end..asmheader_end, target);
+
+    let opener = bytes
+        .windows(b"\x0f\x0d\x0bexp_par_cur".len())
+        .position(|window| window == b"\x0f\x0d\x0bexp_par_cur")
+        .expect("inline pcurve scope");
+    let close = bytes[opener..]
+        .windows([0x10, 0x0a, 0x0b, 0x0a, 0x0b].len())
+        .position(|window| window == [0x10, 0x0a, 0x0b, 0x0a, 0x0b])
+        .map(|offset| opener + offset)
+        .expect("inline pcurve scope close");
+    let mut reference = vec![0x0f];
+    t_ident(&mut reference, "ref");
+    t_long(&mut reference, 0);
+    reference.push(0x10);
+    bytes.splice(close..close, reference);
+    bytes
+}
+
 fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[6];
     let mut surface = Vec::new();
@@ -1020,7 +1075,7 @@ fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
@@ -1068,7 +1123,7 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
 fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
@@ -1104,7 +1159,7 @@ fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
 
 fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
@@ -1118,7 +1173,7 @@ fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> 
 
 fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
@@ -1134,7 +1189,7 @@ fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
 
 fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
@@ -1154,7 +1209,7 @@ fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8>
 fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let record = &mut bytes[edge.offset..edge.offset + edge.len];
@@ -1185,7 +1240,7 @@ fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1226,7 +1281,7 @@ fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_helix_curve_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let helix = records.iter().find(|record| record.index == 19).unwrap();
     let block = generated_curve_block();
@@ -1242,7 +1297,7 @@ fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
@@ -1292,10 +1347,236 @@ fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     bytes
 }
 
+/// Push a `0x15` enum token carrying the signed `int_width`-8 value.
+fn push_native_enum(bytes: &mut Vec<u8>, value: i64) {
+    bytes.push(0x15);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+/// Append a vector-serialized `TRANS` law variable: the operator string, four
+/// `0x14` vectors, a `0x06` scale, and three bare boolean flags.
+fn append_transform_vec_variable(bytes: &mut Vec<u8>) {
+    push_u8_string(bytes, "TRANS");
+    for vector in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0],
+    ] {
+        t_vec(bytes, vector);
+    }
+    t_dbl(bytes, 0.1);
+    bytes.push(0x0b); // false
+    bytes.push(0x0b); // false
+    bytes.push(0x0a); // true
+}
+
+/// Build the version-stamped `law_int_cur` subtype span (opening `0x0f` through
+/// the `0x10` terminator): a `04 <20900> 15 <0>` version prefix, solved cache,
+/// two `null_surface` and two `nullbs` carriers, bare-`0b` unbounded interval
+/// bounds, three empty discontinuity arrays, and primary/additional formulas —
+/// the primary carrying a vector-form `TRANS`, the additional list the fixed
+/// four-slot `[null_law, null_law, raw-law, TRANS-wrapped]` shape.
+fn stamped_law_curve_subtype(primary_name: &str, raw_name: &str) -> Vec<u8> {
+    let mut c = Vec::new();
+    c.push(0x0f);
+    t_ident(&mut c, "law_int_cur");
+    t_long(&mut c, 20900);
+    push_native_enum(&mut c, 0);
+    c.extend_from_slice(&generated_curve_block());
+    t_dbl(&mut c, 0.0005);
+    t_ident(&mut c, "null_surface");
+    t_ident(&mut c, "null_surface");
+    t_ident(&mut c, "nullbs");
+    t_ident(&mut c, "nullbs");
+    c.push(0x0b);
+    c.push(0x0b);
+    for _ in 0..3 {
+        append_generated_float_array(&mut c, &[]);
+    }
+    t_long(&mut c, 0);
+    t_u16_string(&mut c, primary_name);
+    t_long(&mut c, 1);
+    append_transform_vec_variable(&mut c);
+    t_long(&mut c, 4);
+    push_u8_string(&mut c, "null_law");
+    push_u8_string(&mut c, "null_law");
+    t_u16_string(&mut c, raw_name);
+    t_long(&mut c, 0);
+    push_u8_string(&mut c, "TRANS(VEC(X,X2,X3),TRANS1)");
+    t_long(&mut c, 1);
+    append_transform_vec_variable(&mut c);
+    c.push(0x10);
+    c
+}
+
+fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let edge = &records[10];
+    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    t_ref(&mut curve, -1);
+    t_long(&mut curve, -1);
+    t_ref(&mut curve, -1);
+    curve.extend_from_slice(subtype);
+    t_end(&mut curve);
+    bytes.splice(delta..delta, curve);
+    bytes
+}
+
+#[test]
+fn stamped_law_intcurve_round_trips_byte_exactly() {
+    use cadmpeg_ir::geometry::{CurveGeometry, LawExpression, ProceduralCurveDefinition};
+
+    // Formula names exceed 255 bytes to exercise the u16 (`0x08`) length prefix
+    // the serializer selects for long law text.
+    let primary_name = format!("TRANS({},TRANS1)", "VEC(X,X2,X3)*COS(X)+".repeat(20));
+    let raw_name = "VEC(X,X2,X3)*COS(X)+".repeat(20);
+    assert!(primary_name.len() > 255 && raw_name.len() > 255);
+    let subtype = stamped_law_curve_subtype(&primary_name, &raw_name);
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_stamped_law_curve_smbh(&subtype),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("stamped law intcurve decode");
+    let procedural = decoded
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| matches!(curve.definition, ProceduralCurveDefinition::Law { .. }))
+        .expect("stamped law construction");
+    let ProceduralCurveDefinition::Law {
+        version,
+        primary,
+        additional,
+        ..
+    } = &procedural.definition
+    else {
+        unreachable!()
+    };
+    let version = version.as_ref().expect("version stamp");
+    assert_eq!(version.stamp, 20900);
+    assert_eq!(version.post_enum, 0);
+    assert_eq!(version.parameter_range, [None, None]);
+    assert_eq!(primary.name, primary_name);
+    assert!(matches!(
+        primary.variables[0],
+        LawExpression::TransformVec { .. }
+    ));
+    assert_eq!(additional.len(), 4);
+    assert_eq!(additional[0].name, "null_law");
+    assert_eq!(additional[1].name, "null_law");
+    assert_eq!(additional[2].name, raw_name);
+    assert_eq!(additional[3].name, "TRANS(VEC(X,X2,X3),TRANS1)");
+    assert!(matches!(
+        additional[3].variables[0],
+        LawExpression::TransformVec { .. }
+    ));
+
+    // Byte-exact re-emission of the subtype span. The solved cache uses
+    // integer-valued control points so the cm->mm scaling round-trip is exact.
+    let solved = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == procedural.curve)
+        .and_then(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => Some(nurbs.clone()),
+            _ => None,
+        })
+        .expect("solved cache");
+    let mut regenerated = Vec::new();
+    crate::writer::generate::native_geometry::native_procedural_curve(
+        &mut regenerated,
+        &decoded.ir,
+        &procedural.curve,
+        &solved,
+    )
+    .expect("regenerate stamped law curve");
+    let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
+    let span = crate::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    assert_eq!(span, subtype.as_slice());
+}
+
+#[test]
+fn legacy_law_intcurve_round_trips_byte_exactly() {
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition};
+
+    // The pre-stamp layout must keep decoding and re-emitting without regression.
+    let smbh = synthetic_geometry_with_law_curve_smbh();
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("legacy law intcurve decode");
+    let procedural = decoded
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| matches!(curve.definition, ProceduralCurveDefinition::Law { .. }))
+        .expect("legacy law construction");
+    let ProceduralCurveDefinition::Law { version, .. } = &procedural.definition else {
+        unreachable!()
+    };
+    assert!(version.is_none());
+
+    let original = {
+        let marker = smbh
+            .windows(b"law_int_cur".len())
+            .position(|window| window == b"law_int_cur")
+            .unwrap()
+            - 3;
+        crate::nurbs::subtypes::subtype_span(&smbh, marker, 8)
+            .unwrap()
+            .to_vec()
+    };
+    let solved = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == procedural.curve)
+        .and_then(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => Some(nurbs.clone()),
+            _ => None,
+        })
+        .expect("solved cache");
+    let mut regenerated = Vec::new();
+    crate::writer::generate::native_geometry::native_procedural_curve(
+        &mut regenerated,
+        &decoded.ir,
+        &procedural.curve,
+        &solved,
+    )
+    .expect("regenerate legacy law curve");
+    let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
+    let span = crate::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    assert_eq!(span, original.as_slice());
+}
+
 fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1335,7 +1616,7 @@ fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1368,7 +1649,7 @@ fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1422,7 +1703,7 @@ fn with_legacy_subtype(mut bytes: Vec<u8>, modern: &str, legacy: &str) -> Vec<u8
 fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1462,7 +1743,7 @@ fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1506,7 +1787,7 @@ fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1550,7 +1831,7 @@ fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1794,7 +2075,7 @@ fn synthetic_geometry_with_spring_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1844,15 +2125,25 @@ fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     bytes
 }
 
-/// Splice one cache-first intcurve record built by `tail` into the synthetic
-/// geometry stream and point edge 10 at it.
+/// The cache form `0` head of the shared cache-first intcurve context: the
+/// enum, the solved curve cache, and its fit tolerance.
+fn push_solved_cache_first_head(curve: &mut Vec<u8>) {
+    curve.push(0x15);
+    curve.extend_from_slice(&0i64.to_le_bytes());
+    curve.extend_from_slice(&generated_curve_block());
+    t_dbl(curve, 0.0004);
+}
+
+/// Splice one cache-first intcurve record built by `head` and `tail` into the
+/// synthetic geometry stream and point edge 10 at it.
 fn synthetic_geometry_with_cache_first_curve_smbh(
     subtype: &str,
+    head: fn(&mut Vec<u8>),
     tail: impl FnOnce(&mut Vec<u8>),
 ) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -1872,10 +2163,7 @@ fn synthetic_geometry_with_cache_first_curve_smbh(
     curve.push(0x0f);
     t_ident(&mut curve, subtype);
     t_long(&mut curve, 23100);
-    curve.push(0x15);
-    curve.extend_from_slice(&0i64.to_le_bytes());
-    curve.extend_from_slice(&generated_curve_block());
-    t_dbl(&mut curve, 0.0004);
+    head(&mut curve);
     t_ident(&mut curve, "null_surface");
     t_ident(&mut curve, "null_surface");
     t_ident(&mut curve, "nullbs");
@@ -1902,10 +2190,14 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_cache_first_curve_smbh("spring_int_cur", |curve| {
-                    curve.push(0x15);
-                    curve.extend_from_slice(&4i64.to_le_bytes());
-                }),
+                &synthetic_geometry_with_cache_first_curve_smbh(
+                    "spring_int_cur",
+                    push_solved_cache_first_head,
+                    |curve| {
+                        curve.push(0x15);
+                        curve.extend_from_slice(&4i64.to_le_bytes());
+                    },
+                ),
             )),
             &DecodeOptions::default(),
         )
@@ -1936,7 +2228,11 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first spring encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -1954,10 +2250,14 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_cache_first_curve_smbh("par_int_cur", |curve| {
-                    curve.push(0x0a);
-                    curve.push(0x0b);
-                }),
+                &synthetic_geometry_with_cache_first_curve_smbh(
+                    "par_int_cur",
+                    push_solved_cache_first_head,
+                    |curve| {
+                        curve.push(0x0a);
+                        curve.push(0x0b);
+                    },
+                ),
             )),
             &DecodeOptions::default(),
         )
@@ -1984,7 +2284,11 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first parametric encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -2002,22 +2306,26 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     let result = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_cache_first_curve_smbh("off_surf_int_cur", |curve| {
-                    for value in [-1.0, 2.0, -3.0, 4.0] {
+                &synthetic_geometry_with_cache_first_curve_smbh(
+                    "off_surf_int_cur",
+                    push_solved_cache_first_head,
+                    |curve| {
+                        for value in [-1.0, 2.0, -3.0, 4.0] {
+                            curve.push(0x0a);
+                            t_dbl(curve, value);
+                        }
+                        curve.extend_from_slice(&generated_curve_block());
+                        curve.push(0x0b);
+                        curve.push(0x0b);
                         curve.push(0x0a);
-                        t_dbl(curve, value);
-                    }
-                    curve.extend_from_slice(&generated_curve_block());
-                    curve.push(0x0b);
-                    curve.push(0x0b);
-                    curve.push(0x0a);
-                    t_dbl(curve, -0.5);
-                    curve.push(0x0a);
-                    t_dbl(curve, 1.5);
-                    t_dbl(curve, -0.25);
-                    t_dbl(curve, 0.75);
-                    t_dbl(curve, 1.25);
-                }),
+                        t_dbl(curve, -0.5);
+                        curve.push(0x0a);
+                        t_dbl(curve, 1.5);
+                        t_dbl(curve, -0.25);
+                        t_dbl(curve, 0.75);
+                        t_dbl(curve, 1.25);
+                    },
+                ),
             )),
             &DecodeOptions::default(),
         )
@@ -2054,7 +2362,11 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first surface-offset encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -2101,12 +2413,37 @@ fn push_revision_surface_tail(surface: &mut Vec<u8>) {
     surface.push(0x0b);
 }
 
+/// The shared revision-gated surface tail in cache form `2`: no solved cache
+/// and no fit tolerance, the U parameter interval, the V parameter interval,
+/// then the U closure, V closure, U singularity, and V singularity enums.
+fn push_parameterized_revision_surface_tail(surface: &mut Vec<u8>) {
+    surface.push(0x15);
+    surface.extend_from_slice(&2i64.to_le_bytes());
+    // U interval: present lower bound, absent upper bound.
+    surface.push(0x0a);
+    t_dbl(surface, 0.25);
+    surface.push(0x0b);
+    // V interval: both bounds present.
+    for value in [-1.5, 3.5] {
+        surface.push(0x0a);
+        t_dbl(surface, value);
+    }
+    for value in [1, 0, 2, 3] {
+        surface.push(0x15);
+        surface.extend_from_slice(&i64::from(value).to_le_bytes());
+    }
+    for _ in 0..6 {
+        t_long(surface, 0);
+    }
+    surface.push(0x0b);
+}
+
 /// Replace record 9 of the mixed stream with a revision-gated spline-surface
 /// record whose subtype body is built by `body`.
 fn synthetic_revision_surface_smbh(subtype: &str, body: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -2163,7 +2500,11 @@ fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &str) {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less revision surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -2197,7 +2538,89 @@ fn generated_revision_offset_surface_round_trips() {
         }
         push_revision_surface_tail(surface);
     });
-    assert_revision_surface_round_trip(smbh, "offset");
+    assert_revision_surface_round_trip(smbh.clone(), "offset");
+
+    // The revision-gated layout shares byte positions with the pre-revision
+    // U/V sense enums but no grammar, so its four-boolean carrier run travels
+    // in the revision form and leaves the enum slots empty.
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("revision offset decode");
+    let ProceduralSurfaceDefinition::Offset {
+        u_sense,
+        v_sense,
+        extension_flags,
+        revision_form,
+        ..
+    } = &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected offset surface construction")
+    };
+    assert_eq!((*u_sense, *v_sense), (None, None));
+    assert!(extension_flags.is_empty());
+    assert_eq!(
+        revision_form.as_ref().expect("revision form").flags,
+        [false, true, false, false]
+    );
+}
+
+#[test]
+fn generated_parameterized_revision_offset_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("off_spl_sur", |surface| {
+        t_ident(surface, "spline");
+        surface.extend_from_slice(&generated_surface_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.0);
+        surface.push(0x0b);
+        surface.push(0x0a);
+        t_dbl(surface, 2.0);
+        surface.push(0x0b);
+        t_dbl(surface, 0.3);
+        for flag in [false, true, false, false] {
+            surface.push(if flag { 0x0a } else { 0x0b });
+        }
+        push_parameterized_revision_surface_tail(surface);
+    });
+    assert_revision_surface_round_trip(smbh.clone(), "offset");
+
+    let subtype = synthetic_revision_surface_subtype_span(&smbh);
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized revision offset decode");
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    // Cache form 2 stores no fit tolerance.
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { revision_form, .. } =
+        &procedural.definition
+    else {
+        panic!("expected offset surface construction")
+    };
+    let form = revision_form.as_ref().expect("revision form");
+    assert_eq!(form.tail_enum, 2);
+    let parameterization = form
+        .tail_parameterization
+        .as_ref()
+        .expect("tail parameterization");
+    assert_eq!(parameterization.u_interval, [Some(0.25), None]);
+    assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);
+    assert_eq!(
+        (parameterization.u_closure, parameterization.v_closure),
+        (1, 0)
+    );
+    assert_eq!(
+        (
+            parameterization.u_singularity,
+            parameterization.v_singularity
+        ),
+        (2, 3)
+    );
+    assert_eq!(regenerated_procedural_surface_span(&result.ir), subtype);
 }
 
 #[test]
@@ -2217,6 +2640,45 @@ fn generated_revision_orthogonal_taper_round_trips() {
         surface.push(0x0a);
     });
     assert_revision_surface_round_trip(smbh, "taper");
+}
+
+#[test]
+fn generated_revision_orthogonal_taper_decodes_sense_true() {
+    let smbh = synthetic_revision_surface_smbh("ortho_spl_sur", |surface| {
+        t_ident(surface, "spline");
+        surface.extend_from_slice(&generated_surface_block());
+        surface.extend_from_slice(&[0x0b; 4]);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.0);
+        surface.push(0x0a);
+        t_dbl(surface, 2.0);
+        surface.extend_from_slice(&generated_pcurve_block());
+        t_dbl(surface, 0.5);
+        push_revision_surface_tail(surface);
+        // Trailing orthogonal-sense logical set true.
+        surface.push(0x0a);
+    });
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("ortho revision decode");
+    let definition = &result
+        .ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("ortho construction")
+        .definition;
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Taper { taper, .. } = definition else {
+        panic!("expected taper definition, got {definition:?}");
+    };
+    assert_eq!(
+        *taper,
+        cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }
+    );
 }
 
 #[test]
@@ -2258,103 +2720,294 @@ fn generated_revision_sweep_surface_round_trips() {
     assert_revision_surface_round_trip(smbh, "sweep");
 }
 
-#[test]
-fn generated_revision_loft_surface_round_trips() {
-    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
-        t_long(surface, 1);
-        t_dbl(surface, 0.0);
-        t_long(surface, 1);
-        t_long(surface, 1);
-        surface.extend_from_slice(&generated_curve_block());
-        surface.extend_from_slice(&[0x0b, 0x0b]);
+/// A revision-gated `loft_spl_sur` body holding one section entry with one
+/// profile member. `type_code` selects the member payload: a nonzero type
+/// stores the support surface, one nullable pcurve, and the first flag; a zero
+/// type stores two nullable pcurve slots and no first flag. `asm_extension`
+/// carries the ASM integer only when the stream save format stores it, and
+/// `tail` writes the shared revision-gated surface tail in the cache form
+/// under test.
+fn push_revision_loft_body(
+    surface: &mut Vec<u8>,
+    type_code: i64,
+    asm_extension: Option<i64>,
+    tail: fn(&mut Vec<u8>),
+) {
+    t_long(surface, 1);
+    t_dbl(surface, 0.0);
+    t_long(surface, 1);
+    t_long(surface, type_code);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&[0x0b, 0x0b]);
+    if type_code == 0 {
+        surface.extend_from_slice(&generated_pcurve_block());
+        t_ident(surface, "nullbs");
+    } else {
         t_ident(surface, "null_surface");
         t_ident(surface, "nullbs");
         surface.push(0x0b);
-        t_long(surface, -1);
-        t_long(surface, 213);
-        t_long(surface, 1);
-        t_long(surface, 1);
-        for value in [0.0, 1.0, 0.25, 0.75, 0.5, 1.5] {
-            t_dbl(surface, value);
-        }
-        surface.push(0x0b);
-        t_ident(surface, "null_curve");
-        t_long(surface, 0);
-        t_long(surface, -1);
-        t_long(surface, 0);
-        for value in [0.0, 1.0, 0.0, 1.0] {
-            surface.push(0x0a);
-            t_dbl(surface, value);
-        }
-        surface.extend_from_slice(&[0x0b; 4]);
-        t_long(surface, 0);
-        t_long(surface, 0);
-        push_revision_surface_tail(surface);
+    }
+    if let Some(value) = asm_extension {
+        t_long(surface, value);
+    }
+    t_long(surface, 213);
+    t_long(surface, 1);
+    t_long(surface, 1);
+    for value in [0.0, 1.0, 0.25, 0.75, 0.5, 1.5] {
+        t_dbl(surface, value);
+    }
+    surface.push(0x0b);
+    t_ident(surface, "null_curve");
+    t_long(surface, 0);
+    t_long(surface, -1);
+    t_long(surface, 0);
+    for value in [0.0, 1.0, 0.0, 1.0] {
+        surface.push(0x0a);
+        t_dbl(surface, value);
+    }
+    surface.extend_from_slice(&[0x0b; 4]);
+    t_long(surface, 0);
+    t_long(surface, 0);
+    tail(surface);
+}
+
+/// Rewrite a `BinaryFile8` stream's save-format version word.
+fn with_save_format(mut smbh: Vec<u8>, version: u32) -> Vec<u8> {
+    smbh[15..19].copy_from_slice(&version.to_le_bytes());
+    smbh
+}
+
+/// The single revision-gated profile member of a decoded loft construction.
+fn decoded_revision_loft_member(
+    ir: &cadmpeg_ir::document::CadIr,
+) -> &cadmpeg_ir::geometry::LoftProfileMember {
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft {
+        sections,
+        revision_form,
+        ..
+    } = &ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("revision loft construction")
+        .definition
+    else {
+        panic!("expected a loft construction")
+    };
+    assert!(revision_form.is_some());
+    &sections[0].entries[0].profile[0]
+}
+
+/// Byte-exact re-emission of the decoded construction's subtype span.
+fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::CadIr) -> Vec<u8> {
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("procedural construction");
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == procedural.surface)
+        .expect("solved surface");
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(cache) = &surface.geometry else {
+        panic!("expected a solved NURBS cache")
+    };
+    let mut bytes = Vec::new();
+    crate::writer::generate::native_geometry::native_procedural_surface(
+        &mut bytes, ir, surface, cache,
+    )
+    .expect("regenerate procedural surface");
+    let inner = bytes
+        .iter()
+        .position(|&byte| byte == 0x0f)
+        .expect("subtype opening");
+    crate::nurbs::subtypes::subtype_span(&bytes, inner, 8)
+        .expect("subtype span")
+        .to_vec()
+}
+
+/// The subtype span of the synthetic stream's revision-gated surface record.
+fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
+    let start = asm_header::record_stream_start(smbh).unwrap();
+    let limit = asm_header::solved_record_limit(smbh).unwrap();
+    let records = crate::sab::frame(smbh, start, limit, 8).unwrap();
+    let record = &records[9];
+    let slice = &smbh[record.offset..record.offset + record.len];
+    let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
+    crate::nurbs::subtypes::subtype_span(slice, inner, 8)
+        .unwrap()
+        .to_vec()
+}
+
+#[test]
+fn generated_revision_loft_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        push_revision_loft_body(surface, 1, Some(-1), push_revision_surface_tail);
     });
     assert_revision_surface_round_trip(smbh, "loft");
 }
 
+/// The parameterization the shared form-`2` tail builder writes.
+fn assert_parameterized_tail(
+    tail_enum: i64,
+    parameterization: Option<&cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+) {
+    assert_eq!(tail_enum, 2);
+    let parameterization = parameterization.expect("tail parameterization");
+    assert_eq!(parameterization.u_interval, [Some(0.25), None]);
+    assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);
+    assert_eq!(
+        (parameterization.u_closure, parameterization.v_closure),
+        (1, 0)
+    );
+    assert_eq!(
+        (
+            parameterization.u_singularity,
+            parameterization.v_singularity
+        ),
+        (2, 3)
+    );
+}
+
+#[test]
+fn generated_parameterized_revision_loft_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        push_revision_loft_body(
+            surface,
+            1,
+            Some(-1),
+            push_parameterized_revision_surface_tail,
+        );
+    });
+    assert_revision_surface_round_trip(smbh.clone(), "loft");
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized revision loft decode");
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    // Cache form 2 stores no fit tolerance.
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft { revision_form, .. } =
+        &procedural.definition
+    else {
+        panic!("expected a loft construction")
+    };
+    let form = revision_form.as_ref().expect("revision form");
+    assert_parameterized_tail(form.tail_enum, form.tail_parameterization.as_ref());
+}
+
+#[test]
+fn revision_loft_member_omits_the_asm_integer_in_an_early_save_format_stream() {
+    // Save format 22600: the constraint subdata follows the first flag with no
+    // ASM integer between them.
+    let smbh = with_save_format(
+        synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+            push_revision_loft_body(surface, 1, None, push_revision_surface_tail);
+        }),
+        22600,
+    );
+    let subtype = synthetic_revision_surface_subtype_span(&smbh);
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("early-era revision loft decode");
+    let member = decoded_revision_loft_member(&decoded.ir);
+    assert_eq!(member.type_code, 1);
+    assert_eq!(member.data.first_flag, Some(false));
+    assert_eq!(member.data.asm_extension, None);
+    assert_eq!(member.data.secondary_pcurve, None);
+    assert_eq!(regenerated_procedural_surface_span(&decoded.ir), subtype);
+}
+
+#[test]
+fn revision_loft_type_zero_member_stores_two_pcurve_slots() {
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        push_revision_loft_body(surface, 0, Some(-1), push_revision_surface_tail);
+    });
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("type-zero revision loft decode");
+    let member = decoded_revision_loft_member(&decoded.ir);
+    assert_eq!(member.type_code, 0);
+    assert_eq!(member.data.surface, None);
+    assert!(member.data.pcurve.is_some());
+    assert_eq!(member.data.secondary_pcurve, None);
+    assert_eq!(member.data.first_flag, None);
+    assert_eq!(member.data.asm_extension, Some(-1));
+    assert_revision_surface_round_trip(smbh, "loft");
+}
+
 fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8> {
-    let mut bytes = synthetic_geometry_smbh();
-    let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
-    let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
-        .expect("generated edge reference offsets");
-    bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
-    let delta = bytes
-        .windows(b"delta_state".len())
-        .position(|window| window == b"delta_state")
-        .unwrap()
-        - 2;
-    let mut curve = Vec::new();
-    t_subident(&mut curve, "intcurve");
-    t_ident(&mut curve, "curve");
-    t_ref(&mut curve, -1);
-    t_long(&mut curve, -1);
-    t_ref(&mut curve, -1);
-    curve.push(0x0f);
-    t_ident(&mut curve, "defm_int_cur");
-    t_long(&mut curve, 0);
-    curve.extend_from_slice(&generated_curve_block());
-    t_long(&mut curve, mode);
-    match mode {
-        8 => {
-            for vector in [
-                [1.0, 2.0, 3.0],
-                [4.0, 5.0, 6.0],
-                [7.0, 8.0, 9.0],
-                [10.0, 11.0, 12.0],
-            ] {
-                t_vec(&mut curve, vector);
+    synthetic_geometry_with_cache_first_curve_smbh(
+        "defm_int_cur",
+        push_solved_cache_first_head,
+        |curve| {
+            curve.extend_from_slice(&generated_curve_block());
+            curve.push(0x0a);
+            t_dbl(curve, 0.0);
+            curve.push(0x0a);
+            t_dbl(curve, 1.0);
+            t_long(curve, mode);
+            match mode {
+                8 => {
+                    for vector in [
+                        [1.0, 2.0, 3.0],
+                        [4.0, 5.0, 6.0],
+                        [7.0, 8.0, 9.0],
+                        [10.0, 11.0, 12.0],
+                    ] {
+                        t_vec(curve, vector);
+                    }
+                    t_long(curve, 2);
+                    for value in [-1.0, 0.25, 2.0, 3.5] {
+                        t_dbl(curve, value);
+                    }
+                }
+                3 => {
+                    for vector in [
+                        [1.0, 2.0, 3.0],
+                        [4.0, 5.0, 6.0],
+                        [7.0, 8.0, 9.0],
+                        [10.0, 11.0, 12.0],
+                    ] {
+                        t_vec(curve, vector);
+                    }
+                    t_dbl(curve, 0.5);
+                    curve.extend_from_slice(&[0x0a, 0x0b, 0x0a]);
+                    t_pos(curve, [13.0, 14.0, 15.0]);
+                    for vector in [[16.0, 17.0, 18.0], [19.0, 20.0, 21.0]] {
+                        t_vec(curve, vector);
+                    }
+                    t_dbl(curve, 1.5);
+                    curve.extend_from_slice(&[0x0b, 0x0a]);
+                    for value in [2.5, 3.5, 4.5] {
+                        t_dbl(curve, value);
+                    }
+                    curve.extend_from_slice(&[0x0a, 0x0b, 0x0a, 0x0b, 0x0a]);
+                    t_dbl(curve, 5.5);
+                    t_long(curve, 6);
+                }
+                _ => unreachable!(),
             }
-            t_long(&mut curve, 2);
-            for value in [-1.0, 0.25, 2.0, 3.5] {
-                t_dbl(&mut curve, value);
-            }
-        }
-        5 => {
-            t_ident(&mut curve, "plane");
-            t_pos(&mut curve, [1.0, 2.0, 3.0]);
-            t_vec(&mut curve, [0.0, 0.0, 1.0]);
-            t_vec(&mut curve, [1.0, 0.0, 0.0]);
-            curve.push(0x0b);
-        }
-        _ => unreachable!(),
-    }
-    curve.extend_from_slice(&generated_curve_block());
-    t_dbl(&mut curve, 0.0005);
-    curve.push(0x10);
-    t_end(&mut curve);
-    bytes.splice(delta..delta, curve);
-    bytes
+        },
+    )
 }
 
 fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let body = &records[1];
     let record = &mut bytes[body.offset..body.offset + body.len];
@@ -2395,10 +3048,19 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     bytes
 }
 
-fn synthetic_geometry_with_sketch_link_smbh() -> Vec<u8> {
+/// One `sketch_attrib_def` payload form: the form selector the third header
+/// integer carries and the members that follow it.
+enum SketchLinkForm<'a> {
+    /// Form `3`: the members as one tagged ASCII field.
+    Tagged(&'a str),
+    /// Form `2` or `0`: the members as integers.
+    Integers(i64, &'a [i64]),
+}
+
+fn synthetic_geometry_with_sketch_link_smbh(form: SketchLinkForm<'_>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
@@ -2415,10 +3077,21 @@ fn synthetic_geometry_with_sketch_link_smbh() -> Vec<u8> {
     t_ident(&mut attribute, "attrib");
     t_ref(&mut attribute, -1);
     push_u8_string(&mut attribute, "sketch_attrib_def");
-    for value in [1, 1, 3] {
+    let (selector, members) = match form {
+        SketchLinkForm::Tagged(_) => (3, &[][..]),
+        SketchLinkForm::Integers(selector, members) => (selector, members),
+    };
+    for value in [1, 1, selector] {
         t_long(&mut attribute, value);
     }
-    push_u8_string(&mut attribute, "113 0 1 0 2 3");
+    match form {
+        SketchLinkForm::Tagged(tuple) => push_u8_string(&mut attribute, tuple),
+        SketchLinkForm::Integers(..) => {
+            for value in members {
+                t_long(&mut attribute, *value);
+            }
+        }
+    }
     t_end(&mut attribute);
     bytes.splice(delta..delta, attribute);
     bytes
@@ -2583,7 +3256,7 @@ fn synthetic_free_vertex_body_smbh() -> Vec<u8> {
 fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     for (record_index, reference_ordinal) in [(1usize, 3usize), (3, 5)] {
         let record = &records[record_index];
@@ -2670,7 +3343,7 @@ fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
 fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
@@ -2805,10 +3478,85 @@ fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
     synthetic_cyl_spl_sur_with_cache_smbh(true)
 }
 
+/// Append the head of the shared revision-gated surface tail. Form `0` stores
+/// the solved cache followed by its fit tolerance; form `2` stores the U
+/// parameter interval and the V parameter interval in the optional bool-gated
+/// encoding, then the U closure, V closure, U singularity, and V singularity
+/// enums. Every slot carries a distinct value so a reordering fails loudly.
+fn append_revision_surface_tail_head(bytes: &mut Vec<u8>, form: i64, fit_tolerance: f64) {
+    push_tagged_i64(bytes, 0x15, form);
+    if form == 0 {
+        bytes.extend_from_slice(&generated_surface_block());
+        t_dbl(bytes, fit_tolerance);
+        return;
+    }
+    for value in [0.25, 0.75, -1.5, 3.5] {
+        bytes.push(0x0a);
+        t_dbl(bytes, value);
+    }
+    for value in [1, 2, 3, 4] {
+        push_tagged_i64(bytes, 0x15, value);
+    }
+}
+
+/// Append the six counted discontinuity arrays and the boolean closing the
+/// shared revision-gated surface tail.
+fn append_revision_surface_tail_discontinuities(bytes: &mut Vec<u8>) {
+    for values in [
+        &[0.25][..],
+        &[][..],
+        &[0.5, 0.75][..],
+        &[1.5][..],
+        &[][..],
+        &[2.5, 3.5][..],
+    ] {
+        t_long(bytes, i64::try_from(values.len()).unwrap());
+        for value in values {
+            t_dbl(bytes, *value);
+        }
+    }
+    bytes.push(0x0b);
+}
+
+/// The discontinuity arrays `append_revision_surface_tail_discontinuities`
+/// writes.
+fn expected_revision_surface_tail_discontinuities() -> [Vec<f64>; 6] {
+    [
+        vec![0.25],
+        vec![],
+        vec![0.5, 0.75],
+        vec![1.5],
+        vec![],
+        vec![2.5, 3.5],
+    ]
+}
+
+/// The parameterization `append_revision_surface_tail_head` writes for form `2`.
+fn expected_revision_surface_tail_parameterization(
+) -> cadmpeg_ir::geometry::RevisionSurfaceParameterization {
+    cadmpeg_ir::geometry::RevisionSurfaceParameterization {
+        u_interval: [Some(0.25), Some(0.75)],
+        v_interval: [Some(-1.5), Some(3.5)],
+        u_closure: 1,
+        v_closure: 2,
+        u_singularity: 3,
+        v_singularity: 4,
+    }
+}
+
 fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
+    synthetic_versioned_cyl_spl_sur_with_tail_smbh(0)
+}
+
+/// A revision-gated `cyl_spl_sur` closing with the shared surface tail. Its
+/// directrix scope carries a surface block and a trailing scalar of its own, so
+/// a decoder that locates the face cache by scanning the scope rather than by
+/// parsing the tail picks that block up and reads its trailing scalar as the
+/// fit tolerance.
+fn synthetic_versioned_cyl_spl_sur_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
@@ -2827,6 +3575,8 @@ fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
     surface.push(0x0f);
     t_ident(&mut surface, "exact_int_cur");
     surface.extend_from_slice(&generated_curve_block());
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.009);
     surface.push(0x10);
     surface.push(0x0a);
     t_dbl(&mut surface, 0.25);
@@ -2834,8 +3584,8 @@ fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
     t_dbl(&mut surface, 0.75);
     t_vec(&mut surface, [0.0, 0.0, 2.0]);
     t_pos(&mut surface, [4.0, 5.0, 6.0]);
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.002);
+    append_revision_surface_tail_head(&mut surface, tail_form, 0.002);
+    append_revision_surface_tail_discontinuities(&mut surface);
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old_offset..old_offset + old_len, surface);
@@ -2849,7 +3599,7 @@ fn synthetic_cacheless_cyl_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
@@ -2880,7 +3630,7 @@ fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
 fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -2918,7 +3668,7 @@ fn synthetic_exact_spl_sur_with_decoy_sense_smbh() -> Vec<u8> {
 fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -2945,7 +3695,7 @@ fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
 fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -2973,7 +3723,7 @@ fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
 fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -2999,7 +3749,7 @@ fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
 fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -3035,7 +3785,7 @@ fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
 fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -3068,7 +3818,7 @@ fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -3145,7 +3895,7 @@ fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64, direction:
 fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3183,7 +3933,7 @@ fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
 fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3226,7 +3976,7 @@ fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3274,7 +4024,7 @@ fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
 fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3314,7 +4064,7 @@ fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3364,7 +4114,7 @@ fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
 fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3405,7 +4155,7 @@ fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
 fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3463,7 +4213,7 @@ fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
 fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3519,7 +4269,7 @@ fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
 fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3588,7 +4338,7 @@ fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8>
 fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
@@ -3628,7 +4378,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let records = crate::sab::frame(
         &bytes,
         asm_header::record_stream_start(&bytes).unwrap(),
-        asm_header::first_delta_state_offset(&bytes).unwrap(),
+        asm_header::solved_record_limit(&bytes).unwrap(),
         8,
     )
     .unwrap();
@@ -3644,7 +4394,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3692,7 +4442,7 @@ fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
 fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3745,7 +4495,7 @@ fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
 fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3799,7 +4549,7 @@ fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
 fn synthetic_law_driven_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3878,7 +4628,7 @@ fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
 fn synthetic_compound_loft_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3917,7 +4667,7 @@ fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) {
 fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -3969,7 +4719,7 @@ fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
 fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4078,7 +4828,7 @@ fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
 fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4155,7 +4905,7 @@ fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i6
 fn synthetic_sub_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4196,7 +4946,7 @@ fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
 fn synthetic_g2_blend_spl_sur_smbh(name: &str, full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4258,7 +5008,7 @@ fn synthetic_rational_cyl_spl_sur_smbh() -> Vec<u8> {
 fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let asmheader = &records[0];
     let surface = &records[9];
@@ -4281,10 +5031,38 @@ fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_revision_ref_directrix_cyl_spl_sur_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let asmheader = &records[0];
+
+    let mut target = Vec::new();
+    target.push(0x0f);
+    t_ident(&mut target, "exact_int_cur");
+    target.extend_from_slice(&generated_curve_block());
+    target.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut target, 0.009);
+    target.push(0x10);
+    let target_start = bytes
+        .windows(target.len())
+        .position(|window| window == target)
+        .expect("inline directrix definition");
+
+    let mut reference = vec![0x0f, 0x04];
+    reference.extend_from_slice(&0i64.to_le_bytes());
+    reference.push(0x10);
+    bytes.splice(target_start..target_start + target.len(), reference);
+    let asmheader_end = asmheader.offset + asmheader.len - 1;
+    bytes.splice(asmheader_end..asmheader_end, target);
+    bytes
+}
+
 fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
@@ -4339,9 +5117,13 @@ fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) 
 }
 
 fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
+    synthetic_full_rolling_ball_with_tail_smbh(name, 0)
+}
+
+fn synthetic_full_rolling_ball_with_tail_smbh(name: &str, tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4373,15 +5155,8 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
         t_dbl(&mut surface, value);
     }
     t_long(&mut surface, 17);
-    push_tagged_i64(&mut surface, 0x15, 0);
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.004);
-    for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-        t_long(&mut surface, i64::try_from(values.len()).unwrap());
-        for value in values {
-            t_dbl(&mut surface, *value);
-        }
-    }
+    append_revision_surface_tail_head(&mut surface, tail_form, 0.004);
+    append_revision_surface_tail_discontinuities(&mut surface);
     if matches!(name, "sss_blend_spl_sur" | "sssblndsur") {
         push_u8_string(&mut surface, "third");
         t_ident(&mut surface, "plane");
@@ -4396,6 +5171,9 @@ fn synthetic_full_rolling_ball_smbh(name: &str) -> Vec<u8> {
         t_long(&mut surface, 23);
         t_ident(&mut surface, "nullbs");
         surface.push(0x0b);
+    }
+    for value in [11, 12, 13] {
+        t_long(&mut surface, value);
     }
     surface.push(0x10);
     t_end(&mut surface);
@@ -4442,22 +5220,138 @@ fn append_generated_variable_blend_value(
     }
 }
 
+/// An `edge_offset` radius law with no leading sub-discriminator: the
+/// law-domain parameter range and one offset length.
+fn append_generated_variable_blend_edge_offset_value(
+    bytes: &mut Vec<u8>,
+    parameters: [f64; 2],
+    offset: f64,
+) {
+    push_u8_string(bytes, "edge_offset");
+    push_tagged_i64(bytes, 0x15, 3);
+    bytes.push(0x0a);
+    for value in parameters.into_iter().chain([offset]) {
+        t_dbl(bytes, value);
+    }
+}
+
+/// An `interp` radius law: the law-domain parameter range, a `(u,radius)` BS2
+/// function, the extension enum, the point count, and one radius point. The
+/// payload ends at that point — nothing gates a trailing scalar pair.
+fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) {
+    push_u8_string(bytes, "interp");
+    push_tagged_i64(bytes, 0x15, 0);
+    bytes.push(0x0a);
+    t_dbl(bytes, 0.0);
+    t_dbl(bytes, 1.0);
+    bytes.extend_from_slice(&generated_pcurve_block());
+    push_tagged_i64(bytes, 0x15, 2);
+    push_tagged_i64(bytes, 0x04, 1);
+    for value in [0.5, 1.5, 0.25, 0.75] {
+        t_dbl(bytes, value);
+    }
+    bytes.push(0x13);
+    for value in [1.0f64, 2.0, 3.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0x14);
+    for value in [0.0f64, 0.0, 1.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// Which radius law the synthetic stream stores as its first blend value.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FirstRadiusLaw {
+    TwoEnds,
+    Interp,
+    /// `edge_offset` with no leading sub-discriminator: two law-domain
+    /// parameters and one offset length.
+    EdgeOffset,
+}
+
 fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
-    synthetic_variable_blend_smbh_with_selector(name, false, None)
+    synthetic_variable_blend_smbh_with_selector(name, false, None, [None, None])
 }
 
 fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) -> Vec<u8> {
-    synthetic_variable_blend_smbh_with_selector(name, rounded_chamfer, rounded_chamfer.then_some(3))
+    synthetic_variable_blend_smbh_with_selector(
+        name,
+        rounded_chamfer,
+        rounded_chamfer.then_some(3),
+        [None, None],
+    )
 }
 
 fn synthetic_variable_blend_smbh_with_selector(
     name: &str,
     two_radii: bool,
-    chamfer_selector: Option<i64>,
+    cross_section_selector: Option<i64>,
+    v_range: [Option<f64>; 2],
+) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(
+        name,
+        two_radii,
+        cross_section_selector,
+        v_range,
+        FirstRadiusLaw::TwoEnds,
+        0,
+    )
+}
+
+/// The same stream whose shared revision-gated surface tail takes the given
+/// form.
+fn synthetic_variable_blend_smbh_with_tail_form(name: &str, tail_form: i64) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(
+        name,
+        false,
+        None,
+        [None, None],
+        FirstRadiusLaw::TwoEnds,
+        tail_form,
+    )
+}
+
+/// The same stream with an `interp` first radius law, which places a radius
+/// point immediately before the cross-section enum.
+fn synthetic_variable_blend_smbh_with_interp_radius(
+    name: &str,
+    cross_section_selector: Option<i64>,
+) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(
+        name,
+        false,
+        cross_section_selector,
+        [None, None],
+        FirstRadiusLaw::Interp,
+        0,
+    )
+}
+
+/// The same stream with an `edge_offset` first radius law carrying no leading
+/// sub-discriminator.
+fn synthetic_variable_blend_smbh_with_edge_offset_radius(name: &str) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(
+        name,
+        false,
+        None,
+        [None, None],
+        FirstRadiusLaw::EdgeOffset,
+        0,
+    )
+}
+
+fn synthetic_variable_blend_smbh_inner(
+    name: &str,
+    two_radii: bool,
+    cross_section_selector: Option<i64>,
+    v_range: [Option<f64>; 2],
+    first_value: FirstRadiusLaw,
+    tail_form: i64,
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4477,21 +5371,32 @@ fn synthetic_variable_blend_smbh_with_selector(
     t_dbl(&mut surface, 0.4);
     surface.push(0x15);
     surface.extend_from_slice(&i64::from(two_radii).to_le_bytes());
-    append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
+    match first_value {
+        FirstRadiusLaw::Interp => append_generated_variable_blend_interp_value(&mut surface),
+        FirstRadiusLaw::EdgeOffset => {
+            append_generated_variable_blend_edge_offset_value(&mut surface, [0.25, 0.75], 1.5);
+        }
+        FirstRadiusLaw::TwoEnds => {
+            append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
+        }
+    }
     if !two_radii {
-        if let Some(selector) = chamfer_selector {
+        if let Some(selector) = cross_section_selector {
             surface.push(0x15);
             surface.extend_from_slice(&selector.to_le_bytes());
+            if matches!(selector, 1 | 7) {
+                t_dbl(&mut surface, 2.0);
+                t_dbl(&mut surface, 2.0);
+            }
         }
     }
     if two_radii {
         append_generated_variable_blend_value(&mut surface, [0.1, 0.9], [3.5, 4.5]);
-        if let Some(selector) = chamfer_selector {
+        if let Some(selector) = cross_section_selector {
             surface.push(0x15);
             surface.extend_from_slice(&selector.to_le_bytes());
             if selector == 3 {
-                surface.push(0x15);
-                surface.extend_from_slice(&2i64.to_le_bytes());
+                surface.push(0x0a);
                 append_generated_variable_blend_value(&mut surface, [0.0, 1.0], [5.5, 6.5]);
             }
         }
@@ -4500,15 +5405,22 @@ fn synthetic_variable_blend_smbh_with_selector(
         surface.push(0x0a);
         t_dbl(&mut surface, value);
     }
-    surface.push(0x0b);
-    surface.push(0x0b);
+    // Second interval `(T lo, F)`: a lower bound with an unbounded-above
+    // marker, or both bounds absent when `v_range` is `[None, None]`.
+    for bound in v_range {
+        match bound {
+            Some(value) => {
+                surface.push(0x0a);
+                t_dbl(&mut surface, value);
+            }
+            None => surface.push(0x0b),
+        }
+    }
     t_long(&mut surface, 11);
     t_dbl(&mut surface, 0.125);
     t_dbl(&mut surface, 0.6);
     t_long(&mut surface, 12);
-    push_tagged_i64(&mut surface, 0x15, 0);
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.004);
+    append_revision_surface_tail_head(&mut surface, tail_form, 0.004);
     for values in [
         &[0.125][..],
         &[][..],
@@ -4554,7 +5466,7 @@ fn append_vertex_boundary_common(bytes: &mut Vec<u8>, kind: &str, x: f64) {
 fn synthetic_vertex_blend_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
@@ -4815,6 +5727,74 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
+#[test]
+fn malformed_tspline_cage_degrades_to_a_loss_note() {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+        .unwrap();
+    zip.write_all(&synthetic_geometry_smbh()).unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/TSplines.BlobParts/Cage1.tsm",
+        stored,
+    )
+    .unwrap();
+    // An edge-root index far outside the half-edge range makes the cage
+    // internally inconsistent while the entry itself stays well-formed.
+    zip.write_all(b"tsm 1.0\ner 999\n").unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let result = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("an inconsistent cage must not fail the document decode");
+    assert!(result.ir.model.subds.is_empty());
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
+            && loss.message.contains("T-spline control cage not decoded")));
+}
+
+#[test]
+fn malformed_paramesh_reports_its_entry_and_parser_failure() {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    let entry = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
+    zip.start_file(entry, stored).unwrap();
+    zip.write_all(b"not a paramesh container").unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("independent malformed mesh entry must not abort document decode");
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == LossCode::DecodeDiagnostic
+            && loss.severity == Severity::Error
+            && loss.message.contains(entry)
+            && loss.message.contains("paramesh container has no magic")
+    }));
+}
+
+fn f3d_with_deflated_smbh(smbh: &[u8]) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        deflated,
+    )
+    .unwrap();
+    zip.write_all(smbh).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
 fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32) {
     let central = archive
         .windows(4)
@@ -4836,14 +5816,26 @@ fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32)
 
 #[test]
 fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
-    let mut archive = f3d_with_smbh(&synthetic_geometry_smbh());
+    let mut archive = f3d_with_deflated_smbh(&synthetic_geometry_smbh());
     let target = b"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX);
 
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect_err("oversized inflated entry must be rejected");
-    assert!(error.to_string().contains("inflated bytes"));
+    assert!(
+        matches!(error, cadmpeg_codec_core::CodecError::ResourceLimit(_)),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn container_resource_limits_match_the_declared_f3d_profile() {
+    assert_eq!(crate::container::MAX_ARCHIVE_BYTES, 256 * 1024 * 1024);
+    assert_eq!(
+        crate::container::MAX_INFLATED_ENTRY_BYTES,
+        128 * 1024 * 1024
+    );
 }
 
 #[test]
@@ -4929,7 +5921,11 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
     F3dCodec
-        .encode_preserving(&retained, &decoded.source_fidelity, &mut retained_bytes)
+        .write_preserved_with_source_fidelity(
+            &retained,
+            &decoded.source_fidelity,
+            &mut retained_bytes,
+        )
         .expect("retained configuration edit");
     let retained_round_trip = F3dCodec
         .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
@@ -4945,12 +5941,20 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less configuration encode");
     let mut inconsistent = source_less.clone();
     inconsistent.model.configurations[0].active = false;
     let error = F3dCodec
-        .encode(&inconsistent, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &inconsistent,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("neutral/native configuration divergence must be rejected");
     assert!(error
         .to_string()
@@ -4996,7 +6000,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     assert!(matches!(
         invalid,
-        Err(cadmpeg_ir::codec::CodecError::Malformed(message))
+        Err(cadmpeg_codec_core::CodecError::Malformed(message))
             if message.contains("configuration JSON must be an object")
     ));
 
@@ -5028,24 +6032,34 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         );
         assert!(matches!(
             invalid,
-            Err(cadmpeg_ir::codec::CodecError::Malformed(message))
+            Err(cadmpeg_codec_core::CodecError::Malformed(message))
                 if message.contains(expected)
         ));
     }
 
-    let invalid_rule = F3dCodec.decode(
-        &mut Cursor::new(f3d_with_configuration(
-            &synthetic_geometry_smbh(),
-            rule_name,
-            br#"{"when":"width > 20 mm"}"#,
-        )),
-        &DecodeOptions::default(),
+    let partial_rule = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_configuration(
+                &synthetic_geometry_smbh(),
+                rule_name,
+                br#"{"when":"width > 20 mm","vendorExtension":7}"#,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("partial native rule remains decodable");
+    assert!(partial_rule.ir.model.configurations.is_empty());
+    let partial_native = f3d_native(&partial_rule.ir);
+    assert_eq!(
+        partial_native.design_configurations[0].payload["vendorExtension"],
+        7
     );
-    assert!(matches!(
-        invalid_rule,
-        Err(cadmpeg_ir::codec::CodecError::Malformed(message))
-            if message.contains("`when` and `activate` must be paired strings")
-    ));
+    assert!(partial_rule
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(
+            "configuration rule(s) were retained without an unambiguous neutral activation target"
+        )));
 }
 
 #[test]
@@ -5057,7 +6071,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
 
     let mut replayed = Vec::new();
     F3dCodec
-        .encode_preserving(&decoded.ir, &decoded.source_fidelity, &mut replayed)
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut replayed)
         .unwrap();
     assert_eq!(replayed, source);
 
@@ -5076,7 +6090,11 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     *u_axis = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&point_edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(
+            &point_edited,
+            &decoded.source_fidelity,
+            &mut regenerated,
+        )
         .unwrap();
     assert_ne!(regenerated, source);
     let round_trip = F3dCodec
@@ -5094,151 +6112,12 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     let mut modified = decoded.ir;
     modified.model.bodies[0].name = Some("edited".into());
     let error = F3dCodec
-        .encode_preserving(&modified, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&modified, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
-}
-
-/// The source-fidelity gate as a truth table over record presence, retained-byte
-/// integrity, and baseline match. After gate adoption every combination that a
-/// sidecar cannot support resolves to a successful `Generate` rather than the
-/// former `Malformed`/`NotImplemented` write refusal; the degraded combinations
-/// (a retained record was present but unusable) carry an `ExportReport` note.
-#[test]
-fn source_fidelity_gate_truth_table() {
-    fn run(
-        ir: &cadmpeg_ir::document::CadIr,
-        sidecar: Option<&cadmpeg_ir::source_fidelity::SourceFidelity>,
-    ) -> (Vec<u8>, cadmpeg_ir::report::ExportReport) {
-        let mut out = Vec::new();
-        let report = F3dCodec
-            .encode_with_source_fidelity(ir, sidecar, &mut out)
-            .expect("the gate never errors: every refusal is Generate");
-        (out, report)
-    }
-
-    fn degraded(report: &cadmpeg_ir::report::ExportReport) -> bool {
-        report
-            .notes
-            .iter()
-            .any(|note| note.contains("unusable for replay or patch"))
-    }
-
-    let source = f3d_with_smbh(&synthetic_geometry_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("truth-table fixture decodes");
-    assert!(
-        decoded
-            .source_fidelity
-            .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
-            .is_some(),
-        "fixture must retain the F3D source image"
-    );
-
-    // The bytes a clean Generate produces for this IR (source-less writer). Every
-    // Generate cell below must reproduce exactly these bytes.
-    let regenerated = {
-        let mut out = Vec::new();
-        F3dCodec
-            .encode(&decoded.ir, &mut out)
-            .expect("decoded IR writes source-less");
-        out
-    };
-    assert_ne!(
-        regenerated, source,
-        "generate must not reproduce the retained image"
-    );
-
-    // record ✓  integrity ✓  baseline = current  ->  Replay verbatim.
-    let (out, report) = run(&decoded.ir, Some(&decoded.source_fidelity));
-    assert_eq!(out, source, "matching baseline replays the retained image");
-    assert!(!degraded(&report));
-    assert!(report.notes.iter().any(|n| n.contains("replayed verbatim")));
-
-    // record ✓  integrity ✓  baseline ≠ current  ->  Patch.
-    let mut edited = decoded.ir.clone();
-    edited.model.points[0].position.x += 1.0;
-    let (out, report) = run(&edited, Some(&decoded.source_fidelity));
-    assert_ne!(out, source, "an edit does not replay verbatim");
-    assert_ne!(
-        out, regenerated,
-        "a patchable edit patches, not regenerates"
-    );
-    assert!(!degraded(&report));
-    assert!(report
-        .notes
-        .iter()
-        .any(|n| n.contains("patched with supported edits")));
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(out), &DecodeOptions::default())
-        .expect("patched container decodes");
-    assert_eq!(
-        round_trip.ir.model.points[0].position.x,
-        edited.model.points[0].position.x
-    );
-
-    // record ✓  integrity ✓  baseline absent  ->  Generate (degraded).
-    let mut no_baseline = decoded.ir.clone();
-    no_baseline
-        .source
-        .as_mut()
-        .expect("decoded IR has a source")
-        .attributes
-        .remove("semantic_sha256");
-    let (out, report) = run(&no_baseline, Some(&decoded.source_fidelity));
-    assert_eq!(out, regenerated, "absent baseline regenerates from the IR");
-    assert!(degraded(&report));
-
-    // record ✓  integrity ✗ (tampered bytes)  baseline = current  ->  Generate (degraded).
-    let mut tampered = decoded.source_fidelity.clone();
-    {
-        let record = tampered
-            .retained_records
-            .iter_mut()
-            .find(|r| r.id == crate::ids::FILE_SOURCE_IMAGE_ID)
-            .expect("source image present");
-        // Keep the declared byte_len and sha256; swap the stored bytes.
-        record.data = Some(vec![0u8; record.byte_len as usize]);
-    }
-    let (out, report) = run(&decoded.ir, Some(&tampered));
-    assert_eq!(out, regenerated, "failed integrity regenerates from the IR");
-    assert!(degraded(&report));
-
-    // record ✓  no retained bytes  ->  Generate (degraded).
-    let mut no_data = decoded.source_fidelity.clone();
-    no_data
-        .retained_records
-        .iter_mut()
-        .find(|r| r.id == crate::ids::FILE_SOURCE_IMAGE_ID)
-        .expect("source image present")
-        .data = None;
-    let (out, report) = run(&decoded.ir, Some(&no_data));
-    assert_eq!(
-        out, regenerated,
-        "record without bytes regenerates from the IR"
-    );
-    assert!(degraded(&report));
-
-    // record ✗ (sidecar present, image removed)  ->  Generate (clean).
-    let mut no_record = decoded.source_fidelity.clone();
-    no_record
-        .retained_records
-        .retain(|r| r.id != crate::ids::FILE_SOURCE_IMAGE_ID);
-    let (out, report) = run(&decoded.ir, Some(&no_record));
-    assert_eq!(out, regenerated, "absent record regenerates from the IR");
-    assert!(
-        !degraded(&report),
-        "no retained record is a clean generate, not a degraded one"
-    );
-
-    // no sidecar  ->  Generate (clean).
-    let (out, report) = run(&decoded.ir, None);
-    assert_eq!(out, regenerated, "no sidecar regenerates from the IR");
-    assert!(!degraded(&report));
 }
 
 #[test]
@@ -5274,13 +6153,15 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             id: "f3d:asm:tolerant-vertex-tail#generated".into(),
             vertex: tolerant_vertex,
             record_index: 0,
-            leading_tolerances: [1.25, -2.5],
+            leading_tolerances: [-1.0, -1.0],
+            trailing_field: Some(0),
         }];
         native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
             id: "f3d:asm:tolerant-edge-tail#generated".into(),
             edge: tolerant_edge,
             record_index: 0,
-            trailing_integers: [22800, 0],
+            entity_revision: 22800,
+            trailing_field: Some(1),
         }];
         native.tolerant_coedge_parameters = vec![crate::records::TolerantCoedgeParameters {
             id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
@@ -5301,9 +6182,15 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         }];
     }
     let mut encoded = Vec::new();
+    crate::native::reset_load_count();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less F3D encode");
+    assert_eq!(crate::native::load_count(), 1);
     let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
     let mut properties = Vec::new();
     archive
@@ -5359,7 +6246,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
             };
         let error = F3dCodec
-            .encode(&invalid, &mut Vec::new())
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &invalid,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
             .expect_err("stale normalized face sense must not be rewritten");
         assert!(error
             .to_string()
@@ -5369,7 +6260,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         let mut invalid = source_less.clone();
         f3d_native_mut(&mut invalid).body_visibilities[0].asm_body_key = 43;
         let error = F3dCodec
-            .encode(&invalid, &mut Vec::new())
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &invalid,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
             .expect_err("visibility must rejoin the emitted ASM body");
         assert!(error
             .to_string()
@@ -5400,12 +6295,16 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.vertices[0].tolerance, Some(0.025));
     assert_eq!(round_trip.ir.model.edges[0].tolerance, Some(0.035));
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_integers,
-        [22800, 0]
+        f3d_native(&round_trip.ir).tolerant_edge_tails[0].entity_revision,
+        22800
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_field,
+        Some(1)
     );
     assert_eq!(
         f3d_native(&round_trip.ir).tolerant_vertex_tails[0].leading_tolerances,
-        [1.25, -2.5]
+        [-1.0, -1.0]
     );
     assert_eq!(
         f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
@@ -5450,7 +6349,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     }
     let mut retained = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &round_trip.source_fidelity, &mut retained)
+        .write_preserved_with_source_fidelity(&edited, &round_trip.source_fidelity, &mut retained)
         .expect("retained double-sided containment edit");
     let retained = F3dCodec
         .decode(&mut Cursor::new(retained), &DecodeOptions::default())
@@ -5462,8 +6361,12 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
     assert_eq!(retained.ir.model.edges[0].tolerance, Some(0.06));
     assert_eq!(
-        f3d_native(&retained.ir).tolerant_edge_tails[0].trailing_integers,
-        [22800, 0]
+        f3d_native(&retained.ir).tolerant_edge_tails[0].entity_revision,
+        22800
+    );
+    assert_eq!(
+        f3d_native(&retained.ir).tolerant_edge_tails[0].trailing_field,
+        Some(1)
     );
     assert_eq!(retained.ir.model.bodies[0].visible, Some(true));
     assert_eq!(
@@ -5482,6 +6385,68 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 }
 
 #[test]
+fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
+    // The tedge tail carries the serializer revision stamp, then a trailing
+    // LONG present only in newer streams and taking the values 0, 1, and 2.
+    // The tvertex trailing LONG shares the gate and the value set. Each form
+    // must survive a write/decode cycle byte-for-byte.
+    for (edge_trailing, vertex_trailing) in [
+        (Some(0), Some(0)),
+        (Some(1), Some(1)),
+        (Some(2), Some(2)),
+        (None, None),
+    ] {
+        let source = f3d_with_smbh(&synthetic_geometry_smbh());
+        let decoded = F3dCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("generated planar triangle decode");
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.model.vertices[0].tolerance = Some(0.025);
+        source_less.model.edges[0].tolerance = Some(0.035);
+        let tolerant_vertex = source_less.model.vertices[0].id.clone();
+        let tolerant_edge = source_less.model.edges[0].id.clone();
+        {
+            let mut native = f3d_native_mut(&mut source_less);
+            native.tolerant_vertex_tails = vec![crate::records::TolerantVertexTail {
+                id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+                vertex: tolerant_vertex,
+                record_index: 0,
+                leading_tolerances: [-1.0, -1.0],
+                trailing_field: vertex_trailing,
+            }];
+            native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
+                id: "f3d:asm:tolerant-edge-tail#generated".into(),
+                edge: tolerant_edge,
+                record_index: 0,
+                entity_revision: 22800,
+                trailing_field: edge_trailing,
+            }];
+        }
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("tolerant tail encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("tolerant tail round trip");
+        assert_eq!(
+            f3d_native(&round_trip.ir).tolerant_edge_tails[0].entity_revision,
+            22800
+        );
+        assert_eq!(
+            f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_field,
+            edge_trailing
+        );
+        assert_eq!(
+            f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_field,
+            vertex_trailing
+        );
+    }
+}
+
+#[test]
 fn generated_source_less_f3d_rejects_subds() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -5490,19 +6455,25 @@ fn generated_source_less_f3d_rejects_subds() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.subds.push(cadmpeg_ir::subd::SubdSurface {
+    source_less.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId("test:f3d:subd#0".into()),
-        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
+        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
         source_object: None,
     });
 
-    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+        cadmpeg_codec_core::CodecError::NotImplemented(message)
             if message.contains("does not support SubD surfaces")
     ));
 }
@@ -5535,10 +6506,16 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
             native_ref: None,
         });
 
-    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::Malformed(message)
+        cadmpeg_codec_core::CodecError::Malformed(message)
             if message.contains("must equal the projection")
     ));
 }
@@ -5555,8 +6532,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             byte_offset: 0,
             class_tag: "305".into(),
             record_index: 700,
-            prefix_value: 0,
-            prefix_value_offset: 22,
+            family_discriminator: Some(0),
+            family_discriminator_offset: Some(22),
             source_ordinal: 0,
             owner_record_index: None,
             expression: "Width / 2".into(),
@@ -5578,8 +6555,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             byte_offset: 0,
             class_tag: "305".into(),
             record_index: 701,
-            prefix_value: 0,
-            prefix_value_offset: 22,
+            family_discriminator: Some(0),
+            family_discriminator_offset: Some(22),
             source_ordinal: 1,
             owner_record_index: None,
             expression: "60 mm".into(),
@@ -5608,7 +6585,11 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less document parameter encode");
     let decoded = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -5650,7 +6631,11 @@ fn generated_source_less_writes_document_tolerance_contract() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerance encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -5670,7 +6655,11 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
 
     source_less.model.faces[0].tolerance = Some(0.02);
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("face tolerance must not disappear");
     assert!(
         error.to_string().contains("cannot serialize face")
@@ -5681,7 +6670,11 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     source_less.model.edges[0].tolerance = Some(0.03);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("supported tolerant edge encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -5692,7 +6685,11 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     source_less.model.vertices[0].tolerance = Some(0.04);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("supported tolerant vertex encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -5703,8 +6700,8 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
 #[test]
 fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::provenance::SourceObjectAssociation;
     use cadmpeg_ir::tessellation::Tessellation;
+    use cadmpeg_ir::SourceObjectAssociation;
 
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -5725,7 +6722,11 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
 
     source_less.model.surfaces[0].source_object = Some(association.clone());
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("surface source identity must not disappear");
     assert!(error
         .to_string()
@@ -5741,7 +6742,11 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         source_object: Some(association),
     });
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("curve source identity must not disappear");
     assert!(error
         .to_string()
@@ -5765,7 +6770,11 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         channels: Vec::new(),
     });
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("neutral tessellation must not disappear");
     assert!(error
         .to_string()
@@ -5788,9 +6797,16 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
     source_less.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
 
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("open face cannot be emitted as a solid body");
-    assert!(matches!(error, cadmpeg_ir::codec::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_codec_core::CodecError::Malformed(_)
+    ));
 }
 
 #[test]
@@ -5863,7 +6879,11 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less polygon encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -5959,7 +6979,11 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         .collect::<Vec<_>>();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less line-carrier encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6021,7 +7045,11 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less circle-carrier encode");
     let mut round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6032,13 +7060,17 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     assert!(!cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new())
         .findings
         .iter()
-        .any(|finding| finding.check == cadmpeg_ir::validate::Check::Annotations));
+        .any(|finding| finding.check == cadmpeg_ir::Check::Annotations));
     round_trip.ir.model.curves[0].geometry = CurveGeometry::Line {
         origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
     };
     let error = F3dCodec
-        .encode_preserving(&round_trip.ir, &round_trip.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(
+            &round_trip.ir,
+            &round_trip.source_fidelity,
+            &mut Vec::new(),
+        )
         .expect_err("native ellipse record cannot silently retain a line edit");
     assert!(error
         .to_string()
@@ -6075,7 +7107,11 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less ellipse-carrier encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6085,7 +7121,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     assert!(!cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new())
         .findings
         .iter()
-        .any(|finding| finding.check == cadmpeg_ir::validate::Check::Annotations));
+        .any(|finding| finding.check == cadmpeg_ir::Check::Annotations));
 }
 
 #[test]
@@ -6109,7 +7145,11 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cylinder encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6260,7 +7300,11 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less closed cylinder band encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6318,7 +7362,11 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sphere encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6349,7 +7397,11 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cone encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6381,7 +7433,11 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
     let mut initial = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut initial)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut initial))
         .expect("source-less cone encode");
     let retained_decode = F3dCodec
         .decode(&mut Cursor::new(initial), &DecodeOptions::default())
@@ -6398,7 +7454,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(
+        .write_preserved_with_source_fidelity(
             &retained,
             &retained_decode.source_fidelity,
             &mut regenerated,
@@ -6437,7 +7493,7 @@ fn generated_f3d_rewrites_plane_frame() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("plane frame regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -6464,7 +7520,7 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
     };
 
     let error = F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("native plane record cannot silently retain a sphere edit");
     assert!(error
         .to_string()
@@ -6493,7 +7549,11 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less torus encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6533,7 +7593,11 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less NURBS surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6573,7 +7637,11 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational NURBS surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6615,7 +7683,11 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational NURBS curve encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6637,7 +7709,11 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less inline pcurve encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6705,7 +7781,11 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less line pcurve encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6746,7 +7826,11 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational pcurve encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6793,7 +7877,11 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less shared-edge encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -6921,7 +8009,11 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multiple-loop encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7005,7 +8097,11 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face NURBS encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7039,7 +8135,11 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
         }];
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less unit cube encode");
     {
         let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).unwrap();
@@ -7157,7 +8257,11 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face torus encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7213,7 +8317,11 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face analytic encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7252,7 +8360,11 @@ fn generated_source_less_writes_translational_extrusion_definition() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less extrusion encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7266,6 +8378,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         direction,
         parameter_interval,
         native_position,
+        revision_form: None,
     } = &actual.definition
     else {
         panic!("expected extrusion definition")
@@ -7300,6 +8413,121 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     );
 }
 
+/// The revision-gated `cyl_spl_sur` layout carries the shared surface tail, so
+/// the tail's enum, discontinuity arrays, and closing boolean reach the IR and
+/// come back byte-identical through source-less generation. The compact layout
+/// has no tail and keeps writing the compact record.
+#[test]
+fn generated_source_less_writes_revision_gated_extrusion_definition() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_versioned_cyl_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("revision-gated extrusion decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let expected = source_less.model.procedural_surfaces[0].clone();
+    let ProceduralSurfaceDefinition::Extrusion {
+        revision_form: Some(form),
+        ..
+    } = &expected.definition
+    else {
+        panic!("expected a revision-gated extrusion")
+    };
+    assert_eq!(form.revision, 23100);
+    assert_eq!(form.flags, [true]);
+    assert_eq!(form.tail_enum, 0);
+    assert_eq!(form.tail_parameterization, None);
+    assert_eq!(
+        form.discontinuities,
+        expected_revision_surface_tail_discontinuities()
+    );
+    assert!(!form.tail_flag);
+    assert_eq!(expected.cache_fit_tolerance, Some(0.02));
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("revision-gated extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("revision-gated extrusion round trip");
+    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    assert_eq!(actual.definition, expected.definition);
+    assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
+
+    // The directrix sense Boolean is stored, not assumed: the opposite value
+    // survives the same round trip.
+    let ProceduralSurfaceDefinition::Extrusion {
+        revision_form: Some(form),
+        ..
+    } = &mut source_less.model.procedural_surfaces[0].definition
+    else {
+        unreachable!("revision-gated extrusion")
+    };
+    form.flags = vec![false];
+    let expected = source_less.model.procedural_surfaces[0].clone();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("reversed-directrix extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("reversed-directrix extrusion round trip");
+    assert_eq!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        expected.definition
+    );
+}
+
+/// A form-`2` extrusion stores its parameterization in place of a solved cache.
+/// It regenerates from that parameterization, with no cache to draw on.
+#[test]
+fn generated_source_less_writes_parameterized_extrusion_definition() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_versioned_cyl_spl_sur_with_tail_smbh(2),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized extrusion decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let expected = source_less.model.procedural_surfaces[0].clone();
+    assert_eq!(expected.cache_fit_tolerance, None);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("parameterized extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("parameterized extrusion round trip");
+    let actual = &round_trip.ir.model.procedural_surfaces[0];
+    assert_eq!(actual.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::Extrusion {
+        revision_form: Some(form),
+        ..
+    } = &actual.definition
+    else {
+        panic!("expected a parameterized revision-gated extrusion")
+    };
+    assert_eq!(form.tail_enum, 2);
+    assert_eq!(
+        form.tail_parameterization,
+        Some(expected_revision_surface_tail_parameterization())
+    );
+    assert_eq!(actual.definition, expected.definition);
+}
+
 #[test]
 fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry};
@@ -7319,6 +8547,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         direction,
         parameter_interval,
         native_position,
+        revision_form: None,
     } = &procedural.definition
     else {
         panic!("expected extrusion definition")
@@ -7375,7 +8604,11 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-less extrusion encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7403,7 +8636,11 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
 
     source_less.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.01);
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("cache-less extrusion tolerance must be rejected");
     assert!(error
         .to_string()
@@ -7450,7 +8687,11 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less circle extrusion encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7544,7 +8785,11 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rolling-ball encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7603,7 +8848,11 @@ fn generated_source_less_unit_cube_writes_body_transform() {
     source_less.model.bodies[0].transform = Some(expected);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less transformed cube encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7637,7 +8886,11 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less colored cube encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7720,9 +8973,10 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     ];
     native.sketch_curve_links = vec![SketchCurveLink {
         id: "generated:sketch-curve-link#0".into(),
-        coedge: coedge_id.clone(),
+        target: AttributeTarget::Coedge(coedge_id.clone()),
         sketch_curve_id: 113,
-        signed_reference: Some(1),
+        ref_b: 0,
+        sense: Some(1),
         role: 2,
         closure: 3,
     }];
@@ -7746,7 +9000,11 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less provenance attribute encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7771,7 +9029,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     }));
     assert_eq!(native.sketch_curve_links.len(), 1);
     assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
-    assert_eq!(native.sketch_curve_links[0].signed_reference, Some(1));
+    assert_eq!(native.sketch_curve_links[0].sense, Some(1));
     assert_eq!(native.sketch_curve_links[0].role, 2);
     assert_eq!(native.sketch_curve_links[0].closure, 3);
     assert_eq!(native.creation_timestamps.len(), 5);
@@ -7793,7 +9051,11 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         .creation_timestamps
         .push(duplicate);
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate generated timestamp target must be rejected");
     assert!(error
         .to_string()
@@ -7821,9 +9083,10 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     native.sketch_curve_links = [0, 1]
         .map(|ordinal| SketchCurveLink {
             id: format!("generated:sketch-curve-link#{ordinal}"),
-            coedge: coedge.clone(),
+            target: AttributeTarget::Coedge(coedge.clone()),
             sketch_curve_id: 113 + ordinal,
-            signed_reference: Some(1),
+            ref_b: 0,
+            sense: Some(1),
             role: 2,
             closure: 3,
         })
@@ -7831,7 +9094,11 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     drop(native);
 
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate sketch links must not be collapsed");
     assert!(error
         .to_string()
@@ -7839,7 +9106,11 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
 
     f3d_native_mut(&mut source_less).sketch_curve_links.pop();
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("noncanonical persistent link order must not be rewritten");
     assert!(error
         .to_string()
@@ -7866,7 +9137,11 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             .into();
     }
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate edge metadata must not collapse");
     assert!(error
         .to_string()
@@ -7880,10 +9155,15 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             vertex,
             record_index: 0,
             leading_tolerances: [1.0, 2.0],
+            trailing_field: Some(0),
         }];
     }
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("tolerant metadata on an ordinary vertex must not be dropped");
     assert!(error
         .to_string()
@@ -7927,7 +9207,11 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-body encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -7962,7 +9246,11 @@ fn generated_source_less_writes_typed_asm_history_graph() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less history encode");
     let mut preambleless = source_less.clone();
     {
@@ -7972,7 +9260,11 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     }
     let mut preambleless_bytes = Vec::new();
     F3dCodec
-        .encode(&preambleless, &mut preambleless_bytes)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &preambleless,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut preambleless_bytes))
         .expect("source-less preambleless history encode");
     let preambleless_round_trip = F3dCodec
         .decode(
@@ -7991,7 +9283,11 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     f3d_native_mut(&mut source_less).asm_histories[0].states[0].bulletin_boards[0].changes[0]
         .kind = crate::history_records::AsmEntityChangeKind::Delete;
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("inconsistent generated history change kind must be rejected");
     assert!(error
         .to_string()
@@ -8003,7 +9299,11 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         native.asm_histories[0].stream_size = Some(3);
     }
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("incoherent generated history preamble must be rejected");
     assert!(error
         .to_string()
@@ -8031,16 +9331,21 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     let mut orphaned = decoded.ir.clone();
     orphaned.source = None;
     orphaned.set_native_unknowns("f3d", &[]).unwrap();
-    orphaned
+    let orphan = &mut orphaned
         .native
         .namespace_mut("f3d")
         .arenas
         .get_mut("asm_history_records")
-        .expect("history-record arena")[0]
-        .fields
-        .insert("parent".into(), serde_json::json!("missing-state"));
+        .expect("history-record arena")[0];
+    let mut orphan_fields = orphan.fields();
+    orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
+    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
     let error = F3dCodec
-        .encode(&orphaned, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &orphaned,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("orphan history records must not be discarded");
     assert!(error
         .to_string()
@@ -8057,7 +9362,11 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .expect("delta-state arena");
     states.push(states[0].clone());
     let error = F3dCodec
-        .encode(&duplicate, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &duplicate,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate history identities must not multiply children");
     assert!(error
         .to_string()
@@ -8068,7 +9377,11 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     broken_chain.set_native_unknowns("f3d", &[]).unwrap();
     f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);
     let error = F3dCodec
-        .encode(&broken_chain, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &broken_chain,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unresolved history links must be rejected");
     assert!(error
         .to_string()
@@ -8076,109 +9389,203 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 }
 
 #[test]
-fn generated_source_less_writes_design_object_metastream() {
-    use crate::records::{DesignObject, DesignObjectKind};
+fn design_type_table_attributes_each_entry_to_its_own_type() {
+    use crate::design::decode::sketch::parse_design_type_table;
+
+    let first = "11111111-1111-1111-1111-111111111111";
+    let second = "22222222-2222-2222-2222-222222222222";
+    let third = "33333333-3333-3333-3333-333333333333";
+    let base = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    // The middle entry is a root type: its base GUID is the empty string, so
+    // its length prefix is a four-byte zero run rather than a GUID.
+    let bytes = design_metastream(&[
+        (first, base, 3, "Fusion", &[10, 11]),
+        (second, "", 7, "MSketch", &[20]),
+        (third, second, 11, "Body", &[30, 31, 32]),
+    ]);
+    let types = parse_design_type_table(&bytes).expect("a segment closing on its own end parses");
+    assert_eq!(types.len(), 3);
+
+    // Every field of an entry belongs to that entry, not to its successor.
+    assert_eq!(types[0].type_guid, first);
+    assert_eq!(types[0].base_type_guid.as_deref(), Some(base));
+    assert_eq!(types[0].version, 3);
+    assert_eq!(types[0].module, "Fusion");
+    assert_eq!(types[0].entity_ids, [10, 11]);
+
+    assert_eq!(types[1].type_guid, second);
+    assert_eq!(types[1].base_type_guid, None);
+    assert_eq!(types[1].base_type_guid_offset, None);
+    assert_eq!(types[1].version, 7);
+    assert_eq!(types[1].module, crate::records::DESIGN_MODULE_SKETCH);
+    assert_eq!(types[1].entity_ids, [20]);
+
+    assert_eq!(types[2].type_guid, third);
+    assert_eq!(types[2].base_type_guid.as_deref(), Some(second));
+    assert_eq!(types[2].version, 11);
+    assert_eq!(types[2].module, crate::records::DESIGN_MODULE_BODY);
+    assert_eq!(types[2].entity_ids, [30, 31, 32]);
+
+    // Every reported offset addresses the field it names.
+    let string_at = |offset: u64, length: usize| {
+        std::str::from_utf8(&bytes[offset as usize..offset as usize + length])
+            .expect("ASCII field")
+            .to_owned()
+    };
+    let u32_at = |offset: u64| {
+        u32::from_le_bytes(
+            bytes[offset as usize..offset as usize + 4]
+                .try_into()
+                .expect("4-byte field"),
+        )
+    };
+    for design_type in &types {
+        assert!(design_type.byte_offset < design_type.type_guid_offset);
+        assert_eq!(
+            string_at(design_type.type_guid_offset, 36),
+            design_type.type_guid
+        );
+        assert_eq!(u32_at(design_type.version_offset), design_type.version);
+        if let (Some(base), Some(offset)) = (
+            &design_type.base_type_guid,
+            design_type.base_type_guid_offset,
+        ) {
+            assert_eq!(&string_at(offset, 36), base);
+        }
+        for (entity_id, offset) in design_type
+            .entity_ids
+            .iter()
+            .zip(&design_type.entity_id_offsets)
+        {
+            assert_eq!(
+                u64::from_le_bytes(
+                    bytes[*offset as usize..*offset as usize + 8]
+                        .try_into()
+                        .expect("8-byte field")
+                ),
+                *entity_id
+            );
+        }
+    }
+
+    // A stream that does not close on its own end is rejected whole.
+    let mut trailing = bytes.clone();
+    trailing.push(0);
+    assert!(parse_design_type_table(&trailing).is_none());
+    assert!(parse_design_type_table(&bytes[..bytes.len() - 1]).is_none());
+}
+
+#[test]
+fn generated_source_less_writes_design_type_metastream() {
+    use crate::records::DesignType;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_objects = vec![
-        DesignObject {
-            id: "generated:design-object#0".into(),
+    native.design_types = vec![
+        DesignType {
+            id: "generated:design-type#0".into(),
             byte_offset: 0,
-            kind: DesignObjectKind::Fusion,
+            module: "Fusion".to_owned(),
             entity_ids: vec![1, 2],
             entity_id_offsets: Vec::new(),
-            self_guid: "11111111-2222-3333-4444-555555555555".into(),
-            self_guid_offset: 0,
-            zero_run_length: 16,
-            parent_guid: None,
-            parent_guid_offset: None,
-            revision: 7,
-            revision_offset: 0,
+            type_guid: "11111111-2222-3333-4444-555555555555".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 7,
+            version_offset: 0,
         },
-        DesignObject {
-            id: "generated:design-object#1".into(),
+        DesignType {
+            id: "generated:design-type#1".into(),
             byte_offset: 0,
-            kind: DesignObjectKind::Sketch,
+            module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entity_ids: vec![277],
             entity_id_offsets: Vec::new(),
-            self_guid: "22222222-3333-4444-5555-666666666666".into(),
-            self_guid_offset: 0,
-            zero_run_length: 4,
-            parent_guid: Some("11111111-2222-3333-4444-555555555555".into()),
-            parent_guid_offset: None,
-            revision: 9,
-            revision_offset: 0,
+            type_guid: "22222222-3333-4444-5555-666666666666".into(),
+            type_guid_offset: 0,
+            base_type_guid: Some("11111111-2222-3333-4444-555555555555".into()),
+            base_type_guid_offset: None,
+            version: 9,
+            version_offset: 0,
         },
-        DesignObject {
-            id: "generated:design-object#2".into(),
+        DesignType {
+            id: "generated:design-type#2".into(),
             byte_offset: 0,
-            kind: DesignObjectKind::Other("FutureFeature".into()),
+            module: "FutureFeature".to_owned(),
             entity_ids: vec![999],
             entity_id_offsets: Vec::new(),
-            self_guid: "33333333-4444-5555-6666-777777777777".into(),
-            self_guid_offset: 0,
-            zero_run_length: 0,
-            parent_guid: Some("11111111-2222-3333-4444-555555555555".into()),
-            parent_guid_offset: None,
-            revision: 11,
-            revision_offset: 0,
+            type_guid: "33333333-4444-5555-6666-777777777777".into(),
+            type_guid_offset: 0,
+            base_type_guid: Some("11111111-2222-3333-4444-555555555555".into()),
+            base_type_guid_offset: None,
+            version: 11,
+            version_offset: 0,
         },
     ];
 
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design MetaStream encode");
-    for invalid in ["", "11111111-2222-3333-4444-555555555555"] {
-        let mut invalid_kind = source_less.clone();
-        f3d_native_mut(&mut invalid_kind).design_objects[2].kind =
-            DesignObjectKind::Other(invalid.into());
-        let error = F3dCodec
-            .encode(&invalid_kind, &mut Vec::new())
-            .expect_err("invalid Design object class must not be emitted");
-        assert!(error
-            .to_string()
-            .contains("Design object class is empty or GUID-shaped"));
-    }
-    f3d_native_mut(&mut source_less).design_objects[0].parent_guid =
-        Some("22222222-3333-4444-5555-666666666666".into());
+    let mut guid_module = source_less.clone();
+    f3d_native_mut(&mut guid_module).design_types[2].module =
+        "11111111-2222-3333-4444-555555555555".into();
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
-        .expect_err("cyclic Design ownership must not be emitted");
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &guid_module,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("a GUID-shaped Design module name must not be emitted");
     assert!(error
         .to_string()
-        .contains("Design object hierarchy contains a cycle"));
+        .contains("Design type module name is GUID-shaped"));
+    f3d_native_mut(&mut source_less).design_types[0].base_type_guid =
+        Some("22222222-3333-4444-5555-666666666666".into());
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("a cyclic Design type hierarchy must not be emitted");
+    assert!(error
+        .to_string()
+        .contains("Design type hierarchy contains a cycle"));
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design MetaStream round trip");
-    let objects = &f3d_native(&round_trip.ir).design_objects;
-    assert_eq!(objects.len(), 3);
-    let fusion = objects
+    let types = &f3d_native(&round_trip.ir).design_types;
+    assert_eq!(types.len(), 3);
+    let fusion = types
         .iter()
-        .find(|object| object.kind == DesignObjectKind::Fusion)
-        .expect("Fusion object");
+        .find(|design_type| design_type.type_guid == "11111111-2222-3333-4444-555555555555")
+        .expect("Fusion type");
+    assert_eq!(fusion.module, "Fusion");
     assert_eq!(fusion.entity_ids, [1, 2]);
-    assert_eq!(fusion.revision, 7);
-    assert_eq!(fusion.zero_run_length, 16);
-    let sketch = objects
+    assert_eq!(fusion.version, 7);
+    assert_eq!(fusion.base_type_guid, None);
+    let sketch = types
         .iter()
-        .find(|object| object.kind == DesignObjectKind::Sketch)
-        .expect("Sketch object");
+        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_SKETCH)
+        .expect("sketch-module type");
     assert_eq!(sketch.entity_ids, [277]);
     assert_eq!(
-        sketch.parent_guid.as_deref(),
+        sketch.base_type_guid.as_deref(),
         Some("11111111-2222-3333-4444-555555555555")
     );
-    assert_eq!(sketch.revision, 9);
-    assert_eq!(sketch.zero_run_length, 4);
-    let future = objects
+    assert_eq!(sketch.version, 9);
+    let future = types
         .iter()
-        .find(|object| object.kind == DesignObjectKind::Other("FutureFeature".into()))
-        .expect("forward-compatible object");
+        .find(|design_type| design_type.module == "FutureFeature")
+        .expect("forward-compatible module");
     assert_eq!(future.entity_ids, [999]);
-    assert_eq!(future.revision, 11);
+    assert_eq!(future.version, 11);
 }
 
 #[test]
@@ -8206,6 +9613,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         kind,
         design_id: Some(format!("{}", 320 + ordinal)),
         design_id_offset: None,
+        design_selector: None,
         recipe_index: 0,
         record_index: 100 + i32::try_from(ordinal).unwrap(),
     })
@@ -8249,11 +9657,19 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design BulkStream encode");
     f3d_native_mut(&mut source_less).construction_recipes[0].recipe_index = 1;
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("recipe group indices must not be renumbered");
     assert!(error
         .to_string()
@@ -8364,25 +9780,22 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
 
 #[test]
 fn generated_source_less_writes_design_ownership_and_record_headers() {
-    use crate::records::{
-        DesignBodyMember, DesignEntityHeader, DesignObject, DesignObjectKind, DesignRecordHeader,
-    };
+    use crate::records::{DesignBodyMember, DesignEntityHeader, DesignRecordHeader, DesignType};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_objects = vec![DesignObject {
-        id: "generated:design-object#0".into(),
+    native.design_types = vec![DesignType {
+        id: "generated:design-type#0".into(),
         byte_offset: 0,
-        kind: DesignObjectKind::Sketch,
+        module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
         entity_ids: vec![277],
         entity_id_offsets: Vec::new(),
-        self_guid: "22222222-3333-4444-5555-666666666666".into(),
-        self_guid_offset: 0,
-        zero_run_length: 0,
-        parent_guid: None,
-        parent_guid_offset: None,
-        revision: 4,
-        revision_offset: 0,
+        type_guid: "22222222-3333-4444-5555-666666666666".into(),
+        type_guid_offset: 0,
+        base_type_guid: None,
+        base_type_guid_offset: None,
+        version: 4,
+        version_offset: 0,
     }];
     native.design_body_members = vec![
         DesignBodyMember {
@@ -8405,7 +9818,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         entity_id: "0_277".into(),
         class_tag: "269".into(),
         optional_slot_present: true,
-        object_kind: Some(DesignObjectKind::Sketch),
+        module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
         record_reference_offset: None,
         declared_reference_count: Some(2),
@@ -8432,26 +9845,43 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design ownership encode");
     f3d_native_mut(&mut source_less).design_entity_headers[0].declared_reference_count = Some(3);
-    let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
-        .expect_err("mismatched sketch reference counts must not be normalized");
-    assert!(error
-        .to_string()
-        .contains("has an inconsistent reference list"));
+    let mut normalized = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut normalized))
+        .expect("source sketch reference count is regenerated");
+    let normalized = F3dCodec
+        .decode(&mut Cursor::new(normalized), &DecodeOptions::default())
+        .expect("regenerated sketch reference count round trip");
+    assert_eq!(
+        f3d_native(&normalized.ir).design_entity_headers[0].declared_reference_count,
+        Some(2)
+    );
     {
         let mut native = f3d_native_mut(&mut source_less);
         native.design_entity_headers[0].declared_reference_count = Some(2);
-        native.design_entity_headers[0].object_kind = Some(DesignObjectKind::Body);
+        native.design_entity_headers[0].module = Some("Body".to_owned());
     }
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
-        .expect_err("cross-stream object kinds must not diverge");
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("cross-stream modules must not diverge");
     assert!(error
         .to_string()
-        .contains("object kind conflicts with MetaStream ownership"));
+        .contains("module conflicts with MetaStream ownership"));
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design ownership round trip");
@@ -8471,27 +9901,41 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
 #[test]
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     use crate::records::{
-        DesignEntityHeader, DesignObject, DesignObjectKind, SketchConstraintKind,
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+        DesignEntityHeader, DesignType, SketchConstraintKind, SketchCurveGeometry,
+        SketchCurveIdentity, SketchPoint, SketchRelation,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_objects = vec![DesignObject {
-        id: "generated:sketch-object#0".into(),
-        byte_offset: 0,
-        kind: DesignObjectKind::Sketch,
-        entity_ids: vec![277],
-        entity_id_offsets: Vec::new(),
-        self_guid: "22222222-3333-4444-5555-666666666666".into(),
-        self_guid_offset: 0,
-        zero_run_length: 0,
-        parent_guid: None,
-        parent_guid_offset: None,
-        revision: 1,
-        revision_offset: 0,
-    }];
+    native.design_types = vec![
+        DesignType {
+            id: "generated:sketch-object#0".into(),
+            byte_offset: 0,
+            module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
+            entity_ids: vec![277],
+            entity_id_offsets: Vec::new(),
+            type_guid: "22222222-3333-4444-5555-666666666666".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 1,
+            version_offset: 0,
+        },
+        DesignType {
+            id: "generated:sketch-relation-type#0".into(),
+            byte_offset: 1,
+            module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
+            entity_ids: Vec::new(),
+            entity_id_offsets: Vec::new(),
+            type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 1,
+            version_offset: 0,
+        },
+    ];
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "generated:sketch-header#0".into(),
         byte_offset: 0,
@@ -8499,7 +9943,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         entity_id: "0_277".into(),
         class_tag: "269".into(),
         optional_slot_present: true,
-        object_kind: Some(DesignObjectKind::Sketch),
+        module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
         record_reference_offset: None,
         declared_reference_count: Some(1),
@@ -8588,13 +10032,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     native.sketch_relations = vec![SketchRelation {
         id: "generated:sketch-relation#0".into(),
         record_index: 33,
-        class_tag: "350".into(),
+        class_tag: "257".into(),
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 277,
         owner_entity_id: String::new(),
         owner_reference_offset: 0,
-        auxiliary_references: vec![900],
+        auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
         members: vec![100, 600],
         resolved_members: Vec::new(),
@@ -8605,7 +10049,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             SketchConstraintKind::Parallel,
         ],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![600, 100],
@@ -8622,7 +10066,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sketch BulkStream encode");
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
@@ -8631,7 +10079,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     let mut variable_relation = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut variable_relation)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut variable_relation))
         .expect("source-less variable-width sketch relation encode");
     let variable_round_trip = F3dCodec
         .decode(
@@ -8656,7 +10108,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("relations with missing sketch owners must not disappear");
     assert!(error
         .to_string()
@@ -8667,14 +10123,22 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         native.sketch_points[0].record_index = 600;
     }
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("duplicate typed sketch indices must not be deduplicated");
     assert!(error.to_string().contains("share record index 600"));
     f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
     f3d_native_mut(&mut source_less).sketch_relations[0].constraint_kinds =
         vec![SketchConstraintKind::Horizontal];
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("inconsistent generated sketch constraint mask must be rejected");
     assert!(error
         .to_string()
@@ -8709,7 +10173,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     assert_eq!(native.sketch_relations.len(), 1);
     assert_eq!(native.sketch_relations[0].members, [100, 600]);
-    assert_eq!(native.sketch_relations[0].auxiliary_references, [900]);
+    assert!(native.sketch_relations[0].auxiliary_references.is_empty());
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
     assert_eq!(native.sketch_relations[0].owner_entity_id, "0_277");
     assert_eq!(native.sketch_relations[0].state, 0x11);
@@ -8751,7 +10215,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert!(crate::validate::validate_native(&inconsistent)
         .iter()
         .any(|finding| {
-            finding.check == cadmpeg_ir::validate::Check::NativeLinks
+            finding.check == cadmpeg_ir::Check::NativeLinks
                 && finding.message.contains("typed operands disagree")
         }));
 
@@ -8848,7 +10312,11 @@ fn generated_source_less_writes_act_table_channels_and_root_component() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less ACT encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -8916,7 +10384,11 @@ fn generated_source_less_rejects_lossy_act_layouts() {
             .collect();
     }
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("ACT GUID order must not be normalized");
     assert!(error
         .to_string()
@@ -8930,7 +10402,11 @@ fn generated_source_less_rejects_lossy_act_layouts() {
         native.act_entities[0].channel_class_tag = None;
     }
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unemitted ACT entities must not disappear");
     assert!(error
         .to_string()
@@ -8941,7 +10417,7 @@ fn generated_source_less_rejects_lossy_act_layouts() {
 fn generated_source_less_writes_protein_appearance_and_body_binding() {
     use std::collections::BTreeMap;
 
-    use crate::records::{DesignMaterialAssignment, DesignObject, DesignObjectKind};
+    use crate::records::{DesignMaterialAssignment, DesignType};
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::topology::Color;
@@ -8953,6 +10429,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         id: appearance_id.clone(),
         name: Some("Prism-Generated".into()),
         asset_guid: Some(visual_guid.into()),
+        library_id: None,
         visual_guid: Some(visual_guid.into()),
         physical_token: Some("PrismMaterial-Generated".into()),
         schema: Some("GenericSchema".into()),
@@ -8978,19 +10455,18 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         channels: BTreeMap::new(),
     }];
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_objects = vec![DesignObject {
+    native.design_types = vec![DesignType {
         id: "generated:body-object#0".into(),
         byte_offset: 0,
-        kind: DesignObjectKind::Body,
+        module: "Body".to_owned(),
         entity_ids: vec![985],
         entity_id_offsets: Vec::new(),
-        self_guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
-        self_guid_offset: 0,
-        zero_run_length: 0,
-        parent_guid: None,
-        parent_guid_offset: None,
-        revision: 1,
-        revision_offset: 0,
+        type_guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
+        type_guid_offset: 0,
+        base_type_guid: None,
+        base_type_guid_offset: None,
+        version: 1,
+        version_offset: 0,
     }];
     native.design_material_assignments = vec![DesignMaterialAssignment {
         id: "generated:material-assignment#0".into(),
@@ -9011,7 +10487,11 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Protein appearance encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -9084,7 +10564,11 @@ fn generated_source_less_rejects_collapsed_design_body_bindings() {
         .collect();
 
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("conflicting body-map rows must not collapse");
     assert!(error
         .to_string()
@@ -9107,7 +10591,7 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("native sketch-point regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9146,7 +10630,7 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("native sketch-arc regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9184,7 +10668,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("native sketch-constraint regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9219,7 +10703,7 @@ fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
 
     let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::validate::Check::ReferentialIntegrity
+        finding.check == cadmpeg_ir::Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(relation_id.as_str())
     }));
 }
@@ -9250,12 +10734,12 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
 
     let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::validate::Check::NativeLinks
+        finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some(point_id.as_str())
             && finding.message.contains("persistent identity")
     }));
     assert!(findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::validate::Check::NativeLinks
+        finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding.message.contains("persistent identity")
     }));
@@ -9288,7 +10772,7 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
 
     assert!(
         !crate::validate::validate_native(&ir).iter().any(|finding| {
-            finding.check == cadmpeg_ir::validate::Check::NativeLinks
+            finding.check == cadmpeg_ir::Check::NativeLinks
                 && (finding.entity.as_deref() == Some(point_id.as_str())
                     || finding.entity.as_deref() == Some(curve_id.as_str()))
                 && finding.message.contains("persistent identity")
@@ -9311,7 +10795,7 @@ fn validation_rejects_aliased_sketch_geometry_records() {
     };
 
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::validate::Check::NativeLinks
+        finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding
                 .message
@@ -9341,7 +10825,7 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
     };
 
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::validate::Check::NativeLinks
+        finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some(duplicate_id.as_str())
             && finding.message.contains("entity suffix is duplicated")
     }));
@@ -9359,8 +10843,8 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         byte_offset: 100,
         class_tag: "305".into(),
         record_index: 900,
-        prefix_value: 0,
-        prefix_value_offset: 122,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(122),
         source_ordinal: 0,
         owner_record_index: None,
         expression: "60 mm".into(),
@@ -9378,13 +10862,29 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::validate::validate_native(&ir).is_empty());
 
-    f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 7;
+    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(7);
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::validate::Check::NativeLinks
+        finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
             && finding.message.contains("family discriminator")
     }));
-    f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 0;
+    f3d_native_mut(&mut ir).design_parameters[0].family_discriminator = Some(0);
+
+    {
+        let parameter = &mut f3d_native_mut(&mut ir).design_parameters[0];
+        parameter.family_discriminator = None;
+        parameter.family_discriminator_offset = None;
+    }
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::NativeLinks
+            && finding.entity.as_deref() == Some("generated:design-parameter#0")
+            && finding.message.contains("family discriminator")
+    }));
+    {
+        let parameter = &mut f3d_native_mut(&mut ir).design_parameters[0];
+        parameter.family_discriminator = Some(0);
+        parameter.family_discriminator_offset = Some(122);
+    }
 
     {
         let mut native = f3d_native_mut(&mut ir);
@@ -9392,16 +10892,16 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         native.design_parameters[0].owner_record_index = Some(1234);
     }
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::validate::Check::NativeLinks
+        finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
     }));
 }
 
 #[test]
-fn validation_requires_one_exact_extrude_profile_group() {
+fn validation_accepts_grouped_and_direct_extrude_profiles() {
     use crate::records::{
         DesignConstructionOperandGroup, DesignExtrudeExtent, DesignExtrudeOperandRole,
-        DesignExtrudeOperation, DesignExtrudeStart, DesignParameterScope,
+        DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart, DesignParameterScope,
         DesignSketchProfileOperand,
     };
 
@@ -9427,14 +10927,20 @@ fn validation_requires_one_exact_extrude_profile_group() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude_operation: Some(DesignExtrudeOperation::NewBody),
-        extrude_operation_offset: Some(128),
-        extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
-        extrude_extent_offsets: Some([132, 136]),
-        extrude_direction_reversed: Some(false),
-        extrude_direction_reversed_offset: Some(140),
-        extrude_start: Some(DesignExtrudeStart::ProfilePlane),
-        extrude_start_offset: Some(141),
+        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+            reference: None,
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 128,
+            extent_discriminators: [1, 2],
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            extent_discriminator_offsets: [132, 136],
+            direction_reversed: false,
+            direction_reversed_offset: 140,
+            solid_operation: true,
+            solid_operation_offset: 141,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 142,
+        }),
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -9459,6 +10965,9 @@ fn validation_requires_one_exact_extrude_profile_group() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -9466,15 +10975,32 @@ fn validation_requires_one_exact_extrude_profile_group() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: Some(profile),
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -9489,21 +11015,26 @@ fn validation_requires_one_exact_extrude_profile_group() {
         record_index: 30,
         byte_offset: 400,
         class_tag: "302".into(),
-        member_count_offset: 420,
         members: vec![20],
         lost_edge_references: Vec::new(),
         member_offsets: vec![424],
-        identity_record_index: 31,
-        identity_record_offset: 440,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 420,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![31],
+            identity_record_offsets: vec![440],
+            opaque_index: 1,
+            opaque_index_offset: 460,
+            opaque_scalar: 0.5,
+            opaque_scalar_offset: 464,
+            variant: false,
+        },
         role: 0x0000_0041_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Profile),
         extrude_face_role: None,
         role_offset: 450,
-        opaque_index: 1,
-        opaque_index_offset: 460,
-        opaque_scalar: 0.5,
-        opaque_scalar_offset: 464,
-        variant: false,
+
         paired_class_tag: "262".into(),
         paired_byte_offset: 500,
     };
@@ -9514,7 +11045,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
             .design_construction_operand_groups
             .push(group.clone());
     }
-    let profile_message = |finding: &cadmpeg_ir::validate::Finding| {
+    let profile_message = |finding: &cadmpeg_ir::Finding| {
         finding.message == "Fusion Design Extrude profile conflicts with its profile operand group"
     };
     let findings = crate::validate::validate_native(&ir);
@@ -9533,6 +11064,15 @@ fn validation_requires_one_exact_extrude_profile_group() {
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .clear();
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(profile_message));
+
+    f3d_native_mut(&mut ir).design_parameter_scopes[0]
+        .extrude_profile
+        .as_mut()
+        .expect("test Extrude profile")
+        .scope_reference_ordinal = 1;
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(profile_message));
@@ -9577,7 +11117,7 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("native sketch-NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9611,7 +11151,7 @@ fn generated_f3d_rewrites_body_transform() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("body-transform regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9658,7 +11198,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let header = native
         .design_entity_headers
         .iter_mut()
-        .find(|header| header.object_kind == Some(crate::records::DesignObjectKind::Sketch))
+        .find(|header| header.in_sketch_module())
         .expect("generated sketch entity header");
     assert!(header.byte_offset > 0);
     assert!(header.record_reference_offset.is_some());
@@ -9666,16 +11206,16 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     header.record_reference = Some(585);
     header.reference_indices.swap(0, 1);
     let object = native
-        .design_objects
+        .design_types
         .iter_mut()
-        .find(|object| object.kind == crate::records::DesignObjectKind::Body)
+        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_BODY)
         .expect("generated body design object");
-    assert!(object.byte_offset < object.revision_offset);
+    assert!(object.byte_offset < object.version_offset);
     assert_eq!(object.entity_id_offsets.len(), 1);
     object.entity_ids[0] = 986;
-    object.self_guid = "91111111-2222-3333-4444-555555555555".into();
-    object.parent_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
-    object.revision = 9;
+    object.type_guid = "91111111-2222-3333-4444-555555555555".into();
+    object.base_type_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
+    object.version = 9;
     let act_guid = native
         .act_guids
         .iter_mut()
@@ -9688,7 +11228,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
     act_root.registry_flag = 0;
-    act_root.entity_id = "0_4".into();
+    act_root.entity_id = "1_3".into();
     act_root.display_name = "(Renamed)".into();
     let act_entity = &mut native.act_entities[0];
     assert!(act_entity.table_entity_id_offset.is_some());
@@ -9739,7 +11279,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("persistent-reference regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9769,24 +11309,24 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let header = f3d_native(&round_trip.ir)
         .design_entity_headers
         .iter()
-        .find(|header| header.object_kind == Some(crate::records::DesignObjectKind::Sketch))
+        .find(|header| header.in_sketch_module())
         .cloned()
         .expect("round-trip sketch entity header");
     assert_eq!(header.record_reference, Some(585));
     assert_eq!(header.reference_indices, [44, 33]);
     let object = f3d_native(&round_trip.ir)
-        .design_objects
+        .design_types
         .iter()
-        .find(|object| object.kind == crate::records::DesignObjectKind::Body)
+        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_BODY)
         .cloned()
         .expect("round-trip body design object");
     assert_eq!(object.entity_ids, [986]);
-    assert_eq!(object.self_guid, "91111111-2222-3333-4444-555555555555");
+    assert_eq!(object.type_guid, "91111111-2222-3333-4444-555555555555");
     assert_eq!(
-        object.parent_guid.as_deref(),
+        object.base_type_guid.as_deref(),
         Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef")
     );
-    assert_eq!(object.revision, 9);
+    assert_eq!(object.version, 9);
     assert!(f3d_native(&round_trip.ir)
         .act_guids
         .iter()
@@ -9796,7 +11336,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(act_root.instance_root_record, 71);
     assert_eq!(act_root.components_root_record, 72);
     assert_eq!(act_root.registry_flag, 0);
-    assert_eq!(act_root.entity_id, "0_4");
+    assert_eq!(act_root.entity_id, "1_3");
     assert_eq!(act_root.display_name, "(Renamed)");
     let act_entity = &f3d_native(&round_trip.ir).act_entities[0];
     assert_eq!(act_entity.entity_id, "0_986");
@@ -9865,11 +11405,11 @@ fn generated_f3d_rejects_act_binding_divergence() {
     });
 
     let error = F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent ACT and appearance binding must fail");
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
 }
 
@@ -9885,11 +11425,11 @@ fn generated_f3d_rejects_material_assignment_divergence() {
     });
 
     let error = F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent assignment and appearance must fail");
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+        cadmpeg_codec_core::CodecError::NotImplemented(_)
     ));
 }
 
@@ -9905,10 +11445,10 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         .properties
         .insert("refraction_index".into(), 0.5);
     let error = F3dCodec
-        .encode_preserving(&invalid, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(&invalid, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("out-of-range refraction must be refused");
     assert!(
-        matches!(error, cadmpeg_ir::codec::CodecError::Malformed(message) if message.contains("refraction_index"))
+        matches!(error, cadmpeg_codec_core::CodecError::Malformed(message) if message.contains("refraction_index"))
     );
 
     let mut structural = decoded.ir;
@@ -9916,10 +11456,14 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         .properties
         .insert("unserialized_property".into(), 0.5);
     let error = F3dCodec
-        .encode_preserving(&structural, &decoded.source_fidelity, &mut Vec::new())
+        .write_preserved_with_source_fidelity(
+            &structural,
+            &decoded.source_fidelity,
+            &mut Vec::new(),
+        )
         .expect_err("new Protein property must be refused");
     assert!(
-        matches!(error, cadmpeg_ir::codec::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
+        matches!(error, cadmpeg_codec_core::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
     );
 }
 
@@ -9952,7 +11496,7 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("multi-Protein appearance regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -9998,7 +11542,7 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("Prism scalar regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10030,7 +11574,7 @@ fn generated_f3d_rewrites_body_rgb_color() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("body-color regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10056,7 +11600,7 @@ fn generated_f3d_rewrites_face_rgb_color_and_sense() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("face-color regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10079,7 +11623,7 @@ fn generated_f3d_rewrites_edge_parameter_range() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("edge-range regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10104,7 +11648,7 @@ fn generated_f3d_rewrites_edge_native_metadata() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("edge-continuity regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10139,7 +11683,7 @@ fn generated_f3d_rewrites_vertex_ownership() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("vertex-ownership regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10161,7 +11705,7 @@ fn generated_f3d_rewrites_face_and_coedge_sense() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("orientation regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -10213,8 +11757,11 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
-    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
-        .unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+        stored,
+    )
+    .unwrap();
     zip.write_all(smbh).unwrap();
     for (ordinal, protein) in proteins.iter().enumerate() {
         zip.start_file(
@@ -10241,55 +11788,78 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
     zip.finish().unwrap().into_inner()
 }
 
-fn generated_design_metastream() -> Vec<u8> {
+/// Build one Design `MetaStream` segment holding `types`, each entry a
+/// `(type GUID, base type GUID, version, module, entity ids)` tuple. An empty
+/// base GUID marks a root type. The segment carries the modern header shape
+/// and empty named-entity and record indexes, and closes on its own end.
+pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Vec<u8> {
     fn lp(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
     }
-    fn record(
-        out: &mut Vec<u8>,
-        kind: &str,
-        ids: &[u64],
-        self_guid: &str,
-        parent_guid: &str,
-        revision: u32,
-    ) {
-        lp(out, kind);
-        out.extend_from_slice(&(ids.len() as u32).to_le_bytes());
-        for id in ids {
-            out.extend_from_slice(&id.to_le_bytes());
-        }
-        lp(out, self_guid);
-        lp(out, parent_guid);
-        out.extend_from_slice(&revision.to_le_bytes());
-    }
     let mut out = Vec::new();
-    let parent = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    record(
-        &mut out,
-        "Body",
-        &[985],
-        "11111111-2222-3333-4444-555555555555",
-        parent,
-        3,
-    );
-    record(
-        &mut out,
-        "MSketch",
-        &[277],
-        "22222222-3333-4444-5555-666666666666",
-        parent,
-        4,
-    );
-    record(
-        &mut out,
-        "Dimension",
-        &[270, 271],
-        "33333333-4444-5555-6666-777777777777",
-        parent,
-        5,
-    );
+    lp(&mut out, "Design");
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let asset_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    out.extend_from_slice(&(asset_guid.encode_utf16().count() as u32).to_le_bytes());
+    for unit in asset_guid.encode_utf16() {
+        out.extend_from_slice(&unit.to_le_bytes());
+    }
+    out.extend_from_slice(&1234u32.to_le_bytes());
+    out.extend_from_slice(&[0; 12]);
+    lp(&mut out, "FusionDesignSegmentType");
+    lp(&mut out, "Fusion");
+    out.extend_from_slice(&[0; 8]);
+    out.extend_from_slice(&(types.len() as u32).to_le_bytes());
+    for (type_guid, base_type_guid, version, module, entity_ids) in types {
+        lp(&mut out, type_guid);
+        lp(&mut out, base_type_guid);
+        out.extend_from_slice(&version.to_le_bytes());
+        lp(&mut out, module);
+        out.extend_from_slice(&(entity_ids.len() as u32).to_le_bytes());
+        for entity_id in *entity_ids {
+            out.extend_from_slice(&entity_id.to_le_bytes());
+        }
+    }
+    // Empty named-entity list, record index, and secondary index, then the
+    // next-entity counter, the flag, and an empty property block.
+    out.extend_from_slice(&[0; 12]);
+    out.extend_from_slice(&[0; 16]);
     out
+}
+
+fn generated_design_metastream() -> Vec<u8> {
+    let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    design_metastream(&[
+        (
+            "11111111-2222-3333-4444-555555555555",
+            base,
+            3,
+            "Body",
+            &[985],
+        ),
+        (
+            "22222222-3333-4444-5555-666666666666",
+            base,
+            4,
+            "MSketch",
+            &[277],
+        ),
+        (
+            "33333333-4444-5555-6666-777777777777",
+            "",
+            5,
+            "Dimension",
+            &[270, 271],
+        ),
+        (
+            "60403D47-0C49-49B0-BDE8-1679608164A2",
+            base,
+            1,
+            "MSketch",
+            &[],
+        ),
+    ])
 }
 
 fn generated_act_bulkstream() -> Vec<u8> {
@@ -10357,6 +11927,11 @@ fn generated_design_bulkstream() -> Vec<u8> {
         }
     }
 
+    fn reference(relation: &mut [u8], at: usize, target: u32) {
+        relation[at] = 1;
+        relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
+    }
+
     let mut out = Vec::new();
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&42u64.to_le_bytes());
@@ -10392,41 +11967,25 @@ fn generated_design_bulkstream() -> Vec<u8> {
         out.extend_from_slice(&[0u8; 6]);
     }
     for (class_tag, record_index, members) in
-        [("350", 33u32, [100u32, 200u32]), ("351", 44, [300, 400])]
+        [("259", 33u32, [100u32, 200u32]), ("259", 44, [300, 400])]
     {
+        // A relation is `u8 1`, the counted `(reference, relation ordinal)`
+        // pairs, the property-block presence byte, `ParentNode`, the u64
+        // mask, the counted return run, and one zero byte.
         let mut relation = vec![0u8; 101];
         relation[0..4].copy_from_slice(&3u32.to_le_bytes());
         relation[4..7].copy_from_slice(class_tag.as_bytes());
         relation[7..11].copy_from_slice(&record_index.to_le_bytes());
         relation[19] = 1;
         relation[20..24].copy_from_slice(&2u32.to_le_bytes());
-        relation[24] = 1;
-        relation[25..29].copy_from_slice(&members[0].to_le_bytes());
-        relation[39] = 1;
-        relation[40..44].copy_from_slice(&members[1].to_le_bytes());
-        relation[55] = 1;
-        relation[56..60].copy_from_slice(&277u32.to_le_bytes());
-        relation[66] = 1;
-        let state = if record_index == 33 { 0x10u32 } else { 0x04 };
-        relation[67..71].copy_from_slice(&state.to_le_bytes());
+        reference(&mut relation, 24, members[0]);
+        reference(&mut relation, 39, members[1]);
+        reference(&mut relation, 55, 277);
+        let state = if record_index == 33 { 0x10u64 } else { 0x04 };
+        relation[66..74].copy_from_slice(&state.to_le_bytes());
         relation[74..78].copy_from_slice(&2u32.to_le_bytes());
-        relation[78] = 1;
-        relation[79..83].copy_from_slice(&members[1].to_le_bytes());
-        relation[89] = 1;
-        relation[90..94].copy_from_slice(&members[0].to_le_bytes());
-        if record_index == 44 {
-            relation[55..101].fill(0);
-            relation[55] = 1;
-            relation[60] = 1;
-            relation[61..65].copy_from_slice(&277u32.to_le_bytes());
-            relation[71] = 1;
-            relation[72..76].copy_from_slice(&0x04u32.to_le_bytes());
-            relation[79..83].copy_from_slice(&2u32.to_le_bytes());
-            relation[83] = 1;
-            relation[84..88].copy_from_slice(&members[1].to_le_bytes());
-            relation[94] = 1;
-            relation[95..99].copy_from_slice(&members[0].to_le_bytes());
-        }
+        reference(&mut relation, 78, members[1]);
+        reference(&mut relation, 89, members[0]);
         out.extend_from_slice(&relation);
     }
     for (record_index, persistent_id, coordinates) in [
@@ -10734,9 +12293,10 @@ fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
         zip.write_all(&synthetic_smbh()).unwrap();
     }
 
-    // A construction-snapshot .smb (header only, no delta_state).
+    // A history-less .smb (header only, no history partition).
     let mut smb = synthetic_smbh();
-    smb.truncate(60); // header prefix only, no delta_state marker
+    smb[39..47].copy_from_slice(&2u64.to_le_bytes());
+    smb.truncate(60); // header prefix only, no history partition
     zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)
         .unwrap();
     zip.write_all(&smb).unwrap();
@@ -10756,20 +12316,82 @@ fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
     cursor.into_inner()
 }
 
+fn synthetic_legacy_multi_brep_f3d() -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let folder = "FusionAssetName[Active]";
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    for name in ["first", "second"] {
+        let mut smb = synthetic_smbh();
+        smb[39..47].copy_from_slice(&2u64.to_le_bytes());
+        smb.truncate(60);
+        zip.start_file(format!("{folder}/Breps.BlobParts/BREP.{name}.smb"), stored)
+            .unwrap();
+        zip.write_all(&smb).unwrap();
+    }
+    for stream in ["BulkStream.dat", "MetaStream.dat"] {
+        zip.start_file(format!("{folder}/Design1/{stream}"), stored)
+            .unwrap();
+        zip.write_all(b"legacy-design").unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
 #[test]
 fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
     let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width, 8);
-    assert_eq!(h.release, Some(23100));
+    assert_eq!(h.save_format_version, Some(23100));
     assert_eq!(h.entity_count, Some(7));
     assert_eq!(h.flags, Some(3));
+    assert_eq!(h.save_format_major(), Some(231));
+    assert_eq!(h.save_format_minor(), Some(0));
+    assert!(h.has_history_partition());
+    // Flags `3` is the history bit plus revision `1` in bits 1 to 7. Nothing is
+    // left over, so no bit reaches the uninterpreted set.
+    assert_eq!(h.format_revision(), Some(1));
+    assert_eq!(h.unassigned_flags(), Some(0));
     assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
     assert_eq!(h.product_version.as_deref(), Some("ASM 231.6.3.65535 OSX"));
     assert_eq!(h.save_date.as_deref(), Some("Tue Mar 31 16:16:19 2026"));
     assert_eq!(h.scale, Some(60.0));
     assert_eq!(h.linear, Some(1e-6));
     assert_eq!(h.angular, Some(1e-10));
+}
+
+/// Flag bits 1 to 7 hold the save format's revision number
+/// ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)):
+/// save format 22300 carries revision 2 and 22500 carries revision 3. Those
+/// bits are assigned, so they leave the uninterpreted set; bits 8 and above
+/// stay in it.
+#[test]
+fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
+    let header = |flags: u64| asm_header::AsmHeader {
+        width: 8,
+        save_format_version: Some(22500),
+        record_count: None,
+        entity_count: None,
+        flags: Some(flags),
+        product_family: None,
+        product_version: None,
+        save_date: None,
+        scale: None,
+        linear: None,
+        angular: None,
+    };
+
+    assert_eq!(header(0b0000_0101).format_revision(), Some(2));
+    assert_eq!(header(0b0000_0111).format_revision(), Some(3));
+    assert_eq!(header(0b1111_1110).format_revision(), Some(0x7f));
+    assert_eq!(header(0b0000_0001).format_revision(), Some(0));
+
+    assert_eq!(header(0b0000_0111).unassigned_flags(), Some(0));
+    assert_eq!(header(0b1111_1111).unassigned_flags(), Some(0));
+    assert_eq!(header(0x1_00).unassigned_flags(), Some(0x1_00));
+    assert!(header(0b0000_0101).has_history_partition());
+    assert!(!header(0b0000_0100).has_history_partition());
 }
 
 #[test]
@@ -10779,12 +12401,12 @@ fn asm_header_absent_on_non_asm_bytes() {
 }
 
 /// The `BinaryFile4` fixed header ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)): 15-byte magic, four little-endian
-/// u32 words (release, record count, entity count, flags), then the same
+/// u32 words (save-format version, record count, entity count, flags), then the same
 /// tagged string/double sequence as `BinaryFile8`.
 fn bf4_header_prefix(flags: u32) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"ASM BinaryFile4");
-    b.extend_from_slice(&22700u32.to_le_bytes()); // ASM release word
+    b.extend_from_slice(&22700u32.to_le_bytes()); // ACIS save-format version
     b.extend_from_slice(&0u32.to_le_bytes()); // record count (unwritten)
     b.extend_from_slice(&2u32.to_le_bytes()); // entity count
     b.extend_from_slice(&flags.to_le_bytes());
@@ -10813,7 +12435,7 @@ fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
 
     let mut bytes = synthetic_geometry_bf4_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = crate::sab::frame(&bytes, start, limit, 4).unwrap();
     let ellipse_range = records[19].offset..records[19].offset + records[19].len;
 
@@ -11023,7 +12645,7 @@ fn asm_header_parses_binaryfile4_fields() {
     assert!(asm_header::has_asm_magic(&bytes));
     let h = asm_header::parse(&bytes).expect("magic present");
     assert_eq!(h.width, 4);
-    assert_eq!(h.release, Some(22700));
+    assert_eq!(h.save_format_version, Some(22700));
     assert_eq!(h.record_count, Some(0));
     assert_eq!(h.entity_count, Some(2));
     assert_eq!(h.flags, Some(5));
@@ -11094,7 +12716,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("generated BinaryFile4 regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -11142,7 +12764,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("generated BinaryFile4 NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -11189,14 +12811,52 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
 }
 
 #[test]
-fn delta_state_boundary_is_located() {
+fn delta_state_boundary_is_located_at_an_exact_identifier() {
     let bytes = synthetic_smbh();
-    let off = asm_header::first_delta_state_offset(&bytes).expect("has a delta_state");
-    assert_eq!(&bytes[off..off + 11], b"delta_state");
-    // The .smb truncation removes the marker.
-    let mut smb = bytes.clone();
-    smb.truncate(60);
-    assert!(asm_header::first_delta_state_offset(&smb).is_none());
+    let off = asm_header::solved_record_limit(&bytes).expect("has a delta_state");
+    assert_eq!(&bytes[off..off + 2], &[0x0d, 0x0b]);
+    assert_eq!(&bytes[off + 2..off + 13], b"delta_state");
+
+    // The header flag is part of the partition contract. A history-less
+    // `.smb` with the same solved prefix has no partition boundary.
+    let mut smb = bytes;
+    smb[39..47].copy_from_slice(&2u64.to_le_bytes());
+    smb.truncate(off);
+    assert!(asm_header::solved_record_limit(&smb).is_none());
+}
+
+#[test]
+fn history_preamble_record_is_the_modern_partition_boundary() {
+    let direct = synthetic_smbh();
+    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let mut bytes = direct[..delta].to_vec();
+    let expected = bytes.len();
+    t_ident(&mut bytes, "Begin-of-ASM-History-Data");
+    t_end(&mut bytes);
+    bytes.extend_from_slice(&direct[delta..]);
+
+    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let solved = crate::sab::frame(&bytes, start, expected, 8).unwrap();
+    assert_eq!(
+        solved.last().map(|record| record.name.as_str()),
+        Some("body")
+    );
+}
+
+#[test]
+fn delta_state_text_inside_a_payload_cannot_cut_the_solved_stream() {
+    let direct = synthetic_smbh();
+    let delta = asm_header::solved_record_limit(&direct).unwrap();
+    let start = asm_header::record_stream_start(&direct).unwrap();
+    let mut bytes = direct[..start].to_vec();
+    t_ident(&mut bytes, "metadata");
+    push_u8_string(&mut bytes, "delta_state");
+    t_end(&mut bytes);
+    let expected = bytes.len();
+    bytes.extend_from_slice(&direct[delta..]);
+
+    assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
 }
 
 #[test]
@@ -11263,7 +12923,7 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("delta-state owner regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -11353,14 +13013,14 @@ fn inspect_enumerates_and_reads_headers() {
         Some("Autodesk Neutron")
     );
     assert_eq!(smbh.attributes.get("scale").map(String::as_str), Some("60"));
-    assert!(smbh.attributes.contains_key("delta_state_first_offset"));
+    assert!(smbh.attributes.contains_key("history_partition_offset"));
     assert!(smbh.attributes.contains_key("sha256"));
 
-    // The active history-stream selection prefers the .smbh.
+    // The header identifies the unique history-bearing stream.
     assert!(summary
         .notes
         .iter()
-        .any(|n| n.contains(".smbh history stream")));
+        .any(|n| n.contains("history-bearing BREP")));
 }
 
 #[test]
@@ -11374,13 +13034,12 @@ fn decode_yields_metadata_and_honest_report() {
     assert!(!result.report.geometry_transferred);
     assert!(result.ir.model.faces.is_empty());
     assert!(result.report.error_count() >= 1);
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|l| matches!(l.category, cadmpeg_ir::report::LossCategory::Geometry)));
+    assert!(result.report.losses.iter().any(|l| matches!(
+        l.code.category(),
+        cadmpeg_ir::report::LossCategory::Geometry
+    )));
 
-    // But the active BREP is preserved as an unknown passthrough with a hash,
+    // But the explicit fallback BREP is preserved as an unknown passthrough with a hash,
     // and source metadata was captured.
     let unknowns = result.ir.native_unknowns("f3d").unwrap();
     assert_eq!(unknowns.len(), 1);
@@ -11411,18 +13070,30 @@ fn decode_yields_metadata_and_honest_report() {
 }
 
 #[test]
-fn smb_only_is_reported_as_construction_snapshot() {
-    // With no .smbh present, only the .smb construction snapshot remains; it must
-    // be selected as a fallback but flagged as non-authoritative ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)).
+fn smb_only_is_an_explicit_geometry_fallback_without_history() {
     let f3d = synthetic_f3d(false);
     with_scan(&f3d, |scan| {
-        let active = container::select_active_brep(scan).unwrap();
-        assert!(!active.is_smbh);
+        let fallback = container::select_fallback_brep(scan).unwrap();
+        assert!(!fallback.is_smbh);
+        assert!(container::select_history_brep(scan).is_none());
+        assert!(container::legacy_design_model_breps(scan).is_none());
         let summary = container::summarize(scan);
         assert!(summary
             .notes
             .iter()
-            .any(|n| n.contains("construction snapshot")));
+            .any(|note| note.contains("no BREP header declares a history partition")));
+    });
+}
+
+#[test]
+fn legacy_design_segment_selects_its_complete_brep_set() {
+    let f3d = synthetic_legacy_multi_brep_f3d();
+    with_scan(&f3d, |scan| {
+        assert!(container::select_fallback_brep(scan).is_none());
+        let selected = container::legacy_design_model_breps(scan).unwrap();
+        assert_eq!(selected.len(), 2);
+        assert!(selected[0].name.ends_with("BREP.first.smb"));
+        assert!(selected[1].name.ends_with("BREP.second.smb"));
     });
 }
 
@@ -11452,7 +13123,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
 fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
-    let limit = asm_header::first_delta_state_offset(&bytes).unwrap_or(bytes.len());
+    let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
     let records = crate::sab::frame(&bytes, start, limit, 8).expect("framing succeeds");
 
     // asmheader occupies index 0; the topology records follow in order.
@@ -11554,6 +13225,28 @@ fn decode_builds_valid_topology_and_geometry() {
 }
 
 #[test]
+fn history_topology_decode_matches_full_brep_graph() {
+    for bytes in [
+        synthetic_geometry_with_pcurve_smbh(),
+        synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
+    ] {
+        let start = asm_header::record_stream_start(&bytes).expect("record stream start");
+        let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
+        let records = crate::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
+
+        let full =
+            crate::history::historical_topology(&crate::brep::decode(&records, &bytes, "full"))
+                .expect("full topology");
+        let history = crate::history::historical_topology(&crate::brep::decode_history_topology(
+            &records, &bytes,
+        ))
+        .expect("history topology");
+
+        assert_eq!(history, full);
+    }
+}
+
+#[test]
 fn decode_transfers_generated_wire_body_topology() {
     let mut result = F3dCodec
         .decode(
@@ -11592,7 +13285,7 @@ fn decode_transfers_generated_wire_body_topology() {
     });
     let mut edited = Vec::new();
     F3dCodec
-        .encode_preserving(&result.ir, &result.source_fidelity, &mut edited)
+        .write_preserved_with_source_fidelity(&result.ir, &result.source_fidelity, &mut edited)
         .expect("wire-side retained edit");
     let edited = F3dCodec
         .decode(&mut Cursor::new(edited), &DecodeOptions::default())
@@ -11710,7 +13403,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     };
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("degenerate curve regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -11730,7 +13423,11 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less degenerate curve encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -11763,7 +13460,11 @@ fn generated_source_less_writes_general_face_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less general body encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -11816,7 +13517,11 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less face-and-point-wire body encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -11868,7 +13573,11 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less solid-plus-wire encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -11921,7 +13630,11 @@ fn generated_source_less_writes_wire_body_topology() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less wire body encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -11973,7 +13686,11 @@ fn generated_source_less_writes_isolated_vertex_wire() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less free-vertex wire encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -12041,7 +13758,11 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less mixed-wire shell encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -12113,7 +13834,11 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-wire-body encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -12173,7 +13898,11 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-edge wire encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -12222,7 +13951,11 @@ fn generated_source_less_writes_multi_region_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-region wire encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -12278,7 +14011,11 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-shell wire encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -12649,7 +14386,7 @@ fn decode_reports_faces_with_missing_surface_references() {
     for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
-        let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+        let limit = asm_header::solved_record_limit(&smbh).unwrap();
         let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
         let face = records
             .iter()
@@ -12713,7 +14450,7 @@ fn decode_reports_undecoded_edge_curve_kinds() {
 fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
-    let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+    let limit = asm_header::solved_record_limit(&smbh).unwrap();
     let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
     let edge = &records[10];
     let record = &mut smbh[edge.offset..edge.offset + edge.len];
@@ -12767,7 +14504,11 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
     let mut replay = Vec::new();
     F3dCodec
-        .encode_with_source_fidelity(&result.ir, Some(&result.source_fidelity), &mut replay)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &result.ir,
+            fidelity: Some(&result.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut replay))
         .expect("mesh-surface native replay");
     assert_eq!(replay, source);
 
@@ -12775,7 +14516,11 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     f3d_native_mut(&mut edited).mesh_surface_sentinels[0].id =
         "f3d:asm:mesh-surface-sentinel#edited".into();
     let error = F3dCodec
-        .encode_with_source_fidelity(&edited, Some(&result.source_fidelity), &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &edited,
+            fidelity: Some(&result.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("mesh-surface structural metadata is immutable");
     assert!(error.to_string().contains("edits beyond supported"));
 
@@ -12784,7 +14529,11 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Unknown { record: None };
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("mesh-surface sentinel requires retained ASM bytes");
     assert!(error
         .to_string()
@@ -12870,7 +14619,11 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less exact spline surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -12935,7 +14688,11 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less ruled surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13017,7 +14774,11 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less sum surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13078,7 +14839,11 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("cacheless exact surface source-less encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13148,7 +14913,11 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less revolution surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13222,7 +14991,11 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less offset surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13290,7 +15063,11 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13377,7 +15154,11 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less taper encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13481,7 +15262,11 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less loft encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13569,7 +15354,11 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less net surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13620,7 +15409,11 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less profile-first sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13685,7 +15478,11 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less T-spline encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13741,7 +15538,11 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         );
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less helix surface encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -13772,7 +15573,13 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
         duplicate.id = format!("generated:duplicate-{label}").into();
         source_less.model.procedural_surfaces.push(duplicate);
 
-        let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+        let error = F3dCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+            .unwrap_err();
         assert!(
             error
                 .to_string()
@@ -13809,7 +15616,11 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("analytic carrier must not discard its procedural surface");
     assert!(error
         .to_string()
@@ -13836,7 +15647,11 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         direction: Vector3::new(1.0, 0.0, 0.0),
     };
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("analytic carrier must not discard its procedural curve");
     assert!(error
         .to_string()
@@ -13866,7 +15681,13 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
-    F3dCodec.encode(&source_less, &mut encoded).unwrap();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -13921,7 +15742,13 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
-        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        F3dCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
+            .unwrap();
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
@@ -13976,7 +15803,13 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
         direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0),
     };
     let mut encoded = Vec::new();
-    F3dCodec.encode(&source_less, &mut encoded).unwrap();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let round = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -14044,7 +15877,13 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
             direction: cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0),
         };
         let mut encoded = Vec::new();
-        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        F3dCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
+            .unwrap();
         let round = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
@@ -14108,7 +15947,11 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less referenced T-spline encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14181,7 +16024,11 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit formula sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14238,11 +16085,15 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
     *native = None;
 
     let error = F3dCodec
-        .encode(&decoded, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("a sweep without its native graph must not be guessed");
     assert!(matches!(
         error,
-        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+        cadmpeg_codec_core::CodecError::NotImplemented(message)
             if message.contains("lacks its native construction graph")
     ));
 }
@@ -14310,7 +16161,11 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit guide sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14396,7 +16251,11 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit surface sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14483,7 +16342,11 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less law-driven sweep encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14614,7 +16477,13 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
-        let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+        let error = F3dCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+            .unwrap_err();
         assert!(
             error
                 .to_string()
@@ -14649,7 +16518,11 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less surface without optional tolerance");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14677,7 +16550,11 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
     source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less loft without optional tolerance");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14697,10 +16574,6 @@ fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
     let cases = [
         (synthetic_geometry_with_exact_curve_smbh(), "exact"),
         (synthetic_geometry_with_law_curve_smbh(), "law"),
-        (
-            synthetic_geometry_with_deformable_curve_smbh(8),
-            "deformable",
-        ),
         (synthetic_geometry_with_projection_smbh(), "projection"),
         (
             synthetic_geometry_with_early_close_projection_smbh(),
@@ -14753,7 +16626,11 @@ fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
         source_less.model.procedural_curves[0].cache_fit_tolerance = None;
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{family} source-less encode: {error}"));
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14768,6 +16645,28 @@ fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
             "{family} invented a cache-fit tolerance"
         );
     }
+}
+
+#[test]
+fn cache_first_deformable_refuses_a_missing_fit_tolerance() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_deformable_curve_smbh(8),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("deformable decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.model.procedural_curves[0].cache_fit_tolerance = None;
+    let mut encoded = Vec::new();
+    let error = F3dCodec.encode(&source_less, &mut encoded).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("cache-first intcurve requires a native cache-fit tolerance"));
+    assert!(encoded.is_empty());
 }
 
 #[test]
@@ -14815,7 +16714,11 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     let mut missing_tolerance = source_less.clone();
     missing_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = None;
     let error = F3dCodec
-        .encode(&missing_tolerance, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &missing_tolerance,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("compound loft without its required tolerance must be rejected");
     assert!(
         error
@@ -14835,7 +16738,11 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound-loft encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -14941,7 +16848,11 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         construction.tail = expected.clone();
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less compound-loft encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15045,13 +16956,21 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     let mut missing_tolerance = source_less.clone();
     missing_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = None;
     assert!(F3dCodec
-        .encode(&missing_tolerance, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &missing_tolerance,
+            fidelity: None
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("full scaled compound loft without tolerance must fail")
         .to_string()
         .contains("full shape requires a native cache-fit tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less scaled compound-loft encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15127,7 +17046,11 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
         construction.branch = branch;
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less scaled compound-loft encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15147,15 +17070,11 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             (
                 ScaledCompoundLoftShape::Full,
                 ScaledCompoundLoftBranch::ExtendedVector { .. }
-            ) | (
-                ScaledCompoundLoftShape::Full,
-                ScaledCompoundLoftBranch::ExtendedCurve { .. }
-            ) | (
-                ScaledCompoundLoftShape::Full,
-                ScaledCompoundLoftBranch::Direct {
-                    direction: CompoundLoftDirection::Curve { .. },
-                    ..
-                }
+                    | ScaledCompoundLoftBranch::ExtendedCurve { .. }
+                    | ScaledCompoundLoftBranch::Direct {
+                        direction: CompoundLoftDirection::Curve { .. },
+                        ..
+                    }
             )
         ));
     }
@@ -15204,13 +17123,21 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     let mut unexpected_tolerance = source_less.clone();
     unexpected_tolerance.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.04);
     assert!(F3dCodec
-        .encode(&unexpected_tolerance, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &unexpected_tolerance,
+            fidelity: None
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("none-shape scaled compound loft with tolerance must fail")
         .to_string()
         .contains("none shape cannot carry a cache-fit tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less scaled compound-loft none-shape encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15266,7 +17193,11 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less skin surface encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15330,7 +17261,13 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
-        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        F3dCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
+            .unwrap();
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
@@ -15393,7 +17330,13 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
-        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        F3dCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
+            .unwrap();
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
@@ -15468,7 +17411,13 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
-        F3dCodec.encode(&source_less, &mut encoded).unwrap();
+        F3dCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
+            .unwrap();
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
@@ -15530,7 +17479,11 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less structural-law encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15578,7 +17531,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     };
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].type_code, 9);
-    assert_eq!(profiles[0].data.asm_extension, -1);
+    assert_eq!(profiles[0].data.asm_extension, Some(-1));
     assert!(profiles[0].data.pcurve.is_some());
     assert!(profiles[0].data.direction.is_some());
     assert_eq!(*tail, [-1, 7]);
@@ -15599,7 +17552,11 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less expanded skin encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15669,7 +17626,11 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less algebraic skin encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15704,7 +17665,13 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         operator: "SIN".into(),
         operands: Vec::new(),
     };
-    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(error.to_string().contains("requires 1 operands, got 0"));
 
     let ProceduralSurfaceDefinition::Skin { construction } =
@@ -15716,7 +17683,13 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         operator: "MIN".into(),
         operands: vec![LawExpression::Double { value: 1.0 }],
     };
-    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(error.to_string().contains("unresolved variable arity"));
 }
 
@@ -15768,7 +17741,13 @@ fn generated_skin_surface_round_trips_set_rotate_and_term_laws() {
     ];
 
     let mut encoded = Vec::new();
-    F3dCodec.encode(&source_less, &mut encoded).unwrap();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -15867,7 +17846,11 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             };
             let mut encoded = Vec::new();
             F3dCodec
-                .encode(&source_less, &mut encoded)
+                .plan(cadmpeg_ir::codec::EncodeInput {
+                    ir: &source_less,
+                    fidelity: None,
+                })
+                .and_then(|plan| plan.write_to(&mut encoded))
                 .expect("source-less G2 encode");
             let round_trip = F3dCodec
                 .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -15963,11 +17946,14 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         assert_eq!(native.shape_prefix, 1);
         assert_eq!(native.parameters, [0.1, 0.2]);
         assert_eq!(native.tail, 17);
-        assert_eq!(native.cache_selector, 0);
+        assert_eq!(native.tail_enum, 0);
+        assert_eq!(native.tail_parameterization, None);
         assert_eq!(
             native.discontinuities,
-            [vec![0.25], vec![], vec![0.5, 0.75]]
+            expected_revision_surface_tail_discontinuities()
         );
+        assert!(!native.tail_flag);
+        assert_eq!(native.tail_extensions, [11, 12, 13]);
         assert_eq!(native.third.is_some(), name.starts_with("sss"));
         if let Some(third) = &native.third {
             assert_eq!(third.label, "third");
@@ -16023,7 +18009,11 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less rolling-ball encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -16076,15 +18066,303 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
     }
 }
 
+/// Tail form `2` stores no cache and no fit tolerance: it stores the U
+/// parameter interval, the V parameter interval, and the U closure, V closure,
+/// U singularity, and V singularity enums. The carrier fields that follow the
+/// tail decode at their stored values only when the tail is framed exactly.
 #[test]
-fn generated_variable_blends_decode_complete_single_radius_graphs() {
+fn parameterized_tail_form_decodes_in_every_blend_carrier() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_variable_blend_smbh_with_tail_form("var_blend_spl_sur", 2),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized variable-blend decode");
+    let procedural = &decoded.ir.model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::VariableBlend { construction } = &procedural.definition else {
+        panic!("expected variable-blend construction")
+    };
+    assert_eq!(construction.tail_enum, 2);
+    assert_eq!(
+        construction.tail_parameterization,
+        Some(expected_revision_surface_tail_parameterization())
+    );
+    // Fields after the tail; a misframed tail shifts every one of them.
+    assert_eq!(construction.tail_extensions, [31, 32, 33]);
+    assert_eq!(construction.post_range, [Some(0.0), Some(1.0)]);
+
+    for name in ["rb_blend_spl_sur", "sss_blend_spl_sur"] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_full_rolling_ball_with_tail_smbh(
+                    name, 2,
+                ))),
+                &DecodeOptions::default(),
+            )
+            .expect("parameterized rolling-ball decode");
+        let procedural = &decoded.ir.model.procedural_surfaces[0];
+        assert_eq!(procedural.cache_fit_tolerance, None);
+        let ProceduralSurfaceDefinition::Blend {
+            native: Some(native),
+            ..
+        } = &procedural.definition
+        else {
+            panic!("expected complete rolling-ball graph")
+        };
+        assert_eq!(native.tail_enum, 2);
+        assert_eq!(
+            native.tail_parameterization,
+            Some(expected_revision_surface_tail_parameterization())
+        );
+        assert_eq!(
+            native.discontinuities,
+            expected_revision_surface_tail_discontinuities()
+        );
+        assert!(!native.tail_flag);
+        assert_eq!(native.third.is_some(), name.starts_with("sss"));
+        // Fields after the tail; a misframed tail shifts every one of them.
+        assert_eq!(native.tail_extensions, [11, 12, 13]);
+    }
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_versioned_cyl_spl_sur_with_tail_smbh(2),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized extrusion decode");
+    let procedural = &decoded.ir.model.procedural_surfaces[0];
+    // Form `2` stores no cache and no fit tolerance. The surface block inside
+    // the directrix scope is not this record's cache and its trailing scalar is
+    // not this record's fit tolerance.
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::Extrusion {
+        parameter_interval: Some([0.25, 0.75]),
+        revision_form: Some(form),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected a parameterized revision-gated extrusion")
+    };
+    assert_eq!(form.tail_enum, 2);
+    assert_eq!(
+        form.tail_parameterization,
+        Some(expected_revision_surface_tail_parameterization())
+    );
+    assert_eq!(
+        form.discontinuities,
+        expected_revision_surface_tail_discontinuities()
+    );
+    assert!(!form.tail_flag);
+}
+
+/// Tail form `2` stores no solved cache, so a blend record carrying it owns
+/// every surface block it holds as a construction support and rests on its
+/// procedural carrier. Source-less generation writes the construction back from
+/// the stored parameterization rather than needing a cache it never had.
+#[test]
+fn parameterized_blend_tails_round_trip_source_less_generation() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    for stream in [
+        synthetic_full_rolling_ball_with_tail_smbh("rb_blend_spl_sur", 2),
+        synthetic_variable_blend_smbh_with_tail_form("var_blend_spl_sur", 2),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&stream)),
+                &DecodeOptions::default(),
+            )
+            .expect("parameterized blend decode");
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let expected = source_less.model.procedural_surfaces[0].clone();
+        assert_eq!(expected.cache_fit_tolerance, None);
+        let carrier = source_less
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == expected.surface)
+            .expect("blend surface carrier");
+        assert!(matches!(
+            carrier.geometry,
+            SurfaceGeometry::Procedural { .. }
+        ));
+
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("parameterized blend encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("parameterized blend round trip");
+        let actual = &round_trip.ir.model.procedural_surfaces[0];
+        assert_eq!(actual.cache_fit_tolerance, None);
+        let (enumeration, parameterization) = match &actual.definition {
+            ProceduralSurfaceDefinition::Blend {
+                native: Some(native),
+                ..
+            } => (native.tail_enum, native.tail_parameterization.clone()),
+            ProceduralSurfaceDefinition::VariableBlend { construction } => (
+                construction.tail_enum,
+                construction.tail_parameterization.clone(),
+            ),
+            other => panic!("expected a parameterized blend construction: {other:?}"),
+        };
+        assert_eq!(enumeration, 2);
+        assert_eq!(
+            parameterization,
+            Some(expected_revision_surface_tail_parameterization())
+        );
+    }
+}
+
+#[test]
+fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    // The tail's second interval carries a lower bound with an
+    // unbounded-above marker: `(T lo, F)` decodes to `[Some(lo), None]`.
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_selector(
+                "srf_srf_v_bl_spl_sur",
+                false,
+                None,
+                [Some(-0.5), None],
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("half-bounded second-interval decode");
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected variable blend")
+    };
+    assert_eq!(construction.u_range, [Some(-1.0), Some(2.0)]);
+    assert_eq!(construction.v_range, [Some(-0.5), None]);
+    assert_eq!(construction.shape_prefix, 11);
+    assert_eq!(construction.shape_length, 6.0);
+}
+
+#[test]
+fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, VariableBlendCrossSection, VariableBlendValuePayload,
+    };
+
+    // An `interp` payload ends at its last radius point. The enum that follows
+    // is the record's cross-section selector; reading it as a trailing flag
+    // costs the cross-section while leaving the byte count intact, so the
+    // decoded cross-section is what pins the boundary.
+    for (selector, expected) in [
+        (Some(0), Some(VariableBlendCrossSection::Circular)),
+        (
+            Some(7),
+            Some(VariableBlendCrossSection::G2Round {
+                parameters: [2.0, 2.0],
+            }),
+        ),
+        (None, None),
+    ] {
+        let smbh =
+            synthetic_variable_blend_smbh_with_interp_radius("srf_srf_v_bl_spl_sur", selector);
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("interp variable-blend decode");
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &result.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected variable blend")
+        };
+        let VariableBlendValuePayload::Interpolated { points, .. } =
+            &construction.first_value.payload
+        else {
+            panic!("expected interpolated radius law")
+        };
+        assert_eq!(points.len(), 1);
+        assert_eq!(construction.cross_section, expected);
+
+        assert_revision_surface_round_trip(smbh, "variable_blend");
+    }
+}
+
+#[test]
+fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
     use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendValuePayload};
 
-    for name in [
-        "var_blend_spl_sur",
-        "varblendsplsur",
-        "srf_srf_v_bl_spl_sur",
-        "srfsrfblndsur",
+    // `edge_offset` without the leading sub-discriminator stores its law-domain
+    // parameter range and one offset: the second field is a parameter, and only
+    // the third is a length, so only the third takes the centimetre-to-
+    // millimetre conversion.
+    let smbh = synthetic_variable_blend_smbh_with_edge_offset_radius("srf_srf_v_bl_spl_sur");
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("edge-offset variable-blend decode");
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected variable blend")
+    };
+    let VariableBlendValuePayload::EdgeOffset { scalars, lengths } =
+        &construction.first_value.payload
+    else {
+        panic!("expected edge-offset radius law")
+    };
+    assert_eq!(scalars, &[0.25, 0.75]);
+    assert_eq!(lengths, &[15.0]);
+
+    assert_revision_surface_round_trip(smbh, "variable_blend");
+}
+
+#[test]
+fn generated_variable_blends_decode_complete_single_radius_graphs() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, VariableBlendSurfaceSubtype, VariableBlendValuePayload,
+    };
+
+    for (name, subtype) in [
+        (
+            "var_blend_spl_sur",
+            VariableBlendSurfaceSubtype::VariableBlend,
+        ),
+        ("varblendsplsur", VariableBlendSurfaceSubtype::VariableBlend),
+        (
+            "srf_srf_v_bl_spl_sur",
+            VariableBlendSurfaceSubtype::SurfaceSurface,
+        ),
+        ("srfsrfblndsur", VariableBlendSurfaceSubtype::SurfaceSurface),
+        (
+            "crv_crv_v_bl_spl_sur",
+            VariableBlendSurfaceSubtype::CurveCurve,
+        ),
+        ("crvcrvblndsur", VariableBlendSurfaceSubtype::CurveCurve),
+        (
+            "crv_srf_v_bl_spl_sur",
+            VariableBlendSurfaceSubtype::CurveSurface,
+        ),
+        ("crvsrfblndsur", VariableBlendSurfaceSubtype::CurveSurface),
+        (
+            "sfcv_free_bl_spl_sur",
+            VariableBlendSurfaceSubtype::SurfaceCurveFree,
+        ),
+        (
+            "sfcvfreeblndsur",
+            VariableBlendSurfaceSubtype::SurfaceCurveFree,
+        ),
     ] {
         let result = F3dCodec
             .decode(
@@ -16097,6 +18375,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         else {
             panic!("expected variable blend")
         };
+        assert_eq!(construction.subtype, subtype);
         assert_eq!(construction.revision, 23100);
         assert_eq!(
             construction.sides[0].support_kind,
@@ -16132,7 +18411,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.v_range, [None, None]);
         assert_eq!(construction.shape_prefix, 11);
         assert_eq!(construction.shape_length, 6.0);
-        assert_eq!(construction.cache_selector, 0);
+        assert_eq!(construction.tail_enum, 0);
         assert_eq!(
             construction.discontinuities,
             [
@@ -16206,7 +18485,11 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less variable-blend encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -16257,11 +18540,8 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
 }
 
 #[test]
-fn generated_variable_blend_rejects_cross_branch_radius_payloads() {
-    use cadmpeg_ir::geometry::{
-        LoftBridgeToken, ProceduralSurfaceDefinition, VariableBlendRadiusKind,
-        VariableBlendSingleRadiusTail,
-    };
+fn generated_variable_blend_rejects_radius_cardinality_mismatch() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let mut decoded = F3dCodec
         .decode(
@@ -16279,21 +18559,22 @@ fn generated_variable_blend_rejects_cross_branch_radius_payloads() {
     else {
         panic!("expected variable blend")
     };
-    construction.radius_kind = VariableBlendRadiusKind::TwoRadii;
     construction.second_value = Some(construction.first_value.clone());
-    construction.single_radius_tail = Some(VariableBlendSingleRadiusTail {
-        selector: LoftBridgeToken::Integer(1),
-        parameters: [0.25, 0.75],
-    });
 
-    assert!(cadmpeg_ir::validate::validate(&decoded, Vec::new())
+    assert!(cadmpeg_ir::validate(&decoded, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "variable blend construction payload is invalid"));
-    let error = F3dCodec.encode(&decoded, &mut Vec::new()).unwrap_err();
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
     assert!(error
         .to_string()
-        .contains("two-radii variable blend carries a single-radius tail"));
+        .contains("single-radius variable blend carries two-radii payloads"));
 }
 
 #[test]
@@ -16327,20 +18608,19 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
             radii: [35.0, 45.0]
         })
     ));
-    let chamfer = construction.chamfer.as_ref().expect("rounded chamfer");
-    assert_eq!(
-        chamfer.kind,
-        cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded
-    );
-    assert_eq!(chamfer.chamfer_type, 2);
+    let Some(cadmpeg_ir::geometry::VariableBlendCrossSection::RoundedChamfer {
+        radius: Some(radius),
+    }) = &construction.cross_section
+    else {
+        panic!("expected rounded-chamfer cross section with a radius law")
+    };
     assert!(matches!(
-        &chamfer.value.payload,
+        &radius.payload,
         VariableBlendValuePayload::TwoEnds {
             parameters: [0.0, 1.0],
             radii: [55.0, 65.0]
         }
     ));
-    assert!(construction.single_radius_tail.is_none());
 
     let expected = construction.clone();
     let mut source_less = decoded.ir;
@@ -16348,7 +18628,11 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("two-radii variable-blend source-less encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -16361,7 +18645,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
 }
 
 #[test]
-fn generated_two_radii_variable_blend_consumes_zero_chamfer_selector() {
+fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() {
     use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendRadiusKind};
 
     let decoded = F3dCodec
@@ -16370,6 +18654,7 @@ fn generated_two_radii_variable_blend_consumes_zero_chamfer_selector() {
                 "srf_srf_v_bl_spl_sur",
                 true,
                 Some(0),
+                [None, None],
             ))),
             &DecodeOptions::default(),
         )
@@ -16380,15 +18665,21 @@ fn generated_two_radii_variable_blend_consumes_zero_chamfer_selector() {
         panic!("expected variable blend")
     };
     assert_eq!(construction.radius_kind, VariableBlendRadiusKind::TwoRadii);
-    assert_eq!(construction.chamfer_selector, Some(0));
-    assert!(construction.chamfer.is_none());
+    assert!(matches!(
+        &construction.cross_section,
+        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)
+    ));
     let expected = construction.clone();
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("selector-zero source-less encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -16415,6 +18706,162 @@ fn generated_revision_exact_surface_round_trips() {
         push_tagged_i64(surface, 0x15, 0);
     });
     assert_revision_surface_round_trip(smbh, "exact");
+}
+
+/// The blend constructions' tail enum was serialized as `cache_selector`. A
+/// document written under that name deserializes into the same construction.
+#[test]
+fn blend_tail_enum_deserializes_under_its_former_name() {
+    for smbh in [
+        synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
+        synthetic_variable_blend_smbh("var_blend_spl_sur"),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("blend decode");
+        let json = serde_json::to_string(&decoded.ir).expect("IR JSON");
+        assert_eq!(json.matches("\"tail_enum\"").count(), 1);
+        let renamed = json.replace("\"tail_enum\"", "\"cache_selector\"");
+        let restored: cadmpeg_ir::document::CadIr =
+            serde_json::from_str(&renamed).expect("IR under the former field name");
+        assert_eq!(restored, decoded.ir);
+    }
+}
+
+/// Tail form `0` stores a solved cache and its fit tolerance together, so a
+/// construction that reaches the writer with the cache and without the
+/// tolerance is inconsistent. The writer names the carrier and refuses instead
+/// of substituting a tolerance of its own, which the tail cannot be
+/// distinguished from a stored zero.
+#[test]
+fn revision_gated_solved_tails_refuse_a_missing_fit_tolerance() {
+    for (smbh, carrier) in [
+        (
+            synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
+                push_revision_surface_tail(surface);
+                push_optional_value_quartet(surface);
+                push_tagged_i64(surface, 0x15, 0);
+            }),
+            "exact spline surface",
+        ),
+        (synthetic_versioned_cyl_spl_sur_smbh(), "extrusion surface"),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{carrier} decode: {error}"));
+        assert!(decoded.ir.model.procedural_surfaces[0]
+            .cache_fit_tolerance
+            .is_some());
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less.model.procedural_surfaces[0].cache_fit_tolerance = None;
+        let mut encoded = Vec::new();
+        let error = F3dCodec.encode(&source_less, &mut encoded).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("{carrier} requires a native cache-fit tolerance")),
+            "unexpected {carrier} error: {error}"
+        );
+        assert!(encoded.is_empty());
+    }
+}
+
+#[test]
+fn generated_revision_exact_surface_carries_two_unextended_intervals() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
+
+    // Two distinct non-[0,1] unextended parameter intervals: U then V.
+    let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        for value in [0.0, std::f64::consts::FRAC_PI_2, 0.5, 2.0] {
+            surface.push(0x0a);
+            t_dbl(surface, value);
+        }
+        push_tagged_i64(surface, 0x15, 0);
+    });
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("revision exact decode");
+    let procedural = result.ir.model.procedural_surfaces.first().unwrap();
+    let ProceduralSurfaceDefinition::Exact { parameters, .. } = &procedural.definition else {
+        panic!("expected exact definition");
+    };
+    assert_eq!(
+        parameters,
+        &SplineSurfaceParameters::RevisionRanges {
+            intervals: [
+                [Some(0.0), Some(std::f64::consts::FRAC_PI_2)],
+                [Some(0.5), Some(2.0)],
+            ],
+        }
+    );
+    assert_revision_surface_round_trip(smbh, "exact");
+}
+
+#[test]
+fn generated_revision_loft_surface_carries_one_nonempty_wrap_interval() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
+
+    // First wrap interval non-empty [0,1]; second reversed [1,0] = empty.
+    let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
+        t_long(surface, 1);
+        t_dbl(surface, 0.0);
+        t_long(surface, 1);
+        t_long(surface, 1);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.extend_from_slice(&[0x0b, 0x0b]);
+        t_ident(surface, "null_surface");
+        t_ident(surface, "nullbs");
+        surface.push(0x0b);
+        t_long(surface, -1);
+        t_long(surface, 213);
+        t_long(surface, 1);
+        t_long(surface, 1);
+        for value in [0.0, 1.0, 0.25, 0.75, 0.5, 1.5] {
+            t_dbl(surface, value);
+        }
+        surface.push(0x0b);
+        t_ident(surface, "null_curve");
+        t_long(surface, 0);
+        t_long(surface, -1);
+        t_long(surface, 0);
+        for value in [0.0, 1.0, 1.0, 0.0] {
+            surface.push(0x0a);
+            t_dbl(surface, value);
+        }
+        surface.extend_from_slice(&[0x0b; 4]);
+        t_long(surface, 0);
+        t_long(surface, 0);
+        push_revision_surface_tail(surface);
+    });
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("revision loft decode");
+    let procedural = result.ir.model.procedural_surfaces.first().unwrap();
+    let ProceduralSurfaceDefinition::Loft { parameters, .. } = &procedural.definition else {
+        panic!("expected loft definition");
+    };
+    assert_eq!(
+        parameters,
+        &SplineSurfaceParameters::RevisionRanges {
+            intervals: [[Some(0.0), Some(1.0)], [Some(1.0), Some(0.0)]],
+        }
+    );
+    assert_revision_surface_round_trip(smbh, "loft");
 }
 
 #[test]
@@ -16497,6 +18944,52 @@ fn generated_revision_g2_blend_round_trips() {
 }
 
 #[test]
+fn generated_parameterized_revision_g2_blend_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("g2_blend_spl_sur", |surface| {
+        t_dbl(surface, 1.0);
+        t_dbl(surface, 1.0);
+        append_generated_variable_blend_side(surface, "left", 1.0);
+        append_generated_variable_blend_side(surface, "right", 4.0);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.5);
+        surface.push(0x0a);
+        t_dbl(surface, 2.5);
+        t_dbl(surface, 0.125);
+        t_dbl(surface, 0.125);
+        push_tagged_i64(surface, 0x15, -1);
+        surface.extend_from_slice(&[0x0b; 4]);
+        t_long(surface, 1);
+        t_dbl(surface, 0.001);
+        t_dbl(surface, 0.0001);
+        t_long(surface, 1);
+        push_parameterized_revision_surface_tail(surface);
+        for value in [0, 0, 0] {
+            t_long(surface, value);
+        }
+    });
+    assert_revision_surface_round_trip(smbh.clone(), "revision_g2_blend");
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized revision g2 blend decode");
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionG2Blend { construction } =
+        &procedural.definition
+    else {
+        panic!("expected a revision g2 blend construction")
+    };
+    assert_parameterized_tail(
+        construction.tail_enum,
+        construction.tail_parameterization.as_ref(),
+    );
+}
+
+#[test]
 fn generated_revision_vertex_blend_round_trips() {
     let smbh = synthetic_revision_surface_smbh("VBL_SURF", |surface| {
         t_long(surface, 2);
@@ -16560,7 +19053,7 @@ fn generated_revision_offset_with_inline_untyped_support_decodes() {
 }
 
 #[test]
-fn generated_single_radius_variable_blend_consumes_zero_selector() {
+fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_section() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
@@ -16569,6 +19062,7 @@ fn generated_single_radius_variable_blend_consumes_zero_selector() {
                 "srf_srf_v_bl_spl_sur",
                 false,
                 Some(0),
+                [None, None],
             ))),
             &DecodeOptions::default(),
         )
@@ -16578,15 +19072,21 @@ fn generated_single_radius_variable_blend_consumes_zero_selector() {
     else {
         panic!("expected variable blend")
     };
-    assert_eq!(construction.single_radius_selector, Some(0));
-    assert!(construction.single_radius_tail.is_none());
+    assert!(matches!(
+        &construction.cross_section,
+        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)
+    ));
     let expected = construction.clone();
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("selector-zero source-less encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -16596,6 +19096,116 @@ fn generated_single_radius_variable_blend_consumes_zero_selector() {
         ProceduralSurfaceDefinition::VariableBlend { construction }
             if construction == &expected
     ));
+}
+
+#[test]
+fn generated_variable_blend_round_trips_parameterized_cross_sections() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendCrossSection};
+
+    for (selector, expected_cross_section) in [
+        (
+            1,
+            VariableBlendCrossSection::Thumbweights {
+                parameters: [2.0, 2.0],
+            },
+        ),
+        (
+            7,
+            VariableBlendCrossSection::G2Round {
+                parameters: [2.0, 2.0],
+            },
+        ),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_selector(
+                    "srf_srf_v_bl_spl_sur",
+                    false,
+                    Some(selector),
+                    [None, None],
+                ))),
+                &DecodeOptions::default(),
+            )
+            .expect("parameterized cross-section decode");
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected variable blend")
+        };
+        assert_eq!(
+            construction.cross_section.as_ref(),
+            Some(&expected_cross_section)
+        );
+
+        let expected = construction.clone();
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("parameterized cross-section source-less encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("parameterized cross-section round trip");
+        assert!(matches!(
+            &round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::VariableBlend { construction }
+                if construction == &expected
+        ));
+    }
+}
+
+#[test]
+fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurfaceDefinition, VariableBlendBareCrossSection, VariableBlendCrossSection,
+    };
+
+    for (selector, expected) in [
+        (2, VariableBlendBareCrossSection::Selector2),
+        (4, VariableBlendBareCrossSection::Selector4),
+        (5, VariableBlendBareCrossSection::Selector5),
+        (6, VariableBlendBareCrossSection::Selector6),
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_selector(
+                    "srf_srf_v_bl_spl_sur",
+                    false,
+                    Some(selector),
+                    [None, None],
+                ))),
+                &DecodeOptions::default(),
+            )
+            .expect("bare cross-section decode");
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &decoded.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected variable blend")
+        };
+        assert_eq!(
+            construction.cross_section,
+            Some(VariableBlendCrossSection::UnclassifiedBare { selector: expected })
+        );
+
+        let expected_construction = construction.clone();
+        let mut source_less = decoded.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("bare cross-section source-less encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("bare cross-section round trip");
+        assert!(matches!(
+            &round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::VariableBlend { construction }
+                if construction == &expected_construction
+        ));
+    }
 }
 
 fn push_revision_cl_scale(surface: &mut Vec<u8>, with_path: bool) {
@@ -16657,6 +19267,47 @@ fn generated_revision_compound_loft_round_trips() {
 }
 
 #[test]
+fn generated_parameterized_revision_compound_loft_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("cl_loft_spl_sur", |surface| {
+        push_parameterized_revision_surface_tail(surface);
+        push_revision_cl_scale(surface, true);
+        t_long(surface, 2);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 0.0);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 1.0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        surface.push(0x0b);
+        surface.push(0x0b);
+    });
+    assert_revision_surface_round_trip(smbh.clone(), "revision_compound_loft");
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("parameterized revision compound loft decode");
+    let procedural = &result.ir.model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
+        &procedural.definition
+    else {
+        panic!("expected a revision compound loft construction")
+    };
+    assert_parameterized_tail(
+        construction.tail_enum,
+        construction.tail_parameterization.as_ref(),
+    );
+}
+
+#[test]
 fn generated_revision_compound_loft_trailing_curve_round_trips() {
     let smbh = synthetic_revision_surface_smbh("cl_loft_spl_sur", |surface| {
         push_revision_surface_tail(surface);
@@ -16681,6 +19332,135 @@ fn generated_revision_compound_loft_trailing_curve_round_trips() {
 }
 
 #[test]
+fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    // The trailing curve is present exactly when both parameter values are
+    // present, so a payload carrying two present values and closing straight
+    // away is not a legal record. The decoder reads the curve on the parameter
+    // pair alone; it does not look ahead for the subtype-close byte.
+    let smbh = synthetic_revision_surface_smbh("cl_loft_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        push_revision_cl_scale(surface, false);
+        t_long(surface, 1);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 1.0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        surface.push(0x0a);
+        t_dbl(surface, 1.0);
+        surface.push(0x0a);
+        t_dbl(surface, 0.0);
+    });
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode retains the record as a native unknown");
+    assert!(!decoded
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            ProceduralSurfaceDefinition::RevisionCompoundLoft { .. }
+        )));
+
+    // The writer refuses the same state rather than emitting bytes no reader
+    // can recover the curve from.
+    let legal = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_revision_surface_smbh(
+                "cl_loft_spl_sur",
+                |surface| {
+                    push_revision_surface_tail(surface);
+                    push_revision_cl_scale(surface, false);
+                    t_long(surface, 1);
+                    push_revision_cl_scale(surface, false);
+                    t_dbl(surface, 1.0);
+                    surface.push(0x0b);
+                    surface.push(0x0b);
+                    t_long(surface, 0);
+                    surface.push(0x0b);
+                    surface.push(0x0b);
+                    t_long(surface, 0);
+                    t_vec(surface, [0.0, 0.0, 1.0]);
+                    surface.push(0x0a);
+                    t_dbl(surface, 1.0);
+                    surface.push(0x0a);
+                    t_dbl(surface, 0.0);
+                    surface.extend_from_slice(&generated_curve_block());
+                },
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("legal revision compound loft decode")
+        .ir;
+    let mut edited = legal.clone();
+    edited.source = None;
+    edited.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
+        &mut edited.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected revision compound loft")
+    };
+    construction.trailing_curve = None;
+    let error = F3dCodec.encode(&edited, &mut Vec::new()).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("pairs its trailing curve with both parameter values"));
+}
+
+#[test]
+fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
+    // The `Custom` system's `modelingLengthName` is the document's display
+    // length unit. It reaches `SourceMeta`, not `CadIr::units`: no stored
+    // quantity depends on it, and model-space coordinates stay centimetres
+    // under every value.
+    let design = crate::design::decode::units::tests::stream([
+        "centimeter",
+        "millimeter",
+        "meter",
+        "inch",
+        "foot",
+        "inch",
+    ]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+        .unwrap();
+    zip.write_all(&synthetic_geometry_smbh()).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&design).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let result = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("decode with a unit-systems design stream");
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("modeling_length_unit"))
+            .map(String::as_str),
+        Some("inch")
+    );
+    // The IR stays millimetre-canonical regardless of the display unit.
+    assert_eq!(result.ir.units, cadmpeg_ir::units::Units::default());
+}
+
+#[test]
 fn record_level_surface_bounds_round_trip() {
     let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
         push_revision_surface_tail(surface);
@@ -16701,7 +19481,11 @@ fn record_level_surface_bounds_round_trip() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("record-bounds encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -16762,7 +19546,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         assert_eq!(*form, 1);
         assert_eq!(twists, &[cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0)]);
         assert_eq!(*parameters, [0.1, 0.9]);
-        assert_eq!(*sense, 0);
+        assert!(!*sense);
         assert!(matches!(
             construction.boundaries[1].geometry,
             VertexBlendBoundaryGeometry::Degenerate { .. }
@@ -16807,7 +19591,11 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less vertex-blend encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -16852,6 +19640,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         directrix,
         parameter_interval,
         native_position,
+        revision_form: None,
     } = &procedural.definition
     else {
         panic!("expected extrusion")
@@ -16928,7 +19717,7 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("extrusion-direction regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -16961,7 +19750,7 @@ fn generated_f3d_rewrites_procedural_surface_fit_tolerance() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("procedural-surface fit regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17005,7 +19794,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("NURBS surface regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17051,7 +19840,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("rational-weight regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17102,7 +19891,7 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("extrusion-directrix regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17132,6 +19921,27 @@ fn decode_resolves_generated_ref_translational_extrusion() {
         result.ir.model.procedural_surfaces[0].cache_fit_tolerance,
         Some(0.02)
     );
+}
+
+#[test]
+fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let f3d = f3d_with_smbh(&synthetic_revision_ref_directrix_cyl_spl_sur_smbh());
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    assert!(matches!(
+        result.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Extrusion { .. }
+    ));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::report::LossKind::GeometryNotTransferred));
 }
 
 #[test]
@@ -17260,7 +20070,11 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rolling-ball encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -17308,7 +20122,11 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("canonical rolling-ball encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -17341,7 +20159,7 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("rolling-ball radius regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17393,7 +20211,7 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("blend-spine regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17442,7 +20260,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("blend-support regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17469,7 +20287,7 @@ fn decode_reports_generated_partial_rolling_ball_supports() {
 
 #[test]
 fn subtype_reference_resolves_surface_cache() {
-    use crate::nurbs::core::decode_surface_cache_resolving_refs;
+    use crate::nurbs::core::decode_surface_cache_resolving_refs_at;
 
     let mut target = Vec::new();
     target.extend_from_slice(b"\x0f\x0d\x07surface");
@@ -17486,13 +20304,160 @@ fn subtype_reference_resolves_surface_cache() {
 
     let mut active = target;
     active.extend_from_slice(&source);
-    let decoded = decode_surface_cache_resolving_refs(
+    let decoded = decode_surface_cache_resolving_refs_at(
         &source,
         &active,
         &crate::nurbs::subtypes::SubtypeTables::from_stream(&active),
+        8,
     )
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count, decoded.v_count), (2, 2));
+}
+
+/// A form-2 `par_int_cur` whose uv pcurve runs from `first` to `second`.
+fn generated_form_two_par_int_cur(first: [f64; 2], second: [f64; 2]) -> Vec<u8> {
+    let mut scope = vec![0x0f];
+    t_ident(&mut scope, "par_int_cur");
+    push_tagged_i64(&mut scope, 0x04, 1);
+    push_tagged_i64(&mut scope, 0x15, 2);
+    for bound in [0.0, 1.0] {
+        scope.push(0x0a);
+        push_tagged_f64(&mut scope, bound);
+    }
+    push_tagged_i64(&mut scope, 0x15, 0);
+    t_ident(&mut scope, "spline");
+    scope.push(0x0b);
+    scope.push(0x0f);
+    t_ident(&mut scope, "exact_spl_sur");
+    scope.extend_from_slice(&generated_surface_block());
+    scope.push(0x10);
+    scope.extend_from_slice(&[0x0b; 4]);
+    t_ident(&mut scope, "null_surface");
+    scope.extend_from_slice(b"\x0d\x04nubs");
+    push_tagged_i64(&mut scope, 0x04, 1);
+    push_tagged_i64(&mut scope, 0x15, 0);
+    push_tagged_i64(&mut scope, 0x04, 2);
+    for (knot, multiplicity) in [(0.0, 1i64), (1.0, 1)] {
+        push_tagged_f64(&mut scope, knot);
+        push_tagged_i64(&mut scope, 0x04, multiplicity);
+    }
+    for [u, v] in [first, second] {
+        push_tagged_f64(&mut scope, u);
+        push_tagged_f64(&mut scope, v);
+    }
+    t_ident(&mut scope, "nullbs");
+    push_tagged_i64(&mut scope, 0x04, 0);
+    scope.push(0x10);
+    scope
+}
+
+#[test]
+fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
+    use crate::nurbs::proc_curve::decode_par_int_cur_isoline;
+    use cadmpeg_ir::math::Point3;
+
+    // The support is the unit bilinear patch scaled to millimetres, so the
+    // isoline at u = 1 is the patch's far edge.
+    let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
+    let curve = decode_par_int_cur_isoline(&scope, 8, None).expect("form-2 isoline");
+    assert_eq!(curve.degree, 1);
+    assert_eq!(curve.knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        curve.control_points,
+        [Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)]
+    );
+
+    // A pcurve that crosses the support holds neither parameter fixed, so no
+    // NURBS curve reproduces it and the form is refused.
+    let diagonal = generated_form_two_par_int_cur([0.0, 0.0], [1.0, 1.0]);
+    assert!(decode_par_int_cur_isoline(&diagonal, 8, None).is_none());
+
+    // A pcurve running only part of the support's domain would need a trim.
+    let partial = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 0.5]);
+    assert!(decode_par_int_cur_isoline(&partial, 8, None).is_none());
+}
+
+#[test]
+fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
+    use crate::nurbs::core::{decode_curve_cache, decode_owned_curve_cache_at};
+
+    // A `par_int_cur` whose cache slot is `nullbs` and whose support is an
+    // intcurve construction carrying a curve block of its own.
+    let mut scope = vec![0x0f];
+    t_ident(&mut scope, "par_int_cur");
+    scope.push(0x0f);
+    t_ident(&mut scope, "exact_int_cur");
+    scope.extend_from_slice(&generated_curve_block());
+    scope.push(0x10);
+    t_ident(&mut scope, "nullbs");
+    scope.push(0x10);
+
+    assert!(decode_curve_cache(&scope).is_some());
+    assert!(decode_owned_curve_cache_at(&scope, 8).is_none());
+}
+
+#[test]
+fn a_nested_construction_does_not_claim_its_enclosing_record() {
+    use crate::nurbs::proc_surface::{
+        decode_procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
+    };
+    use crate::nurbs::subtypes::SubtypeTables;
+
+    let bytes = synthetic_cyl_spl_sur_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let record = &records[9];
+    let owned = bytes[record.offset..record.offset + record.len].to_vec();
+    let decoded = decode_procedural_surface_resolving_refs(
+        &owned,
+        &owned,
+        &SubtypeTables::from_stream(&owned),
+    )
+    .expect("the record owns its extrusion");
+    assert!(matches!(
+        decoded.definition,
+        DecodedProceduralSurfaceDefinition::Extrusion { .. }
+    ));
+
+    // The same extrusion nested inside a variable-blend scope is that blend's
+    // support surface, not the record's own surface.
+    let marker = b"\x0f\x0d\x0bcyl_spl_sur";
+    let at = owned
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap();
+    let mut nested = owned.clone();
+    nested.splice(at..at, *b"\x0f\x0d\x14srf_srf_v_bl_spl_sur");
+    let terminator = nested.len() - 1;
+    nested.insert(terminator, 0x10);
+    assert!(decode_procedural_surface_resolving_refs(
+        &nested,
+        &nested,
+        &SubtypeTables::from_stream(&nested)
+    )
+    .is_none());
+}
+
+#[test]
+fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
+    for ref_width in [4usize, 8] {
+        // The last four payload bytes spell a definition opening. Only a walker
+        // that consumes the length prefix at `ref_width` steps past them.
+        let payload = [b'0', b'1', b'2', b'3', 0x0f, 0x0d, 0x01, b'x'];
+
+        let mut active = Vec::new();
+        t_ident(&mut active, "tspl");
+        active.push(0x09);
+        active.extend_from_slice(&payload.len().to_le_bytes()[..ref_width]);
+        active.extend_from_slice(&payload);
+        let definition = active.len();
+        active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
+        active.push(0x11);
+
+        let tables = crate::nurbs::subtypes::SubtypeTables::from_stream(&active);
+        assert_eq!(tables.for_width(ref_width), [definition]);
+    }
 }
 
 #[test]
@@ -17759,7 +20724,7 @@ fn decode_retains_generated_helix_construction() {
     let edited_cache = solved_curve.geometry.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("helix definition regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -17785,7 +20750,11 @@ fn decode_retains_generated_helix_construction() {
     let expected = source_less.model.procedural_curves[0].definition.clone();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less helix encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -17851,7 +20820,11 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("cacheless helix source-less encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -17892,6 +20865,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
         extension,
         primary,
         additional,
+        ..
     } = &procedural.definition
     else {
         unreachable!()
@@ -17910,7 +20884,11 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less law intcurve encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -17978,7 +20956,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     let edited_definition = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("vector-offset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18011,7 +20989,11 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less vector-offset encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18102,7 +21084,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("subset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18131,7 +21113,11 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     };
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less subset encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18196,7 +21182,11 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less exact intcurve encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18229,7 +21219,11 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
 
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less spline carrier encode");
         let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
         let mut generated_smbh = Vec::new();
@@ -18409,7 +21403,11 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("canonical source-less intcurve encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18472,7 +21470,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("compound intcurve regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18499,7 +21497,11 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound intcurve encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18580,7 +21582,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     let expected_edit = edited.model.procedural_curves[0].definition.clone();
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("two-sided offset regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18595,7 +21597,11 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-sided offset encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18660,7 +21666,11 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     let expected_retained = retained.model.procedural_curves[0].definition.clone();
     let mut retained_bytes = Vec::new();
     F3dCodec
-        .encode_preserving(&retained, &result.source_fidelity, &mut retained_bytes)
+        .write_preserved_with_source_fidelity(
+            &retained,
+            &result.source_fidelity,
+            &mut retained_bytes,
+        )
         .expect("retained embedded offset-support edit");
     let retained_round_trip = F3dCodec
         .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
@@ -18676,7 +21686,11 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     let mut expected = source_less.model.procedural_curves[0].definition.clone();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less embedded offset-support encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18759,7 +21773,11 @@ fn generated_mixed_offset_supports_write_source_less() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less mixed offset-support encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18848,7 +21866,11 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     let expected_geometries = supports;
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less analytic offset-support encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -18925,7 +21947,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     *discontinuity_flag = false;
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("intersection context regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -18943,7 +21965,11 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less surface intersection encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19029,7 +22055,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     *role = "surf1".into();
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("projection context regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19053,7 +22079,11 @@ fn generated_projection_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less projection encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19109,7 +22139,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
     *flag = false;
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("early-close projection regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19127,7 +22157,11 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less early-close projection encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19187,7 +22221,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     *selector = -4;
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("three-surface intersection regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19206,7 +22240,11 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less three-surface intersection encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19267,7 +22305,11 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         context.parameter_range = [-1.0, 2.0];
         let mut regenerated = Vec::new();
         F3dCodec
-            .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+            .write_preserved_with_source_fidelity(
+                &edited,
+                &result.source_fidelity,
+                &mut regenerated,
+            )
             .unwrap_or_else(|error| panic!("{name} context regeneration failed: {error}"));
         let regenerated = F3dCodec
             .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19283,7 +22325,11 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19361,7 +22407,11 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         }
         let mut regenerated = Vec::new();
         F3dCodec
-            .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+            .write_preserved_with_source_fidelity(
+                &edited,
+                &result.source_fidelity,
+                &mut regenerated,
+            )
             .unwrap_or_else(|error| panic!("{name} regeneration failed: {error}"));
         let regenerated = F3dCodec
             .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19384,7 +22434,11 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         source_less.set_native_unknowns("f3d", &[]).unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19452,7 +22506,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("surface-offset scalar regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19477,7 +22531,11 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less surface-offset encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19540,7 +22598,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     *direction = 4;
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &result.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &result.source_fidelity, &mut regenerated)
         .expect("spring tail regeneration");
     let regenerated = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19560,7 +22618,11 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less spring encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19617,7 +22679,11 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less null-support spring encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -19632,7 +22698,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
 fn generated_deformable_curves_decode_and_write_source_less() {
     use cadmpeg_ir::geometry::{DeformableCurveData, ProceduralCurveDefinition};
 
-    for mode in [8, 5] {
+    for mode in [8, 3] {
         let result = F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(
@@ -19642,15 +22708,27 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             )
             .expect("deformable decode");
         let ProceduralCurveDefinition::Deformable {
-            extension,
-            bend,
+            context,
+            cache_first,
+            source,
+            source_parameter_range,
             data,
         } = &result.ir.model.procedural_curves[0].definition
         else {
             panic!("expected deformable construction")
         };
-        assert_eq!(*extension, 0);
-        assert!(result.ir.model.curves.iter().any(|curve| curve.id == *bend));
+        let cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve: source } = source else {
+            panic!("expected resolved deformable source")
+        };
+        assert_eq!(cache_first.revision, 23100);
+        assert_eq!(context.parameter_range, [-1.0, 2.0]);
+        assert_eq!(*source_parameter_range, [Some(0.0), Some(1.0)]);
+        assert!(result
+            .ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id == *source));
         match (mode, data) {
             (
                 8,
@@ -19662,18 +22740,13 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 assert_eq!(vectors[3], cadmpeg_ir::math::Vector3::new(10.0, 11.0, 12.0));
                 assert_eq!(parameter_pairs, &[[-1.0, 0.25], [2.0, 3.5]]);
             }
-            (5, DeformableCurveData::Surface { surface }) => {
-                assert!(result
-                    .ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .any(|item| item.id == *surface));
+            (3, DeformableCurveData::Mode3 { trailing_value, .. }) => {
+                assert_eq!(*trailing_value, 6);
             }
             _ => panic!("wrong deformable discriminator payload"),
         }
         let expected_data = data.clone();
-        let bend = bend.clone();
+        let source = source.clone();
 
         let mut source_less = result.ir;
         source_less.source = None;
@@ -19682,39 +22755,43 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .model
             .curves
             .iter_mut()
-            .find(|curve| curve.id == bend)
-            .expect("deformable bend carrier")
+            .find(|curve| curve.id == source)
+            .expect("deformable source carrier")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
             origin: cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
             direction: cadmpeg_ir::math::Vector3::new(2.0, 4.0, -1.0),
         };
         let mut encoded = Vec::new();
         F3dCodec
-            .encode(&source_less, &mut encoded)
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &source_less,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less deformable encode");
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less deformable round trip");
         let ProceduralCurveDefinition::Deformable {
-            extension: round_extension,
-            bend: round_bend,
+            source: round_source,
             data: round_data,
+            ..
         } = &round_trip.ir.model.procedural_curves[0].definition
         else {
             panic!("expected round-trip deformable construction")
         };
-        assert_eq!(*round_extension, 0);
+        let cadmpeg_ir::geometry::DeformableCurveSource::Curve {
+            curve: round_source,
+        } = round_source
+        else {
+            panic!("expected resolved round-trip deformable source")
+        };
         match (&expected_data, round_data) {
             (DeformableCurveData::VectorField { .. }, DeformableCurveData::VectorField { .. }) => {
                 assert_eq!(round_data, &expected_data)
             }
-            (DeformableCurveData::Surface { .. }, DeformableCurveData::Surface { surface }) => {
-                assert!(round_trip
-                    .ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .any(|item| item.id == *surface))
+            (DeformableCurveData::Mode3 { .. }, DeformableCurveData::Mode3 { .. }) => {
+                assert_eq!(round_data, &expected_data)
             }
             _ => panic!("round-trip deformable discriminator changed"),
         }
@@ -19723,14 +22800,14 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .model
             .curves
             .iter()
-            .any(|curve| curve.id == *round_bend));
+            .any(|curve| curve.id == *round_source));
         assert!(matches!(
             round_trip
                 .ir
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == *round_bend)
+                .find(|curve| curve.id == *round_source)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                 if curve.degree == 1
@@ -19741,6 +22818,44 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                     ]
         ));
     }
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_deformable_curve_smbh(8),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("native-reference deformable decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralCurveDefinition::Deformable { source, .. } =
+        &mut source_less.model.procedural_curves[0].definition
+    else {
+        panic!("expected deformable construction")
+    };
+    *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+        flag: false,
+        index: 10_000,
+    };
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("native-reference deformable encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("native-reference deformable round trip");
+    assert!(matches!(
+        &round_trip.ir.model.procedural_curves[0].definition,
+        ProceduralCurveDefinition::Deformable {
+            source: cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+                flag: false,
+                index: 10_000,
+            },
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -19754,7 +22869,7 @@ fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("procedural-curve fit regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19785,7 +22900,11 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
     };
     let mut encoded = Vec::new();
     let error = F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect_err("typed intersection must not degrade to a cache-only curve");
     assert!(error
         .to_string()
@@ -19796,7 +22915,11 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
         record: None,
     };
     let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unknown construction must not degrade to a cache-only curve");
     assert!(error
         .to_string()
@@ -19819,7 +22942,11 @@ fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
     source_less.model.procedural_curves.push(duplicate);
     let mut encoded = Vec::new();
     let error = F3dCodec
-        .encode(&source_less, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect_err("duplicate procedural construction must be rejected");
     assert!(error
         .to_string()
@@ -19850,7 +22977,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("topology-bound NURBS regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -19965,6 +23092,25 @@ fn inline_pcurve_scope_is_its_exact_carrier_identity() {
             .count(),
         1
     );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("explicit UV pcurve reference")));
+}
+
+#[test]
+fn inline_pcurve_owns_its_carrier_ahead_of_referenced_supports() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_inline_pcurve_with_referenced_support_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("inline pcurve with referenced support");
+
+    assert_eq!(result.ir.model.pcurves.len(), 1);
     assert!(result
         .report
         .losses
@@ -20115,7 +23261,7 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
 fn generated_pcurve_reports_dangling_carrier_reference() {
     let mut smbh = synthetic_geometry_with_pcurve_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
-    let limit = asm_header::first_delta_state_offset(&smbh).unwrap();
+    let limit = asm_header::solved_record_limit(&smbh).unwrap();
     let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut smbh[coedge.offset..coedge.offset + coedge.len];
@@ -20172,7 +23318,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("pcurve regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20199,7 +23345,7 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("scoped pcurve regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20228,7 +23374,7 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("rational pcurve regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20263,7 +23409,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("ref-form pcurve regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20274,7 +23420,11 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     edited.set_native_unknowns("f3d", &[]).unwrap();
     let mut source_less = Vec::new();
     F3dCodec
-        .encode(&edited, &mut source_less)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &edited,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut source_less))
         .expect("source-less ref-form pcurve encode");
     let source_less_round_trip = F3dCodec
         .decode(&mut Cursor::new(source_less), &DecodeOptions::default())
@@ -20306,7 +23456,11 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     mixed.model.pcurves.push(inline);
     let mut mixed_bytes = Vec::new();
     F3dCodec
-        .encode(&mixed, &mut mixed_bytes)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &mixed,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut mixed_bytes))
         .expect("mixed inline/ref-form pcurve encode");
     let mixed_round_trip = F3dCodec
         .decode(&mut Cursor::new(mixed_bytes), &DecodeOptions::default())
@@ -20336,6 +23490,85 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
             .pcurves
             .iter()
             .any(|pcurve| pcurve.id == *pcurve_id)));
+}
+
+#[test]
+fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use cadmpeg_ir::units::Units;
+
+    // One appearance attribute GUID reaches every face carrying it, so the
+    // assignment pair repeats across those faces. The face id has to enter the
+    // binding id, or the arena holds colliding ids and fails both the global
+    // identity check and the strict arena-order check.
+    let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let visual_guid = "11111111-2222-3333-4444-555555555555";
+    let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
+    for face in ["face:1", "face:2", "face:3"] {
+        ir.model.attributes.push(SourceAttribute {
+            id: format!("attr:{face}").into(),
+            target: AttributeTarget::Face(face.into()),
+            name: "NEUTRON_Material_attrib_def".into(),
+            values: vec![
+                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
+                AttributeValue::String(face_guid.into()),
+            ],
+        });
+    }
+    ir.model.appearances.push(Appearance {
+        id: "appearance:1".into(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: Some(visual_guid.into()),
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+
+    crate::decode::resolve_face_appearance_bindings(
+        &mut ir,
+        &[crate::materials::FaceAppearanceAssignment {
+            face_guid: face_guid.into(),
+            visual_guid: visual_guid.into(),
+        }],
+    );
+
+    assert_eq!(ir.model.appearance_bindings.len(), 3);
+    let ids = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| binding.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(ids.len(), 3);
+    let targets = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| binding.target.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets,
+        vec![
+            AppearanceTarget::Face("face:1".into()),
+            AppearanceTarget::Face("face:2".into()),
+            AppearanceTarget::Face("face:3".into()),
+        ]
+    );
+
+    // The decode path sorts by id after resolving; that sort is only a total
+    // order over the arena when the ids are distinct.
+    ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
+    assert!(ir
+        .model
+        .appearance_bindings
+        .windows(2)
+        .all(|pair| pair[0].id < pair[1].id));
 }
 
 #[test]
@@ -20470,15 +23703,15 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_objects.len(), 3);
+    assert_eq!(f3d_native(&result.ir).design_types.len(), 4);
     let sketch = f3d_native(&result.ir)
-        .design_objects
+        .design_types
         .iter()
-        .find(|object| object.kind == crate::records::DesignObjectKind::Sketch)
+        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_SKETCH)
         .cloned()
         .unwrap();
     assert_eq!(sketch.entity_ids, vec![277]);
-    assert_eq!(sketch.revision, 4);
+    assert_eq!(sketch.version, 4);
     assert_eq!(f3d_native(&result.ir).design_entity_headers.len(), 1);
     assert_eq!(
         f3d_native(&result.ir).design_entity_headers[0].entity_id,
@@ -20490,8 +23723,10 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert!(f3d_native(&result.ir).design_entity_headers[0].optional_slot_present);
     assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].object_kind,
-        Some(crate::records::DesignObjectKind::Sketch)
+        f3d_native(&result.ir).design_entity_headers[0]
+            .module
+            .as_deref(),
+        Some(crate::records::DESIGN_MODULE_SKETCH)
     );
     assert_eq!(
         f3d_native(&result.ir).design_entity_headers[0].record_reference,
@@ -20512,7 +23747,7 @@ fn decode_transfers_generated_protein_appearance() {
         .find(|record| record.record_index == 33)
         .cloned()
         .expect("record 33");
-    assert_eq!(record_33.class_tag, "350");
+    assert_eq!(record_33.class_tag, "259");
     assert_eq!(f3d_native(&result.ir).sketch_relations.len(), 2);
     assert_eq!(
         f3d_native(&result.ir).sketch_relations[0].members,
@@ -20534,10 +23769,9 @@ fn decode_transfers_generated_protein_appearance() {
         f3d_native(&result.ir).sketch_relations[0].unknown_constraint_bits,
         0
     );
-    assert_eq!(
-        f3d_native(&result.ir).sketch_relations[1].auxiliary_references,
-        [0]
-    );
+    assert!(f3d_native(&result.ir).sketch_relations[1]
+        .auxiliary_references
+        .is_empty());
     assert_eq!(
         f3d_native(&result.ir).sketch_relations[0].raw_bytes.len(),
         101
@@ -20694,7 +23928,11 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .encode(&source, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerant vertex encode");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -20742,7 +23980,7 @@ fn generated_f3d_rewrites_creation_timestamp() {
 
     let mut regenerated = Vec::new();
     F3dCodec
-        .encode_preserving(&edited, &decoded.source_fidelity, &mut regenerated)
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
         .expect("timestamp regeneration");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
@@ -20755,7 +23993,9 @@ fn generated_f3d_rewrites_creation_timestamp() {
 
 #[test]
 fn decode_transfers_generated_sketch_curve_link() {
-    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh());
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
+        SketchLinkForm::Tagged("113 0 1 0 2 3"),
+    ));
     let result = F3dCodec
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
@@ -20765,9 +24005,106 @@ fn decode_transfers_generated_sketch_curve_link() {
         .first()
         .cloned()
         .unwrap();
-    assert_eq!(link.coedge.0, "f3d:brep:entity#7");
+    assert_eq!(
+        link.target,
+        cadmpeg_ir::attributes::AttributeTarget::Coedge(cadmpeg_ir::ids::CoedgeId(
+            "f3d:brep:entity#7".into()
+        ))
+    );
     assert_eq!(link.sketch_curve_id, 113);
-    assert_eq!(link.signed_reference, Some(1));
+    assert_eq!(link.sense, Some(1));
+    assert_eq!((link.role, link.closure), (2, 3));
+}
+
+/// The one sketch-curve link a synthetic archive carries under `form`.
+fn decoded_sketch_link(form: SketchLinkForm<'_>) -> Option<crate::records::SketchCurveLink> {
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(form));
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    f3d_native(&result.ir).sketch_curve_links.first().cloned()
+}
+
+#[test]
+fn a_sketch_link_keeps_the_second_tuple_member_the_source_writes() {
+    let link = decoded_sketch_link(SketchLinkForm::Tagged("113 4550 1 0 2 3"))
+        .expect("a non-zero second member does not refuse the link");
+    assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
+    assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
+    // The member reaches the full unsigned 64-bit range, so it does not fit the
+    // signed reading the other members take.
+    let link = decoded_sketch_link(SketchLinkForm::Tagged("113 18446744073709551615 1 0 2 3"))
+        .expect("a second member above i64::MAX does not refuse the link");
+    assert_eq!(link.ref_b, u64::MAX);
+}
+
+#[test]
+fn a_sketch_link_decodes_in_every_payload_form() {
+    // Form 2 writes the five members as integers with a trailing `0`; form 0
+    // writes them with no trailing member at all.
+    for form in [
+        SketchLinkForm::Integers(2, &[113, 4550, 1, 2, 3, 0]),
+        SketchLinkForm::Integers(0, &[113, 4550, 1, 2, 3]),
+    ] {
+        let link = decoded_sketch_link(form).expect("integer-form sketch link");
+        assert_eq!((link.sketch_curve_id, link.ref_b), (113, 4550));
+        assert_eq!((link.sense, link.role, link.closure), (Some(1), 2, 3));
+    }
+    // An integer form spells the unconstrained sense as the signed `-1` of the
+    // same 32-bit pattern the tagged field spells as `4294967295`.
+    assert_eq!(
+        decoded_sketch_link(SketchLinkForm::Integers(2, &[113, 0, -1, 2, 3, 0]))
+            .expect("integer-form sketch link")
+            .sense,
+        None
+    );
+    // Form 2 without its trailing `0`, and form 0 with one, are misframed.
+    assert!(decoded_sketch_link(SketchLinkForm::Integers(2, &[113, 0, 1, 2, 3])).is_none());
+    assert!(decoded_sketch_link(SketchLinkForm::Integers(0, &[113, 0, 1, 2, 3, 0])).is_none());
+}
+
+#[test]
+fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
+    use crate::records::SketchCurveLink;
+
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
+        SketchLinkForm::Tagged("113 0 4294967295 0 2 3"),
+    ));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        f3d_native(&decoded.ir).sketch_curve_links[0].sense,
+        None,
+        "4294967295 is the disabled sense, not a stored one"
+    );
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let coedge = source_less.model.coedges[0].id.clone();
+    f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
+        id: "generated:sketch-curve-link#0".into(),
+        target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
+        sketch_curve_id: 113,
+        ref_b: 0,
+        sense: None,
+        role: 2,
+        closure: 3,
+    }];
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less sketch-link encode");
+    assert!(
+        encoded
+            .windows(b"113 0 4294967295 0 2 3".len())
+            .any(|window| window == b"113 0 4294967295 0 2 3"),
+        "the writer must re-emit the disabled sense in its source spelling"
+    );
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less sketch-link round trip");
+    let link = &f3d_native(&round_trip.ir).sketch_curve_links[0];
+    assert_eq!((link.sketch_curve_id, link.sense), (113, None));
     assert_eq!((link.role, link.closure), (2, 3));
 }
 
@@ -20916,14 +24253,14 @@ fn browser_body_record(entity: u64, name: Option<&str>, visual: &str) -> Vec<u8>
 #[test]
 fn browser_body_appearance_decodes_named_and_nameless_records() {
     let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015";
-    let mut bytes = browser_body_record(200598, Some("Hexagon 1"), visual);
-    bytes.extend(browser_body_record(454966, None, visual));
+    let mut bytes = browser_body_record(200_598, Some("Hexagon 1"), visual);
+    bytes.extend(browser_body_record(454_966, None, visual));
     let out = crate::materials::browser_body_appearances(&bytes);
     assert_eq!(
         out,
         vec![
-            (200598, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
-            (454966, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
+            (200_598, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
+            (454_966, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
         ]
     );
 }
@@ -20947,15 +24284,63 @@ fn protein_revision_suffix_does_not_change_visual_guid_identity() {
 #[test]
 fn browser_body_appearance_requires_head_and_node_entity_agreement() {
     let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015";
-    let mut bytes = browser_body_record(200598, Some("Hexagon 1"), visual);
+    let mut bytes = browser_body_record(200_598, Some("Hexagon 1"), visual);
     // Corrupt the node entity so it no longer equals the head entity plus one.
-    let node = (200599u64).to_le_bytes();
+    let node = 200_599_u64.to_le_bytes();
     let at = bytes
         .windows(8)
         .position(|window| window == node)
         .expect("node entity bytes are present");
     bytes[at..at + 8].copy_from_slice(&(999u64).to_le_bytes());
     assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
+}
+
+#[test]
+fn browser_body_appearance_joins_through_browser_node_guid() {
+    let mut bytes = vec![0u8; 8];
+    let records = [
+        (
+            "1b5e92d0-eade-40d5-ab4d-35af2eb411b4",
+            "674E6024-4294-4322-B572-A88F64F0DA77_Post2015_Post2015",
+            37_251u64,
+        ),
+        (
+            "a349885b-a9b6-4b79-a9c9-7976717ee6be",
+            "4218E352-E25F-423E-8DCD-527E5148C2F6_Post2015_Post2015",
+            37_441u64,
+        ),
+    ];
+    for (node_guid, visual, entity_suffix) in records {
+        for value in [
+            "e966e81d-2581-4d41-821d-839938974425",
+            node_guid,
+            "DE897CF7-F483-4D31-A2D8-41671FE36D3D",
+            "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+            "PrismMaterial-018",
+            "ba2d3026-32c4-4584-b0e1-a738e387fa35",
+            visual,
+            "BA5EE55E-9982-449B-9D66-9F036540E140",
+            "Prism-090",
+        ] {
+            bytes.extend(lp_utf16_bytes(value));
+        }
+        bytes.extend(lp_utf16_bytes(node_guid));
+        bytes.push(0);
+        bytes.extend([0x01, 0x01]);
+        bytes.extend(entity_suffix.to_le_bytes());
+    }
+
+    assert_eq!(
+        crate::materials::browser_body_appearances(&bytes),
+        [
+            (37_251, "674E6024-4294-4322-B572-A88F64F0DA77".to_string()),
+            (37_441, "4218E352-E25F-423E-8DCD-527E5148C2F6".to_string()),
+        ]
+    );
+    assert!(
+        crate::materials::face_appearance_assignments(&bytes).is_empty(),
+        "a body-owned visual marker is not also a face assignment"
+    );
 }
 
 #[test]
@@ -21174,6 +24559,56 @@ fn f3z_archive_merges_identity_occurrences() {
             shell_owner.id.0
         );
     }
+    assert!(decoded
+        .source_fidelity
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .is_none());
+    assert_eq!(
+        decoded.source_fidelity.annotations.provenance.len(),
+        component_alone.source_fidelity.annotations.provenance.len()
+    );
+    assert!(decoded
+        .source_fidelity
+        .annotations
+        .provenance
+        .keys()
+        .all(|id| id.starts_with(&prefix)));
+    let mut regenerated = Vec::new();
+    let report = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut regenerated))
+        .expect("merged F3Z regenerates instead of replaying a member");
+    assert!(!regenerated.is_empty());
+    assert!(report
+        .notes
+        .iter()
+        .any(|note| note == "source container regenerated from IR"));
+}
+
+#[test]
+fn f3z_archive_without_merged_components_preserves_root_replay() {
+    let root = f3d_with_smbh(&synthetic_geometry_smbh());
+    let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded
+        .source_fidelity
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .is_some());
+    let mut replayed = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .and_then(|plan| plan.write_to(&mut replayed))
+        .expect("unmerged F3Z root member remains replayable");
+    assert_eq!(replayed, root);
 }
 
 #[test]
@@ -21260,868 +24695,34 @@ fn f3z_prefix_detects_as_f3d() {
     );
 }
 
-/// Golden-snapshot harness pinning the F3D codec's decode, container-inspect, and
-/// every drivable encode branch against a covering, committed fixture set.
-///
-/// # Fixture-to-`brep/emit.rs` coverage ledger
-///
-/// Each committed `tests/golden/fixtures/*.f3d` decodes through the real codec;
-/// the union of their decode paths exercises the [`crate::brep::emit`] regions.
-/// The `emit_region_coverage` test enforces the floor below from the live decode
-/// output, so this ledger cannot drift silently: an over-claim fails the test.
-///
-/// PINNED emit.rs regions (each backed by ≥1 fixture, machine-checked):
-/// - `emit_points`         — every brep fixture (`topology_base`, …).
-/// - `emit_vertices`       — every brep fixture; tolerant/free forms via wire fixtures.
-/// - `emit_edges`          — every brep fixture.
-/// - `emit_coedges`        — every brep fixture.
-/// - `emit_loops`          — every faced brep fixture.
-/// - `emit_faces`          — every faced brep fixture.
-/// - `emit_containers`     — `topology_base` (solid), `wire_body`, `free_vertex_body`,
-///                           `mixed_face_wire_body` (general, drives `project_subshell_faces`).
-/// - `project_subshell_faces` — `mixed_face_wire_body`.
-/// - `emit_attributes`     — `attributes`, `body_color`, `face_color`.
-/// - `emit_annotation_records` — every brep fixture (maps each emitted entity to
-///   its source-record offset).
-/// - `count_other_records` — every fixture (opaque-leftover record accounting).
-/// - `emit_passthrough_unknowns` — `container_metadata_only`, `mesh_surface`
-///   (undecoded carrier retained as an unknown passthrough record).
-/// - `emit_carrier_records` (NURBS surface carriers) — `cyl_spline_surface`,
-///   `exact_surface`, and the procedural-surface fixtures below.
-/// - `emit_carrier_records` (NURBS curve carriers) — `exact_curve`, ruled/loft
-///   profiles, and the procedural-curve fixtures below.
-/// - `emit_pcurves`        — `pcurve_inline`, `pcurve_ref`, `pcurve_rational`.
-/// - Surface sub-emitters: `emit_deformable_surface` (`deformable_surface`),
-///   `emit_loft_surface` (`loft_surface`), `emit_compound_loft_surface`
-///   (`compound_loft_surface`), `emit_scaled_compound_loft_surface`
-///   (`scaled_compound_loft_surface`), `emit_law_surface` (`law_surface`),
-///   `emit_skin_surface` (`skin_surface`), `emit_net_surface` (`net_surface`),
-///   `emit_sweep_surface` (`sweep_surface`), `emit_g2_blend_surface`
-///   (`g2_blend_surface`), `emit_variable_blend_surface` (`variable_blend_surface`),
-///   `emit_vertex_blend_surface` (`vertex_blend_surface`), `emit_blend_surface`
-///   (`rolling_ball_blend_surface`). Inline definition arms (Exact/Ruled/Revolution/
-///   Offset/Taper/Sum/SubSurface/Helix/TSpline/Extrusion) are pinned by
-///   `exact_surface`, `ruled_surface`, `revolution_surface`, `offset_surface`,
-///   `taper_surface`, `sum_surface`, `sub_surface`, `helix_surface`,
-///   `tspline_surface`.
-/// - Curve sub-emitters: `emit_law_curve` (`law_curve`), `emit_silhouette_curve`
-///   (`silhouette_curve`), `emit_surface_offset_curve` (`surface_offset_curve`),
-///   `emit_spring_curve` (`spring_curve`), `emit_projection_curve`
-///   (`projection_curve`). Inline curve arms (VectorOffset/Subset/TwoSidedOffset/
-///   Intersection/Helix/Compound) via `subset_curve`, `compound_curve`,
-///   `helix_curve`, `surface_intersection_curve`, `degenerate_curve`.
-/// - design records — `design_appearances_protein` (Design MetaStream objects).
-/// - history — `history`.
-/// - appearances — `design_appearances_protein` (Protein appearance assets).
-///
-/// UNPINNED emit.rs regions (honest gaps — the go/no-go input for the emit
-/// migration; drive these before relying on the harness for those arms):
-/// - `emit_revision_compound_loft_surface` and `emit_revision_g2_blend_surface`:
-///   the `RevisionCompoundLoft` / `RevisionG2Blend` definition arms require the
-///   `synthetic_revision_surface_smbh` body closures, which are inlined per white-box
-///   test and not reusable as no-argument builders. No fixture drives these arms.
-/// - `emit_carrier_surface`'s `cached_unknown_procedural_surfaces` /
-///   `ProceduralSurfaceDefinition::Unknown` arm: no fixture retains an
-///   unknown-but-cached procedural surface.
-/// - BinaryFile4 carrier variants beyond the analytic base are not separately
-///   pinned here (the `binaryfile4` / `binaryfile4_nurbs` fixtures pin the BF4
-///   topology carriers only).
-mod golden {
-    use std::collections::BTreeSet;
-    use std::io::Cursor;
-    use std::path::{Path, PathBuf};
-
-    use cadmpeg_ir::codec::{CodecError, DecodeResult};
-    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-
-    use super::*;
-
-    /// The covering fixture set as `(golden name, full `.f3d` bytes)`.
-    ///
-    /// Every entry reuses the module-level synthetic builders (`synthetic_*_smbh`)
-    /// wrapped by the module-level ZIP builders (`f3d_with_smbh`,
-    /// `f3d_with_smbh_and_protein`, `f3d_with_configuration`). All wrappers use
-    /// STORED ZIP framing, so the committed bytes and the `ContainerSummary`
-    /// compressed-length fields are independent of the active `flate2` backend.
-    fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
-        let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
-
-        // --- Base topology and container grouping. ---
-        f.push(("topology_base", f3d_with_smbh(&synthetic_geometry_smbh())));
-        f.push(("wire_body", f3d_with_smbh(&synthetic_wire_body_smbh())));
-        f.push((
-            "free_vertex_body",
-            f3d_with_smbh(&synthetic_free_vertex_body_smbh()),
-        ));
-        f.push((
-            "mixed_face_wire_body",
-            f3d_with_smbh(&synthetic_mixed_face_wire_body_smbh()),
-        ));
-
-        // --- Attributes, colors, transforms. ---
-        f.push((
-            "attributes",
-            f3d_with_smbh(&synthetic_geometry_with_attribute_smbh()),
-        ));
-        f.push((
-            "body_color",
-            f3d_with_smbh(&synthetic_geometry_with_body_color_smbh()),
-        ));
-        f.push((
-            "face_color",
-            f3d_with_smbh(&synthetic_geometry_with_face_color_smbh()),
-        ));
-        f.push((
-            "body_transform",
-            f3d_with_smbh(&synthetic_geometry_with_transform_smbh()),
-        ));
-
-        // --- History, design records, appearances. ---
-        f.push((
-            "history",
-            f3d_with_smbh(&synthetic_geometry_with_history_smbh()),
-        ));
-        f.push((
-            "design_appearances_protein",
-            f3d_with_smbh_and_protein(&synthetic_geometry_smbh()),
-        ));
-
-        // --- Metadata-only decode (no topology): passthrough unknown, geometry loss. ---
-        f.push(("container_metadata_only", f3d_with_smbh(&synthetic_smbh())));
-
-        // --- Mesh-surface sentinel and sketch-curve link. ---
-        f.push((
-            "mesh_surface",
-            f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh()),
-        ));
-        f.push((
-            "sketch_link",
-            f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh()),
-        ));
-
-        // --- Pcurve carriers. ---
-        f.push((
-            "pcurve_inline",
-            f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh()),
-        ));
-        f.push((
-            "pcurve_ref",
-            f3d_with_smbh(&synthetic_geometry_with_ref_pcurve_smbh()),
-        ));
-        f.push((
-            "pcurve_rational",
-            f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh()),
-        ));
-
-        // --- Curve carriers and procedural-curve sub-emitters. ---
-        f.push((
-            "exact_curve",
-            f3d_with_smbh(&synthetic_geometry_with_exact_curve_smbh()),
-        ));
-        f.push((
-            "subset_curve",
-            f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh()),
-        ));
-        f.push((
-            "compound_curve",
-            f3d_with_smbh(&synthetic_geometry_with_compound_curve_smbh()),
-        ));
-        f.push((
-            "helix_curve",
-            f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh()),
-        ));
-        f.push((
-            "law_curve",
-            f3d_with_smbh(&synthetic_geometry_with_law_curve_smbh()),
-        ));
-        f.push((
-            "silhouette_curve",
-            f3d_with_smbh(&synthetic_geometry_with_silhouette_smbh(
-                "para_silh_int_cur",
-                None,
-            )),
-        ));
-        f.push((
-            "surface_offset_curve",
-            f3d_with_smbh(&synthetic_geometry_with_surface_offset_smbh()),
-        ));
-        f.push((
-            "spring_curve",
-            f3d_with_smbh(&synthetic_geometry_with_spring_smbh()),
-        ));
-        f.push((
-            "projection_curve",
-            f3d_with_smbh(&synthetic_geometry_with_projection_smbh()),
-        ));
-        f.push((
-            "surface_intersection_curve",
-            f3d_with_smbh(&synthetic_geometry_with_surface_intersection_smbh()),
-        ));
-        f.push((
-            "degenerate_curve",
-            f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh()),
-        ));
-
-        // --- NURBS surface carriers and procedural-surface sub-emitters. ---
-        f.push((
-            "cyl_spline_surface",
-            f3d_with_smbh(&synthetic_cyl_spl_sur_smbh()),
-        ));
-        f.push((
-            "exact_surface",
-            f3d_with_smbh(&synthetic_exact_spl_sur_smbh("exact_spl_sur")),
-        ));
-        f.push((
-            "ruled_surface",
-            f3d_with_smbh(&synthetic_ruled_spl_sur_smbh("rule_sur", true)),
-        ));
-        f.push((
-            "revolution_surface",
-            f3d_with_smbh(&synthetic_rot_spl_sur_smbh("rot_spl_sur")),
-        ));
-        f.push((
-            "offset_surface",
-            f3d_with_smbh(&synthetic_off_spl_sur_smbh("off_spl_sur")),
-        ));
-        f.push((
-            "taper_surface",
-            f3d_with_smbh(&synthetic_taper_spl_sur_smbh("taper_spl_sur")),
-        ));
-        f.push((
-            "sum_surface",
-            f3d_with_smbh(&synthetic_sum_spl_sur_smbh("sum_spl_sur", true)),
-        ));
-        f.push((
-            "sub_surface",
-            f3d_with_smbh(&synthetic_sub_spl_sur_smbh("sub_spl_sur")),
-        ));
-        f.push((
-            "loft_surface",
-            f3d_with_smbh(&synthetic_loft_spl_sur_smbh("loft_spl_sur")),
-        ));
-        f.push((
-            "compound_loft_surface",
-            f3d_with_smbh(&synthetic_comp_spl_sur_smbh()),
-        ));
-        f.push((
-            "scaled_compound_loft_surface",
-            f3d_with_smbh(&synthetic_scaled_compound_loft_smbh(true)),
-        ));
-        f.push((
-            "law_surface",
-            f3d_with_smbh(&synthetic_law_spl_sur_smbh("law_spl_sur", false, 0)),
-        ));
-        f.push((
-            "skin_surface",
-            f3d_with_smbh(&synthetic_skin_spl_sur_smbh(0, false)),
-        ));
-        f.push(("net_surface", f3d_with_smbh(&synthetic_net_spl_sur_smbh())));
-        f.push((
-            "sweep_surface",
-            f3d_with_smbh(&synthetic_profile_first_sweep_smbh()),
-        ));
-        f.push((
-            "g2_blend_surface",
-            f3d_with_smbh(&synthetic_g2_blend_spl_sur_smbh("g2_blend_spl_sur", true)),
-        ));
-        f.push((
-            "variable_blend_surface",
-            f3d_with_smbh(&synthetic_variable_blend_smbh("var_blend_spl_sur")),
-        ));
-        f.push((
-            "rolling_ball_blend_surface",
-            f3d_with_smbh(&synthetic_full_rolling_ball_smbh("rb_blend_spl_sur")),
-        ));
-        f.push((
-            "vertex_blend_surface",
-            f3d_with_smbh(&synthetic_vertex_blend_smbh("VBL_SURF")),
-        ));
-        f.push((
-            "helix_surface",
-            f3d_with_smbh(&synthetic_helix_surface_smbh(true)),
-        ));
-        f.push((
-            "tspline_surface",
-            f3d_with_smbh(&synthetic_t_spl_sur_smbh()),
-        ));
-        f.push((
-            "deformable_surface",
-            f3d_with_smbh(&synthetic_minimal_deformable_surface_smbh()),
-        ));
-
-        // --- BinaryFile4 topology carriers. ---
-        f.push(("binaryfile4", f3d_with_smbh(&synthetic_geometry_bf4_smbh())));
-        f.push((
-            "binaryfile4_nurbs",
-            f3d_with_smbh(&synthetic_geometry_bf4_nurbs_smbh()),
-        ));
-
-        // --- Design configuration table. ---
-        f.push((
-            "design_configuration",
-            f3d_with_configuration(
-                &synthetic_geometry_smbh(),
-                "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg",
-                br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide"}"#,
-            ),
-        ));
-
-        // --- Encoder-generated round-trip fixture: the writer's own source-less
-        // output for a neutral unit-cube IR. Decoding it yields an IR the
-        // source-less writer accepts, so the `generate` branch produces bytes
-        // rather than a refusal. ---
-        f.push(("generated_unit_cube", encoder_generated_unit_cube()));
-
-        f
-    }
-
-    /// A valid `.f3d` produced by the source-less writer for a neutral unit-cube
-    /// IR. Deterministic: the writer performs no compression and no hash-map or
-    /// clock-dependent work.
-    fn encoder_generated_unit_cube() -> Vec<u8> {
-        let ir = cadmpeg_ir::examples::unit_cube();
-        let mut bytes = Vec::new();
-        F3dCodec
-            .encode(&ir, &mut bytes)
-            .expect("encode neutral unit-cube IR");
-        bytes
-    }
-
-    fn decode_result(bytes: &[u8]) -> Result<DecodeResult, CodecError> {
-        F3dCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    }
-
-    /// Nest a pretty-JSON block under an object key, preserving the block's own
-    /// key order (a `serde_json::Value` round-trip would re-sort object keys and
-    /// so would not reflect `to_canonical_json` faithfully).
-    fn indent_block(block: &str) -> String {
-        let mut lines = block.lines();
-        let mut out = String::new();
-        if let Some(first) = lines.next() {
-            out.push_str(first);
-        }
-        for line in lines {
-            out.push('\n');
-            out.push_str("  ");
-            out.push_str(line);
-        }
-        out
-    }
-
-    /// The decode snapshot: the canonical IR (via `CadIr::to_canonical_json`),
-    /// the `DecodeReport`, and the `SourceFidelity` sidecar as one stable pretty
-    /// document. A refused decode is frozen as `{"decode_error": ...}` (a `.f3d`
-    /// that fails to decode is contract-relevant behavior), so this never panics.
-    fn decode_snapshot(bytes: &[u8]) -> String {
-        match decode_result(bytes) {
-            Ok(result) => {
-                let ir = result
-                    .ir
-                    .to_canonical_json()
-                    .expect("serialize canonical ir");
-                let report =
-                    serde_json::to_string_pretty(&result.report).expect("serialize report");
-                let fidelity = serde_json::to_string_pretty(&result.source_fidelity)
-                    .expect("serialize source_fidelity");
-                let mut out = String::from("{\n");
-                out.push_str("  \"ir\": ");
-                out.push_str(&indent_block(&ir));
-                out.push_str(",\n  \"report\": ");
-                out.push_str(&indent_block(&report));
-                out.push_str(",\n  \"source_fidelity\": ");
-                out.push_str(&indent_block(&fidelity));
-                out.push_str("\n}\n");
-                out
-            }
-            Err(err) => {
-                let value = serde_json::json!({ "decode_error": err.to_string() });
-                let mut text =
-                    serde_json::to_string_pretty(&value).expect("serialize decode error");
-                text.push('\n');
-                text
-            }
-        }
-    }
-
-    /// The inspect snapshot: the `ContainerSummary` as stable pretty JSON, with
-    /// inspect errors frozen the same way decode errors are.
-    fn inspect_snapshot(bytes: &[u8]) -> String {
-        let value =
-            match F3dCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-                Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
-                Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
-            };
-        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
-        text.push('\n');
-        text
-    }
-
-    /// The `replay` branch of [`crate::F3dCodec::encode_with_source_fidelity`]:
-    /// decode, then re-encode with the intact source-fidelity sidecar. The sidecar
-    /// retains the F3D source image and the IR is unchanged, so the `plan_write`
-    /// gate returns `Replay` and the retained bytes are written verbatim. `None`
-    /// when the fixture does not decode.
-    fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-        let result = decode_result(bytes).ok()?;
-        let mut out = Vec::new();
-        Some(
-            match F3dCodec.encode_with_source_fidelity(
-                &result.ir,
-                Some(&result.source_fidelity),
-                &mut out,
-            ) {
-                Ok(_) => Ok(out),
-                Err(err) => Err(err.to_string()),
-            },
-        )
-    }
-
-    /// The `generate` branch of [`cadmpeg_ir::codec::Encoder::encode`]: re-encode
-    /// the decoded IR with no sidecar, driving `writer::generate::write_new`. Most
-    /// decoded synthetic archives carry native F3D records the source-less writer
-    /// declines, so this is usually a pinned refusal; `generated_unit_cube` drives
-    /// the successful path. `None` when the fixture does not decode.
-    fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-        let result = decode_result(bytes).ok()?;
-        let mut out = Vec::new();
-        Some(match F3dCodec.encode(&result.ir, &mut out) {
-            Ok(_) => Ok(out),
-            Err(err) => Err(err.to_string()),
-        })
-    }
-
-    /// The `patch` branch of [`crate::F3dCodec::encode_with_source_fidelity`]:
-    /// nudge the first model point, which changes `decode::semantic_hash` so the
-    /// `plan_write` gate returns `Patch` and routes through
-    /// `writer::patch::write_semantic`. `None` when the fixture does not decode or
-    /// has no point to edit (patch is not drivable from it).
-    fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-        let result = decode_result(bytes).ok()?;
-        if result.ir.model.points.is_empty() {
-            return None;
-        }
-        let mut edited = result.ir.clone();
-        edited.model.points[0].position.x += 1.0;
-        let mut out = Vec::new();
-        Some(
-            match F3dCodec.encode_with_source_fidelity(
-                &edited,
-                Some(&result.source_fidelity),
-                &mut out,
-            ) {
-                Ok(_) => Ok(out),
-                Err(err) => Err(err.to_string()),
-            },
-        )
-    }
-
-    fn golden_root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
-    }
-
-    fn update_requested() -> bool {
-        std::env::var_os("UPDATE_GOLDEN").is_some()
-    }
-
-    /// First differing line, 1-based, both sides truncated for a readable failure.
-    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
-        let mut exp = expected.lines();
-        let mut act = actual.lines();
-        let mut line = 0usize;
-        loop {
-            line += 1;
-            match (exp.next(), act.next()) {
-                (Some(e), Some(a)) if e == a => {}
-                (e, a) => {
-                    let trunc = |s: Option<&str>| match s {
-                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
-                        Some(s) => s.to_string(),
-                        None => "<end of file>".to_string(),
-                    };
-                    return (line, trunc(e), trunc(a));
-                }
-            }
-        }
-    }
-
-    fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
-        let offset = expected
-            .iter()
-            .zip(actual)
-            .position(|(e, a)| e != a)
-            .unwrap_or_else(|| expected.len().min(actual.len()));
-        let describe = |bytes: &[u8]| match bytes.get(offset) {
-            Some(byte) => format!("0x{byte:02x}"),
-            None => "<end of file>".to_string(),
-        };
-        format!(
-            "first byte difference at offset {offset}: golden {}, actual {} (lengths: {} and {})",
-            describe(expected),
-            describe(actual),
-            expected.len(),
-            actual.len(),
-        )
-    }
-
-    fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<String>) {
-        if update {
-            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
-                .expect("create golden dir");
-            std::fs::write(path, actual.as_bytes())
-                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
-            return;
-        }
-        match std::fs::read_to_string(path) {
-            Ok(expected) if expected == actual => {}
-            Ok(expected) => {
-                let (line, exp, act) = first_line_diff(&expected, actual);
-                failures.push(format!(
-                    "{}: diverged at line {line}\n    golden: {exp}\n    actual: {act}",
-                    path.display()
-                ));
-            }
-            Err(e) => failures.push(format!(
-                "{}: cannot read golden ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
-                path.display()
-            )),
-        }
-    }
-
-    fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
-        if update {
-            std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
-                .expect("create golden dir");
-            std::fs::write(path, actual)
-                .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
-            return;
-        }
-        match std::fs::read(path) {
-            Ok(expected) if expected == actual => {}
-            Ok(expected) => {
-                failures.push(format!("{}: {}", path.display(), first_byte_diff(&expected, actual)))
-            }
-            Err(e) => failures.push(format!(
-                "{}: cannot read golden ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
-                path.display()
-            )),
-        }
-    }
-
-    fn remove_if_exists(path: &Path) {
-        if path.exists() {
-            std::fs::remove_file(path).unwrap_or_else(|e| panic!("remove {}: {e}", path.display()));
-        }
-    }
-
-    /// Freeze an encode branch as either `<dir>/<name>.bin` (accepted) or
-    /// `<dir>/<name>.err.txt` (refused). `None` outcomes (branch not drivable from
-    /// this fixture) remove both artifacts on update and pin nothing.
-    fn compare_encode(
-        update: bool,
-        root: &Path,
-        dir: &str,
-        name: &str,
-        outcome: Option<Result<Vec<u8>, String>>,
-        failures: &mut Vec<String>,
-    ) {
-        let bin_path = root.join(dir).join(format!("{name}.bin"));
-        let err_path = root.join(dir).join(format!("{name}.err.txt"));
-        match outcome {
-            Some(Ok(encoded)) => {
-                if update {
-                    remove_if_exists(&err_path);
-                }
-                compare_bytes(update, &bin_path, &encoded, failures);
-            }
-            Some(Err(message)) => {
-                if update {
-                    remove_if_exists(&bin_path);
-                }
-                compare_text(update, &err_path, &format!("{message}\n"), failures);
-            }
-            None if update => {
-                remove_if_exists(&bin_path);
-                remove_if_exists(&err_path);
-            }
-            None => {}
-        }
-    }
-
-    /// Reads a committed `.f3d` fixture; the committed bytes, not the builder, are
-    /// the snapshot source of truth so a builder drift cannot silently repin.
-    fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
-        let path = golden_root().join("fixtures").join(format!("{name}.f3d"));
-        std::fs::read(&path).map_err(|e| {
-            format!(
-                "fixture `{name}`: cannot read {} ({e}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
-                path.display()
-            )
-        })
-    }
-
-    #[test]
-    fn golden_snapshots_are_byte_identical() {
-        let update = update_requested();
-        let root = golden_root();
-        let mut failures = Vec::new();
-        for (name, builder_bytes) in fixtures() {
-            let fixture_path = root.join("fixtures").join(format!("{name}.f3d"));
-            // The committed `.f3d` is the frozen decode input. On update, rewrite
-            // it from the builder; then snapshot the exact committed bytes so the
-            // pins do not depend on the builder staying constant.
-            if update {
-                std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
-                    .expect("create fixtures dir");
-                std::fs::write(&fixture_path, &builder_bytes)
-                    .unwrap_or_else(|e| panic!("write fixture {name}: {e}"));
-            }
-            let input = if update {
-                builder_bytes.clone()
-            } else {
-                match read_fixture(name) {
-                    Ok(value) => value,
-                    Err(message) => {
-                        failures.push(message);
-                        continue;
-                    }
-                }
-            };
-
-            compare_text(
-                update,
-                &root.join("decode").join(format!("{name}.json")),
-                &decode_snapshot(&input),
-                &mut failures,
-            );
-            compare_text(
-                update,
-                &root.join("inspect").join(format!("{name}.json")),
-                &inspect_snapshot(&input),
-                &mut failures,
-            );
-            compare_encode(
-                update,
-                &root,
-                "replay",
-                name,
-                replay_outcome(&input),
-                &mut failures,
-            );
-            compare_encode(
-                update,
-                &root,
-                "generate",
-                name,
-                generate_outcome(&input),
-                &mut failures,
-            );
-            compare_encode(
-                update,
-                &root,
-                "patch",
-                name,
-                patch_outcome(&input),
-                &mut failures,
-            );
-        }
-        assert!(
-            failures.is_empty(),
-            "{} golden artifact(s) drifted; if the change is intended regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden` and review the diff:\n\n{}",
-            failures.len(),
-            failures.join("\n\n"),
-        );
-    }
-
-    /// Guards against nondeterministic output (hash-map iteration order,
-    /// timestamps): every artifact must be a pure function of the input bytes.
-    #[test]
-    fn golden_output_is_deterministic() {
-        for (name, bytes) in fixtures() {
-            let decode_first = decode_snapshot(&bytes);
-            let decode_second = decode_snapshot(&bytes);
-            if decode_first != decode_second {
-                let (line, a, b) = first_line_diff(&decode_first, &decode_second);
-                panic!("fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {a}\n    run 2: {b}");
-            }
-            let inspect_first = inspect_snapshot(&bytes);
-            let inspect_second = inspect_snapshot(&bytes);
-            if inspect_first != inspect_second {
-                let (line, a, b) = first_line_diff(&inspect_first, &inspect_second);
-                panic!("fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {a}\n    run 2: {b}");
-            }
-            assert_eq!(
-                replay_outcome(&bytes),
-                replay_outcome(&bytes),
-                "fixture `{name}`: nondeterministic replay"
-            );
-            assert_eq!(
-                generate_outcome(&bytes),
-                generate_outcome(&bytes),
-                "fixture `{name}`: nondeterministic generate"
-            );
-            assert_eq!(
-                patch_outcome(&bytes),
-                patch_outcome(&bytes),
-                "fixture `{name}`: nondeterministic patch"
-            );
-        }
-    }
-
-    /// The committed `.f3d` fixtures still reproduce the builder bytes. A
-    /// corruption check on the frozen fixtures, not a drift gate; skipped during
-    /// generation. All fixtures use STORED ZIP framing, so this holds regardless
-    /// of the active `flate2` backend.
-    #[test]
-    fn golden_fixtures_match_builders() {
-        if update_requested() {
-            return;
-        }
-        let mut failures: Vec<String> = Vec::new();
-        for (name, builder_bytes) in fixtures() {
-            match read_fixture(name) {
-                Ok(bytes) if bytes == builder_bytes => {}
-                Ok(bytes) => failures.push(format!(
-                    "fixture `{name}`: committed {} bytes, builder produces {} bytes",
-                    bytes.len(),
-                    builder_bytes.len()
-                )),
-                Err(message) => failures.push(message),
-            }
-        }
-        assert!(
-            failures.is_empty(),
-            "committed fixtures diverged from their builders; regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`:\n\n{}",
-            failures.join("\n")
-        );
-    }
-
-    /// The `brep/emit.rs` regions the fixture set exercises, observed from live
-    /// decode output. Keeps the ledger doc honest: a region claimed pinned but
-    /// populated by no fixture fails `emit_region_coverage`.
-    fn coverage_tags(result: &DecodeResult) -> BTreeSet<&'static str> {
-        let mut t = BTreeSet::new();
-        let m = &result.ir.model;
-        if !m.points.is_empty() {
-            t.insert("points");
-        }
-        if !m.vertices.is_empty() {
-            t.insert("vertices");
-        }
-        if !m.edges.is_empty() {
-            t.insert("edges");
-        }
-        if !m.coedges.is_empty() {
-            t.insert("coedges");
-        }
-        if !m.loops.is_empty() {
-            t.insert("loops");
-        }
-        if !m.faces.is_empty() {
-            t.insert("faces");
-        }
-        if !m.bodies.is_empty() {
-            t.insert("containers");
-        }
-        if !m.attributes.is_empty() {
-            t.insert("attributes");
-        }
-        if !m.appearances.is_empty() || !m.appearance_bindings.is_empty() {
-            t.insert("appearances");
-        }
-        if !m.pcurves.is_empty() {
-            t.insert("pcurve_carrier");
-        }
-        if !m.procedural_surfaces.is_empty() {
-            t.insert("procedural_surface_carrier");
-        }
-        if !m.procedural_curves.is_empty() {
-            t.insert("procedural_curve_carrier");
-        }
-        if m.surfaces
-            .iter()
-            .any(|s| matches!(s.geometry, SurfaceGeometry::Nurbs(_)))
-        {
-            t.insert("nurbs_surface_carrier");
-        }
-        if m.curves
-            .iter()
-            .any(|c| matches!(c.geometry, CurveGeometry::Nurbs(_)))
-        {
-            t.insert("nurbs_curve_carrier");
-        }
-        if result
-            .ir
-            .native_unknowns("f3d")
-            .is_ok_and(|u| !u.is_empty())
-        {
-            t.insert("passthrough_unknowns");
-        }
-        let native = f3d_native(&result.ir);
-        if !native.design_objects.is_empty()
-            || !native.design_body_members.is_empty()
-            || !native.design_entity_headers.is_empty()
-            || !native.design_parameters.is_empty()
-        {
-            t.insert("design_records");
-        }
-        if !native.asm_histories.is_empty() {
-            t.insert("history");
-        }
-        t
-    }
-
-    /// The floor the fixture set must collectively cover. Every listed region is
-    /// claimed PINNED in the module ledger; this test proves each is populated by
-    /// at least one fixture from live decode output.
-    const REQUIRED_REGIONS: &[&str] = &[
-        "appearances",
-        "attributes",
-        "coedges",
-        "containers",
-        "design_records",
-        "edges",
-        "faces",
-        "history",
-        "loops",
-        "nurbs_curve_carrier",
-        "nurbs_surface_carrier",
-        "passthrough_unknowns",
-        "pcurve_carrier",
-        "points",
-        "procedural_curve_carrier",
-        "procedural_surface_carrier",
-        "vertices",
-    ];
-
-    #[test]
-    fn emit_region_coverage() {
-        let mut covered = BTreeSet::new();
-        let mut per_fixture = Vec::new();
-        for (name, bytes) in fixtures() {
-            if let Ok(result) = decode_result(&bytes) {
-                let tags = coverage_tags(&result);
-                covered.extend(tags.iter().copied());
-                per_fixture.push((name, tags));
-            } else {
-                per_fixture.push((name, BTreeSet::new()));
-            }
-        }
-        let missing: Vec<&str> = REQUIRED_REGIONS
-            .iter()
-            .copied()
-            .filter(|region| !covered.contains(region))
-            .collect();
-        println!(
-            "emit.rs region coverage: {}/{} required regions",
-            REQUIRED_REGIONS.len() - missing.len(),
-            REQUIRED_REGIONS.len()
-        );
-        for (name, tags) in &per_fixture {
-            println!("  {name}: {tags:?}");
-        }
-        assert!(
-            missing.is_empty(),
-            "ledger claims these regions pinned but no fixture populates them: {missing:?}"
-        );
-    }
+#[test]
+fn colliding_body_keys_bind_the_smallest_body() {
+    let body_keys = [
+        (
+            cadmpeg_ir::ids::BodyId("f3d:brep/b.smbh/brep:entity#1".into()),
+            7u64,
+        ),
+        (
+            cadmpeg_ir::ids::BodyId("f3d:brep/a.smbh/brep:entity#1".into()),
+            7u64,
+        ),
+        (
+            cadmpeg_ir::ids::BodyId("f3d:brep/c.smbh/brep:entity#1".into()),
+            9u64,
+        ),
+    ]
+    .into_iter()
+    .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(
+        crate::materials::body_for_key(&body_keys, 7).map(|body| body.0),
+        Some("f3d:brep/a.smbh/brep:entity#1".to_owned())
+    );
+    assert_eq!(
+        crate::materials::body_for_key(&body_keys, 9).map(|body| body.0),
+        Some("f3d:brep/c.smbh/brep:entity#1".to_owned())
+    );
+    assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

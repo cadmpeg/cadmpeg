@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -9,7 +9,6 @@
         "attributes": [],
         "bodies": [],
         "coedges": [],
-        "components": [],
         "configurations": [],
         "curves": [],
         "drawings": [],
@@ -26,8 +25,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [],
         "semantic_annotations": [],
         "shells": [],
@@ -130,10 +128,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "267",
+          "file_size": "261",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "253",
+          "footer_offset": "247",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_test",
@@ -156,14 +154,13 @@
       "geometry_transferred": false,
       "losses": [
         {
-          "category": "geometry",
           "code": "geometry_not_transferred",
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 253, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_test"
       ]
@@ -245,11 +242,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 177,
+        "compressed_size": 171,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 177
+        "uncompressed_size": 171
       },
       {
         "attributes": {
@@ -282,7 +279,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 253, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_test"
     ]

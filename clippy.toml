@@ -5,4 +5,5 @@ disallowed-methods = [
   "alloc::vec::Vec::resize",
   "alloc::vec::Vec::resize_with",
   "core::iter::repeat_n",
+  "std::io::Read::read_to_end",
 ]

@@ -7,6 +7,8 @@ use std::collections::{HashMap, HashSet};
 #[cfg(test)]
 use std::mem::size_of;
 
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
+
 use crate::catalog;
 use crate::container;
 use crate::entity_table;
@@ -157,7 +159,8 @@ const CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION: u32 = 206;
 #[cfg(test)]
 const CATIA_OBJECT_GRAPH_SEGMENT_VERSION: u32 = 208;
 
-const CATIA_ARENA_NAMES: &[&str] = &[
+/// Complete CATIA native arena manifest in lexical order.
+pub(crate) const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
@@ -5012,6 +5015,698 @@ pub struct CatiaNative {
     #[serde(default)]
     pub zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence>,
 }
+/// Owning, flattened arena payload shared by borrowed and consuming stores.
+pub(crate) struct CatiaArenaProjection {
+    alias_rows: Vec<CatiaAliasRow>,
+    catalogs: Vec<CatiaCatalog>,
+    consolidated_circles: Vec<CatiaConsolidatedCircle>,
+    consolidated_class61_records: Vec<CatiaConsolidatedClass61Record>,
+    consolidated_cone_faces: Vec<CatiaConsolidatedConeFace>,
+    consolidated_cones: Vec<CatiaConsolidatedCone>,
+    consolidated_cylinders: Vec<CatiaConsolidatedCylinder>,
+    consolidated_embedded_cylinders: Vec<CatiaConsolidatedEmbeddedCylinder>,
+    consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode>,
+    consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun>,
+    consolidated_groups: Vec<CatiaConsolidatedGroup>,
+    consolidated_line_profiles: Vec<CatiaConsolidatedLineProfile>,
+    consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket>,
+    consolidated_parameter_points: Vec<CatiaConsolidatedParameterPoint>,
+    consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
+    consolidated_reference_lists: Vec<CatiaConsolidatedReferenceList>,
+    consolidated_revolutions: Vec<CatiaConsolidatedRevolution>,
+    consolidated_spheres: Vec<CatiaConsolidatedSphere>,
+    consolidated_tori: Vec<CatiaConsolidatedTorus>,
+    consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity>,
+    configuration_row_chains: Vec<CatiaConfigurationRowChain>,
+    design_objects: Vec<CatiaDesignObject>,
+    entity_records: Vec<CatiaEntityRecord>,
+    external_references: Vec<CatiaExternalReference>,
+    finjpl_segments: Vec<CatiaFinjplSegment>,
+    legacy_entity_runs: Vec<CatiaLegacyEntityRun>,
+    object_graphs: Vec<CatiaObjectGraph>,
+    preview_images: Vec<CatiaPreviewImage>,
+    reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort>,
+    value_blocks: Vec<CatiaValueBlock>,
+    zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride>,
+    zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair>,
+    zero_entity_ownership_roots: Vec<CatiaZeroEntityOwnershipRoot>,
+    zero_entity_endpoint_pair_candidates: Vec<CatiaZeroEntityEndpointPairCandidate>,
+    zero_entity_records: Vec<CatiaZeroEntityRecord>,
+    zero_entity_support_runs: Vec<CatiaZeroEntitySupportRun>,
+    zero_entity_endpoint_locus_candidates: Vec<CatiaZeroEntityEndpointLocusCandidate>,
+    zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence>,
+    catalog_entries: Vec<CatiaCatalogEntry>,
+    object_graph_records: Vec<CatiaObjectRecord>,
+    value_schema_selections: Vec<CatiaValueSchemaSelection>,
+}
+
+impl From<&CatiaNative> for CatiaArenaProjection {
+    fn from(native: &CatiaNative) -> Self {
+        let mut catalogs = native.catalogs.clone();
+        let catalog_entries = catalogs
+            .iter_mut()
+            .flat_map(|catalog| std::mem::take(&mut catalog.entries))
+            .collect();
+        let mut object_graphs = native.object_graphs.clone();
+        let object_graph_records = object_graphs
+            .iter_mut()
+            .flat_map(|graph| std::mem::take(&mut graph.records))
+            .collect();
+        let mut value_blocks = native.value_blocks.clone();
+        let value_schema_selections = value_blocks
+            .iter_mut()
+            .flat_map(|block| std::mem::take(&mut block.schema_selections))
+            .collect();
+        Self {
+            alias_rows: native.alias_rows.clone(),
+            catalogs,
+            consolidated_circles: native.consolidated_circles.clone(),
+            consolidated_class61_records: native.consolidated_class61_records.clone(),
+            consolidated_cone_faces: native.consolidated_cone_faces.clone(),
+            consolidated_cones: native.consolidated_cones.clone(),
+            consolidated_cylinders: native.consolidated_cylinders.clone(),
+            consolidated_embedded_cylinders: native.consolidated_embedded_cylinders.clone(),
+            consolidated_edge_nodes: native.consolidated_edge_nodes.clone(),
+            consolidated_edge_runs: native.consolidated_edge_runs.clone(),
+            consolidated_groups: native.consolidated_groups.clone(),
+            consolidated_line_profiles: native.consolidated_line_profiles.clone(),
+            consolidated_owner_packets: native.consolidated_owner_packets.clone(),
+            consolidated_parameter_points: native.consolidated_parameter_points.clone(),
+            consolidated_pcurves: native.consolidated_pcurves.clone(),
+            consolidated_reference_lists: native.consolidated_reference_lists.clone(),
+            consolidated_revolutions: native.consolidated_revolutions.clone(),
+            consolidated_spheres: native.consolidated_spheres.clone(),
+            consolidated_tori: native.consolidated_tori.clone(),
+            consolidated_vertex_identities: native.consolidated_vertex_identities.clone(),
+            configuration_row_chains: native.configuration_row_chains.clone(),
+            design_objects: native.design_objects.clone(),
+            entity_records: native.entity_records.clone(),
+            external_references: native.external_references.clone(),
+            finjpl_segments: native.finjpl_segments.clone(),
+            legacy_entity_runs: native.legacy_entity_runs.clone(),
+            object_graphs,
+            preview_images: native.preview_images.clone(),
+            reference_signature_cohorts: native.reference_signature_cohorts.clone(),
+            value_blocks,
+            zero_entity_edge_strides: native.zero_entity_edge_strides.clone(),
+            zero_entity_oriented_use_pairs: native.zero_entity_oriented_use_pairs.clone(),
+            zero_entity_ownership_roots: native.zero_entity_ownership_roots.clone(),
+            zero_entity_endpoint_pair_candidates: native
+                .zero_entity_endpoint_pair_candidates
+                .clone(),
+            zero_entity_records: native.zero_entity_records.clone(),
+            zero_entity_support_runs: native.zero_entity_support_runs.clone(),
+            zero_entity_endpoint_locus_candidates: native
+                .zero_entity_endpoint_locus_candidates
+                .clone(),
+            zero_entity_vertex_incidences: native.zero_entity_vertex_incidences.clone(),
+            catalog_entries,
+            object_graph_records,
+            value_schema_selections,
+        }
+    }
+}
+
+impl From<CatiaNative> for CatiaArenaProjection {
+    fn from(mut native: CatiaNative) -> Self {
+        let catalog_entries = native
+            .catalogs
+            .iter_mut()
+            .flat_map(|catalog| std::mem::take(&mut catalog.entries))
+            .collect();
+        let object_graph_records = native
+            .object_graphs
+            .iter_mut()
+            .flat_map(|graph| std::mem::take(&mut graph.records))
+            .collect();
+        let value_schema_selections = native
+            .value_blocks
+            .iter_mut()
+            .flat_map(|block| std::mem::take(&mut block.schema_selections))
+            .collect();
+        Self {
+            alias_rows: native.alias_rows,
+            catalogs: native.catalogs,
+            consolidated_circles: native.consolidated_circles,
+            consolidated_class61_records: native.consolidated_class61_records,
+            consolidated_cone_faces: native.consolidated_cone_faces,
+            consolidated_cones: native.consolidated_cones,
+            consolidated_cylinders: native.consolidated_cylinders,
+            consolidated_embedded_cylinders: native.consolidated_embedded_cylinders,
+            consolidated_edge_nodes: native.consolidated_edge_nodes,
+            consolidated_edge_runs: native.consolidated_edge_runs,
+            consolidated_groups: native.consolidated_groups,
+            consolidated_line_profiles: native.consolidated_line_profiles,
+            consolidated_owner_packets: native.consolidated_owner_packets,
+            consolidated_parameter_points: native.consolidated_parameter_points,
+            consolidated_pcurves: native.consolidated_pcurves,
+            consolidated_reference_lists: native.consolidated_reference_lists,
+            consolidated_revolutions: native.consolidated_revolutions,
+            consolidated_spheres: native.consolidated_spheres,
+            consolidated_tori: native.consolidated_tori,
+            consolidated_vertex_identities: native.consolidated_vertex_identities,
+            configuration_row_chains: native.configuration_row_chains,
+            design_objects: native.design_objects,
+            entity_records: native.entity_records,
+            external_references: native.external_references,
+            finjpl_segments: native.finjpl_segments,
+            legacy_entity_runs: native.legacy_entity_runs,
+            object_graphs: native.object_graphs,
+            preview_images: native.preview_images,
+            reference_signature_cohorts: native.reference_signature_cohorts,
+            value_blocks: native.value_blocks,
+            zero_entity_edge_strides: native.zero_entity_edge_strides,
+            zero_entity_oriented_use_pairs: native.zero_entity_oriented_use_pairs,
+            zero_entity_ownership_roots: native.zero_entity_ownership_roots,
+            zero_entity_endpoint_pair_candidates: native.zero_entity_endpoint_pair_candidates,
+            zero_entity_records: native.zero_entity_records,
+            zero_entity_support_runs: native.zero_entity_support_runs,
+            zero_entity_endpoint_locus_candidates: native.zero_entity_endpoint_locus_candidates,
+            zero_entity_vertex_incidences: native.zero_entity_vertex_incidences,
+            catalog_entries,
+            object_graph_records,
+            value_schema_selections,
+        }
+    }
+}
+
+type CatiaFamilyRow = FamilyRow<CatiaArenaProjection, (), cadmpeg_ir::NativeNamespace, ()>;
+
+/// Declarative CATIA native-family catalogue.
+pub(crate) const CATIA_FAMILIES: &[CatiaFamilyRow] = &[
+    CatiaFamilyRow {
+        arena: "alias_rows",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| namespace.set_arena(row.arena, &projection.alias_rows),
+        len: |projection| projection.alias_rows.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "catalogs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| namespace.set_arena(row.arena, &projection.catalogs),
+        len: |projection| projection.catalogs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_circles",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_circles)
+        },
+        len: |projection| projection.consolidated_circles.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_class61_records",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_class61_records)
+        },
+        len: |projection| projection.consolidated_class61_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_cone_faces",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_cone_faces)
+        },
+        len: |projection| projection.consolidated_cone_faces.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_cones",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_cones)
+        },
+        len: |projection| projection.consolidated_cones.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_cylinders",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_cylinders)
+        },
+        len: |projection| projection.consolidated_cylinders.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_embedded_cylinders",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_embedded_cylinders)
+        },
+        len: |projection| projection.consolidated_embedded_cylinders.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_edge_nodes",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_edge_nodes)
+        },
+        len: |projection| projection.consolidated_edge_nodes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_edge_runs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_edge_runs)
+        },
+        len: |projection| projection.consolidated_edge_runs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_groups",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_groups)
+        },
+        len: |projection| projection.consolidated_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_line_profiles",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_line_profiles)
+        },
+        len: |projection| projection.consolidated_line_profiles.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_owner_packets",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_owner_packets)
+        },
+        len: |projection| projection.consolidated_owner_packets.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_parameter_points",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_parameter_points)
+        },
+        len: |projection| projection.consolidated_parameter_points.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_pcurves",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_pcurves)
+        },
+        len: |projection| projection.consolidated_pcurves.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_reference_lists",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_reference_lists)
+        },
+        len: |projection| projection.consolidated_reference_lists.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_revolutions",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_revolutions)
+        },
+        len: |projection| projection.consolidated_revolutions.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_spheres",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_spheres)
+        },
+        len: |projection| projection.consolidated_spheres.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_tori",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_tori)
+        },
+        len: |projection| projection.consolidated_tori.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_vertex_identities",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_vertex_identities)
+        },
+        len: |projection| projection.consolidated_vertex_identities.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "configuration_row_chains",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.configuration_row_chains)
+        },
+        len: |projection| projection.configuration_row_chains.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "design_objects",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.design_objects)
+        },
+        len: |projection| projection.design_objects.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "entity_records",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.entity_records)
+        },
+        len: |projection| projection.entity_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "external_references",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.external_references)
+        },
+        len: |projection| projection.external_references.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "finjpl_segments",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.finjpl_segments)
+        },
+        len: |projection| projection.finjpl_segments.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "legacy_entity_runs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.legacy_entity_runs)
+        },
+        len: |projection| projection.legacy_entity_runs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "object_graphs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.object_graphs)
+        },
+        len: |projection| projection.object_graphs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "preview_images",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.preview_images)
+        },
+        len: |projection| projection.preview_images.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "reference_signature_cohorts",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.reference_signature_cohorts)
+        },
+        len: |projection| projection.reference_signature_cohorts.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "value_blocks",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| namespace.set_arena(row.arena, &projection.value_blocks),
+        len: |projection| projection.value_blocks.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_edge_strides",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_edge_strides)
+        },
+        len: |projection| projection.zero_entity_edge_strides.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_oriented_use_pairs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_oriented_use_pairs)
+        },
+        len: |projection| projection.zero_entity_oriented_use_pairs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_ownership_roots",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_ownership_roots)
+        },
+        len: |projection| projection.zero_entity_ownership_roots.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_endpoint_pair_candidates",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_endpoint_pair_candidates)
+        },
+        len: |projection| projection.zero_entity_endpoint_pair_candidates.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_records",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_records)
+        },
+        len: |projection| projection.zero_entity_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_support_runs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_support_runs)
+        },
+        len: |projection| projection.zero_entity_support_runs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_endpoint_locus_candidates",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_endpoint_locus_candidates)
+        },
+        len: |projection| projection.zero_entity_endpoint_locus_candidates.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_vertex_incidences",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_vertex_incidences)
+        },
+        len: |projection| projection.zero_entity_vertex_incidences.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "catalog_entries",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.catalog_entries)
+        },
+        len: |projection| projection.catalog_entries.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "object_graph_records",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.object_graph_records)
+        },
+        len: |projection| projection.object_graph_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "value_schema_selections",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.value_schema_selections)
+        },
+        len: |projection| projection.value_schema_selections.len(),
+        counts_toward_emptiness: true,
+    },
+];
+
+const CATIA_CATALOGUE: Catalogue<
+    'static,
+    CatiaArenaProjection,
+    (),
+    cadmpeg_ir::NativeNamespace,
+    (),
+> = Catalogue::new(
+    CATIA_FAMILIES,
+    VersionContract {
+        minimum: 0,
+        maximum: u32::MAX,
+    },
+);
+
+fn store_projection(
+    projection: &CatiaArenaProjection,
+    namespace: &mut cadmpeg_ir::NativeNamespace,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    namespace.version = CATIA_NATIVE_VERSION;
+    CATIA_CATALOGUE.emit_all(projection, namespace)?;
+    debug_assert!(CATIA_ARENA_NAMES
+        .iter()
+        .all(|name| namespace.arenas.contains_key(*name)));
+    Ok(())
+}
 
 impl Default for CatiaNative {
     fn default() -> Self {
@@ -5539,7 +6234,7 @@ fn valid_legacy_relation_field_pair(
 fn validate_legacy_entity_runs(
     runs: &[CatiaLegacyEntityRun],
     require_field_codes: bool,
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let mut previous_end = None;
     for (index, run) in runs.iter().enumerate() {
         let run_end = run.byte_offset.checked_add(run.byte_len);
@@ -5855,12 +6550,10 @@ fn validate_legacy_entity_runs(
                     }
             });
         if !valid {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "legacy entity run `{}` has an invalid identity sequence",
-                    run.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "legacy entity run `{}` has an invalid identity sequence",
+                run.id
+            )));
         }
         previous_end = run_end;
     }
@@ -6781,7 +7474,7 @@ fn native_consolidated_support_binding(
 #[cfg(test)]
 fn validate_consolidated_class61_records(
     records: &[CatiaConsolidatedClass61Record],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, record) in records.iter().enumerate() {
         let expected_id = format!("catia:consolidated:class61-record#{index}");
         let valid_payload = match &record.payload {
@@ -6800,12 +7493,10 @@ fn validate_consolidated_class61_records(
             || !valid_payload
             || index > 0 && records[index - 1].byte_offset >= record.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated class-0x61 record `{}` is structurally invalid",
-                    record.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated class-0x61 record `{}` is structurally invalid",
+                record.id
+            )));
         }
     }
     Ok(())
@@ -6814,15 +7505,16 @@ fn validate_consolidated_class61_records(
 #[cfg(test)]
 fn validate_consolidated_groups(
     groups: &[CatiaConsolidatedGroup],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, group) in groups.iter().enumerate() {
         let expected_id = format!("catia:consolidated:group#{index}");
         if group.id != expected_id
             || index > 0 && groups[index - 1].byte_offset >= group.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("consolidated group `{}` is structurally invalid", group.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated group `{}` is structurally invalid",
+                group.id
+            )));
         }
     }
     Ok(())
@@ -6832,7 +7524,7 @@ fn validate_consolidated_groups(
 fn validate_consolidated_cone_faces(
     faces: &[CatiaConsolidatedConeFace],
     parameter_points: &[CatiaConsolidatedParameterPoint],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let points_by_id = parameter_points
         .iter()
         .map(|point| (point.id.as_str(), point))
@@ -6862,12 +7554,10 @@ fn validate_consolidated_cone_faces(
             || !parameter_run_valid
             || index > 0 && faces[index - 1].byte_offset >= face.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated cone-face descriptor `{}` is structurally invalid",
-                    face.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated cone-face descriptor `{}` is structurally invalid",
+                face.id
+            )));
         }
     }
     Ok(())
@@ -6876,7 +7566,7 @@ fn validate_consolidated_cone_faces(
 #[cfg(test)]
 fn validate_consolidated_pcurves(
     pcurves: &[CatiaConsolidatedPcurve],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, pcurve) in pcurves.iter().enumerate() {
         let expected_id = format!("catia:consolidated:pcurve#{index}");
         let count = pcurve.knots.len();
@@ -6899,12 +7589,10 @@ fn validate_consolidated_pcurves(
             || !matches!(pcurve.tail.as_slice(), [0x07] | [0x07, 0x00])
             || index > 0 && pcurves[index - 1].byte_offset >= pcurve.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated pcurve `{}` is structurally invalid",
-                    pcurve.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated pcurve `{}` is structurally invalid",
+                pcurve.id
+            )));
         }
     }
     Ok(())
@@ -6913,7 +7601,7 @@ fn validate_consolidated_pcurves(
 #[cfg(test)]
 fn validate_consolidated_circles(
     circles: &[CatiaConsolidatedCircle],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, circle) in circles.iter().enumerate() {
         let full_circle =
             crate::families::b2::records::circle_range_is_full_turn(circle.radius, circle.range);
@@ -6937,12 +7625,10 @@ fn validate_consolidated_circles(
             || circle.full_circle != full_circle
             || index > 0 && circles[index - 1].byte_offset >= circle.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated circle `{}` is structurally invalid",
-                    circle.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated circle `{}` is structurally invalid",
+                circle.id
+            )));
         }
     }
     Ok(())
@@ -6951,7 +7637,7 @@ fn validate_consolidated_circles(
 #[cfg(test)]
 fn validate_consolidated_cones(
     cones: &[CatiaConsolidatedCone],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, cone) in cones.iter().enumerate() {
         let expected_id = format!("catia:consolidated:cone#{index}");
         let dot = |first: [f64; 3], second: [f64; 3]| {
@@ -6999,9 +7685,10 @@ fn validate_consolidated_cones(
             || cone.angular_scale <= 0.0
             || index > 0 && cones[index - 1].byte_offset >= cone.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("consolidated cone `{}` is structurally invalid", cone.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated cone `{}` is structurally invalid",
+                cone.id
+            )));
         }
     }
     Ok(())
@@ -7010,7 +7697,7 @@ fn validate_consolidated_cones(
 #[cfg(test)]
 fn validate_consolidated_cylinders(
     cylinders: &[CatiaConsolidatedCylinder],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, cylinder) in cylinders.iter().enumerate() {
         let expected_id = format!("catia:consolidated:cylinder#{index}");
         let squared_length =
@@ -7090,12 +7777,10 @@ fn validate_consolidated_cylinders(
             || !payload_valid
             || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated cylinder `{}` is structurally invalid",
-                    cylinder.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated cylinder `{}` is structurally invalid",
+                cylinder.id
+            )));
         }
     }
     Ok(())
@@ -7105,7 +7790,7 @@ fn validate_consolidated_cylinders(
 fn validate_consolidated_embedded_cylinders(
     cylinders: &[CatiaConsolidatedEmbeddedCylinder],
     groups: &[CatiaConsolidatedGroup],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let groups = groups
         .iter()
         .enumerate()
@@ -7156,12 +7841,10 @@ fn validate_consolidated_embedded_cylinders(
             )
             || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated embedded cylinder `{}` is structurally invalid",
-                    cylinder.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated embedded cylinder `{}` is structurally invalid",
+                cylinder.id
+            )));
         }
     }
     Ok(())
@@ -7170,7 +7853,7 @@ fn validate_consolidated_embedded_cylinders(
 #[cfg(test)]
 fn validate_consolidated_parameter_points(
     points: &[CatiaConsolidatedParameterPoint],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, point) in points.iter().enumerate() {
         let payload_valid = match &point.payload {
             CatiaConsolidatedParameterPointPayload::Uv { uv } => {
@@ -7192,12 +7875,10 @@ fn validate_consolidated_parameter_points(
             || !payload_valid
             || index > 0 && points[index - 1].byte_offset >= point.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated parameter point `{}` is structurally invalid",
-                    point.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated parameter point `{}` is structurally invalid",
+                point.id
+            )));
         }
     }
     Ok(())
@@ -7206,18 +7887,16 @@ fn validate_consolidated_parameter_points(
 #[cfg(test)]
 fn validate_consolidated_reference_lists(
     lists: &[CatiaConsolidatedReferenceList],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, list) in lists.iter().enumerate() {
         if list.id != format!("catia:consolidated:reference-list#{index}")
             || list.references.is_empty()
             || index > 0 && lists[index - 1].byte_offset >= list.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated reference list `{}` is structurally invalid",
-                    list.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated reference list `{}` is structurally invalid",
+                list.id
+            )));
         }
     }
     Ok(())
@@ -7227,7 +7906,7 @@ fn validate_consolidated_reference_lists(
 fn validate_consolidated_revolutions(
     revolutions: &[CatiaConsolidatedRevolution],
     circles: &[CatiaConsolidatedCircle],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, revolution) in revolutions.iter().enumerate() {
         let mut profile_candidates = circles.iter().filter(|circle| {
             circle.range[0].to_bits() == revolution.profile_range[0].to_bits()
@@ -7288,12 +7967,10 @@ fn validate_consolidated_revolutions(
                 != std::f64::consts::TAU
             || index > 0 && revolutions[index - 1].byte_offset >= revolution.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated revolution `{}` is structurally invalid",
-                    revolution.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated revolution `{}` is structurally invalid",
+                revolution.id
+            )));
         }
     }
     Ok(())
@@ -7302,7 +7979,7 @@ fn validate_consolidated_revolutions(
 #[cfg(test)]
 fn validate_consolidated_line_profiles(
     lines: &[CatiaConsolidatedLineProfile],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, line) in lines.iter().enumerate() {
         let squared_length = line
             .direction
@@ -7320,12 +7997,10 @@ fn validate_consolidated_line_profiles(
             || line.range[0] >= line.range[1]
             || index > 0 && lines[index - 1].byte_offset >= line.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated line profile `{}` is structurally invalid",
-                    line.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated line profile `{}` is structurally invalid",
+                line.id
+            )));
         }
     }
     Ok(())
@@ -7334,7 +8009,7 @@ fn validate_consolidated_line_profiles(
 #[cfg(test)]
 fn validate_consolidated_spheres(
     spheres: &[CatiaConsolidatedSphere],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, sphere) in spheres.iter().enumerate() {
         let expected_id = format!("catia:consolidated:sphere#{index}");
         let dot = |first: [f64; 3], second: [f64; 3]| {
@@ -7376,12 +8051,10 @@ fn validate_consolidated_spheres(
             )
             || index > 0 && spheres[index - 1].byte_offset >= sphere.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated sphere `{}` is structurally invalid",
-                    sphere.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated sphere `{}` is structurally invalid",
+                sphere.id
+            )));
         }
     }
     Ok(())
@@ -7390,7 +8063,7 @@ fn validate_consolidated_spheres(
 #[cfg(test)]
 fn validate_consolidated_tori(
     tori: &[CatiaConsolidatedTorus],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, torus) in tori.iter().enumerate() {
         let expected_id = format!("catia:consolidated:torus#{index}");
         let dot = |first: [f64; 3], second: [f64; 3]| {
@@ -7446,9 +8119,10 @@ fn validate_consolidated_tori(
             || torus.minor_scale <= 0.0
             || index > 0 && tori[index - 1].byte_offset >= torus.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("consolidated torus `{}` is structurally invalid", torus.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated torus `{}` is structurally invalid",
+                torus.id
+            )));
         }
     }
     Ok(())
@@ -7458,7 +8132,7 @@ fn validate_consolidated_tori(
 fn validate_zero_entity_support_runs(
     runs: &[CatiaZeroEntitySupportRun],
     records: &[CatiaZeroEntityRecord],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let face_count = runs.iter().filter(|run| run.face.is_some()).count();
     let face_roster_valid = face_count == 0 || face_count == runs.len();
     let expected_loop_count = runs
@@ -7762,12 +8436,10 @@ fn validate_zero_entity_support_runs(
                 && (runs[index - 1].carrier_byte_offset >= run.carrier_byte_offset
                     || runs[index - 1].carrier_record_ordinal >= run.carrier_record_ordinal)
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "zero-entity support run `{}` is structurally invalid",
-                    run.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "zero-entity support run `{}` is structurally invalid",
+                run.id
+            )));
         }
     }
     Ok(())
@@ -7898,10 +8570,10 @@ fn validate_zero_entity_model_curve(
 fn validate_zero_entity_endpoint_pair_candidates(
     endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let expected = zero_entity_endpoint_pair_candidates(derived_zero_entity_endpoint_pairs(runs));
     if endpoint_pairs != expected {
-        return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity endpoint-pair candidates disagree with their radial support occurrences"
                 .to_string(),
         ));
@@ -7952,14 +8624,14 @@ fn validate_zero_entity_endpoint_locus_candidates(
     endpoint_loci: &[CatiaZeroEntityEndpointLocusCandidate],
     endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let derived_pairs = derived_zero_entity_endpoint_pairs(runs);
     let expected = zero_entity_endpoint_locus_candidates(
         crate::families::zero_entity::topology::endpoint_locus_candidates(&derived_pairs),
         endpoint_pairs,
     );
     if endpoint_loci != expected {
-        return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity endpoint-locus candidates disagree with their endpoint-pair endpoints"
                 .to_string(),
         ));
@@ -7987,7 +8659,7 @@ fn zero_entity_vertex_owner(
 #[cfg(test)]
 fn validate_zero_entity_records(
     records: &[CatiaZeroEntityRecord],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let valid = records.iter().enumerate().all(|(index, record)| {
         let ordinal = u32::try_from(index)
             .ok()
@@ -8000,7 +8672,7 @@ fn validate_zero_entity_records(
     if valid {
         Ok(())
     } else {
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity record namespace is structurally invalid".to_string(),
         ))
     }
@@ -8011,7 +8683,7 @@ fn validate_zero_entity_ownership_roots(
     roots: &[CatiaZeroEntityOwnershipRoot],
     support_runs: &[CatiaZeroEntitySupportRun],
     records: &[CatiaZeroEntityRecord],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let bound_face_count = support_runs.iter().filter(|run| run.face.is_some()).count();
     let valid = roots.len() <= 1
         && roots.iter().all(|root| {
@@ -8051,7 +8723,7 @@ fn validate_zero_entity_ownership_roots(
     if valid {
         Ok(())
     } else {
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity ownership root is structurally invalid".to_string(),
         ))
     }
@@ -8063,7 +8735,7 @@ fn validate_zero_entity_topology_records(
     oriented_use_pairs: &[CatiaZeroEntityOrientedUsePair],
     vertex_incidences: &[CatiaZeroEntityVertexIncidence],
     records: &[CatiaZeroEntityRecord],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let edge_strides_valid = edge_strides.iter().enumerate().all(|(index, record)| {
         record.id == format!("catia:zero-entity:edge-stride#{index}")
             && record.record_ordinal != 0
@@ -8128,7 +8800,7 @@ fn validate_zero_entity_topology_records(
     if edge_strides_valid && pairs_valid && incidences_valid {
         Ok(())
     } else {
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity topology records are structurally invalid".to_string(),
         ))
     }
@@ -8137,7 +8809,7 @@ fn validate_zero_entity_topology_records(
 #[cfg(test)]
 fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, packet) in packets.iter().enumerate() {
         let valid_link = packet.allocation_link.is_none_or(|link| {
             link.byte_offset.checked_add(link.byte_len) == Some(packet.byte_offset)
@@ -8165,12 +8837,10 @@ fn validate_consolidated_owner_packets(
             || !valid_link
             || index > 0 && packets[index - 1].byte_offset >= packet.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated owner packet `{}` is structurally invalid",
-                    packet.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated owner packet `{}` is structurally invalid",
+                packet.id
+            )));
         }
     }
     Ok(())
@@ -8194,7 +8864,7 @@ fn validate_consolidated_edge_runs(
     supports: &ConsolidatedSupportArenas<'_>,
     nodes: &[CatiaConsolidatedEdgeNode],
     vertex_identities: &[CatiaConsolidatedVertexIdentity],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let pcurves = pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
@@ -8328,12 +8998,10 @@ fn validate_consolidated_edge_runs(
             || !class25_descriptor_valid
             || index > 0 && nodes[index - 1].byte_offset >= node.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated edge node `{}` is structurally invalid",
-                    node.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated edge node `{}` is structurally invalid",
+                node.id
+            )));
         }
     }
     for (index, run) in runs.iter().enumerate() {
@@ -8347,20 +9015,16 @@ fn validate_consolidated_edge_runs(
             .each_ref()
             .map(|id| pcurves.get(id.as_str()).map(|pcurve| pcurve.range));
         let Some(node) = nodes_by_id.get(run.node.as_str()) else {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated edge run `{}` references missing node `{}`",
-                    run.id, run.node
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated edge run `{}` references missing node `{}`",
+                run.id, run.node
+            )));
         };
         if !run_nodes.insert(run.node.as_str()) {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "consolidated edge node `{}` belongs to multiple runs",
-                    run.node
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated edge node `{}` belongs to multiple runs",
+                run.node
+            )));
         }
         let loci_valid = run.shared_loci.as_ref().map_or_else(
             || run.endpoint_loci.is_none(),
@@ -8417,15 +9081,16 @@ fn validate_consolidated_edge_runs(
             || !loci_valid
             || index > 0 && runs[index - 1].byte_offset >= run.byte_offset
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("consolidated edge run `{}` is structurally invalid", run.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated edge run `{}` is structurally invalid",
+                run.id
+            )));
         }
     }
     let mut expected_nodes = nodes.to_vec();
     let expected_identities = consolidated_vertex_identities(&mut expected_nodes);
     if expected_nodes != nodes || expected_identities != vertex_identities {
-        return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "consolidated vertex identities disagree with edge incidence".to_string(),
         ));
     }
@@ -8543,19 +9208,21 @@ fn validate_native_links(
     graphs: &[CatiaObjectGraph],
     segments: &[CatiaFinjplSegment],
     value_blocks: &[CatiaValueBlock],
-) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for catalog in catalogs {
         let count_width = if catalog.declared_count <= 0x50 { 1 } else { 2 };
         let Some(mut expected_offset) = catalog.byte_offset.checked_add(6 + count_width) else {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("catalog `{}` has an overflowing extent", catalog.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "catalog `{}` has an overflowing extent",
+                catalog.id
+            )));
         };
         let catalog_end = catalog.byte_offset.checked_add(catalog.byte_len);
         if catalog.id != format!("catia:outer:catalog#{:010}", catalog.byte_offset) {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("catalog `{}` has an invalid source identity", catalog.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "catalog `{}` has an invalid source identity",
+                catalog.id
+            )));
         }
         for (index, entry) in catalog.entries.iter().enumerate() {
             let next_offset = catalog
@@ -8571,16 +9238,18 @@ fn validate_native_links(
                     matches!(encoded.checked_sub(value), Some(1 | 5))
                 })
             {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                    format!("catalog entry `{}` has an invalid source extent", entry.id),
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "catalog entry `{}` has an invalid source extent",
+                    entry.id
+                )));
             }
             expected_offset = next_offset.expect("validated catalog end");
         }
         if Some(expected_offset) != catalog_end {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("catalog `{}` entries do not cover its frame", catalog.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "catalog `{}` entries do not cover its frame",
+                catalog.id
+            )));
         }
     }
     for (index, segment) in segments.iter().enumerate() {
@@ -8595,43 +9264,38 @@ fn validate_native_links(
                     && finjpl_family(parsed.kind) == segment.family
                     && parsed.name == segment.name)
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "FINJPL segment `{}` has an invalid retained view",
-                    segment.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "FINJPL segment `{}` has an invalid retained view",
+                segment.id
+            )));
         }
     }
     if segments
         .windows(2)
         .any(|pair| pair[0].byte_offset.checked_add(pair[0].byte_len) != Some(pair[1].byte_offset))
     {
-        return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "CATIA FINJPL segment extents are not contiguous".to_string(),
         ));
     }
     for block in value_blocks {
         if block.id != format!("catia:outer:value-block#{:010}", block.byte_offset) {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("value block `{}` has an invalid source identity", block.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` has an invalid source identity",
+                block.id
+            )));
         }
         let Some(catalog) = catalogs.iter().find(|catalog| catalog.id == block.catalog) else {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "value block `{}` references missing catalog `{}`",
-                    block.id, block.catalog
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` references missing catalog `{}`",
+                block.id, block.catalog
+            )));
         };
         if block.byte_offset.checked_add(block.byte_len) != Some(catalog.byte_offset) {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "value block `{}` is not adjacent to catalog `{}`",
-                    block.id, block.catalog
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` is not adjacent to catalog `{}`",
+                block.id, block.catalog
+            )));
         }
         let payload_len = u64::try_from(block.payload.len()).ok();
         if block.declared_len.checked_add(1) != Some(block.byte_len)
@@ -8640,9 +9304,10 @@ fn validate_native_links(
             || value_schema_selections(&block.id, block.byte_offset, &block.fields, catalog)
                 != block.schema_selections
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("value block `{}` has an invalid derived view", block.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` has an invalid derived view",
+                block.id
+            )));
         }
         let mut adjacent_graphs = graphs.iter().filter(|graph| {
             graph.byte_offset.checked_add(graph.byte_len) == Some(block.byte_offset)
@@ -8651,50 +9316,50 @@ fn validate_native_links(
         if adjacent_graphs.next().is_some()
             || block.object_graph.as_deref() != adjacent_graph.map(|graph| graph.id.as_str())
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "value block `{}` has an invalid adjacent graph link",
-                    block.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` has an invalid adjacent graph link",
+                block.id
+            )));
         }
     }
     for graph in graphs {
         let Some(graph_end) = graph.byte_offset.checked_add(graph.byte_len) else {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("object graph `{}` has an overflowing extent", graph.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` has an overflowing extent",
+                graph.id
+            )));
         };
         let mut expected_record_offset = graph.byte_offset.checked_add(6);
         if graph.id != format!("catia:outer:object-graph#{:010}", graph.byte_offset) {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("object graph `{}` has an invalid source identity", graph.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` has an invalid source identity",
+                graph.id
+            )));
         }
         if graph.finjpl_segment.as_deref()
             != containing_finjpl_segment(graph.byte_offset, graph.byte_len, segments)
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "object graph `{}` has an invalid FINJPL segment link",
-                    graph.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` has an invalid FINJPL segment link",
+                graph.id
+            )));
         }
         for record in &graph.records {
             if Some(record.byte_offset) != expected_record_offset
                 || record.id != format!("catia:outer:object-record#{:010}", record.byte_offset)
             {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                    format!("object record `{}` has an invalid source extent", record.id),
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object record `{}` has an invalid source extent",
+                    record.id
+                )));
             }
             expected_record_offset = record.byte_offset.checked_add(record.byte_len);
         }
         if expected_record_offset != Some(graph_end) {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("object graph `{}` records do not cover its frame", graph.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` records do not cover its frame",
+                graph.id
+            )));
         }
         let mut candidates = catalogs
             .iter()
@@ -8712,12 +9377,10 @@ fn validate_native_links(
             || graph.catalog_byte_offset != catalog.map(|catalog| catalog.byte_offset)
             || graph.catalog.as_deref() != catalog.map(|catalog| catalog.id.as_str())
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "object graph `{}` has an invalid schema-catalog link",
-                    graph.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` has an invalid schema-catalog link",
+                graph.id
+            )));
         }
         for record in &graph.records {
             let expected_class = catalog.and_then(|catalog| {
@@ -8736,9 +9399,10 @@ fn validate_native_links(
                         catalog,
                     )
             {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                    format!("object record `{}` has an invalid schema class", record.id),
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object record `{}` has an invalid schema class",
+                    record.id
+                )));
             }
         }
     }
@@ -8764,9 +9428,10 @@ fn validate_native_links(
     };
     for alias in aliases {
         if alias.id != format!("catia:outer:alias-row#{:010}", alias.byte_offset) {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!("alias row `{}` has an invalid source identity", alias.id),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "alias row `{}` has an invalid source identity",
+                alias.id
+            )));
         }
         let expected = usize::from(alias.entity_record_ordinal)
             .checked_sub(1)
@@ -8792,20 +9457,19 @@ fn validate_native_links(
             },
         );
         if !valid {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "alias row `{}` has invalid graph, record, or design-object links",
-                    alias.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "alias row `{}` has invalid graph, record, or design-object links",
+                alias.id
+            )));
         }
         if let Some(group) = &alias.group {
             if group.target_slot != (u32::from(alias.f1[2]) | ((alias.f2 & 0x00ff_ffff) << 8))
                 || !object_graph::is_alias_group_storage_prefix(&group.storage_prefix)
             {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                    format!("alias row `{}` has invalid group storage", alias.id),
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "alias row `{}` has invalid group storage",
+                    alias.id
+                )));
             }
         }
     }
@@ -9215,8 +9879,8 @@ impl CatiaNative {
     /// Load the typed CATIA namespace from generic native arenas.
     #[cfg(test)]
     pub fn load(
-        namespace: &cadmpeg_ir::native::NativeNamespace,
-    ) -> Result<Self, cadmpeg_ir::native::NativeConvertError> {
+        namespace: &cadmpeg_ir::NativeNamespace,
+    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let mut catalogs: Vec<CatiaCatalog> = namespace.arena_as("catalogs")?;
         let entries: Vec<CatiaCatalogEntry> = namespace.arena_as("catalog_entries")?;
         let catalog_ids = catalogs
@@ -9224,7 +9888,7 @@ impl CatiaNative {
             .map(|catalog| catalog.id.as_str())
             .collect::<HashSet<_>>();
         if catalog_ids.len() != catalogs.len() {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "duplicate CATIA catalog identity".to_string(),
             ));
         }
@@ -9232,12 +9896,10 @@ impl CatiaNative {
             .iter()
             .find(|entry| !catalog_ids.contains(entry.parent.as_str()))
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "catalog entry `{}` references missing catalog `{}`",
-                    entry.id, entry.parent
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "catalog entry `{}` references missing catalog `{}`",
+                entry.id, entry.parent
+            )));
         }
         for catalog in &mut catalogs {
             catalog.entries = entries
@@ -9256,9 +9918,10 @@ impl CatiaNative {
                     .enumerate()
                     .any(|(ordinal, entry)| usize::try_from(entry.ordinal).ok() != Some(ordinal))
             {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                    format!("catalog `{}` has an invalid entry sequence", catalog.id),
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "catalog `{}` has an invalid entry sequence",
+                    catalog.id
+                )));
             }
         }
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
@@ -9383,7 +10046,7 @@ impl CatiaNative {
             .map(|graph| graph.id.as_str())
             .collect::<HashSet<_>>();
         if graph_ids.len() != graphs.len() {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "duplicate CATIA object-graph identity".to_string(),
             ));
         }
@@ -9391,12 +10054,10 @@ impl CatiaNative {
             .iter()
             .find(|record| !graph_ids.contains(record.parent.as_str()))
         {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "object record `{}` references missing graph `{}`",
-                    record.id, record.parent
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object record `{}` references missing graph `{}`",
+                record.id, record.parent
+            )));
         }
         let record_ids = records
             .iter()
@@ -9407,7 +10068,7 @@ impl CatiaNative {
             .map(|record| record.id.as_str())
             .collect::<HashSet<_>>();
         if record_ids.len() != records.len() || entity_record_ids.len() != entity_records.len() {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "duplicate CATIA object or entity-record identity".to_string(),
             ));
         }
@@ -9415,12 +10076,10 @@ impl CatiaNative {
             !graph_ids.contains(entity.object_graph.as_str())
                 || !record_ids.contains(entity.object_record.as_str())
         }) {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                format!(
-                    "entity record `{}` has a missing graph or object-record link",
-                    entity.id
-                ),
-            ));
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "entity record `{}` has a missing graph or object-record link",
+                entity.id
+            )));
         }
         let entity_classes_by_graph_identity = entity_class_index(&records);
         let (
@@ -9479,7 +10138,7 @@ impl CatiaNative {
         if namespace.version < CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION {
             reference_signature_cohorts = expected_reference_signature_cohorts;
         } else if reference_signature_cohorts != expected_reference_signature_cohorts {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "CATIA reference-signature cohorts are not canonical".to_string(),
             ));
         }
@@ -9630,7 +10289,7 @@ impl CatiaNative {
         if namespace.version < CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION {
             configuration_row_chains = expected_configuration_row_chains;
         } else if configuration_row_chains != expected_configuration_row_chains {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "configuration-row chains do not match their successor links".to_string(),
             ));
         }
@@ -9836,12 +10495,10 @@ impl CatiaNative {
                             .checked_add(1)
                     }) != Some(graph.byte_offset))
             {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                    format!(
-                        "object graph `{}` has an invalid entity-table sequence",
-                        graph.id
-                    ),
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object graph `{}` has an invalid entity-table sequence",
+                    graph.id
+                )));
             }
             let record_ids = graph
                 .records
@@ -9867,12 +10524,10 @@ impl CatiaNative {
                     .filter(|record| record.entity_id.is_some())
                     .count()
             {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                    format!(
-                        "object graph `{}` has duplicate entity identities",
-                        graph.id
-                    ),
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object graph `{}` has duplicate entity identities",
+                    graph.id
+                )));
             }
             for (ordinal, record) in graph.records.iter().enumerate() {
                 let expected_head_roles = object_graph::head_roles(record.lead, &record.head);
@@ -9932,9 +10587,10 @@ impl CatiaNative {
                             terminal_null_entity_id,
                         )
                 {
-                    return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                        format!("object graph `{}` has an invalid record sequence", graph.id),
-                    ));
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "object graph `{}` has an invalid record sequence",
+                        graph.id
+                    )));
                 }
             }
         }
@@ -9946,19 +10602,17 @@ impl CatiaNative {
             .map(|block| block.id.clone())
             .collect::<HashSet<_>>();
         if value_block_ids.len() != value_blocks.len() {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "duplicate CATIA value-block identity".to_string(),
             ));
         }
         let mut selections_by_block = HashMap::<String, Vec<CatiaValueSchemaSelection>>::new();
         for selection in value_schema_selections {
             if !value_block_ids.contains(&selection.parent) {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
-                    format!(
-                        "value selection `{}` references missing block `{}`",
-                        selection.id, selection.parent
-                    ),
-                ));
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "value selection `{}` references missing block `{}`",
+                    selection.id, selection.parent
+                )));
             }
             selections_by_block
                 .entry(selection.parent.clone())
@@ -10010,7 +10664,7 @@ impl CatiaNative {
                     .iter()
                     .any(|object| stored_by_id.get(object.id.as_str()).copied() != Some(object))
             {
-                return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                     "stored CATIA design objects disagree with their object graph".to_string(),
                 ));
             }
@@ -10038,7 +10692,7 @@ impl CatiaNative {
         external_references.sort_by_key(|reference| reference.byte_offset);
         let expected_external_references = external_reference_views(&finjpl_segments);
         if external_references != expected_external_references {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "stored CATIA external references disagree with their project-flags segments"
                     .to_string(),
             ));
@@ -10076,7 +10730,7 @@ impl CatiaNative {
                 .filter_map(|run| run.schema_program.as_mut())
             {
                 program.identifiers = legacy_schema_identifiers(program).ok_or_else(|| {
-                    cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+                    cadmpeg_ir::NativeConvertError::InvalidOwner(
                         "legacy schema-program offset exceeds the platform index range".to_string(),
                     )
                 })?;
@@ -10171,7 +10825,7 @@ impl CatiaNative {
         preview_images.sort_by_key(|preview| preview.byte_offset);
         let expected_preview_images = preview_views(&finjpl_segments);
         if preview_images != expected_preview_images {
-            return Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "stored CATIA previews disagree with their summary segments".to_string(),
             ));
         }
@@ -10360,272 +11014,17 @@ impl CatiaNative {
     #[cfg(test)]
     pub fn store(
         &self,
-        namespace: &mut cadmpeg_ir::native::NativeNamespace,
-    ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
-        namespace.version = CATIA_NATIVE_VERSION;
-        let catalogs = self
-            .catalogs
-            .iter()
-            .cloned()
-            .map(|mut catalog| {
-                catalog.entries.clear();
-                catalog
-            })
-            .collect::<Vec<_>>();
-        let entries = self
-            .catalogs
-            .iter()
-            .flat_map(|catalog| catalog.entries.iter().cloned())
-            .collect::<Vec<_>>();
-        let graphs = self
-            .object_graphs
-            .iter()
-            .cloned()
-            .map(|mut graph| {
-                graph.records.clear();
-                graph
-            })
-            .collect::<Vec<_>>();
-        let records = self
-            .object_graphs
-            .iter()
-            .flat_map(|graph| graph.records.iter().cloned())
-            .collect::<Vec<_>>();
-        let value_blocks = self
-            .value_blocks
-            .iter()
-            .cloned()
-            .map(|mut block| {
-                block.schema_selections.clear();
-                block
-            })
-            .collect::<Vec<_>>();
-        let value_schema_selections = self
-            .value_blocks
-            .iter()
-            .flat_map(|block| block.schema_selections.iter().cloned())
-            .collect::<Vec<_>>();
-        namespace.set_arena("catalogs", &catalogs)?;
-        namespace.set_arena("consolidated_circles", &self.consolidated_circles)?;
-        namespace.set_arena(
-            "consolidated_class61_records",
-            &self.consolidated_class61_records,
-        )?;
-        namespace.set_arena("consolidated_cone_faces", &self.consolidated_cone_faces)?;
-        namespace.set_arena("consolidated_cones", &self.consolidated_cones)?;
-        namespace.set_arena("consolidated_cylinders", &self.consolidated_cylinders)?;
-        namespace.set_arena(
-            "consolidated_embedded_cylinders",
-            &self.consolidated_embedded_cylinders,
-        )?;
-        namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
-        namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
-        namespace.set_arena("consolidated_groups", &self.consolidated_groups)?;
-        namespace.set_arena(
-            "consolidated_line_profiles",
-            &self.consolidated_line_profiles,
-        )?;
-        namespace.set_arena(
-            "consolidated_owner_packets",
-            &self.consolidated_owner_packets,
-        )?;
-        namespace.set_arena(
-            "consolidated_parameter_points",
-            &self.consolidated_parameter_points,
-        )?;
-        namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
-        namespace.set_arena(
-            "consolidated_reference_lists",
-            &self.consolidated_reference_lists,
-        )?;
-        namespace.set_arena("consolidated_revolutions", &self.consolidated_revolutions)?;
-        namespace.set_arena("consolidated_spheres", &self.consolidated_spheres)?;
-        namespace.set_arena("consolidated_tori", &self.consolidated_tori)?;
-        namespace.set_arena(
-            "consolidated_vertex_identities",
-            &self.consolidated_vertex_identities,
-        )?;
-        namespace.set_arena("configuration_row_chains", &self.configuration_row_chains)?;
-        namespace.set_arena("design_objects", &self.design_objects)?;
-        namespace.set_arena("entity_records", &self.entity_records)?;
-        namespace.set_arena("external_references", &self.external_references)?;
-        namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
-        namespace.set_arena("legacy_entity_runs", &self.legacy_entity_runs)?;
-        namespace.set_arena("alias_rows", &self.alias_rows)?;
-        namespace.set_arena("catalog_entries", &entries)?;
-        namespace.set_arena("object_graphs", &graphs)?;
-        namespace.set_arena("object_graph_records", &records)?;
-        namespace.set_arena("preview_images", &self.preview_images)?;
-        namespace.set_arena(
-            "reference_signature_cohorts",
-            &self.reference_signature_cohorts,
-        )?;
-        namespace.set_arena("value_blocks", &value_blocks)?;
-        namespace.set_arena("value_schema_selections", &value_schema_selections)?;
-        namespace.set_arena("zero_entity_edge_strides", &self.zero_entity_edge_strides)?;
-        namespace.set_arena(
-            "zero_entity_oriented_use_pairs",
-            &self.zero_entity_oriented_use_pairs,
-        )?;
-        namespace.set_arena(
-            "zero_entity_ownership_roots",
-            &self.zero_entity_ownership_roots,
-        )?;
-        namespace.set_arena(
-            "zero_entity_endpoint_pair_candidates",
-            &self.zero_entity_endpoint_pair_candidates,
-        )?;
-        namespace.set_arena("zero_entity_records", &self.zero_entity_records)?;
-        namespace.set_arena("zero_entity_support_runs", &self.zero_entity_support_runs)?;
-        namespace.set_arena(
-            "zero_entity_endpoint_locus_candidates",
-            &self.zero_entity_endpoint_locus_candidates,
-        )?;
-        namespace.set_arena(
-            "zero_entity_vertex_incidences",
-            &self.zero_entity_vertex_incidences,
-        )?;
-        debug_assert!(CATIA_ARENA_NAMES
-            .iter()
-            .all(|name| namespace.arenas.contains_key(*name)));
-        Ok(())
+        namespace: &mut cadmpeg_ir::NativeNamespace,
+    ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        store_projection(&CatiaArenaProjection::from(self), namespace)
     }
 
     /// Store this namespace while moving child arenas out of their typed owners.
-    ///
-    /// Decode paths use this form so large object graphs are not cloned while
-    /// converting them into generic native records.
     pub fn store_owned(
         self,
-        namespace: &mut cadmpeg_ir::native::NativeNamespace,
-    ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
-        let Self {
-            version: _,
-            alias_rows,
-            mut catalogs,
-            consolidated_circles,
-            consolidated_class61_records,
-            consolidated_cone_faces,
-            consolidated_cones,
-            consolidated_cylinders,
-            consolidated_embedded_cylinders,
-            consolidated_edge_nodes,
-            consolidated_edge_runs,
-            consolidated_groups,
-            consolidated_line_profiles,
-            consolidated_owner_packets,
-            consolidated_parameter_points,
-            consolidated_pcurves,
-            consolidated_reference_lists,
-            consolidated_revolutions,
-            consolidated_spheres,
-            consolidated_tori,
-            consolidated_vertex_identities,
-            configuration_row_chains,
-            design_objects,
-            entity_records,
-            external_references,
-            finjpl_segments,
-            legacy_entity_runs,
-            mut object_graphs,
-            preview_images,
-            reference_signature_cohorts,
-            mut value_blocks,
-            zero_entity_edge_strides,
-            zero_entity_oriented_use_pairs,
-            zero_entity_ownership_roots,
-            zero_entity_endpoint_pair_candidates,
-            zero_entity_records,
-            zero_entity_support_runs,
-            zero_entity_endpoint_locus_candidates,
-            zero_entity_vertex_incidences,
-        } = self;
-        let entries = catalogs
-            .iter_mut()
-            .flat_map(|catalog| std::mem::take(&mut catalog.entries))
-            .collect::<Vec<_>>();
-        let records = object_graphs
-            .iter_mut()
-            .flat_map(|graph| std::mem::take(&mut graph.records))
-            .collect::<Vec<_>>();
-        let value_schema_selections = value_blocks
-            .iter_mut()
-            .flat_map(|block| std::mem::take(&mut block.schema_selections))
-            .collect::<Vec<_>>();
-
-        namespace.version = CATIA_NATIVE_VERSION;
-        namespace.set_arena("catalogs", &catalogs)?;
-        namespace.set_arena("consolidated_circles", &consolidated_circles)?;
-        namespace.set_arena(
-            "consolidated_class61_records",
-            &consolidated_class61_records,
-        )?;
-        namespace.set_arena("consolidated_cone_faces", &consolidated_cone_faces)?;
-        namespace.set_arena("consolidated_cones", &consolidated_cones)?;
-        namespace.set_arena("consolidated_cylinders", &consolidated_cylinders)?;
-        namespace.set_arena(
-            "consolidated_embedded_cylinders",
-            &consolidated_embedded_cylinders,
-        )?;
-        namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
-        namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
-        namespace.set_arena("consolidated_groups", &consolidated_groups)?;
-        namespace.set_arena("consolidated_line_profiles", &consolidated_line_profiles)?;
-        namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
-        namespace.set_arena(
-            "consolidated_parameter_points",
-            &consolidated_parameter_points,
-        )?;
-        namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
-        namespace.set_arena(
-            "consolidated_reference_lists",
-            &consolidated_reference_lists,
-        )?;
-        namespace.set_arena("consolidated_revolutions", &consolidated_revolutions)?;
-        namespace.set_arena("consolidated_spheres", &consolidated_spheres)?;
-        namespace.set_arena("consolidated_tori", &consolidated_tori)?;
-        namespace.set_arena(
-            "consolidated_vertex_identities",
-            &consolidated_vertex_identities,
-        )?;
-        namespace.set_arena("configuration_row_chains", &configuration_row_chains)?;
-        namespace.set_arena("design_objects", &design_objects)?;
-        namespace.set_arena("entity_records", &entity_records)?;
-        namespace.set_arena("external_references", &external_references)?;
-        namespace.set_arena("catalog_entries", &entries)?;
-        namespace.set_arena("object_graphs", &object_graphs)?;
-        namespace.set_arena("object_graph_records", &records)?;
-        namespace.set_arena("finjpl_segments", &finjpl_segments)?;
-        namespace.set_arena("legacy_entity_runs", &legacy_entity_runs)?;
-        namespace.set_arena("alias_rows", &alias_rows)?;
-        namespace.set_arena("preview_images", &preview_images)?;
-        namespace.set_arena("reference_signature_cohorts", &reference_signature_cohorts)?;
-        namespace.set_arena("value_blocks", &value_blocks)?;
-        namespace.set_arena("value_schema_selections", &value_schema_selections)?;
-        namespace.set_arena("zero_entity_edge_strides", &zero_entity_edge_strides)?;
-        namespace.set_arena(
-            "zero_entity_oriented_use_pairs",
-            &zero_entity_oriented_use_pairs,
-        )?;
-        namespace.set_arena("zero_entity_ownership_roots", &zero_entity_ownership_roots)?;
-        namespace.set_arena(
-            "zero_entity_endpoint_pair_candidates",
-            &zero_entity_endpoint_pair_candidates,
-        )?;
-        namespace.set_arena("zero_entity_records", &zero_entity_records)?;
-        namespace.set_arena("zero_entity_support_runs", &zero_entity_support_runs)?;
-        namespace.set_arena(
-            "zero_entity_endpoint_locus_candidates",
-            &zero_entity_endpoint_locus_candidates,
-        )?;
-        namespace.set_arena(
-            "zero_entity_vertex_incidences",
-            &zero_entity_vertex_incidences,
-        )?;
-        debug_assert!(CATIA_ARENA_NAMES
-            .iter()
-            .all(|name| namespace.arenas.contains_key(*name)));
-        Ok(())
+        namespace: &mut cadmpeg_ir::NativeNamespace,
+    ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        store_projection(&CatiaArenaProjection::from(self), namespace)
     }
 }
 

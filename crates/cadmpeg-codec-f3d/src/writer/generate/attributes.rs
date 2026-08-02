@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-less attribute, link, and tag encoders.
 
+use std::collections::HashMap;
+
+use crate::native::F3dNative;
 use crate::records::{
     CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    SKETCH_LINK_SENSE_UNCONSTRAINED,
 };
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face};
 
@@ -12,48 +16,292 @@ use super::native_bytes::{
     native_f64, native_i64, native_ident, native_record_index, native_ref, native_string,
     native_subident,
 };
-use crate::writer::primitives::f3d_native;
+
+pub(crate) struct AttributeIndex<'a> {
+    creation_timestamps: &'a [CreationTimestamp],
+    body_group_ordinals: HashMap<String, usize>,
+    face_group_ordinals: HashMap<String, usize>,
+    edge_group_ordinals: HashMap<String, usize>,
+    sketch_ordinals: HashMap<String, usize>,
+    body_group_count: usize,
+    face_group_count: usize,
+    edge_group_count: usize,
+    body_links: HashMap<&'a str, Vec<&'a PersistentDesignLink>>,
+    face_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
+    edge_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
+    body_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
+    face_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
+    edge_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
+    coedge_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
+    vertex_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
+    coedge_sketch_links: HashMap<&'a str, &'a SketchCurveLink>,
+    body_timestamp_ordinals: HashMap<&'a str, usize>,
+    face_timestamp_ordinals: HashMap<&'a str, usize>,
+    edge_timestamp_ordinals: HashMap<&'a str, usize>,
+    coedge_timestamp_ordinals: HashMap<&'a str, usize>,
+    vertex_timestamp_ordinals: HashMap<&'a str, usize>,
+    body_keys: HashMap<&'a str, &'a crate::records::BodyNativeKey>,
+    assigned_body_keys: HashMap<&'a str, u64>,
+}
+
+impl<'a> AttributeIndex<'a> {
+    pub(crate) fn new(target: &'a CadIr, native: &'a F3dNative) -> Self {
+        let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
+        let mut body_keys = HashMap::new();
+        for key in &native.body_native_keys {
+            body_keys.entry(key.body.as_str()).or_insert(key);
+        }
+        let mut material_body_keys = HashMap::new();
+        for assignment in &native.design_material_assignments {
+            if crate::materials::visual_guid_matches(
+                &assignment.visual_guid,
+                &assignment.visual_guid,
+            ) {
+                material_body_keys
+                    .entry(assignment.visual_guid[..36].to_ascii_lowercase())
+                    .or_insert(assignment.asm_body_key);
+            }
+        }
+        let appearance_guids = target
+            .model
+            .appearances
+            .iter()
+            .filter_map(|appearance| {
+                appearance
+                    .visual_guid
+                    .as_deref()
+                    .map(|guid| (appearance.id.as_str(), guid))
+            })
+            .collect::<HashMap<_, _>>();
+        let mut assigned_body_keys = HashMap::new();
+        for binding in &target.model.appearance_bindings {
+            let cadmpeg_ir::appearance::AppearanceTarget::Body(body) = &binding.target else {
+                continue;
+            };
+            let Some(guid) = appearance_guids.get(binding.appearance.as_str()) else {
+                continue;
+            };
+            if !crate::materials::visual_guid_matches(guid, guid) {
+                continue;
+            }
+            if let Some(key) = material_body_keys.get(&guid[..36].to_ascii_lowercase()) {
+                assigned_body_keys.entry(body.as_str()).or_insert(*key);
+            }
+        }
+        for link in &native.persistent_design_links {
+            if let cadmpeg_ir::attributes::AttributeTarget::Body(id) = &link.target {
+                body_links.entry(id.as_str()).or_default().push(link);
+            }
+        }
+        for group in body_links.values_mut() {
+            group.sort_by_key(|link| link.ordinal);
+        }
+        let mut face_tags: HashMap<_, Vec<_>> = HashMap::new();
+        let mut edge_tags: HashMap<_, Vec<_>> = HashMap::new();
+        for tag in &native.persistent_subentity_tags {
+            match &tag.target {
+                cadmpeg_ir::attributes::AttributeTarget::Face(id) => {
+                    face_tags.entry(id.as_str()).or_default().push(tag);
+                }
+                cadmpeg_ir::attributes::AttributeTarget::Edge(id) => {
+                    edge_tags.entry(id.as_str()).or_default().push(tag);
+                }
+                _ => {}
+            }
+        }
+        for group in face_tags.values_mut().chain(edge_tags.values_mut()) {
+            group.sort_by_key(|tag| tag.ordinal);
+        }
+        let mut body_timestamps = HashMap::new();
+        let mut face_timestamps = HashMap::new();
+        let mut edge_timestamps = HashMap::new();
+        let mut coedge_timestamps = HashMap::new();
+        let mut vertex_timestamps = HashMap::new();
+        for timestamp in &native.creation_timestamps {
+            match &timestamp.target {
+                cadmpeg_ir::attributes::AttributeTarget::Body(id) => {
+                    body_timestamps.entry(id.as_str()).or_insert(timestamp);
+                }
+                cadmpeg_ir::attributes::AttributeTarget::Face(id) => {
+                    face_timestamps.entry(id.as_str()).or_insert(timestamp);
+                }
+                cadmpeg_ir::attributes::AttributeTarget::Edge(id) => {
+                    edge_timestamps.entry(id.as_str()).or_insert(timestamp);
+                }
+                cadmpeg_ir::attributes::AttributeTarget::Coedge(id) => {
+                    coedge_timestamps.entry(id.as_str()).or_insert(timestamp);
+                }
+                cadmpeg_ir::attributes::AttributeTarget::Vertex(id) => {
+                    vertex_timestamps.entry(id.as_str()).or_insert(timestamp);
+                }
+                _ => {}
+            }
+        }
+        let mut coedge_sketch_links = HashMap::new();
+        for link in &native.sketch_curve_links {
+            if let cadmpeg_ir::attributes::AttributeTarget::Coedge(id) = &link.target {
+                coedge_sketch_links.entry(id.as_str()).or_insert(link);
+            }
+        }
+        let mut body_timestamp_ordinals = HashMap::new();
+        let mut face_timestamp_ordinals = HashMap::new();
+        let mut edge_timestamp_ordinals = HashMap::new();
+        let mut coedge_timestamp_ordinals = HashMap::new();
+        let mut vertex_timestamp_ordinals = HashMap::new();
+        let mut split_ordinal = 0;
+        macro_rules! split_timestamp_ordinals {
+            ($items:expr, $timestamps:expr, $ordinals:expr) => {
+                for item in $items {
+                    if $timestamps.contains_key(item.id.as_str()) {
+                        $ordinals.insert(item.id.as_str(), split_ordinal);
+                        split_ordinal += 1;
+                    }
+                }
+            };
+        }
+        split_timestamp_ordinals!(
+            &target.model.bodies,
+            body_timestamps,
+            body_timestamp_ordinals
+        );
+        split_timestamp_ordinals!(
+            &target.model.faces,
+            face_timestamps,
+            face_timestamp_ordinals
+        );
+        split_timestamp_ordinals!(
+            &target.model.edges,
+            edge_timestamps,
+            edge_timestamp_ordinals
+        );
+        split_timestamp_ordinals!(
+            &target.model.coedges,
+            coedge_timestamps,
+            coedge_timestamp_ordinals
+        );
+        split_timestamp_ordinals!(
+            &target.model.vertices,
+            vertex_timestamps,
+            vertex_timestamp_ordinals
+        );
+        let body_group_count = target
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body_links.contains_key(body.id.as_str()))
+            .count();
+        let face_group_count = target
+            .model
+            .faces
+            .iter()
+            .filter(|face| face_tags.contains_key(face.id.as_str()))
+            .count();
+        let edge_group_count = target
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge_tags.contains_key(edge.id.as_str()))
+            .count();
+        let body_group_ordinals = target
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body_links.contains_key(body.id.as_str()))
+            .enumerate()
+            .map(|(ordinal, body)| (body.id.0.clone(), ordinal))
+            .collect();
+        let face_group_ordinals = target
+            .model
+            .faces
+            .iter()
+            .filter(|face| face_tags.contains_key(face.id.as_str()))
+            .enumerate()
+            .map(|(ordinal, face)| (face.id.0.clone(), ordinal))
+            .collect();
+        let edge_group_ordinals = target
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge_tags.contains_key(edge.id.as_str()))
+            .enumerate()
+            .map(|(ordinal, edge)| (edge.id.0.clone(), ordinal))
+            .collect();
+        let sketch_ordinals = target
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge_sketch_links.contains_key(coedge.id.as_str()))
+            .enumerate()
+            .map(|(ordinal, coedge)| (coedge.id.0.clone(), ordinal))
+            .collect();
+        Self {
+            creation_timestamps: &native.creation_timestamps,
+            body_group_ordinals,
+            face_group_ordinals,
+            edge_group_ordinals,
+            sketch_ordinals,
+            body_group_count,
+            face_group_count,
+            edge_group_count,
+            body_links,
+            face_tags,
+            edge_tags,
+            body_timestamps,
+            face_timestamps,
+            edge_timestamps,
+            coedge_timestamps,
+            vertex_timestamps,
+            coedge_sketch_links,
+            body_timestamp_ordinals,
+            face_timestamp_ordinals,
+            edge_timestamp_ordinals,
+            coedge_timestamp_ordinals,
+            vertex_timestamp_ordinals,
+            body_keys,
+            assigned_body_keys,
+        }
+    }
+
+    fn timestamp(
+        &self,
+        target: &cadmpeg_ir::attributes::AttributeTarget,
+    ) -> Option<&'a CreationTimestamp> {
+        use cadmpeg_ir::attributes::AttributeTarget;
+        match target {
+            AttributeTarget::Body(id) => self.body_timestamps.get(id.as_str()).copied(),
+            AttributeTarget::Face(id) => self.face_timestamps.get(id.as_str()).copied(),
+            AttributeTarget::Edge(id) => self.edge_timestamps.get(id.as_str()).copied(),
+            AttributeTarget::Coedge(id) => self.coedge_timestamps.get(id.as_str()).copied(),
+            AttributeTarget::Vertex(id) => self.vertex_timestamps.get(id.as_str()).copied(),
+            _ => None,
+        }
+    }
+
+    fn timestamp_ordinal(&self, target: &cadmpeg_ir::attributes::AttributeTarget) -> Option<usize> {
+        use cadmpeg_ir::attributes::AttributeTarget;
+        match target {
+            AttributeTarget::Body(id) => self.body_timestamp_ordinals.get(id.as_str()).copied(),
+            AttributeTarget::Face(id) => self.face_timestamp_ordinals.get(id.as_str()).copied(),
+            AttributeTarget::Edge(id) => self.edge_timestamp_ordinals.get(id.as_str()).copied(),
+            AttributeTarget::Coedge(id) => self.coedge_timestamp_ordinals.get(id.as_str()).copied(),
+            AttributeTarget::Vertex(id) => self.vertex_timestamp_ordinals.get(id.as_str()).copied(),
+            _ => None,
+        }
+    }
+}
 
 pub(crate) fn source_less_body_key(
-    target: &CadIr,
+    index: &AttributeIndex<'_>,
     body: &Body,
     body_ordinal: usize,
 ) -> Result<i64, CodecError> {
-    let native = f3d_native(target)?;
-    if let Some(key) = native.as_ref().and_then(|native| {
-        native
-            .body_native_keys
-            .iter()
-            .find(|key| key.body == body.id)
-    }) {
+    if let Some(key) = index.body_keys.get(body.id.as_str()) {
         return key.asm_body_key.map_or(Ok(-1), |key| {
             i64::try_from(key)
                 .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
         });
     }
-    let assigned = target
-        .model
-        .appearance_bindings
-        .iter()
-        .find_map(|binding| match &binding.target {
-            cadmpeg_ir::appearance::AppearanceTarget::Body(id) if id == &body.id => target
-                .model
-                .appearances
-                .iter()
-                .find(|appearance| appearance.id == binding.appearance)
-                .and_then(|appearance| appearance.visual_guid.as_deref()),
-            _ => None,
-        })
-        .and_then(|visual_guid| {
-            native
-                .as_ref()?
-                .design_material_assignments
-                .iter()
-                .find(|assignment| {
-                    crate::materials::visual_guid_matches(&assignment.visual_guid, visual_guid)
-                })
-                .map(|assignment| assignment.asm_body_key)
-        });
+    let assigned = index.assigned_body_keys.get(body.id.as_str()).copied();
     let key = assigned.unwrap_or(
         u64::try_from(body_ordinal)
             .ok()
@@ -93,185 +341,111 @@ fn color_attribute_ref(
     native_record_index(attribute_start, preceding)
 }
 
-fn persistent_links(
-    target: &CadIr,
+fn persistent_links<'i, 'n>(
+    index: &'i AttributeIndex<'n>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
-) -> Vec<PersistentDesignLink> {
-    let mut links = f3d_native(target)
-        .ok()
-        .flatten()
-        .into_iter()
-        .flat_map(|native| native.persistent_design_links)
-        .filter(|link| &link.target == entity)
-        .collect::<Vec<_>>();
-    links.sort_by_key(|link| link.ordinal);
-    links
+) -> &'i [&'n PersistentDesignLink] {
+    if let cadmpeg_ir::attributes::AttributeTarget::Body(id) = entity {
+        index.body_links.get(id.as_str()).map_or(&[], Vec::as_slice)
+    } else {
+        &[]
+    }
 }
 
-pub(crate) fn persistent_subentity_tags(
-    target: &CadIr,
+pub(crate) fn persistent_subentity_tags<'i, 'n>(
+    index: &'i AttributeIndex<'n>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
-) -> Vec<PersistentSubentityTag> {
-    let mut tags = f3d_native(target)
-        .ok()
-        .flatten()
-        .into_iter()
-        .flat_map(|native| native.persistent_subentity_tags)
-        .filter(|tag| &tag.target == entity)
-        .collect::<Vec<_>>();
-    tags.sort_by_key(|tag| tag.ordinal);
-    tags
+) -> &'i [&'n PersistentSubentityTag] {
+    match entity {
+        cadmpeg_ir::attributes::AttributeTarget::Face(id) => {
+            index.face_tags.get(id.as_str()).map_or(&[], Vec::as_slice)
+        }
+        cadmpeg_ir::attributes::AttributeTarget::Edge(id) => {
+            index.edge_tags.get(id.as_str()).map_or(&[], Vec::as_slice)
+        }
+        _ => &[],
+    }
 }
 
-fn creation_timestamp(
-    target: &CadIr,
+fn creation_timestamp<'a>(
+    index: &'a AttributeIndex<'_>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
-) -> Option<CreationTimestamp> {
-    f3d_native(target)
-        .ok()
-        .flatten()?
-        .creation_timestamps
-        .into_iter()
-        .find(|timestamp| &timestamp.target == entity)
+) -> Option<&'a CreationTimestamp> {
+    index.timestamp(entity)
 }
 
 fn timestamp_attribute_ordinal(
-    target: &CadIr,
+    index: &AttributeIndex<'_>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
 ) -> Option<usize> {
-    let model = &target.model;
-    let targets = model
-        .bodies
-        .iter()
-        .map(|item| cadmpeg_ir::attributes::AttributeTarget::Body(item.id.clone()))
-        .chain(
-            model
-                .faces
-                .iter()
-                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Face(item.id.clone())),
-        )
-        .chain(
-            model
-                .edges
-                .iter()
-                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Edge(item.id.clone())),
-        )
-        .chain(
-            model
-                .coedges
-                .iter()
-                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Coedge(item.id.clone())),
-        )
-        .chain(
-            model
-                .vertices
-                .iter()
-                .map(|item| cadmpeg_ir::attributes::AttributeTarget::Vertex(item.id.clone())),
-        );
-    let mut ordinal = 0;
-    for candidate in targets {
-        if creation_timestamp(target, &candidate).is_some() {
-            if &candidate == entity {
-                return Some(ordinal);
-            }
-            ordinal += 1;
-        }
-    }
-    None
+    index.timestamp_ordinal(entity)
 }
 
-fn existing_source_less_attribute_count(target: &CadIr) -> usize {
+fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'_>) -> usize {
     source_less_color_count(target)
         + source_less_name_count(target)
-        + persistent_body_group_count(target)
-        + persistent_face_group_count(target)
-        + persistent_edge_group_count(target)
-        + target
-            .model
-            .coedges
-            .iter()
-            .filter(|coedge| sketch_link(target, coedge).is_some())
-            .count()
+        + index.body_group_count
+        + index.face_group_count
+        + index.edge_group_count
+        + index.coedge_sketch_links.len()
 }
 
 pub(crate) fn timestamp_attribute_ref(
     target: &CadIr,
+    index: &AttributeIndex<'_>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
     attribute_start: i64,
 ) -> Result<Option<i64>, CodecError> {
-    timestamp_attribute_ordinal(target, entity)
+    timestamp_attribute_ordinal(index, entity)
         .map(|ordinal| {
             native_record_index(
                 attribute_start,
-                existing_source_less_attribute_count(target) + ordinal,
+                existing_source_less_attribute_count(target, index) + ordinal,
             )
         })
         .transpose()
 }
 
-fn body_persistent_links(target: &CadIr, body: &Body) -> Vec<PersistentDesignLink> {
+fn body_persistent_links<'i, 'n>(
+    index: &'i AttributeIndex<'n>,
+    body: &Body,
+) -> &'i [&'n PersistentDesignLink] {
     persistent_links(
-        target,
+        index,
         &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
     )
 }
 
-fn persistent_body_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .bodies
-        .iter()
-        .filter(|body| !body_persistent_links(target, body).is_empty())
-        .count()
-}
-
-fn face_persistent_tags(target: &CadIr, face: &Face) -> Vec<PersistentSubentityTag> {
+fn face_persistent_tags<'i, 'n>(
+    index: &'i AttributeIndex<'n>,
+    face: &Face,
+) -> &'i [&'n PersistentSubentityTag] {
     persistent_subentity_tags(
-        target,
+        index,
         &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
     )
 }
 
-fn edge_persistent_tags(target: &CadIr, edge: &Edge) -> Vec<PersistentSubentityTag> {
+fn edge_persistent_tags<'i, 'n>(
+    index: &'i AttributeIndex<'n>,
+    edge: &Edge,
+) -> &'i [&'n PersistentSubentityTag] {
     persistent_subentity_tags(
-        target,
+        index,
         &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
     )
 }
 
-fn persistent_face_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .faces
-        .iter()
-        .filter(|face| !face_persistent_tags(target, face).is_empty())
-        .count()
-}
-
-fn persistent_edge_group_count(target: &CadIr) -> usize {
-    target
-        .model
-        .edges
-        .iter()
-        .filter(|edge| !edge_persistent_tags(target, edge).is_empty())
-        .count()
-}
-
 fn body_persistent_attribute_ref(
     target: &CadIr,
+    index: &AttributeIndex<'_>,
     body: &Body,
     attribute_start: i64,
 ) -> Result<Option<i64>, CodecError> {
-    if body_persistent_links(target, body).is_empty() {
+    if body_persistent_links(index, body).is_empty() {
         return Ok(None);
     }
-    let ordinal = target
-        .model
-        .bodies
-        .iter()
-        .take_while(|candidate| candidate.id != body.id)
-        .filter(|candidate| !body_persistent_links(target, candidate).is_empty())
-        .count();
+    let ordinal = index.body_group_ordinals[body.id.as_str()];
     let color_count = target
         .model
         .bodies
@@ -311,6 +485,7 @@ fn body_name_attribute_ref(
 
 pub(crate) fn owner_color_or_body_tag_ref(
     target: &CadIr,
+    index: &AttributeIndex<'_>,
     body: &Body,
     body_ordinal: usize,
     attribute_start: i64,
@@ -327,11 +502,12 @@ pub(crate) fn owner_color_or_body_tag_ref(
     if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
         return Ok(reference);
     }
-    if let Some(reference) = body_persistent_attribute_ref(target, body, attribute_start)? {
+    if let Some(reference) = body_persistent_attribute_ref(target, index, body, attribute_start)? {
         return Ok(reference);
     }
     Ok(timestamp_attribute_ref(
         target,
+        index,
         &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
         attribute_start,
     )?
@@ -340,24 +516,19 @@ pub(crate) fn owner_color_or_body_tag_ref(
 
 fn face_persistent_attribute_ref(
     target: &CadIr,
+    index: &AttributeIndex<'_>,
     face: &Face,
     attribute_start: i64,
 ) -> Result<Option<i64>, CodecError> {
-    if face_persistent_tags(target, face).is_empty() {
+    if face_persistent_tags(index, face).is_empty() {
         return Ok(None);
     }
-    let ordinal = target
-        .model
-        .faces
-        .iter()
-        .take_while(|candidate| candidate.id != face.id)
-        .filter(|candidate| !face_persistent_tags(target, candidate).is_empty())
-        .count();
+    let ordinal = index.face_group_ordinals[face.id.as_str()];
     native_record_index(
         attribute_start,
         source_less_color_count(target)
             + source_less_name_count(target)
-            + persistent_body_group_count(target)
+            + index.body_group_count
             + ordinal,
     )
     .map(Some)
@@ -393,6 +564,7 @@ fn face_name_attribute_ref(
 
 pub(crate) fn owner_color_or_face_tag_ref(
     target: &CadIr,
+    index: &AttributeIndex<'_>,
     face: &Face,
     face_ordinal: usize,
     attribute_start: i64,
@@ -409,11 +581,12 @@ pub(crate) fn owner_color_or_face_tag_ref(
     if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
         return Ok(reference);
     }
-    if let Some(reference) = face_persistent_attribute_ref(target, face, attribute_start)? {
+    if let Some(reference) = face_persistent_attribute_ref(target, index, face, attribute_start)? {
         return Ok(reference);
     }
     Ok(timestamp_attribute_ref(
         target,
+        index,
         &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
         attribute_start,
     )?
@@ -422,23 +595,21 @@ pub(crate) fn owner_color_or_face_tag_ref(
 
 pub(crate) fn edge_persistent_attribute_ref(
     target: &CadIr,
+    index: &AttributeIndex<'_>,
     edge: &Edge,
-    edge_ordinal: usize,
+    _edge_ordinal: usize,
     attribute_start: i64,
 ) -> Result<Option<i64>, CodecError> {
-    if edge_persistent_tags(target, edge).is_empty() {
+    if edge_persistent_tags(index, edge).is_empty() {
         return Ok(None);
     }
-    let ordinal = target.model.edges[..edge_ordinal]
-        .iter()
-        .filter(|candidate| !edge_persistent_tags(target, candidate).is_empty())
-        .count();
+    let ordinal = index.edge_group_ordinals[edge.id.as_str()];
     native_record_index(
         attribute_start,
         source_less_color_count(target)
             + source_less_name_count(target)
-            + persistent_body_group_count(target)
-            + persistent_face_group_count(target)
+            + index.body_group_count
+            + index.face_group_count
             + ordinal,
     )
     .map(Some)
@@ -474,48 +645,42 @@ fn source_less_name_count(target: &CadIr) -> usize {
             .count()
 }
 
-fn sketch_link(target: &CadIr, coedge: &Coedge) -> Option<SketchCurveLink> {
-    f3d_native(target)
-        .ok()
-        .flatten()?
-        .sketch_curve_links
-        .into_iter()
-        .find(|link| link.coedge == coedge.id)
+fn sketch_link<'a>(index: &'a AttributeIndex<'_>, coedge: &Coedge) -> Option<&'a SketchCurveLink> {
+    index.coedge_sketch_links.get(coedge.id.as_str()).copied()
 }
 
 pub(crate) fn sketch_link_attribute_ref(
     target: &CadIr,
+    index: &AttributeIndex<'_>,
     coedge: &Coedge,
-    coedge_ordinal: usize,
+    _coedge_ordinal: usize,
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
-    if sketch_link(target, coedge).is_none() {
+    if sketch_link(index, coedge).is_none() {
         return Ok(timestamp_attribute_ref(
             target,
+            index,
             &cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge.id.clone()),
             attribute_start,
         )?
         .unwrap_or(-1));
     }
-    let preceding = target.model.coedges[..coedge_ordinal]
-        .iter()
-        .filter(|candidate| sketch_link(target, candidate).is_some())
-        .count();
+    let preceding = index.sketch_ordinals[coedge.id.as_str()];
     let color_count = source_less_color_count(target);
     native_record_index(
         attribute_start,
         color_count
             + source_less_name_count(target)
-            + persistent_body_group_count(target)
-            + persistent_face_group_count(target)
-            + persistent_edge_group_count(target)
+            + index.body_group_count
+            + index.face_group_count
+            + index.edge_group_count
             + preceding,
     )
 }
 
 fn native_persistent_design_attribute(
     records: &mut Vec<u8>,
-    links: &[PersistentDesignLink],
+    links: &[&PersistentDesignLink],
     kind: i64,
     next: i64,
 ) -> Result<(), CodecError> {
@@ -550,7 +715,7 @@ fn native_persistent_design_attribute(
 
 fn native_persistent_subentity_attribute(
     records: &mut Vec<u8>,
-    tags: &[PersistentSubentityTag],
+    tags: &[&PersistentSubentityTag],
     next: i64,
 ) -> Result<(), CodecError> {
     native_subident(records, "ATTRIB_CUSTOM")?;
@@ -599,9 +764,10 @@ fn native_sketch_link_attribute(
     native_string(
         records,
         &format!(
-            "{} 0 {} 0 {} {}",
+            "{} {} {} 0 {} {}",
             link.sketch_curve_id,
-            link.signed_reference.unwrap_or(-1),
+            link.ref_b,
+            link.sense.unwrap_or(SKETCH_LINK_SENSE_UNCONSTRAINED),
             link.role,
             link.closure
         ),
@@ -611,32 +777,31 @@ fn native_sketch_link_attribute(
 pub(crate) fn encode_source_less_attributes(
     records: &mut Vec<u8>,
     target: &CadIr,
+    index: &AttributeIndex<'_>,
     attribute_start: i64,
 ) -> Result<(), CodecError> {
     let model = &target.model;
-    if let Some(native) = f3d_native(target)? {
-        for (ordinal, timestamp) in native.creation_timestamps.iter().enumerate() {
-            if !timestamp.unix_microseconds.is_finite() {
-                return Err(CodecError::Malformed(format!(
-                    "F3D creation timestamp {} is non-finite",
-                    timestamp.id
-                )));
-            }
-            if native.creation_timestamps[..ordinal]
-                .iter()
-                .any(|before| before.target == timestamp.target)
-            {
-                return Err(CodecError::Malformed(format!(
-                    "multiple F3D creation timestamps target the same entity: {}",
-                    timestamp.id
-                )));
-            }
-            if timestamp_attribute_ordinal(target, &timestamp.target).is_none() {
-                return Err(CodecError::NotImplemented(format!(
-                    "F3D creation timestamp has an unsupported or missing target: {}",
-                    timestamp.id
-                )));
-            }
+    for (ordinal, timestamp) in index.creation_timestamps.iter().enumerate() {
+        if !timestamp.unix_microseconds.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "F3D creation timestamp {} is non-finite",
+                timestamp.id
+            )));
+        }
+        if index.creation_timestamps[..ordinal]
+            .iter()
+            .any(|before| before.target == timestamp.target)
+        {
+            return Err(CodecError::Malformed(format!(
+                "multiple F3D creation timestamps target the same entity: {}",
+                timestamp.id
+            )));
+        }
+        if timestamp_attribute_ordinal(index, &timestamp.target).is_none() {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D creation timestamp has an unsupported or missing target: {}",
+                timestamp.id
+            )));
         }
     }
     for body in model.bodies.iter().filter(|body| body.color.is_some()) {
@@ -645,12 +810,13 @@ pub(crate) fn encode_source_less_attributes(
         {
             reference
         } else if let Some(reference) =
-            body_persistent_attribute_ref(target, body, attribute_start)?
+            body_persistent_attribute_ref(target, index, body, attribute_start)?
         {
             reference
         } else {
             timestamp_attribute_ref(
                 target,
+                index,
                 &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
                 attribute_start,
             )?
@@ -664,12 +830,13 @@ pub(crate) fn encode_source_less_attributes(
         {
             reference
         } else if let Some(reference) =
-            face_persistent_attribute_ref(target, face, attribute_start)?
+            face_persistent_attribute_ref(target, index, face, attribute_start)?
         {
             reference
         } else {
             timestamp_attribute_ref(
                 target,
+                index,
                 &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
                 attribute_start,
             )?
@@ -680,12 +847,13 @@ pub(crate) fn encode_source_less_attributes(
     }
     for body in model.bodies.iter().filter(|body| body.name.is_some()) {
         let next = if let Some(reference) =
-            body_persistent_attribute_ref(target, body, attribute_start)?
+            body_persistent_attribute_ref(target, index, body, attribute_start)?
         {
             reference
         } else {
             timestamp_attribute_ref(
                 target,
+                index,
                 &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
                 attribute_start,
             )?
@@ -700,12 +868,13 @@ pub(crate) fn encode_source_less_attributes(
     }
     for face in model.faces.iter().filter(|face| face.name.is_some()) {
         let next = if let Some(reference) =
-            face_persistent_attribute_ref(target, face, attribute_start)?
+            face_persistent_attribute_ref(target, index, face, attribute_start)?
         {
             reference
         } else {
             timestamp_attribute_ref(
                 target,
+                index,
                 &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
                 attribute_start,
             )?
@@ -719,58 +888,62 @@ pub(crate) fn encode_source_less_attributes(
         records.push(0x11);
     }
     for body in &model.bodies {
-        let links = body_persistent_links(target, body);
+        let links = body_persistent_links(index, body);
         if links.is_empty() {
             continue;
         }
         let next = timestamp_attribute_ref(
             target,
+            index,
             &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
             attribute_start,
         )?
         .unwrap_or(-1);
-        native_persistent_design_attribute(records, &links, 3, next)?;
+        native_persistent_design_attribute(records, links, 3, next)?;
         records.push(0x11);
     }
     for face in &model.faces {
-        let tags = face_persistent_tags(target, face);
+        let tags = face_persistent_tags(index, face);
         if tags.is_empty() {
             continue;
         }
         let next = timestamp_attribute_ref(
             target,
+            index,
             &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
             attribute_start,
         )?
         .unwrap_or(-1);
-        native_persistent_subentity_attribute(records, &tags, next)?;
+        native_persistent_subentity_attribute(records, tags, next)?;
         records.push(0x11);
     }
     for edge in &model.edges {
-        let tags = edge_persistent_tags(target, edge);
+        let tags = edge_persistent_tags(index, edge);
         if tags.is_empty() {
             continue;
         }
         let next = timestamp_attribute_ref(
             target,
+            index,
             &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
             attribute_start,
         )?
         .unwrap_or(-1);
-        native_persistent_subentity_attribute(records, &tags, next)?;
+        native_persistent_subentity_attribute(records, tags, next)?;
         records.push(0x11);
     }
     for coedge in &model.coedges {
-        let Some(link) = sketch_link(target, coedge) else {
+        let Some(link) = sketch_link(index, coedge) else {
             continue;
         };
         let next = timestamp_attribute_ref(
             target,
+            index,
             &cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge.id.clone()),
             attribute_start,
         )?
         .unwrap_or(-1);
-        native_sketch_link_attribute(records, &link, next)?;
+        native_sketch_link_attribute(records, link, next)?;
         records.push(0x11);
     }
     for entity in model
@@ -802,7 +975,7 @@ pub(crate) fn encode_source_less_attributes(
                 .map(|item| cadmpeg_ir::attributes::AttributeTarget::Vertex(item.id.clone())),
         )
     {
-        let Some(timestamp) = creation_timestamp(target, &entity) else {
+        let Some(timestamp) = creation_timestamp(index, &entity) else {
             continue;
         };
         native_subident(records, "ATTRIB_CUSTOM")?;

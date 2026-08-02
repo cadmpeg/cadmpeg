@@ -3,8 +3,6 @@
 
 use std::fmt;
 
-use cadmpeg_ir::wire::cursor::Cursor;
-
 /// The fixed ASCII prefix of a 3DM file header.
 pub(crate) const MAGIC: &[u8; 24] = b"3D Geometry File Format ";
 /// The end-of-file chunk typecode.
@@ -192,16 +190,11 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
 }
 
 /// A reader whose cursor and end are explicit offsets in an in-memory buffer.
-///
-/// The read position, bounds, and every byte read are delegated to the shared
-/// poisoned [`Cursor`]; `bytes` and `end` are retained locally to serve
-/// [`backing_bytes`](Self::backing_bytes)/[`end`](Self::end) and to reconstruct
-/// the exact [`FramingError`] the cursor's fault kinds do not distinguish.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BoundedReader<'a> {
     bytes: &'a [u8],
     end: usize,
-    cursor: Cursor<'a>,
+    position: usize,
 }
 
 impl<'a> BoundedReader<'a> {
@@ -217,13 +210,13 @@ impl<'a> BoundedReader<'a> {
         Ok(Self {
             bytes,
             end,
-            cursor: Cursor::new(bytes).window(start, end),
+            position: start,
         })
     }
 
     /// Returns the absolute cursor offset.
     pub(crate) fn position(&self) -> usize {
-        self.cursor.position()
+        self.position
     }
 
     /// Returns the absolute end offset.
@@ -238,17 +231,25 @@ impl<'a> BoundedReader<'a> {
 
     /// Returns a reader over the unread bounded bytes.
     pub(crate) fn unread(&self) -> Result<Self, FramingError> {
-        Self::new(self.bytes, self.cursor.position(), self.end)
+        Self::new(self.bytes, self.position, self.end)
     }
 
     /// Returns the unread byte count.
     pub(crate) fn remaining(&self) -> usize {
-        self.end - self.cursor.position()
+        self.end - self.position
     }
 
     /// Skips exactly `count` bytes.
     pub(crate) fn skip(&mut self, count: usize) -> Result<(), FramingError> {
-        self.take(count).map(|_| ())
+        let end = self
+            .position
+            .checked_add(count)
+            .ok_or(FramingError::Overflow {
+                offset: self.position,
+            })?;
+        self.require(end)?;
+        self.position = end;
+        Ok(())
     }
 
     /// Reads a byte.
@@ -313,7 +314,7 @@ impl<'a> BoundedReader<'a> {
             0 => Ok(false),
             1 => Ok(true),
             value => Err(FramingError::Structural {
-                offset: self.position() - 1,
+                offset: self.position - 1,
                 message: format!("boolean value {value} is not 0 or 1"),
             }),
         }
@@ -328,30 +329,34 @@ impl<'a> BoundedReader<'a> {
     }
 
     /// Returns a bounded slice and advances the cursor.
-    ///
-    /// An offset overflow keeps the distinct [`FramingError::Overflow`] message
-    /// that the poisoned cursor folds into a truncation; any bounded read past
-    /// [`end`](Self::end) becomes [`FramingError::OutOfBounds`] at the same
-    /// trigger point the old `require` check raised it.
     pub(crate) fn take(&mut self, count: usize) -> Result<&'a [u8], FramingError> {
-        let start = self.cursor.position();
-        let end = start
+        let end = self
+            .position
             .checked_add(count)
-            .ok_or(FramingError::Overflow { offset: start })?;
-        let result = self.cursor.take(count);
-        if self.cursor.is_poisoned() {
-            return Err(FramingError::OutOfBounds {
-                offset: start,
-                end,
-                bound: self.end,
-            });
-        }
+            .ok_or(FramingError::Overflow {
+                offset: self.position,
+            })?;
+        self.require(end)?;
+        let result = &self.bytes[self.position..end];
+        self.position = end;
         Ok(result)
     }
 
     /// Reads a fixed-width byte array.
     pub(crate) fn array<const N: usize>(&mut self) -> Result<[u8; N], FramingError> {
         Ok(self.take(N)?.try_into().expect("array length checked"))
+    }
+
+    fn require(&self, end: usize) -> Result<(), FramingError> {
+        if end > self.end {
+            Err(FramingError::OutOfBounds {
+                offset: self.position,
+                end,
+                bound: self.end,
+            })
+        } else {
+            Ok(())
+        }
     }
 }
 

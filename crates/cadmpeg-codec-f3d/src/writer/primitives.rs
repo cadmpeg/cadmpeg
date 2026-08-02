@@ -4,7 +4,7 @@
 
 use crate::history_records::AsmEntityChangeKind;
 use crate::native::F3dNative;
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
@@ -50,6 +50,34 @@ pub(crate) fn validate_configuration_projection(
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"
                 .into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_assembly_projection(
+    target: &CadIr,
+    native: Option<&F3dNative>,
+) -> Result<(), CodecError> {
+    let Some(native) = native else {
+        return target
+            .model
+            .assembly_joints
+            .is_empty()
+            .then_some(())
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D generation does not support assembly joints".into(),
+                )
+            });
+    };
+    let projected = crate::design::assembly::project_assembly_joints(
+        &native.design_parameter_scopes,
+        &native.design_component_occurrences,
+    );
+    if target.model.assembly_joints != projected {
+        return Err(CodecError::NotImplemented(
+            "editing F3D assembly joints is not supported".into(),
         ));
     }
     Ok(())

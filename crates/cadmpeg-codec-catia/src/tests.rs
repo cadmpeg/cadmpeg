@@ -16,11 +16,52 @@ use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeom
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::Annotations;
 
 use crate::variant::Variant;
 
 use crate::CatiaCodec;
+
+struct NativeFieldsMut<'a> {
+    record: &'a mut cadmpeg_ir::NativeRecord,
+    fields: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+impl std::ops::Deref for NativeFieldsMut<'_> {
+    type Target = serde_json::Map<String, serde_json::Value>;
+
+    fn deref(&self) -> &Self::Target {
+        self.fields.as_ref().expect("native fields guard")
+    }
+}
+
+impl std::ops::DerefMut for NativeFieldsMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.fields.as_mut().expect("native fields guard")
+    }
+}
+
+impl Drop for NativeFieldsMut<'_> {
+    fn drop(&mut self) {
+        let id = self.record.id().to_owned();
+        let fields = self.fields.take().expect("native fields guard");
+        *self.record = cadmpeg_ir::NativeRecord::new(id, fields);
+    }
+}
+
+trait NativeRecordTestExt {
+    fn fields_mut(&mut self) -> NativeFieldsMut<'_>;
+}
+
+impl NativeRecordTestExt for cadmpeg_ir::NativeRecord {
+    fn fields_mut(&mut self) -> NativeFieldsMut<'_> {
+        let fields = self.fields();
+        NativeFieldsMut {
+            record: self,
+            fields: Some(fields),
+        }
+    }
+}
 
 fn summary_preview_segment() -> Vec<u8> {
     let mut bytes = b"FINJPL  \x01\x01\x00\x03\x00\x00\x00\x15\x00CATSummaryInformation".to_vec();
@@ -3644,6 +3685,16 @@ fn scan_parses_directory_and_identifies_standard() {
 }
 
 #[test]
+fn flagged_fbb_marker_is_structural() {
+    assert!(crate::container::is_fbb_row(&[
+        0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1,
+    ]));
+    assert!(!crate::container::is_fbb_row(&[
+        0x20, 0x04, 0x04, 0xff, 0xff, 0xc4, 0xb2, 0xaa,
+    ]));
+}
+
+#[test]
 fn standard_decode_retains_native_surface_carrier_tags() {
     let decoded = CatiaCodec
         .decode(
@@ -3772,7 +3823,10 @@ fn inspect_enumerates_streams_and_names_variant() {
     let f = standard_catpart();
     let mut cur = Cursor::new(f);
     let summary = CatiaCodec
-        .inspect(&mut cur, &cadmpeg_ir::decode::InspectOptions::default())
+        .inspect(
+            &mut cur,
+            &cadmpeg_codec_core::decode::InspectOptions::default(),
+        )
         .unwrap();
     assert_eq!(summary.format, "catia");
     assert_eq!(summary.container_kind, "v5-cfv2");
@@ -3850,13 +3904,17 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .report
         .losses
         .iter()
-        .any(|l| l.category == cadmpeg_ir::report::LossCategory::Topology));
+        .any(|l| l.code.category() == cadmpeg_ir::report::LossCategory::Topology));
     assert_eq!(
-        result.report.coverage["attempted_standard_topology_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["attached_standard_topology_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         0
     );
     assert_eq!(
@@ -3876,9 +3934,11 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| result.report.coverage[key])
+        .map(|key| result.report.coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
-        result.report.coverage["standard_topology_failure_ambiguous_solution_count"]
+        result
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
     );
     assert_eq!(
         [
@@ -3887,15 +3947,25 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| result.report.coverage[key])
+        .map(|key| result.report.coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
-        result.report.coverage["standard_topology_failure_search_exhausted_count"]
+        result
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
     );
     assert_eq!(
-        result.report.coverage["standard_topology_empty_endpoint_domain_count"]
-            + result.report.coverage["standard_topology_singleton_endpoint_domain_count"]
-            + result.report.coverage["standard_topology_multiple_endpoint_domain_count"],
-        result.report.coverage["standard_topology_curve_support_count"]
+        result
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
+            + result
+                .report
+                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
+            + result
+                .report
+                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
+        result
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
     );
     assert!(
         result
@@ -3913,24 +3983,17 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             <= 1
     );
     assert_eq!(
-        result.report.coverage["standard_topology_mesh_rejection_endpoint_incidence_count"],
-        result.report.coverage
-            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count"]
+        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
+        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
     );
     assert_eq!(
-        result.report.coverage
-            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"],
-        result.report.coverage["standard_topology_mesh_rejection_incidence_input_shape_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_incidence_choice_pruning_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_incidence_fixed_assignment_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_incidence_component_domain_count"]
-            + result.report.coverage
-                ["standard_topology_mesh_rejection_incidence_component_composition_count"]
+        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
+        result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
+            + result.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
     );
 
     // The produced IR validates (free carriers, no dangling references).
@@ -3961,7 +4024,7 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
         SurfaceGeometry::Unknown { record: Some(_) }
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 unresolved surface carriers")
     }));
@@ -4018,16 +4081,20 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     );
     assert!(!decoded.report.losses.iter().any(|loss| {
         matches!(
-            loss.category,
+            loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
-        decoded.report.coverage["attempted_standard_topology_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["attached_standard_topology_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
         1
     );
     assert_eq!(
@@ -4047,9 +4114,11 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| decoded.report.coverage[key])
+        .map(|key| decoded.report.coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
-        decoded.report.coverage["standard_topology_failure_ambiguous_solution_count"]
+        decoded
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
     );
     assert_eq!(
         [
@@ -4058,15 +4127,25 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| decoded.report.coverage[key])
+        .map(|key| decoded.report.coverage.get(key).copied().unwrap_or(0))
         .sum::<usize>(),
-        decoded.report.coverage["standard_topology_failure_search_exhausted_count"]
+        decoded
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
     );
     assert_eq!(
-        decoded.report.coverage["standard_topology_empty_endpoint_domain_count"]
-            + decoded.report.coverage["standard_topology_singleton_endpoint_domain_count"]
-            + decoded.report.coverage["standard_topology_multiple_endpoint_domain_count"],
-        decoded.report.coverage["standard_topology_curve_support_count"]
+        decoded
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
+            + decoded
+                .report
+                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
+            + decoded
+                .report
+                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
+        decoded
+            .report
+            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
     );
     assert_eq!(
         decoded
@@ -4084,24 +4163,17 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         0
     );
     assert_eq!(
-        decoded.report.coverage["standard_topology_mesh_rejection_endpoint_incidence_count"],
-        decoded.report.coverage
-            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_endpoint_incidence_boundary_reconstruction_count"]
+        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
+        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
     );
     assert_eq!(
-        decoded.report.coverage
-            ["standard_topology_mesh_rejection_endpoint_incidence_no_assignment_count"],
-        decoded.report.coverage["standard_topology_mesh_rejection_incidence_input_shape_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_incidence_choice_pruning_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_incidence_fixed_assignment_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_incidence_component_domain_count"]
-            + decoded.report.coverage
-                ["standard_topology_mesh_rejection_incidence_component_composition_count"]
+        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
+        decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
+            + decoded.report.coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
     );
 }
 
@@ -4157,35 +4229,49 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode legacy identity run");
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_entity_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ENTITY_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_entity_identity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ENTITY_IDENTITY_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_identity_lead_81_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_81_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_identity_lead_82_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_82_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_identity_lead_e5_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_E5_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_identity_lead_fd_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_FD_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_role_selector_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_SELECTOR_COUNT),
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains("legacy design run")
     }));
 }
@@ -4238,30 +4324,47 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode compound legacy fields");
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_text_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_TEXT_FIELD_COUNT),
         6
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_e3_role_tail_text_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_E3_ROLE_TAIL_TEXT_FIELD_COUNT),
         6
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_role_text_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_TEXT_FIELD_COUNT),
         5
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_selected_role_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SELECTED_ROLE_COUNT),
         4
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_role_field_binding_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT),
         5
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_schema_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT),
         5
     );
-    assert_eq!(decoded.report.coverage["decoded_legacy_relation_count"], 2);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_RELATION_COUNT),
+        2
+    );
 
     let native = crate::native::CatiaNative::load(
         decoded
@@ -4305,7 +4408,7 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     invalid_relation_pair.legacy_entity_runs[0].relations[1].expression_offset =
         prelude.byte_offset;
     invalid_relation_pair.legacy_entity_runs[0].relations[1].expression = prelude.value;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_relation_pair
         .store(&mut namespace)
         .expect("store invalid selected relation pair");
@@ -4314,7 +4417,7 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     let mut invalid = native;
     invalid.legacy_entity_runs[0].role_selectors[3].name =
         crate::native::CatiaLegacyRoleName::Selector(0);
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid selected role");
@@ -4343,23 +4446,33 @@ fn decode_retains_legacy_relation_synchronous_states() {
         .expect("decode legacy relation update states");
 
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_synchronous_state_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SYNCHRONOUS_STATE_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_synchronous_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SYNCHRONOUS_RELATION_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_asynchronous_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ASYNCHRONOUS_RELATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_schema_field_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_role_field_binding_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT),
         4
     );
     let native = crate::native::CatiaNative::load(
@@ -4395,7 +4508,7 @@ fn decode_retains_legacy_relation_synchronous_states() {
     missing_selected_successor.legacy_entity_runs[0]
         .role_selectors
         .pop();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     missing_selected_successor
         .store(&mut namespace)
         .expect("store selected state without successor role");
@@ -4403,7 +4516,7 @@ fn decode_retains_legacy_relation_synchronous_states() {
 
     let mut invalid_field_boundary = native.clone();
     invalid_field_boundary.legacy_entity_runs[0].schema_fields[0].boundary_role_byte_offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_field_boundary
         .store(&mut namespace)
         .expect("store invalid schema-field boundary");
@@ -4411,7 +4524,7 @@ fn decode_retains_legacy_relation_synchronous_states() {
 
     let mut missing_bound_field_code = native.clone();
     missing_bound_field_code.legacy_entity_runs[0].role_selectors[0].field_code = None;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     missing_bound_field_code
         .store(&mut namespace)
         .expect("store schema field without its role binding");
@@ -4419,7 +4532,7 @@ fn decode_retains_legacy_relation_synchronous_states() {
 
     let mut invalid = native;
     invalid.legacy_entity_runs[0].synchronous_states[0].selector += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid relation update state");
@@ -4452,7 +4565,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
     assert_eq!(parameter.name, "Width");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::ParameterValue::Length(
             cadmpeg_ir::features::Length(12.5)
         ))
     );
@@ -4462,7 +4575,9 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
         .as_deref()
         .is_some_and(|id| id.starts_with("catia:legacy:entity-run#")));
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -4503,11 +4618,15 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
         ))
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_string_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_STRING_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_named_string_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_NAMED_STRING_VALUE_COUNT),
         1
     );
 }
@@ -4541,11 +4660,15 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
     );
     assert_eq!(parameter.expression, "11");
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_integer_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_INTEGER_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_legacy_named_integer_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEGACY_NAMED_INTEGER_VALUE_COUNT),
         1
     );
 }
@@ -4577,7 +4700,9 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
     assert!(parameter.expression.is_empty());
     assert_eq!(parameter.properties["value_type"], "LENGTH");
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -4662,7 +4787,9 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
     );
     assert_eq!(integer.properties["value_type"], "Integer");
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         2
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -4693,7 +4820,9 @@ fn decode_does_not_override_a_string_value_type_descriptor() {
 
         assert!(decoded.ir.model.parameters.is_empty());
         assert_eq!(
-            decoded.report.coverage["transferred_legacy_parameter_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
             0
         );
     }
@@ -4725,7 +4854,9 @@ fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         0
     );
 }
@@ -4768,12 +4899,14 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
         .expect("decode selected legacy type");
     assert_eq!(
         decoded.ir.model.parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::ParameterValue::Length(
             cadmpeg_ir::features::Length(8.0)
         ))
     );
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_selector_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT),
         1
     );
 
@@ -4785,7 +4918,9 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
         .expect("decode cyclic legacy type");
     assert!(cyclic.ir.model.parameters.is_empty());
     assert_eq!(
-        cyclic.report.coverage["transferred_legacy_selector_parameter_count"],
+        cyclic
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT),
         0
     );
 }
@@ -4850,7 +4985,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_formula_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
     let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
@@ -4864,7 +5001,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         .expect("decode mismatched legacy formula");
     assert_eq!(mismatched.ir.model.parameters[0].expression, "6");
     assert_eq!(
-        mismatched.report.coverage["transferred_legacy_formula_count"],
+        mismatched
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
 
@@ -4879,7 +5018,12 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(parameter.value, None);
-    assert_eq!(unset.report.coverage["transferred_legacy_formula_count"], 1);
+    assert_eq!(
+        unset
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        1
+    );
 
     let mismatched_unset = CatiaCodec
         .decode(
@@ -4893,7 +5037,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert!(parameter.expression.is_empty());
     assert_eq!(parameter.value, None);
     assert_eq!(
-        mismatched_unset.report.coverage["transferred_legacy_formula_count"],
+        mismatched_unset
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
 
@@ -4913,7 +5059,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         Some("Boolean")
     );
     assert_eq!(
-        boolean.report.coverage["transferred_legacy_formula_count"],
+        boolean
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
 
@@ -4937,7 +5085,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
     );
     assert_eq!(
-        conditional.report.coverage["transferred_legacy_formula_count"],
+        conditional
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
 }
@@ -4996,12 +5146,12 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     );
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
-            "Easy Evans".to_string()
-        ))
+        Some(cadmpeg_ir::ParameterValue::String("Easy Evans".to_string()))
     );
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_formula_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -5017,7 +5167,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         .expect("decode mismatched legacy string formula");
     assert!(mismatched.ir.model.parameters[0].expression.is_empty());
     assert_eq!(
-        mismatched.report.coverage["transferred_legacy_formula_count"],
+        mismatched
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         0
     );
 
@@ -5039,12 +5191,12 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     );
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
-            "ied".to_string()
-        ))
+        Some(cadmpeg_ir::ParameterValue::String("ied".to_string()))
     );
     assert_eq!(
-        methods.report.coverage["transferred_legacy_formula_count"],
+        methods
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
         1
     );
 }
@@ -5092,11 +5244,15 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
         .expect("decode zero-entity parametric support");
 
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_support_curve_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_parametric_surface_curve_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        ),
         1
     );
     let [curve] = result.ir.model.curves.as_slice() else {
@@ -5148,11 +5304,15 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
         .expect("decode zero-entity exact support");
 
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_support_curve_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["transferred_zero_entity_parametric_surface_curve_count"],
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        ),
         0
     );
     assert!(matches!(
@@ -5510,7 +5670,7 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
         vec![[0.0, 0.0], [1.0, 1.0]]
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA pcurves");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA pcurves"),
@@ -5519,7 +5679,7 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 
     let mut invalid = native;
     invalid.consolidated_pcurves[0].degree = 4;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA pcurve for load validation");
@@ -5535,7 +5695,7 @@ fn native_namespace_retains_typed_consolidated_groups() {
     assert_eq!(group.byte_offset, 9);
     assert_eq!(group.group_type, 3);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA consolidated groups");
@@ -5546,7 +5706,7 @@ fn native_namespace_retains_typed_consolidated_groups() {
 
     let mut invalid = native;
     invalid.consolidated_groups[0].id.push_str("-changed");
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA consolidated group for load validation");
@@ -5582,7 +5742,7 @@ fn native_namespace_retains_consolidated_class61_records() {
     assert_eq!(references, &[0x0100, 0x0103, 0x0106, 0x0109, 0x010c]);
     assert_eq!(*scalar, 42.5);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA class-0x61 records");
@@ -5598,7 +5758,7 @@ fn native_namespace_retains_consolidated_class61_records() {
         panic!("long class-0x61 record")
     };
     members.swap(0, 1);
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA class-0x61 record for load validation");
@@ -5644,7 +5804,7 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
         }
     ));
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA parameter points");
@@ -5655,7 +5815,7 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
 
     let mut invalid = native;
     invalid.consolidated_parameter_points[0].layout = 0x1a;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA parameter point");
@@ -5670,7 +5830,7 @@ fn native_namespace_retains_consolidated_reference_lists() {
     };
     assert_eq!(list.references, (0u32..26).collect::<Vec<_>>());
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA reference list");
@@ -5681,7 +5841,7 @@ fn native_namespace_retains_consolidated_reference_lists() {
 
     let mut invalid = native;
     invalid.consolidated_reference_lists[0].references.clear();
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA reference list");
@@ -5703,7 +5863,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     assert!(circle.full_circle);
     assert_eq!(circle.chart_shift, 0.0);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA circle");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA circle"),
@@ -5712,7 +5872,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
 
     let mut invalid = native;
     invalid.consolidated_circles[0].full_circle = false;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA circle for load validation");
@@ -5757,7 +5917,7 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
             == ((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits()
     ));
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA cylinders");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA cylinders"),
@@ -5771,7 +5931,7 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
         panic!("range-origin cylinder")
     };
     *range_origin += 1.0;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cylinder for load validation");
@@ -5801,7 +5961,7 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA cone");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA cone"),
@@ -5810,7 +5970,7 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
 
     let mut invalid = native;
     invalid.consolidated_cones[0].angular_domain[0] += 0.25;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cone for load validation");
@@ -5836,7 +5996,7 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA cone-face chart");
@@ -5847,7 +6007,7 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
 
     let mut invalid = native.clone();
     invalid.consolidated_cone_faces[0].program.clear();
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cone-face chart");
@@ -5857,7 +6017,7 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
     invalid.consolidated_cone_faces[0]
         .parameter_points
         .swap(0, 1);
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cone-face parameter run");
@@ -5876,11 +6036,15 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode CATIA cone-face chart");
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_cone_face_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_cone_face_parameter_point_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT),
         4
     );
 }
@@ -5903,7 +6067,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         Some("catia:consolidated:circle#0")
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA revolution");
@@ -5914,7 +6078,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
 
     let mut invalid = native.clone();
     invalid.consolidated_revolutions[0].profile_circle = None;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA revolution profile binding");
@@ -5922,7 +6086,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
 
     let mut invalid = native;
     invalid.consolidated_revolutions[0].axis = [0.0, 0.0, -1.0];
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA revolution for load validation");
@@ -5990,7 +6154,9 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         } if *angular_interval == [0.5, 0.5 + std::f64::consts::TAU]
     ));
     assert_eq!(
-        decoded.report.coverage["transferred_consolidated_revolution_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT),
         1
     );
     assert!(!decoded.report.losses.iter().any(|loss| loss
@@ -6008,7 +6174,7 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
     assert_eq!(line.direction, [0.0, 0.6, 0.8]);
     assert_eq!(line.range, [-4.0, 9.0]);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA line profile");
@@ -6019,7 +6185,7 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
 
     let mut invalid = native;
     invalid.consolidated_line_profiles[0].direction = [0.0, 0.0, 2.0];
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA line profile for load validation");
@@ -6036,11 +6202,15 @@ fn decode_transfers_exact_consolidated_line_profiles() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode consolidated line profile");
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_line_profile_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["transferred_consolidated_line_profile_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
         1
     );
     assert!(decoded.ir.model.curves.iter().any(|curve| matches!(
@@ -6164,7 +6334,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         ])
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA zero-entity support run");
@@ -6179,7 +6349,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .loop_terminals[0] = 8;
-    let mut invalid_face_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_face_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_face
         .store(&mut invalid_face_namespace)
         .expect("store invalid CATIA zero-entity face");
@@ -6191,7 +6361,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .loop_terminals[0] = 0;
-    let mut zero_face_terminal_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut zero_face_terminal_namespace = cadmpeg_ir::NativeNamespace::default();
     zero_face_terminal
         .store(&mut zero_face_terminal_namespace)
         .expect("store zero CATIA zero-entity face loop terminal");
@@ -6204,7 +6374,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .loop_class = 0x50;
-    let mut invalid_loop_roster_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_loop_roster_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_loop_roster
         .store(&mut invalid_loop_roster_namespace)
         .expect("store invalid CATIA zero-entity loop roster");
@@ -6216,7 +6386,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .allocations[0] = 0;
-    let mut invalid_face_allocation_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_face_allocation_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_face_allocation
         .store(&mut invalid_face_allocation_namespace)
         .expect("store invalid CATIA zero-entity face allocation");
@@ -6228,7 +6398,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .terminal_control = 0x04;
-    let mut invalid_face_control_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_face_control_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_face_control
         .store(&mut invalid_face_control_namespace)
         .expect("store invalid CATIA zero-entity face control");
@@ -6241,7 +6411,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .gap = 0;
-    let mut invalid_loop_gap_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_loop_gap_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_loop_gap
         .store(&mut invalid_loop_gap_namespace)
         .expect("store invalid CATIA zero-entity loop gap");
@@ -6249,7 +6419,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid_support_slot = native.clone();
     invalid_support_slot.zero_entity_support_runs[0].supports[0].face_local_slot = 0;
-    let mut invalid_support_slot_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_support_slot_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_support_slot
         .store(&mut invalid_support_slot_namespace)
         .expect("store invalid CATIA zero-entity support slot");
@@ -6263,7 +6433,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .loops[0]
         .forward_senses
         .clear();
-    let mut invalid_loop_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_loop_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_loop
         .store(&mut invalid_loop_namespace)
         .expect("store invalid CATIA zero-entity loop");
@@ -6276,7 +6446,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .typed_records[0] = "catia:zero-entity:record#2".to_string();
-    let mut invalid_typed_record_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_typed_record_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_typed_record
         .store(&mut invalid_typed_record_namespace)
         .expect("store invalid CATIA zero-entity typed loop reference");
@@ -6289,7 +6459,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .support_record_ordinals[0] = 1;
-    let mut invalid_binding_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_binding_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_binding
         .store(&mut invalid_binding_namespace)
         .expect("store invalid CATIA zero-entity loop support binding");
@@ -6304,7 +6474,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         panic!("NURBS support pcurve")
     };
     *degree = 2;
-    let mut invalid_pcurve_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_pcurve_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_pcurve
         .store(&mut invalid_pcurve_namespace)
         .expect("store invalid CATIA zero-entity support pcurve");
@@ -6319,7 +6489,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         panic!("NURBS support model curve")
     };
     model_curve.periodic = true;
-    let mut invalid_model_curve_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_model_curve_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_curve
         .store(&mut invalid_model_curve_namespace)
         .expect("store invalid CATIA zero-entity support model curve");
@@ -6328,7 +6498,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     let mut invalid_model_parameters = native.clone();
     invalid_model_parameters.zero_entity_support_runs[0].supports[0].model_parameters =
         Some([1.0, 1.0]);
-    let mut invalid_model_parameters_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_model_parameters_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_parameters
         .store(&mut invalid_model_parameters_namespace)
         .expect("store invalid CATIA zero-entity support model parameters");
@@ -6336,7 +6506,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut missing_model_midpoint = native.clone();
     missing_model_midpoint.zero_entity_support_runs[0].supports[0].model_midpoint = None;
-    let mut missing_model_midpoint_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut missing_model_midpoint_namespace = cadmpeg_ir::NativeNamespace::default();
     missing_model_midpoint
         .store(&mut missing_model_midpoint_namespace)
         .expect("store CATIA zero-entity support without its model midpoint");
@@ -6353,7 +6523,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             apex_factor: 1.0,
             axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         });
-    let mut invalid_model_construction_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_model_construction_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_construction
         .store(&mut invalid_model_construction_namespace)
         .expect("store invalid CATIA zero-entity support model construction");
@@ -6370,7 +6540,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         ]);
-    let mut invalid_oriented_endpoint_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_oriented_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_oriented_endpoints
         .store(&mut invalid_oriented_endpoint_namespace)
         .expect("store invalid CATIA zero-entity oriented endpoints");
@@ -6395,7 +6565,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             ],
             model_midpoint: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         });
-    let mut invalid_endpoint_pair_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_endpoint_pair_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_endpoint_pair
         .store(&mut invalid_endpoint_pair_namespace)
         .expect("store invalid CATIA zero-entity endpoint pair");
@@ -6415,7 +6585,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             representative_point: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             maximum_deviation: 0.0,
         });
-    let mut invalid_endpoint_locus_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_endpoint_locus_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_endpoint_locus
         .store(&mut invalid_endpoint_locus_namespace)
         .expect("store invalid CATIA zero-entity endpoint-locus candidate");
@@ -6427,7 +6597,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("model endpoints")[0]
         .x = f64::NAN;
-    let mut invalid_model_endpoint_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_model_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_endpoint
         .store(&mut invalid_model_endpoint_namespace)
         .expect("store invalid CATIA zero-entity model endpoint");
@@ -6435,7 +6605,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid = native;
     invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity support run");
@@ -6466,7 +6636,7 @@ fn native_namespace_retains_closed_zero_entity_endpoint_tapes() {
         ]]
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA zero-entity endpoint tape");
@@ -6493,7 +6663,7 @@ fn native_namespace_retains_zero_entity_ownership_root() {
         root.shell_byte_offset
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA zero-entity ownership root");
@@ -6505,7 +6675,7 @@ fn native_namespace_retains_zero_entity_ownership_root() {
 
     let mut invalid = native;
     invalid.zero_entity_ownership_roots[0].face_slots.clear();
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity ownership root");
@@ -6540,7 +6710,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
         Some("catia:zero-entity:record#6")
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA zero-entity topology registries");
@@ -6552,7 +6722,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 
     let mut invalid = native.clone();
     invalid.zero_entity_edge_strides[0].allocations[0] = 0;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity edge allocation");
@@ -6560,7 +6730,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 
     let mut invalid = native.clone();
     invalid.zero_entity_vertex_incidences[0].vertex_record = None;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity vertex owner");
@@ -6568,7 +6738,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 
     let mut invalid = native;
     invalid.zero_entity_oriented_use_pairs[0].uses[1].allocations[0] += 1;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity topology registries");
@@ -6603,79 +6773,115 @@ fn decode_reports_zero_entity_surface_support_runs() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity support run");
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_face_bound_support_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_face_terminal_control_03_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_face_terminal_control_05_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_terminal_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_class_41_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_class_50_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_loop_class_c1_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_forward_loop_member_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_reversed_loop_member_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_oriented_loop_member_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_occurrence_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_pcurve_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_model_curve_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_support_model_construction_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_uv_endpoint_pair_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_model_midpoint_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT),
         1
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss
                 .message
                 .contains("1 zero-entity surface-support run(s)")
@@ -6697,43 +6903,61 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity topology registries");
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT),
         8
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_edge_stride_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_edge_stride_allocation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT),
         5
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_oriented_use_pair_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_oriented_use_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_oriented_use_allocation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT),
         4
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_vertex_incidence_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_vertex_incidence_allocation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_zero_entity_vertex_owner_binding_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT),
         1
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.message.contains("1 edge-stride allocation tuple(s)")
             && loss.message.contains("1 oriented-use pair(s)")
             && loss.message.contains("1 vertex-incidence record(s)")
@@ -6777,7 +7001,9 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
                 && axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
     ));
     assert_eq!(
-        decoded.report.coverage["refined_consolidated_analytic_surface_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT),
         1
     );
 }
@@ -6813,7 +7039,7 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
     assert_eq!(torus.major_scale, 14.0);
     assert_eq!(torus.minor_scale, 4.0);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA torus");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA torus"),
@@ -6822,7 +7048,7 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
 
     let mut invalid = native;
     invalid.consolidated_tori[0].major_angular_domain[0] += 0.25;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA torus for load validation");
@@ -6843,7 +7069,7 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
     assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
     assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA sphere");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA sphere"),
@@ -6852,7 +7078,7 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
 
     let mut invalid = native;
     invalid.consolidated_spheres[0].latitude_range.reverse();
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA sphere for load validation");
@@ -6883,7 +7109,7 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
     assert_eq!(link.target, 1003);
     assert_eq!(link.target + 1, references[8]);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA owner packet");
@@ -6898,7 +7124,7 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
         .as_mut()
         .expect("allocation-successor link")
         .target -= 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid CATIA owner packet");
@@ -6924,7 +7150,7 @@ fn native_namespace_retains_count_framed_owner_packet_and_allocation_link() {
         *references.last().expect("final owner reference")
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store count-framed CATIA owner packet");
@@ -6940,7 +7166,7 @@ fn native_namespace_retains_count_framed_owner_packet_and_allocation_link() {
         panic!("count-framed owner payload")
     };
     tail.clear();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid count-framed CATIA owner packet");
@@ -6992,35 +7218,49 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode consolidated edge-run coverage");
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_edge_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_edge_run_support_binding_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_consolidated_edge_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["partially_resolved_consolidated_edge_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::PARTIALLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["fully_resolved_consolidated_edge_run_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::FULLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_edge_run_shared_locus_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_consolidated_edge_run_endpoint_locus_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT),
         0
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA edge run");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA edge run"),
@@ -7029,7 +7269,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 
     let mut invalid = native;
     invalid.consolidated_edge_runs[0].pcurves[1] = "missing".to_string();
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA edge run for load validation");
@@ -7041,7 +7281,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .as_mut()
         .expect("edge definition")
         .class = 0x26;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA edge definition");
@@ -7049,7 +7289,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 
     let mut invalid = crate::native::CatiaNative::decode(&bytes);
     invalid.consolidated_edge_nodes[0].uses = None;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store orphaned CATIA edge definition");
@@ -7059,7 +7299,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     invalid.consolidated_vertex_identities[0]
         .incident_edge_nodes
         .clear();
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA vertex incidence for load validation");
@@ -7112,7 +7352,7 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
         ["catia:consolidated:edge-node#0"]
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store standalone consolidated edge node");
@@ -7195,7 +7435,7 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
             .map(|loci| [loci[0], loci[loci.len() - 1]])
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store resolved CATIA edge run");
@@ -7227,7 +7467,7 @@ fn native_namespace_retains_resolved_consolidated_torus_supports() {
         .all(|binding| matches!(binding, Some(CatiaConsolidatedSupportBinding::Torus { .. }))));
     assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store torus-bound CATIA edge run");
@@ -7259,7 +7499,7 @@ fn native_namespace_retains_resolved_consolidated_sphere_supports() {
     )));
     assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store sphere-bound CATIA edge run");
@@ -7292,7 +7532,7 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
     assert_eq!(cylinder.object_id, 0x5678);
     assert_eq!(cylinder.u_range, [0.0, 4.0 * std::f64::consts::PI]);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store embedded CATIA cylinder");
@@ -7317,7 +7557,7 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
     invalid.consolidated_embedded_cylinders[1]
         .group
         .clone_from(&invalid.consolidated_groups[0].id);
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store cross-group embedded cylinder");
@@ -7349,7 +7589,7 @@ fn native_namespace_binds_edges_to_retained_embedded_cylinders() {
         Some(CatiaConsolidatedSupportBinding::EmbeddedCylinder { .. })
     )));
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store embedded-cylinder edge binding");
@@ -7874,7 +8114,7 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     assert_eq!(native.consolidated_circles[0].center_pair, [12.0, 34.0]);
     assert_eq!(native.consolidated_circles[0].range, [0.0, 10.0]);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store analytic circle binding");
@@ -7889,7 +8129,7 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         .as_mut()
         .expect("analytic circle binding")
         .circle = "missing".to_string();
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid analytic circle binding");
@@ -8977,19 +9217,21 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
         ]
     );
     assert_eq!(
-        decoded.report.coverage["decoded_design_object_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
         2
     );
 
     let mut malformed = native.clone();
     malformed.design_objects[0].relations.swap(0, 1);
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store reordered design relations");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -9025,7 +9267,9 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
         }]
     );
     assert_eq!(
-        decoded.report.coverage["decoded_design_unowned_field_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT),
         1
     );
 }
@@ -9061,11 +9305,15 @@ fn native_design_objects_preserve_reflexive_field_relations() {
         }]
     );
     assert_eq!(
-        decoded.report.coverage["decoded_design_same_object_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_design_reflexive_field_relation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_REFLEXIVE_FIELD_RELATION_COUNT),
         1
     );
 }
@@ -9221,7 +9469,9 @@ fn null_storage_roles_are_not_unresolved_storage_links() {
         .expect("decode null storage role");
 
     assert_eq!(
-        decoded.report.coverage["unresolved_storage_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_STORAGE_RECORD_COUNT),
         0
     );
 }
@@ -9507,13 +9757,13 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .rows[0]
         .cells[0]
         .entity_id += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed parallel reference table");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed_offset = native.clone();
@@ -9524,13 +9774,13 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .rows[0]
         .cells[0]
         .payload_offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed parallel-reference cell offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed_list_offset = native.clone();
@@ -9540,24 +9790,25 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .columns[0]
         .list_payload_offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_list_offset
         .store(&mut namespace)
         .expect("store malformed parallel-reference list offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    let mut version_256_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_256_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_256_namespace)
         .expect("store pre-column-incidence parallel reference table");
-    let columns = version_256_namespace
+    let mut stored_fields = version_256_namespace
         .arenas
         .get_mut("design_objects")
         .expect("stored design objects")[0]
-        .fields
+        .fields_mut();
+    let columns = stored_fields
         .get_mut("parallel_reference_table")
         .expect("stored parallel reference table")
         .as_object_mut()
@@ -9574,6 +9825,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     }
     version_256_namespace.version =
         crate::native::CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_256_namespace)
         .expect("migrate parallel-reference column incidences");
     assert_eq!(
@@ -9581,7 +9833,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut version_255_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_255_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_255_namespace)
         .expect("store pre-offset parallel reference table");
@@ -9609,7 +9861,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut previous_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut previous_namespace)
         .expect("store current parallel reference table");
@@ -9628,7 +9880,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut version_203_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_203_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_203_namespace)
         .expect("store current parallel reference row matches");
@@ -9654,7 +9906,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut version_202_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_202_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_202_namespace)
         .expect("store current classified parallel reference columns");
@@ -9680,7 +9932,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut version_201_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_201_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_201_namespace)
         .expect("store current classified parallel reference table");
@@ -9725,7 +9977,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         cell.entity_id == 5 && cell.is_null && cell.field.is_none() && cell.design_object.is_none()
     }));
 
-    let mut version_210_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::default();
     terminal_null
         .store(&mut version_210_namespace)
         .expect("store terminal null parallel reference cells");
@@ -9813,7 +10065,7 @@ fn parallel_reference_row_match_requires_distinct_target_fields() {
     assert!(table.rows[1].matching_design_object.is_none());
     assert_eq!(table.rows[1].cells[0].field, table.rows[1].cells[1].field);
 
-    let mut version_204_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_204_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_204_namespace)
         .expect("store current parallel reference row matches");
@@ -9873,7 +10125,7 @@ fn native_design_objects_follow_first_field_order() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store source-ordered design objects");
@@ -10432,29 +10684,80 @@ fn decode_retains_outer_object_graph_order_and_references() {
             .map(|record| record.id.clone())
             .collect::<Vec<_>>()
     );
-    assert_eq!(decoded.report.coverage["decoded_object_graph_count"], 1);
-    assert_eq!(decoded.report.coverage["decoded_object_record_count"], 2);
-    assert_eq!(decoded.report.coverage["decoded_design_object_count"], 1);
-    assert_eq!(decoded.report.coverage["decoded_design_field_count"], 2);
     assert_eq!(
-        decoded.report.coverage["decoded_design_object_relation_count"],
-        0
-    );
-    assert_eq!(decoded.report.coverage["classified_design_object_count"], 0);
-    assert_eq!(decoded.report.coverage["unresolved_design_owner_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_feature_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_sketch_count"], 0);
-    assert_eq!(
-        decoded.report.coverage["transferred_sketch_constraint_count"],
-        0
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
+        1
     );
     assert_eq!(
-        decoded.report.coverage["transferred_configuration_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_FIELD_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_SKETCH_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 design object(s)")
             && loss.message.contains("2 object-graph field record(s)")
@@ -10463,7 +10766,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
     assert!(validation
         .findings
         .iter()
-        .all(|finding| finding.check != cadmpeg_ir::validate::Check::Identity));
+        .all(|finding| finding.check != cadmpeg_ir::report::Check::Identity));
 }
 
 #[test]
@@ -10479,20 +10782,44 @@ fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode object graph without a declared part container");
 
-    assert_eq!(decoded.report.coverage["decoded_object_graph_count"], 1);
-    assert_eq!(decoded.report.coverage["decoded_object_record_count"], 2);
-    assert_eq!(decoded.report.coverage["modeling_object_graph_count"], 0);
-    assert_eq!(decoded.report.coverage["modeling_object_record_count"], 0);
     assert_eq!(
-        decoded.report.coverage["retained_unscoped_object_graph_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["retained_unscoped_object_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::MODELING_OBJECT_GRAPH_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::MODELING_OBJECT_RECORD_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT),
         2
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 retained object graph(s)")
             && loss.message.contains("2 field record(s)")
@@ -10525,7 +10852,9 @@ fn decode_links_design_objects_through_their_owner_record_group() {
     );
     assert_eq!(native.design_objects[1].owner_design_object, None);
     assert_eq!(
-        decoded.report.coverage["decoded_design_object_owner_link_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_OWNER_LINK_COUNT),
         1
     );
 }
@@ -10541,7 +10870,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
         "Sketch",
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA native namespace");
@@ -10555,7 +10884,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
             .clear();
         assert!(matches!(
             crate::native::CatiaNative::load(&malformed),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     }
 
@@ -10565,7 +10894,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
         arena.push(arena.first().expect("owner record").clone());
         assert!(matches!(
             crate::native::CatiaNative::load(&malformed),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     }
 
@@ -10577,7 +10906,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
         .clear();
     assert!(matches!(
         crate::native::CatiaNative::load(&stale_design_objects),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -10585,49 +10914,49 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
 fn native_load_rejects_dangling_cross_arena_links() {
     let mut value_native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     value_native.value_blocks[0].catalog = "catia:missing-catalog".to_string();
-    let mut value_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut value_namespace = cadmpeg_ir::NativeNamespace::default();
     value_native
         .store(&mut value_namespace)
         .expect("store malformed value link");
     assert!(matches!(
         crate::native::CatiaNative::load(&value_namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut omitted_value_graph =
         crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     omitted_value_graph.value_blocks[0].object_graph = None;
-    let mut omitted_value_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut omitted_value_namespace = cadmpeg_ir::NativeNamespace::default();
     omitted_value_graph
         .store(&mut omitted_value_namespace)
         .expect("store omitted value-block graph link");
     assert!(matches!(
         crate::native::CatiaNative::load(&omitted_value_namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut external_native =
         crate::native::CatiaNative::decode(&external_reference_segment("Support.CATPart"));
     external_native.external_references[0].segment = "catia:missing-segment".to_string();
-    let mut external_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut external_namespace = cadmpeg_ir::NativeNamespace::default();
     external_native
         .store(&mut external_namespace)
         .expect("store malformed external-reference link");
     assert!(matches!(
         crate::native::CatiaNative::load(&external_namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut alias_native = crate::native::CatiaNative::decode(&surface_alias_stream());
     alias_native.alias_rows[0].object_graph = Some("catia:missing-graph".to_string());
     alias_native.alias_rows[0].object_record = Some("catia:missing-record".to_string());
-    let mut alias_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut alias_namespace = cadmpeg_ir::NativeNamespace::default();
     alias_native
         .store(&mut alias_namespace)
         .expect("store malformed alias link");
     assert!(matches!(
         crate::native::CatiaNative::load(&alias_namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let graph =
@@ -10640,13 +10969,13 @@ fn native_load_rejects_dangling_cross_arena_links() {
     assert!(omitted_alias_links.alias_rows[0].object_graph.is_some());
     omitted_alias_links.alias_rows[0].object_graph = None;
     omitted_alias_links.alias_rows[0].object_record = None;
-    let mut omitted_alias_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut omitted_alias_namespace = cadmpeg_ir::NativeNamespace::default();
     omitted_alias_links
         .store(&mut omitted_alias_namespace)
         .expect("store omitted alias links");
     assert!(matches!(
         crate::native::CatiaNative::load(&omitted_alias_namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -10664,66 +10993,66 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 
     let mut invalid_count = native.clone();
     invalid_count.catalogs[0].declared_count += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_count
         .store(&mut namespace)
         .expect("store invalid catalog count");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid_entry_ordinal = native.clone();
     invalid_entry_ordinal.catalogs[0].entries[0].ordinal = 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_entry_ordinal
         .store(&mut namespace)
         .expect("store invalid catalog ordinal");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid_record_ordinal = native.clone();
     invalid_record_ordinal.object_graphs[0].records[0].ordinal = 9;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_record_ordinal
         .store(&mut namespace)
         .expect("store invalid record ordinal");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid_design_link = native.clone();
     invalid_design_link.object_graphs[0].records[0].design_object = None;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_design_link
         .store(&mut namespace)
         .expect("store invalid design-object link");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid_references = native;
     invalid_references.object_graphs[0].records[0]
         .references
         .clear();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_references
         .store(&mut namespace)
         .expect("store invalid payload-reference links");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
 #[test]
 fn native_load_rejects_noncanonical_value_block_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
-    let mut canonical_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut canonical_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut canonical_namespace)
         .expect("store canonical value selections");
@@ -10732,7 +11061,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
         .get("value_blocks")
         .is_some_and(|blocks| blocks
             .iter()
-            .all(|block| !block.fields.contains_key("schema_selections"))));
+            .all(|block| !block.fields().contains_key("schema_selections"))));
     assert_eq!(
         canonical_namespace
             .arenas
@@ -10750,17 +11079,17 @@ fn native_load_rejects_noncanonical_value_block_views() {
         .expect("store orphaned value selection");
     assert!(matches!(
         crate::native::CatiaNative::load(&canonical_namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed value-block view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     };
 
@@ -10798,13 +11127,13 @@ fn native_load_rejects_noncanonical_entity_frame_lengths() {
     {
         let mut malformed = native.clone();
         mutate(&mut malformed.entity_records[0]);
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed entity frame");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     }
 }
@@ -10837,13 +11166,13 @@ fn native_namespace_retains_and_validates_definition_schema_selections() {
 
     let mut malformed = native;
     malformed.entity_records[0].definition_schema_selections[0].name = Some("Pad".to_string());
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed definition-schema view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -10869,13 +11198,13 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
         .as_mut()
         .expect("repeated reference suffix")
         .terminal_reference += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed repeated-reference-suffix view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -10903,13 +11232,13 @@ fn native_namespace_resolves_and_validates_repeated_reference_schema_selections(
         .as_mut()
         .expect("reference schema selection")
         .name = Some("WrongSchema".to_string());
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-schema view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -10942,7 +11271,7 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
 
     let mut legacy = native.clone();
     legacy.entity_records[0].numeric_pair = None;
-    let mut legacy_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut legacy_namespace = cadmpeg_ir::NativeNamespace::default();
     legacy
         .store(&mut legacy_namespace)
         .expect("store legacy numeric-pair view");
@@ -10957,13 +11286,13 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
         .as_mut()
         .expect("complete numeric pair")
         .slots[0] = crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 };
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed numeric-pair view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -10977,11 +11306,15 @@ fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() 
         .expect("decode complete numeric entity-value pair");
 
     assert_eq!(
-        decoded.report.coverage["decoded_numeric_entity_value_pair_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PAIR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_numeric_entity_value_packet_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT),
         0
     );
     assert!(decoded.report.losses.iter().any(|loss| {
@@ -11050,22 +11383,24 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
 
     let expected = signature.clone();
     let expected_cohort = cohort.clone();
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
         .expect("store reference-signature incidences");
     stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION - 1;
-    let stored_signature = stored
+    let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let stored_signature = stored_fields
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
         .expect("stored reference-signature object");
     stored_signature.remove("signature_offset");
     stored_signature.remove("second_reference_offset");
+    drop(stored_fields);
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("migrate reference-signature incidences");
     assert_eq!(
@@ -11073,22 +11408,24 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         Some(expected.clone())
     );
 
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
         .expect("store resolved reference-signature incidences");
     stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION - 1;
-    let stored_signature = stored
+    let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let stored_signature = stored_fields
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
         .expect("stored reference-signature object");
     stored_signature.remove("first_entity");
     stored_signature.remove("second_entity");
+    drop(stored_fields);
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("resolve reference-signature incidences");
     assert_eq!(
@@ -11096,22 +11433,24 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         Some(expected.clone())
     );
 
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
         .expect("store reference-signature program");
     stored.version = crate::native::CATIA_REFERENCE_SIGNATURE_FRAME_VERSION - 1;
-    let stored_signature = stored
+    let mut stored_fields = stored
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let stored_signature = stored_fields
         .get_mut("reference_signature")
         .expect("stored reference signature")
         .as_object_mut()
         .expect("stored reference-signature object");
     stored_signature.remove("prefix");
     stored_signature.remove("signature_program");
+    drop(stored_fields);
     let migrated =
         crate::native::CatiaNative::load(&stored).expect("parse reference-signature program");
     assert_eq!(
@@ -11119,7 +11458,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         Some(expected.clone())
     );
 
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
         .expect("store consecutive reference-signature pair");
@@ -11131,7 +11470,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         Some(expected)
     );
 
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
         .expect("store reference-signature schema incidence");
@@ -11143,7 +11482,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         std::slice::from_ref(&expected_cohort)
     );
 
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut stored)
         .expect("store reference-signature cohort");
@@ -11164,51 +11503,75 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode reference-signature incidences");
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_prefix_atom_2_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_2_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_prefix_atom_35_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_35_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_cohort_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_multi_member_reference_signature_cohort_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_MULTI_MEMBER_REFERENCE_SIGNATURE_COHORT_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_cohort_member_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_reference_signature_cohort_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_REFERENCE_SIGNATURE_COHORT_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_instruction_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_INSTRUCTION_COUNT),
         8
     );
     assert_eq!(
-        decoded.report.coverage["decoded_reference_signature_token_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCE_SIGNATURE_TOKEN_COUNT),
         8
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_reference_signature_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_reference_signature_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT),
         2
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unresolved_reference_signature_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNRESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT),
         0
     );
 
@@ -11219,13 +11582,13 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("complete reference signature")
         .second_entity
         .entity_id += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = crate::native::CatiaNative::decode(&bytes);
@@ -11235,13 +11598,13 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("complete reference signature")
         .production
         .signature_offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature incidence");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = crate::native::CatiaNative::decode(&bytes);
@@ -11252,24 +11615,24 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .production
         .signature_program
         .clear();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature program");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = crate::native::CatiaNative::decode(&bytes);
     malformed.reference_signature_cohorts[0].members.clear();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature cohort");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -11305,13 +11668,13 @@ fn native_namespace_tokenizes_and_validates_complete_entity_values() {
 
     let mut malformed = native;
     malformed.entity_records[0].value_fields.pop();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed entity-value view");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -11354,13 +11717,13 @@ fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
     );
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed entity-value schema view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     };
 
@@ -11419,13 +11782,13 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         .expect("complete relation expression")
         .expression
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed relation expression");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -11534,27 +11897,47 @@ fn decode_retains_an_opened_parser_version_expression_without_formula_incidence(
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["decoded_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_opened_boolean_parser_version_relation_expression_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_typed_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
-    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -11611,27 +11994,47 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["decoded_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_parser_version_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_typed_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
-    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -11994,71 +12397,105 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode lead-54 relation-program instance");
     assert_eq!(
-        decoded.report.coverage["decoded_relation_program_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_relation_program_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_relation_program_parameter_dependency_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+        ),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_typed_relation_program_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_relation_program_input_instance_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_relation_program_input_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_relation_program_input_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["transferred_relation_program_input_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_lead12_relation_program_context_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_lead12_relation_program_context_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_lead12_relation_program_paramout_context_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_other_lead12_relation_program_context_class_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_lead12_relation_program_context_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_lead54_relation_program_trailing_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_lead54_relation_program_trailing_entity_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
+        ),
         0
     );
 
@@ -12115,141 +12552,208 @@ fn decode_reports_exact_relation_program_instances() {
             )
             .expect("decode relation-program instance");
         assert_eq!(
-            decoded.report.coverage["decoded_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
             1
         );
         assert_eq!(
-            decoded.report.coverage["decoded_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             8
         );
         let resolved_reference_incidences = 1 + usize::from(repeated_reference_entity_id == 1);
         let null_reference_incidences = usize::from(repeated_reference_entity_id == 3);
         assert_eq!(
-            decoded.report.coverage["decoded_resolved_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage["decoded_null_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             null_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             8 - resolved_reference_incidences - null_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage
-                ["decoded_classified_relation_program_reference_incidence_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded.report.coverage["decoded_lead12_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
             1
         );
         assert_eq!(
-            decoded.report.coverage["decoded_lead54_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
             0
         );
         assert_eq!(
-            decoded.report.coverage
-                ["decoded_resolved_lead12_relation_program_context_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            ),
             1
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_lead12_relation_program_context_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            ),
             0
         );
         assert_eq!(
-            decoded.report.coverage
-                ["decoded_lead12_relation_program_paramout_context_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
+            ),
             0
         );
         assert_eq!(
-            decoded.report.coverage["decoded_other_lead12_relation_program_context_class_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
+            ),
             1
         );
         assert_eq!(
-            decoded.report.coverage["unclassified_lead12_relation_program_context_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            ),
             0
         );
         assert_eq!(
-            decoded.report.coverage["decoded_resolved_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
             resolved
         );
         assert_eq!(
-            decoded.report.coverage["decoded_relation_expression_program_instance_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT
+            ),
             expression
         );
         assert_eq!(
-            decoded.report.coverage["decoded_other_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT),
             other
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_instance_count"], unresolved,
+            decoded
+                .report
+                .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
+            unresolved,
             "program entity {program_entity_id}"
         );
         assert_eq!(
-            decoded.report.coverage["decoded_null_relation_program_instance_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT),
             usize::from(program_entity_id == 3)
         );
         assert_eq!(
-            decoded.report.coverage["decoded_resolved_relation_program_repeated_reference_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            ),
             resolved_repeated
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_repeated_reference_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            ),
             usize::from(repeated_reference_entity_id > 3)
         );
         assert_eq!(
-            decoded.report.coverage["decoded_null_relation_program_repeated_reference_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            ),
             usize::from(repeated_reference_entity_id == 3)
         );
         let classified_program = usize::from(program_entity_id <= 2);
         assert_eq!(
-            decoded.report.coverage["decoded_classified_relation_program_entity_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
             classified_program
         );
         assert_eq!(
-            decoded.report.coverage["unclassified_relation_program_entity_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
             1 - classified_program
         );
         let classified_repeated = usize::from(repeated_reference_entity_id == 1);
         assert_eq!(
-            decoded.report.coverage["decoded_classified_relation_program_repeated_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
+            ),
             classified_repeated
         );
         assert_eq!(
-            decoded.report.coverage["unclassified_relation_program_repeated_entity_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
+            ),
             1 - classified_repeated
         );
         assert_eq!(
-            decoded.report.coverage["decoded_instanced_relation_expression_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_INSTANCED_RELATION_EXPRESSION_COUNT),
             expression
         );
         assert_eq!(
-            decoded.report.coverage["decoded_referenced_relation_expression_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
             expression
         );
         assert_eq!(
-            decoded.report.coverage["decoded_formula_referenced_relation_expression_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT
+            ),
             0
         );
         assert_eq!(
-            decoded.report.coverage["decoded_program_referenced_relation_expression_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT
+            ),
             expression
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+            decoded
+                .report
+                .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
             1 - expression
         );
         assert_eq!(
-            decoded.report.coverage["decoded_relation_program_parameter_dependency_count"],
+            decoded.report.coverage_count(
+                crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+            ),
             expression * 3
         );
         assert_eq!(
-            decoded.report.coverage["unresolved_relation_program_parameter_dependency_count"],
+            decoded.report.coverage_count(
+                crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+            ),
             expression * 3
         );
-        assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
+        assert_eq!(
+            decoded
+                .report
+                .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+            0
+        );
         assert!(decoded.ir.model.parameters.is_empty());
     }
 }
@@ -12268,7 +12772,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .relation_program_instance
             .clone()
             .expect("decoded relation-program instance");
-        let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+        let mut stored = cadmpeg_ir::NativeNamespace::default();
         native
             .store(&mut stored)
             .expect("store older relation-program namespace");
@@ -12318,11 +12822,12 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         ] {
             let mut namespace = stored.clone();
             namespace.version = version;
-            let stored_instance = namespace
+            let mut stored_fields = namespace
                 .arenas
                 .get_mut("entity_records")
                 .expect("stored entity records")[1]
-                .fields
+                .fields_mut();
+            let stored_instance = stored_fields
                 .get_mut("relation_program_instance")
                 .expect("stored relation-program field")
                 .as_object_mut()
@@ -12350,6 +12855,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 }
             }
 
+            drop(stored_fields);
             let migrated = crate::native::CatiaNative::load(&namespace)
                 .expect("migrate relation-program instance");
             assert_eq!(
@@ -12362,11 +12868,12 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
 
         let mut namespace = stored.clone();
         namespace.version = crate::native::CATIA_RELATION_REFERENCE_OFFSET_VERSION - 1;
-        let incidences = namespace
+        let mut stored_fields = namespace
             .arenas
             .get_mut("entity_records")
             .expect("stored entity records")[1]
-            .fields
+            .fields_mut();
+        let incidences = stored_fields
             .get_mut("relation_program_instance")
             .expect("stored relation-program field")
             .as_object_mut()
@@ -12379,6 +12886,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             *incidence =
                 incidence.as_object().expect("stored reference incidence")["reference"].clone();
         }
+        drop(stored_fields);
         let migrated = crate::native::CatiaNative::load(&namespace)
             .expect("migrate relation-program reference offsets");
         assert_eq!(
@@ -12390,11 +12898,12 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
 
         let mut namespace = stored.clone();
         namespace.version = crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1;
-        let dependencies = namespace
+        let mut stored_fields = namespace
             .arenas
             .get_mut("entity_records")
             .expect("stored entity records")[1]
-            .fields
+            .fields_mut();
+        let dependencies = stored_fields
             .get_mut("relation_program_instance")
             .expect("stored relation-program field")
             .as_object_mut()
@@ -12409,6 +12918,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
                 .expect("stored parameter dependency")
                 .remove("source_offset");
         }
+        drop(stored_fields);
         let migrated = crate::native::CatiaNative::load(&namespace)
             .expect("migrate relation-program dependency offsets");
         assert_eq!(
@@ -12425,13 +12935,13 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("decoded relation-program instance")
             .parameter_dependencies[0]
             .symbol = "#999_".to_string();
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed_dependencies
             .store(&mut namespace)
             .expect("store malformed relation-program dependencies");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
 
         let mut malformed_inputs = native.clone();
@@ -12440,13 +12950,13 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .as_mut()
             .expect("decoded relation-program instance")
             .inputs = Some(Vec::new());
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed_inputs
             .store(&mut namespace)
             .expect("store malformed relation-program inputs");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
 
         let mut malformed_offset = native.clone();
@@ -12456,13 +12966,13 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("decoded relation-program instance")
             .reference_incidences[0]
             .payload_offset = u64::MAX;
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed_offset
             .store(&mut namespace)
             .expect("store malformed relation-program incidence offset");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
 
         let mut malformed = native;
@@ -12473,13 +12983,13 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .reference_incidences[0]
             .reference
             .entity_id = u32::MAX;
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed relation-program incidences");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     }
 }
@@ -12555,63 +13065,93 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode configuration incidences");
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_RECORD_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_schema_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_SCHEMA_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_configuration_entity_reference_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_row_link_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_ROW_LINK_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_row_class_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_CLASS_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_row_successor_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_complete_configuration_row_chain_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_COMPLETE_CONFIGURATION_ROW_CHAIN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_ordered_configuration_row_link_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ORDERED_CONFIGURATION_ROW_LINK_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_configuration_row_chain_terminal_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_configuration_row_chain_terminal_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_row_order_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_ORDER_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["transferred_configuration_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
         0
     );
     assert!(decoded.ir.model.configurations.is_empty());
@@ -12678,11 +13218,15 @@ fn configuration_row_chain_retains_complete_source_order() {
         )
         .expect("decode configuration row intervals");
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_row_intervening_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT),
         3
     );
     assert_eq!(
-        decoded.report.coverage["decoded_configuration_row_intervening_configuration_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CONFIGURATION_ROW_INTERVENING_CONFIGURATION_COUNT
+        ),
         0
     );
 }
@@ -12731,15 +13275,21 @@ fn configuration_productions_preserve_unresolved_identities() {
         .decode(&mut Cursor::new(cyclic_file), &DecodeOptions::default())
         .expect("decode cyclic configuration row");
     assert_eq!(
-        cyclic.report.coverage["decoded_complete_configuration_row_chain_count"],
+        cyclic
+            .report
+            .coverage_count(crate::coverage::DECODED_COMPLETE_CONFIGURATION_ROW_CHAIN_COUNT),
         0
     );
     assert_eq!(
-        cyclic.report.coverage["decoded_ordered_configuration_row_link_count"],
+        cyclic
+            .report
+            .coverage_count(crate::coverage::DECODED_ORDERED_CONFIGURATION_ROW_LINK_COUNT),
         0
     );
     assert_eq!(
-        cyclic.report.coverage["unresolved_configuration_row_order_count"],
+        cyclic
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_ORDER_COUNT),
         1
     );
 
@@ -12780,35 +13330,51 @@ fn configuration_productions_distinguish_terminal_null_identities() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode terminal-null configuration incidences");
     assert_eq!(
-        decoded.report.coverage["decoded_null_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_entity_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_configuration_row_class_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_CLASS_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_row_class_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_CLASS_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_configuration_row_successor_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_row_successor_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_configuration_row_chain_terminal_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_configuration_row_chain_terminal_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT),
         0
     );
 }
@@ -12818,7 +13384,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(8, 5, 7),
     );
-    let mut older = cadmpeg_ir::native::NativeNamespace::default();
+    let mut older = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut older)
         .expect("store configuration namespace");
@@ -12828,8 +13394,11 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .get_mut("entity_records")
         .expect("stored entity records")
     {
-        entity.fields.remove("configuration_record");
-        entity.fields.remove("configuration_row_link");
+        let id = entity.id().to_owned();
+        let mut fields = entity.fields();
+        fields.remove("configuration_record");
+        fields.remove("configuration_row_link");
+        *entity = cadmpeg_ir::NativeRecord::new(id, fields);
     }
     let migrated =
         crate::native::CatiaNative::load(&older).expect("migrate configuration incidences");
@@ -12846,7 +13415,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         native.configuration_row_chains
     );
 
-    let mut version_250 = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_250 = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_250)
         .expect("store configuration payload offsets");
@@ -12854,8 +13423,8 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records");
-    let configuration = entities[0]
-        .fields
+    let mut stored_fields = entities[0].fields_mut();
+    let configuration = stored_fields
         .get_mut("configuration_record")
         .expect("stored configuration record")
         .as_object_mut()
@@ -12866,8 +13435,9 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .expect("stored configuration incidence")["reference"]
         .clone();
     configuration.insert("entity_reference".to_string(), entity_reference);
+    drop(stored_fields);
     entities[1]
-        .fields
+        .fields()
         .get_mut("configuration_row_link")
         .expect("stored configuration-row link")
         .as_object_mut()
@@ -12887,7 +13457,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
 
     let interval_native =
         crate::native::CatiaNative::decode(&standard_catpart_with_configuration_row_chain());
-    let mut older = cadmpeg_ir::native::NativeNamespace::default();
+    let mut older = cadmpeg_ir::NativeNamespace::default();
     interval_native
         .store(&mut older)
         .expect("store pre-interval configuration namespace");
@@ -12897,8 +13467,9 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .get_mut("configuration_row_chains")
         .expect("stored configuration-row chains")
     {
-        for link in chain
-            .fields
+        let id = chain.id().to_owned();
+        let mut fields = chain.fields();
+        for link in fields
             .get_mut("links")
             .expect("stored configuration-row links")
             .as_array_mut()
@@ -12908,6 +13479,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
                 .expect("stored configuration-row link")
                 .remove("intervening_entities");
         }
+        *chain = cadmpeg_ir::NativeRecord::new(id, fields);
     }
     let migrated = crate::native::CatiaNative::load(&older)
         .expect("migrate configuration-row successor intervals");
@@ -12916,7 +13488,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         interval_native.configuration_row_chains
     );
 
-    let mut older = cadmpeg_ir::native::NativeNamespace::default();
+    let mut older = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut older)
         .expect("store pre-chain configuration namespace");
@@ -12929,7 +13501,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         native.configuration_row_chains
     );
 
-    let mut version_254 = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_254 = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_254)
         .expect("store pre-link-incidence configuration namespace");
@@ -12938,7 +13510,10 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .get_mut("configuration_row_chains")
         .expect("stored configuration-row chains")
     {
-        chain.fields.remove("links");
+        let id = chain.id().to_owned();
+        let mut fields = chain.fields();
+        fields.remove("links");
+        *chain = cadmpeg_ir::NativeRecord::new(id, fields);
     }
     version_254.version = crate::native::CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION - 1;
     let migrated = crate::native::CatiaNative::load(&version_254)
@@ -12965,7 +13540,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     stale_nulls.configuration_row_chains[0].links[0]
         .successor
         .is_null = false;
-    let mut version_239 = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_239 = cadmpeg_ir::NativeNamespace::default();
     stale_nulls
         .store(&mut version_239)
         .expect("store pre-null-incidence namespace");
@@ -12979,24 +13554,24 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     malformed_chain.configuration_row_chains[0].links[0]
         .successor
         .entity_id = 6;
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_chain
         .store(&mut current)
         .expect("store malformed configuration chain");
     assert!(matches!(
         crate::native::CatiaNative::load(&current),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed_chain_offset = native.clone();
     malformed_chain_offset.configuration_row_chains[0].links[0].successor_payload_offset += 1;
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_chain_offset
         .store(&mut current)
         .expect("store malformed configuration-chain offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&current),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed_offsets = native.clone();
@@ -13011,13 +13586,13 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .as_mut()
         .expect("decoded configrow link")
         .successor_payload_offset += 1;
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_offsets
         .store(&mut current)
         .expect("store malformed configuration offsets");
     assert!(matches!(
         crate::native::CatiaNative::load(&current),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed_intervals = interval_native;
@@ -13026,13 +13601,13 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .as_mut()
         .expect("source-ordered row interval")[0]
         .entity_id = 8;
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_intervals
         .store(&mut current)
         .expect("store malformed configuration-row intervals");
     assert!(matches!(
         crate::native::CatiaNative::load(&current),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = native;
@@ -13042,13 +13617,13 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .expect("decoded configrow link")
         .successor
         .entity_id = 6;
-    let mut current = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut current)
         .expect("store malformed current namespace");
     assert!(matches!(
         crate::native::CatiaNative::load(&current),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -13082,11 +13657,23 @@ fn decode_retains_a_parser_version_expression_without_fabricating_formula_incide
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["decoded_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
         1
     );
-    assert_eq!(decoded.report.coverage["decoded_formula_relation_count"], 0);
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 0);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -13184,13 +13771,13 @@ fn native_migrates_and_validates_relation_signature_outer_whitespace() {
         result_type: "LENGTH".to_string(),
     });
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store pre-canonical signature");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     namespace.version = crate::native::CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION - 1;
@@ -13264,13 +13851,13 @@ fn native_migrates_and_validates_relation_signature_parameter_symbols() {
         .inputs[0]
         .parameter = "value".to_string();
 
-    let mut current_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut current_namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut current_namespace)
         .expect("store malformed relation signature");
     assert!(matches!(
         crate::native::CatiaNative::load(&current_namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     current_namespace.version = crate::native::CATIA_RELATION_SIGNATURE_PARAMETER_VERSION - 1;
@@ -13375,7 +13962,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         .as_mut()
         .expect("complete named parameter value")
         .evaluation_opcode_offset = 0;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     stale_offsets
         .store(&mut namespace)
         .expect("store stale named parameter offsets");
@@ -13393,13 +13980,13 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         .as_mut()
         .expect("complete named parameter value")
         .evaluation_opcode_offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed named parameter offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = native;
@@ -13409,13 +13996,13 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         .expect("complete named parameter value")
         .name
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed parameter value");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -13446,37 +14033,58 @@ fn native_namespace_types_dimension_constraint_ranges() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode constraint range");
-    assert_eq!(decoded.report.coverage["decoded_constraint_range_count"], 1);
     assert_eq!(
-        decoded.report.coverage["decoded_dimension_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_complex_constraint_range_count"],
-        0
-    );
-    assert_eq!(
-        decoded.report.coverage["decoded_evaluated_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unset_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_constraint_range_incoming_reference_count"],
-        0
-    );
-    assert_eq!(
-        decoded.report.coverage["unreferenced_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["uniquely_referenced_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["multiply_referenced_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert!(!decoded
@@ -13565,28 +14173,39 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(unique_file), &DecodeOptions::default())
         .expect("decode uniquely referenced constraint range");
     assert_eq!(
-        uniquely_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        uniquely_referenced.report.coverage
-            ["decoded_classified_constraint_range_source_entity_count"],
+        uniquely_referenced.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT
+        ),
         usize::from(source_entity.class_name.is_some())
     );
     assert_eq!(
-        uniquely_referenced.report.coverage["unclassified_constraint_range_source_entity_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT),
         usize::from(source_entity.class_name.is_none())
     );
     assert_eq!(
-        uniquely_referenced.report.coverage["unreferenced_constraint_range_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        uniquely_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        uniquely_referenced.report.coverage["multiply_referenced_constraint_range_count"],
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
 
@@ -13620,25 +14239,33 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(storage_file), &DecodeOptions::default())
         .expect("decode storage-referenced constraint range");
     assert_eq!(
-        storage_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        storage_referenced
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        storage_referenced.report.coverage
-            ["decoded_constraint_range_incoming_payload_reference_count"],
+        storage_referenced.report.coverage_count(
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT
+        ),
         0
     );
     assert_eq!(
-        storage_referenced.report.coverage
-            ["decoded_constraint_range_incoming_storage_reference_count"],
+        storage_referenced.report.coverage_count(
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_STORAGE_REFERENCE_COUNT
+        ),
         1
     );
     assert_eq!(
-        storage_referenced.report.coverage["unreferenced_constraint_range_count"],
+        storage_referenced
+            .report
+            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        storage_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        storage_referenced
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
 
@@ -13649,11 +14276,15 @@ fn native_namespace_types_dimension_constraint_ranges() {
         )
         .expect("decode constraint range with both incidence forms");
     assert_eq!(
-        combined.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        combined
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         2
     );
     assert_eq!(
-        combined.report.coverage["multiply_referenced_constraint_range_count"],
+        combined
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
 
@@ -13681,19 +14312,27 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(multiple_file), &DecodeOptions::default())
         .expect("decode multiply referenced constraint range");
     assert_eq!(
-        multiply_referenced.report.coverage["decoded_constraint_range_incoming_reference_count"],
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
         2
     );
     assert_eq!(
-        multiply_referenced.report.coverage["unreferenced_constraint_range_count"],
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        multiply_referenced.report.coverage["uniquely_referenced_constraint_range_count"],
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        multiply_referenced.report.coverage["multiply_referenced_constraint_range_count"],
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
 
@@ -13703,13 +14342,13 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .as_mut()
         .expect("complete dimension constraint range")
         .framing = CatiaConstraintRangeFraming::DimensionB8;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint range");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = crate::native::CatiaNative::decode(
@@ -13721,13 +14360,13 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete dimension constraint range")
         .constraint
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint role");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = unique_native.clone();
@@ -13737,13 +14376,13 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete referenced constraint range")
         .incoming_references[0]
         .payload_offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint-range incidence");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = storage_native.clone();
@@ -13753,16 +14392,16 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete storage-referenced constraint range")
         .incoming_storage_references[0]
         .object_record = unique_native.object_graphs[0].records[0].id.clone();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint-range storage incidence");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     unique_native
         .store(&mut stored)
         .expect("store older constraint-range namespace");
@@ -13771,7 +14410,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields()
         .get_mut("constraint_range")
         .expect("stored constraint range")
         .as_object_mut()
@@ -13789,7 +14428,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         1
     );
 
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     unique_native
         .store(&mut stored)
         .expect("store older constraint-range source namespace");
@@ -13798,7 +14437,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields()
         .get_mut("constraint_range")
         .expect("stored constraint range")
         .as_object_mut()
@@ -13827,7 +14466,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .source_entity
     );
 
-    let mut stored = cadmpeg_ir::native::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
     storage_native
         .store(&mut stored)
         .expect("store older constraint-range storage namespace");
@@ -13836,7 +14475,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields()
         .get_mut("constraint_range")
         .expect("stored constraint range")
         .as_object_mut()
@@ -13895,21 +14534,34 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
             &DecodeOptions::default(),
         )
         .expect("decode unset complex constraint range");
-    assert_eq!(decoded.report.coverage["decoded_constraint_range_count"], 1);
     assert_eq!(
-        decoded.report.coverage["decoded_dimension_constraint_range_count"],
-        0
-    );
-    assert_eq!(
-        decoded.report.coverage["decoded_complex_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_evaluated_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unset_constraint_range_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT),
         1
     );
 
@@ -13945,59 +14597,87 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic entity suffix");
     assert_eq!(
-        decoded.report.coverage["decoded_scalar_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unset_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_control_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_control_e9_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_separator_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_atom_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_atom_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_evaluation_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_control_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_separator_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_schema_entity_suffix_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_SCHEMA_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_wide_prefix_entity_suffix_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     let native =
@@ -14030,7 +14710,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         panic!("scalar suffix evaluation");
     };
     *opcode_offset = 0;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     stale_evaluation_offset
         .store(&mut namespace)
         .expect("store stale evaluation offset");
@@ -14053,13 +14733,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         panic!("scalar suffix evaluation");
     };
     *opcode_offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_evaluation_offset
         .store(&mut namespace)
         .expect("store malformed evaluation offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let wide_scalar_bits = 0.001_f64.to_bits();
@@ -14072,7 +14752,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode wide-prefix scalar suffix");
     assert_eq!(
-        wide_scalar.report.coverage["decoded_wide_prefix_entity_suffix_value_count"],
+        wide_scalar
+            .report
+            .coverage_count(crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let wide_scalar = crate::native::CatiaNative::load(
@@ -14112,13 +14794,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete wide-prefix scalar")
         .prefix_atom_widths[0] = 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_wide_scalar
         .store(&mut namespace)
         .expect("store malformed wide-prefix scalar");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let wide_control =
@@ -14153,11 +14835,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic unset entity suffix");
     assert_eq!(
-        unset.report.coverage["decoded_scalar_entity_suffix_value_count"],
+        unset
+            .report
+            .coverage_count(crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        unset.report.coverage["decoded_unset_entity_suffix_value_count"],
+        unset
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
 
@@ -14187,15 +14873,21 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic control entity suffix");
     assert_eq!(
-        control.report.coverage["decoded_control_entity_suffix_value_count"],
+        control
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
-        control.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        control
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
-        control.report.coverage["decoded_control_e9_entity_suffix_value_count"],
+        control
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     let control =
@@ -14219,15 +14911,21 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode E9 control entity suffix");
     assert_eq!(
-        control_e9.report.coverage["decoded_control_entity_suffix_value_count"],
+        control_e9
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     assert_eq!(
-        control_e9.report.coverage["decoded_control_e8_entity_suffix_value_count"],
+        control_e9
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT),
         0
     );
     assert_eq!(
-        control_e9.report.coverage["decoded_control_e9_entity_suffix_value_count"],
+        control_e9
+            .report
+            .coverage_count(crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let control_e9 = crate::native::CatiaNative::load(
@@ -14248,13 +14946,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete E9 control suffix")
         .payload = CatiaEntitySuffixPayload::ControlE8;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_control_e9
         .store(&mut namespace)
         .expect("store malformed E9 control suffix");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
     let malformed_control_e9 =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
@@ -14277,7 +14975,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic separator entity suffix");
     assert_eq!(
-        separator.report.coverage["decoded_separator_entity_suffix_value_count"],
+        separator
+            .report
+            .coverage_count(crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let separator = crate::native::CatiaNative::load(
@@ -14308,7 +15008,8 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic atom entity suffix");
     assert_eq!(
-        atom.report.coverage["decoded_atom_entity_suffix_value_count"],
+        atom.report
+            .coverage_count(crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let atom =
@@ -14328,13 +15029,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete atom suffix")
         .payload = CatiaEntitySuffixPayload::Atom { value: 4 };
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_atom
         .store(&mut namespace)
         .expect("store malformed atom suffix");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let truncated_compact_atom =
@@ -14352,12 +15053,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected atom entity suffix");
     assert_eq!(
-        schema_selected_atom.report.coverage
-            ["decoded_schema_selected_atom_entity_suffix_value_count"],
+        schema_selected_atom.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         1
     );
     assert_eq!(
-        schema_selected_atom.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        schema_selected_atom
+            .report
+            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let schema_selected_atom = crate::native::CatiaNative::load(
@@ -14411,7 +15115,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("resolved suffix selector")
         .offset = 0;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     stale_schema_selected_atom
         .store(&mut namespace)
         .expect("store stale suffix schema offsets");
@@ -14433,13 +15137,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("resolved suffix selector")
         .offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_schema_selected_atom
         .store(&mut namespace)
         .expect("store malformed schema-selected atom suffix");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let out_of_range_schema_selected_atom =
@@ -14463,8 +15167,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected scalar suffix");
     assert_eq!(
-        selected_scalar.report.coverage
-            ["decoded_schema_selected_evaluation_entity_suffix_value_count"],
+        selected_scalar.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         1
     );
     let selected_scalar = crate::native::CatiaNative::load(
@@ -14501,13 +15206,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         panic!("schema-selected scalar evaluation");
     };
     *opcode_offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_selected_evaluation_offset
         .store(&mut namespace)
         .expect("store malformed selected evaluation offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let selected_unset =
@@ -14537,12 +15242,15 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected control suffix");
     assert_eq!(
-        selected_control.report.coverage
-            ["decoded_schema_selected_control_entity_suffix_value_count"],
+        selected_control.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT
+        ),
         1
     );
     assert_eq!(
-        selected_control.report.coverage["decoded_schema_selected_entity_suffix_value_count"],
+        selected_control
+            .report
+            .coverage_count(crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT),
         1
     );
     let selected_control = crate::native::CatiaNative::load(
@@ -14583,13 +15291,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("resolved schema-selected control suffix")
         .value = crate::native::CatiaEntitySuffixSchemaValue::Separator37;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_selected_control
         .store(&mut namespace)
         .expect("store malformed schema-selected control suffix");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
     let malformed_selected_control =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
@@ -14655,13 +15363,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         panic!("nested suffix schema selector");
     };
     *offset += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_nested_offset
         .store(&mut namespace)
         .expect("store malformed nested suffix offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut nonfinite_selected_scalar = vec![0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6];
@@ -14773,13 +15481,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         evaluation: CatiaEntityEvaluation::Scalar { bits },
         encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
     };
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_encoding
         .store(&mut namespace)
         .expect("store malformed suffix encoding");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed = native;
@@ -14788,13 +15496,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete suffix value")
         .trailer = CatiaEntitySuffixTrailer::Token814A;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed suffix value");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -14816,35 +15524,51 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode definition-chain evaluation");
     assert_eq!(
-        decoded.report.coverage["decoded_definition_chain_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_definition_chain_evaluation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_structurally_owned_definition_chain_value_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_VALUE_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_chain_value_owner_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_evaluated_definition_chain_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_EVALUATED_DEFINITION_CHAIN_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unset_definition_chain_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNSET_DEFINITION_CHAIN_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_structurally_owned_definition_chain_evaluation_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_EVALUATION_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_chain_evaluation_owner_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT),
         0
     );
     let mut native =
@@ -14880,13 +15604,13 @@ fn native_namespace_binds_two_definition_value_chains() {
     malformed_ownership.design_objects[0]
         .definition_chain_values
         .clear();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_ownership
         .store(&mut namespace)
         .expect("store malformed definition-chain ownership");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     native.entity_records[0]
@@ -14895,13 +15619,13 @@ fn native_namespace_binds_two_definition_value_chains() {
         .expect("definition-chain evaluation")
         .role
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store malformed definition-chain evaluation");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let wrong_selector =
@@ -14921,15 +15645,18 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode definition-chain atom");
     assert_eq!(
-        atom.report.coverage["decoded_definition_chain_value_count"],
+        atom.report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        atom.report.coverage["decoded_definition_chain_atom_count"],
+        atom.report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_ATOM_COUNT),
         1
     );
     assert_eq!(
-        atom.report.coverage["decoded_definition_chain_evaluation_count"],
+        atom.report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT),
         0
     );
     let atom_native =
@@ -14955,7 +15682,10 @@ fn native_namespace_binds_two_definition_value_chains() {
                 &DecodeOptions::default(),
             )
             .expect("decode definition-chain state");
-        assert_eq!(decoded.report.coverage[coverage], 1);
+        assert_eq!(
+            decoded.report.coverage.get(coverage).copied().unwrap_or(0),
+            1
+        );
     }
 
     let nested = CatiaCodec
@@ -14967,7 +15697,9 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode nested definition-chain selector");
     assert_eq!(
-        nested.report.coverage["decoded_definition_chain_schema_selector_count"],
+        nested
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_SCHEMA_SELECTOR_COUNT),
         1
     );
     let nested_native =
@@ -15003,19 +15735,19 @@ fn design_objects_retain_definition_chain_values_in_field_order() {
 
     let mut reversed = native;
     reversed.design_objects[0].definition_chain_values.reverse();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     reversed
         .store(&mut namespace)
         .expect("store misordered definition-chain ownership");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_two_definition_chain_values());
     let expected = native.design_objects[0].definition_chain_values.clone();
-    let mut previous_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut previous_namespace)
         .expect("store current definition-chain ownership");
@@ -15043,23 +15775,33 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
         )
         .expect("decode literal owner slot");
     assert_eq!(
-        decoded.report.coverage["decoded_definition_chain_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_chain_value_owner_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unassigned_definition_chain_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unassigned_definition_chain_evaluation_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_EVALUATION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_unassigned_object_owner_slot_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_UNASSIGNED_OBJECT_OWNER_SLOT_COUNT),
         1
     );
 
@@ -15077,16 +15819,16 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
     let mut malformed = native.clone();
     malformed.object_graphs[0].records[0].owner =
         Some(crate::native::CatiaObjectOwner::UnassignedLiteral(67));
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed literal owner slot");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    let mut previous_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut previous_namespace)
         .expect("store current literal owner slot");
@@ -15127,13 +15869,22 @@ fn native_namespace_binds_and_validates_definition_values() {
             &DecodeOptions::default(),
         )
         .expect("decode definition-bound value");
-    assert_eq!(decoded.report.coverage["decoded_definition_value_count"], 1);
     assert_eq!(
-        decoded.report.coverage["decoded_owned_definition_value_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_DEFINITION_VALUE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_definition_value_owner_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_OWNED_DEFINITION_VALUE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DEFINITION_VALUE_OWNER_COUNT),
         0
     );
     let mut native =
@@ -15171,26 +15922,26 @@ fn native_namespace_binds_and_validates_definition_values() {
 
     let mut malformed_storage = native.clone();
     malformed_storage.object_graphs[0].records[0].storage_record = None;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_storage
         .store(&mut namespace)
         .expect("store malformed storage link");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed_ownership = native.clone();
     malformed_ownership.design_objects[0]
         .definition_values
         .clear();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_ownership
         .store(&mut namespace)
         .expect("store malformed definition-value ownership");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let definition_value = native.entity_records[0]
@@ -15202,13 +15953,13 @@ fn native_namespace_binds_and_validates_definition_values() {
         evaluation: CatiaEntityEvaluation::Unset,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     };
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store malformed definition value");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let control = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
@@ -15341,7 +16092,7 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
     parameter.name.ordinal = 0;
     parameter.binding.offset = 0;
     parameter.binding.ordinal = 0;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     stale
         .store(&mut namespace)
         .expect("store stale typed schema incidences");
@@ -15364,13 +16115,13 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
         .expect("complete named parameter")
         .name
         .offset = u64::MAX;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed typed schema incidence");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -15421,15 +16172,16 @@ fn native_namespace_types_and_validates_formula_relations() {
     );
     let expected_formula = formula.clone();
 
-    let mut version_235_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_235_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_235_namespace)
         .expect("store current formula output reference");
-    let formula_fields = version_235_namespace
+    let mut stored_fields = version_235_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let formula_fields = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15460,6 +16212,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         output.get("entity").cloned().unwrap_or_default(),
     );
     version_235_namespace.version = crate::native::CATIA_FORMULA_OUTPUT_REFERENCE_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_235_namespace)
         .expect("migrate formula output reference");
     assert_eq!(
@@ -15467,15 +16220,16 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_236_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_236_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_236_namespace)
         .expect("store current formula expression reference");
-    let formula_fields = version_236_namespace
+    let mut stored_fields = version_236_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let formula_fields = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15491,6 +16245,7 @@ fn native_namespace_types_and_validates_formula_relations() {
             .clone(),
     );
     version_236_namespace.version = crate::native::CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_236_namespace)
         .expect("migrate formula expression reference");
     assert_eq!(
@@ -15498,15 +16253,16 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_249_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_249_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_249_namespace)
         .expect("store current formula reference offsets");
-    let formula_fields = version_249_namespace
+    let mut stored_fields = version_249_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let formula_fields = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15519,6 +16275,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         formula_fields.insert(field.to_string(), reference);
     }
     version_249_namespace.version = crate::native::CATIA_FORMULA_REFERENCE_OFFSET_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_249_namespace)
         .expect("migrate formula reference offsets");
     assert_eq!(
@@ -15526,15 +16283,16 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_237_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_237_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_237_namespace)
         .expect("store current formula dependency references");
-    let candidates = version_237_namespace
+    let mut stored_fields = version_237_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let candidates = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15553,6 +16311,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         *candidate = candidate.as_object().expect("stored candidate reference")["entity"].clone();
     }
     version_237_namespace.version = crate::native::CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&version_237_namespace)
         .expect("migrate formula dependency references");
     assert_eq!(
@@ -15560,7 +16319,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_245_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_245_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_245_namespace)
         .expect("store current formula dependency offsets");
@@ -15568,7 +16327,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields()
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15588,7 +16347,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_205_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_205_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_205_namespace)
         .expect("store current formula dependency candidates");
@@ -15621,13 +16380,13 @@ fn native_namespace_types_and_validates_formula_relations() {
         .output_entity
         .reference
         .entity_id = 98;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed formula relation");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut malformed_offset =
@@ -15638,13 +16397,13 @@ fn native_namespace_types_and_validates_formula_relations() {
         .expect("complete formula relation")
         .expression_entity
         .payload_offset = u64::MAX;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed formula incidence offset");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -15721,15 +16480,16 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
         .formula_relation
         .clone()
         .expect("complete formula relation");
-    let mut old_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut old_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut old_namespace)
         .expect("store relation dependencies");
-    let dependencies = old_namespace
+    let mut stored_fields = old_namespace
         .arenas
         .get_mut("entity_records")
         .expect("stored entity records")[0]
-        .fields
+        .fields_mut();
+    let dependencies = stored_fields
         .get_mut("formula_relation")
         .expect("stored formula relation")
         .as_object_mut()
@@ -15745,6 +16505,7 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
         .insert("source_offset".to_string(), 9_u64.into());
     dependencies.insert(0, literal_dependency);
     old_namespace.version = crate::native::CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION - 1;
+    drop(stored_fields);
     let migrated = crate::native::CatiaNative::load(&old_namespace)
         .expect("migrate string-literal relation dependencies");
     assert_eq!(
@@ -15822,13 +16583,22 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     assert_eq!(input.expression, "35 mm");
     assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
     assert!(input.dependencies.is_empty());
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 1);
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         1
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
@@ -15855,7 +16625,7 @@ fn terminal_entity_identity_is_a_null_formula_output() {
     assert!(formula_record.references[2].is_null);
     assert_eq!(formula_record.references[2].target, None);
 
-    let mut version_210_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut version_210_namespace)
         .expect("store terminal null references");
@@ -15901,27 +16671,39 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode formula with null output");
     assert_eq!(
-        decoded.report.coverage["decoded_null_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_FORMULA_OUTPUT_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_formula_output_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_formula_output_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["decoded_null_object_record_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_object_record_reference_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT),
         0
     );
 }
@@ -15947,10 +16729,17 @@ fn formula_input_with_additional_object_payload_remains_unresolved() {
 
     assert_eq!(decoded.ir.model.parameters.len(), 1);
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         0
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        4
+    );
 }
 
 #[test]
@@ -15995,21 +16784,34 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
-    assert_eq!(decoded.report.coverage["transferred_parameter_count"], 2);
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        2
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         4
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_formula_output_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         usize::from(output_entity.class_name.is_some())
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_formula_output_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
         usize::from(output_entity.class_name.is_none())
     );
     let expression_classified = native.entity_records[0]
@@ -16021,11 +16823,15 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .class_name
         .is_some();
     assert_eq!(
-        decoded.report.coverage["decoded_classified_formula_expression_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT),
         usize::from(expression_classified)
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_formula_expression_entity_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT),
         usize::from(!expression_classified)
     );
     let dependency_candidate = &native.entity_records[0]
@@ -16035,53 +16841,74 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .parameter_dependencies[0]
         .candidates[0];
     assert_eq!(
-        decoded.report.coverage["decoded_formula_parameter_dependency_candidate_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_classified_formula_parameter_dependency_candidate_count"],
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
+        ),
         usize::from(dependency_candidate.class_name.is_some())
     );
     assert_eq!(
-        decoded.report.coverage["unclassified_formula_parameter_dependency_candidate_count"],
+        decoded.report.coverage_count(
+            crate::coverage::UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
+        ),
         usize::from(dependency_candidate.class_name.is_none())
     );
     assert_eq!(
-        decoded.report.coverage["decoded_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_formula_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_program_referenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_unreferenced_relation_expression_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_formula_output_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
         0
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 0);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        0
+    );
     assert!(decoded.report.losses.iter().all(|loss| {
-        loss.category != cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
         decoded.source_fidelity.annotations.exactness[&input.id.0].fields["expression"],
-        cadmpeg_ir::provenance::Exactness::Derived
+        cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
         decoded.source_fidelity.annotations.exactness[&input.id.0].fields["properties"],
-        cadmpeg_ir::provenance::Exactness::Derived
+        cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
         decoded.source_fidelity.annotations.exactness[&output.id.0].fields["properties"],
-        cadmpeg_ir::provenance::Exactness::Derived
+        cadmpeg_ir::Exactness::Derived
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new())
         .findings
@@ -16110,10 +16937,17 @@ fn decode_keeps_a_mismatched_formula_result_unresolved() {
     assert_eq!(input.name, "Width");
     assert!(input.dependencies.is_empty());
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         1
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 3);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        3
+    );
 }
 
 #[test]
@@ -16198,7 +17032,9 @@ fn decode_rejects_a_constant_formula_that_disagrees_with_its_stored_result() {
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         0
     );
 }
@@ -16958,22 +17794,10 @@ fn decode_transfers_linear_interpolation_formula() {
     let [start, end, fraction, output] = decoded.ir.model.parameters.as_slice() else {
         panic!("linear interpolation parameters")
     };
-    assert_eq!(
-        start.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(2.0))
-    );
-    assert_eq!(
-        end.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(10.0))
-    );
-    assert_eq!(
-        fraction.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(0.25))
-    );
-    assert_eq!(
-        output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(4.0))
-    );
+    assert_eq!(start.value, Some(cadmpeg_ir::ParameterValue::Real(2.0)));
+    assert_eq!(end.value, Some(cadmpeg_ir::ParameterValue::Real(10.0)));
+    assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
+    assert_eq!(output.value, Some(cadmpeg_ir::ParameterValue::Real(4.0)));
     assert_eq!(
         output.dependencies,
         vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
@@ -17003,22 +17827,10 @@ fn decode_transfers_cubic_interpolation_formula() {
     let [start, end, fraction, output] = decoded.ir.model.parameters.as_slice() else {
         panic!("cubic interpolation parameters")
     };
-    assert_eq!(
-        start.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(2.0))
-    );
-    assert_eq!(
-        end.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(10.0))
-    );
-    assert_eq!(
-        fraction.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(0.25))
-    );
-    assert_eq!(
-        output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(3.25))
-    );
+    assert_eq!(start.value, Some(cadmpeg_ir::ParameterValue::Real(2.0)));
+    assert_eq!(end.value, Some(cadmpeg_ir::ParameterValue::Real(10.0)));
+    assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
+    assert_eq!(output.value, Some(cadmpeg_ir::ParameterValue::Real(3.25)));
     assert_eq!(
         output.dependencies,
         vec![start.id.clone(), end.id.clone(), fraction.id.clone()]
@@ -17073,23 +17885,20 @@ fn decode_transfers_dimensioned_linear_interpolation_formula() {
     };
     assert_eq!(
         start.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::ParameterValue::Length(
             cadmpeg_ir::features::Length(2.0)
         ))
     );
     assert_eq!(
         end.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::ParameterValue::Length(
             cadmpeg_ir::features::Length(10.0)
         ))
     );
-    assert_eq!(
-        fraction.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(0.25))
-    );
+    assert_eq!(fraction.value, Some(cadmpeg_ir::ParameterValue::Real(0.25)));
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::ParameterValue::Length(
             cadmpeg_ir::features::Length(4.0)
         ))
     );
@@ -17277,7 +18086,7 @@ fn decode_transfers_dimensionless_real_formula() {
     for parameter in [input, output] {
         assert_eq!(
             decoded.source_fidelity.annotations.exactness[&parameter.id.0].fields["properties"],
-            cadmpeg_ir::provenance::Exactness::Derived
+            cadmpeg_ir::Exactness::Derived
         );
     }
 }
@@ -17334,7 +18143,9 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
     assert_eq!(output.expression, "(#1_ /2>#2_ /2) and (#1_ /2>=0)");
     assert_eq!(output.dependencies, [x.id.clone(), y.id.clone()]);
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         5
     );
     assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
@@ -17548,7 +18359,7 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut excluded_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let mut annotations = cadmpeg_ir::Annotations::default();
     let excluded = crate::formula::transfer_parameters(
         &mut excluded_ir,
         &native,
@@ -17597,12 +18408,19 @@ fn decode_transfers_each_supported_formula_input_independently() {
     );
     assert!(depth.dependencies.is_empty());
     assert_eq!(
-        decoded.report.coverage["transferred_formula_design_record_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
         2
     );
-    assert_eq!(decoded.report.coverage["unresolved_design_record_count"], 4);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        4
+    );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("4 modeling-scope field record(s)")
     }));
@@ -17791,19 +18609,27 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
 
     assert!(decoded.ir.model.parameters.is_empty());
     assert_eq!(
-        decoded.report.coverage["decoded_formula_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["decoded_resolved_formula_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         0
     );
     assert_eq!(
-        decoded.report.coverage["unresolved_formula_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
     assert_eq!(
-        decoded.report.coverage["ambiguous_formula_parameter_dependency_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT),
         1
     );
 }
@@ -17819,7 +18645,7 @@ fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
         .iter()
         .all(|selection| selection.packets.is_empty()));
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store crossing packet fixture");
@@ -17834,13 +18660,13 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     assert!(native.object_graphs[0].records[0].class_name.is_some());
     assert!(native.object_graphs[0].records[0].class_entry.is_some());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed graph-catalog view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     };
 
@@ -17865,13 +18691,13 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
 fn native_load_rejects_invalid_source_identities_and_extents() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed source identity");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     };
 
@@ -17898,11 +18724,24 @@ fn native_load_rejects_invalid_source_identities_and_extents() {
 
 #[test]
 fn native_store_paths_write_the_current_schema_version() {
+    let catalogue_names = crate::native::CATIA_FAMILIES
+        .iter()
+        .map(|row| row.arena)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 41);
+    assert_eq!(
+        catalogue_names,
+        crate::native::CATIA_ARENA_NAMES
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
+
     let borrowed = crate::native::CatiaNative {
         version: 1,
         ..crate::native::CatiaNative::default()
     };
-    let mut borrowed_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut borrowed_namespace = cadmpeg_ir::NativeNamespace::default();
     borrowed
         .store(&mut borrowed_namespace)
         .expect("store borrowed CATIA namespace");
@@ -17915,11 +18754,25 @@ fn native_store_paths_write_the_current_schema_version() {
         version: 1,
         ..crate::native::CatiaNative::default()
     };
-    let mut owned_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut owned_namespace = cadmpeg_ir::NativeNamespace::default();
     owned
         .store_owned(&mut owned_namespace)
         .expect("store owned CATIA namespace");
     assert_eq!(owned_namespace.version, crate::native::CATIA_NATIVE_VERSION);
+
+    let rich = crate::native::CatiaNative::decode(&standard_catpart());
+    let mut rich_borrowed = cadmpeg_ir::NativeNamespace::default();
+    rich.store(&mut rich_borrowed)
+        .expect("store populated borrowed CATIA namespace");
+    let mut rich_owned = cadmpeg_ir::NativeNamespace::default();
+    rich.clone()
+        .store_owned(&mut rich_owned)
+        .expect("store populated owned CATIA namespace");
+    assert_eq!(rich_borrowed, rich_owned);
+    assert_eq!(
+        crate::native::CatiaNative::load(&rich_borrowed).expect("reload populated namespace"),
+        rich
+    );
 }
 
 #[test]
@@ -17942,7 +18795,7 @@ fn native_migrates_and_validates_evaluated_value_names() {
     let mut invalid = native.clone();
     invalid.legacy_entity_runs[0].integer_values[0].name = None;
     invalid.legacy_entity_runs[0].integer_values[0].name_field = None;
-    let mut invalid_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store noncanonical evaluated value name");
@@ -18191,7 +19044,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     );
     assert_eq!(native.legacy_entity_runs[0].integer_values[0].value, 11);
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store legacy entity run");
@@ -18256,7 +19109,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("schema program")
         .data
         .pop();
-    let mut invalid_schema_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_schema_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_schema_program
         .store(&mut invalid_schema_namespace)
         .expect("store invalid schema program");
@@ -18269,7 +19122,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("schema program")
         .identifiers[0]
         .value = "Bar".to_string();
-    let mut invalid_identifier_namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut invalid_identifier_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_schema_identifier
         .store(&mut invalid_identifier_namespace)
         .expect("store invalid schema identifier");
@@ -18353,7 +19206,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         crate::native::CatiaLegacyTypeValue::Name {
             value: "1Boolean".to_string(),
         };
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_type_name
         .store(&mut namespace)
         .expect("store invalid legacy type name");
@@ -18361,7 +19214,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid_lead = native.clone();
     invalid_lead.legacy_entity_runs[0].identities[0].lead = 0xe6;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_lead
         .store(&mut namespace)
         .expect("store invalid legacy identity lead");
@@ -18369,7 +19222,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid_name = native.clone();
     invalid_name.legacy_entity_runs[0].scalar_values[0].name = Some("Other".to_string());
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_name
         .store(&mut namespace)
         .expect("store invalid legacy scalar name");
@@ -18378,7 +19231,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     let mut invalid_scalar_id = native.clone();
     invalid_scalar_id.legacy_entity_runs[0].scalar_values[0].id =
         "catia:legacy:scalar#00000000-0".to_string();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_scalar_id
         .store(&mut namespace)
         .expect("store invalid legacy scalar identity");
@@ -18386,7 +19239,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid_integer = native.clone();
     invalid_integer.legacy_entity_runs[0].integer_values[0].value = -1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_integer
         .store(&mut namespace)
         .expect("store invalid inline legacy integer");
@@ -18394,7 +19247,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid_parameter = native.clone();
     invalid_parameter.legacy_entity_runs[0].relations[0].parameter_entity_id = Some(4);
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_parameter
         .store(&mut namespace)
         .expect("store invalid legacy relation parameter");
@@ -18402,7 +19255,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid = native;
     invalid.legacy_entity_runs[0].identities[1].entity_id = 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid legacy entity run");
@@ -18418,7 +19271,7 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
         )));
     }
     let native = crate::native::CatiaNative::decode(&bytes);
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store indexed FINJPL segments");
@@ -18450,13 +19303,13 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
     );
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed FINJPL view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     };
     let mut invalid_length = native.clone();
@@ -18505,13 +19358,13 @@ fn object_graphs_retain_exact_finjpl_containment() {
 
     let mut invalid = native;
     invalid.object_graphs[1].finjpl_segment = None;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store malformed graph segment link");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -18536,7 +19389,7 @@ fn object_graphs_retain_exact_outer_container_declarations() {
     assert_eq!(container.stream_name, "1048_62eb7b6f_1825");
     let expected = container.clone();
 
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store outer container binding");
@@ -18582,7 +19435,7 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         native.object_graphs[0].outer_container.as_ref()
     );
     let expected_binding = run.outer_container.clone();
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store container-bound legacy run");
@@ -18597,7 +19450,9 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode container-bound legacy parameter");
     assert_eq!(
-        decoded.report.coverage["transferred_legacy_parameter_count"],
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
         1
     );
     assert_eq!(decoded.ir.model.parameters.len(), 1);
@@ -18611,7 +19466,7 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     }
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.preview_images.len(), 12);
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store indexed preview views");
@@ -18628,13 +19483,13 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     );
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed preview view");
         assert!(matches!(
             crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     };
     let mut missing = native.clone();
@@ -18732,7 +19587,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         ]
     );
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("1 visualization value block(s)")
             && loss
@@ -18740,7 +19595,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
                 .contains("1 schema-selected presentation value(s)")
     }));
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("neutral features")
             && !loss.message.contains("value block")
@@ -18757,14 +19612,14 @@ fn visualization_values_do_not_assert_missing_design_intent() {
         .expect("decode visualization-only values");
 
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
             && loss.message.contains("schema-selected presentation value")
     }));
     assert!(decoded
         .report
         .losses
         .iter()
-        .all(|loss| loss.category != cadmpeg_ir::report::LossCategory::DesignIntent));
+        .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent));
 }
 
 #[test]
@@ -18795,7 +19650,7 @@ fn decode_does_not_promote_operation_field_class_names_to_features() {
             ["CurrentFeature", class]
         );
         assert!(decoded.report.losses.iter().any(|loss| {
-            loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
                 && loss.message.contains("neutral features")
         }));
     }
@@ -18905,7 +19760,7 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
             .target_slot,
         0x17b
     );
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store grouped alias row");
@@ -18918,13 +19773,13 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         .as_mut()
         .expect("group membership")
         .target_slot += 1;
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid grouped alias row");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
     let mut invalid = loaded;
@@ -18933,13 +19788,13 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         .as_mut()
         .expect("group membership")
         .storage_prefix = vec![2, 0, 0];
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid group storage");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -18978,13 +19833,13 @@ fn native_namespace_retains_surface_alias_core() {
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store unresolved alias with a design-object link");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -19013,13 +19868,13 @@ fn native_alias_f1_resolves_primary_object_record() {
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid alias design-object link");
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::native::NativeConvertError::InvalidOwner(_))
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 }
 
@@ -19220,35 +20075,51 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.pcurves.len(), 3);
     assert_eq!(
-        result.report.coverage["resolved_object_stream_face_terminal_control_03_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_face_terminal_control_05_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_uncounted_face_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_edge_terminal_control_2a_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_vertex_incidence_terminal_control_04_count"],
+        result.report.coverage_count(
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_loop_framing_controls_05_05_count"],
+        result.report.coverage_count(
+            crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_extended_loop_metadata_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_class_21_pcurve_suffix_scalar_count"],
+        result.report.coverage_count(
+            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
+        ),
         3
     );
     assert!(result
@@ -19259,7 +20130,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         .all(|pcurve| pcurve.parameter_range == Some([0.0, 1.0])));
     assert!(result.report.losses.iter().all(|loss| {
         !matches!(
-            loss.category,
+            loss.code.category(),
             cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
@@ -19288,19 +20159,27 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
         .expect("decode typed unresolved face");
 
     assert_eq!(
-        result.report.coverage["typed_object_stream_face_terminal_control_03_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_face_terminal_control_05_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["resolved_object_stream_face_terminal_control_03_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         0
     );
     assert_eq!(
-        result.report.coverage["typed_unresolved_object_stream_face_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
         1
     );
 }
@@ -19380,47 +20259,69 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         )
         .expect("decode typed face without resolved topology");
     assert_eq!(
-        result.report.coverage["typed_object_stream_face_terminal_control_03_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_unresolved_object_stream_face_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_loop_framing_controls_05_05_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_unresolved_object_stream_loop_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_edge_terminal_control_21_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_vertex_incidence_terminal_control_04_count"],
+        result.report.coverage_count(
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_class_21_pcurve_suffix_scalar_count"],
+        result.report.coverage_count(
+            crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
+        ),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_parameter_incidence_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_parameter_incidence_member_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_vertex_incidence_roster_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT),
         1
     );
     assert_eq!(
-        result.report.coverage["typed_object_stream_vertex_incidence_roster_member_count"],
+        result.report.coverage_count(
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT
+        ),
         1
     );
 }
@@ -19476,7 +20377,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
     assert_eq!(result.ir.model.vertices.len(), 2);
     assert!(result.ir.model.edges.is_empty());
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(matches!(
@@ -19532,11 +20433,11 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         .iter()
         .all(|edge| edge.curve.is_some() && edge.param_range.is_some()));
     assert!(result.report.losses.iter().all(|loss| {
-        loss.category != cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() != cadmpeg_ir::report::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("two trailing orientation signs")
     }));
@@ -19632,3 +20533,6 @@ fn every_decode_path_populates_v1_annotations() {
         &container_only.source_fidelity.annotations,
     );
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

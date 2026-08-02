@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -9,7 +9,6 @@
         "attributes": [],
         "bodies": [],
         "coedges": [],
-        "components": [],
         "configurations": [],
         "curves": [],
         "drawings": [],
@@ -26,8 +25,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [],
         "semantic_annotations": [],
         "shells": [],
@@ -48,9 +46,8 @@
           "arenas": {
             "parasolid_attribute_class_uses": [
               {
-                "attribute_definition": "nx:s0:attribute-definition#201",
-                "class_discriminator": 200,
-                "definition_xmt": 201,
+                "attribute_definition": "nx:s0:attribute-definition#202",
+                "definition_xmt": 202,
                 "entity_51_record": "nx:s0:entity-51#50-178",
                 "id": "nx:s0:attribute-class-use#50-178",
                 "stream_ordinal": 0
@@ -58,131 +55,70 @@
             ],
             "parasolid_attribute_definitions": [
               {
+                "action_codes": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
                 "field_codes": [
                   1
                 ],
                 "field_count": 1,
-                "field_descriptor_prefix": [
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170,
-                  170
-                ],
-                "field_record_header_words": [
+                "field_names_xmt": 1,
+                "id": "nx:s0:attribute-definition#202",
+                "identifier_inflated_offset": 70,
+                "identifier_xmt": 201,
+                "inflated_offset": 88,
+                "legal_owner_flags": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
                   0,
                   0
                 ],
-                "field_record_references": [
-                  0,
-                  0
-                ],
-                "field_record_xmt": 202,
-                "id": "nx:s0:attribute-definition#201",
-                "inflated_offset": 70,
                 "name": "ATTR_CLASS",
+                "next_definition_xmt": 1,
                 "stream_ordinal": 0,
-                "xmt": 201
-              }
-            ],
-            "parasolid_attribute_numeric_class_uses": [
-              {
-                "attribute_class_use": "nx:s0:attribute-class-use#50-178",
-                "attribute_definition": "nx:s0:attribute-definition#201",
-                "entity_51_record": "nx:s0:entity-51#50-178",
-                "id": "nx:s0:attribute-numeric-class-use#50-178-1",
-                "inflated_offset": 178,
-                "kind": "unsigned_integers",
-                "numeric_use": "nx:s0:entity-51-numeric-use#50-178-1",
-                "reference_ordinal": 1,
-                "stream_ordinal": 0,
-                "value_record": "nx:s0:entity-52-integers#101-131"
-              },
-              {
-                "attribute_class_use": "nx:s0:attribute-class-use#50-178",
-                "attribute_definition": "nx:s0:attribute-definition#201",
-                "entity_51_record": "nx:s0:entity-51#50-178",
-                "id": "nx:s0:attribute-numeric-class-use#50-178-2",
-                "inflated_offset": 178,
-                "kind": "doubles",
-                "numeric_use": "nx:s0:entity-51-numeric-use#50-178-2",
-                "reference_ordinal": 2,
-                "stream_ordinal": 0,
-                "value_record": "nx:s0:entity-53-doubles#102-143"
-              }
-            ],
-            "parasolid_entity_51_numeric_uses": [
-              {
-                "entity_51_record": "nx:s0:entity-51#50-178",
-                "id": "nx:s0:entity-51-numeric-use#50-178-1",
-                "inflated_offset": 178,
-                "kind": "unsigned_integers",
-                "reference_ordinal": 1,
-                "referenced_xmt": 101,
-                "stream_ordinal": 0,
-                "value_record": "nx:s0:entity-52-integers#101-131"
-              },
-              {
-                "entity_51_record": "nx:s0:entity-51#50-178",
-                "id": "nx:s0:entity-51-numeric-use#50-178-2",
-                "inflated_offset": 178,
-                "kind": "doubles",
-                "reference_ordinal": 2,
-                "referenced_xmt": 102,
-                "stream_ordinal": 0,
-                "value_record": "nx:s0:entity-53-doubles#102-143"
+                "type_id": 9000,
+                "xmt": 202
               }
             ],
             "parasolid_entity_51_records": [
               {
                 "byte_len": 26,
-                "discriminator": 200,
+                "definition_xmt": 202,
                 "flags": 1,
                 "id": "nx:s0:entity-51#50-178",
                 "inflated_offset": 178,
-                "references": [
+                "leading_references": [
                   100,
                   101,
                   102,
                   150,
-                  151,
-                  152
+                  151
                 ],
                 "sequence": 2,
                 "stream_ordinal": 0,
+                "trailing_references": [
+                  152
+                ],
                 "xmt": 50
-              }
-            ],
-            "parasolid_entity_51_string_uses": [
-              {
-                "entity_51_record": "nx:s0:entity-51#50-178",
-                "id": "nx:s0:entity-51-string-use#50-178-0",
-                "inflated_offset": 178,
-                "reference_ordinal": 0,
-                "referenced_xmt": 100,
-                "stream_ordinal": 0,
-                "string_record": "nx:s0:entity-54-string#100-159"
               }
             ],
             "parasolid_entity_52_integer_records": [
@@ -232,10 +168,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "256",
+          "file_size": "261",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "242",
+          "footer_offset": "247",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -258,14 +194,13 @@
       "geometry_transferred": false,
       "losses": [
         {
-          "category": "geometry",
           "code": "geometry_not_transferred",
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 242, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -291,8 +226,8 @@
             "stream": 1,
             "tag": "ATTRIBUTE_CLASS_USE"
           },
-          "nx:s0:attribute-definition#201": {
-            "offset": 70,
+          "nx:s0:attribute-definition#202": {
+            "offset": 88,
             "stream": 1,
             "tag": "ATTRIBUTE_DEFINITION"
           },
@@ -300,21 +235,6 @@
             "offset": 178,
             "stream": 1,
             "tag": "ENTITY_51"
-          },
-          "nx:s0:entity-51-numeric-use#50-178-1": {
-            "offset": 178,
-            "stream": 1,
-            "tag": "ENTITY_51_NUMERIC_USE"
-          },
-          "nx:s0:entity-51-numeric-use#50-178-2": {
-            "offset": 178,
-            "stream": 1,
-            "tag": "ENTITY_51_NUMERIC_USE"
-          },
-          "nx:s0:entity-51-string-use#50-178-0": {
-            "offset": 178,
-            "stream": 1,
-            "tag": "ENTITY_51_STRING_USE"
           },
           "nx:s0:entity-52-integers#101-131": {
             "offset": 131,
@@ -340,10 +260,10 @@
       "retained_records": [
         {
           "byte_len": 206,
-          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AABPAAAACgDJQVRUUl9DTEFTUwBQAAAAAQDKAAAAAAAAAACqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqgEAUgAAAAEAZQAAAAcAUwAAAAEAZj/4AAAAAAAAAFQAAAAKAGRBVFRSX0xBQkVMAABRAAAAAQAyAAAAAgDIAGQAZQBmAJYAlwCYqqo=",
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AABPAAAACgDJQVRUUl9DTEFTUwBQAAAAAQDKAAEAyQAAIygAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAEAUgAAAAEAZQAAAAcAUwAAAAEAZj/4AAAAAAAAAFQAAAAKAGRBVFRSX0xBQkVMAABRAAAAAQAyAAAAAgDKAGQAZQBmAJYAlwCYqqo=",
           "id": "nx:container:parasolid#0",
           "offset": 76,
-          "sha256": "14ddccef2ef0cc815a25947a31a7a201cd2268a0ce8683ebc09230830c18d28e",
+          "sha256": "8409b0937bfb591500bb40c1cabdcc1a32e9cf06718872f27afcb1131dea68dd",
           "stream": "nx:container"
         }
       ],
@@ -358,11 +278,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 166,
+        "compressed_size": 171,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 166
+        "uncompressed_size": 171
       },
       {
         "attributes": {
@@ -395,7 +315,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 242, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 247, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

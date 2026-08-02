@@ -1406,6 +1406,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             parameter_interval: None,
             direction: Vector3::new(0.0, 0.0, 1.0),
             native_position: None,
+            revision_form: None,
         },
         cache_fit_tolerance: None,
         record_bounds: None,

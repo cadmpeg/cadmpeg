@@ -3,21 +3,21 @@
 
 use std::collections::HashSet;
 
-use super::{Check, Finding, ModelIndex, Severity};
 use crate::document::CadIr;
+use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_semantic_annotations(
     ir: &CadIr,
-    index: &ModelIndex<'_>,
+    all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) {
     let mut orders = HashSet::new();
     for annotation in &ir.model.semantic_annotations {
-        let refs_valid = index.contains(&annotation.object)
-            && index.contains(&annotation.native_ref)
-            && annotation.assets.iter().all(|id| index.contains(id))
+        let refs_valid = all_ids.contains(&annotation.object)
+            && all_ids.contains(&annotation.native_ref)
+            && annotation.assets.iter().all(|id| all_ids.contains(id))
             && annotation.references.values().flatten().all(|target| {
-                target.target.as_ref().is_none_or(|id| index.contains(id))
+                target.target.as_ref().is_none_or(|id| all_ids.contains(id))
                     && (target.is_null
                         || target.target.is_some()
                         || (target.external_document.is_some() && target.external_object.is_some()))

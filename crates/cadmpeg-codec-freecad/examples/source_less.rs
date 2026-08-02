@@ -38,6 +38,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             vec![FcstdPropertyValue::attribute("Float", "value", "3")],
         )?;
     let ir = document.build()?;
-    FcstdCodec.encode(&ir, &mut File::create(output)?)?;
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut File::create(output)?))?;
     Ok(())
 }

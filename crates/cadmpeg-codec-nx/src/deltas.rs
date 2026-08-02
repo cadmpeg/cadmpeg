@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::wire::be;
+use cadmpeg_codec_core::be;
 
 /// One complete admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
@@ -2511,7 +2511,12 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
     let (xmt, byte_len, references) = match kind {
         81 => {
             let record = crate::parasolid::entity_51_record_at(stream, offset)?;
-            (record.xmt, record.byte_len, record.references)
+            let references = record
+                .leading_references
+                .into_iter()
+                .chain(record.trailing_references)
+                .collect();
+            (record.xmt, record.byte_len, references)
         }
         82 => {
             let record = crate::parasolid::entity_52_integer_record_at(stream, offset)?;
@@ -4195,10 +4200,11 @@ mod reference_type_map_tests {
     }
 
     #[test]
+    #[allow(clippy::disallowed_methods)] // Test-only hostile-size fixture construction.
     fn reference_type_map_precedes_counted_record_at_shared_kind() {
         let map = vec![0, 1, 0, 1, 0, 3, 0, 82, 0, 1, 0, 0, 2, 100];
         let mut bytes = map.clone();
-        bytes.extend(std::iter::repeat_n(0, 65_536 * 4));
+        bytes.resize(bytes.len() + 65_536 * 4, 0);
 
         let census = walk(&bytes);
 

@@ -9,8 +9,9 @@ use crate::families::standard::fbb::{
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
-use crate::solve::mesh_quotient::{MeshConstraintBudget, MAX_MESH_CONSTRAINT_OPERATIONS};
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::UnionFind;
+use cadmpeg_codec_core::decode::WorkBudget;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -27,32 +28,35 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    if let Some((edge_rows, _, _)) = parse_edge_tables_scoped_at(bytes, after_faces) {
+    // The two-table FBB grammar overlaps the generic scoped-table grammar.
+    // Resolve it first because repeated handles within one FBB table are the
+    // serialized endpoint identities; generic rows allocate independent ports.
+    if let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(bytes, after_faces) {
+        let mut identity_by_handle = HashMap::new();
         return edge_rows
             .iter()
-            .enumerate()
-            .map(|(edge, row)| {
-                row.handles.first().zip(row.handles.last())?;
-                let start = edge.checked_mul(2)?;
-                Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
+            .zip(scopes)
+            .map(|(row, scope)| {
+                let mut pair = [0; 2];
+                for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let next = u32::try_from(identity_by_handle.len()).ok()?;
+                    pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
+                }
+                Some(pair)
             })
             .collect();
     }
-    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
-    let mut identity_by_handle = HashMap::new();
+    let (edge_rows, _, _) = parse_edge_tables_scoped_at(bytes, after_faces)?;
     edge_rows
         .iter()
-        .zip(scopes)
-        .map(|(row, scope)| {
-            let mut pair = [0; 2];
-            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
-                .into_iter()
-                .enumerate()
-            {
-                let next = u32::try_from(identity_by_handle.len()).ok()?;
-                pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
-            }
-            Some(pair)
+        .enumerate()
+        .map(|(edge, row)| {
+            row.handles.first().zip(row.handles.last())?;
+            let start = edge.checked_mul(2)?;
+            Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
         })
         .collect()
 }
@@ -1850,7 +1854,7 @@ pub fn parse_standard_mesh_selection(
 fn boundary_endpoint_support(
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: &MeshConstraintBudget,
+    budget: &WorkBudget<'_>,
 ) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
     #[derive(Clone, Copy)]
     struct State {
@@ -2002,7 +2006,7 @@ pub fn standard_mesh_prune_endpoint_candidates(
         })
         .collect::<Vec<_>>();
     let mut faces = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     loop {
         let before = (
             faces.iter().map(Vec::len).sum::<usize>(),

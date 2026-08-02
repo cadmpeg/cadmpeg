@@ -14,17 +14,13 @@ keywords = ["cad", "siemens-nx", "parasolid", "prt", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 flate2.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
-sha2.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true
-# Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
-# the normal library build.
-cadmpeg-ir = { workspace = true, features = ["test-support"] }
+sha2.workspace = true
 
 [lints]
 workspace = true

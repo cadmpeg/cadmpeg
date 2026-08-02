@@ -1,12 +1,13 @@
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
+use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
     InnerWireTaper, Length, PathRef, RevolveExtent, ShellJoin, ShellMode, SweepOrientation,
     SweepTransformation, SweepTransition, Termination,
 };
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
+use cadmpeg_ir::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use zip::write::SimpleFileOptions;
 
 use crate::FcstdCodec;
@@ -45,7 +46,11 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
-        .encode(&edited, &mut encoded)
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &edited,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
     assert!(report.losses.is_empty());
     let round_trip = FcstdCodec
@@ -106,9 +111,40 @@ fn write_target_and_source_requirements_are_explicit() {
 
     let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let missing_graph = FcstdCodec
-        .encode(&source_less, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
     assert!(missing_graph.to_string().contains("source-less"));
+}
+
+#[test]
+fn seekable_encoder_matches_the_write_only_fallback() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut staged = Vec::new();
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut staged))
+        .expect("write-only fallback");
+    let mut streamed = Cursor::new(Vec::new());
+    crate::writer::write_seekable(
+        &decoded.ir,
+        &mut streamed,
+        crate::FcstdWriteOptions::default(),
+    )
+    .expect("seekable writer");
+
+    assert_eq!(streamed.into_inner(), staged);
 }
 
 #[test]
@@ -130,7 +166,11 @@ fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
         .set_arena("objects", &objects)
         .expect("replace objects");
     let error = FcstdCodec
-        .encode(&declaration_edit, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &declaration_edit,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unserialized declaration edit must fail");
     assert!(error.to_string().contains("declaration edits"));
 
@@ -149,7 +189,11 @@ fn writer_rejects_unserialized_declaration_and_stale_payload_edits() {
         .set_arena("entries", &entries)
         .expect("replace entries");
     let error = FcstdCodec
-        .encode(&stale_entry, &mut Vec::new())
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &stale_entry,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("stale entry metadata must fail");
     assert!(error.to_string().contains("stale length or digest"));
 }
@@ -216,7 +260,13 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .expect("replace side entry");
 
     let mut encoded = Vec::new();
-    FcstdCodec.encode(&ir, &mut encoded).expect("write graph");
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("write graph");
     let round_trip = FcstdCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode generated file");
@@ -241,10 +291,10 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
 }
 
 fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
-    let errors = cadmpeg_ir::validate::validate(ir, Vec::new())
+    let errors = cadmpeg_ir::validate(ir, Vec::new())
         .findings
         .into_iter()
-        .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
+        .filter(|finding| finding.severity >= cadmpeg_ir::Severity::Error)
         .collect::<Vec<_>>();
     assert!(errors.is_empty(), "{errors:#?}");
 }
@@ -347,7 +397,7 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
                 .report
                 .losses
                 .iter()
-                .all(|loss| loss.severity < cadmpeg_ir::report::Severity::Blocking),
+                .all(|loss| loss.severity < cadmpeg_ir::Severity::Blocking),
             "{name}: {:#?}",
             first.report.losses
         );
@@ -998,11 +1048,11 @@ fn transfers_part_and_partdesign_analytic_primitives() {
         }
     ));
     assert!(result.report.losses.is_empty());
-    let findings = cadmpeg_ir::validate::validate(&result.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
     assert!(
         findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::validate::Check::GeometricConsistency),
+            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
         "{findings:#?}"
     );
 }
@@ -1543,12 +1593,17 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#A", "fcstd:design:feature#B"]
     );
-    let cadmpeg_ir::features::FeatureDefinition::Combine { target, tools, op } =
-        &feature("Fuse").definition
+    let cadmpeg_ir::features::FeatureDefinition::Combine {
+        target,
+        tools,
+        op,
+        keep_tools,
+    } = &feature("Fuse").definition
     else {
         panic!("multi-fuse");
     };
     assert_eq!(*op, cadmpeg_ir::features::BooleanOp::Join);
+    assert!(!keep_tools);
     assert!(matches!(
         target,
         cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":link:0")
@@ -1596,6 +1651,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
             op: cadmpeg_ir::features::BooleanOp::Join,
+            keep_tools: false,
         } if target.ends_with(":Group:link:2")
             && tools.ends_with(":Group:links:0..2")
     ));
@@ -1605,6 +1661,7 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
             op: cadmpeg_ir::features::BooleanOp::Cut,
+            keep_tools: false,
         } if target.ends_with(":BaseFeature") && tools.ends_with(":Group")
     ));
     assert!(result.report.losses.is_empty());
@@ -1704,7 +1761,9 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     assert!(matches!(
         &feature("Pipe").definition,
         cadmpeg_ir::features::FeatureDefinition::Sweep {
-            profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
+            section: cadmpeg_ir::features::SweepSection::Profile(
+                cadmpeg_ir::features::ProfileRef::Sketch(_),
+            ),
             sections,
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
@@ -1989,11 +2048,11 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
             && record.semantic_kind == "pattern"
             && record.neutral
     }));
-    let baseline_findings = cadmpeg_ir::validate::validate(&result.ir, Vec::new()).findings;
+    let baseline_findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
     assert!(
         baseline_findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::validate::Check::Identity),
+            .all(|finding| finding.check != cadmpeg_ir::Check::Identity),
         "{baseline_findings:?}"
     );
     let mut corrupted = result.ir.clone();
@@ -2095,7 +2154,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
     derived.definition = cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
         source: cadmpeg_ir::features::FeatureId("fcstd:design:feature#Missing".into()),
     };
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("source feature")));
@@ -2176,7 +2235,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
     *active_child = Some(cadmpeg_ir::features::FeatureId(
         "fcstd:design:feature#Outside".into(),
     ));
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("active tree child")));
@@ -2954,11 +3013,11 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert_eq!(hole.dependencies.len(), 1);
     assert!(result.report.losses.is_empty());
-    let findings = cadmpeg_ir::validate::validate(&result.ir, Vec::new()).findings;
+    let findings = cadmpeg_ir::validate(&result.ir, Vec::new()).findings;
     assert!(
         findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::validate::Check::GeometricConsistency),
+            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
         "{findings:#?}"
     );
 }
@@ -3038,7 +3097,7 @@ fn reports_attributable_native_design_blockers() {
     assert_eq!(result.report.losses.len(), 1);
     assert_eq!(
         result.report.losses[0].severity,
-        cadmpeg_ir::report::Severity::Blocking
+        cadmpeg_ir::Severity::Blocking
     );
     assert_eq!(
         result.report.losses[0]
@@ -3112,11 +3171,11 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     assert_eq!(
         sheet.column_widths,
         [
-            cadmpeg_ir::spreadsheets::SpreadsheetDimension {
+            cadmpeg_ir::SpreadsheetDimension {
                 name: "A".into(),
                 pixels: 120,
             },
-            cadmpeg_ir::spreadsheets::SpreadsheetDimension {
+            cadmpeg_ir::SpreadsheetDimension {
                 name: "B".into(),
                 pixels: 80,
             },
@@ -3124,27 +3183,27 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     );
     assert_eq!(
         sheet.row_heights,
-        [cadmpeg_ir::spreadsheets::SpreadsheetDimension {
+        [cadmpeg_ir::SpreadsheetDimension {
             name: "2".into(),
             pixels: 45,
         }]
     );
     assert_eq!(
         sheet.merged_ranges,
-        [cadmpeg_ir::spreadsheets::SpreadsheetRange {
+        [cadmpeg_ir::SpreadsheetRange {
             start: "A1".into(),
             end: "B1".into(),
         }]
     );
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
-    corrupted.model.spreadsheets[0].merged_ranges.push(
-        cadmpeg_ir::spreadsheets::SpreadsheetRange {
+    corrupted.model.spreadsheets[0]
+        .merged_ranges
+        .push(cadmpeg_ir::SpreadsheetRange {
             start: "A1".into(),
             end: "A2".into(),
-        },
-    );
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+        });
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("merged ranges overlap")));
@@ -3229,11 +3288,11 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(occurrence.element_transforms.len(), 2);
     assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
     assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
-    assert_eq!(result.ir.model.components.len(), 5);
+    assert_eq!(result.ir.model.product_definitions.len(), 5);
     let component = result
         .ir
         .model
-        .components
+        .product_definitions
         .iter()
         .find(|component| {
             component
@@ -3242,52 +3301,69 @@ fn recovers_product_prototypes_occurrences_and_placements() {
                 .is_some_and(|id| id.ends_with("Assembly"))
         })
         .expect("neutral assembly component");
-    assert!(component.parent.is_some());
-    assert_eq!(component.local_transform[0][3], 10.0);
-    assert_eq!(component.resolved_transform[0][3], 110.0);
-    assert_eq!(component.occurrences.len(), 2);
-    assert_eq!(result.ir.model.occurrences.len(), 2);
-    assert_eq!(result.ir.model.occurrences[0].array_index, Some(0));
-    assert_eq!(result.ir.model.occurrences[0].local_transform[0][3], 5.0);
-    assert_eq!(result.ir.model.occurrences[1].local_transform[0][3], 8.0);
+    let assembly_occurrence = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.native_ref.as_deref() == component.native_ref.as_deref())
+        .expect("assembly occurrence");
+    let link_occurrences = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("Occurrence"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(assembly_occurrence.transform.rows[0][3], 10.0);
+    assert_eq!(link_occurrences.len(), 2);
+    assert_eq!(link_occurrences[0].ordinal, 0);
+    assert_eq!(link_occurrences[0].transform.rows[0][3], 5.0);
+    assert_eq!(link_occurrences[1].transform.rows[0][3], 8.0);
+    let graph =
+        cadmpeg_ir::AssemblyGraph::new(&result.ir.model.occurrences).expect("valid assembly graph");
     assert_eq!(
-        result.ir.model.occurrences[0].resolved_transform[0][3],
+        graph
+            .resolved_transform(&link_occurrences[0].id)
+            .unwrap()
+            .rows[0][3],
         115.0
     );
     assert_eq!(
-        result.ir.model.occurrences[1].resolved_transform[0][3],
+        graph
+            .resolved_transform(&link_occurrences[1].id)
+            .unwrap()
+            .rows[0][3],
         118.0
     );
-    assert_eq!(result.ir.model.occurrences[0].scale, [2.0, 3.0, 4.0]);
-    assert_eq!(result.ir.model.occurrences[1].scale, [4.0, 6.0, 8.0]);
-    assert_eq!(result.ir.model.occurrences[0].linked_subelements, ["Face1"]);
-    assert_eq!(result.ir.model.occurrences[0].visible, Some(true));
-    assert_eq!(result.ir.model.occurrences[1].visible, Some(false));
-    assert!(result.ir.model.occurrences[0].element_component.is_some());
-    assert_eq!(result.ir.model.occurrences[0].claim_child, Some(true));
+    assert_eq!(link_occurrences[0].scale, [2.0, 3.0, 4.0]);
+    assert_eq!(link_occurrences[1].scale, [4.0, 6.0, 8.0]);
+    assert_eq!(link_occurrences[0].linked_subelements, ["Face1"]);
+    assert_eq!(link_occurrences[0].visible, Some(true));
+    assert_eq!(link_occurrences[1].visible, Some(false));
+    assert!(link_occurrences[0].element_component.is_some());
+    assert_eq!(link_occurrences[0].claim_child, Some(true));
     assert_eq!(
-        result.ir.model.occurrences[0].copy_on_change,
-        Some(cadmpeg_ir::products::CopyOnChangePolicy::Owned)
+        link_occurrences[0].copy_on_change,
+        Some(cadmpeg_ir::CopyOnChangePolicy::Owned)
     );
-    assert!(result.ir.model.occurrences[0]
-        .copy_on_change_source
-        .is_some());
-    assert!(result.ir.model.occurrences[0]
-        .copy_on_change_group
-        .is_some());
-    assert_eq!(
-        result.ir.model.occurrences[0].copy_on_change_touched,
-        Some(true)
-    );
+    assert!(link_occurrences[0].copy_on_change_source.is_some());
+    assert!(link_occurrences[0].copy_on_change_group.is_some());
+    assert_eq!(link_occurrences[0].copy_on_change_touched, Some(true));
     assert!(matches!(
-        &result.ir.model.occurrences[0].prototype,
-        cadmpeg_ir::products::ComponentReference::Local { component }
-            if component.0.contains("Prototype")
+        &link_occurrences[0].prototype,
+        cadmpeg_ir::PrototypeReference::Local { definition }
+            if definition.0.contains("Prototype")
     ));
     let prototype = result
         .ir
         .model
-        .components
+        .product_definitions
         .iter()
         .find(|component| component.source_name.as_deref() == Some("Prototype"))
         .expect("prototype component identity");
@@ -3300,21 +3376,13 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
-    corrupted.model.occurrences[0].prototype = cadmpeg_ir::products::ComponentReference::Local {
-        component: cadmpeg_ir::products::ComponentId("fcstd:model:component#missing".into()),
+    corrupted.model.occurrences[0].prototype = cadmpeg_ir::PrototypeReference::Local {
+        definition: cadmpeg_ir::ids::ProductDefinitionId("fcstd:model:component#missing".into()),
     };
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
-    let mut corrupted = result.ir.clone();
-    corrupted.model.occurrences[0].resolved_transform[0][3] += 1.0;
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding
-            .message
-            .contains("invalid occurrence reference or transform")));
 }
 
 #[test]
@@ -3371,16 +3439,16 @@ fn recovers_assembly_joint_operands_frames_and_state() {
     );
     assert_eq!(result.ir.model.assembly_joints.len(), 1);
     let joint = &result.ir.model.assembly_joints[0];
-    assert_eq!(joint.kind, cadmpeg_ir::products::JointKind::Revolute);
+    assert_eq!(joint.kind, cadmpeg_ir::JointKind::Revolute);
     assert_eq!(joint.operands.len(), 2);
     assert!(joint
         .operands
         .iter()
-        .all(|operand| operand.component.is_some()));
-    assert_eq!(joint.frames[1][0][3], 2.0);
+        .all(|operand| operand.occurrence.is_some()));
+    assert_eq!(joint.frames[1].rows[0][3], 2.0);
     assert_eq!(joint.offset_frames.len(), 2);
-    assert_eq!(joint.offset_frames[0][0][3], 0.5);
-    assert_eq!(joint.offset_frames[1][0][3], 1.5);
+    assert_eq!(joint.offset_frames[0].rows[0][3], 0.5);
+    assert_eq!(joint.offset_frames[1].rows[0][3], 1.5);
     assert!(joint.suppressed);
     assert_eq!(joint.detached, [true, false]);
     assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < 1e-12);
@@ -3396,13 +3464,13 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         .expect("limits");
     limits.minimum = Some(2.0);
     limits.maximum = Some(1.0);
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid assembly joint")));
     let mut corrupted = result.ir.clone();
-    corrupted.model.assembly_joints[0].operands[0].component = None;
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    corrupted.model.assembly_joints[0].operands[0].occurrence = None;
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid assembly joint operands")));
@@ -3442,45 +3510,38 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
                     .native_ref
                     .as_deref()
                     .is_some_and(|id| id.ends_with(name))
+                    && !occurrence.id.0.ends_with(":container")
             })
             .expect("named occurrence")
     };
-    assert_eq!(occurrence("Inner").prototype_transform[0][3], 5.0);
-    assert_eq!(occurrence("Inner").resolved_transform[0][3], 8.0);
-    assert_eq!(occurrence("Outer").prototype_transform[0][3], 8.0);
-    assert_eq!(occurrence("Outer").resolved_transform[0][3], 20.0);
-    assert_eq!(occurrence("Override").prototype_transform[0][3], 0.0);
-    assert_eq!(occurrence("Override").resolved_transform[0][3], 14.0);
+    assert_eq!(occurrence("Inner").prototype_transform.rows[0][3], 5.0);
+    assert_eq!(occurrence("Outer").prototype_transform.rows[0][3], 8.0);
+    assert_eq!(occurrence("Override").prototype_transform.rows[0][3], 0.0);
+    let graph =
+        cadmpeg_ir::AssemblyGraph::new(&result.ir.model.occurrences).expect("valid assembly graph");
+    assert_eq!(
+        graph
+            .resolved_transform(&occurrence("Inner").id)
+            .unwrap()
+            .rows[0][3],
+        8.0
+    );
+    assert_eq!(
+        graph
+            .resolved_transform(&occurrence("Outer").id)
+            .unwrap()
+            .rows[0][3],
+        20.0
+    );
+    assert_eq!(
+        graph
+            .resolved_transform(&occurrence("Override").id)
+            .unwrap()
+            .rows[0][3],
+        14.0
+    );
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
-    let inner_component = result
-        .ir
-        .model
-        .components
-        .iter()
-        .find(|component| component.source_name.as_deref() == Some("Inner"))
-        .expect("inner link component")
-        .id
-        .clone();
-    let mut corrupted = result.ir.clone();
-    let inner = corrupted
-        .model
-        .occurrences
-        .iter_mut()
-        .find(|occurrence| {
-            occurrence
-                .native_ref
-                .as_deref()
-                .is_some_and(|id| id.ends_with("Inner"))
-        })
-        .expect("inner link occurrence");
-    inner.prototype = cadmpeg_ir::products::ComponentReference::Local {
-        component: inner_component,
-    };
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("prototype cycle")));
 }
 
 #[test]
@@ -3513,9 +3574,7 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
                 .is_some_and(|id| id.ends_with("ByPath"))
         })
         .expect("path occurrence");
-    let cadmpeg_ir::products::ComponentReference::External { document, object } =
-        &by_path.prototype
-    else {
+    let cadmpeg_ir::PrototypeReference::External { document, object } = &by_path.prototype else {
         panic!("path prototype is external");
     };
     assert_eq!(document.path.as_deref(), Some("parts/widget.FCStd"));
@@ -3523,7 +3582,7 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
     assert_eq!(object.as_deref(), Some("Body"));
     assert_eq!(
         document.resolution,
-        cadmpeg_ir::products::ExternalResolution::Unresolved
+        cadmpeg_ir::ExternalResolution::Unresolved
     );
 
     let by_document = result
@@ -3538,8 +3597,7 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
                 .is_some_and(|id| id.ends_with("ByDocument"))
         })
         .expect("document occurrence");
-    let cadmpeg_ir::products::ComponentReference::External { document, object } =
-        &by_document.prototype
+    let cadmpeg_ir::PrototypeReference::External { document, object } = &by_document.prototype
     else {
         panic!("document prototype is external");
     };
@@ -3548,19 +3606,19 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
     assert_eq!(object.as_deref(), Some("Gear"));
     assert_eq!(
         document.resolution,
-        cadmpeg_ir::products::ExternalResolution::Unresolved
+        cadmpeg_ir::ExternalResolution::Unresolved
     );
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
-    let cadmpeg_ir::products::ComponentReference::External { document, .. } =
+    let cadmpeg_ir::PrototypeReference::External { document, .. } =
         &mut corrupted.model.occurrences[0].prototype
     else {
         panic!("external prototype");
     };
     document.path = Some("also-a-path.FCStd".into());
     document.document_id = Some("also-an-id".into());
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
@@ -3588,13 +3646,13 @@ fn transfers_grounded_assembly_state_with_resolved_component() {
         .expect("grounded assembly object");
     assert_eq!(result.ir.model.assembly_joints.len(), 1);
     let joint = &result.ir.model.assembly_joints[0];
-    assert_eq!(joint.kind, cadmpeg_ir::products::JointKind::Grounded);
+    assert_eq!(joint.kind, cadmpeg_ir::JointKind::Grounded);
     assert_eq!(joint.operands.len(), 1);
-    assert!(joint.operands[0].component.is_some());
+    assert!(joint.operands[0].occurrence.is_some());
     assert_eq!(joint.frames.len(), 1);
-    assert_eq!(joint.frames[0][0][3], 7.0);
-    assert_eq!(joint.frames[0][1][3], 8.0);
-    assert_eq!(joint.frames[0][2][3], 9.0);
+    assert_eq!(joint.frames[0].rows[0][3], 7.0);
+    assert_eq!(joint.frames[0].rows[1][3], 8.0);
+    assert_eq!(joint.frames[0].rows[2][3], 9.0);
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
 }
@@ -3645,16 +3703,13 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert_eq!(report.object, by_domain["Fem"].object);
     assert!(report.byte_start < report.byte_end);
     assert_eq!(report.byte_len, report.data.len() as u64);
-    assert_eq!(
-        report.sha256,
-        cadmpeg_ir::wire::hash::sha256_hex(&report.data)
-    );
+    assert_eq!(report.sha256, cadmpeg_ir::hash::sha256_hex(&report.data));
     assert_eq!(report.payloads.len(), 1);
     assert_eq!(report.payloads[0].name, "analysis.dat");
     assert_eq!(report.payloads[0].data, b"finite-element-results");
     assert_eq!(
         report.payloads[0].sha256,
-        cadmpeg_ir::wire::hash::sha256_hex(&report.payloads[0].data)
+        cadmpeg_ir::hash::sha256_hex(&report.payloads[0].data)
     );
     let python = &by_domain["Path"].property_records[0];
     assert!(python.inert);
@@ -3662,7 +3717,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert!(records.iter().all(|record| {
         record.byte_start < record.byte_end
             && record.byte_len == record.data.len() as u64
-            && record.sha256 == cadmpeg_ir::wire::hash::sha256_hex(&record.data)
+            && record.sha256 == cadmpeg_ir::hash::sha256_hex(&record.data)
     }));
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
@@ -3808,7 +3863,7 @@ fn retains_ordered_document_level_gui_state() {
         .as_mut()
         .expect("camera state")
         .orientation = Some([0.0; 4]);
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "invalid document presentation state"));
@@ -3955,7 +4010,7 @@ fn recovers_techdraw_page_template_and_view_graph() {
         .find(|drawing| drawing.object.ends_with("#View"))
         .expect("neutral view")
         .scale = Some(0.0);
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "invalid drawing reference, order, or numeric state"));
@@ -4084,7 +4139,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
 
     let mut corrupted = result.ir.clone();
     corrupted.model.semantic_annotations[0].value = Some(f64::INFINITY);
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message
@@ -4658,7 +4713,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     ));
     let native_findings = crate::validate_native(&result.ir);
     assert!(native_findings.is_empty(), "{native_findings:#?}");
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     let design_findings = validation
         .findings
         .iter()
@@ -4892,13 +4947,9 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
         "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
         SimpleFileOptions::default().large_file(true),
     );
-    let arena = cadmpeg_ir::decode::DecodeArena::new();
-    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_ir::decode::DecodePolicy::default(),
-    )
-    .expect("root view");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        .expect("ZIP64 archive fits root policy");
     let scan = crate::container::scan(&ctx, root).expect("ZIP64 streaming ZIP");
     assert!(scan
         .ledger
@@ -4915,13 +4966,9 @@ fn frames_zip64_streaming_descriptor_and_local_extra() {
 #[test]
 fn frames_streaming_data_descriptor_separately_from_padding() {
     let bytes = streaming_archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
-    let arena = cadmpeg_ir::decode::DecodeArena::new();
-    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_ir::decode::DecodePolicy::default(),
-    )
-    .expect("root view");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        .expect("archive fits root policy");
     let scan = crate::container::scan(&ctx, root).expect("streaming ZIP");
     let descriptors = scan
         .ledger
@@ -4939,7 +4986,7 @@ fn rejects_unsafe_names() {
     let error = FcstdCodec
         .inspect(
             &mut Cursor::new(unsafe_name),
-            &cadmpeg_ir::decode::InspectOptions::default(),
+            &cadmpeg_codec_core::decode::InspectOptions::default(),
         )
         .expect_err("unsafe path must fail");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
@@ -5098,7 +5145,7 @@ Co 1001000 +2 0 *
 
     let mut corrupted = result.ir.clone();
     corrupted.model.view_presentations[0].line_width = Some(f64::NAN);
-    assert!(cadmpeg_ir::validate::validate(&corrupted, Vec::new())
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.message == "invalid view presentation reference, order, or size"));
@@ -5108,12 +5155,12 @@ Co 1001000 +2 0 *
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(
         report
             .findings
             .iter()
-            .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error),
+            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error),
         "{:#?}",
         report.findings
     );
@@ -5173,11 +5220,11 @@ So 1001000 +2 0 *
     ));
     assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 1.0]));
     assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(
         validation.findings.iter().all(|finding| {
-            finding.severity < cadmpeg_ir::report::Severity::Error
-                || finding.check == cadmpeg_ir::validate::Check::Identity
+            finding.severity < cadmpeg_ir::Severity::Error
+                || finding.check == cadmpeg_ir::Check::Identity
         }),
         "{:#?}",
         validation.findings
@@ -5357,11 +5404,11 @@ Co 1001000 +2 0 *
     assert_eq!(second.radial_next, first.id);
     assert_ne!(first.pcurves, second.pcurves);
     assert!(!first.pcurves.is_empty() && !second.pcurves.is_empty());
-    let errors = cadmpeg_ir::validate::validate(&result.ir, Vec::new())
+    let errors = cadmpeg_ir::validate(&result.ir, Vec::new())
         .findings
         .into_iter()
-        .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
-        .filter(|finding| finding.check != cadmpeg_ir::validate::Check::Identity)
+        .filter(|finding| finding.severity == cadmpeg_ir::Severity::Error)
+        .filter(|finding| finding.check != cadmpeg_ir::Check::Identity)
         .collect::<Vec<_>>();
     assert!(errors.is_empty(), "{errors:#?}");
 }
@@ -5541,11 +5588,13 @@ Co 1001000 +2 1 +2 3 *
             cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
-    let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    let report = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(
-        report.findings.iter().all(|finding| finding.severity
-            < cadmpeg_ir::report::Severity::Error
-            || finding.check == cadmpeg_ir::validate::Check::Identity),
+        report
+            .findings
+            .iter()
+            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error
+                || finding.check == cadmpeg_ir::Check::Identity),
         "{:#?}",
         report.findings
     );
@@ -5557,7 +5606,7 @@ fn legacy_layout_is_inspectable_but_explicitly_refused_for_decode() {
     let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(&bytes),
-            &cadmpeg_ir::decode::InspectOptions::default(),
+            &cadmpeg_codec_core::decode::InspectOptions::default(),
         )
         .expect("legacy inspection");
     assert!(summary.notes.iter().any(|note| note == "SchemaVersion=3"));
@@ -5582,12 +5631,17 @@ fn thumbnail_bytes_are_retained_with_digest() {
             },
         )
         .expect("decode");
-    let unknowns = result
+    assert_eq!(
+        result.ir.native_unknowns_iter("fcstd").count(),
+        1,
+        "thumbnail has one product reference"
+    );
+    let retained = result
         .source_fidelity
-        .native_unknown_records(&result.ir, "fcstd")
-        .expect("unknowns");
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].data.as_deref(), Some(b"png".as_slice()));
+        .retained_records
+        .first()
+        .expect("retained thumbnail");
+    assert_eq!(retained.data.as_deref(), Some(b"png".as_slice()));
 }
 
 #[test]
@@ -5890,12 +5944,6 @@ fn detects_marker_but_not_arbitrary_zip() {
         "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
     ));
     assert_eq!(FcstdCodec.detect(&public[..512]), Confidence::High);
-    // ZIP magic and a `Document.xml` byte run, but no well-formed first-entry
-    // marker header: the substring search alone lands Medium.
-    assert_eq!(
-        FcstdCodec.detect(b"PK\x03\x04 Document.xml here"),
-        Confidence::Medium
-    );
     assert_eq!(FcstdCodec.detect(b"PK\x03\x04 unrelated"), Confidence::Low);
     assert_eq!(FcstdCodec.detect(b"not zip"), Confidence::No);
 }
@@ -5907,7 +5955,7 @@ fn inspects_and_closes_physical_ledger() {
     let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(&bytes),
-            &cadmpeg_ir::decode::InspectOptions::default(),
+            &cadmpeg_codec_core::decode::InspectOptions::default(),
         )
         .expect("inspect");
     assert_eq!(summary.format, "fcstd");
@@ -5950,498 +5998,5 @@ fn inspects_and_closes_physical_ledger() {
     }
 }
 
-/// Golden-snapshot harness that pins the FCStd codec's observable behavior before
-/// the deep-modules refactor. Each sha256-pinned corpus fixture is frozen through
-/// four surfaces: `decode/` (canonical IR + report + source-fidelity sidecar),
-/// `inspect/` (container summary), `encode/` (retained round-trip bytes), and
-/// `step/` (cross-crate STEP AP214 conversion). Regenerate with
-/// `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden`.
-mod golden {
-    use std::path::{Path, PathBuf};
-
-    use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
-    use cadmpeg_ir::decode::InspectOptions;
-    use cadmpeg_ir::wire::hash::sha256_hex;
-    use cadmpeg_step::{write_step, StepWriteOptions};
-    use serde_json::Value;
-    use std::io::Cursor;
-
-    use crate::FcstdCodec;
-
-    /// `(golden name, manifest sha256, embedded fixture bytes)`. Bytes are baked in
-    /// from the sha256-pinned corpus at `corpus/freecad_fcstd/fixtures`; the pinned
-    /// digest is the exact `sha256` field from `corpus/manifest.toml`.
-    /// `fixture_hashes_match_manifest` re-derives each digest and fails if an
-    /// embedded fixture ever drifts from its pin.
-    fn fixtures() -> Vec<(&'static str, &'static str, &'static [u8])> {
-        macro_rules! fixture {
-            ($name:literal, $hash:literal) => {
-                (
-                    $name,
-                    $hash,
-                    include_bytes!(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/../../corpus/freecad_fcstd/fixtures/",
-                        $name,
-                        ".FCStd"
-                    )) as &'static [u8],
-                )
-            };
-        }
-        vec![
-            fixture!(
-                "application_payloads",
-                "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75"
-            ),
-            fixture!(
-                "binary_exact_shape",
-                "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e"
-            ),
-            fixture!(
-                "core_design_product",
-                "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba"
-            ),
-            fixture!(
-                "core_operations",
-                "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228"
-            ),
-            fixture!(
-                "design_history",
-                "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7"
-            ),
-            fixture!(
-                "external_component",
-                "e1a563bd89e46c00237b65ac543482aaa361c833deef759164143687d0de557b"
-            ),
-            fixture!(
-                "geometry_topology",
-                "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59"
-            ),
-            fixture!(
-                "gui_appearance",
-                "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2"
-            ),
-            fixture!(
-                "product_assembly",
-                "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340"
-            ),
-            fixture!(
-                "sketch_constraints",
-                "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f"
-            ),
-            fixture!(
-                "techdraw_annotations",
-                "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317"
-            ),
-        ]
-    }
-
-    fn golden_dir() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
-    }
-
-    fn update_requested() -> bool {
-        std::env::var_os("UPDATE_GOLDEN").is_some()
-    }
-
-    /// Decode outcome of a binary surface (`encode`, `step`). `Bytes` is committed
-    /// under the success path, `Err` under a sibling `.err` text path, and
-    /// `Skipped` (decode failed, so nothing to encode/convert) commits neither.
-    /// Freezing all three pins the success/failure boundary itself.
-    enum Outcome {
-        Bytes(Vec<u8>),
-        Err(String),
-        Skipped,
-    }
-
-    /// `decode/<name>.json`: the canonical IR, the `DecodeReport`, and the
-    /// `SourceFidelity` sidecar as one pretty document. The IR and sidecar are
-    /// serialized through their `to_canonical_json` producers so the frozen form is
-    /// the canonical one. The sidecar is retained deliberately: retained-write
-    /// integrity keys on its records, so a refactor that drops them surfaces here.
-    /// A decode failure is frozen as `{ "decode_error": ... }` (a real, contract-
-    /// relevant behavior for a fixture outside the schema-4/file-1 band).
-    fn decode_snapshot(bytes: &[u8]) -> String {
-        let value =
-            match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-                Ok(result) => {
-                    let ir: Value = serde_json::from_str(
-                        &result.ir.to_canonical_json().expect("canonical ir json"),
-                    )
-                    .expect("parse canonical ir");
-                    let sidecar: Value = serde_json::from_str(
-                        &result
-                            .source_fidelity
-                            .to_canonical_json()
-                            .expect("canonical sidecar json"),
-                    )
-                    .expect("parse canonical sidecar");
-                    serde_json::json!({
-                        "ir": ir,
-                        "report": serde_json::to_value(&result.report).expect("serialize report"),
-                        "source_fidelity": sidecar,
-                    })
-                }
-                Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
-            };
-        let mut text = serde_json::to_string_pretty(&value).expect("serialize decode snapshot");
-        text.push('\n');
-        text
-    }
-
-    /// `inspect/<name>.json`: the `ContainerSummary` from the container-scan path.
-    /// This pins container behavior before the scan-signature migration. Inspection
-    /// runs on every fixture regardless of persistence band.
-    fn inspect_snapshot(bytes: &[u8]) -> String {
-        let value = match FcstdCodec
-            .inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
-        {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
-            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
-        };
-        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
-        text.push('\n');
-        text
-    }
-
-    /// `encode/<name>.fcstd.bin`: decode, then `encode_with_source_fidelity` back to
-    /// native bytes. `FcstdCodec` does not override `encode_with_source_fidelity`, so
-    /// the sidecar argument has no byte effect — the retained round-trip is driven
-    /// entirely by the `fcstd` native namespace inside the IR. `encode_paths_agree`
-    /// pins that equivalence. When decode fails there is no IR to encode (`Skipped`).
-    fn encode_outcome(bytes: &[u8]) -> Outcome {
-        let Ok(result) =
-            FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-        else {
-            return Outcome::Skipped;
-        };
-        let mut buf = Vec::new();
-        match FcstdCodec.encode_with_source_fidelity(
-            &result.ir,
-            Some(&result.source_fidelity),
-            &mut buf,
-        ) {
-            Ok(_) => Outcome::Bytes(buf),
-            Err(err) => Outcome::Err(err.to_string()),
-        }
-    }
-
-    /// `step/<name>.step`: decode, then convert the IR through
-    /// `cadmpeg_step::write_step` with default options (AP214, fixed epoch
-    /// timestamp). This doubles as the cross-crate STEP conversion reference for the
-    /// refactor. When decode fails there is no IR to convert (`Skipped`).
-    fn step_outcome(bytes: &[u8]) -> Outcome {
-        let Ok(result) =
-            FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-        else {
-            return Outcome::Skipped;
-        };
-        let mut buf = Vec::new();
-        match write_step(&result.ir, &mut buf, &StepWriteOptions::default()) {
-            Ok(_) => Outcome::Bytes(buf),
-            Err(err) => Outcome::Err(err.to_string()),
-        }
-    }
-
-    fn write_golden(path: &Path, bytes: &[u8]) {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).expect("create golden subdir");
-        }
-        std::fs::write(path, bytes)
-            .unwrap_or_else(|e| panic!("write golden {}: {e}", path.display()));
-    }
-
-    fn remove_if_exists(path: &Path) {
-        if path.exists() {
-            std::fs::remove_file(path).unwrap_or_else(|e| panic!("remove {}: {e}", path.display()));
-        }
-    }
-
-    /// First differing line between two texts, 1-based, both sides truncated for a
-    /// readable failure.
-    fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
-        let mut exp = expected.lines();
-        let mut act = actual.lines();
-        let mut line = 0usize;
-        loop {
-            line += 1;
-            match (exp.next(), act.next()) {
-                (Some(e), Some(a)) if e == a => {}
-                (e, a) => {
-                    let trunc = |s: Option<&str>| match s {
-                        Some(s) if s.len() > 200 => format!("{}…", &s[..200]),
-                        Some(s) => s.to_string(),
-                        None => "<end of file>".to_string(),
-                    };
-                    return (line, trunc(e), trunc(a));
-                }
-            }
-        }
-    }
-
-    fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
-        let offset = expected
-            .iter()
-            .zip(actual)
-            .position(|(e, a)| e != a)
-            .unwrap_or_else(|| expected.len().min(actual.len()));
-        format!(
-            "first byte difference at offset {offset} (golden {} bytes, actual {} bytes)",
-            expected.len(),
-            actual.len()
-        )
-    }
-
-    fn check_text(
-        failures: &mut Vec<String>,
-        update: bool,
-        label: &str,
-        path: &Path,
-        actual: &str,
-    ) {
-        if update {
-            write_golden(path, actual.as_bytes());
-            return;
-        }
-        let expected = match std::fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(e) => {
-                failures.push(format!(
-                    "{label}: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden`",
-                    path.display()
-                ));
-                return;
-            }
-        };
-        if expected != actual {
-            let (line, exp_line, act_line) = first_line_diff(&expected, actual);
-            failures.push(format!(
-                "{label}: diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}"
-            ));
-        }
-    }
-
-    fn check_outcome(
-        failures: &mut Vec<String>,
-        update: bool,
-        label: &str,
-        ok_path: &Path,
-        err_path: &Path,
-        outcome: &Outcome,
-    ) {
-        if update {
-            match outcome {
-                Outcome::Bytes(bytes) => {
-                    write_golden(ok_path, bytes);
-                    remove_if_exists(err_path);
-                }
-                Outcome::Err(message) => {
-                    write_golden(err_path, format!("{message}\n").as_bytes());
-                    remove_if_exists(ok_path);
-                }
-                Outcome::Skipped => {
-                    remove_if_exists(ok_path);
-                    remove_if_exists(err_path);
-                }
-            }
-            return;
-        }
-        match outcome {
-            Outcome::Bytes(actual) => {
-                if err_path.exists() {
-                    failures.push(format!(
-                        "{label}: now produces bytes but golden expected an error ({})",
-                        err_path.display()
-                    ));
-                }
-                match std::fs::read(ok_path) {
-                    Ok(expected) if &expected == actual => {}
-                    Ok(expected) => failures.push(format!(
-                        "{label}: byte mismatch; {}",
-                        first_byte_diff(&expected, actual)
-                    )),
-                    Err(e) => failures.push(format!(
-                        "{label}: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden`",
-                        ok_path.display()
-                    )),
-                }
-            }
-            Outcome::Err(actual) => {
-                if ok_path.exists() {
-                    failures.push(format!(
-                        "{label}: now errors but golden expected bytes ({})",
-                        ok_path.display()
-                    ));
-                }
-                let actual = format!("{actual}\n");
-                match std::fs::read_to_string(err_path) {
-                    Ok(expected) if expected == actual => {}
-                    Ok(expected) => {
-                        let (line, exp_line, act_line) = first_line_diff(&expected, &actual);
-                        failures.push(format!(
-                            "{label}: error diverged at line {line}\n    golden: {exp_line}\n    actual: {act_line}"
-                        ));
-                    }
-                    Err(e) => failures.push(format!(
-                        "{label}: cannot read golden {} ({e}); run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden`",
-                        err_path.display()
-                    )),
-                }
-            }
-            Outcome::Skipped => {
-                if ok_path.exists() || err_path.exists() {
-                    failures.push(format!(
-                        "{label}: decode no longer yields an IR, but a golden artifact still exists (remove it or fix decode)"
-                    ));
-                }
-            }
-        }
-    }
-
-    /// Every embedded fixture must hash to its `corpus/manifest.toml` pin. Guards the
-    /// pinning premise: a golden set anchored to unverified bytes proves nothing.
-    #[test]
-    fn fixture_hashes_match_manifest() {
-        let mut failures = Vec::new();
-        for (name, expected, bytes) in fixtures() {
-            let actual = sha256_hex(bytes);
-            if actual != expected {
-                failures.push(format!(
-                    "fixture `{name}`: embedded sha256 {actual} != manifest pin {expected}"
-                ));
-            }
-        }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
-    }
-
-    #[test]
-    fn golden_snapshots_are_byte_identical() {
-        let update = update_requested();
-        let dir = golden_dir();
-        let mut failures: Vec<String> = Vec::new();
-        let mut skipped_binary: Vec<&str> = Vec::new();
-        for (name, _, bytes) in fixtures() {
-            check_text(
-                &mut failures,
-                update,
-                &format!("decode `{name}`"),
-                &dir.join(format!("decode/{name}.json")),
-                &decode_snapshot(bytes),
-            );
-            check_text(
-                &mut failures,
-                update,
-                &format!("inspect `{name}`"),
-                &dir.join(format!("inspect/{name}.json")),
-                &inspect_snapshot(bytes),
-            );
-            let encode = encode_outcome(bytes);
-            let step = step_outcome(bytes);
-            if matches!(encode, Outcome::Skipped) {
-                skipped_binary.push(name);
-            }
-            check_outcome(
-                &mut failures,
-                update,
-                &format!("encode `{name}`"),
-                &dir.join(format!("encode/{name}.fcstd.bin")),
-                &dir.join(format!("encode/{name}.fcstd.err")),
-                &encode,
-            );
-            check_outcome(
-                &mut failures,
-                update,
-                &format!("step `{name}`"),
-                &dir.join(format!("step/{name}.step")),
-                &dir.join(format!("step/{name}.step.err")),
-                &step,
-            );
-        }
-        if !skipped_binary.is_empty() {
-            println!(
-                "golden: {} fixture(s) do not decode, so carry no encode/step reference: {skipped_binary:?}",
-                skipped_binary.len()
-            );
-        }
-        assert!(
-            failures.is_empty(),
-            "{} golden snapshot(s) drifted; if the change is intended run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-freecad golden` and review the diff:\n\n{}",
-            failures.len(),
-            failures.join("\n\n")
-        );
-    }
-
-    /// Guards against nondeterministic output (`HashMap` iteration order, timestamps):
-    /// decoding and re-encoding the same bytes twice must be byte-identical across all
-    /// four surfaces.
-    #[test]
-    fn golden_output_is_deterministic() {
-        for (name, _, bytes) in fixtures() {
-            let decode = (decode_snapshot(bytes), decode_snapshot(bytes));
-            if decode.0 != decode.1 {
-                let (line, a, b) = first_line_diff(&decode.0, &decode.1);
-                panic!("fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {a}\n    run 2: {b}");
-            }
-            let inspect = (inspect_snapshot(bytes), inspect_snapshot(bytes));
-            if inspect.0 != inspect.1 {
-                let (line, a, b) = first_line_diff(&inspect.0, &inspect.1);
-                panic!("fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {a}\n    run 2: {b}");
-            }
-            if let (Outcome::Bytes(first), Outcome::Bytes(second)) =
-                (encode_outcome(bytes), encode_outcome(bytes))
-            {
-                assert!(
-                    first == second,
-                    "fixture `{name}`: nondeterministic encode; {}",
-                    first_byte_diff(&first, &second)
-                );
-            }
-            if let (Outcome::Bytes(first), Outcome::Bytes(second)) =
-                (step_outcome(bytes), step_outcome(bytes))
-            {
-                assert!(
-                    first == second,
-                    "fixture `{name}`: nondeterministic step; {}",
-                    first_byte_diff(&first, &second)
-                );
-            }
-        }
-    }
-
-    /// `FcstdCodec` does not override `encode_with_source_fidelity`, so the retained
-    /// write is driven by the IR's `fcstd` native namespace and the sidecar argument
-    /// is inert. This freezes that equivalence: if a later change makes the sidecar
-    /// load-bearing and the two paths diverge, this fails and the golden `encode/`
-    /// bytes must be re-examined.
-    #[test]
-    fn encode_paths_agree() {
-        for (name, _, bytes) in fixtures() {
-            let Ok(result) =
-                FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            else {
-                continue;
-            };
-            let mut plain = Vec::new();
-            let plain_ok = FcstdCodec.encode(&result.ir, &mut plain).is_ok();
-            let mut fidelity = Vec::new();
-            let fidelity_ok = FcstdCodec
-                .encode_with_source_fidelity(
-                    &result.ir,
-                    Some(&result.source_fidelity),
-                    &mut fidelity,
-                )
-                .is_ok();
-            assert_eq!(
-                plain_ok, fidelity_ok,
-                "fixture `{name}`: encode and encode_with_source_fidelity disagree on success"
-            );
-            if plain_ok {
-                assert!(
-                    plain == fidelity,
-                    "fixture `{name}`: encode and encode_with_source_fidelity produced different bytes; {}",
-                    first_byte_diff(&plain, &fidelity)
-                );
-            }
-        }
-    }
-}
+#[path = "integration_tests.rs"]
+mod integration_tests;

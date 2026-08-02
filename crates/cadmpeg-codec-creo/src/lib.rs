@@ -8,14 +8,14 @@
 //! # Quick start
 //!
 //! [`CreoCodec`] implements [`cadmpeg_ir::codec::Codec`]. Use
-//! [`cadmpeg_ir::codec::CodecEntry::inspect`] to enumerate sections and read container diagnostics:
+//! [`cadmpeg_ir::CodecEntry::inspect`] to enumerate sections and read container diagnostics:
 //!
 //! ```no_run
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_creo::CreoCodec;
 //! use cadmpeg_ir::codec::CodecEntry;
-//! use cadmpeg_ir::decode::InspectOptions;
+//! use cadmpeg_codec_core::decode::InspectOptions;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
@@ -25,7 +25,7 @@
 //! # }
 //! ```
 //!
-//! Use [`cadmpeg_ir::codec::CodecEntry::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
+//! Use [`cadmpeg_ir::CodecEntry::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
 //! its [`cadmpeg_ir::report::DecodeReport`].
 //!
 //! # Format model
@@ -53,11 +53,11 @@
 
 mod compress;
 pub mod container;
+pub(crate) mod coverage;
 pub mod curve;
 pub mod datum;
 pub mod decode;
 pub mod feature;
-pub(crate) mod loss;
 pub mod placement;
 pub mod primdata;
 pub mod psb;
@@ -66,8 +66,9 @@ pub mod scalar;
 pub mod surface;
 pub mod topology;
 
-use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
 
 /// Codec for Creo Parametric and Pro/ENGINEER PSB `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -90,10 +91,10 @@ impl Codec for CreoCodec {
 
     fn inspect_impl(
         &self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan(ctx, root);
+        let scan = container::scan_bytes(root.window());
         Ok(container::summarize(&scan))
     }
 

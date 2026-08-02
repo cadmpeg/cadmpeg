@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -14,15 +15,6 @@ use cadmpeg_ir::topology::{
 };
 
 use crate::parse::{Exchange, RawRecord, Value};
-use crate::vocab::{
-    ADVANCED_BREP_SHAPE_REPRESENTATION, ADVANCED_FACE, BREP_WITH_VOIDS, CLOSED_SHELL,
-    CONNECTED_EDGE_SET, EDGE_BASED_WIREFRAME_MODEL, EDGE_CURVE, EDGE_LOOP, FACE_BOUND,
-    FACE_OUTER_BOUND, GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION,
-    GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION, GEOMETRIC_CURVE_SET, GEOMETRIC_SET,
-    MANIFOLD_SOLID_BREP, MANIFOLD_SURFACE_SHAPE_REPRESENTATION, OPEN_SHELL, ORIENTED_CLOSED_SHELL,
-    ORIENTED_EDGE, ORIENTED_OPEN_SHELL, PCURVE, SEAM_CURVE, SHAPE_REPRESENTATION,
-    SHELL_BASED_SURFACE_MODEL, SURFACE_CURVE, VERTEX_LOOP, VERTEX_POINT,
-};
 
 pub(super) struct TopologyResult {
     pub typed_records: BTreeSet<u64>,
@@ -46,7 +38,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
                     .into_iter()
                     .filter(|model| {
                         exchange.records.get(model).is_some_and(|record| {
-                            record.simple_name() == Some(EDGE_BASED_WIREFRAME_MODEL)
+                            record.simple_name() == Some("EDGE_BASED_WIREFRAME_MODEL")
                         })
                     })
                     .map(move |model| (id, model))
@@ -64,11 +56,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             built_wire_models.insert(model);
             built.typed.insert(representation);
             result.typed_records.append(&mut built.typed);
-            ir.model.vertices.append(&mut built.vertices);
-            ir.model.edges.append(&mut built.edges);
-            ir.model.shells.append(&mut built.shells);
-            ir.model.regions.push(built.region);
-            ir.model.bodies.push(built.body);
+            if let Err(error) = built.draft.commit_model(ir) {
+                result.warnings.push(format!(
+                    "EDGE_BASED_WIREFRAME_MODEL #{model} conflicts with decoded topology: {error}"
+                ));
+            }
         } else {
             result.warnings.push(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
@@ -98,20 +90,18 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
-            Some(SHELL_BASED_SURFACE_MODEL | MANIFOLD_SOLID_BREP | BREP_WITH_VOIDS)
+            Some("SHELL_BASED_SURFACE_MODEL" | "MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
         ) {
             continue;
         }
         if let Some(mut built) = build(id, record, exchange, &vertices, &edges, &oriented) {
             result.typed_records.append(&mut built.typed);
-            ir.model.vertices.append(&mut built.vertices);
-            ir.model.edges.append(&mut built.edges);
-            ir.model.coedges.append(&mut built.coedges);
-            ir.model.loops.append(&mut built.loops);
-            ir.model.faces.append(&mut built.faces);
-            ir.model.shells.append(&mut built.shells);
-            ir.model.regions.push(built.region);
-            ir.model.bodies.push(built.body);
+            if let Err(error) = built.draft.commit_model(ir) {
+                result.warnings.push(format!(
+                    "{} #{id} conflicts with decoded topology: {error}",
+                    record.simple_name().expect("matched simple name")
+                ));
+            }
         } else {
             result.warnings.push(format!(
                 "{} #{id} does not resolve to a complete connected topology graph",
@@ -120,7 +110,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         }
     }
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some(GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION) {
+        if record.simple_name() != Some("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
             continue;
         }
         let Some(mut built) = build_geometric_set(id, record, exchange, &geometry_ids) else {
@@ -139,18 +129,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             continue;
         };
         result.typed_records.append(&mut built.typed);
-        ir.model.faces.append(&mut built.faces);
-        ir.model.shells.append(&mut built.shells);
-        ir.model.regions.push(built.region);
-        ir.model.bodies.push(built.body);
+        if let Err(error) = built.draft.commit_model(ir) {
+            result.warnings.push(format!(
+                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} conflicts with decoded topology: {error}"
+            ));
+        }
     }
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
             Some(
-                SHAPE_REPRESENTATION
-                    | ADVANCED_BREP_SHAPE_REPRESENTATION
-                    | GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION
+                "SHAPE_REPRESENTATION"
+                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+                    | "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION"
             )
         ) {
             continue;
@@ -179,9 +170,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         if matches!(
             record.simple_name(),
             Some(
-                MANIFOLD_SURFACE_SHAPE_REPRESENTATION
-                    | ADVANCED_BREP_SHAPE_REPRESENTATION
-                    | SHAPE_REPRESENTATION
+                "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
+                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+                    | "SHAPE_REPRESENTATION"
             )
         ) && record
             .parameter(1)
@@ -206,7 +197,7 @@ fn build_wire(
     let mut used_edges = BTreeSet::new();
     for set_id in sets {
         let set = exchange.records.get(&set_id)?;
-        if set.simple_name() != Some(CONNECTED_EDGE_SET) {
+        if set.simple_name() != Some("CONNECTED_EDGE_SET") {
             return None;
         }
         used_edges.extend(refs(set.parameter(1)?)?);
@@ -254,26 +245,26 @@ fn build_wire(
     let body = BodyId(format!("step:data:body#{id}"));
     let region = RegionId(format!("step:data:region#{id}"));
     let shell = ShellId(format!("step:data:shell#{id}"));
-    Some(Built {
+    staged_topology(
         typed,
-        vertices: built_vertices,
-        edges: built_edges,
-        coedges: Vec::new(),
-        loops: Vec::new(),
-        faces: Vec::new(),
-        shells: vec![Shell {
+        built_vertices,
+        built_edges,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        vec![Shell {
             id: shell.clone(),
             region: region.clone(),
             faces: Vec::new(),
             wire_edges,
             free_vertices: Vec::new(),
         }],
-        region: Region {
+        Region {
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
         },
-        body: Body {
+        Body {
             id: body,
             kind: BodyKind::Wire,
             regions: vec![region],
@@ -282,7 +273,7 @@ fn build_wire(
             color: None,
             visible: None,
         },
-    })
+    )
 }
 
 fn mark_standalone_geometric_set(
@@ -300,7 +291,10 @@ fn mark_standalone_geometric_set(
         let Some(set) = exchange.records.get(&set_id) else {
             continue;
         };
-        if !matches!(set.simple_name(), Some(GEOMETRIC_SET | GEOMETRIC_CURVE_SET)) {
+        if !matches!(
+            set.simple_name(),
+            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
+        ) {
             continue;
         }
         let Some(items) = set.parameter(1).and_then(refs) else {
@@ -333,7 +327,7 @@ fn build_geometric_set(
     let mut surfaces = Vec::new();
     for set_id in set_ids {
         let set = exchange.records.get(&set_id)?;
-        if set.simple_name() != Some(GEOMETRIC_SET) {
+        if set.simple_name() != Some("GEOMETRIC_SET") {
             continue;
         }
         typed.insert(set_id);
@@ -364,26 +358,26 @@ fn build_geometric_set(
         })
         .collect::<Vec<_>>();
     let face_ids = faces.iter().map(|face| face.id.clone()).collect();
-    Some(Built {
+    staged_topology(
         typed,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        coedges: Vec::new(),
-        loops: Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
         faces,
-        shells: vec![Shell {
+        vec![Shell {
             id: shell.clone(),
             region: region.clone(),
             faces: face_ids,
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         }],
-        region: Region {
+        Region {
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
         },
-        body: Body {
+        Body {
             id: body,
             kind: BodyKind::Sheet,
             regions: vec![region],
@@ -392,7 +386,7 @@ fn build_geometric_set(
             color: None,
             visible: None,
         },
-    })
+    )
 }
 
 struct GeometryIds {
@@ -423,7 +417,7 @@ fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
         .records
         .iter()
         .filter_map(|(&id, r)| {
-            if r.simple_name() != Some(VERTEX_POINT) {
+            if r.simple_name() != Some("VERTEX_POINT") {
                 return None;
             }
             Some((
@@ -440,7 +434,7 @@ fn edge_defs(exchange: &Exchange) -> BTreeMap<u64, EdgeDef> {
         .records
         .iter()
         .filter_map(|(&id, r)| {
-            if r.simple_name() != Some(EDGE_CURVE) {
+            if r.simple_name() != Some("EDGE_CURVE") {
                 return None;
             }
             Some((
@@ -460,7 +454,7 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
         .records
         .iter()
         .filter_map(|(&id, r)| {
-            if r.simple_name() != Some(ORIENTED_EDGE) {
+            if r.simple_name() != Some("ORIENTED_EDGE") {
                 return None;
             }
             Some((
@@ -476,6 +470,12 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
 
 struct Built {
     typed: BTreeSet<u64>,
+    draft: ModelDraft,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn staged_topology(
+    typed: BTreeSet<u64>,
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
     coedges: Vec<Coedge>,
@@ -484,6 +484,29 @@ struct Built {
     shells: Vec<Shell>,
     region: Region,
     body: Body,
+) -> Option<Built> {
+    let mut draft = ModelDraft::new();
+    for vertex in vertices {
+        draft.insert(vertex).ok()?;
+    }
+    for edge in edges {
+        draft.insert(edge).ok()?;
+    }
+    for coedge in coedges {
+        draft.insert(coedge).ok()?;
+    }
+    for loop_ in loops {
+        draft.insert(loop_).ok()?;
+    }
+    for face in faces {
+        draft.insert(face).ok()?;
+    }
+    for shell in shells {
+        draft.insert(shell).ok()?;
+    }
+    draft.insert(region).ok()?;
+    draft.insert(body).ok()?;
+    Some(Built { typed, draft })
 }
 
 fn build(
@@ -496,12 +519,12 @@ fn build(
 ) -> Option<Built> {
     let solid = matches!(
         root.simple_name(),
-        Some(MANIFOLD_SOLID_BREP | BREP_WITH_VOIDS)
+        Some("MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
     );
     let shell_steps = match root.simple_name()? {
-        SHELL_BASED_SURFACE_MODEL => refs(root.parameter(1)?)?,
-        MANIFOLD_SOLID_BREP => vec![root.parameter(1)?.reference()?],
-        BREP_WITH_VOIDS => {
+        "SHELL_BASED_SURFACE_MODEL" => refs(root.parameter(1)?)?,
+        "MANIFOLD_SOLID_BREP" => vec![root.parameter(1)?.reference()?],
+        "BREP_WITH_VOIDS" => {
             let mut ids = vec![root.parameter(1)?.reference()?];
             ids.extend(refs(root.parameter(2)?)?);
             ids
@@ -510,32 +533,30 @@ fn build(
     };
     let bid = BodyId(format!("step:data:body#{id}"));
     let rid = RegionId(format!("step:data:region#{id}"));
-    let mut built = Built {
-        typed: BTreeSet::from([id]),
-        vertices: vec![],
-        edges: vec![],
-        coedges: vec![],
-        loops: vec![],
-        faces: vec![],
-        shells: vec![],
-        region: Region {
-            id: rid.clone(),
-            body: bid.clone(),
-            shells: vec![],
+    let mut typed = BTreeSet::from([id]);
+    let mut vertices = Vec::new();
+    let mut edges = Vec::new();
+    let mut coedges = Vec::new();
+    let mut loops = Vec::new();
+    let mut faces = Vec::new();
+    let mut shells = Vec::new();
+    let mut region = Region {
+        id: rid.clone(),
+        body: bid.clone(),
+        shells: Vec::new(),
+    };
+    let body = Body {
+        id: bid,
+        kind: if solid {
+            BodyKind::Solid
+        } else {
+            BodyKind::Sheet
         },
-        body: Body {
-            id: bid,
-            kind: if solid {
-                BodyKind::Solid
-            } else {
-                BodyKind::Sheet
-            },
-            regions: vec![rid.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        },
+        regions: vec![rid.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
     };
     let mut used_v = BTreeSet::new();
     let mut used_e = BTreeSet::new();
@@ -543,13 +564,12 @@ fn build(
     let mut used_faces = BTreeSet::new();
     let mut radial = BTreeMap::<u64, Vec<usize>>::new();
     for shell_reference in shell_steps {
-        let (shell_step, shell_forward) =
-            resolve_shell(shell_reference, exchange, &mut built.typed)?;
+        let (shell_step, shell_forward) = resolve_shell(shell_reference, exchange, &mut typed)?;
         if !used_shells.insert(shell_step) {
             continue;
         }
         let sr = exchange.records.get(&shell_step)?;
-        if !matches!(sr.simple_name(), Some(OPEN_SHELL | CLOSED_SHELL)) {
+        if !matches!(sr.simple_name(), Some("OPEN_SHELL" | "CLOSED_SHELL")) {
             return None;
         }
         let sid = ShellId(format!("step:data:shell#{shell_step}"));
@@ -559,7 +579,7 @@ fn build(
                 continue;
             }
             let fr = exchange.records.get(&face_step)?;
-            if fr.simple_name() != Some(ADVANCED_FACE) {
+            if fr.simple_name() != Some("ADVANCED_FACE") {
                 return None;
             }
             let surface_step = fr.parameter(2)?.reference()?;
@@ -567,21 +587,21 @@ fn build(
             let mut loop_ids = vec![];
             for bound_step in refs(fr.parameter(1)?)? {
                 let br = exchange.records.get(&bound_step)?;
-                if !matches!(br.simple_name(), Some(FACE_BOUND | FACE_OUTER_BOUND)) {
+                if !matches!(br.simple_name(), Some("FACE_BOUND" | "FACE_OUTER_BOUND")) {
                     return None;
                 }
                 let loop_step = br.parameter(1)?.reference()?;
                 let lr = exchange.records.get(&loop_step)?;
                 let lid = LoopId(format!("step:data:loop#{loop_step}-face-{face_step}"));
-                if lr.simple_name() == Some(VERTEX_LOOP) {
+                if lr.simple_name() == Some("VERTEX_LOOP") {
                     let vertex_step = lr.parameter(1)?.reference()?;
                     if !vdefs.contains_key(&vertex_step) {
                         return None;
                     }
-                    built.loops.push(Loop {
+                    loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if br.simple_name() == Some(FACE_OUTER_BOUND) {
+                        boundary_role: if br.simple_name() == Some("FACE_OUTER_BOUND") {
                             LoopBoundaryRole::Outer
                         } else {
                             LoopBoundaryRole::Inner
@@ -593,12 +613,12 @@ fn build(
                             pcurves: Vec::new(),
                         }],
                     });
-                    loop_ids.push((br.simple_name() == Some(FACE_OUTER_BOUND), lid));
+                    loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
                     used_v.insert(vertex_step);
-                    built.typed.extend([bound_step, loop_step]);
+                    typed.extend([bound_step, loop_step]);
                     continue;
                 }
-                if lr.simple_name() != Some(EDGE_LOOP) {
+                if lr.simple_name() != Some("EDGE_LOOP") {
                     return None;
                 }
                 let bound_forward = br.parameter(2)?.logical()?;
@@ -615,7 +635,7 @@ fn build(
                     let edge = edefs.get(&o.edge)?;
                     let cid = CoedgeId(format!("step:data:coedge#{use_step}-face-{face_step}"));
                     coedge_ids.push(cid.clone());
-                    built.coedges.push(Coedge {
+                    coedges.push(Coedge {
                         id: cid,
                         owner_loop: lid.clone(),
                         edge: EdgeId(format!("step:data:edge#{}", o.edge)),
@@ -638,24 +658,21 @@ fn build(
                         use_curve: None,
                         use_curve_parameter_range: None,
                     });
-                    radial
-                        .entry(o.edge)
-                        .or_default()
-                        .push(built.coedges.len() - 1);
+                    radial.entry(o.edge).or_default().push(coedges.len() - 1);
                     used_e.insert(o.edge);
                     used_v.extend([edge.start, edge.end]);
-                    built.typed.extend([use_step, o.edge]);
+                    typed.extend([use_step, o.edge]);
                 }
                 let n = coedge_ids.len();
-                let start = built.coedges.len() - n;
+                let start = coedges.len() - n;
                 for i in 0..n {
-                    built.coedges[start + i].next = coedge_ids[(i + 1) % n].clone();
-                    built.coedges[start + i].previous = coedge_ids[(i + n - 1) % n].clone();
+                    coedges[start + i].next = coedge_ids[(i + 1) % n].clone();
+                    coedges[start + i].previous = coedge_ids[(i + n - 1) % n].clone();
                 }
-                built.loops.push(Loop {
+                loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
-                    boundary_role: if br.simple_name() == Some(FACE_OUTER_BOUND) {
+                    boundary_role: if br.simple_name() == Some("FACE_OUTER_BOUND") {
                         LoopBoundaryRole::Outer
                     } else {
                         LoopBoundaryRole::Inner
@@ -663,13 +680,13 @@ fn build(
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
                 });
-                loop_ids.push((br.simple_name() == Some(FACE_OUTER_BOUND), lid));
-                built.typed.extend([bound_step, loop_step]);
+                loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
+                typed.extend([bound_step, loop_step]);
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
             let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
             let face_forward = fr.parameter(3)?.logical()? == shell_forward;
-            built.faces.push(Face {
+            faces.push(Face {
                 id: fid.clone(),
                 shell: sid.clone(),
                 surface: SurfaceId(format!("step:data:surface#{surface_step}")),
@@ -684,17 +701,17 @@ fn build(
                 tolerance: None,
             });
             face_ids.push(fid);
-            built.typed.insert(face_step);
+            typed.insert(face_step);
         }
-        built.shells.push(Shell {
+        shells.push(Shell {
             id: sid.clone(),
             region: rid.clone(),
             faces: face_ids,
             wire_edges: vec![],
             free_vertices: vec![],
         });
-        built.region.shells.push(sid);
-        built.typed.insert(shell_step);
+        region.shells.push(sid);
+        typed.insert(shell_step);
     }
     for edge_id in used_e {
         let e = edefs.get(&edge_id)?;
@@ -703,7 +720,7 @@ fn build(
         } else {
             (e.end, e.start)
         };
-        built.edges.push(Edge {
+        edges.push(Edge {
             id: EdgeId(format!("step:data:edge#{edge_id}")),
             curve: Some(CurveId(format!(
                 "step:data:curve#{}",
@@ -717,27 +734,27 @@ fn build(
     }
     for vertex_id in used_v {
         let v = vdefs.get(&vertex_id)?;
-        built.vertices.push(Vertex {
+        vertices.push(Vertex {
             id: VertexId(format!("step:data:vertex#{vertex_id}")),
             point: PointId(format!("step:data:point#{}", v.point)),
             tolerance: None,
         });
-        built.typed.insert(vertex_id);
+        typed.insert(vertex_id);
     }
     for indices in radial.values() {
         for (position, &index) in indices.iter().enumerate() {
-            built.coedges[index].radial_next = built.coedges
-                [indices[(position + 1) % indices.len()]]
-            .id
-            .clone();
+            coedges[index].radial_next =
+                coedges[indices[(position + 1) % indices.len()]].id.clone();
         }
     }
-    Some(built)
+    staged_topology(
+        typed, vertices, edges, coedges, loops, faces, shells, region, body,
+    )
 }
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
     let curve = exchange.records.get(&curve_step)?;
-    if matches!(curve.simple_name(), Some(SURFACE_CURVE | SEAM_CURVE)) {
+    if matches!(curve.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
         curve.parameter(1)?.reference()
     } else {
         Some(curve_step)
@@ -746,14 +763,14 @@ fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
 
 fn associated_pcurve(curve_step: u64, surface_step: u64, exchange: &Exchange) -> Option<PcurveId> {
     let curve = exchange.records.get(&curve_step)?;
-    if !matches!(curve.simple_name(), Some(SURFACE_CURVE | SEAM_CURVE)) {
+    if !matches!(curve.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
         return None;
     }
     refs(curve.parameter(2)?)?
         .into_iter()
         .find_map(|pcurve_step| {
             let pcurve = exchange.records.get(&pcurve_step)?;
-            (pcurve.simple_name() == Some(PCURVE)
+            (pcurve.simple_name() == Some("PCURVE")
                 && pcurve.parameter(1)?.reference()? == surface_step)
                 .then(|| PcurveId(format!("step:data:pcurve#{pcurve_step}")))
         })
@@ -765,12 +782,12 @@ fn resolve_shell(
     typed: &mut BTreeSet<u64>,
 ) -> Option<(u64, bool)> {
     let record = exchange.records.get(&reference)?;
-    if matches!(record.simple_name(), Some(OPEN_SHELL | CLOSED_SHELL)) {
+    if matches!(record.simple_name(), Some("OPEN_SHELL" | "CLOSED_SHELL")) {
         return Some((reference, true));
     }
     if matches!(
         record.simple_name(),
-        Some(ORIENTED_OPEN_SHELL | ORIENTED_CLOSED_SHELL)
+        Some("ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL")
     ) {
         typed.insert(reference);
         return Some((

@@ -5,22 +5,21 @@
 //! loss accounting, neutral-model admissibility, source metadata, generic
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SurfaceGeometry,
 };
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::provenance::Exactness;
-use cadmpeg_ir::provenance::SourceObjectAssociation;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::builder::{BodySpec, TopologyBuilder};
-use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::wire::hash::sha256_hex;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
+use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashSet};
 
 use crate::container::{self, ContainerScan};
@@ -56,19 +55,12 @@ pub(crate) fn annotate(
 }
 
 pub(crate) fn neutral_model_is_admissible(ir: &CadIr, pending_unknowns: &[UnknownRecord]) -> bool {
-    let mut candidate = ir.clone();
-    let native_unknowns = pending_unknowns
-        .iter()
-        .map(cadmpeg_ir::unknown::NativeUnknownRecord::from)
-        .collect::<Vec<_>>();
-    if candidate
-        .set_native_unknowns("catia", &native_unknowns)
-        .is_err()
-    {
-        return false;
-    }
-    candidate.finalize();
-    cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok()
+    cadmpeg_ir::validate::validate_with_additional_native_identities(
+        ir,
+        pending_unknowns.iter().map(|record| record.id.as_str()),
+        Vec::new(),
+    )
+    .is_ok()
 }
 
 pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
@@ -173,8 +165,7 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     losses.insert(
         0,
         LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Blocking,
             message: format!(
                 "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
@@ -203,38 +194,32 @@ pub(crate) fn attach_free_vertices(
             Exactness::Inferred,
         );
     }
-    // Snapshot the vertex ids before the mutable `finish` borrow; the builder
-    // aggregates `shell.free_vertices` in this (vertex-arena) order.
-    let free_vertices: Vec<_> = ir
-        .model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.id.clone())
-        .collect();
-    let mut builder = TopologyBuilder::new();
-    builder
-        .body(
-            body_id.clone(),
-            BodySpec {
-                kind: BodyKind::Wire,
-                ..BodySpec::default()
-            },
-        )
-        .expect("unbound-points body id is unique");
-    builder
-        .region(region_id.clone(), &body_id)
-        .expect("unbound-points region id is unique under its body");
-    builder
-        .shell(shell_id.clone(), &region_id)
-        .expect("unbound-points shell id is unique under its region");
-    for vertex in free_vertices {
-        builder
-            .free_vertex(&shell_id, vertex)
-            .expect("free vertex records under the unbound-points shell");
-    }
-    builder
-        .finish(&mut ir.model)
-        .expect("unbound-points hierarchy appends without id or owner conflicts");
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Wire,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id,
+        shells: vec![shell_id.clone()],
+    });
+    ir.model.shells.push(Shell {
+        id: shell_id,
+        region: region_id,
+        faces: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices: ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.id.clone())
+            .collect(),
+    });
 }
 
 pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
@@ -419,8 +404,7 @@ pub(crate) fn build_geometry_report(
     let mut losses = Vec::new();
 
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::CarrierSummary,
-        category: LossCategory::Geometry,
+        code: cadmpeg_ir::report::LossKind::CarrierSummary,
         severity: Severity::Info,
         message: format!(
             "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
@@ -440,8 +424,7 @@ pub(crate) fn build_geometry_report(
 
     if let Some(topology_failure) = topology_failure {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: format!(
                 "The B-rep boundary graph was not emitted: {} face outer-bound run(s) were \
@@ -454,8 +437,7 @@ pub(crate) fn build_geometry_report(
 
     if plane_faces > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
             message: format!(
                 "{plane_faces} plane surface record(s) were located but not decoded because their \
@@ -468,8 +450,7 @@ pub(crate) fn build_geometry_report(
     let invalid_analytic = analytic_record_count.saturating_sub(typed.total() + plane_faces);
     if invalid_analytic > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
             message: format!(
                 "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
@@ -480,8 +461,7 @@ pub(crate) fn build_geometry_report(
     }
     if unresolved_surfaces.face_local_freeform > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
             message: format!(
                 "{} face-local free-form carrier record(s) retain their tag, bounds, and \
@@ -493,8 +473,7 @@ pub(crate) fn build_geometry_report(
     }
     if unresolved_surfaces.unbound_revolution > 0 {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
             message: format!(
                 "{} consolidated surface-of-revolution record(s) retain their profile identity, \
@@ -509,8 +488,7 @@ pub(crate) fn build_geometry_report(
     insert_unresolved_carrier_loss(ir, &mut losses);
 
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::AttributesNotTransferred,
-        category: LossCategory::Attribute,
+        code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
         severity: Severity::Warning,
         message: "Standard circles with an exact adjacent-carrier section normal or two \
                   non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or \
@@ -527,6 +505,7 @@ pub(crate) fn build_geometry_report(
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -534,11 +513,7 @@ pub(crate) fn build_geometry_report(
 
 pub(crate) fn build_metadata_ir(
     scan: &ContainerScan,
-) -> (
-    CadIr,
-    cadmpeg_ir::annotations::Annotations,
-    Vec<UnknownRecord>,
-) {
+) -> (CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>) {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -578,7 +553,7 @@ pub(crate) fn preserve_raw_payload(
 ) {
     let (bytes, stream) = match scan.brep.as_ref() {
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
-        None => (scan.data.as_slice(), "CATPart"),
+        None => (scan.data.as_ref(), "CATPart"),
     };
     let id = UnknownId(id.to_string());
     annotate(
@@ -627,8 +602,7 @@ pub(crate) fn link_payload_carriers(
 pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let mut losses = vec![LossNote {
-        code: cadmpeg_ir::report::LossCode::GeometryNotTransferred,
-        category: LossCategory::Geometry,
+        code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
         severity: Severity::Blocking,
         message: format!(
             "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
@@ -641,8 +615,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
 
     if container_only {
         losses.push(LossNote {
-            code: cadmpeg_ir::report::LossCode::ContainerOnly,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::report::LossKind::ContainerOnly,
             severity: Severity::Info,
             message: "Container-only decode requested; entity decode was not attempted."
                 .to_string(),
@@ -651,8 +624,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     }
 
     losses.push(LossNote {
-        code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-        category: LossCategory::Topology,
+        code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
         severity: Severity::Blocking,
         message:
             "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
@@ -666,6 +638,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }

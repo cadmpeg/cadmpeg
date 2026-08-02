@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 4 plus source annotations and retained native records, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, source annotations, retained records, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
+cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 5 plus source annotations and retained native records, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, source annotations, retained records, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
 
 ## Pipeline
 
@@ -19,15 +19,15 @@ native CAD ── detect + inspect ──> container summary
 - `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source annotations, and retained records. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
 
-CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 4, including its required `subds` arena; source annotations and retained records remain outside the document. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena; source annotations and retained records remain outside the document. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
 
 ## Decode session
 
-The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`. `DecodeContext` owns budget counters, the depth gauge, and the address-space registry; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_ir::decode`.
+The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`. `DecodeContext` owns budget counters and the address-space registry; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_codec_core::decode`.
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 4`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
+`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 5`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
 
 Output and report files are written through a unique temporary file in the destination directory and then persisted. Existing files require `--force`. An output path resolving to the input is rejected.
 
@@ -44,7 +44,7 @@ The [format support profiles](format-support.md) record read, write, and round-t
 | Crate                  | Responsibility                                                                                                                                                                                                   |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                                    |
-| `cadmpeg-ir`           | Version 4 IR model, canonical JSON, free-carrier source associations, source-fidelity sidecars and their replay/patch/generate write-plan gate, sparse provenance and exactness, native namespaces, structural diff, validation over a shared model index, codec and encoder traits, and report types. Also hosts the byte platform the format codecs share: the poisoned wire cursor with checked endian readers, bounded decompression, the ZIP container walker, Parasolid stream location, and the topology builder. |
+| `cadmpeg-ir`           | Version 4 IR model, canonical JSON, free-carrier source associations, source-fidelity sidecars, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types. |
 | `cadmpeg-codec-f3d`    | `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, history decode, retained-source replay, and selected native edits.   |
 | `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing.          |
 | `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                          |
@@ -61,9 +61,8 @@ Each input codec implements `Codec`:
 - `detect(&[u8]) -> Confidence` identifies a format from a byte prefix.
 - `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure.
 - `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, CodecError>` produces `CadIr` and `DecodeReport`.
-- `validate_native(&CadIr) -> Vec<Finding>` reports findings for this codec's retained native-namespace data. The default is a no-op; the CLI calls it on every registered codec unconditionally, and a codec returns an empty list when the document carries no namespace it owns.
 
-The CLI detects a codec unless `--input-format` selects one. Output codecs that implement native encoding use the separate `Encoder` trait; the CLI selects one encoder per invocation from the requested output format, without mutating any registry. The Rust trait definitions are authoritative for exact signatures.
+The CLI detects a codec unless `--input-format` selects one. Output codecs that implement native encoding use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.
 
 ## Build shape
 

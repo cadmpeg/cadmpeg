@@ -3,10 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
-use cadmpeg_ir::provenance::Exactness;
+use cadmpeg_ir::{Annotations, Exactness};
 
 use crate::native::CatiaNative;
 

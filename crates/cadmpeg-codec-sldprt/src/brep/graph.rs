@@ -18,11 +18,11 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
     RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::provenance::Exactness;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::Exactness;
 
 use super::attrib;
 use super::blend::BlendSupportRef;

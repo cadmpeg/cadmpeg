@@ -4,7 +4,6 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
@@ -12,7 +11,7 @@ use cadmpeg_ir::geometry::{
     Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
-use cadmpeg_ir::provenance::Exactness;
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{B5Graph, B5Profile, B5Surface};
 use super::super::vecmath::{add, cross, scale};
@@ -783,6 +782,7 @@ fn emit_extrusion_procedure(
             parameter_interval: Some(extrusion.directrix_parameter_range),
             direction: extrusion.direction,
             native_position: None,
+            revision_form: None,
         },
         cache_fit_tolerance: None,
         record_bounds: Some(parameter_record_bounds(extrusion.parameter_bounds)),

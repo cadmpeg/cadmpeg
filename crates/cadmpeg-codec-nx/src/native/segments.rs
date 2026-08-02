@@ -490,13 +490,14 @@ mod tests {
     use flate2::Compression;
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
-    use cadmpeg_ir::provenance::Exactness;
     use cadmpeg_ir::report::LossCategory;
+    use cadmpeg_ir::Exactness;
 
     use crate::container;
     use crate::parasolid::{self, StreamKind};

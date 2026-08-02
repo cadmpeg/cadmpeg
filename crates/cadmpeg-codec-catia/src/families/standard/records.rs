@@ -4,10 +4,10 @@
 //! curve-support/edge-incidence table, standard vertex rosters, and the
 //! inline big-endian curved-surface parameter block.
 
+use cadmpeg_codec_core::be::f32_at as f32_be;
+use cadmpeg_codec_core::le::u32_at as u32_le;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::wire::be::f32_at as f32_be;
-use cadmpeg_ir::wire::le::u32_at as u32_le;
 use std::collections::{BTreeMap, HashMap};
 
 /// The standard-nested plane bounds record. Its three-byte tag is the bridge to
@@ -729,7 +729,7 @@ fn unit_vector(vector: Vector3) -> Option<Vector3> {
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
-    cadmpeg_ir::wire::le::f32_at(bytes, at).unwrap_or(f32::NAN)
+    cadmpeg_codec_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
 }
 
 fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -9,7 +9,6 @@
         "attributes": [],
         "bodies": [],
         "coedges": [],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -53,8 +52,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [],
         "semantic_annotations": [],
         "shells": [],
@@ -137,10 +135,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "351",
+          "file_size": "364",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "337",
+          "footer_offset": "350",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -163,26 +161,18 @@
       "geometry_transferred": true,
       "losses": [
         {
-          "category": "geometry",
           "code": "carrier_summary",
           "message": "Decoded 0 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (0 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (0 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
         },
         {
-          "category": "topology",
           "code": "topology_not_transferred",
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
-        },
-        {
-          "category": "attribute",
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 337, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 350, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -252,11 +242,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 261,
+        "compressed_size": 274,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 261
+        "uncompressed_size": 274
       },
       {
         "attributes": {
@@ -289,7 +279,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 337, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 350, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

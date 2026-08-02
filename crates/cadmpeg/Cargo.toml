@@ -19,6 +19,7 @@ name = "cadmpeg"
 path = "src/main.rs"
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-codec-f3d.workspace = true
 cadmpeg-codec-freecad.workspace = true
@@ -41,7 +42,7 @@ predicates.workspace = true
 zip.workspace = true
 # The CLI integration tests build `cadmpeg_ir::examples`; the feature keeps
 # those fixtures out of the normal library build.
-cadmpeg-ir = { workspace = true, features = ["test-support"] }
+cadmpeg-ir = { workspace = true }
 
 [lints]
 workspace = true

@@ -3,11 +3,11 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::cursor::bounded_len;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::wire::cursor::{bounded_len, Cursor, FaultKind};
 use serde::{Deserialize, Serialize};
 
 use crate::native::{EntryRecord, PropertyRecord};
@@ -669,12 +669,6 @@ fn census_surface(
 }
 
 fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
-    const MAX_TEXT_BREP_BYTES: usize = 256 * 1024 * 1024;
-    if bytes.len() > MAX_TEXT_BREP_BYTES {
-        return Err(CodecError::Malformed(
-            "text B-rep size limit exceeded".into(),
-        ));
-    }
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let topology_version = if text.contains("CASCADE Topology V1, (c) Matra-Datavision") {
@@ -773,12 +767,6 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
 }
 
 fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
-    const MAX_BINARY_BREP_BYTES: usize = 256 * 1024 * 1024;
-    if bytes.len() > MAX_BINARY_BREP_BYTES {
-        return Err(CodecError::Malformed(
-            "binary B-rep exceeds the 256 MiB parser limit".into(),
-        ));
-    }
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
@@ -839,7 +827,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
                     let power = cursor.i32("binary location power")?;
                     let powered =
                         transform_power(locations[referenced - 1].transform, i64::from(power))?;
-                    transform = multiply_transform(powered, transform);
+                    transform = powered.compose(transform);
                     factors.push(LocationFactor {
                         location: referenced,
                         power: i64::from(power),
@@ -1923,39 +1911,17 @@ fn parse_binary_curve2d(
 }
 
 struct BinaryCursor<'a> {
-    /// The full payload, retained so `line` can scan ahead of the read position
-    /// for a newline; `inner` owns the read position and bounds every byte read.
     bytes: &'a [u8],
-    /// The shared poisoned cursor that performs and bounds each read.
-    inner: Cursor<'a>,
+    offset: usize,
 }
 
 impl<'a> BinaryCursor<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self {
-            bytes,
-            inner: Cursor::new(bytes),
-        }
+        Self { bytes, offset: 0 }
     }
 
     fn remaining(&self) -> usize {
-        self.inner.remaining()
-    }
-
-    /// Translates the inner cursor's first recorded fault into this read's
-    /// labeled error, reproducing `BinaryCursor`'s original messages. A
-    /// finite-check failure keeps `non-finite {label}`; every other fault on
-    /// these read paths is a truncation and keeps `truncated {label}`. Each read
-    /// method calls this immediately, so the recorded fault always belongs to
-    /// the read just performed.
-    fn checked(&self, label: &str) -> Result<(), CodecError> {
-        match self.inner.fault() {
-            None => Ok(()),
-            Some(fault) => Err(CodecError::Malformed(match fault.kind {
-                FaultKind::NonFinite => format!("non-finite {label}"),
-                _ => format!("truncated {label}"),
-            })),
-        }
+        self.bytes.len() - self.offset
     }
 
     /// Clamps a declared element count to what the unread bytes can hold.
@@ -1968,21 +1934,22 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
-        // The poisoned cursor folds an offset overflow into a truncation fault,
-        // so guard the overflow here to keep the distinct labeled message.
-        self.inner
-            .position()
+        let end = self
+            .offset
             .checked_add(count)
             .ok_or_else(|| CodecError::Malformed(format!("{label} offset overflow")))?;
-        let bytes = self.inner.take(count);
-        self.checked(label)?;
+        let bytes = self
+            .bytes
+            .get(self.offset..end)
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
+        self.offset = end;
         Ok(bytes)
     }
 
     fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
         let tail = self
             .bytes
-            .get(self.inner.position()..)
+            .get(self.offset..)
             .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
         let length = tail
             .iter()
@@ -2014,9 +1981,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
-        let value = self.inner.u8();
-        self.checked(label)?;
-        Ok(value)
+        Ok(self.take(1, label)?[0])
     }
 
     fn bool(&mut self, label: &str) -> Result<bool, CodecError> {
@@ -2030,15 +1995,15 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn u16(&mut self, label: &str) -> Result<u16, CodecError> {
-        let value = self.inner.u16_le();
-        self.checked(label)?;
-        Ok(value)
+        Ok(u16::from_le_bytes(
+            self.take(2, label)?.try_into().expect("two-byte slice"),
+        ))
     }
 
     fn i32(&mut self, label: &str) -> Result<i32, CodecError> {
-        let value = self.inner.i32_le();
-        self.checked(label)?;
-        Ok(value)
+        Ok(i32::from_le_bytes(
+            self.take(4, label)?.try_into().expect("four-byte slice"),
+        ))
     }
 
     fn count(&mut self, label: &str) -> Result<usize, CodecError> {
@@ -2050,18 +2015,15 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
-        // `f64_le` performs the same finiteness rejection as the original read,
-        // recording `NonFinite` where this codec raised `non-finite {label}`.
-        let value = self.inner.f64_le();
-        self.checked(label)?;
-        Ok(value)
+        let value = f64::from_le_bytes(self.take(8, label)?.try_into().expect("eight-byte slice"));
+        value
+            .is_finite()
+            .then_some(value)
+            .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
     }
 
     fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
-        // The shared cursor has no finite-checked `f32` reader, so `f32_le`
-        // covers truncation and the finiteness check stays local.
-        let value = self.inner.f32_le();
-        self.checked(label)?;
+        let value = f32::from_le_bytes(self.take(4, label)?.try_into().expect("four-byte slice"));
         value
             .is_finite()
             .then_some(value)
@@ -2174,7 +2136,7 @@ fn parse_locations(
                     }
                     let power = cursor.integer("location factor power")?;
                     let powered = transform_power(locations[referenced - 1].transform, power)?;
-                    transform = multiply_transform(powered, transform);
+                    transform = powered.compose(transform);
                     factors.push(LocationFactor {
                         location: referenced,
                         power,
@@ -2342,20 +2304,6 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
     })
 }
 
-fn multiply_transform(left: Transform, right: Transform) -> Transform {
-    let mut result = Transform {
-        rows: [[0.0; 4]; 4],
-    };
-    for row in 0..4 {
-        for column in 0..4 {
-            result.rows[row][column] = (0..4)
-                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
-                .sum();
-        }
-    }
-    result
-}
-
 fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecError> {
     let mut base = if power < 0 {
         invert_affine(transform)?
@@ -2366,11 +2314,11 @@ fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecE
     let mut result = Transform::identity();
     while exponent > 0 {
         if exponent & 1 == 1 {
-            result = multiply_transform(result, base);
+            result = result.compose(base);
         }
         exponent >>= 1;
         if exponent > 0 {
-            base = multiply_transform(base, base);
+            base = base.compose(base);
         }
     }
     Ok(result)
@@ -3649,7 +3597,7 @@ mod tests {
             name: "empty.brp".into(),
             role: "brep".into(),
             byte_len: 0,
-            sha256: cadmpeg_ir::wire::hash::sha256_hex(b""),
+            sha256: cadmpeg_ir::hash::sha256_hex(b""),
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
@@ -3658,7 +3606,7 @@ mod tests {
             name: "empty-2.brp".into(),
             role: "brep".into(),
             byte_len: 0,
-            sha256: cadmpeg_ir::wire::hash::sha256_hex(b""),
+            sha256: cadmpeg_ir::hash::sha256_hex(b""),
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };

@@ -4,32 +4,34 @@
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_ir::codec::{CadirEncoder, CodecEntry, DecodeOptions, Encoder};
-use cadmpeg_ir::decode::InspectOptions;
-use cadmpeg_ir::report::{DecodeReport, ExportReport};
-use cadmpeg_ir::source_fidelity::SourceFidelity;
-use cadmpeg_ir::validate::{validate, validate_with_source_fidelity, ValidationReport};
-use cadmpeg_ir::CadIr;
+use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
+use cadmpeg_ir::{
+    decode_sidecar_path, validate, validate_with_source_fidelity, CadIr, CodecEntry, DecodeSidecar,
+    SourceFidelity,
+};
 
-use crate::envelope::{envelope, print_json, write_output, ReportSink};
-use crate::format::{ForcedInput, Format};
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
-use crate::registry::Registry;
+use crate::registry::{DetectionOutcome, Registry, TargetOptions};
+use crate::{DecodeArgs, ForcedInput, Format};
+
+const CLI_SCHEMA_VERSION: u32 = 5;
 
 fn validate_ir(
     registry: &Registry,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
-    losses: Vec<cadmpeg_ir::report::LossNote>,
+    losses: Vec<cadmpeg_ir::LossNote>,
 ) -> ValidationReport {
     let mut report = match source_fidelity {
         Some(source_fidelity) => validate_with_source_fidelity(ir, source_fidelity, losses),
         None => validate(ir, losses),
     };
-    report.findings.extend(registry.native_findings(ir));
+    report.findings.extend(registry.validate_native(ir));
     report
 }
 
@@ -39,6 +41,47 @@ fn validate_ir(
 /// The executable maps this error to exit status 1.
 pub struct SemanticFailure(String);
 
+/// Whether a conversion validates the neutral model before export.
+#[derive(Debug, Clone, Copy)]
+pub enum ValidationMode {
+    /// Validate and optionally permit invalid output.
+    Required {
+        /// Continue despite validation errors.
+        allow_invalid: bool,
+    },
+    /// Skip neutral validation.
+    Skipped,
+}
+
+/// Complete policy and target configuration for one conversion pipeline.
+pub struct ConversionPlan {
+    /// Replace an existing output or report file.
+    pub force: bool,
+    /// Optional path for the versioned JSON command report.
+    pub report: Option<PathBuf>,
+    /// Neutral validation policy.
+    pub validation: ValidationMode,
+    /// Export a geometry format when decoding transferred no geometry.
+    pub allow_empty: bool,
+    /// Refuse to export when the decode reported any loss.
+    pub reject_lossy: bool,
+    /// Explicit Rhino output archive version.
+    pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
+    /// STEP writer options selected by the caller.
+    pub step_options: cadmpeg_step::StepWriteOptions,
+    /// Explicit input format selected by the user.
+    pub forced_input: Option<ForcedInput>,
+}
+
+/// One input to a structural diff and its optional format override.
+#[derive(Clone, Copy)]
+pub(crate) struct DiffInput<'a> {
+    /// Model path to load.
+    pub(crate) path: &'a Path,
+    /// Explicit reader selection for this input.
+    pub(crate) forced: Option<ForcedInput>,
+}
+
 impl fmt::Display for SemanticFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
@@ -47,24 +90,8 @@ impl fmt::Display for SemanticFailure {
 
 impl std::error::Error for SemanticFailure {}
 
-impl SemanticFailure {
-    /// Whether this failure carries no message and should print nothing.
-    pub fn is_silent(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
 fn semantic(message: impl Into<String>) -> anyhow::Error {
     SemanticFailure(message.into()).into()
-}
-
-/// A semantic failure carrying no message.
-///
-/// `diff` writes its comparison to stdout, then returns this to report a
-/// non-empty diff as exit status 1 without printing an error line — the
-/// quiet-stderr half of the diff exit contract.
-pub(crate) fn semantic_silent() -> anyhow::Error {
-    SemanticFailure(String::new()).into()
 }
 
 /// Inspect a native container and print its entries.
@@ -73,7 +100,8 @@ pub fn inspect(
     path: &Path,
     forced: Option<ForcedInput>,
     json: bool,
-    report: Option<&Path>,
+    report_path: Option<&Path>,
+    limits: cadmpeg_codec_core::decode::ResourceLimits,
 ) -> Result<()> {
     let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
     let (codec, confidence) = match forced {
@@ -85,33 +113,44 @@ pub fn inspect(
         ),
         Some(ForcedInput::Cadir) => bail!("inspect requires a container input, not cadir"),
         None => {
-            let (codec, confidence) = registry.detect(&prefix).ok_or_else(|| {
-                anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection", path.display())
-            })?;
-            (codec, Some(confidence))
+            match registry.detect(&prefix) {
+                DetectionOutcome::None => return Err(anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection", path.display())),
+                DetectionOutcome::Detected { descriptor, confidence } => (
+                    descriptor.codec.as_deref().expect("detected descriptor has codec"),
+                    Some(confidence),
+                ),
+                DetectionOutcome::Ambiguous { confidence, candidates } => return Err(anyhow!(
+                    "ambiguous {confidence}-confidence input format: {}; pass --input-format",
+                    candidates.iter().map(|candidate| candidate.id).collect::<Vec<_>>().join(", ")
+                )),
+            }
         }
     };
     let mut file = File::open(path)?;
     let summary = codec
-        .inspect(&mut file, &InspectOptions::default())
+        .inspect(&mut file, &InspectOptions { limits })
         .with_context(|| format!("inspecting {}", path.display()))?;
-    if json || report.is_some() {
-        let payload = serde_json::json!({
+    write_json_report(
+        path,
+        report_path,
+        false,
+        "inspect",
+        &serde_json::json!({
             "confidence": confidence,
-            "summary": serde_json::to_value(&summary)?,
-        });
-        let sink = ReportSink {
-            input: path,
-            output: report,
-            force: false,
-            command: "inspect",
-        };
-        if json {
-            sink.write_payload(payload.clone())?;
-            print_json(&envelope("inspect", payload))?;
-            return Ok(());
-        }
-        sink.write_payload(payload)?;
+            "summary": summary,
+        }),
+    )?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": CLI_SCHEMA_VERSION,
+                "command": "inspect",
+                "confidence": confidence,
+                "summary": summary,
+            }))?
+        );
+        return Ok(());
     }
     println!(
         "format: {}{}\ncontainer: {}\nentries: {}",
@@ -150,27 +189,34 @@ pub fn decode(
     force: bool,
     report_path: Option<&Path>,
     forced: Option<ForcedInput>,
-    options: DecodeOptions,
+    args: &DecodeArgs,
 ) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, options, forced)?;
+    let loaded = loader::load_artifact(registry, path, args.options(), forced)?;
     export_ir(
-        &CadirEncoder,
+        registry,
         &loaded.ir,
-        loaded.source_fidelity.as_ref(),
+        loaded.decode_report(),
+        loaded.fidelity(),
+        Format::Cadir,
         out,
         path,
         force,
+        None,
+        cadmpeg_step::StepWriteOptions::default(),
+        false,
     )?;
-    if let Some(report) = &loaded.decode_report {
+    if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
-    ReportSink {
-        input: path,
-        output: report_path,
+    write_command_report(
+        path,
+        report_path,
         force,
-        command: "decode",
-    }
-    .write(loaded.decode_report.as_ref(), None, None)?;
+        "decode",
+        loaded.decode_report(),
+        None,
+        None,
+    )?;
     Ok(())
 }
 
@@ -179,40 +225,44 @@ pub fn validate_cmd(
     registry: &Registry,
     path: &Path,
     forced: Option<ForcedInput>,
-    options: DecodeOptions,
+    args: &DecodeArgs,
     json: bool,
     report_path: Option<&Path>,
 ) -> Result<()> {
-    let loaded = loader::load_ir(registry, path, options, forced)?;
-    if let Some(decode_report) = &loaded.decode_report {
-        print_decode_report(&mut io::stderr(), decode_report)?;
+    let loaded = loader::load_artifact(registry, path, args.options(), forced)?;
+    let mut stdout = io::stdout();
+    if let Some(report) = loaded.decode_report() {
+        print_decode_report(&mut io::stderr(), report)?;
     }
     let report = validate_ir(
         registry,
         &loaded.ir,
-        loaded.source_fidelity.as_ref(),
-        losses(loaded.decode_report.as_ref()),
+        loaded.fidelity(),
+        losses(loaded.decode_report()),
     );
-    if json || report_path.is_some() {
-        let payload = serde_json::json!({
-            "decode_report": serde_json::to_value(&loaded.decode_report)?,
-            "validation_report": serde_json::to_value(&report)?,
-        });
-        let sink = ReportSink {
-            input: path,
-            output: report_path,
-            force: false,
-            command: "validate",
-        };
-        if json {
-            sink.write_payload(payload.clone())?;
-            print_json(&envelope("validate", payload))?;
-        } else {
-            sink.write_payload(payload)?;
-            print_validation_report(&mut io::stdout(), &report)?;
-        }
+    write_json_report(
+        path,
+        report_path,
+        false,
+        "validate",
+        &serde_json::json!({
+            "decode_report": loaded.decode_report(),
+            "validation_report": report,
+        }),
+    )?;
+    if json {
+        writeln!(
+            stdout,
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": CLI_SCHEMA_VERSION,
+                "command": "validate",
+                "decode_report": loaded.decode_report(),
+                "validation_report": report,
+            }))?
+        )?;
     } else {
-        print_validation_report(&mut io::stdout(), &report)?;
+        print_validation_report(&mut stdout, &report)?;
     }
     if !report.is_ok() {
         return Err(semantic(format!(
@@ -223,96 +273,81 @@ pub fn validate_cmd(
     Ok(())
 }
 
-/// Whether an export validates CADIR before writing.
-pub enum ValidationGate {
-    /// Export without validating, as `export` does.
-    Skip,
-    /// Validate first, refusing on errors unless `allow_invalid`, as `convert` does.
-    Require {
-        /// Export despite CADIR validation errors.
-        allow_invalid: bool,
-    },
-}
-
-/// One export's format, encoder, destinations, and safety gates.
-///
-/// This carries everything an export needs beyond the registry, input path, and
-/// decode options, so `export` and `convert` differ only in their [`ValidationGate`].
-pub struct ExportPipeline<'a> {
-    /// Resolved output format.
-    pub format: Format,
-    /// Encoder for `format`, carried unresolved so its guard surfaces in order.
-    pub encoder: Result<Box<dyn Encoder>>,
-    /// Output artifact path, or `None` to write to standard output.
-    pub out: Option<&'a Path>,
-    /// Versioned JSON report path, or `None` for no report.
-    pub report: Option<&'a Path>,
-    /// Replace an existing output or report file.
-    pub force: bool,
-    /// Export a geometry format when decoding transferred no geometry.
-    pub allow_empty: bool,
-    /// Refuse to export when the decode reported any loss.
-    pub reject_lossy: bool,
-    /// Explicit input format selected by the user.
-    pub forced_input: Option<ForcedInput>,
-    /// Whether CADIR is validated before writing.
-    pub gate: ValidationGate,
-}
-
-/// Decode if needed, optionally validate, then export.
-pub fn run_export(
+/// Decode if needed and export without validating CADIR.
+pub fn export(
     registry: &Registry,
-    input: &Path,
-    pipeline: ExportPipeline<'_>,
-    options: DecodeOptions,
+    path: &Path,
+    format: Option<Format>,
+    out: Option<&Path>,
+    plan: ConversionPlan,
+    args: &DecodeArgs,
 ) -> Result<()> {
-    let ExportPipeline {
-        format,
-        encoder,
-        out,
-        report: report_path,
-        force,
-        allow_empty,
-        reject_lossy,
-        forced_input,
-        gate,
-    } = pipeline;
-    let loaded = loader::load_ir(registry, input, options, forced_input)?;
-    let sink = ReportSink {
-        input,
-        output: report_path,
-        force,
-        command: match gate {
-            ValidationGate::Skip => "export",
-            ValidationGate::Require { .. } => "convert",
-        },
-    };
+    execute_conversion(registry, path, format, out, plan, args, "export")
+}
+
+/// Decode if needed, validate CADIR, and export.
+pub fn convert(
+    registry: &Registry,
+    path: &Path,
+    format: Option<Format>,
+    out: Option<&Path>,
+    plan: ConversionPlan,
+    args: &DecodeArgs,
+) -> Result<()> {
+    execute_conversion(registry, path, format, out, plan, args, "convert")
+}
+
+fn execute_conversion(
+    registry: &Registry,
+    path: &Path,
+    format: Option<Format>,
+    out: Option<&Path>,
+    plan: ConversionPlan,
+    args: &DecodeArgs,
+    command: &'static str,
+) -> Result<()> {
+    let format = resolve_format(format, out)?;
+    let loaded = loader::load_artifact(registry, path, args.options(), plan.forced_input)?;
     let mut stderr = io::stderr();
-    if let Some(report) = &loaded.decode_report {
+    if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut stderr, report)?;
-        match gate {
-            ValidationGate::Skip => {
-                eprintln!("note: export skips IR validation; use `convert` to validate");
-            }
-            ValidationGate::Require { .. } => writeln!(stderr)?,
+        if matches!(plan.validation, ValidationMode::Skipped) {
+            eprintln!("note: export skips IR validation; use `convert` to validate");
+        } else {
+            writeln!(stderr)?;
         }
     }
-    if let Some(refusal) = lossy_refusal(reject_lossy, loaded.decode_report.as_ref(), format) {
-        sink.write(loaded.decode_report.as_ref(), None, None)?;
+    if let Some(refusal) = lossy_refusal(plan.reject_lossy, loaded.decode_report(), format) {
+        write_command_report(
+            path,
+            plan.report.as_deref(),
+            plan.force,
+            command,
+            loaded.decode_report(),
+            None,
+            None,
+        )?;
         return Err(refusal);
     }
-    let validation = match gate {
-        ValidationGate::Skip => None,
-        ValidationGate::Require { allow_invalid } => {
+    let validation = match plan.validation {
+        ValidationMode::Required { allow_invalid } => {
             let validation = validate_ir(
                 registry,
                 &loaded.ir,
-                loaded.source_fidelity.as_ref(),
-                losses(loaded.decode_report.as_ref()),
+                loaded.fidelity(),
+                losses(loaded.decode_report()),
             );
             print_validation_report(&mut stderr, &validation)?;
             if !validation.is_ok() && !allow_invalid {
-                sink.write(loaded.decode_report.as_ref(), Some(&validation), None)?;
+                write_command_report(
+                    path,
+                    plan.report.as_deref(),
+                    plan.force,
+                    command,
+                    loaded.decode_report(),
+                    Some(&validation),
+                    None,
+                )?;
                 return Err(semantic(format!(
                     "validation found {} error(s); refusing to export (use --allow-invalid to override)",
                     validation.error_count()
@@ -320,36 +355,234 @@ pub fn run_export(
             }
             Some(validation)
         }
+        ValidationMode::Skipped => None,
     };
     if format.is_geometry_export()
         && loaded
-            .decode_report
+            .decode_report()
             .as_ref()
             .is_some_and(|report| !report.geometry_transferred)
-        && !allow_empty
+        && !plan.allow_empty
     {
-        sink.write(loaded.decode_report.as_ref(), validation.as_ref(), None)?;
+        write_command_report(
+            path,
+            plan.report.as_deref(),
+            plan.force,
+            command,
+            loaded.decode_report(),
+            validation.as_ref(),
+            None,
+        )?;
         return Err(semantic(format!(
             "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
             format.name()
         )));
     }
     let report = export_ir(
-        &*encoder?,
+        registry,
         &loaded.ir,
-        loaded.source_fidelity.as_ref(),
+        loaded.decode_report(),
+        loaded.fidelity(),
+        format,
         out,
-        input,
-        force,
+        path,
+        plan.force,
+        plan.rhino_version,
+        plan.step_options,
+        plan.reject_lossy,
     )?;
-    sink.write(
-        loaded.decode_report.as_ref(),
+    write_command_report(
+        path,
+        plan.report.as_deref(),
+        plan.force,
+        command,
+        loaded.decode_report(),
         validation.as_ref(),
         Some(&report),
     )
 }
 
-fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::report::LossNote> {
+/// Structurally compare two decoded models.
+pub fn diff(
+    registry: &Registry,
+    a: DiffInput<'_>,
+    b: DiffInput<'_>,
+    args: &DecodeArgs,
+    json: bool,
+    report_path: Option<&Path>,
+) -> Result<ExitCode> {
+    let left = loader::load_artifact(registry, a.path, args.options(), a.forced)?;
+    let right = loader::load_artifact(registry, b.path, args.options(), b.forced)?;
+    let result = cadmpeg_ir::diff(&left.ir, &right.ir);
+    let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
+    let different = !result.is_empty() || fidelity_differs(&fidelity);
+    write_json_report(
+        a.path,
+        report_path,
+        false,
+        "diff",
+        &serde_json::json!({
+            "different": different,
+            "diff": result,
+            "source_fidelity": fidelity_json(&fidelity),
+        }),
+    )?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": CLI_SCHEMA_VERSION,
+                "command": "diff",
+                "different": different,
+                "diff": result,
+                "source_fidelity": fidelity_json(&fidelity),
+            }))?
+        );
+        return Ok(if different {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        });
+    }
+    println!("diff {} vs {}", a.path.display(), b.path.display());
+    if let Some((before, after)) = &result.unit_change {
+        println!("  units: {before:?} → {after:?}");
+    }
+    if let Some((before, after)) = &result.tolerance_change {
+        println!("  tolerances: {before:?} → {after:?}");
+    }
+    for arena in &result.per_arena {
+        if arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty() {
+            continue;
+        }
+        println!(
+            "  {}: +{} -{} ~{}",
+            arena.kind,
+            arena.added.len(),
+            arena.removed.len(),
+            arena.modified.len()
+        );
+        print_id_delta("removed", &arena.removed);
+        print_id_delta("added", &arena.added);
+        let modified: Vec<String> = arena
+            .modified
+            .iter()
+            .map(|item| format!("{} ({})", item.id, item.fields.join(", ")))
+            .collect();
+        print_id_delta("modified", &modified);
+    }
+    print_fidelity_summary(&fidelity);
+    if different {
+        Ok(ExitCode::from(1))
+    } else {
+        println!("  identical");
+        Ok(ExitCode::SUCCESS)
+    }
+}
+
+enum FidelitySummary {
+    /// Neither decode reported a sidecar, for example when both inputs are CADIR JSON.
+    None,
+    /// Only the left input reported a sidecar.
+    OnlyLeft,
+    /// Only the right input reported a sidecar.
+    OnlyRight,
+    /// Both inputs reported a sidecar; the interpreted delta between them.
+    Both(FidelityDiff),
+}
+
+struct FidelityDiff {
+    version: Option<(String, String)>,
+    annotations_changed: bool,
+    retained_records_changed: bool,
+}
+
+impl FidelityDiff {
+    fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
+        Self {
+            version: (left.version != right.version)
+                .then(|| (left.version.clone(), right.version.clone())),
+            annotations_changed: left.annotations != right.annotations,
+            retained_records_changed: left.retained_records != right.retained_records,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.version.is_none() && !self.annotations_changed && !self.retained_records_changed
+    }
+}
+
+fn fidelity_diff(left: Option<&SourceFidelity>, right: Option<&SourceFidelity>) -> FidelitySummary {
+    match (left, right) {
+        (Some(left), Some(right)) => FidelitySummary::Both(FidelityDiff::between(left, right)),
+        (Some(_), None) => FidelitySummary::OnlyLeft,
+        (None, Some(_)) => FidelitySummary::OnlyRight,
+        (None, None) => FidelitySummary::None,
+    }
+}
+
+fn fidelity_differs(summary: &FidelitySummary) -> bool {
+    match summary {
+        FidelitySummary::None => false,
+        FidelitySummary::OnlyLeft | FidelitySummary::OnlyRight => true,
+        FidelitySummary::Both(diff) => !diff.is_empty(),
+    }
+}
+
+fn fidelity_json(summary: &FidelitySummary) -> serde_json::Value {
+    match summary {
+        FidelitySummary::None => serde_json::Value::Null,
+        FidelitySummary::OnlyLeft => serde_json::json!({ "present": "left_only" }),
+        FidelitySummary::OnlyRight => serde_json::json!({ "present": "right_only" }),
+        FidelitySummary::Both(diff) => serde_json::json!({
+            "present": "both",
+            "different": !diff.is_empty(),
+            "diff": fidelity_delta_json(diff),
+        }),
+    }
+}
+
+fn fidelity_delta_json(diff: &FidelityDiff) -> serde_json::Value {
+    let mut value = serde_json::json!({
+        "annotations_changed": diff.annotations_changed,
+        "retained_records_changed": diff.retained_records_changed,
+    });
+    if let Some(version) = &diff.version {
+        value["version"] = serde_json::json!(version);
+    }
+    value
+}
+
+fn print_fidelity_summary(summary: &FidelitySummary) {
+    let diff = match summary {
+        FidelitySummary::None => return,
+        FidelitySummary::OnlyLeft => {
+            println!("  source fidelity: present on left only (not comparable)");
+            return;
+        }
+        FidelitySummary::OnlyRight => {
+            println!("  source fidelity: present on right only (not comparable)");
+            return;
+        }
+        FidelitySummary::Both(diff) => diff,
+    };
+    if diff.is_empty() {
+        println!("  source fidelity: identical");
+        return;
+    }
+    println!("  source fidelity:");
+    if let Some((before, after)) = &diff.version {
+        println!("    version: {before} → {after}");
+    }
+    if diff.annotations_changed {
+        println!("    annotations changed");
+    }
+    if diff.retained_records_changed {
+        println!("    retained records changed");
+    }
+}
+
+fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
     report
         .map(|report| report.losses.clone())
         .unwrap_or_default()
@@ -376,33 +609,233 @@ fn lossy_refusal(
     })
 }
 
+fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format> {
+    if let Some(format) = explicit {
+        if let Some(inferred) = Format::from_path(out) {
+            if inferred != format {
+                eprintln!(
+                    "warning: explicit format {} disagrees with output extension format {}; using {}",
+                    format.name(),
+                    inferred.name(),
+                    format.name()
+                );
+            }
+        }
+        return Ok(format);
+    }
+    Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn export_ir(
-    encoder: &dyn Encoder,
+    registry: &Registry,
     ir: &CadIr,
+    decode_report: Option<&DecodeReport>,
     source_fidelity: Option<&SourceFidelity>,
+    format: Format,
     out: Option<&Path>,
     input: &Path,
     force: bool,
+    rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
+    step_options: cadmpeg_step::StepWriteOptions,
+    reject_lossy: bool,
 ) -> Result<ExportReport> {
     let mut bytes = Vec::new();
-    let report = encoder.encode_with_source_fidelity(ir, source_fidelity, &mut bytes)?;
+    if rhino_version.is_some() && format != Format::Rhino {
+        bail!("--rhino-version requires Rhino output");
+    }
     if let Some(path) = out {
-        write_output(input, path, &bytes, force)?;
+        check_output_path(input, path, force)?;
+    }
+    let target_options = match format {
+        Format::Step => TargetOptions::Step(step_options),
+        Format::Rhino => TargetOptions::Rhino(
+            rhino_version.unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
+        ),
+        _ => TargetOptions::Neutral,
+    };
+    let encoder = registry
+        .encoder(format.name(), target_options)
+        .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))??;
+    let plan = encoder.plan(cadmpeg_ir::codec::EncodeInput {
+        ir,
+        fidelity: source_fidelity,
+    })?;
+    if reject_lossy && !plan.report().losses.is_empty() {
+        return Err(semantic(format!(
+            "export planning reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
+            plan.report().losses.len(),
+            format.name()
+        )));
+    }
+    let report = plan.write_to(&mut bytes)?;
+    if let Some(path) = out {
+        write_atomic(path, &bytes)?;
+        if format == Format::Cadir {
+            persist_decode_sidecar(path, &bytes, decode_report, source_fidelity)?;
+        }
         eprintln!(
             "wrote {} ({} entities)",
             path.display(),
-            report.total_entities
+            report.census.total()
         );
     } else {
         io::stdout().write_all(&bytes)?;
+        if format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some() {
+            eprintln!("note: CADIR written to stdout cannot carry its decode-fidelity sidecar");
+        }
     }
     if !report.losses.is_empty() {
         eprintln!("{} export losses:", report.format);
         for loss in &report.losses {
-            eprintln!("  [{}/{}] {}", loss.severity, loss.category, loss.message);
+            eprintln!(
+                "  [{}/{}] {}",
+                loss.severity,
+                loss.code.category(),
+                loss.message
+            );
         }
     }
     Ok(report)
+}
+
+fn persist_decode_sidecar(
+    cadir_path: &Path,
+    cadir_bytes: &[u8],
+    report: Option<&DecodeReport>,
+    fidelity: Option<&SourceFidelity>,
+) -> Result<()> {
+    let path = decode_sidecar_path(cadir_path);
+    match (report, fidelity) {
+        (Some(report), Some(fidelity)) => {
+            let sidecar = DecodeSidecar::bind(cadir_bytes, report.clone(), fidelity.clone());
+            let mut bytes = sidecar.to_canonical_json()?.into_bytes();
+            bytes.push(b'\n');
+            write_atomic(&path, &bytes)?;
+            eprintln!("wrote decode sidecar {}", path.display());
+        }
+        _ if path.exists() => {
+            std::fs::remove_file(&path)
+                .with_context(|| format!("removing stale decode sidecar {}", path.display()))?;
+            eprintln!("removed stale decode sidecar {}", path.display());
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn write_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
+    temporary
+        .write_all(bytes)
+        .with_context(|| format!("writing temporary output for {}", output.display()))?;
+    temporary
+        .persist(output)
+        .map_err(|error| error.error)
+        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
+    Ok(())
+}
+
+fn write_command_report(
+    input: &Path,
+    output: Option<&Path>,
+    force: bool,
+    command: &'static str,
+    decode_report: Option<&DecodeReport>,
+    validation_report: Option<&ValidationReport>,
+    export: Option<&ExportReport>,
+) -> Result<()> {
+    write_json_report(
+        input,
+        output,
+        force,
+        command,
+        &serde_json::json!({
+            "decode_report": decode_report,
+            "validation_report": validation_report,
+            "export": export,
+        }),
+    )
+}
+
+fn write_json_report(
+    input: &Path,
+    output: Option<&Path>,
+    force: bool,
+    command: &'static str,
+    payload: &serde_json::Value,
+) -> Result<()> {
+    let Some(output) = output else {
+        return Ok(());
+    };
+    let mut object = payload
+        .as_object()
+        .cloned()
+        .ok_or_else(|| anyhow!("command report payload must be a JSON object"))?;
+    object.insert(
+        "schema_version".to_string(),
+        serde_json::json!(CLI_SCHEMA_VERSION),
+    );
+    object.insert("command".to_string(), serde_json::json!(command));
+    let mut bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(object))?;
+    bytes.push(b'\n');
+    write_output(input, output, &bytes, force)?;
+    eprintln!("wrote report {}", output.display());
+    Ok(())
+}
+
+fn write_output(input: &Path, output: &Path, bytes: &[u8], force: bool) -> Result<()> {
+    check_output_path(input, output, force)?;
+    write_atomic(output, bytes)
+}
+
+fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
+    let input = std::fs::canonicalize(input)
+        .with_context(|| format!("canonicalizing {}", input.display()))?;
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let output_absolute = if output.exists() {
+        std::fs::canonicalize(output)?
+    } else {
+        std::fs::canonicalize(parent)?.join(
+            output
+                .file_name()
+                .ok_or_else(|| anyhow!("output path has no filename"))?,
+        )
+    };
+    if input == output_absolute {
+        bail!("refusing to overwrite input {}", input.display());
+    }
+    if output.exists() && !force {
+        bail!("{} exists; pass --force to overwrite", output.display());
+    }
+    Ok(())
+}
+
+fn print_id_delta(label: &str, ids: &[String]) {
+    const MAX: usize = 8;
+    if ids.is_empty() {
+        return;
+    }
+    let more = ids.len().saturating_sub(MAX);
+    let shown = ids
+        .iter()
+        .take(MAX)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    if more > 0 {
+        println!("      {label}: {shown} (+{more} more)");
+    } else {
+        println!("      {label}: {shown}");
+    }
 }
 
 fn print_decode_report(writer: &mut impl Write, report: &DecodeReport) -> io::Result<()> {
@@ -417,7 +850,9 @@ fn print_decode_report(writer: &mut impl Write, report: &DecodeReport) -> io::Re
             writeln!(
                 writer,
                 "  [{}/{}] {}",
-                loss.severity, loss.category, loss.message
+                loss.severity,
+                loss.code.category(),
+                loss.message
             )?;
         }
     }

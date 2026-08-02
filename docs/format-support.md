@@ -208,7 +208,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
 
 **Kernel:** ASM, derived from ACIS
 
-**Ladder: L4 tested.** Undefined carrier payloads and tolerant-topology variants block L5. Native writing exceeds the scored gates.
+**Ladder: L4 tested.** Undefined geometry-carrier payloads block L5. Tolerant coedge, edge, and vertex records decode across their release-gated layouts and round-trip through retained and source-less native writing. Native writing exceeds the scored gates.
 
 ### Read profile
 
@@ -221,6 +221,7 @@ See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`
   Extrusions driven by prior solid faces retain exact state-qualified profile faces when every counted selection member corroborates one owner face.
 - **Product structure: Partial.** Body transforms and root-component records transfer. Multi-component structure and constraints remain open.
 - **Presentation and metadata: Partial.** Linked source attributes, Protein appearance assets, material properties, body bindings, and per-body display visibility transfer. External material-library display names and some schema fields remain unresolved.
+  Canvas timeline objects with a structurally complete image-plane binding transfer as neutral reference-image features carrying their image asset, plane frame, opacity, and plane-local bounds; objects without a resolved binding remain identity-preserving native records and report an attribute loss. Decals transfer as presentation timeline objects. Neither counts as an incomplete shape-history operation.
 
 ### Write and round trip
 

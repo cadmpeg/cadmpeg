@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(
+        clippy::default_trait_access,
+        clippy::needless_borrow,
+        clippy::unwrap_used
+    )
+)]
 //! Read Siemens NX `.prt` files into [`cadmpeg_ir::document::CadIr`].
 //!
 //! The codec recognizes the `SPLMSSTR` container signature, extracts compressed
@@ -58,9 +66,8 @@
 //! model. Current-body writers and their complete earlier dependency closure
 //! transfer as active; other operation suppression remains unresolved. Embedded
 //! JT coordinates and triangle connectivity transfer as canonical tessellations.
-//! Complete design history, assembly occurrence placement, material
-//! and appearance assignment, class-specific entity attribute fields, and `.prt`
-//! writing are not supported.
+//! Complete design history, assembly occurrence placement, material and appearance
+//! assignment and `.prt` writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules
 //! expose the lower-level container, stream, geometry, NURBS, intersection, and
 //! topology decoders. The object-model extraction and attachment tier (record
@@ -71,11 +78,11 @@
 pub mod container;
 pub mod decode;
 pub mod deltas;
+pub mod evaluation;
 pub mod geometry;
 pub mod intersection;
 mod jt;
 mod jt_topology;
-pub(crate) mod loss;
 pub(crate) mod native;
 pub mod nurbs;
 pub mod om;
@@ -85,10 +92,9 @@ pub mod topology;
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeResult,
-};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
 
 /// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]

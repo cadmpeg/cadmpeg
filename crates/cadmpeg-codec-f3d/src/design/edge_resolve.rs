@@ -88,20 +88,27 @@ pub(crate) fn resolved_edge_group(
             _ => false,
         }
     });
-    let identity_transition_slots = identity_matches.as_ref().and_then(|operands| {
-        let [operand] = operands.as_slice() else {
-            return None;
-        };
-        let mut edges = operand.transition_edge_candidates.clone();
-        edges.sort_unstable();
-        edges.dedup();
-        (!edges.is_empty()).then_some(edges)
+    let identity_transition_slots = treatment_radius
+        .is_none()
+        .then(|| {
+            let [operand] = identity_matches.as_ref()?.as_slice() else {
+                return None;
+            };
+            let mut edges = operand.transition_edge_candidates.clone();
+            edges.sort_unstable();
+            edges.dedup();
+            (!edges.is_empty()).then_some(edges)
+        })
+        .flatten();
+    let identity_radius_slots = treatment_radius.and_then(|radius| {
+        radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
     });
     let has_complete_identity_selection = identity_matches.as_ref().is_some_and(|operands| {
         !operands.is_empty()
             && (operands.iter().all(|operand| {
                 operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
-            }) || identity_transition_slots.is_some())
+            }) || identity_transition_slots.is_some()
+                || identity_radius_slots.is_some())
     });
     let recipe_corroborates_identity_transition =
         identity_transition_slots.as_ref().is_some_and(|slots| {
@@ -156,6 +163,21 @@ pub(crate) fn resolved_edge_group(
             return EdgeSelection::Historical {
                 state,
                 edges,
+                native: group.id.clone(),
+            };
+        }
+        if let Some(edges) = identity_radius_slots.as_ref() {
+            return EdgeSelection::Historical {
+                state,
+                edges: edges
+                    .iter()
+                    .map(|edge_slot| {
+                        ids::history_input_edge_id(
+                            &ids::history_input_prefix(feature_key, previous_state_id),
+                            *edge_slot,
+                        )
+                    })
+                    .collect(),
                 native: group.id.clone(),
             };
         }
@@ -250,10 +272,18 @@ pub(crate) fn resolved_edge_group(
         .iter()
         .map(|operand| resolved_edge_operand(operand))
         .collect::<Option<Vec<_>>>()
-        .or_else(|| unique_edge_group_assignment(&matched_operands));
+        .or_else(|| unique_edge_group_assignment(&matched_operands))
+        .or_else(|| changed_reference_edge_group_candidates(&matched_operands));
     let transition_slots = || {
         treatment_radius
             .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
+            .or_else(|| {
+                treatment_radius.and_then(|radius| {
+                    identity_matches.as_ref().and_then(|operands| {
+                        radius_edge_identity_group_candidates(operands, radius)
+                    })
+                })
+            })
             .or_else(|| {
                 context_only_edge_group_candidates(matched_operands.iter().map(|operand| {
                     (
@@ -269,6 +299,7 @@ pub(crate) fn resolved_edge_group(
                         .map(|operand| operand.recipe_selectors.as_slice()),
                 )
             })
+            .or_else(|| deleted_reference_edge_group_candidates(&matched_operands))
             .or_else(|| {
                 common_deleted_edge_group_candidates(matched_operands.iter().map(|operand| {
                     (
@@ -448,6 +479,76 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
     unique_edge_assignment_with_context(&candidate_sets)
 }
 
+pub(crate) fn changed_reference_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+) -> Option<Vec<i64>> {
+    let candidate_sets = operands
+        .iter()
+        .map(|operand| {
+            let mut changed_sets = operand
+                .recipe_reference_contexts
+                .iter()
+                .map(|context| context.changed_reference_edge_slots.as_slice())
+                .filter(|edges| !edges.is_empty());
+            let mut candidates = changed_sets.next()?.to_vec();
+            for changed in changed_sets {
+                candidates.retain(|candidate| changed.contains(candidate));
+            }
+            candidates.sort_unstable();
+            candidates.dedup();
+            (!candidates.is_empty()).then_some(candidates)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    unique_bipartite_assignment(&candidate_sets)
+}
+
+pub(crate) fn deleted_reference_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+) -> Option<Vec<i64>> {
+    let reference_candidates = operands
+        .iter()
+        .map(|operand| {
+            let mut candidates = operand
+                .recipe_reference_contexts
+                .iter()
+                .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
+                .collect::<Vec<_>>();
+            candidates.sort_unstable();
+            candidates.dedup();
+            candidates
+        })
+        .collect::<Vec<_>>();
+    let deleted_candidates = operands
+        .iter()
+        .map(|operand| operand.deleted_boundary_edge_slots.clone())
+        .collect::<Vec<_>>();
+    unique_deleted_reference_assignment(&reference_candidates, &deleted_candidates)
+}
+
+pub(crate) fn unique_deleted_reference_assignment(
+    reference_candidates: &[Vec<i64>],
+    deleted_candidates: &[Vec<i64>],
+) -> Option<Vec<i64>> {
+    if reference_candidates.len() != deleted_candidates.len() {
+        return None;
+    }
+    let candidate_sets = reference_candidates
+        .iter()
+        .zip(deleted_candidates)
+        .map(|(references, deleted)| {
+            let mut candidates = references
+                .iter()
+                .copied()
+                .filter(|edge| deleted.contains(edge))
+                .collect::<Vec<_>>();
+            candidates.sort_unstable();
+            candidates.dedup();
+            (!candidates.is_empty()).then_some(candidates)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    unique_bipartite_assignment(&candidate_sets)
+}
+
 #[derive(Debug, PartialEq)]
 pub(crate) enum EdgeAssignmentCandidates {
     Context,
@@ -461,7 +562,10 @@ pub(crate) fn edge_group_assignment_candidates<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<EdgeAssignmentCandidates> {
-    let reference_edge_sets = reference_edge_sets.into_iter().collect::<Vec<_>>();
+    let reference_edge_sets = reference_edge_sets
+        .into_iter()
+        .filter(|edges| !edges.is_empty())
+        .collect::<Vec<_>>();
     if !selector_contexts.is_empty() {
         return edge_assignment_candidates(selector_contexts, reference_edge_sets)
             .map(EdgeAssignmentCandidates::Edges);
@@ -469,9 +573,6 @@ pub(crate) fn edge_group_assignment_candidates<'a>(
     let [first, second, ..] = reference_edge_sets.as_slice() else {
         return Some(EdgeAssignmentCandidates::Context);
     };
-    if first.is_empty() || second.is_empty() {
-        return None;
-    }
     let mut candidates = first.to_vec();
     candidates.retain(|candidate| second.contains(candidate));
     candidates.sort_unstable();
@@ -522,6 +623,54 @@ pub(crate) fn radius_edge_group_candidates(
         }
     }
     Some(chain)
+}
+
+fn radius_edge_identity_group_candidates(
+    operands: &[&DesignEdgeIdentityOperand],
+    radius: f64,
+) -> Option<Vec<i64>> {
+    if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let tolerance = 1.0e-9 * (1.0 + radius.abs());
+    let mut chain = operands
+        .iter()
+        .flat_map(|operand| {
+            operand
+                .resolved_edge_slot
+                .iter()
+                .copied()
+                .chain(operand.resolved_edge_slots.iter().copied())
+                .chain(
+                    operand
+                        .treatment_radius_candidates
+                        .iter()
+                        .filter(|candidate| (candidate.radius - radius).abs() <= tolerance)
+                        .map(|candidate| candidate.edge_slot),
+                )
+        })
+        .collect::<Vec<_>>();
+    chain.sort_unstable();
+    chain.dedup();
+    if chain.is_empty() {
+        return None;
+    }
+    operands
+        .iter()
+        .all(|operand| {
+            operand.resolved_edge_slot.is_some()
+                || !operand.resolved_edge_slots.is_empty()
+                || operand
+                    .treatment_radius_candidates
+                    .iter()
+                    .any(|candidate| (candidate.radius - radius).abs() <= tolerance)
+                || operand.transition_edge_candidates.is_empty()
+                || operand
+                    .transition_edge_candidates
+                    .iter()
+                    .any(|edge| chain.contains(edge))
+        })
+        .then_some(chain)
 }
 
 pub(crate) fn unique_edge_assignment_with_context(
@@ -891,6 +1040,46 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
     resolved_edge_candidate_intersection_with_extra_proofs(selector_contexts, shared_edge_sets, [])
 }
 
+pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
+    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+) -> Option<i64> {
+    let mut incidence = selector_contexts
+        .iter()
+        .flat_map(|selector| selector.incidence_matching_edge_slots.iter().copied())
+        .collect::<Vec<_>>();
+    incidence.sort_unstable();
+    incidence.dedup();
+    let mut reference_edge_sets = reference_edge_sets
+        .into_iter()
+        .map(|edges| {
+            let mut edges = edges.to_vec();
+            edges.sort_unstable();
+            edges.dedup();
+            edges
+        })
+        .collect::<Vec<_>>();
+    reference_edge_sets.sort();
+    reference_edge_sets.dedup();
+    let mut candidates = incidence
+        .into_iter()
+        .filter(|edge| {
+            reference_edge_sets
+                .iter()
+                .filter(|edges| edges.contains(edge))
+                .take(2)
+                .count()
+                == 2
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
+    }
+}
+
 pub(crate) fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
@@ -919,9 +1108,21 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         .filter(|edges| !edges.is_empty())
         .collect::<Vec<_>>();
     let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
-    let reference = (shared_edge_sets.len() >= 2)
-        .then(|| unique_edge_set_intersection(&shared_edge_sets))
-        .flatten();
+    let reference_candidates =
+        (shared_edge_sets.len() >= 2).then(|| edge_set_intersection(&shared_edge_sets));
+    // A disjoint adjacent-face reference set names no edge that every reference
+    // shares, so it identifies an unresolved edge-bearing operand: no other
+    // proof can select an edge outside the operand's own references.
+    if reference_candidates
+        .as_deref()
+        .is_some_and(<[i64]>::is_empty)
+    {
+        return None;
+    }
+    let reference = match reference_candidates.as_deref() {
+        Some(&[edge]) => Some(edge),
+        _ => None,
+    };
     let incidence = (!references_unavailable)
         .then(|| corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false))
         .flatten();
@@ -1011,18 +1212,24 @@ fn corroborated_edge_set_intersection(
     (candidates.len() == 1).then_some(candidates[0])
 }
 
-fn unique_edge_set_intersection(edge_sets: &[&[i64]]) -> Option<i64> {
+/// Edges every reference set shares, ascending and without repeats. An empty
+/// result from a nonempty input is a disjoint reference set, which the caller
+/// separates from a set that shares more than one edge.
+fn edge_set_intersection(edge_sets: &[&[i64]]) -> Vec<i64> {
     let mut sets = edge_sets.iter();
-    let mut candidates = sets.next()?.to_vec();
+    let Some(first) = sets.next() else {
+        return Vec::new();
+    };
+    let mut candidates = first.to_vec();
     candidates.sort_unstable();
     candidates.dedup();
     for edge_set in sets {
         candidates.retain(|candidate| edge_set.contains(candidate));
         if candidates.is_empty() {
-            return None;
+            break;
         }
     }
-    (candidates.len() == 1).then_some(candidates[0])
+    candidates
 }
 
 fn corroborated_edge_intersection(
@@ -1093,42 +1300,20 @@ pub(crate) fn project_fixed_fillet(
 
     let fixed = scope.fixed_fillet_parameters.as_ref()?;
     let stream = native_stream(&scope.id)?;
-    let groups = construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-                && !group.members.is_empty()
-                && group.members.iter().all(|member| {
-                    edge_operands.iter().any(|operand| {
-                        native_stream(&operand.id) == Some(stream)
-                            && operand.scope_record_index == scope.record_index
-                            && operand.record_index == *member
-                    }) || edge_identity_operands.iter().any(|operand| {
-                        native_stream(&operand.id) == Some(stream)
-                            && operand.scope_record_index == scope.record_index
-                            && operand.group_record_index == group.record_index
-                            && operand.record_index == *member
-                    })
-                })
-        })
-        .collect::<Vec<_>>();
-    let [group] = groups.as_slice() else {
-        return None;
-    };
-    let radius = match fixed.radii.as_slice() {
-        [radius] if *radius > 0.0 => RadiusSpec::Constant {
+    let radius_spec = |group: &crate::records::DesignFixedFilletGroup| match group.radii.as_slice()
+    {
+        [radius] if *radius > 0.0 => Some(RadiusSpec::Constant {
             radius: Length(*radius * 10.0),
-        },
+        }),
         [first, second, intermediate @ ..]
-            if intermediate.len() == fixed.intermediate_parameters.len() =>
+            if intermediate.len() == group.intermediate_parameters.len() =>
         {
             let mut points = Vec::with_capacity(intermediate.len() + 2);
             points.push(VariableRadius {
                 parameter: 0.0,
                 radius: Length(*first * 10.0),
             });
-            points.extend(intermediate.iter().zip(&fixed.intermediate_parameters).map(
+            points.extend(intermediate.iter().zip(&group.intermediate_parameters).map(
                 |(radius, parameter)| VariableRadius {
                     parameter: *parameter,
                     radius: Length(*radius * 10.0),
@@ -1138,29 +1323,263 @@ pub(crate) fn project_fixed_fillet(
                 parameter: 1.0,
                 radius: Length(*second * 10.0),
             });
-            RadiusSpec::Variable { points }
+            Some(RadiusSpec::Variable { points })
         }
-        _ => return None,
-    };
-    let edge_radius = match radius {
-        RadiusSpec::Constant { radius } => Some(radius.0),
-        RadiusSpec::Chordal { .. } => None,
         _ => None,
     };
-    let edges = resolved_edge_group(
-        group,
-        construction_groups,
-        edge_operands,
-        edge_identity_operands,
-        scope.previous_history_state_id,
-        &neutral_feature_id(scope),
-        edge_radius,
-    );
-    Some(FeatureDefinition::Fillet {
-        groups: vec![FilletGroup {
-            edges,
-            radius,
-            tangency_weight: Some(fixed.tangency_weight),
-        }],
-    })
+    let mut scope_groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && !group.members.is_empty()
+        })
+        .collect::<Vec<_>>();
+    scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let complete_edge_groups = scope_groups
+        .iter()
+        .copied()
+        .filter(|group| {
+            group.members.iter().all(|member| {
+                edge_operands.iter().any(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && operand.record_index == *member
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let edge_groups = if complete_edge_groups.len() == fixed.groups.len() {
+        complete_edge_groups
+    } else if fixed.groups.len() == 1 && complete_edge_groups.is_empty() {
+        let group = {
+            // Support-face operands share the compact persistent-identity
+            // prefix. A sole construction group cannot be a support group
+            // alongside an unrepresented edge group: it is the Fillet's edge
+            // selection when every member has one exact identity record and
+            // the fixed radius selects a nonempty transition chain.
+            let [group] = scope_groups.as_slice() else {
+                return None;
+            };
+            let radius = radius_spec(&fixed.groups[0])?;
+            let RadiusSpec::Constant { radius } = radius else {
+                return None;
+            };
+            let identities = group
+                .members
+                .iter()
+                .map(|member| {
+                    let matches = edge_identity_operands
+                        .iter()
+                        .filter(|operand| {
+                            native_stream(&operand.id) == Some(stream)
+                                && operand.scope_record_index == scope.record_index
+                                && operand.group_record_index == group.record_index
+                                && operand.record_index == *member
+                        })
+                        .collect::<Vec<_>>();
+                    let [operand] = matches.as_slice() else {
+                        return None;
+                    };
+                    Some(*operand)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            radius_edge_identity_group_candidates(&identities, radius.0)?;
+            *group
+        };
+        vec![group]
+    } else {
+        return None;
+    };
+    let groups = fixed
+        .groups
+        .iter()
+        .zip(edge_groups)
+        .map(|(fixed_group, edge_group)| {
+            let radius = radius_spec(fixed_group)?;
+            let edge_radius = match radius {
+                RadiusSpec::Constant { radius } => Some(radius.0),
+                RadiusSpec::Chordal { .. }
+                | RadiusSpec::Variable { .. }
+                | RadiusSpec::Unresolved { .. } => None,
+            };
+            let edges = resolved_edge_group(
+                edge_group,
+                construction_groups,
+                edge_operands,
+                edge_identity_operands,
+                scope.previous_history_state_id,
+                &neutral_feature_id(scope),
+                edge_radius,
+            );
+            Some(FilletGroup {
+                edges,
+                radius,
+                tangency_weight: fixed_group
+                    .tangency_weight
+                    .as_ref()
+                    .map(|tangency| tangency.value),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(FeatureDefinition::Fillet { groups })
+}
+
+#[cfg(test)]
+mod radius_identity_tests {
+    use super::{project_fixed_fillet, radius_edge_identity_group_candidates};
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignParameterScope,
+    };
+
+    fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
+        serde_json::from_value(serde_json::json!({
+            "id": format!("f3d:test:identity#{record_index}"),
+            "scope_record_index": 1,
+            "group_record_index": 2,
+            "group_member_ordinal": record_index,
+            "record_index": record_index,
+            "byte_offset": 0,
+            "class_tag": "277",
+            "local_id": record_index,
+            "local_id_offset": 0,
+            "asset_id": "asset",
+            "asset_id_offset": 0,
+            "context_id": "context",
+            "context_id_offset": 0,
+            "transition_edge_candidates": candidates
+                .iter()
+                .map(|(edge, _)| *edge)
+                .collect::<Vec<_>>(),
+            "treatment_radius_candidates": candidates
+                .iter()
+                .map(|(edge, radius)| serde_json::json!({
+                    "edge_slot": edge,
+                    "radius": radius
+                }))
+                .collect::<Vec<_>>()
+        }))
+        .expect("edge identity")
+    }
+
+    #[test]
+    fn identity_radius_candidates_select_only_the_matching_law() {
+        let first = identity(10, &[(17, 3.0), (18, 5.0)]);
+        let second = identity(11, &[(19, 3.0), (20, 5.0)]);
+        assert_eq!(
+            radius_edge_identity_group_candidates(&[&first, &second], 3.0),
+            Some(vec![17, 19])
+        );
+        assert_eq!(
+            radius_edge_identity_group_candidates(&[&first, &second], 4.0),
+            None
+        );
+    }
+
+    fn fixed_scope() -> DesignParameterScope {
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:scope",
+            "byte_offset": 0,
+            "class_tag": "300",
+            "record_index": 1,
+            "frame_length": 200,
+            "kind": "Fillet",
+            "kind_offset": 0,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 0,
+            "history_state_id": 8,
+            "history_state_id_offset": 0,
+            "previous_history_state_id": 7,
+            "previous_history_state_id_offset": 0,
+            "reference_count_offset": 0,
+            "reference_members": [2],
+            "reference_member_offsets": [0],
+            "fixed_fillet_parameters": {
+                "groups": [{
+                    "tangency_weight": {
+                        "value": 1.0,
+                        "record_index": 4,
+                        "value_offset": 0
+                    },
+                    "radii": [0.3],
+                    "radius_record_indexes": [5],
+                    "radius_offsets": [0],
+                    "intermediate_parameters": [],
+                    "intermediate_parameter_record_indexes": [],
+                    "intermediate_parameter_offsets": []
+                }]
+            },
+            "paired_class_tag": "261",
+            "paired_byte_offset": 200
+        }))
+        .expect("fixed Fillet scope")
+    }
+
+    fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
+        serde_json::from_value(serde_json::json!({
+            "id": format!("f3d:test:group-{record_index}"),
+            "scope_record_index": 1,
+            "scope_reference_ordinal": 0,
+            "record_index": record_index,
+            "byte_offset": 0,
+            "class_tag": "300",
+            "members": [member],
+            "member_offsets": [0],
+            "frame": {
+                "layout": "counted",
+                "member_count_offset": 0,
+                "identity_record_index": 9,
+                "identity_record_offset": 0,
+                "opaque_index": 1,
+                "opaque_index_offset": 0,
+                "opaque_scalar": 1.0,
+                "opaque_scalar_offset": 0,
+                "variant": false
+            },
+            "role": 0x10_0000_0000u64,
+            "role_offset": 0,
+            "paired_class_tag": "258",
+            "paired_byte_offset": 0
+        }))
+        .expect("construction operand group")
+    }
+
+    #[test]
+    fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
+        let scope = fixed_scope();
+        let group = group(2, 10);
+        let identity = identity(10, &[(17, 3.0), (18, 5.0), (19, 3.0)]);
+        let definition = project_fixed_fillet(&scope, &[group], &[], &[identity])
+            .expect("fixed Fillet from sole compact identity group");
+        let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } = definition else {
+            panic!("expected Fillet");
+        };
+        assert!(matches!(
+            groups.as_slice(),
+            [cadmpeg_ir::features::FilletGroup {
+                edges: cadmpeg_ir::features::EdgeSelection::Historical { edges, .. },
+                radius: cadmpeg_ir::features::RadiusSpec::Constant {
+                    radius: cadmpeg_ir::features::Length(3.0)
+                },
+                tangency_weight: Some(1.0),
+            }] if edges.len() == 2
+        ));
+    }
+
+    #[test]
+    fn compact_identity_group_does_not_displace_a_possible_support_group() {
+        let scope = fixed_scope();
+        let first = group(2, 10);
+        let second = group(3, 11);
+        let first_identity = identity(10, &[(17, 3.0)]);
+        let mut second_identity = identity(11, &[(19, 3.0)]);
+        second_identity.group_record_index = 3;
+        assert!(project_fixed_fillet(
+            &scope,
+            &[first, second],
+            &[],
+            &[first_identity, second_identity],
+        )
+        .is_none());
+    }
 }

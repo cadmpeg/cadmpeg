@@ -3,22 +3,25 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
     ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::provenance::Exactness;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
 
 use crate::assemble::{annotate, link_payload_carriers, preserve_raw_payload, source_meta};
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 
-pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutput> {
+pub(crate) fn try_decode_zero_entity(
+    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Option<FamilyOutput> {
     let surfaces = crate::families::zero_entity::records::zero_entity_surfaces(&scan.data);
     if surfaces.is_empty() {
         return None;
@@ -189,9 +192,9 @@ pub(crate) fn try_decode_zero_entity(scan: &ContainerScan) -> Option<FamilyOutpu
             container_only: false,
             geometry_transferred: true,
             coverage,
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: vec![LossNote {
-                code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-                category: LossCategory::Topology,
+                code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
                 severity: Severity::Blocking,
                 message: if ownership_root.is_some() {
                     "Zero-entity loop members bind their face-local support occurrences and the terminal ownership root binds the complete face roster through one shell and body, but support-to-oriented-use, oriented-use-to-incidence, and physical endpoint bindings remain unresolved; no neutral topology was transferred."

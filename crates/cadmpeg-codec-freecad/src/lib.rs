@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(
+        clippy::default_trait_access,
+        clippy::doc_markdown,
+        clippy::unwrap_used
+    )
+)]
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 //!
 //! [`FcstdCodec`] implements [`Codec`] and [`Encoder`]. Retained writes preserve
@@ -22,7 +30,6 @@ mod drawing;
 mod element_map;
 mod gui;
 mod joint;
-pub(crate) mod loss;
 mod mutation;
 mod native;
 mod persistence;
@@ -33,27 +40,24 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder,
+    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
 };
-use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
-use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::report::Severity as FindingSeverity;
-use cadmpeg_ir::report::{DecodeReport, LossNote};
-use cadmpeg_ir::source_fidelity::write_plan::verify_retained_bytes;
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::validate::{Check, Finding};
-use cadmpeg_ir::wire::hash::sha256_hex;
-
-use crate::loss::FcstdLossCode;
+use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
 
 /// `FCStd` document codec.
 #[derive(Debug, Default, Clone, Copy)]
@@ -842,7 +846,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .collect::<HashSet<_>>();
     for entry in &entries {
         entry_lengths.insert(entry.name.as_str(), entry.byte_len);
-        if !verify_retained_bytes(&entry.data, entry.byte_len, &entry.sha256) {
+        if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
             findings.push(finding(
                 Check::PayloadIntegrity,
                 format!("{} failed length or digest validation", entry.id),
@@ -1115,7 +1119,7 @@ impl Codec for FcstdCodec {
         }
         if container::has_document_markers(prefix) {
             Confidence::High
-        } else if memchr::memmem::find(prefix, b"Document.xml").is_some() {
+        } else if contains(prefix, b"Document.xml") {
             Confidence::Medium
         } else {
             Confidence::Low
@@ -1188,22 +1192,23 @@ impl Codec for FcstdCodec {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
         }
         let mut ir = CadIr::empty(Units::default());
-        let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::default();
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
         ir.source = Some(SourceMeta {
             format: "fcstd".into(),
             attributes,
         });
         if let Some((name, bytes)) = thumbnail {
+            ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
-                &[UnknownRecord {
+                [UnknownRecord {
                     id: UnknownId(native::native_id("thumbnail", name)),
                     offset: 0,
                     byte_len: bytes.len() as u64,
                     sha256: sha256_hex(bytes),
-                    data: Some(bytes.clone()),
+                    data: Some(bytes.to_vec()),
                     links: vec![native::native_id("document", "0")],
                 }],
             )?;
@@ -1244,6 +1249,7 @@ impl Codec for FcstdCodec {
                         .filter(|property| property.side_entries.contains(&entry.name))
                         .map(|property| property.id.clone())
                         .collect();
+                    ctx.charge_retained(bytes.len() as u64, "retain FCStd entry", None)?;
                     Ok(native::EntryRecord {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
@@ -1251,7 +1257,7 @@ impl Codec for FcstdCodec {
                         byte_len: bytes.len() as u64,
                         sha256: sha256_hex(bytes),
                         referenced_by,
-                        data: bytes.clone(),
+                        data: bytes.to_vec(),
                     })
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;
@@ -1296,7 +1302,7 @@ impl Codec for FcstdCodec {
                 .extend(surface_transfer.procedural);
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            topology_transfer::transfer(&mut ir, &shape_payloads, &graph.properties)?;
+            topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(
                 &mut ir,
                 &graph.objects,
@@ -1304,19 +1310,19 @@ impl Codec for FcstdCodec {
                 &shape_payloads,
                 &entry_records,
             )?;
-            let (components, occurrences) = product::transfer_neutral(
+            let (product_definitions, occurrences) = product::transfer_neutral(
+                ctx,
                 &product_nodes,
                 &joint_records,
                 &graph.objects,
                 &graph.properties,
+                &shape_payloads,
+                &ir.model.bodies,
             )?;
-            ir.model.components = components;
+            ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
-            ir.model.assembly_joints = joint::transfer_neutral(
-                &joint_records,
-                &ir.model.components,
-                &ir.model.occurrences,
-            );
+            ir.model.assembly_joints =
+                joint::transfer_neutral(&joint_records, &ir.model.occurrences);
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")
@@ -1412,22 +1418,19 @@ impl Codec for FcstdCodec {
         } else {
             semantic_losses(&ir)
         };
-        Ok(DecodeResult::with_source_fidelity(
+        Ok(DecodeResult::new(
             ir,
             DecodeReport {
                 format: "fcstd".into(),
                 container_only: options.container_only,
                 geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
                 losses,
                 notes: container::summarize(&scan).notes,
             },
             source_fidelity,
         ))
-    }
-
-    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
-        validate_native(ir)
     }
 }
 
@@ -1436,12 +1439,16 @@ impl Encoder for FcstdCodec {
         "fcstd"
     }
 
-    fn encode(
-        &self,
-        ir: &CadIr,
-        output: &mut dyn std::io::Write,
-    ) -> Result<ExportReport, CodecError> {
-        self.encode_with_options(ir, output, FcstdWriteOptions::default())
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        let report =
+            self.encode_with_options(input.ir, &mut bytes, FcstdWriteOptions::default())?;
+        let fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        };
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 
@@ -1461,12 +1468,19 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             else {
                 return None;
             };
-            Some(FcstdLossCode::DesignOperationNativeRetained.note(
-                format!(
+            Some(LossNote {
+                code: cadmpeg_ir::LossKind::FeatureHistoryRetained,
+                severity: Severity::Blocking,
+                message: format!(
                     "FCStd design operation {kind} is retained natively but has no neutral semantics"
                 ),
-                feature.native_ref.clone(),
-            ))
+                provenance: Some(cadmpeg_ir::LossProvenance {
+                    format: "fcstd".into(),
+                    stream: "Document.xml".into(),
+                    offset: 0,
+                    tag: feature.native_ref.clone(),
+                }),
+            })
         })
         .collect::<Vec<_>>();
     losses.extend(ir.model.features.iter().filter_map(|feature| {
@@ -1486,21 +1500,35 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
         else {
             return None;
         };
-        Some(FcstdLossCode::LinearPatternDirectionUnresolved.note(
-            "FCStd linear-pattern direction is retained as a native reference but is not geometrically resolved",
-            feature.native_ref.clone(),
-        ))
+        Some(LossNote {
+            code: cadmpeg_ir::LossKind::ParametricRecordOmitted,
+            severity: Severity::Blocking,
+            message: "FCStd linear-pattern direction is retained as a native reference but is not geometrically resolved".into(),
+            provenance: Some(cadmpeg_ir::LossProvenance {
+                format: "fcstd".into(),
+                stream: "Document.xml".into(),
+                offset: 0,
+                tag: feature.native_ref.clone(),
+            }),
+        })
     }));
     losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
         let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
             return None;
         };
-        Some(FcstdLossCode::SketchGeometryNativeRetained.note(
-            format!(
+        Some(LossNote {
+            code: cadmpeg_ir::LossKind::RecordNotTyped,
+            severity: Severity::Blocking,
+            message: format!(
                 "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
             ),
-            entity.native_ref.clone(),
-        ))
+            provenance: Some(cadmpeg_ir::LossProvenance {
+                format: "fcstd".into(),
+                stream: "Document.xml".into(),
+                offset: 0,
+                tag: entity.native_ref.clone(),
+            }),
+        })
     }));
     losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
         let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
@@ -1508,12 +1536,19 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
         else {
             return None;
         };
-        Some(FcstdLossCode::SketchConstraintNativeRetained.note(
-            format!(
+        Some(LossNote {
+            code: cadmpeg_ir::LossKind::RecordNotTyped,
+            severity: Severity::Blocking,
+            message: format!(
                 "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
             ),
-            constraint.native_ref.clone(),
-        ))
+            provenance: Some(cadmpeg_ir::LossProvenance {
+                format: "fcstd".into(),
+                stream: "Document.xml".into(),
+                offset: 0,
+                tag: constraint.native_ref.clone(),
+            }),
+        })
     }));
     losses
 }
@@ -1810,6 +1845,7 @@ fn append_text_surface(
                     parameter_interval: None,
                     direction: *direction,
                     native_position: None,
+                    revision_form: None,
                 },
                 record_bounds: None,
                 cache_fit_tolerance: None,
@@ -2088,6 +2124,12 @@ fn push_logical_span(
             owner,
         });
     }
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 #[cfg(test)]

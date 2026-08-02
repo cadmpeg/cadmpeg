@@ -36,7 +36,11 @@ fn parameter_card(data: &[u8], directory_sequence: u32, sequence: u32) -> Vec<u8
 fn prefix() -> Vec<u8> {
     let mut bytes = card(b"cadmpeg generated fuzz seed", b'S', 1);
     for (index, chunk) in GLOBAL.chunks(72).enumerate() {
-        bytes.extend(card(chunk, b'G', u32::try_from(index + 1).expect("required invariant")));
+        bytes.extend(card(
+            chunk,
+            b'G',
+            u32::try_from(index + 1).expect("required invariant"),
+        ));
     }
     bytes
 }

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -9,7 +9,6 @@
         "attributes": [],
         "bodies": [],
         "coedges": [],
-        "components": [],
         "configurations": [],
         "curves": [],
         "drawings": [],
@@ -26,8 +25,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [],
         "semantic_annotations": [],
         "shells": [],
@@ -80,7 +78,6 @@
       "geometry_transferred": false,
       "losses": [
         {
-          "category": "geometry",
           "code": "geometry_not_transferred",
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"

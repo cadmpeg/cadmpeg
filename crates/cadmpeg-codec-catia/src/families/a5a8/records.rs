@@ -4,17 +4,16 @@
 //! rolling-ball jets, guide-curve jets, and object-stream UV pcurves.
 
 use crate::nurbs::{expand_knots, pole_count};
-use crate::wire::bytes::{f64_le, f64_point, read_f64_array, u32_le_24};
+use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
 use crate::wire::records::{
     a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
 };
-use crate::wire::tokens::compact_uint;
+use cadmpeg_codec_core::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::geometry::{
     NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
     RollingBallJetSite, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::wire::le::{u16_at as u16_le, u32_at as u32_le};
 
 /// Native identity form of one decoded freeform surface carrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -218,6 +217,130 @@ pub struct A5GuideCurve {
     pub second_derivatives: Vec<[f64; 6]>,
 }
 
+/// One non-rational degree-5 NURBS curve stored in an `a5 13 16` frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A5NurbsCurve {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded record token.
+    pub header_token: u32,
+    /// Exact neutral curve.
+    pub geometry: NurbsCurve,
+}
+
+/// Decode length-closed `a5/a6/a7 13 16` non-rational NURBS curves.
+#[must_use]
+pub fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
+    a5_nurbs_curve_frames(data)
+        .into_iter()
+        .filter_map(|frame| parse_a5_nurbs_curve(data, frame))
+        .collect()
+}
+
+fn a5_nurbs_curve_frames(data: &[u8]) -> Vec<ConsolidatedFrame> {
+    let mut frames = Vec::new();
+    for pos in 0..data.len().saturating_sub(8) {
+        let Some(width) = data[pos]
+            .checked_sub(0xa4)
+            .filter(|width| (1..=3).contains(width))
+        else {
+            continue;
+        };
+        if !matches!(data[pos + 1], 0x03 | 0x13 | 0x83) || data[pos + 2] != 0x16 {
+            continue;
+        }
+        let Some(length) = u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
+        else {
+            continue;
+        };
+        let token_start = pos + 7;
+        let payload = token_start + usize::from(width);
+        let Some(end) = payload.checked_add(length).filter(|end| *end <= data.len()) else {
+            continue;
+        };
+        let header_token = data[token_start..payload]
+            .iter()
+            .enumerate()
+            .fold(0u32, |value, (shift, byte)| {
+                value | (u32::from(*byte) << (8 * shift))
+            });
+        frames.push(ConsolidatedFrame {
+            pos,
+            payload,
+            end,
+            header_token,
+        });
+    }
+    frames
+}
+
+fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5NurbsCurve> {
+    let mut at = frame.payload;
+    let degree = compact_int(data, &mut at)?;
+    let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+    if degree != 5 || !(2..=8192).contains(&knot_count) || data.get(at) != Some(&0x0c) {
+        return None;
+    }
+    at += 1;
+    let mut distinct_knots = Vec::with_capacity(knot_count);
+    for _ in 0..knot_count {
+        distinct_knots.push(f64_le(data, at)?);
+        at += 8;
+    }
+    if distinct_knots.windows(2).any(|pair| pair[0] >= pair[1]) || data.get(at) != Some(&0x01) {
+        return None;
+    }
+    at += 1;
+    let control_count = 6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
+    let control_points = (0..control_count)
+        .map(|_| {
+            let point = Point3::new(
+                f64_le(data, at)?,
+                f64_le(data, at + 8)?,
+                f64_le(data, at + 16)?,
+            );
+            at += 24;
+            Some(point)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 2 {
+        return None;
+    }
+    let range_origin = f64_le(data, at)?;
+    let repeated_end = f64_le(data, at + 8)?;
+    let scale = f64_le(data, at + 16)?;
+    let offset = f64_le(data, at + 24)?;
+    at += 32;
+    if range_origin.to_bits() != 0.0f64.to_bits()
+        || repeated_end.to_bits() != distinct_knots.last()?.to_bits()
+        || scale.to_bits() != 1.0f64.to_bits()
+        || offset.to_bits() != 0.0f64.to_bits()
+        || data.get(at..frame.end) != Some(&[0x00, 0x07])
+    {
+        return None;
+    }
+    let mut knots = Vec::with_capacity(control_count + usize::try_from(degree).ok()? + 1);
+    for (index, knot) in distinct_knots.into_iter().enumerate() {
+        let multiplicity = if index == 0 || index + 1 == knot_count {
+            6
+        } else {
+            3
+        };
+        knots.extend(std::iter::repeat_n(knot, multiplicity));
+    }
+    Some(A5NurbsCurve {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        geometry: NurbsCurve {
+            degree,
+            knots,
+            control_points,
+            weights: None,
+            periodic: false,
+        },
+    })
+}
+
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[must_use]
 pub fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
@@ -229,9 +352,9 @@ pub fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
 
 fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5GuideCurve> {
     let mut at = frame.payload;
-    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
-    let degree = compact_uint(data, &mut at)?;
-    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count
+    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+    let degree = compact_int(data, &mut at)?;
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
         || !(2..=4096).contains(&count)
         || !(1..=9).contains(&degree)
     {
@@ -369,10 +492,10 @@ pub fn a8_freeform_curves(data: &[u8]) -> Vec<A8FreeformCurve> {
 fn parse_a8_curve(data: &[u8], pos: usize, end: usize) -> Option<A8FreeformCurve> {
     let object_id = u32_le(data, pos + 7)?;
     let mut at = pos + 12;
-    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
-    let degree = compact_uint(data, &mut at)?;
+    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+    let degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?;
-    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
         || !(2..=8192).contains(&count)
         || degree != 5
     {
@@ -386,7 +509,7 @@ fn parse_a8_curve(data: &[u8], pos: usize, end: usize) -> Option<A8FreeformCurve
     }
     let mut multiplicities = Vec::with_capacity(count);
     for _ in 0..count {
-        multiplicities.push(compact_uint(data, &mut at)?);
+        multiplicities.push(compact_int(data, &mut at)?);
     }
     if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
         return None;
@@ -451,9 +574,9 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         return None;
     }
     let mut at = payload;
-    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
-    let degree = compact_uint(data, &mut at)?;
-    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count
+    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+    let degree = compact_int(data, &mut at)?;
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
         || !(2..=4096).contains(&count)
         || degree != 5
     {
@@ -593,10 +716,10 @@ fn parse_object_stream_pcurve(
     let _ = pos;
     let mut at = payload + 1;
     let support_id = object_stream_reference(data, &mut at)?;
-    let degree = compact_uint(data, &mut at)?;
+    let degree = compact_int(data, &mut at)?;
     at += 2;
     data.get(..at)?;
-    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
+    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at += if data.get(at) == Some(&0x08) { 2 } else { 1 };
     if !(2..=8192).contains(&count) || degree != 5 {
         return None;
@@ -612,9 +735,9 @@ fn parse_object_stream_pcurve(
     let knots = read(&mut at)?;
     let mut multiplicities = Vec::with_capacity(count);
     for _ in 0..count {
-        multiplicities.push(compact_uint(data, &mut at)?);
+        multiplicities.push(compact_int(data, &mut at)?);
     }
-    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count {
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
     }
     let mode = *data.get(at)?;
@@ -673,7 +796,7 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
-#[cfg(any(test, feature = "fuzz"))]
+#[cfg(any(test, feature = "fuzzing"))]
 pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
 }
@@ -830,7 +953,7 @@ pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
         .collect()
 }
 
-#[cfg(any(test, feature = "fuzz"))]
+#[cfg(any(test, feature = "fuzzing"))]
 fn scan_surfaces(
     data: &[u8],
     marker: [u8; 3],
@@ -939,15 +1062,15 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
         return None;
     }
     let mut at = pos + 12; // framing + lead byte
-    let u_degree = compact_uint(data, &mut at)?;
+    let u_degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?; // flags
-    let u_distinct_count = compact_uint(data, &mut at)? as usize;
+    let u_distinct_count = compact_int(data, &mut at)? as usize;
     at = consume_array_marker(data, at)?;
     let u_distinct = f64_values(data, &mut at, u_distinct_count, end)?;
     let u_mults = compact_values(data, &mut at, u_distinct_count)?;
-    let v_degree = compact_uint(data, &mut at)?;
+    let v_degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?;
-    let v_distinct_count = compact_uint(data, &mut at)? as usize;
+    let v_distinct_count = compact_int(data, &mut at)? as usize;
     at = consume_array_marker(data, at)?;
     let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?;
     let v_mults = compact_values(data, &mut at, v_distinct_count)?;
@@ -1000,7 +1123,7 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
     })
 }
 
-#[cfg(any(test, feature = "fuzz"))]
+#[cfg(any(test, feature = "fuzzing"))]
 fn a8_surface(data: &[u8], pos: usize) -> Option<FreeformSurface> {
     a8_surface_from_parsed(data, parse_a8_surface_header(data, pos)?)
 }
@@ -1117,7 +1240,7 @@ fn f64_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) -> Option<
 }
 
 fn compact_values(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
-    (0..count).map(|_| compact_uint(bytes, at)).collect()
+    (0..count).map(|_| compact_int(bytes, at)).collect()
 }
 
 fn monotonic(values: &[f64]) -> bool {
@@ -1136,7 +1259,7 @@ fn a5_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
     }
 }
 
-fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
+pub(super) fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     let multiplicities = match degree {
         5 if distinct.len() >= 2 => {
             let mut values = vec![6u32];
@@ -1144,44 +1267,57 @@ fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
             values.push(6);
             values
         }
-        1 if distinct.len() == 2 => vec![2, 2],
+        1 | 3 | 5 if distinct.len() == 2 => vec![degree + 1, degree + 1],
         _ => return None,
     };
     let count = pole_count(&multiplicities, degree)?;
     Some((expand_knots(distinct, &multiplicities)?, count))
 }
 
-fn a5_weights(bytes: &[u8], at: &mut usize, rows: usize, cols: usize) -> Option<Vec<f64>> {
-    if bytes.get(*at..*at + 3)? != [0x01, 0x07, 0x00] {
-        return None;
-    }
-    *at += 3;
-    let mut seed = Vec::new();
-    while bytes.get(*at) != Some(&0x02) {
-        seed.push(f64_le(bytes, *at)?);
-        *at += 8;
-    }
-    let row = if seed.len() * 2 == cols {
-        seed.iter()
-            .copied()
-            .chain(seed.iter().rev().copied())
-            .collect()
-    } else if seed.len() == cols {
-        seed
-    } else {
-        return None;
-    };
-    let mut copies = 0usize;
-    while bytes.get(*at) == Some(&0x02) {
-        copies += 1;
+pub(super) fn a5_weights(
+    bytes: &[u8],
+    at: &mut usize,
+    rows: usize,
+    cols: usize,
+) -> Option<Vec<f64>> {
+    let count = rows.checked_mul(cols)?;
+    if bytes.get(*at) == Some(&0x00) {
         *at += 1;
+        return f64_values(bytes, at, count, bytes.len()).filter(|weights| {
+            weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight != 0.0)
+        });
     }
-    if copies + 1 != rows
-        || row
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight == 0.0)
-    {
+    if bytes.get(*at) != Some(&0x01) {
         return None;
     }
-    Some((0..rows).flat_map(|_| row.iter().copied()).collect())
+
+    let seed_count = cols.div_ceil(2);
+    let mut weights = Vec::with_capacity(count);
+    let mut previous = None::<Vec<f64>>;
+    for _ in 0..rows {
+        let row = if bytes.get(*at) == Some(&0x02) {
+            *at += 1;
+            previous.clone()?
+        } else {
+            if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
+                return None;
+            }
+            *at += 3;
+            let seed = f64_values(bytes, at, seed_count, bytes.len())?;
+            let mut row = seed.clone();
+            row.extend(seed[..cols / 2].iter().rev().copied());
+            if row.len() != cols {
+                return None;
+            }
+            previous = Some(row.clone());
+            row
+        };
+        weights.extend(row);
+    }
+    weights
+        .iter()
+        .all(|weight| weight.is_finite() && *weight != 0.0)
+        .then_some(weights)
 }

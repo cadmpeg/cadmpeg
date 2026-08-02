@@ -2,19 +2,17 @@
 //! Stable loss vocabulary for `.sldprt` decoding.
 //!
 //! Every fallback, approximation, and drop the decoder reports carries a
-//! stable machine-readable code from [`SldprtLossCode`], so a reworded message
-//! is not a contract change and a new drop path without a variant does not
-//! compile.
+//! stable machine-readable code from [`SldprtLossCode`]. Codes are the gating
+//! surface: harness oracles and downstream tooling key on them, never on the
+//! human-readable message text, so a reworded message is not a contract change
+//! and a new drop path without a code does not compile.
 //!
 //! [`SldprtLossCode::note`] is the single practical construction path for a
 //! decode-time [`LossNote`] in this crate: it fixes the loss category and
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-//! The vocabulary is crate-private: [`SldprtLossCode`] never appears in
-//! serialized output — the [`LossNote`] carries the shared [`LossCode`] the
-//! variant maps to — and no production caller outside this crate reads it.
-use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
 ///
@@ -23,7 +21,7 @@ use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 /// variant name may be refactored freely.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum SldprtLossCode {
+pub enum SldprtLossCode {
     /// Active configuration identity does not resolve to exactly one record.
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
@@ -90,8 +88,7 @@ pub(crate) enum SldprtLossCode {
 
 impl SldprtLossCode {
     /// Every code, in declaration order. Used by tests to assert stability.
-    #[cfg(test)]
-    pub(crate) const ALL: &'static [SldprtLossCode] = &[
+    pub const ALL: &'static [SldprtLossCode] = &[
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
         Self::ConfigInferredWithoutNative,
@@ -126,9 +123,8 @@ impl SldprtLossCode {
     ];
 
     /// The stable string identifier. This is the gating contract.
-    #[cfg(test)]
     #[must_use]
-    pub(crate) const fn code(self) -> &'static str {
+    pub const fn code(self) -> &'static str {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
@@ -164,25 +160,9 @@ impl SldprtLossCode {
         }
     }
 
-    /// The subsystem category this loss belongs to.
-    #[must_use]
-    pub(crate) const fn category(self) -> LossCategory {
-        match self {
-            Self::GeometryFaceSupportSurfaceUntyped
-            | Self::GeometryEdgeSupportCurveUntyped
-            | Self::GeometryParasolidNotTransferred
-            | Self::ContainerNoParasolidStream => LossCategory::Geometry,
-            Self::TopologyBodyHierarchyDerived | Self::TopologyGraphNotTransferred => {
-                LossCategory::Topology
-            }
-            Self::MaterialMetadataNotTransferred => LossCategory::Material,
-            _ => LossCategory::Other,
-        }
-    }
-
     /// The severity of this loss.
     #[must_use]
-    pub(crate) const fn severity(self) -> Severity {
+    pub const fn severity(self) -> Severity {
         match self {
             Self::GeometryParasolidNotTransferred | Self::TopologyGraphNotTransferred => {
                 Severity::Blocking
@@ -192,33 +172,27 @@ impl SldprtLossCode {
         }
     }
 
-    const fn shared_code(self) -> LossCode {
+    const fn shared_code(self) -> LossKind {
         match self {
-            Self::ContainerNoParasolidStream => LossCode::MissingGeometryStream,
-            Self::TopologyBodyHierarchyDerived => LossCode::TopologyGaugeSubstituted,
-            Self::TopologyGraphNotTransferred => LossCode::TopologyNotTransferred,
+            Self::ContainerNoParasolidStream => LossKind::MissingGeometryStream,
+            Self::TopologyBodyHierarchyDerived => LossKind::TopologyGaugeSubstituted,
+            Self::TopologyGraphNotTransferred => LossKind::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
-            | Self::GeometryParasolidNotTransferred => LossCode::GeometryNotTransferred,
-            Self::MaterialMetadataNotTransferred => LossCode::MaterialNotTransferred,
-            _ => LossCode::FeatureHistoryRetained,
+            | Self::GeometryParasolidNotTransferred => LossKind::GeometryNotTransferred,
+            Self::MaterialMetadataNotTransferred => LossKind::MaterialNotTransferred,
+            _ => LossKind::FeatureHistoryRetained,
         }
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// Category and severity come from the code, so a site cannot mislabel a
-    /// loss it names. Provenance is left absent; the decoder attributes losses
-    /// through the message and record identity, not a source span.
+    /// Severity comes from the codec-specific code. Provenance is left absent;
+    /// the decoder attributes losses through the message and record identity,
+    /// not a source span.
     #[must_use]
-    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
-        LossNote {
-            code: self.shared_code(),
-            category: self.category(),
-            severity: self.severity(),
-            message: message.into(),
-            provenance: None,
-        }
+    pub fn note(self, message: impl Into<String>) -> LossNote {
+        LossNote::new(self.shared_code(), message).with_severity(self.severity())
     }
 }
 
@@ -287,13 +261,11 @@ mod tests {
         }
     }
 
-    /// The note builder fixes category and severity from the code so a call
-    /// site cannot mislabel a loss it names.
+    /// The note builder fixes severity from the codec-specific code.
     #[test]
-    fn note_takes_category_and_severity_from_the_code() {
+    fn note_takes_severity_from_the_code() {
         for code in SldprtLossCode::ALL {
             let note = code.note("x");
-            assert_eq!(note.category, code.category());
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());

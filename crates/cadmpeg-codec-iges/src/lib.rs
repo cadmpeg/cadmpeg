@@ -10,16 +10,14 @@ mod entities;
 mod global;
 mod graph;
 mod layout;
-mod loss;
 mod native;
 mod parameter;
 mod profile;
 mod reader;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult,
-};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult};
 use std::io::Cursor;
 
 /// Codec for IGES files.
@@ -53,7 +51,7 @@ impl Codec for IgesCodec {
             }
             layout::Representation::FixedAscii => {}
         }
-        let scan = card::scan(&mut reader)?;
+        let scan = card::scan(root.window())?;
         let global = global::parse(&scan)?;
         let directory = directory::parse(&scan)?;
         let parameters = parameter::assemble(&scan, &directory, &global)?;
@@ -74,7 +72,7 @@ impl Codec for IgesCodec {
         let mut source = Cursor::new(root.window());
         match layout::classify(&mut source)? {
             layout::Representation::FixedAscii => reader::decode(
-                &mut source,
+                root.window(),
                 DecodeOptions {
                     container_only: ctx.container_only(),
                     policy: *ctx.policy(),

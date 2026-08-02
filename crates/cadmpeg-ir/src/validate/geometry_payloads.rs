@@ -4,13 +4,14 @@
 
 use super::*;
 
-pub(super) fn check_tessellations(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
-        if mesh
-            .body
-            .as_ref()
-            .is_some_and(|body| !index.bodies.contains_key(&body.0))
-        {
+        if mesh.body.as_ref().is_some_and(|body| {
+            !ir.model
+                .bodies
+                .iter()
+                .any(|candidate| candidate.id == *body)
+        }) {
             findings.push(Finding {
                 check: Check::Tessellation,
                 severity: Severity::Error,
@@ -21,7 +22,7 @@ pub(super) fn check_tessellations(ir: &CadIr, index: &ModelIndex<'_>, findings: 
         if mesh
             .faces
             .iter()
-            .any(|face| !index.faces.contains_key(&face.0))
+            .any(|face| !ir.model.faces.iter().any(|candidate| candidate.id == *face))
         {
             findings.push(Finding {
                 check: Check::Tessellation,
@@ -209,12 +210,10 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
             parameter,
             radius,
             points,
-            tail,
             ..
         } => {
             parameter.is_finite()
                 && radius.is_finite()
-                && tail.as_ref().is_none_or(|values| finite(values))
                 && points.iter().all(|point| {
                     point.parameter.is_finite()
                         && point.radius.is_finite()
@@ -462,9 +461,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
                     })
                 }
-                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
-                    values.iter().flatten().all(|value| value.is_finite())
-                }
+                crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .all(|value| value.is_finite()),
             };
             if !valid {
                 bounds_err(
@@ -559,9 +560,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
                     })
                 }
-                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
-                    values.iter().flatten().all(|value| value.is_finite())
-                }
+                crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .all(|value| value.is_finite()),
             };
             let sections_valid =
                 sections
@@ -768,6 +771,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
                     }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
+                    }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
                     }
@@ -857,6 +866,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
                     }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
@@ -958,6 +973,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
                     }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
+                    }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
                     }
@@ -1046,6 +1067,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
                     }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
@@ -1455,26 +1482,25 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .as_ref()
                     .is_none_or(variable_blend_value_valid)
                 && construction
-                    .chamfer
+                    .cross_section
                     .as_ref()
-                    .is_none_or(|chamfer| variable_blend_value_valid(&chamfer.value));
+                    .is_none_or(|cross_section| match cross_section {
+                        crate::geometry::VariableBlendCrossSection::Circular => true,
+                        crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
+                        | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
+                            parameters.iter().all(|value| value.is_finite())
+                        }
+                        crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
+                            radius.as_deref().is_none_or(variable_blend_value_valid)
+                        }
+                        crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
+                    });
             let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
                 && construction.shape_parameter.is_finite()
-                && construction.shape_length.is_finite()
-                && construction
-                    .single_radius_tail
-                    .as_ref()
-                    .is_none_or(|tail| {
-                        tail.parameters.iter().all(|value| value.is_finite())
-                            && !matches!(tail.selector, crate::geometry::LoftBridgeToken::Double(value) if !value.is_finite())
-                    });
+                && construction.shape_length.is_finite();
             let radius_branch_valid = match construction.radius_kind {
-                VariableBlendRadiusKind::SingleRadius => {
-                    construction.second_value.is_none() && construction.chamfer.is_none()
-                }
-                VariableBlendRadiusKind::TwoRadii => {
-                    construction.second_value.is_some() && construction.single_radius_tail.is_none()
-                }
+                VariableBlendRadiusKind::SingleRadius => construction.second_value.is_none(),
+                VariableBlendRadiusKind::TwoRadii => construction.second_value.is_some(),
             };
             if !ranges_valid
                 || !sides_valid
@@ -1497,7 +1523,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
             };
             let boundaries_valid = construction.boundaries.iter().all(|boundary| {
-                point_finite(&boundary.magic)
+                vector_finite(&boundary.magic)
                     && boundary.fullness.is_finite()
                     && match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle {
@@ -1658,19 +1684,41 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,
+            revision_form,
             ..
         } = &procedural.definition
         {
-            if !distance.is_finite()
-                || !matches!(
+            // A revision-gated offset stores its four-boolean carrier run in
+            // the revision form and has no ASM extension tail of its own.
+            let flags_shape_ok = if let Some(form) = revision_form {
+                extension_flags.is_empty() && form.flags.len() == 4
+            } else {
+                matches!(
                     extension_flags.as_slice(),
                     [] | [false] | [true, _] | [true, _, _]
                 )
-            {
+            };
+            if !distance.is_finite() || !flags_shape_ok {
                 bounds_err(
                     findings,
                     &procedural.id.0,
                     "offset spline surface distance or extension flags are invalid",
+                );
+            }
+        }
+        if let Some((enumeration, parameterization)) = revision_tail_form(&procedural.definition) {
+            // Tail enum `0` stores a solved cache and its fit tolerance; `2`
+            // stores the parameterization instead. No other value is defined.
+            let form_matches = match enumeration {
+                0 => parameterization.is_none(),
+                2 => parameterization.is_some(),
+                _ => false,
+            };
+            if !form_matches {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "revision-gated surface tail enum does not match its stored cache form",
                 );
             }
         }
@@ -2060,26 +2108,57 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds_err(findings, &procedural.id.0, "invalid spatial curve offset");
             }
         }
-        if let ProceduralCurveDefinition::Deformable { data, .. } = &procedural.definition {
-            if let crate::geometry::DeformableCurveData::VectorField {
-                vectors,
-                parameter_pairs,
-            } = data
-            {
-                let vectors_finite = vectors.iter().all(|vector| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                });
-                let pairs_finite = parameter_pairs
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite());
-                if !vectors_finite || !pairs_finite {
-                    bounds_err(
-                        findings,
-                        &procedural.id.0,
-                        "deformable vector-field payload is not finite",
-                    );
+        if let ProceduralCurveDefinition::Deformable {
+            source_parameter_range,
+            data,
+            ..
+        } = &procedural.definition
+        {
+            let finite_vector = |vector: &crate::math::Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let payload_finite = match data {
+                crate::geometry::DeformableCurveData::VectorField {
+                    vectors,
+                    parameter_pairs,
+                } => {
+                    vectors.iter().all(finite_vector)
+                        && parameter_pairs
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
                 }
+                crate::geometry::DeformableCurveData::Mode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    trailing_point,
+                    trailing_vectors,
+                    frame_parameter,
+                    parameters,
+                    trailing_parameter,
+                    ..
+                } => {
+                    leading_vectors.iter().all(finite_vector)
+                        && leading_parameter.is_finite()
+                        && [trailing_point.x, trailing_point.y, trailing_point.z]
+                            .into_iter()
+                            .all(f64::is_finite)
+                        && trailing_vectors.iter().all(finite_vector)
+                        && frame_parameter.is_finite()
+                        && parameters.iter().all(|value| value.is_finite())
+                        && trailing_parameter.is_finite()
+                }
+            };
+            let range_valid = source_parameter_range
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite());
+            if !payload_finite || !range_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "deformable curve payload is not finite",
+                );
             }
             continue;
         }
@@ -2733,6 +2812,44 @@ pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], 
         };
         bounds_err(findings, id, &label);
     }
+}
+
+/// The shared revision-gated surface tail's form enum and the parameterization
+/// paired with it, from whichever carrier the definition uses.
+fn revision_tail_form(
+    definition: &ProceduralSurfaceDefinition,
+) -> Option<(
+    i64,
+    Option<&crate::geometry::RevisionSurfaceParameterization>,
+)> {
+    let form = match definition {
+        ProceduralSurfaceDefinition::Exact { revision_form, .. }
+        | ProceduralSurfaceDefinition::Taper { revision_form, .. }
+        | ProceduralSurfaceDefinition::Revolution { revision_form, .. }
+        | ProceduralSurfaceDefinition::Sum { revision_form, .. }
+        | ProceduralSurfaceDefinition::Extrusion { revision_form, .. }
+        | ProceduralSurfaceDefinition::Offset { revision_form, .. } => revision_form.as_ref(),
+        ProceduralSurfaceDefinition::TSpline { construction } => {
+            construction.revision_form.as_ref()
+        }
+        ProceduralSurfaceDefinition::VariableBlend { construction } => {
+            return Some((
+                construction.tail_enum,
+                construction.tail_parameterization.as_ref(),
+            ))
+        }
+        ProceduralSurfaceDefinition::Blend {
+            native: Some(construction),
+            ..
+        } => {
+            return Some((
+                construction.tail_enum,
+                construction.tail_parameterization.as_ref(),
+            ))
+        }
+        _ => None,
+    }?;
+    Some((form.tail_enum, form.tail_parameterization.as_ref()))
 }
 
 pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {

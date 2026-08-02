@@ -143,9 +143,10 @@ pub fn subd(data: &[u8]) {
 }
 
 fn with_expand(data: &[u8], f: impl FnOnce(crate::mesh::MeshExpand<'_>)) {
-    let arena = cadmpeg_ir::decode::DecodeArena::new();
-    let policy = cadmpeg_ir::decode::DecodePolicy::default();
-    let Ok((ctx, root)) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    let arena = cadmpeg_codec_core::decode::DecodeArena::new();
+    let policy = cadmpeg_codec_core::decode::DecodePolicy::default();
+    let Ok((ctx, root)) =
+        cadmpeg_codec_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
     else {
         return;
     };

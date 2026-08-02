@@ -11,11 +11,18 @@ use std::collections::BTreeMap;
 macro_rules! string_id {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(
-            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-        )]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, JsonSchema)]
         #[serde(transparent)]
         pub struct $name(pub String);
+
+        impl Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                crate::schema::serialize_reference_id(&self.0, serializer)
+            }
+        }
     };
 }
 
@@ -244,10 +251,22 @@ pub enum SketchGeometry {
         text: String,
         /// Source font-family name.
         font_family: String,
+        /// Numeric font weight from the source text style.
+        font_weight: i32,
         /// Nominal character height.
         height: Length,
-        /// Horizontal scale relative to the nominal font width.
-        width_factor: f64,
+        /// Horizontal scale relative to the nominal font width, absent when the
+        /// source stores none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        width_factor: Option<f64>,
+        /// Point the text is placed and rotated about, in sketch coordinates,
+        /// absent when the source stores no placement.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        anchor: Option<Point2>,
+        /// Rotation about the anchor, counterclockwise from the sketch u axis,
+        /// absent when the source stores no placement.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rotation: Option<Angle>,
     },
     /// Source-native geometry not yet reduced to a neutral family.
     Native {
@@ -335,6 +354,27 @@ pub struct SpatialSketchConstraint {
     pub native_ref: Option<String>,
 }
 
+/// One progenitor/result pair in a model-space sketch offset relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchOffsetPair {
+    /// Source entity whose stored direction defines the signed offset normal.
+    pub source: SpatialSketchEntityId,
+    /// Entity produced at the shared signed offset distance.
+    pub result: SpatialSketchEntityId,
+    /// Reverse the source traversal before selecting its left normal.
+    #[serde(default)]
+    pub source_reversed: bool,
+}
+
+/// One unordered entity pair in a repeated model-space sketch relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchEntityPair {
+    /// First member in source discovery order.
+    pub first: SpatialSketchEntityId,
+    /// Second member in source discovery order.
+    pub second: SpatialSketchEntityId,
+}
+
 /// Neutral geometric relations between model-space sketch entities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -360,6 +400,15 @@ pub enum SpatialSketchConstraintDefinition {
         /// Second coincident point.
         second: SpatialSketchEntityId,
     },
+    /// Two model-space sketch points are mirror images across a model-space line.
+    Symmetric {
+        /// First symmetric point.
+        first: SpatialSketchEntityId,
+        /// Second symmetric point.
+        second: SpatialSketchEntityId,
+        /// Bounded line whose infinite carrier is the reflection axis.
+        axis: SpatialSketchEntityId,
+    },
     /// A model-space point lies on a model-space surface.
     PointOnSurface {
         /// Point constrained to the surface.
@@ -381,6 +430,29 @@ pub enum SpatialSketchConstraintDefinition {
         /// Second tangent curve.
         second: SpatialSketchEntityId,
     },
+    /// Euclidean distance between two model-space sketch points.
+    PointDistance {
+        /// First measured point.
+        first: SpatialSketchEntityId,
+        /// Second measured point.
+        second: SpatialSketchEntityId,
+        /// Driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
+    /// Endpoint-to-endpoint length of one bounded model-space sketch line.
+    LineLength {
+        /// Measured line.
+        entity: SpatialSketchEntityId,
+        /// Driving length parameter.
+        parameter: crate::features::ParameterId,
+    },
+    /// Endpoint-to-endpoint lengths of multiple bounded model-space sketch lines.
+    RepeatedLineLength {
+        /// Distinct measured lines in spatial-sketch entity order.
+        entities: Vec<SpatialSketchEntityId>,
+        /// Shared driving length parameter.
+        parameter: crate::features::ParameterId,
+    },
     /// Minimum separation between two parallel model-space sketch lines.
     ParallelLineDistance {
         /// First measured line.
@@ -389,6 +461,37 @@ pub enum SpatialSketchConstraintDefinition {
         second: SpatialSketchEntityId,
         /// Driving distance parameter.
         parameter: crate::features::ParameterId,
+    },
+    /// Repeated separation between disjoint pairs of parallel lines.
+    RepeatedParallelLineDistance {
+        /// Distinct line pairs in profile traversal order.
+        pairs: Vec<SpatialSketchEntityPair>,
+        /// Shared driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
+    /// Minimum separation between two parallel collinear model-space line sets.
+    ParallelLineSetDistance {
+        /// Collinear entities forming the first line carrier.
+        first: Vec<SpatialSketchEntityId>,
+        /// Collinear entities forming the second line carrier.
+        second: Vec<SpatialSketchEntityId>,
+        /// Driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
+    /// One or more model-space curves offset from their progenitors.
+    Offset {
+        /// Ordered progenitor/result pairs.
+        pairs: Vec<SpatialSketchOffsetPair>,
+        /// Unit normal of the common offset plane.
+        normal: Vector3,
+        /// Strictly positive common offset magnitude.
+        distance: crate::features::Length,
+        /// Driving offset-distance parameter, when dimensional.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<crate::features::ParameterId>,
+        /// Multiplier from the driving parameter value to `distance`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_factor: Option<f64>,
     },
     /// A model-space line is parallel to one fixed model-space direction.
     ParallelToDirection {
@@ -972,6 +1075,22 @@ pub enum SketchConstraintDefinition {
         /// Shared driving distance parameter.
         parameter: ParameterId,
     },
+    /// Equal-length line entities controlled by one linear parameter.
+    RepeatedLength {
+        /// Distinct line entities sharing the driven length.
+        entities: Vec<SketchEntityId>,
+        /// Shared driving length parameter.
+        parameter: ParameterId,
+    },
+    /// Distance between two parallel collinear line-entity sets.
+    ParallelLineSetDistance {
+        /// Collinear entities forming the first line carrier.
+        first: Vec<SketchEntityId>,
+        /// Collinear entities forming the second line carrier.
+        second: Vec<SketchEntityId>,
+        /// Driving distance parameter.
+        parameter: ParameterId,
+    },
     /// Angle controlled by a design parameter.
     Angle {
         /// First angular entity.
@@ -997,11 +1116,25 @@ pub enum SketchConstraintDefinition {
         /// Driving radius parameter.
         parameter: ParameterId,
     },
+    /// Equal-radius circular entities controlled by one design parameter.
+    RepeatedRadius {
+        /// Distinct circular entities sharing the driven radius.
+        entities: Vec<SketchEntityId>,
+        /// Shared driving radius parameter.
+        parameter: ParameterId,
+    },
     /// Diameter controlled by a design parameter.
     Diameter {
         /// Circular entity.
         entity: SketchEntityId,
         /// Driving diameter parameter.
+        parameter: ParameterId,
+    },
+    /// Equal-diameter circular entities controlled by one design parameter.
+    RepeatedDiameter {
+        /// Distinct circular entities sharing the driven diameter.
+        entities: Vec<SketchEntityId>,
+        /// Shared driving diameter parameter.
         parameter: ParameterId,
     },
     /// Refraction relation between two curve loci and their interface.

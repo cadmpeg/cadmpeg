@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 /// Stable presentation-document identity.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
-pub struct PresentationId(pub String);
+pub struct PresentationId(
+    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+);
 
 /// Persisted camera pose.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -100,8 +102,8 @@ pub struct ViewPresentation {
 // Named presentation layers and their model-item membership.
 
 use crate::ids::{
-    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId, ProductId, SurfaceId,
-    VertexId,
+    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId, ProductDefinitionId,
+    SurfaceId, VertexId,
 };
 
 /// A model or presentation object assigned to a layer.
@@ -146,7 +148,7 @@ pub enum PresentationItem {
     /// Product prototype.
     Product {
         /// Assigned product.
-        product: ProductId,
+        product: ProductDefinitionId,
     },
     /// Product occurrence.
     Occurrence {
@@ -189,9 +191,9 @@ pub struct PresentationLayer {
 mod tests {
     use super::*;
     use crate::document::CadIr;
+    use crate::report::Check;
     use crate::units::Units;
-    use crate::validate::validate;
-    use crate::validate::Check;
+    use crate::validate;
 
     #[test]
     fn source_layer_items_validate_without_fabricated_geometry() {

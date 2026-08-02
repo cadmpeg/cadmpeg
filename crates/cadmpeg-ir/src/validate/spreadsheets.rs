@@ -1,13 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Spreadsheet reference and layout validation.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use super::{CadIr, Check, Finding, ModelIndex, Severity};
+use super::{CadIr, Check, Finding, Severity};
 
-pub(super) fn check_spreadsheets(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| &feature.id)
+        .collect::<HashSet<_>>();
+    let parameters = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
     for sheet in &ir.model.spreadsheets {
-        if !index.features.contains_key(sheet.feature.0.as_str()) {
+        if !features.contains(&sheet.feature) {
             spreadsheet_finding(
                 findings,
                 &sheet.id.0,
@@ -17,7 +29,7 @@ pub(super) fn check_spreadsheets(ir: &CadIr, index: &ModelIndex<'_>, findings: &
         let mut cells = HashSet::new();
         let mut addresses = HashSet::new();
         for cell in &sheet.cells {
-            let Some(parameter) = index.parameters.get(cell.0.as_str()) else {
+            let Some(parameter) = parameters.get(cell) else {
                 spreadsheet_finding(findings, &sheet.id.0, "spreadsheet cell does not resolve");
                 continue;
             };

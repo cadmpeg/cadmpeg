@@ -29,6 +29,39 @@ pub(crate) fn native_stream(id: &str) -> Option<&str> {
     id.rsplit_once(':').map(|(stream, _)| stream)
 }
 
+/// Return whether two native IDs belong to the same root document or xref occurrence.
+pub(crate) fn same_native_occurrence(left: &str, right: &str) -> bool {
+    const OCCURRENCE_SEGMENT: &str = "/occurrence-";
+
+    fn occurrence(id: &str) -> Option<&str> {
+        let mut occurrence_end = None;
+        for (at, _) in id.match_indices(OCCURRENCE_SEGMENT) {
+            let digits_at = at + OCCURRENCE_SEGMENT.len();
+            let end = id[digits_at..]
+                .find('/')
+                .map_or(id.len(), |end| digits_at + end);
+            if end > digits_at && id[digits_at..end].bytes().all(|byte| byte.is_ascii_digit()) {
+                occurrence_end = Some(end);
+            }
+        }
+        occurrence_end.map(|end| &id[..end])
+    }
+
+    match (occurrence(left), occurrence(right)) {
+        (Some(left), Some(right)) => left == right,
+        (None, None) => !left.contains(OCCURRENCE_SEGMENT) && !right.contains(OCCURRENCE_SEGMENT),
+        _ => false,
+    }
+}
+
+/// Parse the Design segment shared by sibling `MetaStream.dat` and
+/// `BulkStream.dat` entries from a native record identity.
+pub(crate) fn design_segment(id: &str) -> Option<&str> {
+    let stream = native_stream(id)?;
+    let (segment, entry) = stream.rsplit_once('/')?;
+    matches!(entry, "MetaStream.dat" | "BulkStream.dat").then_some(segment)
+}
+
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 
@@ -55,6 +88,45 @@ fn identity_key_component(value: &str) -> String {
 /// The neutral B-rep topology entity key for entity `index`.
 pub(crate) fn brep_entity_id(index: impl std::fmt::Display) -> String {
     format!("f3d:brep:entity#{index}")
+}
+
+/// Neutral product occurrence projected from one external-reference placement.
+pub(crate) fn neutral_xref_occurrence_id(
+    reference_ordinal: u32,
+    occurrence_ordinal: u32,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId(format!(
+        "f3d:model:occurrence#xref-{reference_ordinal}-{occurrence_ordinal}"
+    ))
+}
+
+/// Neutral local component definition projected from its stable Design GUID.
+pub(crate) fn neutral_component_id(guid: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId(format!(
+        "f3d:model:component#{}",
+        guid.to_ascii_lowercase()
+    ))
+}
+
+/// Neutral local occurrence projected from its stable Design GUID.
+pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId(format!(
+        "f3d:model:occurrence#{}",
+        guid.to_ascii_lowercase()
+    ))
+}
+
+/// Neutral assembly-joint key projected from one Design parameter scope.
+pub(crate) fn neutral_assembly_joint_id(
+    scope: &crate::records::DesignParameterScope,
+) -> cadmpeg_ir::products::JointId {
+    let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
+    cadmpeg_ir::products::JointId(format!(
+        "f3d:model:joint#{}:{}{}",
+        stream.len(),
+        stream,
+        scope.record_index
+    ))
 }
 
 /// The Design configuration record key for the archive entry `entry_name`.
@@ -106,6 +178,12 @@ pub(crate) fn neutral_feature_id_parts(
         feature_ordinal,
         scope_record_index,
     ))
+}
+
+/// The neutral embedded-asset key for one exact archive entry.
+pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
+    let entry_name = identity_key_component(entry_name);
+    cadmpeg_ir::assets::AssetId(format!("f3d:model:asset#{}:{entry_name}", entry_name.len()))
 }
 
 /// The neutral parameter key for a design `parameter`.
@@ -387,6 +465,11 @@ native_record_id!(
     "design-parameter-scope"
 );
 native_record_id!(
+    /// The native design Canvas image-plane binding key.
+    native_design_canvas_image_id,
+    "design-canvas-image"
+);
+native_record_id!(
     /// The native design-dimension-recipe-record key.
     native_design_dimension_recipe_record_id,
     "design-dimension-recipe-record"
@@ -472,9 +555,9 @@ native_record_id!(
     "lost-edge-reference"
 );
 native_record_id!(
-    /// The native design-object record key.
-    native_design_object_id,
-    "design-object"
+    /// The native design-type record key.
+    native_design_type_id,
+    "design-type"
 );
 native_record_id!(
     /// The native design-entity-header record key.
@@ -512,6 +595,11 @@ native_record_id!(
     "sketch-surface"
 );
 native_record_id!(
+    /// The native mesh-body record key.
+    native_mesh_body_id,
+    "mesh-body"
+);
+native_record_id!(
     /// The native design-body-member record key.
     native_design_body_member_id,
     "design-body-member"
@@ -531,3 +619,44 @@ native_record_id!(
     native_design_body_binding_id,
     "design-body-binding"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::{design_segment, same_native_occurrence};
+
+    #[test]
+    fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
+        let meta = "f3d:Asset/Design1/MetaStream.dat:design-type#10";
+        let bulk = "f3d:Asset/Design1/BulkStream.dat:design-canvas-image#20";
+        assert_eq!(design_segment(meta), Some("f3d:Asset/Design1"));
+        assert_eq!(design_segment(meta), design_segment(bulk));
+        assert_eq!(
+            design_segment("f3d:Asset/Design1/Other.dat:record#20"),
+            None
+        );
+    }
+
+    #[test]
+    fn native_occurrence_scope_isolates_xrefs_and_includes_root_streams() {
+        assert!(same_native_occurrence(
+            "f3d:Asset/Design1/BulkStream.dat:record#1",
+            "f3d:design:persistent-subentity-tag#1",
+        ));
+        assert!(same_native_occurrence(
+            "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
+            "f3d:xref/root/occurrence-0/design:persistent-subentity-tag#1",
+        ));
+        assert!(!same_native_occurrence(
+            "f3d:xref/root/occurrence-0/Asset/Design1/BulkStream.dat:record#1",
+            "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1",
+        ));
+        assert!(!same_native_occurrence(
+            "f3d:xref/root/occurrence-0/xref/child/occurrence-0/design:record#1",
+            "f3d:xref/root/occurrence-0/design:persistent-subentity-tag#1",
+        ));
+        assert!(!same_native_occurrence(
+            "f3d:xref/root/occurrence-invalid/design:record#1",
+            "f3d:design:persistent-subentity-tag#1",
+        ));
+    }
+}

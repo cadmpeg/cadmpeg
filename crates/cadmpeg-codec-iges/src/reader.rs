@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
-use crate::loss::IgesLossCode;
 use crate::{card, directory, entities, global, graph, native, parameter};
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
-use cadmpeg_ir::document::SourceMeta;
-use cadmpeg_ir::report::DecodeReport;
-use cadmpeg_ir::source_fidelity::SourceFidelity;
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn source_meta(global: &global::Global) -> SourceMeta {
@@ -43,11 +41,8 @@ fn source_meta(global: &global::Global) -> SourceMeta {
     }
 }
 
-pub(crate) fn decode(
-    reader: &mut dyn ReadSeek,
-    options: DecodeOptions,
-) -> Result<DecodeResult, CodecError> {
-    let scan = card::scan(reader)?;
+pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
+    let scan = card::scan(bytes)?;
     let global = global::parse(&scan)?;
     if global.version() != Some("5.3") {
         return Err(CodecError::NotImplemented(format!(
@@ -84,10 +79,12 @@ pub(crate) fn decode(
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
     if product_occurrences_truncated {
-        losses.push(
-            IgesLossCode::ProductOccurrenceTruncated
-                .note("IGES product occurrence expansion reached its configured output limit"),
-        );
+        losses.push(LossNote {
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            severity: Severity::Warning,
+            message: "IGES product occurrence expansion reached its configured output limit".into(),
+            provenance: None,
+        });
     }
     if !options.container_only {
         losses.extend(
@@ -98,9 +95,10 @@ pub(crate) fn decode(
                         && (!crate::profile::envelope_a_admits(entry.entity_type, entry.form)
                             || !projection.handled.contains(&entry.sequence))
                 })
-                .map(|entry| {
-                    let message = if crate::profile::envelope_a_admits(entry.entity_type, entry.form)
-                    {
+                .map(|entry| LossNote {
+                    code: cadmpeg_ir::LossKind::RecordNotTyped,
+                    severity: Severity::Warning,
+                    message: if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
                         format!(
                             "IGES entity type {} form {} retained without neutral projection",
                             entry.entity_type, entry.form
@@ -110,21 +108,22 @@ pub(crate) fn decode(
                             "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
                             entry.entity_type, entry.form
                         )
-                    };
-                    IgesLossCode::RecordRetainedUntyped.note(message)
+                    },
+                    provenance: None,
                 }),
         );
     }
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
     notes.extend(graph::summary_notes(&references));
-    Ok(DecodeResult::with_source_fidelity(
+    Ok(DecodeResult::new(
         ir,
         DecodeReport {
             format: "iges".into(),
             container_only: options.container_only,
             geometry_transferred,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses,
             notes,
         },

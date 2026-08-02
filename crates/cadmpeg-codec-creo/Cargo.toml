@@ -14,6 +14,7 @@ keywords = ["cad", "creo", "pro-engineer", "prt", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 serde.workspace = true
 sha2.workspace = true

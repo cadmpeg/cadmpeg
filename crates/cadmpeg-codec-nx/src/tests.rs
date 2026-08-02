@@ -9,14 +9,15 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
-use cadmpeg_ir::decode::{DecodeMode, InspectOptions};
+
+use cadmpeg_codec_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::provenance::Exactness;
-use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::report::{LossCategory, LossKind};
+use cadmpeg_ir::Exactness;
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
@@ -24,10 +25,11 @@ use crate::test_support::*;
 use crate::NxCodec;
 
 fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
-    let arena = cadmpeg_ir::decode::DecodeArena::new();
-    let policy = cadmpeg_ir::decode::DecodePolicy::default();
-    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("bounded test input");
+    let arena = cadmpeg_codec_core::decode::DecodeArena::new();
+    let policy = cadmpeg_codec_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_codec_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("bounded test input");
     let container = container::scan_bytes(bytes.to_vec()).expect("test SPLMSSTR container");
     parasolid::extract_streams(&ctx, root, &container).expect("test Parasolid streams")
 }
@@ -35,7 +37,7 @@ fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
 fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOptions {
     DecodeOptions {
         container_only,
-        policy: cadmpeg_ir::decode::DecodePolicy {
+        policy: cadmpeg_codec_core::decode::DecodePolicy {
             mode,
             ..Default::default()
         },
@@ -1047,6 +1049,12 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         count: 3,
         second: None,
     }));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+        spacing: Length(10.0),
+        count: 1,
+        second: None,
+    }));
     assert!(crate::decode::pattern_is_incomplete(
         &PatternKind::CurveDriven {
             path: Some(PathRef::Native("nx:path".into())),
@@ -1071,7 +1079,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         &PatternKind::Composite {
             stages: vec![
                 PatternStage {
-                    pattern: Box::new(linear),
+                    pattern: Box::new(linear.clone()),
                     combination: PatternStageCombination::Initialize,
                 },
                 PatternStage {
@@ -1085,6 +1093,23 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
             ],
         }
     ));
+    let composite = PatternKind::Composite {
+        stages: vec![
+            PatternStage {
+                pattern: Box::new(linear),
+                combination: PatternStageCombination::Initialize,
+            },
+            PatternStage {
+                pattern: Box::new(PatternKind::Mirror {
+                    plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                }),
+                combination: PatternStageCombination::CartesianProduct,
+            },
+        ],
+    };
+    assert!(!crate::decode::pattern_is_incomplete(&composite));
+    assert_eq!(crate::decode::pattern_occurrence_count(&composite), Some(6));
 }
 
 #[test]
@@ -2067,7 +2092,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
 
 #[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
+    use cadmpeg_ir::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -2086,6 +2111,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         definition: FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(cadmpeg_ir::transform::Transform::identity()),
+            op: BooleanOp::NewBody,
         },
         native_ref: None,
     });
@@ -2128,6 +2154,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         ir.model.features[0].definition = FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(invalid_placement),
+            op: BooleanOp::NewBody,
         };
         crate::decode::append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
@@ -2279,6 +2306,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             native: "nx:body-selection#tools".into(),
         },
         op: cadmpeg_ir::features::BooleanOp::Join,
+        keep_tools: false,
     };
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
@@ -2735,10 +2763,63 @@ fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
     assert_eq!(pairs[0].values, [0.5, -0.5]);
     assert_eq!(pairs[0].value_offsets, [8, 17]);
     assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].discriminator, bytes[..8]);
 
     let mut malformed = bytes;
     malformed[16] = 1;
     assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
+}
+
+#[test]
+fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
+    let short = [
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    let extended = [
+        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x30, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xe0, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    ];
+
+    let short_pair = crate::om::sketch_payload_fixed_pairs(&short);
+    assert_eq!(short_pair.len(), 1);
+    assert_eq!(short_pair[0].values, [0.5, -0.5]);
+    assert_eq!(short_pair[0].value_offsets, [15, 23]);
+    assert_eq!(short_pair[0].discriminator, short[..15]);
+
+    let extended_pair = crate::om::sketch_payload_fixed_pairs(&extended);
+    assert_eq!(extended_pair.len(), 1);
+    assert_eq!(extended_pair[0].values, [0.25, -0.25]);
+    assert_eq!(extended_pair[0].value_offsets, [17, 25]);
+    assert_eq!(extended_pair[0].discriminator, extended[..17]);
+
+    let mut malformed = short;
+    malformed[23] = 0x31;
+    assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
+}
+
+#[test]
+fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
+    let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0x00);
+    let mut shifted = 3.25_f32.to_be_bytes();
+    shifted[0] += 0x10;
+    bytes.extend_from_slice(&shifted);
+
+    let pairs = crate::om::sketch_payload_mixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].fixed_value, 0.5);
+    assert_eq!(pairs[0].binary32_value, 3.25);
+    assert_eq!(pairs[0].fixed_raw_value, [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].binary32_raw_value, shifted);
+    assert_eq!(pairs[0].value_offsets, [8, 17]);
+
+    let mut malformed = bytes;
+    malformed[16] = 1;
+    assert!(crate::om::sketch_payload_mixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -2893,6 +2974,56 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
         crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
             bytes: &null,
             payload: &null,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_hole_package_lane_retains_the_exact_four_block_group() {
+    let payload = [
+        0x7e, 0x00, 0x00, 0x01, 0x00, 0x00, 0x46, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcd,
+        0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
+    ];
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label: crate::om::OperationLabel {
+            header_offset: 100,
+            offset: 120,
+            value: "HOLE PACKAGE",
+            object_indices: [None; 4],
+            object_index_offsets: [0; 4],
+        },
+    };
+    let lane = crate::om::hole_package_construction_group_lane(record).unwrap();
+    assert_eq!(lane.offset, 1);
+    assert_eq!(lane.selector, 0x46);
+    assert_eq!(lane.branch, 0x11);
+    assert_eq!(
+        lane.references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [205, 206, 207, 208]
+    );
+    assert_eq!(
+        lane.references
+            .iter()
+            .map(|reference| reference.offset)
+            .collect::<Vec<_>>(),
+        [213, 215, 222, 224]
+    );
+
+    let mut mismatched_branch = payload;
+    mismatched_branch[17] = 0x12;
+    assert!(
+        crate::om::hole_package_construction_group_lane(crate::om::OperationRecord {
+            bytes: &mismatched_branch,
+            payload: &mismatched_branch,
             ..record
         })
         .is_none()
@@ -3676,6 +3807,20 @@ fn om_size_frame_bounds_its_type_declarations() {
     let mut truncated = bytes;
     truncated.pop();
     assert!(crate::om::sections(&truncated).is_empty());
+}
+
+#[test]
+fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
+    let mut bytes = size_framed_om_section();
+    let payload_len = u32::try_from(bytes.len() - 12).expect("short OM fixture");
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    let sections = crate::om::sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].byte_len, bytes.len());
+    assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
+
+    bytes.push(0);
+    assert!(crate::om::sections(&bytes).is_empty());
 }
 
 #[test]
@@ -5417,7 +5562,7 @@ fn decode_reports_unclassified_bounded_offset_store_controls() {
     assert_eq!(attributes["classified_offset_store_control_count"], "0");
     assert_eq!(attributes["unclassified_offset_store_control_count"], "1");
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == LossCategory::DesignIntent
+        loss.code.category() == LossCategory::Other
             && loss
                 .message
                 .contains("1 of 1 bounded offset-store control block(s)")
@@ -5755,13 +5900,32 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert_eq!(records[0].byte_len, 26);
     assert_eq!(records[0].xmt, 10);
     assert_eq!(records[0].sequence, 2);
-    assert_eq!(records[0].discriminator, 0x21);
-    assert_eq!(records[0].references, vec![3, 4, 5, 6, 7, 8]);
+    assert_eq!(records[0].definition_xmt, 0x21);
+    assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
+    assert_eq!(records[0].trailing_references, [8]);
     assert_eq!(
         crate::parasolid::entity_51_record_at(&bytes, 0),
         Some(records[0].clone())
     );
     assert!(crate::parasolid::entity_51_record_at(&bytes[..25], 0).is_none());
+}
+
+#[test]
+fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
+    let mut bytes = vec![0, 0x51];
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&(-7_233i16).to_be_bytes());
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    for reference in 3..=8u16 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
+
+    let record = crate::parasolid::entity_51_record_at(&bytes, 0).unwrap();
+    assert_eq!(record.definition_xmt, 40_000);
+    assert_eq!(record.byte_len, 28);
+    assert!(crate::parasolid::entity_51_record_at(&bytes[..27], 0).is_none());
 }
 
 #[test]
@@ -5778,7 +5942,8 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
         direct.extend_from_slice(&[0xaa, 0xbb]);
 
         let record = crate::parasolid::entity_51_record_at(&direct, 0).unwrap();
-        assert_eq!(record.references.len(), (flags + 5) as usize);
+        assert_eq!(record.leading_references.len(), 5);
+        assert_eq!(record.trailing_references.len(), flags as usize);
         assert_eq!(record.byte_len, direct.len() - 2);
         assert!(crate::parasolid::entity_51_record_at(&direct[..direct.len() - 3], 0).is_none());
 
@@ -5795,7 +5960,8 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
         prefixed.extend_from_slice(&[0xaa, 0xbb]);
 
         let record = crate::parasolid::entity_51_record_at(&prefixed, 0).unwrap();
-        assert_eq!(record.references.len(), (flags + 5) as usize);
+        assert_eq!(record.leading_references.len(), 5);
+        assert_eq!(record.trailing_references.len(), flags as usize);
         assert_eq!(record.byte_len, prefixed.len() - 2);
         assert!(
             crate::parasolid::entity_51_record_at(&prefixed[..prefixed.len() - 3], 0).is_none()
@@ -5867,6 +6033,24 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
 }
 
 #[test]
+fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
+    let bytes = [
+        0xaa, 0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00, 0x1e,
+        0xbb,
+    ];
+    let records = crate::parasolid::field_names_records(&bytes);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(records[0].byte_len, 14);
+    assert_eq!(records[0].xmt, 25);
+    assert_eq!(records[0].name_xmts, [28, 29, 30]);
+    assert!(crate::parasolid::field_names_record_at(&bytes[..14], 1).is_none());
+
+    let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
+    assert!(crate::parasolid::field_names_records(&empty).is_empty());
+}
+
+#[test]
 fn parasolid_entity_53_doubles_require_complete_finite_values() {
     let mut bytes = vec![0xaa, 0x00, 0x53, 0xff];
     bytes.extend_from_slice(&2u32.to_be_bytes());
@@ -5889,6 +6073,90 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
     bytes[last..].copy_from_slice(&f64::NAN.to_be_bytes());
     assert!(crate::parasolid::entity_53_double_records(&bytes).is_empty());
     assert!(crate::parasolid::entity_53_double_record_at(&bytes, 1).is_none());
+}
+
+#[test]
+fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() {
+    let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
+        let mut bytes = vec![0x00, tag];
+        bytes.extend_from_slice(
+            &u32::try_from(vectors.len())
+                .expect("test vector count fits u32")
+                .to_be_bytes(),
+        );
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        for vector in vectors {
+            for component in vector {
+                bytes.extend_from_slice(&component.to_be_bytes());
+            }
+        }
+        bytes
+    };
+    let vectors = [[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]];
+
+    let points = crate::parasolid::entity_55_point_records(&vector_record(0x55, 20, &vectors));
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].values, vectors);
+    let vector_values =
+        crate::parasolid::entity_56_vector_records(&vector_record(0x56, 21, &vectors));
+    assert_eq!(vector_values.len(), 1);
+    assert_eq!(vector_values[0].values, vectors);
+    let directions =
+        crate::parasolid::entity_59_direction_records(&vector_record(0x59, 22, &vectors));
+    assert_eq!(directions.len(), 1);
+    assert_eq!(directions[0].values, vectors);
+
+    let four_vectors = [vectors[0], vectors[1], [7.0, 8.0, 9.0], [0.0, 1.0, 0.0]];
+    let axes = crate::parasolid::entity_57_axis_records(&vector_record(0x57, 23, &four_vectors));
+    assert_eq!(axes.len(), 1);
+    assert_eq!(
+        axes[0].values,
+        [
+            [four_vectors[0], four_vectors[1]],
+            [four_vectors[2], four_vectors[3]],
+        ]
+    );
+    assert!(crate::parasolid::entity_57_axis_records(
+        &vector_record(0x57, 23, &four_vectors[..3],)
+    )
+    .is_empty());
+
+    let mut nonfinite = vectors;
+    nonfinite[1][2] = f64::INFINITY;
+    assert!(
+        crate::parasolid::entity_55_point_records(&vector_record(0x55, 20, &nonfinite)).is_empty()
+    );
+}
+
+#[test]
+fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
+    let tags = [
+        0x00, 0x58, 0, 0, 0, 2, 0, 24, 0, 0, 0, 7, 0xff, 0xff, 0xff, 0xff,
+    ];
+    let records = crate::parasolid::entity_58_tag_records(&tags);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 24);
+    assert_eq!(records[0].values, [7, u32::MAX]);
+    assert!(crate::parasolid::entity_58_tag_records(&tags[..tags.len() - 1]).is_empty());
+
+    let code_units = [b'N' as u16, b'X' as u16, 0xd83d, 0xde80];
+    let mut unicode = vec![0x00, 0x62, 0xff];
+    unicode.extend_from_slice(&4u32.to_be_bytes());
+    unicode.extend_from_slice(&[0xff, 0xff, 0x00, 0x01]);
+    for code_unit in code_units {
+        unicode.extend_from_slice(&code_unit.to_be_bytes());
+    }
+    let records = crate::parasolid::entity_62_unicode_records(&unicode);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 32_768);
+    assert_eq!(records[0].code_units, code_units);
+    assert_eq!(records[0].value, "NX🚀");
+    assert!(crate::parasolid::entity_62_unicode_records(&unicode[..unicode.len() - 1]).is_empty());
+
+    let mut invalid = unicode;
+    invalid[15..17].copy_from_slice(&0xd800u16.to_be_bytes());
+    invalid[17..19].copy_from_slice(&0x0041u16.to_be_bytes());
+    assert!(crate::parasolid::entity_62_unicode_records(&invalid).is_empty());
 }
 
 #[test]
@@ -6907,7 +7175,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         tolerance: Some(1.0e-8),
     });
 
-    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     crate::decode::complete_exact_boundary_intersection_pcurves(&mut ir, &mut annotations);
 
     let ProceduralCurveDefinition::TolerantIntersection {
@@ -6923,7 +7191,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &ir.model.procedural_curves[0].curve,
             parameter,
         )
@@ -6968,7 +7236,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         direction: Point2::new(1.0, 0.0),
     };
     assert!(cadmpeg_ir::eval::model_curve_point_by_id(
-        &ir,
+        &cadmpeg_ir::index::ModelIndex::new(&ir),
         &ir.model.procedural_curves[0].curve,
         0.5,
     )
@@ -7406,12 +7674,9 @@ fn decode_transfers_point_plane_cylinder_line() {
 
     // No topology graph is fabricated; the loss is reported as blocking.
     assert!(result.ir.model.faces.is_empty() && result.ir.model.edges.is_empty());
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|l| l.category == cadmpeg_ir::report::LossCategory::Topology
-            && l.severity == cadmpeg_ir::report::Severity::Blocking));
+    assert!(result.report.losses.iter().any(|l| l.code.category()
+        == cadmpeg_ir::report::LossCategory::Topology
+        && l.severity == cadmpeg_ir::report::Severity::Blocking));
 
     // The Parasolid stream is preserved verbatim.
     let unknowns = result.ir.native_unknowns("nx").unwrap();
@@ -7467,9 +7732,67 @@ fn decode_emits_connected_primitive_brep() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.category != cadmpeg_ir::report::LossCategory::Topology));
+        .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::MaterialNotTransferred));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::AttributesNotTransferred));
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::AssemblyPlacementsNotTransferred
+            && loss.message.contains("Assembly occurrence placements")
+    }));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_reports_missing_assembly_placements_only_for_external_references() {
+    let file = prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        (
+            "/Root/UG_PART/ExternalReferences",
+            external_reference_stream(),
+        ),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::AssemblyPlacementsNotTransferred
+            && loss.message.contains("Assembly occurrence placements")
+    }));
+}
+
+#[test]
+fn decode_reports_material_loss_only_for_retained_material_assets() {
+    let file = prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        (
+            "/Root/materialsTif/Steel",
+            vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0],
+        ),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::MaterialNotTransferred
+            && loss.message.contains("Embedded material texture assets")
+    }));
 }
 
 #[test]
@@ -7479,9 +7802,13 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result.ir.model.procedural_surfaces[0].surface.clone();
     let expected = Point2::new(12.0, 7.0);
-    let point =
-        cadmpeg_ir::eval::model_surface_point_by_id(&result.ir, &surface, expected.u, expected.v)
-            .unwrap();
+    let point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
 
     let actual =
         crate::decode::offset_surface_parameters(&result.ir, &surface, point, None).unwrap();
@@ -7497,9 +7824,13 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             origin.z += 1.0e12;
         }
     }
-    let translated_point =
-        cadmpeg_ir::eval::model_surface_point_by_id(&translated, &surface, expected.u, expected.v)
-            .unwrap();
+    let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&translated),
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
     let translated_parameters = crate::decode::offset_surface_parameters_with_tolerance(
         &translated,
         &surface,
@@ -7542,7 +7873,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             record_bounds: None,
         });
     let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
-        &translated,
+        &cadmpeg_ir::index::ModelIndex::new(&translated),
         &nested_surface,
         expected.u,
         expected.v,
@@ -7567,8 +7898,13 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result.ir.model.procedural_surfaces[0].surface.clone();
     let seed = Point2::new(12.0, 7.0);
-    let mut point =
-        cadmpeg_ir::eval::model_surface_point_by_id(&result.ir, &surface, seed.u, seed.v).unwrap();
+    let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &surface,
+        seed.u,
+        seed.v,
+    )
+    .unwrap();
     point.x += 0.01;
 
     let actual = crate::decode::offset_surface_parameters_with_tolerance(
@@ -8968,7 +9304,7 @@ fn deltas_walks_complete_type_45_records() {
         surface_header.extend_from_slice(&value.to_be_bytes());
     }
     surface_header.extend_from_slice(&[2, b'B', b'B', b'B', b'B', b'B', b'B', b'B', b'B']);
-    surface_header.extend_from_slice(&[b'?', b'?', b'?', b'?']);
+    surface_header.extend_from_slice(b"????");
     for reference in [1u32, 1, 1, 1] {
         surface_header.extend(encoded_xmt(reference));
         surface_header.push(1);
@@ -10375,7 +10711,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             },
             cache_fit_tolerance: None,
         });
-    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let source_stream = annotations.stream("nx:test");
 
     crate::decode::attach_completed_intersection_pcurves(
@@ -10876,14 +11212,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     assert_eq!(lanes[0].len(), chart.len());
     for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
         let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &first,
             lanes[0][ordinal].u,
             lanes[0][ordinal].v,
         )
         .unwrap();
         let second_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &second,
             lanes[1][ordinal].u,
             lanes[1][ordinal].v,
@@ -10945,14 +11281,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     .unwrap();
     for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
         let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &cylinder,
             cylinder_uv.u,
             cylinder_uv.v,
         )
         .unwrap();
         let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &section_plane,
             plane_uv.u,
             plane_uv.v,
@@ -12167,9 +12503,12 @@ fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
     };
     assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let point =
-            cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
-                .expect("exact plane intersection evaluates");
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact plane intersection evaluates");
         let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
             &result.ir,
             &procedural.curve,
@@ -12228,9 +12567,12 @@ fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
         )
     }));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let point =
-            cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
-                .expect("exact generator evaluates");
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact generator evaluates");
         let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
             &result.ir,
             &procedural.curve,
@@ -12294,9 +12636,12 @@ fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
     };
     assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
     for parameter in [0.0, 0.5, 1.0] {
-        let point =
-            cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
-                .expect("exact cone generator evaluates");
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact cone generator evaluates");
         let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
             &result.ir,
             &procedural.curve,
@@ -12382,9 +12727,12 @@ fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
             )
         }));
         for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let point =
-                cadmpeg_ir::eval::model_curve_point_by_id(&result.ir, &procedural.curve, parameter)
-                    .unwrap_or_else(|| panic!("{family} meridian evaluates"));
+            let point = cadmpeg_ir::eval::model_curve_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+                &procedural.curve,
+                parameter,
+            )
+            .unwrap_or_else(|| panic!("{family} meridian evaluates"));
             let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
                 &result.ir,
                 &procedural.curve,
@@ -12844,11 +13192,15 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     let stream = topology_with_fully_extended_geometry_headers();
     let graph = crate::topology::Graph::parse(&stream);
     assert!(matches!(
-        graph.get(50, 6).and_then(|node| node.surface_geometry()),
+        graph
+            .get(50, 6)
+            .and_then(super::topology::Node::surface_geometry),
         Some(SurfaceGeometry::Plane { .. })
     ));
     assert!(matches!(
-        graph.get(30, 9).and_then(|node| node.curve_geometry()),
+        graph
+            .get(30, 9)
+            .and_then(super::topology::Node::curve_geometry),
         Some(CurveGeometry::Line { .. })
     ));
 
@@ -13361,8 +13713,8 @@ fn decode_retains_unsupported_named_stream_payloads() {
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
-        ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature, FeatureDefinition,
-        FeatureId,
+        BooleanOp, ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature,
+        FeatureDefinition, FeatureId,
     };
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -13464,6 +13816,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         definition: FeatureDefinition::Block {
             dimensions: None,
             placement: None,
+            op: BooleanOp::Unresolved,
         },
         native_ref: None,
     });
@@ -13480,9 +13833,12 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sweep {
-            profile: None,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
             sections: Vec::new(),
             path: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
             mode: cadmpeg_ir::features::SweepMode::Unresolved,
             orientation: None,
             transition: None,
@@ -13532,25 +13888,25 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 6);
-    assert_eq!(losses[0].category, LossCategory::DesignIntent);
+    assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
     assert!(losses[0]
         .message
         .contains("10 NX feature history operation"));
-    assert_eq!(losses[1].category, LossCategory::DesignIntent);
+    assert_eq!(losses[1].code.category(), LossCategory::DesignIntent);
     assert!(losses[1].message.contains("2 NX design configuration"));
-    assert_eq!(losses[2].category, LossCategory::DesignIntent);
+    assert_eq!(losses[2].code.category(), LossCategory::DesignIntent);
     assert!(losses[2].message.contains("DELETE (2)"));
-    assert_eq!(losses[3].category, LossCategory::DesignIntent);
+    assert_eq!(losses[3].code.category(), LossCategory::DesignIntent);
     assert!(losses[3].message.contains("datum coordinate system (1)"));
     assert!(losses[3].message.contains("datum plane (1)"));
     assert!(losses[3].message.contains("freeform surface (1)"));
     assert!(losses[3].message.contains("loft (2)"));
-    assert_eq!(losses[4].category, LossCategory::DesignIntent);
+    assert_eq!(losses[4].code.category(), LossCategory::DesignIntent);
     assert!(losses[4].message.contains("block (1)"));
     assert!(losses[4].message.contains("delete body (1)"));
     assert!(losses[4].message.contains("sketch (1)"));
     assert!(losses[4].message.contains("sweep (1)"));
-    assert_eq!(losses[5].category, LossCategory::DesignIntent);
+    assert_eq!(losses[5].code.category(), LossCategory::DesignIntent);
     assert!(losses[5].message.contains("1 NX sketch history feature"));
     assert!(losses[5].message.contains("1 have no neutral sketch graph"));
 
@@ -13574,10 +13930,12 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 6);
+    assert_eq!(losses.len(), 5);
     assert!(!losses[4].message.contains("sketch"));
-    assert!(losses[5].message.contains("no sketch constraints"));
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;
 
 #[test]
 fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
@@ -13621,10 +13979,11 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
     let mut indexed = segment_stream_payload();
     *indexed.last_mut().expect("indexed zlib integrity trailer") ^= 0x01;
     let indexed = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", indexed)]);
-    let arena = cadmpeg_ir::decode::DecodeArena::new();
-    let policy = cadmpeg_ir::decode::DecodePolicy::default();
-    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
-        .expect("bounded test input");
+    let arena = cadmpeg_codec_core::decode::DecodeArena::new();
+    let policy = cadmpeg_codec_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_codec_core::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
+            .expect("bounded test input");
     let container = container::scan_bytes(indexed.clone()).expect("test SPLMSSTR container");
     assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
 }
@@ -13696,7 +14055,7 @@ mod golden {
 
     use super::*;
 
-    /// Every arena name production writes via `set_arena` in `decode.rs`, extracted
+    /// Every arena name production writes via the native catalogue, extracted
     /// mechanically. This is the coverage denominator; `arena_coverage_is_a_subset`
     /// fails if production introduces an arena name this list does not know, which
     /// keeps the denominator honest as the code evolves.
@@ -13754,6 +14113,10 @@ mod golden {
         "external_reference_records",
         "external_reference_tail_reference_pairs",
         "external_references",
+        "fast_load_component_occurrences",
+        "fast_load_component_object_groups",
+        "fast_load_component_prototypes",
+        "fast_load_component_uuids",
         "feature_block_construction_payloads",
         "feature_block_construction_references",
         "feature_block_constructions",
@@ -13804,6 +14167,8 @@ mod golden {
         "feature_input_column_row_uses",
         "feature_input_column_targets",
         "feature_identical_instance_output_lanes",
+        "feature_hole_package_construction_group_lanes",
+        "feature_hole_package_construction_group_uses",
         "feature_multi_instance_output_lanes",
         "feature_operation_body_11_continuations",
         "feature_operation_body_members",
@@ -13839,6 +14204,7 @@ mod golden {
         "feature_sketch_named_point_block_uses",
         "feature_sketch_payload_coordinate_pairs",
         "feature_sketch_payload_fixed_pairs",
+        "feature_sketch_payload_mixed_pairs",
         "feature_sketch_payload_named_records",
         "feature_sketch_payload_names",
         "feature_sketch_payload_scalars",
@@ -13857,11 +14223,14 @@ mod golden {
         "material_texture_assets",
         "material_texture_catalog_entries",
         "object_records",
+        "object_record_handle_pairs",
         "object_references",
+        "object_uuid_values",
         "offset_store_named_points",
         "om_record_areas",
         "parasolid_attribute_class_uses",
-        "parasolid_attribute_numeric_class_uses",
+        "parasolid_attribute_field_uses",
+        "parasolid_attribute_field_names",
         "parasolid_attribute_definitions",
         "parasolid_blend_bound_records",
         "parasolid_blend_surface_records",
@@ -13883,10 +14252,16 @@ mod golden {
         "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
         "parasolid_entity_51_records",
+        "parasolid_entity_51_structured_uses",
         "parasolid_entity_51_string_uses",
         "parasolid_entity_52_integer_records",
         "parasolid_entity_53_double_records",
         "parasolid_entity_54_string_records",
+        "parasolid_entity_57_axis_records",
+        "parasolid_entity_58_tag_records",
+        "parasolid_entity_62_unicode_records",
+        "parasolid_entity_vector_records",
+        "parasolid_field_names_records",
         "parasolid_intersection_records",
         "parasolid_offset_surface_records",
         "parasolid_support_uv_records",
@@ -13899,6 +14274,8 @@ mod golden {
         "persistent_handles",
         "rmfastload_object_id_tables",
         "rmfastload_object_ids",
+        "saved_toggle_entries",
+        "saved_toggle_streams",
         "segment_body_bindings",
         "segment_body_lineage_statuses",
         "segment_index_rows",
@@ -14605,25 +14982,33 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (205), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (223), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
     /// arenas, all of them catalogue-driven, so no non-catalogued arena exists.
     #[test]
     fn catalogue_arenas_match_known_arenas() {
-        use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
+        use cadmpeg_ir::native::catalogue::Phase;
 
-        assert_eq!(CATALOGUE.len(), 205, "one catalogue row per model field");
+        use crate::native::catalogue::CATALOGUE;
+
+        assert_eq!(CATALOGUE.len(), 223, "one catalogue row per model field");
         assert_eq!(
-            CATALOGUE[note_group_a_end()].arena,
-            "feature_parameter_uses",
-            "group A ends immediately before semantic-island parameter notes"
+            CATALOGUE
+                .iter()
+                .filter(|row| row.phase == Phase::GroupA)
+                .count(),
+            106,
+            "group A family count"
         );
         assert_eq!(
-            CATALOGUE[note_group_b_end()].arena,
-            "external_reference_records",
-            "group B ends immediately before island-noted or arena-only rows"
+            CATALOGUE
+                .iter()
+                .filter(|row| row.phase == Phase::GroupB)
+                .count(),
+            9,
+            "group B family count"
         );
 
         let mut catalogue_arenas = BTreeSet::new();
@@ -14650,207 +15035,6 @@ mod golden {
         assert!(
             known_not_catalogue.is_empty(),
             "KNOWN_ARENAS entries absent from CATALOGUE: {known_not_catalogue:?}"
-        );
-    }
-
-    /// Serialize one fixture's [`ContainerSummary`] as stable pretty JSON through
-    /// the sealed [`CodecEntry::inspect`] entry point — the same container-scan
-    /// path the CLI's `inspect` command drives with a default [`InspectOptions`].
-    /// Inspection errors are frozen too (a `.prt` that fails to inspect is a real,
-    /// contract-relevant behavior), so this never panics on codec output.
-    fn inspect_snapshot(bytes: &[u8]) -> String {
-        let value =
-            match NxCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-                Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
-                Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
-            };
-        let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
-        text.push('\n');
-        text
-    }
-
-    /// Container inspection must be a pure function of the input bytes: inspecting
-    /// the same fixture twice must produce identical JSON, guarding against
-    /// `HashMap` iteration order, addresses, or timestamps leaking into the
-    /// [`ContainerSummary`].
-    #[test]
-    fn inspect_golden_output_is_deterministic() {
-        for (name, bytes) in fixtures() {
-            let first = inspect_snapshot(&bytes);
-            let second = inspect_snapshot(&bytes);
-            if first != second {
-                let (line, a, b) = first_line_diff(&first, &second);
-                panic!("fixture `{name}`: nondeterministic inspect output at line {line}\n    run 1: {a}\n    run 2: {b}");
-            }
-        }
-    }
-
-    /// Seed-replay equivalence gate for the Parasolid platform adoption.
-    ///
-    /// The NX codec keeps its own `extract_streams` scan loop and reuses only the
-    /// [`cadmpeg_ir::parasolid`] primitives [`has_prologue`](cadmpeg_ir::parasolid::has_prologue)
-    /// and [`schema_token`](cadmpeg_ir::parasolid::schema_token). This test is the
-    /// evidence for that choice and the guard that keeps it honest.
-    ///
-    /// Over the covering fixture set plus the `nx_parasolid`/`nx_container` seed
-    /// corpora, for every container with a `/Root/UG_PART/UG_PART` span it asserts:
-    ///
-    /// 1. The platform prologue predicate agrees with nx's own classification on
-    ///    every inflated stream: `has_prologue(inflated) == kind.is_parasolid()`.
-    /// 2. The platform schema read reproduces nx's schema token on every Parasolid
-    ///    stream: `schema_token(inflated) == stream.schema`.
-    /// 3. [`locate_streams`](cadmpeg_ir::parasolid::locate_streams) under both
-    ///    `Inflate::Bounded` and `Inflate::With(nx-flate2)` reproduces nx's
-    ///    *Parasolid* stream set exactly — `(payload-relative offset, inflated
-    ///    bytes, schema)` for every non-preview stream.
-    ///
-    /// It also confirms the divergence that forces the fallback: nx additionally
-    /// returns non-Parasolid *preview* streams (schema-less inflated members that
-    /// lack the `PS\0\0` prologue) which `locate_streams` drops. The corpus
-    /// exercises at least one such stream, so full `locate_streams` adoption would
-    /// lose a stream nx keeps. Reproducing nx's full stream set is therefore not
-    /// possible through the platform sniff, and the codec keeps its scan loop.
-    #[test]
-    fn parasolid_platform_reproduces_nx_stream_primitives() {
-        use cadmpeg_ir::parasolid::{
-            has_prologue, locate_streams, schema_token, Inflate, ParasolidStream,
-        };
-        use std::io::Read as _;
-
-        // nx's flate2 inflater: chunked ZlibDecoder, break on error, keep prefix.
-        fn nx_inflate(member: &[u8]) -> Option<Vec<u8>> {
-            let mut decoder = flate2::read::ZlibDecoder::new(member);
-            let mut inflated = Vec::new();
-            let mut chunk = [0u8; 8192];
-            loop {
-                match decoder.read(&mut chunk) {
-                    Ok(0) => break,
-                    Ok(read) => inflated.extend_from_slice(&chunk[..read]),
-                    Err(_) => break,
-                }
-            }
-            (!inflated.is_empty()).then_some(inflated)
-        }
-
-        // The `/Root/UG_PART/UG_PART` window nx scans, and its file-start offset.
-        fn part_window(container: &crate::container::Container) -> Option<(usize, Vec<u8>)> {
-            let (off, size) = container
-                .entries
-                .iter()
-                .find(|e| e.name == "/Root/UG_PART/UG_PART")
-                .and_then(|e| e.file_span)?;
-            let start = usize::try_from(off).ok()?;
-            let size = usize::try_from(size).ok()?;
-            let end = start.checked_add(size)?;
-            let bytes = container.data.get(start..end)?.to_vec();
-            Some((start, bytes))
-        }
-
-        type Set = std::collections::BTreeSet<(usize, Vec<u8>, Option<String>)>;
-
-        fn located_set(payload: &[u8], inflate: Inflate) -> Set {
-            locate_streams(payload, inflate)
-                .into_iter()
-                .map(
-                    |ParasolidStream {
-                         offset,
-                         bytes,
-                         schema,
-                     }| (offset, bytes, schema),
-                )
-                .collect()
-        }
-
-        // Corpus: the covering golden fixtures plus the on-disk seed corpora.
-        let mut corpus: Vec<(String, Vec<u8>)> = fixtures()
-            .into_iter()
-            .map(|(n, b)| (format!("fixture:{n}"), b))
-            .collect();
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-        for dir in [
-            manifest.join("../../seeds/nx_parasolid"),
-            manifest.join("../cadmpeg-fuzz/seeds/nx_container"),
-        ] {
-            if let Ok(rd) = std::fs::read_dir(&dir) {
-                for entry in rd.flatten() {
-                    if let Ok(bytes) = std::fs::read(entry.path()) {
-                        corpus.push((format!("seed:{}", entry.path().display()), bytes));
-                    }
-                }
-            }
-        }
-
-        let mut containers_with_span = 0usize;
-        let mut preview_streams = 0usize;
-
-        for (name, bytes) in corpus {
-            let arena = cadmpeg_ir::decode::DecodeArena::new();
-            let policy = cadmpeg_ir::decode::DecodePolicy::default();
-            let Ok((ctx, root)) =
-                cadmpeg_ir::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            else {
-                continue;
-            };
-            let Ok(container) = crate::container::scan_bytes(bytes.clone()) else {
-                continue;
-            };
-            let Some((start, part)) = part_window(&container) else {
-                continue;
-            };
-            containers_with_span += 1;
-
-            let streams = crate::parasolid::extract_streams(&ctx, root, &container)
-                .expect("bounded corpus decodes");
-            let mut nx_parasolid: Set = Set::new();
-            for stream in &streams {
-                // (1) prologue predicate agrees with nx's classification.
-                assert_eq!(
-                    has_prologue(&stream.inflated),
-                    stream.kind.is_parasolid(),
-                    "{name}: has_prologue disagrees with nx classification at offset {}",
-                    stream.file_offset
-                );
-                if stream.kind.is_parasolid() {
-                    // (2) platform schema read reproduces nx's schema.
-                    assert_eq!(
-                        schema_token(&stream.inflated),
-                        stream.schema,
-                        "{name}: schema_token diverges at offset {}",
-                        stream.file_offset
-                    );
-                    nx_parasolid.insert((
-                        stream.file_offset - start,
-                        stream.inflated.clone(),
-                        stream.schema.clone(),
-                    ));
-                } else {
-                    preview_streams += 1;
-                }
-            }
-
-            // (3) locate_streams reproduces nx's Parasolid set under both strategies.
-            assert_eq!(
-                located_set(&part, Inflate::Bounded),
-                nx_parasolid,
-                "{name}: locate_streams(Bounded) != nx Parasolid set"
-            );
-            assert_eq!(
-                located_set(&part, Inflate::With(nx_inflate)),
-                nx_parasolid,
-                "{name}: locate_streams(With) != nx Parasolid set"
-            );
-        }
-
-        assert!(
-            containers_with_span >= 90,
-            "corpus regressed: only {containers_with_span} containers had a UG_PART span"
-        );
-        // The forced-fallback divergence must remain exercised: nx keeps preview
-        // (non-`PS\0\0`) streams that the platform sniff drops.
-        assert!(
-            preview_streams >= 1,
-            "no preview stream in corpus; the divergence justifying the scan-loop \
-             fallback is no longer exercised"
         );
     }
 }

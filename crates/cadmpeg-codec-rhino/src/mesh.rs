@@ -10,8 +10,10 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, ExpandSpec, View};
+#[cfg(feature = "fuzzing")]
+use cadmpeg_codec_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_codec_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use flate2::{Decompress, FlushDecompress, Status};
@@ -125,7 +127,7 @@ pub(crate) struct MeshDecodeOptions {
     /// Source writer version used by version-gated fields.
     pub(crate) writer_version: Option<i64>,
     /// Source-object association assigned to the tessellation.
-    pub(crate) association: Option<cadmpeg_ir::provenance::SourceObjectAssociation>,
+    pub(crate) association: Option<cadmpeg_ir::SourceObjectAssociation>,
     /// Deterministic tessellation ID.
     pub(crate) id: String,
     /// Native-unit to millimeter scale.
@@ -683,8 +685,6 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    use cadmpeg_ir::decode::{DecodeArena, DecodePolicy};
-
     let expected = usize::from(u16::from_le_bytes([data[0], data[1]]));
     let Ok(mut reader) = BoundedReader::new(data, 2, data.len()) else {
         return;
@@ -1054,7 +1054,7 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
 mod tests {
     use std::io::Write;
 
-    use cadmpeg_ir::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_codec_core::decode::{DecodeArena, DecodePolicy};
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 

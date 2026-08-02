@@ -20,7 +20,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each custom unit symbol convert a curve-relation value to canonical units?
 
-**Known.** `creo_prt.md:3446` defines the built-in unit symbols, their dimensions, and their canonical conversions. Celsius and Fahrenheit use affine conversions.
+**Known.** `creo_prt.md` §8.3 "Square brackets following a numeric literal or parameter expression contain a" defines the built-in unit symbols, their dimensions, and their canonical conversions. Celsius and Fahrenheit use affine conversions.
 
 **Need.** We must know each custom conversion to evaluate a relation that uses the symbol.
 
@@ -28,7 +28,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which custom unit definitions use an affine offset, and what offset does each definition use?
 
-**Known.** `creo_prt.md:3466` states that an affine unit cannot be part of a compound unit.
+**Known.** `creo_prt.md` §8.3 "Square brackets following a numeric literal or parameter expression contain a" states that an affine unit cannot be part of a compound unit.
 
 **Need.** We must know the offset to normalize temperature-like custom values.
 
@@ -36,7 +36,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What slot transition does each other stateful `local_sys f9 04 03` token encode?
 
-**Known.** `creo_prt.md:3521` defines the twelve explicit frame slots. `creo_prt.md:3525` assigns the rank-two image to the shared plane-frame production.
+**Known.** `creo_prt.md` §8.3 "The identifiers `r`, `theta`, and `z` define cylindrical curve coordinates" defines the twelve explicit frame slots. `creo_prt.md` §8.3 "A curve-equation entity carries its placement" assigns the rank-two image to the shared plane-frame production.
 
 **Need.** We must know the other transitions to decode a complete curve-equation placement.
 
@@ -44,7 +44,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
 
-**Known.** `creo_prt.md:1284` defines the direct eight-slot pcurve body and its endpoint order.
+**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body and its endpoint order.
 
 **Need.** We must know the other transitions to decode all pcurve endpoint arrays.
 
@@ -52,7 +52,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What value does each positive DICT prefix outside a defined scalar lane encode?
 
-**Known.** `creo_prt.md:150` defines the DICT reconstruction rule and the lane-specific prefix tables. A lane-specific interpretation has priority.
+**Known.** `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" defines the DICT reconstruction rule and the lane-specific prefix tables. `creo_prt.md` §2.3 "Each record grammar defines the DICT lane for its scalar slots." gives the lane-specific priority rule.
 
 **Need.** We must know the remaining prefixes to decode scalar values without using a value from the wrong lane.
 
@@ -60,7 +60,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What value does each undefined negative DICT prefix encode in its scalar lane?
 
-**Known.** `creo_prt.md:150` defines the negative prefixes that have a complete reconstruction rule. An undefined token remains one bounded scalar slot.
+**Known.** `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" defines the negative prefixes that have a complete reconstruction rule and the byte widths of unresolved forms. `creo_prt.md` §5 "`feat_outl_info.outline f9 02 03` stores six sequential feature-local scalar" states that an undefined prefix does not remove a scalar slot.
 
 **Need.** We must know the remaining prefixes to decode geometry records that contain negative values.
 
@@ -68,7 +68,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What grammar does each `double_xar` slot use when it is not a defined literal, scalar, placeholder, or terminal slot?
 
-**Known.** `creo_prt.md:204` defines the counted array, literal-one slot, literal-zero slot, two recursive placeholder images, scalar slots, and terminal null slot.
+**Known.** `creo_prt.md` §2.3 "An expanded" defines the counted array, literal-one slot, literal-zero slot, two recursive placeholder images, scalar slots, and terminal null slot.
 
 **Need.** We must know the other grammars to keep the counted slot boundary aligned.
 
@@ -76,7 +76,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What bounds and semantics apply to a variable-length `e5` slot in `double_xar`?
 
-**Known.** `creo_prt.md:204` defines `e5 07 23 11 2e` as one exact recursive placeholder image.
+**Known.** `creo_prt.md` §2.3 "An expanded" defines `e5 07 23 11 2e` as one exact recursive placeholder image.
 
 **Need.** We must know the bounds to distinguish one slot from following slots.
 
@@ -84,7 +84,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What scalar value does each undefined prefix in a positional plane envelope encode?
 
-**Known.** `creo_prt.md:1059` through `creo_prt.md:1207` define the standard, compact, held-coordinate, and planar-envelope plane forms.
+**Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard, compact, held-coordinate, and planar-envelope plane forms.
 
 **Need.** We must know the remaining prefixes to construct the plane envelope and domain.
 
@@ -92,7 +92,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What role does each value in an unsuffixed terminal six-scalar frame have?
 
-**Known.** `creo_prt.md:3601` defines six-scalar `MdlRefInfo` line rows as `end1.xyz` followed by `end2.xyz`. Equality of one coordinate pair does not identify that grammar in another record family.
+**Known.** `creo_prt.md` §8.5 "`MdlRefInfo`" defines six-scalar `MdlRefInfo` line rows as `end1.xyz` followed by `end2.xyz`. Equality of one coordinate pair does not identify that grammar in another record family.
 
 **Need.** We must know the roles to distinguish endpoints, frame vectors, plane data, and trailers.
 
@@ -100,7 +100,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What numeric value does a `var_arr` scalar of the form `00 XX YY` encode?
 
-**Known.** `creo_prt.md:175` defines its three-byte boundary. `creo_prt.md:1396` defines the separate nine-byte dimension-driven sentinel.
+**Known.** `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" defines its three-byte boundary. `creo_prt.md` §5 "Within each" defines the separate nine-byte dimension-driven sentinel.
 
 **Need.** We must know the value to solve the section variable.
 
@@ -108,7 +108,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What numeric value does a `var_arr` scalar of the form `01 XX YY ZZ` encode?
 
-**Known.** `creo_prt.md:175` defines its four-byte boundary.
+**Known.** `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" defines its four-byte boundary.
 
 **Need.** We must know the value to solve the section variable.
 
@@ -116,7 +116,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What numeric value does a `var_arr` scalar of the form `34 XX YY` encode?
 
-**Known.** `creo_prt.md:175` defines its three-byte boundary.
+**Known.** `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" defines its three-byte boundary.
 
 **Need.** We must know the value to solve the section variable.
 
@@ -126,7 +126,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What grammar and value rule apply to a per-instance cone half-angle that is not the terminal positive-DICT form?
 
-**Known.** `creo_prt.md:633` defines the terminal positive-DICT half-angle form and the support-frame construction.
+**Known.** `creo_prt.md` §3.2 "A positional cone suffix consists of exactly one complete nine-slot support" defines the terminal positive-DICT half-angle form and the support-frame construction.
 
 **Need.** We must know the override to construct the cone carrier.
 
@@ -134,7 +134,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What grammar and value rule apply to a `geom_type = 26` radius body that is not a tagged radius trailer or terminal prototype-minor-radius replay?
 
-**Known.** `creo_prt.md:813` through `creo_prt.md:1057` define the recognized torus and sphere radius forms and their carrier invariants.
+**Known.** `creo_prt.md` §3.3 "A `srf_prim_ptr(torus)` prototype stores" through `creo_prt.md` §3.3 "In named `radius`, `radius1`, and `radius2` fields" define the recognized torus and sphere radius forms and their carrier invariants.
 
 **Need.** We must know the override to construct the torus or sphere carrier.
 
@@ -142,7 +142,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field joins a later positional spline row to its prototype?
 
-**Known.** `creo_prt.md:271` through `creo_prt.md:811` define named surface prototypes and the positional replay forms that have a proven join.
+**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Cylinder and cone prototype local systems are parameter templates" define named surface prototypes and the positional replay forms that have a proven join.
 
 **Need.** We must know the join to apply the correct spline degree, knots, control points, and weights.
 
@@ -150,7 +150,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field joins a spline surface to each surface-intersection curve on that surface?
 
-**Known.** `creo_prt.md:1988` defines intersection-curve transfer when a surface pair and its endpoint witnesses select one candidate.
+**Known.** `creo_prt.md` §5 "An analytic" defines intersection-curve transfer when a surface pair and its endpoint witnesses select one candidate.
 
 **Need.** We must know the join to bind the trim curve to the spline surface.
 
@@ -158,7 +158,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric role does each point in a prototype-adjacent `tab_cyl` instance row have?
 
-**Known.** `creo_prt.md:674` defines the prototype fields. `creo_prt.md:702` defines the separate repeated cubic replay.
+**Known.** `creo_prt.md` §3.2 "A `tab_cyl`" defines the prototype fields. `creo_prt.md` §3.2 "A repeated `tab_cyl` cubic-curve replay has this structure:" defines the separate repeated cubic replay.
 
 **Need.** We must know the point roles to construct the ruled surface.
 
@@ -166,7 +166,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each parameter in a prototype-adjacent `tab_cyl` instance row control?
 
-**Known.** `creo_prt.md:674` defines the bounded `params` field and its relationship to the prototype.
+**Known.** `creo_prt.md` §3.2 "A `tab_cyl`" defines the bounded `params` field and its relationship to the prototype.
 
 **Need.** We must know the parameter roles to define the surface chart and domain.
 
@@ -174,7 +174,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a replay-bound `tab_cyl` select its placement when its axis span matches neither directrix-coordinate range uniquely?
 
-**Known.** `creo_prt.md:702` defines the repeated cubic replay and the unique axis-span placement cases.
+**Known.** `creo_prt.md` §3.2 "A repeated `tab_cyl` cubic-curve replay has this structure:" defines the repeated cubic replay and the unique axis-span placement cases.
 
 **Need.** We must know the selection rule to place the surface in model space.
 
@@ -182,7 +182,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What role does each slot in an `fc 02` body have outside the defined short pcurve form?
 
-**Known.** `creo_prt.md:1294` identifies `fc 02` as a short pcurve-style endpoint family.
+**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 02` as a short pcurve-style endpoint family.
 
 **Need.** We must know the roles to construct its curve and endpoints.
 
@@ -190,7 +190,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What grammar does an `fc 05` body use when it does not satisfy the defined cap-circle production?
 
-**Known.** `creo_prt.md:1305` through `creo_prt.md:1363` define complete point groups, scalar lanes, termination, cylinder binding, placement, and circle construction for cap-circle bodies.
+**Known.** `creo_prt.md` §4.2 "`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and" through `creo_prt.md` §4.2 "One `fc 05`" define complete point groups, scalar lanes, termination, cylinder binding, placement, and circle construction for cap-circle bodies.
 
 **Need.** We must know the other grammar to construct or reject the curve correctly.
 
@@ -198,7 +198,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the complete body grammar for `fc 08`?
 
-**Known.** `creo_prt.md:1294` identifies `fc 08` as a world-coordinate control-polyline family. Recognized coordinate tokens and opaque spans partition its retained body.
+**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 08` as a world-coordinate control-polyline family. Recognized coordinate tokens and opaque spans partition its retained body.
 
 **Need.** We must know the grammar to construct the control polyline.
 
@@ -206,7 +206,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What role does each field in a full `fc 13` sample group have?
 
-**Known.** `creo_prt.md:1303` identifies `fc 13` as a held-cap-ordinate control polyline.
+**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 13` as a held-cap-ordinate control polyline.
 
 **Need.** We must know the roles to construct the control polyline.
 
@@ -222,7 +222,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What body grammar does each `fc 04`, `fc 07`, `fc 09`, and `fc 0a` subtype use?
 
-**Known.** `creo_prt.md:1294` defines the common `fc <subtype>` opener and the recognized subtype families.
+**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." defines the common `fc <subtype>` opener and the recognized subtype families.
 
 **Need.** We must know each grammar to construct its curve family.
 
@@ -230,7 +230,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do a parabola's `type`, `t0`, `t1`, `c1`, `c2`, and `local_sys` fields define its carrier?
 
-**Known.** `creo_prt.md:3636` defines the named and positional conic fields, frame grammar, and field invariants. `creo_prt.md:3670` defines type 30 as an ellipse.
+**Known.** `creo_prt.md` §8.5 "The named entity in `ent_list(conic)` declares compact `id`, `type`, and" defines the named and positional conic fields, frame grammar, and field invariants. `creo_prt.md` §8.5 "A type-30 conic record defines a complete ellipse carrier without interpreting" defines type 30 as an ellipse.
 
 **Need.** We must know the equation to construct a parabola in model space.
 
@@ -238,7 +238,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do a hyperbola's `type`, `t0`, `t1`, `c1`, `c2`, and `local_sys` fields define its carrier?
 
-**Known.** `creo_prt.md:3636` defines the named and positional conic fields, frame grammar, and field invariants. `creo_prt.md:3670` defines type 30 as an ellipse.
+**Known.** `creo_prt.md` §8.5 "The named entity in `ent_list(conic)` declares compact `id`, `type`, and" defines the named and positional conic fields, frame grammar, and field invariants. `creo_prt.md` §8.5 "A type-30 conic record defines a complete ellipse carrier without interpreting" defines type 30 as an ellipse.
 
 **Need.** We must know the equation to construct a hyperbola in model space.
 
@@ -246,7 +246,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What carrier does each `MdlRefInfo` conic type other than the defined ellipse, parabola, and hyperbola types represent?
 
-**Known.** `creo_prt.md:3636` defines the common conic record grammar and retains all type and coefficient fields.
+**Known.** `creo_prt.md` §8.5 "The named entity in `ent_list(conic)` declares compact `id`, `type`, and" defines the common conic record grammar and retains all type and coefficient fields.
 
 **Need.** We must know the type mapping to construct the correct carrier.
 
@@ -254,7 +254,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What model-space equation does each positional cylinder body outside the defined local-system, compact axis-aligned, referenced planar-envelope, held-axis axial/radial, and repeated-diameter forms encode?
 
-**Known.** `creo_prt.md:271` through `creo_prt.md:811` define the recognized cylinder row families and their placement invariants.
+**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants.
 
 **Need.** We must know the equation to construct the cylinder carrier.
 
@@ -262,7 +262,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What model-space equation does each positional cone body outside the support-apex suffix and planar-envelope forms encode?
 
-**Known.** `creo_prt.md:597` through `creo_prt.md:672` define the recognized cone support, apex, axis, radial ratio, and half-angle construction.
+**Known.** `creo_prt.md` §3.2 "A repeated-diameter type-24 round body stores two scalar diameter endpoints" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay. Their" define the recognized cone support, apex, axis, radial ratio, and half-angle construction.
 
 **Need.** We must know the equation to construct the cone carrier.
 
@@ -270,7 +270,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What scalar value does the three-byte station token between a positional cone's model-reference token and half-angle encode?
 
-**Known.** `creo_prt.md:633` states that the support frame and half-angle define the exact cone independently of this token.
+**Known.** `creo_prt.md` §3.2 "A positional cone suffix consists of exactly one complete nine-slot support" states that the support frame and half-angle define the exact cone independently of this token.
 
 **Need.** We must know the value to preserve the native cone parameters.
 
@@ -278,7 +278,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What model-space equation does each non-plane surface row outside the defined analytic and spline families encode?
 
-**Known.** `creo_prt.md:256` defines the normalized surface-family mapping. `creo_prt.md:271` through `creo_prt.md:1207` define the surface prototypes and the recognized positional constructions.
+**Known.** `creo_prt.md` §3.1 "A decoder must not infer the kind of a row without" defines the normalized surface-family mapping. `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.4 "A standard positional envelope is exactly ten contiguous scalar slots" define the surface prototypes and the recognized positional constructions.
 
 **Need.** We must know the equation to construct the remaining surface carriers.
 
@@ -286,7 +286,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields define the varying radius of a non-prismatic round?
 
-**Known.** `creo_prt.md:2210` through `creo_prt.md:2273` define the recognized edge-treatment schemas, positional replay, and resolved constant-radius forms.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the recognized edge-treatment schemas, positional replay, and resolved constant-radius forms.
 
 **Need.** We must know the fields to construct the varying-radius blend.
 
@@ -302,7 +302,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which relation binds each round or fillet result to its generated face instances?
 
-**Known.** `creo_prt.md:2210` through `creo_prt.md:2273` define the generated-surface arrays and the rowless-cylinder special case.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the generated-surface arrays and the rowless-cylinder special case.
 
 **Need.** We must know the binding to add the generated faces to the body topology.
 
@@ -312,7 +312,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How must a nonlinear curve-equation `SOLVE` block be solved?
 
-**Known.** `creo_prt.md:3356` defines the block framing. The decoder solves complete, dimensionally valid affine systems over numeric unknowns and retains other blocks.
+**Known.** `creo_prt.md` §8.3 "`SOLVE` opens a simultaneous-equation block and `FOR` followed by one or more" defines the block framing. The decoder solves complete, dimensionally valid affine systems over numeric unknowns and retains other blocks.
 
 **Need.** We must know the nonlinear solve rules to evaluate all derived curve parameters.
 
@@ -328,7 +328,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields join a section definition to its sketch datum when the defined owner and generated-datum joins do not select one datum?
 
-**Known.** `creo_prt.md:2787` through `creo_prt.md:2843` define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
+**Known.** `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "n      = sketch_plane.normal" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
 
 **Need.** We must know the join to place the sketch in model space.
 
@@ -336,7 +336,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What equation does each relation type outside signed type 0, type 5, and type 14 encode?
 
-**Known.** `creo_prt.md:1365` through `creo_prt.md:2025` define the recognized linear, radius, incidence, and entity-geometry relations.
+**Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the recognized linear, radius, incidence, and entity-geometry relations.
 
 **Need.** We must know each equation to solve the section geometry.
 
@@ -360,7 +360,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What solver state does `ed ba 10 0c 8d ee 90 b4 0c` encode?
 
-**Known.** `creo_prt.md:1396` defines the nine-byte `ed <tail8>` production as one dimension-driven sentinel slot.
+**Known.** `creo_prt.md` §5 "Within each" defines the nine-byte `ed <tail8>` production as one dimension-driven sentinel slot.
 
 **Need.** We must know the state to evaluate or reject the affected variable correctly.
 
@@ -368,7 +368,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric role does each feature-definition `local_sys` frame have when one definition contains more than one frame?
 
-**Known.** `creo_prt.md:2506` defines the twelve-slot feature frame and its complete rank-two form.
+**Known.** `creo_prt.md` §6 "Feature-definition `local_sys f9 04 03` and `transf f9 04 03` bodies use the" defines the twelve-slot feature frame and its complete rank-two form.
 
 **Need.** We must know each role to select the feature placement.
 
@@ -376,7 +376,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric role does each feature-definition `transf` frame have when one definition contains more than one frame?
 
-**Known.** `creo_prt.md:2506` defines the twelve-slot transform body. A unique feature-bound section transform selects its section definition.
+**Known.** `creo_prt.md` §6 "Feature-definition `local_sys f9 04 03` and `transf f9 04 03` bodies use the" defines the twelve-slot transform body. A unique feature-bound section transform selects its section definition.
 
 **Need.** We must know each role to select the section-to-model transform.
 
@@ -400,7 +400,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields join a dimension-driven `var_arr` value to the relation dimension that drives it?
 
-**Known.** `creo_prt.md:1886` identifies the dimension-driven `var_arr` state. `uvar_id`, point key, relation identifier, relation dimension selector, and external dimension identifier are distinct identities.
+**Known.** `creo_prt.md` §5 "A `segtab` line whose two endpoint identifiers each have complete type-1 and" identifies the dimension-driven `var_arr` state. `uvar_id`, point key, relation identifier, relation dimension selector, and external dimension identifier are distinct identities.
 
 **Need.** We must know the join to assign the dimension value to the solver variable.
 
@@ -416,7 +416,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What neutral constraint does a unary type-1 or type-2 `skamp_ptr` incidence represent when its sense-0 operand is a `segtab` point and it has no matching `verhor` or type-14 axis line?
 
-**Known.** `creo_prt.md:1365` through `creo_prt.md:2025` define the incidence forms that have a proven point, line, or axis structure.
+**Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the incidence forms that have a proven point, line, or axis structure.
 
 **Need.** We must know the constraint to transfer it without inventing an axis.
 
@@ -448,7 +448,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which owner and namespace joins expose model, feature, component, and scoped dimension items to a curve-expression `exists()` query?
 
-**Known.** `creo_prt.md:3502` defines scoped identifiers and local `d<external_id>` binding. Other item classes retain their complete source identity.
+**Known.** `creo_prt.md` §8.3 "A curve-from-equation entity stores `expression f8 <count>` followed by exactly" defines the `exists()` query's complete-program identifier and decoded-section-dimension namespaces. Other item classes retain their complete source identity.
 
 **Need.** We must know the joins to return the correct query result.
 
@@ -456,7 +456,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which DEPDB relation supplies the `protextrude` or `protrevolve` axis when the part has no `ActDatums` section?
 
-**Known.** `creo_prt.md:3530` states that the operation references its axis through `gsec3d_ptr` placement fields, not through an inline vector.
+**Known.** `creo_prt.md` §8.3 "A `protextrude` or `protrevolve` operation references its sweep axis through" states that the operation references its axis through `gsec3d_ptr` placement fields, not through an inline vector.
 
 **Need.** We must know the relation to construct the sweep direction or revolution axis.
 
@@ -472,7 +472,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field selects the current regeneration snapshot when several section definitions select the same internal sketch-plane entity?
 
-**Known.** `creo_prt.md:2160` states that the immediate feature-state chain does not select a snapshot when more than one definition uses that entity.
+**Known.** `creo_prt.md` §6 "DEPDB also stores an internal sketch-datum chain." states that the immediate feature-state chain does not select a snapshot when more than one definition uses that entity.
 
 **Need.** We must know the selector to bind the feature to one section definition.
 
@@ -480,7 +480,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a section select its sketch datum when the generated-datum parent-table remainder is not unique?
 
-**Known.** `creo_prt.md:2787` through `creo_prt.md:2843` define the unique remainder rule and the nested `plane_id` join.
+**Known.** `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "n      = sketch_plane.normal" define the unique remainder rule and the nested `plane_id` join.
 
 **Need.** We must know the selection rule to place the sketch.
 
@@ -488,7 +488,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which datum supplies the in-plane orientation when the nested reference datum is parallel to the sketch normal?
 
-**Known.** `creo_prt.md:2927` states that the nested datum orients an in-plane axis only when it is perpendicular to the sketch-plane normal.
+**Known.** `creo_prt.md` §8.1 "`ref_planes`" states that the nested datum orients an in-plane axis only when it is perpendicular to the sketch-plane normal.
 
 **Need.** We must know the alternate datum to complete the sketch frame.
 
@@ -496,7 +496,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What scalar value does each `a5`, `9f`, `5c`, and `45` token encode in a named `ActDatums` outline?
 
-**Known.** `creo_prt.md:2807` defines the two-corner outline and its held-coordinate plane rule.
+**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section" defines the two-corner outline and its held-coordinate plane rule.
 
 **Need.** We must know the values to construct nonzero datum offsets and extents.
 
@@ -504,7 +504,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each rotational-sweep selector other than the full-turn `angle_choice` form define its angular interval?
 
-**Known.** `creo_prt.md:2377` defines `ea 44 00 00` as a complete 360-degree revolution. Linear sweep extents include one-sided, symmetric, and two-sided spans.
+**Known.** `creo_prt.md` §6 "In a class-916 or class-917 positional feature row, feature form `2` selects a" defines `ea 44 00 00` as a complete 360-degree revolution. Linear sweep extents include one-sided, symmetric, and two-sided spans.
 
 **Need.** We must know the selector semantics to trim a one-sided, symmetric, or two-sided revolution.
 
@@ -514,7 +514,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which DEPDB fields bind a feature recipe to the body topology that it changes?
 
-**Known.** `creo_prt.md:2858` states that sparse DEPDB curve rows do not encode final loops or trims. Feature identifiers bind materialized surface carriers to generating features.
+**Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" states that sparse DEPDB curve rows do not encode final loops or trims. Feature identifiers bind materialized surface carriers to generating features.
 
 **Need.** We must know the binding to apply the feature to the correct body.
 
@@ -538,7 +538,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields bind a topology vertex identifier to its XYZ coordinates?
 
-**Known.** `creo_prt.md:3150` through `creo_prt.md:3173` define coordinate recovery from unique incident analytic carriers.
+**Known.** `creo_prt.md` §8.2 "`vert_tab` chains bind a solved trim-vertex identifier to its incident `segtab` external" through `creo_prt.md` §8.2 "`vert_tab` chains bind a solved trim-vertex identifier to its incident `segtab` external" define coordinate recovery from unique incident analytic carriers.
 
 **Need.** We must know the stored binding to place vertices that carrier intersection cannot resolve uniquely.
 
@@ -546,7 +546,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields bind a rowless face-use reference to its face, loop, edge, and orientation outside the round-feature rowless-cylinder table?
 
-**Known.** `creo_prt.md:2210` through `creo_prt.md:2273` define the round-feature rowless-cylinder special case.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the round-feature rowless-cylinder special case.
 
 **Need.** We must know the general binding to construct those face uses.
 
@@ -562,7 +562,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the `lo_restore.direction` compact integer refer to, and how does it control loop traversal?
 
-**Known.** `creo_prt.md:2184` states that it belongs to a loop-restoration edge record and is not a sweep direction or extent.
+**Known.** `creo_prt.md` §6 "Within an `AllFeatur` `lo_restore` body, named-record type-one fields" states that it belongs to a loop-restoration edge record and is not a sweep direction or extent.
 
 **Need.** We must know its referent and sense to restore the loop order.
 
@@ -570,7 +570,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the `lo_restore.direction2` compact integer refer to, and how does it control loop traversal?
 
-**Known.** `creo_prt.md:2184` states that it belongs to a loop-restoration edge record and is not a sweep direction or extent.
+**Known.** `creo_prt.md` §6 "Within an `AllFeatur` `lo_restore` body, named-record type-one fields" states that it belongs to a loop-restoration edge record and is not a sweep direction or extent.
 
 **Need.** We must know its referent and sense to restore the loop order.
 
@@ -578,7 +578,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What semantic role does each of the four required `lo_hist` fields have?
 
-**Known.** `creo_prt.md:2750` defines the six-entry stored loop-history frame and preserves all field identities.
+**Known.** `creo_prt.md` §6 "A named `lo_id_tab_ptr` table can be followed in the same feature row by" defines the six-entry stored loop-history frame and preserves all field identities.
 
 **Need.** We must know the roles to reconstruct feature-local loop history.
 
@@ -618,7 +618,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields bind a `NeuPrtSld` appearance entry to an exact face instance?
 
-**Known.** `creo_prt.md:68` identifies `NeuPrtSld` as material, appearance, display, and tessellation data.
+**Known.** `creo_prt.md` §1.2 "| `NeuPrtSld` and display sections |" identifies `NeuPrtSld` as material, appearance, display, and tessellation data.
 
 **Need.** We must know the binding to apply the appearance to the correct face.
 
@@ -650,7 +650,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent?
 
-**Known.** `creo_prt.md:2082` states that the prefix is not part of the operation-family name and does not select the current same-ID state. Byte order selects the current state.
+**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name and does not select the current same-ID state. Byte order selects the current state.
 
 **Need.** We must know the prefix meanings to preserve the native state semantics.
 
@@ -660,7 +660,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometry record grammar does packed `VisibGeom` use outside the defined PSB rows?
 
-**Known.** `creo_prt.md:216` defines material `VisibGeom` namespaces that contain PSB `srf_array` and `crv_array` rows.
+**Known.** `creo_prt.md` §3 "`VisibGeom`" defines material `VisibGeom` namespaces that contain PSB `srf_array` and `crv_array` rows.
 
 **Need.** We must know the packed grammar to construct its remaining geometry.
 
@@ -668,7 +668,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does `SolidPrimdata` continue one triangle strip across record boundaries?
 
-**Known.** `creo_prt.md:3575` defines primitive scalar arrays, cumulative strip sizes, vertex and normal tuples, and alternating triangle winding.
+**Known.** `creo_prt.md` §8.4 "`SolidPrimdata` is a PSB compound stream. The named fields `p1`, `p2`, `pts`," defines primitive scalar arrays, cumulative strip sizes, vertex and normal tuples, and alternating triangle winding.
 
 **Need.** We must know the continuation rule to construct all strip triangles.
 
@@ -692,7 +692,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What grammar does each `DEPDB_DATA` body outside the defined surface rows, section definitions, and feature recipes use?
 
-**Known.** `creo_prt.md:2862` defines fixed-prefix surface rows in `DEPDB_DATA`. `creo_prt.md:2120` through `creo_prt.md:2208` define section and feature-definition boundaries.
+**Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines fixed-prefix surface rows in `DEPDB_DATA`. `creo_prt.md` §6 "Within one current-state record, `protextrude` identifies an additive linear" through `creo_prt.md` §6 "Classes 913" define section and feature-definition boundaries.
 
 **Need.** We must know the other grammars to transfer their design data.
 
@@ -700,7 +700,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What initial dictionary and code-width state does the compressed `DispDataTable` variant use?
 
-**Known.** `creo_prt.md:2860` defines `1f 9d 10` Unix-compress streams. `creo_prt.md:3569` states that code 256 is a literal dictionary entry and not a clear code.
+**Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines `1f 9d 10` Unix-compress streams. `creo_prt.md` §8.3 "Unix-compress streams with header `1f 9d 10` grow code width" states that code 256 is a literal dictionary entry and not a clear code.
 
 **Need.** We must know the initial state to decompress the table deterministically.
 
@@ -716,7 +716,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do references traverse the configuration driver table selected by a non-null `FamilyInf.drv_tbl_ptr`?
 
-**Known.** `creo_prt.md:3560` defines the null and referenced pointer forms and the configuration-root identity. A null pointer means that the part has no family-table configurations.
+**Known.** `creo_prt.md` §8.3 "`FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table" defines the null and referenced pointer forms and the configuration-root identity. A null pointer means that the part has no family-table configurations.
 
 **Need.** We must know the traversal to enumerate all configuration rows.
 

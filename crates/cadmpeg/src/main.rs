@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::default_trait_access, clippy::unwrap_used))]
 //! The `cadmpeg` command-line interface.
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
@@ -7,19 +8,14 @@
 //! limits, loss reporting, and exit-status semantics.
 
 mod commands;
-mod diff;
-mod envelope;
-mod format;
 mod loader;
 mod registry;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use cadmpeg_ir::codec::{CadirEncoder, Encoder};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use crate::format::{resolve_format, ForcedInput, Format, InputFormat};
 use crate::registry::Registry;
 
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
@@ -31,6 +27,19 @@ enum StepTarget {
     Ap242e1,
     Ap242e2,
     Ap242e3,
+}
+
+impl StepTarget {
+    fn schema(self) -> cadmpeg_step::StepSchema {
+        match self {
+            Self::Ap203e1 => cadmpeg_step::StepSchema::Ap203Edition1,
+            Self::Ap203e2 => cadmpeg_step::StepSchema::Ap203Edition2,
+            Self::Ap214 => cadmpeg_step::StepSchema::Ap214,
+            Self::Ap242e1 => cadmpeg_step::StepSchema::Ap242Edition1,
+            Self::Ap242e2 => cadmpeg_step::StepSchema::Ap242Edition2,
+            Self::Ap242e3 => cadmpeg_step::StepSchema::Ap242Edition3,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -45,16 +54,8 @@ struct StepOutputArgs {
 
 impl StepOutputArgs {
     fn options(&self) -> cadmpeg_step::StepWriteOptions {
-        let schema = match self.step_target {
-            StepTarget::Ap203e1 => cadmpeg_step::StepSchema::Ap203Edition1,
-            StepTarget::Ap203e2 => cadmpeg_step::StepSchema::Ap203Edition2,
-            StepTarget::Ap214 => cadmpeg_step::StepSchema::Ap214,
-            StepTarget::Ap242e1 => cadmpeg_step::StepSchema::Ap242Edition1,
-            StepTarget::Ap242e2 => cadmpeg_step::StepSchema::Ap242Edition2,
-            StepTarget::Ap242e3 => cadmpeg_step::StepSchema::Ap242Edition3,
-        };
         cadmpeg_step::StepWriteOptions {
-            schema,
+            schema: self.step_target.schema(),
             unsupported: if self.reject_step_losses {
                 cadmpeg_step::StepUnsupportedPolicy::Reject
             } else {
@@ -79,6 +80,24 @@ struct Cli {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Format {
+    /// Canonical CADIR JSON.
+    #[value(alias = "json")]
+    Cadir,
+    /// ISO 10303-21 STEP AP214.
+    Step,
+    /// `FreeCAD` `.FCStd`.
+    Fcstd,
+    /// Autodesk Fusion `.f3d`.
+    F3d,
+    /// `SolidWorks` `.sldprt`.
+    Sldprt,
+    /// Rhino `.3dm`.
+    #[value(alias = "3dm")]
+    Rhino,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum RhinoVersion {
     /// Rhino 5 archive version 50.
     #[value(name = "50", alias = "5")]
@@ -94,37 +113,103 @@ enum RhinoVersion {
     V8,
 }
 
-/// Build the encoder for a resolved output format.
-///
-/// A Rhino version against a non-Rhino format is an error. The caller carries
-/// this result unresolved and unwraps it only when export runs, so the guard
-/// surfaces after the decode and validation diagnostics, not before them.
-fn select_encoder(
-    format: Format,
-    step: &StepOutputArgs,
-    rhino_version: Option<RhinoVersion>,
-) -> anyhow::Result<Box<dyn Encoder>> {
-    if rhino_version.is_some() && format != Format::Rhino {
-        anyhow::bail!("--rhino-version requires Rhino output");
+impl RhinoVersion {
+    const fn codec(self) -> cadmpeg_codec_rhino::RhinoArchiveVersion {
+        match self {
+            Self::V5 => cadmpeg_codec_rhino::RhinoArchiveVersion::V5,
+            Self::V6 => cadmpeg_codec_rhino::RhinoArchiveVersion::V6,
+            Self::V7 => cadmpeg_codec_rhino::RhinoArchiveVersion::V7,
+            Self::V8 => cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
+        }
     }
-    let encoder: Box<dyn Encoder> = match format {
-        Format::Cadir => Box::new(CadirEncoder),
-        Format::Step => Box::new(cadmpeg_step::StepEncoder {
-            options: step.options(),
-        }),
-        Format::Fcstd => Box::new(cadmpeg_codec_freecad::FcstdCodec),
-        Format::F3d => Box::new(cadmpeg_codec_f3d::F3dCodec),
-        Format::Sldprt => Box::new(cadmpeg_codec_sldprt::SldprtCodec),
-        Format::Rhino => Box::new(cadmpeg_codec_rhino::RhinoEncoder::new(
-            match rhino_version {
-                Some(RhinoVersion::V5) => cadmpeg_codec_rhino::RhinoArchiveVersion::V5,
-                Some(RhinoVersion::V6) => cadmpeg_codec_rhino::RhinoArchiveVersion::V6,
-                Some(RhinoVersion::V7) => cadmpeg_codec_rhino::RhinoArchiveVersion::V7,
-                Some(RhinoVersion::V8) | None => cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
-            },
-        )),
-    };
-    Ok(encoder)
+}
+
+impl Format {
+    fn from_extension(extension: &str) -> Option<Self> {
+        match extension.to_ascii_lowercase().as_str() {
+            "cadir" | "json" => Some(Self::Cadir),
+            "step" | "stp" => Some(Self::Step),
+            "fcstd" => Some(Self::Fcstd),
+            "f3d" => Some(Self::F3d),
+            "sldprt" => Some(Self::Sldprt),
+            "3dm" => Some(Self::Rhino),
+            _ => None,
+        }
+    }
+
+    fn is_geometry_export(self) -> bool {
+        matches!(
+            self,
+            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino
+        )
+    }
+
+    fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
+        path.and_then(std::path::Path::extension)
+            .and_then(|extension| extension.to_str())
+            .and_then(Self::from_extension)
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Cadir => "cadir",
+            Self::Step => "step",
+            Self::Fcstd => "fcstd",
+            Self::F3d => "f3d",
+            Self::Sldprt => "sldprt",
+            Self::Rhino => "rhino",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum InputFormat {
+    /// `FreeCAD` `.FCStd`.
+    Fcstd,
+    /// Autodesk Fusion `.f3d`.
+    F3d,
+    /// `SolidWorks` `.sldprt`.
+    Sldprt,
+    /// CATIA V5 `.CATPart`.
+    #[value(alias = "catia")]
+    Catpart,
+    /// Siemens NX `.prt`.
+    Nx,
+    /// Creo Parametric `.prt`.
+    Creo,
+    /// Rhino `.3dm`.
+    #[value(alias = "3dm")]
+    Rhino,
+    /// IGES `.igs` or `.iges`.
+    #[value(alias = "igs")]
+    Iges,
+    /// ISO 10303 STEP.
+    Step,
+    /// Canonical CADIR JSON.
+    Cadir,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ForcedInput {
+    Codec(&'static str),
+    Cadir,
+}
+
+impl InputFormat {
+    fn resolution(self) -> ForcedInput {
+        match self {
+            Self::Fcstd => ForcedInput::Codec("fcstd"),
+            Self::F3d => ForcedInput::Codec("f3d"),
+            Self::Sldprt => ForcedInput::Codec("sldprt"),
+            Self::Catpart => ForcedInput::Codec("catia"),
+            Self::Nx => ForcedInput::Codec("nx"),
+            Self::Creo => ForcedInput::Codec("creo"),
+            Self::Rhino => ForcedInput::Codec("rhino"),
+            Self::Iges => ForcedInput::Codec("iges"),
+            Self::Step => ForcedInput::Codec("step"),
+            Self::Cadir => ForcedInput::Cadir,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -164,19 +249,25 @@ enum LimitProfile {
 }
 
 impl DecodeArgs {
-    fn options(&self) -> cadmpeg_ir::codec::DecodeOptions {
-        let limits = match self.limits {
-            LimitProfile::Desktop => cadmpeg_ir::decode::ResourceLimits::desktop(),
-            LimitProfile::Service => cadmpeg_ir::decode::ResourceLimits::service(),
-        };
+    fn options(&self) -> cadmpeg_ir::DecodeOptions {
+        let limits = self.limits.limits();
         let mode = if self.strict {
-            cadmpeg_ir::decode::DecodeMode::Strict
+            cadmpeg_codec_core::decode::DecodeMode::Strict
         } else {
-            cadmpeg_ir::decode::DecodeMode::Salvage
+            cadmpeg_codec_core::decode::DecodeMode::Salvage
         };
-        cadmpeg_ir::codec::DecodeOptions {
+        cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
-            policy: cadmpeg_ir::decode::DecodePolicy { mode, limits },
+            policy: cadmpeg_codec_core::decode::DecodePolicy { mode, limits },
+        }
+    }
+}
+
+impl LimitProfile {
+    const fn limits(self) -> cadmpeg_codec_core::decode::ResourceLimits {
+        match self {
+            LimitProfile::Desktop => cadmpeg_codec_core::decode::ResourceLimits::desktop(),
+            LimitProfile::Service => cadmpeg_codec_core::decode::ResourceLimits::service(),
         }
     }
 }
@@ -190,9 +281,12 @@ enum Command {
         /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
-        /// Write a versioned JSON summary to this file.
+        /// Write a versioned JSON command report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
+        /// Resource-limit profile applied during inspection.
+        #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+        limits: LimitProfile,
         #[command(flatten)]
         input_args: InputArgs,
     },
@@ -221,7 +315,7 @@ enum Command {
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
-        /// Write a versioned JSON result to this file.
+        /// Write a versioned JSON command report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
         #[command(flatten)]
@@ -276,7 +370,7 @@ enum Command {
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
-        /// Write a versioned JSON result to this file.
+        /// Write a versioned JSON command report to this file.
         #[arg(long)]
         report: Option<PathBuf>,
         #[command(flatten)]
@@ -327,6 +421,7 @@ fn main() -> ExitCode {
             input,
             json,
             report,
+            limits,
             input_args,
         } => commands::inspect(
             &registry,
@@ -334,6 +429,7 @@ fn main() -> ExitCode {
             input_args.forced(),
             json,
             report.as_deref(),
+            limits.limits(),
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Decode {
@@ -350,7 +446,7 @@ fn main() -> ExitCode {
             force,
             report.as_deref(),
             input_args.forced(),
-            decode.options(),
+            &decode,
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Validate {
@@ -363,7 +459,7 @@ fn main() -> ExitCode {
             &registry,
             &input,
             input_args.forced(),
-            decode.options(),
+            &decode,
             json,
             report.as_deref(),
         )
@@ -380,26 +476,24 @@ fn main() -> ExitCode {
             input_args,
             decode,
             step,
-        } => match resolve_format(format, output.as_deref()) {
-            Ok(resolved) => commands::run_export(
-                &registry,
-                &input,
-                commands::ExportPipeline {
-                    format: resolved,
-                    encoder: select_encoder(resolved, &step, rhino_version),
-                    out: output.as_deref(),
-                    report: report.as_deref(),
-                    force,
-                    allow_empty,
-                    reject_lossy,
-                    forced_input: input_args.forced(),
-                    gate: commands::ValidationGate::Skip,
-                },
-                decode.options(),
-            )
-            .map(|()| ExitCode::SUCCESS),
-            Err(error) => Err(error),
-        },
+        } => commands::export(
+            &registry,
+            &input,
+            format,
+            output.as_deref(),
+            commands::ConversionPlan {
+                force,
+                report,
+                validation: commands::ValidationMode::Skipped,
+                allow_empty,
+                reject_lossy,
+                rhino_version: rhino_version.map(RhinoVersion::codec),
+                step_options: step.options(),
+                forced_input: input_args.forced(),
+            },
+            &decode,
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Diff {
             a,
             b,
@@ -408,21 +502,20 @@ fn main() -> ExitCode {
             json,
             report,
             decode,
-        } => diff::diff(
+        } => commands::diff(
             &registry,
-            diff::DiffInput {
+            commands::DiffInput {
                 path: &a,
                 forced: input_format_a.map(InputFormat::resolution),
             },
-            diff::DiffInput {
+            commands::DiffInput {
                 path: &b,
                 forced: input_format_b.map(InputFormat::resolution),
             },
-            decode.options(),
+            &decode,
             json,
             report.as_deref(),
-        )
-        .map(|()| ExitCode::SUCCESS),
+        ),
         Command::Convert {
             input,
             format,
@@ -436,78 +529,31 @@ fn main() -> ExitCode {
             input_args,
             decode,
             step,
-        } => match resolve_format(format, output.as_deref()) {
-            Ok(resolved) => commands::run_export(
-                &registry,
-                &input,
-                commands::ExportPipeline {
-                    format: resolved,
-                    encoder: select_encoder(resolved, &step, rhino_version),
-                    out: output.as_deref(),
-                    report: report.as_deref(),
-                    force,
-                    allow_empty,
-                    reject_lossy,
-                    forced_input: input_args.forced(),
-                    gate: commands::ValidationGate::Require { allow_invalid },
-                },
-                decode.options(),
-            )
-            .map(|()| ExitCode::SUCCESS),
-            Err(error) => Err(error),
-        },
+        } => commands::convert(
+            &registry,
+            &input,
+            format,
+            output.as_deref(),
+            commands::ConversionPlan {
+                force,
+                report,
+                validation: commands::ValidationMode::Required { allow_invalid },
+                allow_empty,
+                reject_lossy,
+                rhino_version: rhino_version.map(RhinoVersion::codec),
+                step_options: step.options(),
+                forced_input: input_args.forced(),
+            },
+            &decode,
+        )
+        .map(|()| ExitCode::SUCCESS),
     };
-    result.unwrap_or_else(
-        |err| match err.downcast_ref::<commands::SemanticFailure>() {
-            Some(failure) => {
-                if !failure.is_silent() {
-                    eprintln!("error: {err:#}");
-                }
-                ExitCode::from(1)
-            }
-            None => {
-                eprintln!("error: {err:#}");
-                ExitCode::from(2)
-            }
-        },
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{select_encoder, RhinoVersion, StepOutputArgs, StepTarget};
-    use crate::format::Format;
-
-    fn step_args() -> StepOutputArgs {
-        StepOutputArgs {
-            step_target: StepTarget::default(),
-            reject_step_losses: false,
+    result.unwrap_or_else(|err| {
+        eprintln!("error: {err:#}");
+        if err.downcast_ref::<commands::SemanticFailure>().is_some() {
+            ExitCode::from(1)
+        } else {
+            ExitCode::from(2)
         }
-    }
-
-    #[test]
-    fn select_encoder_covers_every_format() {
-        let step = step_args();
-        for format in [
-            Format::Cadir,
-            Format::Step,
-            Format::Fcstd,
-            Format::F3d,
-            Format::Sldprt,
-            Format::Rhino,
-        ] {
-            let encoder = select_encoder(format, &step, None)
-                .expect("every format resolves to an encoder without a Rhino version");
-            assert_eq!(encoder.id(), format.name());
-        }
-    }
-
-    #[test]
-    fn select_encoder_rejects_rhino_version_on_non_rhino_format() {
-        let step = step_args();
-        match select_encoder(Format::Step, &step, Some(RhinoVersion::V6)) {
-            Ok(_) => panic!("a Rhino version against a non-Rhino format must be rejected"),
-            Err(error) => assert!(error.to_string().contains("requires Rhino output")),
-        }
-    }
+    })
 }

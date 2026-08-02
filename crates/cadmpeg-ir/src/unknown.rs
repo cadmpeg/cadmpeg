@@ -71,9 +71,6 @@ impl UnknownRecord {
                 Value::Array(self.links.into_iter().map(Value::String).collect()),
             );
         }
-        NativeRecord {
-            id: self.id.0,
-            fields,
-        }
+        NativeRecord::new(self.id.0, fields)
     }
 }

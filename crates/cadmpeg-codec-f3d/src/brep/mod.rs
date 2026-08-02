@@ -167,7 +167,8 @@ pub struct Stats {
     /// Faces resting on a spline/procedural surface whose shape was not decoded
     /// into a typed carrier; emitted with an unknown-geometry surface.
     pub unknown_surface_faces: usize,
-    /// Undecoded face-surface counts by full native record name.
+    /// Undecoded face-surface counts by owned native construction kind, or by
+    /// record head when the record owns no construction subtype.
     pub unknown_surface_kinds: std::collections::BTreeMap<String, usize>,
     /// Faces whose surface record explicitly delegates shape to mesh attributes.
     pub mesh_surface_faces: usize,
@@ -222,19 +223,33 @@ impl Brep {
     pub fn retain_body_keys(
         &mut self,
         selected_keys: &HashSet<u64>,
-    ) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    ) -> Result<(), cadmpeg_codec_core::CodecError> {
         let annotations = std::mem::take(&mut self.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_ir::codec::CodecError::Malformed(format!("BREP serialization failed: {error}"))
+            cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
-        let roots = self
+        let native_body_ids = self
+            .body_native_keys
+            .iter()
+            .map(|native| native.body.0.as_str())
+            .collect::<HashSet<_>>();
+        let mut roots = self
             .body_selectors()
             .into_iter()
             .filter(|(_, selector)| selected_keys.contains(selector))
             .map(|(body, _)| body.0)
             .collect::<HashSet<_>>();
+        // A Design body map selects native ASM body records. Neutral roots
+        // projected from other saved top-level entities have no ASM body key
+        // and remain part of the selected BREP blob.
+        roots.extend(
+            self.bodies
+                .iter()
+                .filter(|body| !native_body_ids.contains(body.id.0.as_str()))
+                .map(|body| body.id.0.clone()),
+        );
         let mut adjacency = HashMap::<String, HashSet<String>>::new();
         collect_entity_adjacency(&value, &owned, &mut adjacency);
         let mut reachable = roots;
@@ -248,7 +263,7 @@ impl Brep {
         }
         retain_root_entities(&mut value, &reachable);
         let mut retained: Self = value.deserialize_into().map_err(|error| {
-            cadmpeg_ir::codec::CodecError::Malformed(format!(
+            cadmpeg_codec_core::CodecError::Malformed(format!(
                 "retained BREP graph is invalid: {error}"
             ))
         })?;
@@ -265,10 +280,10 @@ impl Brep {
 
     /// Qualify every entity owned by this graph so several BREP blobs can
     /// coexist in one document model without record-index collisions.
-    pub fn qualify_ids(&mut self, namespace: &str) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    pub fn qualify_ids(&mut self, namespace: &str) -> Result<(), cadmpeg_codec_core::CodecError> {
         let annotations = std::mem::take(&mut self.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_ir::codec::CodecError::Malformed(format!("BREP serialization failed: {error}"))
+            cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
@@ -284,7 +299,7 @@ impl Brep {
             .collect::<HashMap<_, _>>();
         remap_owned_ids(&mut value, &replacements);
         let mut qualified: Self = value.deserialize_into().map_err(|error| {
-            cadmpeg_ir::codec::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
+            cadmpeg_codec_core::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
         })?;
         qualified.annotation_records = annotations
             .into_iter()
@@ -595,6 +610,7 @@ pub(crate) struct Reachable {
 pub(crate) struct WireShellTopology {
     wire_edges_by_shell: HashMap<i64, Vec<i64>>,
     free_vertices_by_shell: HashMap<i64, Vec<i64>>,
+    saved_free_edges: Vec<i64>,
 }
 
 /// Decode a framed active slice into the IR B-rep graph.
@@ -602,6 +618,30 @@ pub(crate) struct WireShellTopology {
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `f3d:brep:entity#<record-index>`, unique across the `RecordTable`.
 pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
+    decode_with_purpose(records, bytes, stream, DecodePurpose::Model)
+}
+
+/// Decode only the topology and analytic measurements used to bind ASM
+/// history. Free-form carrier shapes are not materialized because historical
+/// binding consumes their stable record identities, not their control data.
+pub(crate) fn decode_history_topology(records: &[Record], bytes: &[u8]) -> Brep {
+    decode_with_purpose(records, bytes, "history", DecodePurpose::History)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DecodePurpose {
+    /// Transfer complete neutral geometry and retained native records.
+    Model,
+    /// Transfer stable topology plus measurements used by history binding.
+    History,
+}
+
+fn decode_with_purpose(
+    records: &[Record],
+    bytes: &[u8],
+    stream: &str,
+    purpose: DecodePurpose,
+) -> Brep {
     let mut out = Brep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
@@ -612,10 +652,9 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
     let ref_width = header
         .as_ref()
         .map_or(8, |header| usize::from(header.width));
-    let release_major = header
+    let save_format_major = header
         .as_ref()
-        .and_then(|header| header.release)
-        .map(|release| release / 100);
+        .and_then(crate::asm_header::AsmHeader::save_format_major);
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records);
@@ -629,6 +668,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         &subtype_tables,
         &mut carriers,
         &mut reach,
+        purpose,
     );
     walk_reachable_topology(
         &mut out,
@@ -638,6 +678,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         &subtype_tables,
         &mut carriers,
         &mut reach,
+        purpose,
     );
     let wire = collect_wire_topology(
         &mut out,
@@ -647,6 +688,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         &subtype_tables,
         &mut carriers,
         &mut reach,
+        purpose,
     );
 
     let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach);
@@ -676,7 +718,7 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         records,
         bytes,
         &subtype_tables,
-        release_major,
+        save_format_major,
         &carriers,
         &reach,
     );
@@ -698,13 +740,15 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
         header_scale,
     );
     project_subshell_faces(&mut out, records, &by_index);
-    let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach);
-    emit_passthrough_unknowns(&mut out, records, bytes, &reach);
-    count_other_records(&mut out, records, &reach, &emitted_attributes);
-    emit_annotation_records(&mut out, records, &by_index, stream);
+    if purpose == DecodePurpose::Model {
+        let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach);
+        emit_passthrough_unknowns(&mut out, records, bytes, &reach);
+        count_other_records(&mut out, records, &reach, &emitted_attributes);
+        emit_annotation_records(&mut out, records, &by_index, stream);
 
-    classify_body_kinds(&mut out);
-    clamp_edge_ranges_to_carrier_domains(&mut out);
+        classify_body_kinds(&mut out);
+        clamp_edge_ranges_to_carrier_domains(&mut out);
+    }
 
     out
 }

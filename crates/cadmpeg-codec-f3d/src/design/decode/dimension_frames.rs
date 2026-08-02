@@ -10,12 +10,12 @@ use crate::records::{
     ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeOperand,
-    DesignEntityHeader, DesignObjectKind, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
+    DesignEntityHeader, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, PersistentSubentityTag,
+    SketchCurveIdentity, SketchPoint,
 };
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::wire::le::u32_at;
+use cadmpeg_codec_core::le::u32_at;
+use cadmpeg_codec_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Record slices every dimension-record decode pass reads: the container scan
@@ -270,19 +270,58 @@ pub fn bind_dimension_recipe_reference_candidates(
     records: &mut [DesignDimensionRecipeRecord],
     tags: &[PersistentSubentityTag],
 ) {
-    for reference in records.iter_mut().flat_map(|record| &mut record.references) {
-        bind_recipe_reference_candidates(reference, tags);
+    for record in records {
+        for reference in &mut record.references {
+            bind_recipe_reference_candidates(reference, tags, Some(&record.id));
+        }
     }
 }
 
 pub(crate) fn bind_recipe_reference_candidates(
     reference: &mut crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
+    owner_id: Option<&str>,
 ) {
-    reference.candidate_faces = recipe_reference_candidate_faces(reference, tags);
-    reference.candidate_edges = recipe_reference_candidate_edges(reference, tags);
-    reference.alternate_selector_faces = recipe_reference_alternate_selector_faces(reference, tags);
-    reference.alternate_selector_edges = recipe_reference_alternate_selector_edges(reference, tags);
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    reference.candidate_faces.clear();
+    reference.candidate_edges.clear();
+    reference.alternate_selector_faces.clear();
+    reference.alternate_selector_edges.clear();
+    for tag in tags.iter().filter(|tag| {
+        owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
+            && tag.token == reference.token
+            && tag.design_references.contains(&reference.design_reference)
+    }) {
+        let matching_selector = tag.selector == reference.selector;
+        match (&tag.target, matching_selector) {
+            (AttributeTarget::Face(face), true) => reference.candidate_faces.push(face.clone()),
+            (AttributeTarget::Edge(edge), true) => reference.candidate_edges.push(edge.clone()),
+            (AttributeTarget::Face(face), false) => {
+                reference.alternate_selector_faces.push(face.clone());
+            }
+            (AttributeTarget::Edge(edge), false) => {
+                reference.alternate_selector_edges.push(edge.clone());
+            }
+            _ => {}
+        }
+    }
+    reference
+        .candidate_faces
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.candidate_faces.dedup();
+    reference
+        .candidate_edges
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.candidate_edges.dedup();
+    reference
+        .alternate_selector_faces
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.alternate_selector_faces.dedup();
+    reference
+        .alternate_selector_edges
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.alternate_selector_edges.dedup();
 }
 
 /// Join dimension programs to byte-identical edge-recipe program tails.
@@ -303,6 +342,9 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     let mut ids = operands
         .iter()
         .filter(|operand| {
+            if native_stream(&operand.id) != native_stream(&record.id) {
+                return false;
+            }
             let Some(tail) = operand
                 .recipe_program
                 .get(7..)
@@ -320,98 +362,6 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     ids.sort();
     ids.dedup();
     ids
-}
-
-pub(crate) fn recipe_reference_candidate_edges(
-    reference: &crate::records::DesignRecipeReference,
-    tags: &[PersistentSubentityTag],
-) -> Vec<cadmpeg_ir::ids::EdgeId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let mut edges = tags
-        .iter()
-        .filter(|tag| {
-            tag.selector == reference.selector
-                && tag.token == reference.token
-                && tag.design_references.contains(&reference.design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Edge(edge) => Some(edge.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    edges.sort_by(|left, right| left.0.cmp(&right.0));
-    edges.dedup();
-    edges
-}
-
-pub(crate) fn recipe_reference_candidate_faces(
-    reference: &crate::records::DesignRecipeReference,
-    tags: &[PersistentSubentityTag],
-) -> Vec<cadmpeg_ir::ids::FaceId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let mut faces = tags
-        .iter()
-        .filter(|tag| {
-            tag.selector == reference.selector
-                && tag.token == reference.token
-                && tag.design_references.contains(&reference.design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Face(face) => Some(face.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    faces.sort_by(|left, right| left.0.cmp(&right.0));
-    faces.dedup();
-    faces
-}
-
-pub(crate) fn recipe_reference_alternate_selector_edges(
-    reference: &crate::records::DesignRecipeReference,
-    tags: &[PersistentSubentityTag],
-) -> Vec<cadmpeg_ir::ids::EdgeId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let mut edges = tags
-        .iter()
-        .filter(|tag| {
-            tag.selector != reference.selector
-                && tag.token == reference.token
-                && tag.design_references.contains(&reference.design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Edge(edge) => Some(edge.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    edges.sort_by(|left, right| left.0.cmp(&right.0));
-    edges.dedup();
-    edges
-}
-
-pub(crate) fn recipe_reference_alternate_selector_faces(
-    reference: &crate::records::DesignRecipeReference,
-    tags: &[PersistentSubentityTag],
-) -> Vec<cadmpeg_ir::ids::FaceId> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
-    let mut faces = tags
-        .iter()
-        .filter(|tag| {
-            tag.selector != reference.selector
-                && tag.token == reference.token
-                && tag.design_references.contains(&reference.design_reference)
-        })
-        .filter_map(|tag| match &tag.target {
-            AttributeTarget::Face(face) => Some(face.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    faces.sort_by(|left, right| left.0.cmp(&right.0));
-    faces.dedup();
-    faces
 }
 
 pub(crate) fn recipe_record_prefix(
@@ -979,10 +929,7 @@ pub fn decode_dimension_annotation_frames(
             .collect::<HashSet<_>>();
         let sketch_entities = entities
             .iter()
-            .filter(|entity| {
-                native_stream(&entity.id) == Some(stream)
-                    && entity.object_kind == Some(DesignObjectKind::Sketch)
-            })
+            .filter(|entity| native_stream(&entity.id) == Some(stream) && entity.in_sketch_module())
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<HashSet<_>>();
         let governed_owners = owners
@@ -1319,10 +1266,7 @@ pub fn decode_dimension_locus_groups(
             .collect::<HashSet<_>>();
         let sketch_entities = entities
             .iter()
-            .filter(|entity| {
-                native_stream(&entity.id) == Some(scope)
-                    && entity.object_kind == Some(DesignObjectKind::Sketch)
-            })
+            .filter(|entity| native_stream(&entity.id) == Some(scope) && entity.in_sketch_module())
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;

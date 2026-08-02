@@ -12,10 +12,10 @@
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{ContainerEntry, ContainerSummary};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
@@ -185,10 +185,10 @@ pub struct FamilyTableRecord {
 /// grouped into per-domain sub-structs so each consumer names the domain it
 /// reads. `ContainerScan` is never serialized; grouping and field naming are
 /// internal and do not affect IR or JSON output.
-pub struct ContainerScan {
+pub struct ContainerScan<'a> {
     /// Container framing: raw bytes, header, TOC-enumerated sections, and
     /// model-level diagnostics.
-    pub framing: FramingScan,
+    pub framing: FramingScan<'a>,
     /// Named scalar and triangle-strip products from expanded primitive data.
     pub primitives: PrimitiveScan,
     /// Model-space reference entities decoded from `MdlRefInfo`.
@@ -207,9 +207,9 @@ pub struct ContainerScan {
 }
 
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
-pub struct FramingScan {
+pub struct FramingScan<'a> {
     /// Complete source bytes.
-    pub data: Vec<u8>,
+    pub data: Cow<'a, [u8]>,
     /// The magic/version header line, ASCII, trimmed.
     pub version_line: String,
     /// Native model filename from the length-prefixed `CMNM` header record.
@@ -1729,20 +1729,10 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
-/// Scan a `.prt` decode root into its container structure.
-///
-/// The decode/inspect entry point, matching the other container codecs'
-/// `scan(ctx, root)` signature. `_ctx` is taken for parity; the scan is a pure
-/// function of the source bytes and charges no decode budget. Copies the root
-/// window into the owned buffer [`scan_bytes`] parses.
-pub fn scan(_ctx: &DecodeContext<'_>, root: View<'_>) -> ContainerScan {
-    scan_bytes(root.window().to_vec())
-}
-
-/// Parse a whole `.prt` byte image. The owned-buffer core reached by [`scan`]
-/// for the decode/inspect paths, and called directly by the tests and the
-/// container-scan fuzz target.
-pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
+/// Parse a whole `.prt` byte image. Split out so tests drive it from a synthetic
+/// buffer without a reader.
+pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
+    let data = data.into();
     let version_line = line_at(&data, 0);
     let (model_name, model_name_offset) =
         model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));

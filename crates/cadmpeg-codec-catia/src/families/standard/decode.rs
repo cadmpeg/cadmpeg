@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
+use cadmpeg_codec_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -13,10 +13,12 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::provenance::Exactness;
-use cadmpeg_ir::topology::builder::{BodySpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{BodyKind, Coedge, Edge, Loop, Point, Region, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::units::Units;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::cgm_source;
@@ -536,7 +538,6 @@ fn bind_consolidated_revolution_faces_and_seams(
 #[cfg(test)]
 mod consolidated_revolution_binding_tests {
     use super::{bind_consolidated_revolution_faces_and_seams, ConsolidatedRevolutionBinding};
-    use cadmpeg_ir::annotations::AnnotationBuilder;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
@@ -549,6 +550,7 @@ mod consolidated_revolution_binding_tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
     use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::AnnotationBuilder;
 
     #[test]
     fn one_revolution_torus_closes_face_aliases_and_meridian_seam() {
@@ -1093,6 +1095,7 @@ pub(crate) fn emit_standard_extrusion_definition(
         parameter_interval: Some(extrusion.directrix_parameter_range),
         direction: extrusion.direction,
         native_position: None,
+        revision_form: None,
     };
     extrusion_definitions.insert(surface_object_id, definition.clone());
     definition
@@ -1107,8 +1110,15 @@ fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
     ]
 }
 
-pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> {
+pub(crate) fn try_decode_standard(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Option<FamilyOutput> {
+    let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
+    if !work_budget.charge() {
+        return None;
+    }
     let points = fbb::standard_vertex_points(brep)
         .unwrap_or_default()
         .into_iter()
@@ -1579,6 +1589,7 @@ pub(crate) fn try_decode_standard(scan: &ContainerScan) -> Option<FamilyOutput> 
         &object_evidence.edge_owner_faces,
         &object_evidence.edge_supports,
         &object_evidence.limit_curves,
+        &work_budget,
         &mut topology_diagnostics,
         &mut bound_standard_limit_curve_count,
     )
@@ -2355,11 +2366,7 @@ pub(crate) fn attach_standard_faces(
     let body_id = BodyId("catia:standard:body#0".to_string());
     let region_id = RegionId("catia:standard:region#0-0".to_string());
     let shell_id = ShellId("catia:standard:shell#0-0".to_string());
-    let mut builder = TopologyBuilder::new();
-    // Annotate and stage faces first to preserve the source note order, then
-    // register them under the shell once the hierarchy above exists; the builder
-    // aggregates `shell.faces` in this registration (binding) order.
-    let mut faces = Vec::with_capacity(face_count);
+    let mut face_ids = Vec::with_capacity(face_count);
     for (face_index, (surface, forward, offset)) in bindings.iter().enumerate() {
         let face_id = FaceId(format!("catia:standard:face#{face_index}"));
         annotate(
@@ -2373,20 +2380,21 @@ pub(crate) fn attach_standard_faces(
         for field in ["shell", "surface", "sense"] {
             annotations.derived(&face_id, field);
         }
-        faces.push((
-            face_id,
-            FaceSpec {
-                surface: surface.clone(),
-                sense: if *forward {
-                    Sense::Forward
-                } else {
-                    Sense::Reversed
-                },
-                name: None,
-                color: None,
-                tolerance: None,
+        face_ids.push(face_id.clone());
+        ir.model.faces.push(Face {
+            id: face_id,
+            shell: shell_id.clone(),
+            surface: surface.clone(),
+            sense: if *forward {
+                Sense::Forward
+            } else {
+                Sense::Reversed
             },
-        ));
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        });
     }
     annotate(
         annotations,
@@ -2399,15 +2407,15 @@ pub(crate) fn attach_standard_faces(
     annotations
         .derived(&body_id, "kind")
         .derived(&body_id, "regions");
-    builder
-        .body(
-            body_id.clone(),
-            BodySpec {
-                kind: BodyKind::Sheet,
-                ..BodySpec::default()
-            },
-        )
-        .expect("standard body id is unique");
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Sheet,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
     annotate(
         annotations,
         &region_id,
@@ -2419,9 +2427,11 @@ pub(crate) fn attach_standard_faces(
     annotations
         .derived(&region_id, "body")
         .derived(&region_id, "shells");
-    builder
-        .region(region_id.clone(), &body_id)
-        .expect("standard region id is unique under its body");
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id,
+        shells: vec![shell_id.clone()],
+    });
     annotate(
         annotations,
         &shell_id,
@@ -2433,17 +2443,13 @@ pub(crate) fn attach_standard_faces(
     annotations
         .derived(&shell_id, "region")
         .derived(&shell_id, "faces");
-    builder
-        .shell(shell_id.clone(), &region_id)
-        .expect("standard shell id is unique under its region");
-    for (face_id, spec) in faces {
-        builder
-            .face(face_id, &shell_id, spec)
-            .expect("standard face id is unique under its shell");
-    }
-    builder
-        .finish(&mut ir.model)
-        .expect("standard topology hierarchy appends without id or owner conflicts");
+    ir.model.shells.push(Shell {
+        id: shell_id,
+        region: region_id,
+        faces: face_ids,
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
 }
 
 pub(crate) fn partition_standard_face_components(
@@ -2915,6 +2921,7 @@ fn attach_standard_topology(
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
     native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
     limit_curves: &[NurbsCurve],
+    work_budget: &WorkBudget<'_>,
     diagnostics: &mut StandardTopologyDiagnostics,
     bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
@@ -3584,6 +3591,7 @@ fn attach_standard_topology(
             options,
             &edge_classes,
             &circle_constraint_edges,
+            work_budget,
             |pairs| {
                 standard_curve_branch_assignment_is_ranked(
                     &supports,
@@ -3617,6 +3625,7 @@ fn attach_standard_topology(
                     options,
                     &edge_classes,
                     &unconstrained,
+                    work_budget,
                     |pairs| {
                         standard_curve_branch_assignment_is_ranked(
                             &supports,
@@ -6401,7 +6410,7 @@ mod route_tests {
     use cadmpeg_ir::topology::{Point, Vertex};
     use cadmpeg_ir::units::Units;
 
-    use cadmpeg_ir::annotations::AnnotationBuilder;
+    use cadmpeg_ir::AnnotationBuilder;
     use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::collections::{HashMap, HashSet};

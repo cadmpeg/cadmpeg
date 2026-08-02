@@ -382,10 +382,15 @@ pub enum SplineSurfaceParameters {
         /// Ordered U and V intervals.
         ranges: [[f64; 2]; 2],
     },
-    /// Four optional native scalar fields in a revision-gated layout.
-    RevisionValues {
-        /// Values in serialized field order; `None` is a false presence flag.
-        values: [Option<f64>; 4],
+    /// Two parameter intervals in a revision-gated layout, each stored as an
+    /// ordered `[lo, hi]` pair of optional bounds. For exact and t-spline
+    /// surfaces these are the surface's unextended (pre-extension) parameter
+    /// ranges; for loft surfaces they are wrap ranges, where a reversed pair
+    /// (`lo > hi`) encodes an empty interval (no wrap). `None` is a false
+    /// bound-presence flag.
+    RevisionRanges {
+        /// Two parameter intervals in serialized field order.
+        intervals: [[Option<f64>; 2]; 2],
     },
 }
 
@@ -517,6 +522,10 @@ pub enum ProceduralSurfaceDefinition {
         /// Native model-space position following the sweep direction, when carried.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_position: Option<Point3>,
+        /// Revision-gated form fields; absent from the pre-revision layout.
+        /// The directrix parameter interval is `parameter_interval`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_form: Option<RevisionSurfaceForm>,
     },
     /// Unbounded linear sweep of a directrix.
     LinearSweep {
@@ -606,7 +615,8 @@ pub enum ProceduralSurfaceDefinition {
         /// Native V parameter-direction sense enum, when carried.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         v_sense: Option<i64>,
-        /// Ordered conditional ASM extension flags.
+        /// Ordered conditional ASM extension flags. A revision-gated offset
+        /// carries no such tail; its boolean run travels in `revision_form`.
         extension_flags: Vec<bool>,
         /// Revision-gated form fields; absent from the pre-revision layout.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1068,8 +1078,14 @@ pub struct RevisionSurfaceForm {
     /// Carrier-specific boolean run preceding the shared tail.
     #[serde(default)]
     pub flags: Vec<bool>,
-    /// Enum opening the shared revision-gated surface tail.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
@@ -1078,6 +1094,30 @@ pub struct RevisionSurfaceForm {
     /// Boolean run following the shared tail.
     #[serde(default)]
     pub trailing_flags: Vec<bool>,
+}
+
+/// Parameterization carried by tail-enum form `2` of the shared revision-gated
+/// spline-surface tail. This form stores no approximation cache and no fit
+/// tolerance; it stores the two parameter intervals followed by four enums, in
+/// the order the fields appear below.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct RevisionSurfaceParameterization {
+    /// U parameter interval, an ordered `[lo, hi]` pair of optional bounds.
+    /// `None` is a false bound-presence flag.
+    #[serde(default)]
+    pub u_interval: [Option<f64>; 2],
+    /// V parameter interval, an ordered `[lo, hi]` pair of optional bounds.
+    /// `None` is a false bound-presence flag.
+    #[serde(default)]
+    pub v_interval: [Option<f64>; 2],
+    /// U closure enum.
+    pub u_closure: i64,
+    /// V closure enum.
+    pub v_closure: i64,
+    /// U singularity enum.
+    pub u_singularity: i64,
+    /// V singularity enum.
+    pub v_singularity: i64,
 }
 
 /// Subtype-specific tail of a native taper spline surface.
@@ -1166,10 +1206,17 @@ pub struct LoftProfileData {
     /// UV curve on the support, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveGeometry>,
-    /// First native constraint flag.
-    pub first_flag: bool,
-    /// ASM extension integer following the first flag.
-    pub asm_extension: i64,
+    /// Second UV curve slot, carried only by the type-zero member form and
+    /// absent for `nullbs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_pcurve: Option<PcurveGeometry>,
+    /// First native constraint flag, absent from the type-zero member form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_flag: Option<bool>,
+    /// ASM extension integer following the first flag, absent from member
+    /// forms that omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asm_extension: Option<i64>,
     /// Native constraint table.
     pub subdata: LoftSubdata,
     /// Optional direction selected by the second native flag.
@@ -1230,8 +1277,14 @@ pub struct LoftRevisionForm {
     /// Two integers preceding the shared tail.
     #[serde(default)]
     pub ints: [i64; 2],
-    /// Enum opening the shared revision-gated surface tail.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
@@ -1430,13 +1483,26 @@ pub struct RollingBallConstruction {
     pub parameters: [f64; 2],
     /// Native long following the trailing scalars.
     pub tail: i64,
-    /// Native selector preceding the solved surface cache.
-    pub cache_selector: i64,
-    /// Three ordered ASM discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 3],
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
+    #[serde(alias = "cache_selector")]
+    pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
+    /// Six ordered ASM discontinuity arrays closing the shared tail.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native Boolean closing the shared tail.
+    #[serde(default)]
+    pub tail_flag: bool,
     /// Third side present only for `sss_blend_spl_sur`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub third: Option<Box<RollingBallThirdSide>>,
+    /// Three ASM integers preceding the subtype close.
+    #[serde(default)]
+    pub tail_extensions: [i64; 3],
 }
 
 /// Geometry role selected by a variable-blend support-side discriminator.
@@ -1492,7 +1558,8 @@ pub struct VariableBlendInterpolationPoint {
     pub parameter: f64,
     /// Radius in document length units.
     pub radius: f64,
-    /// Two ordered tangent scalars.
+    /// First and second derivative scalars; the sentinel
+    /// `9.9999999999999995e+36` marks an unset derivative.
     pub tangents: [f64; 2],
     /// Model-space control location.
     pub location: Point3,
@@ -1519,19 +1586,19 @@ pub struct VariableBlendValue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VariableBlendValuePayload {
-    /// Two endpoint parameters and radii.
+    /// Law-domain parameter range and two endpoint radii.
     TwoEnds {
-        /// Endpoint parameters.
+        /// Law-domain parameter range (lower, upper).
         parameters: [f64; 2],
         /// Endpoint radii in document length units.
         radii: [f64; 2],
     },
-    /// Fixed-width branch: two endpoint parameters and one native width
+    /// Fixed-width branch: the parameter-range bounds and the chamfer width
     /// scalar, stored unscaled.
     FixedWidth {
-        /// Endpoint parameters.
+        /// Parameter-range lower and upper bounds.
         parameters: [f64; 2],
-        /// Native width scalar.
+        /// Chamfer width.
         width: f64,
     },
     /// Edge-offset branch.
@@ -1573,51 +1640,108 @@ pub enum VariableBlendValuePayload {
         radius: f64,
         /// Parametric support curve.
         function: PcurveGeometry,
-        /// Native interpolation enum count.
+        /// Native extension enum, stored ahead of the radius-point count. It
+        /// gates nothing; the payload ends at the last radius point.
         enum_count: i64,
-        /// Whether the enum count and tail flag are stored as `0x15` enum
-        /// tokens (revision-gated streams) rather than `0x04` integers.
+        /// Whether the extension enum is stored as a `0x15` enum token
+        /// (revision-gated streams) rather than a `0x04` integer.
         #[serde(default)]
         enum_tagged: bool,
-        /// Ordered interpolation controls.
+        /// Counted radius-point array: each control carries a parameter,
+        /// radius, two derivative scalars, a position, and a vector.
         points: Vec<VariableBlendInterpolationPoint>,
-        /// Optional two-scalar tail selected by a nonzero flag.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tail: Option<[f64; 2]>,
     },
 }
 
-/// Optional single-radius tail selected by the native radius-kind branch.
+/// Cross-section clause following the variable-radius laws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct VariableBlendSingleRadiusTail {
-    /// Native symbolic or numeric selector.
-    pub selector: LoftBridgeToken,
-    /// Two ordered scalars following the selector.
-    pub parameters: [f64; 2],
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VariableBlendCrossSection {
+    /// Circular section with no additional parameters.
+    Circular,
+    /// Thumbweight-controlled section with two ordered shape parameters.
+    Thumbweights {
+        /// Ordered native shape parameters.
+        parameters: [f64; 2],
+    },
+    /// Rounded chamfer with an optional independent rounding-radius law.
+    RoundedChamfer {
+        /// Rounding-radius law; absent when the clause stores `no_radius`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        radius: Option<Box<VariableBlendValue>>,
+    },
+    /// Curvature-continuous round with two ordered shape parameters.
+    G2Round {
+        /// Ordered native shape parameters.
+        parameters: [f64; 2],
+    },
+    /// A zero-width native selector whose record framing is known but whose
+    /// geometric cross-section law is not classified.
+    UnclassifiedBare {
+        /// Exact numeric selector retained from the native record.
+        selector: VariableBlendBareCrossSection,
+    },
 }
 
-/// Variable-blend chamfer form selected by the two-radii branch.
+/// Native zero-width variable-blend cross-section selectors whose framing is
+/// established while their geometric laws remain unclassified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum VariableBlendChamferKind {
-    /// A rounded transition controlled by a third blend-value law.
-    Rounded,
+#[repr(i64)]
+pub enum VariableBlendBareCrossSection {
+    /// Native selector `2`.
+    Selector2 = 2,
+    /// Native selector `4`.
+    Selector4 = 4,
+    /// Native selector `5`.
+    Selector5 = 5,
+    /// Native selector `6`.
+    Selector6 = 6,
 }
 
-/// Optional rounded-chamfer branch following two radius laws.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct VariableBlendChamfer {
-    /// Variable-chamfer form.
-    pub kind: VariableBlendChamferKind,
-    /// Native chamfer-type enum.
-    pub chamfer_type: i64,
-    /// Chamfer blend-value payload.
-    pub value: VariableBlendValue,
+impl VariableBlendBareCrossSection {
+    /// Numeric selector stored in the native variable-blend record.
+    pub const fn native_selector(self) -> i64 {
+        self as i64
+    }
+}
+
+impl TryFrom<i64> for VariableBlendBareCrossSection {
+    type Error = ();
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            2 => Ok(Self::Selector2),
+            4 => Ok(Self::Selector4),
+            5 => Ok(Self::Selector5),
+            6 => Ok(Self::Selector6),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Native variable-radius blend surface subtype.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableBlendSurfaceSubtype {
+    /// General variable-blend surface.
+    #[default]
+    VariableBlend,
+    /// Surface-to-surface variable blend.
+    SurfaceSurface,
+    /// Curve-to-curve variable blend.
+    CurveCurve,
+    /// Curve-to-surface variable blend.
+    CurveSurface,
+    /// Free surface-curve variable blend.
+    SurfaceCurveFree,
 }
 
 /// Complete native variable-radius blend construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableBlendConstruction {
+    /// Native surface subtype selecting the variable-blend behavior class.
+    #[serde(default)]
+    pub subtype: VariableBlendSurfaceSubtype,
     /// Native serializer-revision integer following the subtype name.
     #[serde(alias = "definition_index")]
     pub revision: i64,
@@ -1637,38 +1761,38 @@ pub struct VariableBlendConstruction {
     /// Second radius-control payload for a two-radii construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_value: Option<VariableBlendValue>,
-    /// Chamfer-selector enum stored after the second radius value of a
-    /// two-radii blend. `0` selects no chamfer, `3` selects the rounded
-    /// chamfer carried in `chamfer`. `None` when the source stored no
-    /// selector token.
+    /// Cross-section clause following the complete radius-law sequence.
+    /// Absence denotes an elided default circular section; an explicit
+    /// circular clause remains distinct.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chamfer_selector: Option<i64>,
-    /// Optional rounded-chamfer payload.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chamfer: Option<Box<VariableBlendChamfer>>,
-    /// Selector enum stored after the radius value of a single-radius blend.
-    /// `0` selects no further fields; `1` and `7` select the two scalars in
-    /// `single_radius_tail`. `None` when the source stored no selector token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub single_radius_selector: Option<i64>,
-    /// Optional single-radius selector tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub single_radius_tail: Option<VariableBlendSingleRadiusTail>,
-    /// Native optional U interval endpoints.
+    pub cross_section: Option<VariableBlendCrossSection>,
+    /// Support-side parameter interval `(T0, T1)`; both bounds present in
+    /// every instance.
     pub u_range: [Option<f64>; 2],
-    /// Native optional V interval endpoints.
+    /// Second interval: a lower bound with an unbounded-above marker,
+    /// encoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`
+    /// upper-bound marker is an interval bound, not a standalone Boolean.
     pub v_range: [Option<f64>; 2],
-    /// Native integer before the solved shape.
+    /// Approximation-current flag preceding the surface cache; `1` when the
+    /// cache approximation is current.
     pub shape_prefix: i64,
-    /// Native scalar before the solved shape.
+    /// Requested fit tolerance for the surface cache.
     pub shape_parameter: f64,
-    /// Native length before the solved shape, in document units.
+    /// Achieved fit tolerance for the surface cache, at or below
+    /// `shape_parameter`, in document units.
     pub shape_length: f64,
-    /// Native integer immediately before the cache selector.
+    /// Non-negative integer immediately before the shared tail's enum.
     pub shape_tail: i64,
-    /// Native selector preceding the solved surface cache.
-    pub cache_selector: i64,
-    /// Six ordered ASM discontinuity arrays following the fit tolerance.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
+    #[serde(alias = "cache_selector")]
+    pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
+    /// Six ordered ASM discontinuity arrays closing the shared tail.
     pub discontinuities: [Vec<f64>; 6],
     /// Native Boolean following the discontinuity arrays.
     pub tail_flag: bool,
@@ -1727,8 +1851,14 @@ pub struct RevisionG2BlendConstruction {
     pub shape_length: f64,
     /// Native integer immediately before the shared tail.
     pub shape_tail: i64,
-    /// Enum opening the shared revision-gated surface tail.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
@@ -1745,8 +1875,14 @@ pub struct RevisionG2BlendConstruction {
 pub struct RevisionCompoundLoftConstruction {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
-    /// Enum opening the shared revision-gated surface tail.
+    /// Enum opening the shared revision-gated surface tail, selecting the
+    /// approximation-cache form. `0` stores a solved NURBS surface and its fit
+    /// tolerance; `2` stores `tail_parameterization` instead.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays following the fit tolerance.
     #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
@@ -1784,14 +1920,16 @@ pub struct RevisionCompoundLoftConstruction {
 /// One boundary record in a native vertex-blend patch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VertexBlendBoundary {
-    /// Native boundary type enum.
-    pub boundary_type: i64,
-    /// Native model-space magic location.
-    pub magic: Point3,
-    /// Native U-smoothing enum.
-    pub u_smoothing: i64,
-    /// Native V-smoothing enum.
-    pub v_smoothing: i64,
+    /// Native cross flag. The wire form is a logical, so the value is the
+    /// tag itself and no payload follows.
+    pub boundary_type: bool,
+    /// Native magic direction. A unit direction or the zero vector, never a
+    /// length, so it carries no unit scale.
+    pub magic: Vector3,
+    /// Native U-smoothing flag, a logical on the wire.
+    pub u_smoothing: bool,
+    /// Native V-smoothing flag, a logical on the wire.
+    pub v_smoothing: bool,
     /// Native fullness scalar.
     pub fullness: f64,
     /// Structurally selected boundary geometry.
@@ -1818,8 +1956,8 @@ pub enum VertexBlendBoundaryGeometry {
         twists: Vec<Point3>,
         /// Two ordered curve parameters.
         parameters: [f64; 2],
-        /// Native sense enum.
-        sense: i64,
+        /// Native sense flag, a logical on the wire.
+        sense: bool,
     },
     /// Degenerate boundary at a model-space location.
     Degenerate {
@@ -1839,8 +1977,8 @@ pub enum VertexBlendBoundaryGeometry {
         /// Native BS2 pcurve, absent for `nullbs`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pcurve: Option<PcurveGeometry>,
-        /// Native sense enum.
-        sense: i64,
+        /// Native sense flag, a logical on the wire.
+        sense: bool,
         /// Parameter-space fit tolerance.
         fit_tolerance: f64,
     },
@@ -2152,6 +2290,16 @@ pub enum LawExpression {
         scalars: [f64; 13],
         /// Three ordered transform enums.
         enums: [i64; 3],
+    },
+    /// Vector-serialized transform-law payload: four ordered vectors, a scale,
+    /// and three flags, in place of the thirteen-scalar/three-enum form.
+    TransformVec {
+        /// Four ordered transform vectors.
+        vectors: [Vector3; 4],
+        /// Trailing transform scale.
+        scale: f64,
+        /// Three ordered transform flags.
+        flags: [bool; 3],
     },
     /// Curve-backed edge law.
     Edge {
@@ -2526,7 +2674,20 @@ impl IntcurveSupportSide {
     }
 }
 
-/// Shared prefix carried by surface-related native intcurve constructions.
+/// Version-stamp prefix and unbounded interval carried by the stamped
+/// `law_int_cur` serializer form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LawCurveVersionForm {
+    /// Serializer version stamp emitted after the subtype name.
+    pub stamp: i64,
+    /// Native enum following the version stamp.
+    pub post_enum: i64,
+    /// Solved-curve interval endpoints; `None` records an unbounded bound.
+    pub parameter_range: [Option<f64>; 2],
+}
+
+/// Shared support surfaces, UV curves, interval, and discontinuity arrays of a
+/// native intcurve subtype.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct IntcurveSupportContext {
     /// Two ordered `(surface, pcurve)` support sides.
@@ -2551,6 +2712,15 @@ pub struct TolerantIntersectionParameterization {
 pub struct CacheFirstCurveForm {
     /// Positive serializer-revision integer selecting the cache-first layout.
     pub revision: i64,
+    /// Enum opening the shared context, selecting the approximation-cache form.
+    /// `0` stores a solved curve cache and its fit tolerance; `2` stores
+    /// `parameterization` instead.
+    #[serde(default)]
+    pub cache_enum: i64,
+    /// Parameterization stored by cache form `2` in place of a solved cache.
+    /// Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameterization: Option<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
     #[serde(default)]
     pub support_bounds: [[Option<f64>; 4]; 2],
@@ -2562,19 +2732,48 @@ pub struct CacheFirstCurveForm {
     pub extension: i64,
 }
 
+/// Parameterization carried by cache form `2` of the shared cache-first
+/// intcurve context. This form stores no solved curve cache and no fit
+/// tolerance; it stores the curve interval followed by the closed-form enum, in
+/// the order the fields appear below.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct CacheFirstCurveParameterization {
+    /// Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is
+    /// a false bound-presence flag.
+    #[serde(default)]
+    pub interval: [Option<f64>; 2],
+    /// Closed-form enum following the interval.
+    pub closed_form: i64,
+}
+
 /// Tail fields carried by the cache-first surface-curve layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SurfaceCurveTail {
     /// Native integer following the discontinuity arrays.
     pub extension: i64,
-    /// Native boolean terminating the subtype payload.
+    /// Terminating boolean shared by all cache-first surface-curve families.
+    /// For `par_int_cur` it is the support-slot selector: `true` places the
+    /// support surface and its BS2 pcurve in serialized slot 1 with slot 2
+    /// null; `false` places them in slot 2 with slot 1 null. For the other
+    /// families (`blend_int_cur`, `surf_int_cur`, `skin_int_cur`) the field is
+    /// a terminating flag with no settled slot-selector semantics.
     pub flag: bool,
-    /// Second terminating boolean stored by `par_int_cur`.
+    /// Second terminating boolean stored by `par_int_cur`, following the
+    /// support-slot selector; semantics unresolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_flag: Option<bool>,
     /// Positive serializer-revision integer opening the cache-first layout.
     #[serde(default)]
     pub revision: i64,
+    /// Enum opening the shared context, selecting the approximation-cache form.
+    /// `0` stores a solved curve cache and its fit tolerance; `2` stores
+    /// `parameterization` instead.
+    #[serde(default)]
+    pub cache_enum: i64,
+    /// Parameterization stored by cache form `2` in place of a solved cache.
+    /// Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameterization: Option<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
     #[serde(default)]
     pub support_bounds: [[Option<f64>; 4]; 2],
@@ -2644,10 +2843,48 @@ pub enum DeformableCurveData {
         /// Ordered pairs from the mode-8 scalar table.
         parameter_pairs: Vec<[f64; 2]>,
     },
-    /// Mode 5 supporting surface.
-    Surface {
-        /// Embedded deformation support surface.
-        surface: SurfaceId,
+    /// Mode 3 fixed deformation payload.
+    Mode3 {
+        /// Four vectors at the start of the payload.
+        leading_vectors: [Vector3; 4],
+        /// Scalar following the leading vectors.
+        leading_parameter: f64,
+        /// Three flags following the leading scalar.
+        leading_flags: [bool; 3],
+        /// Position following the leading flags.
+        trailing_point: Point3,
+        /// Two vectors following the position.
+        trailing_vectors: [Vector3; 2],
+        /// Scalar following the trailing frame.
+        frame_parameter: f64,
+        /// Two flags following the frame scalar.
+        frame_flags: [bool; 2],
+        /// Three ordered scalars following the frame flags.
+        parameters: [f64; 3],
+        /// Five flags following the ordered scalars.
+        trailing_flags: [bool; 5],
+        /// Final scalar before the trailing integer.
+        trailing_parameter: f64,
+        /// Integer closing the mode-3 payload.
+        trailing_value: i64,
+    },
+}
+
+/// Source slot of a deformable native intcurve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeformableCurveSource {
+    /// Source geometry resolved to a neutral curve carrier.
+    Curve {
+        /// Curve being deformed.
+        curve: CurveId,
+    },
+    /// Native intcurve reference whose target is absent from the active subtype table.
+    NativeReference {
+        /// Boolean stored before the reference scope.
+        flag: bool,
+        /// Integer stored by the native `ref` subtype.
+        index: i64,
     },
 }
 
@@ -2661,6 +2898,9 @@ pub enum ProceduralCurveDefinition {
     Law {
         /// Shared support surfaces, UV curves, interval, and discontinuities.
         context: IntcurveSupportContext,
+        /// Version-stamped serializer form, absent for the legacy layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        version: Option<LawCurveVersionForm>,
         /// Native ASM extension integer.
         extension: i64,
         /// Primary recursive law formula.
@@ -2793,13 +3033,17 @@ pub enum ProceduralCurveDefinition {
         /// Native `CURV_DIR` enum value.
         direction: i64,
     },
-    /// Deformation of an embedded bend curve.
+    /// Deformation of an embedded source curve.
     Deformable {
-        /// Native ASM extension integer preceding the bend curve.
-        extension: i64,
-        /// Embedded bend curve.
-        bend: CurveId,
-        /// Mode 8 vector field or mode 5 support surface.
+        /// Shared cache-first support context.
+        context: IntcurveSupportContext,
+        /// Cache-first serializer fields surrounding the solved curve cache.
+        cache_first: CacheFirstCurveForm,
+        /// Curve being deformed or its unresolved native reference.
+        source: DeformableCurveSource,
+        /// Optional native bounds following the source curve.
+        source_parameter_range: [Option<f64>; 2],
+        /// Discriminator-specific deformation payload.
         data: DeformableCurveData,
     },
     /// Projection of a source curve onto a support surface.

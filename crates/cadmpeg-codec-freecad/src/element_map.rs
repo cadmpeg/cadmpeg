@@ -3,9 +3,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::cursor::bounded_len;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::wire::cursor::bounded_len;
 
 use crate::native::{
     ElementMapGroup, ElementMapNode, ElementMapRecord, ElementMappedName, EntryRecord,

@@ -3,6 +3,8 @@
 resolver = "2"
 members = [
   "crates/cadmpeg",
+  "crates/cadmpeg-codec-core",
+  "crates/cadmpeg-container",
   "crates/cadmpeg-ir",
   "crates/cadmpeg-codec-f3d",
   "crates/cadmpeg-codec-freecad",
@@ -29,6 +31,8 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
+cadmpeg-codec-core = { path = "crates/cadmpeg-codec-core", version = "0.3.0" }
+cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.3.0" }
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.3.0" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.3.0" }
 cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.3.0" }
@@ -50,8 +54,10 @@ memchr = "2"
 base64 = "0.23"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
-zip = { version = "8", default-features = false, features = ["deflate", "zstd"] }
+zip = { version = "8", default-features = false, features = ["deflate-flate2", "zstd"] }
+lzma-rs = "0.3"
 flate2 = "1"
+zstd = "0.13"
 crc32fast = "1"
 roxmltree = "0.21"
 regex = "1.13"

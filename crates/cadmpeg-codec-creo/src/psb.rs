@@ -271,14 +271,6 @@ pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
 /// best-effort walker thread a single `Cursor` instead of hand-carrying a
 /// `(value, next)` tuple through every field, while preserving the exact
 /// truncation behavior (`break`/`continue` on a `None` take).
-///
-/// The position is a plain `usize`: PSB decoding threads pure free-function
-/// decoders that report their consumed extent through the returned offset and
-/// signals truncation with a `None` take, not the shared
-/// [`cadmpeg_ir::wire::cursor::Cursor`]'s poison-and-defer contract. It reads
-/// none of that cursor's typed, finite-checked, or bounds-poisoning primitives,
-/// so wrapping one here would only shadow the slice and the position without
-/// exercising a single guarantee.
 pub(crate) struct Cursor<'a> {
     data: &'a [u8],
     pos: usize,

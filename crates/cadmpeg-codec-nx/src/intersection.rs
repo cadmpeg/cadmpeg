@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_codec_core::be;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::wire::be;
 use serde::{Deserialize, Serialize};
 
 use crate::topology::{self, CompositeCurve};
@@ -300,14 +300,30 @@ pub fn curves(stream: &[u8]) -> Vec<IntersectionCurve> {
 
 /// Decode chart-backed constructions and classify every rejected construction.
 pub fn scan(stream: &[u8]) -> CurveScan {
-    scan_with_auxiliaries(stream, &chart_records(stream), &term_records(stream))
+    let graph = topology::Graph::parse(stream);
+    scan_with_graph(stream, &graph)
+}
+
+pub(crate) fn scan_with_graph(stream: &[u8], graph: &topology::Graph) -> CurveScan {
+    scan_with_auxiliaries(stream, &chart_records(stream), &term_records(stream), graph)
 }
 
 /// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
+#[cfg(test)]
 pub(crate) fn scan_with_auxiliary_replacements(
     stream: &[u8],
     base_stream: &[u8],
     replacement_streams: &[&[u8]],
+) -> CurveScan {
+    let graph = topology::Graph::parse(stream);
+    scan_with_auxiliary_replacements_and_graph(stream, base_stream, replacement_streams, &graph)
+}
+
+pub(crate) fn scan_with_auxiliary_replacements_and_graph(
+    stream: &[u8],
+    base_stream: &[u8],
+    replacement_streams: &[&[u8]],
+    graph: &topology::Graph,
 ) -> CurveScan {
     let mut charts = chart_records(base_stream);
     let mut terms = term_records(base_stream);
@@ -315,37 +331,38 @@ pub(crate) fn scan_with_auxiliary_replacements(
         charts.extend(chart_records(replacement_stream));
         terms.extend(term_records(replacement_stream));
     }
-    scan_with_auxiliaries(stream, &charts, &terms)
+    scan_with_auxiliaries(stream, &charts, &terms, graph)
 }
 
 fn scan_with_auxiliaries(
     stream: &[u8],
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
+    graph: &topology::Graph,
 ) -> CurveScan {
     let uv = uv_records(stream);
     let bridges = blend_bound_records(stream);
-    let graph = topology::Graph::parse(stream);
     let referenced_curves = graph.referenced_curve_xmts();
     let mut result = CurveScan::default();
-    for construction in topology::composite_curves(stream)
+    for construction in graph
+        .composite_curves()
         .into_iter()
         .chain(topology::intersection_data_curves(stream))
     {
-        match enrich(construction, charts, terms, &uv, &bridges, &graph) {
+        match enrich(construction, charts, terms, &uv, &bridges, graph) {
             Ok(curve) => {
                 result.constructions.push(construction);
                 result.curves.push(curve);
             }
             Err(rejection)
                 if referenced_curves.contains(&construction.xmt)
-                    && construction_supports(construction, &bridges, &graph).is_some()
-                    && construction_has_endpoint_witnesses(construction, terms, &graph) =>
+                    && construction_supports(construction, &bridges, graph).is_some()
+                    && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
                 result.constructions.push(construction);
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
-                        construction_supports(construction, &bridges, &graph)
+                        construction_supports(construction, &bridges, graph)
                             .filter(|supports| supports[1] > 1),
                         graph
                             .unique_curve_edge_witness(construction.xmt)

@@ -12,11 +12,10 @@
 
 use std::ops::Range;
 
+use cadmpeg_codec_core::le::u32_at as u32_le;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::wire::le::u32_at as u32_le;
 
-use super::bytes::f64_le;
-use super::tokens::compact_uint;
+use super::bytes::{compact_int, f64_le};
 
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
 #[derive(Debug, Clone)]
@@ -50,9 +49,9 @@ pub(crate) fn parse_consolidated_pcurve(
     end: usize,
 ) -> Option<ConsolidatedPcurve> {
     let mut at = payload;
-    let support_id = compact_uint(data, &mut at)?;
-    let degree = compact_uint(data, &mut at)?;
-    let count = usize::try_from(compact_uint(data, &mut at)?).ok()?;
+    let support_id = compact_int(data, &mut at)?;
+    let degree = compact_int(data, &mut at)?;
+    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     if degree != 5 || !(2..=4096).contains(&count) {
         return None;
     }
@@ -80,7 +79,7 @@ pub(crate) fn parse_consolidated_pcurve(
         Some(values)
     };
     let knots = read(&mut at)?;
-    if usize::try_from(compact_uint(data, &mut at)?).ok()? != count {
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
     }
     at += 1;
@@ -298,7 +297,7 @@ pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
-    cadmpeg_ir::wire::le::f32_at(bytes, at).unwrap_or(f32::NAN)
+    cadmpeg_codec_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
 }
 
 fn finite_in_range(v: f32) -> bool {

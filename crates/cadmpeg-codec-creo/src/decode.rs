@@ -13,9 +13,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
-use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
@@ -31,31 +31,35 @@ use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
     SurfaceGeometry,
 };
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, OccurrenceId, PcurveId, PointId,
-    ProceduralCurveId, ProceduralSurfaceId, ProductId, RegionId, ShellId, SurfaceId, UnknownId,
-    VertexId,
+    ProceduralCurveId, ProceduralSurfaceId, ProductDefinitionId, RegionId, ShellId, SurfaceId,
+    UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::product::{OccurrenceParent, Product, ProductOccurrence};
-use cadmpeg_ir::provenance::{Exactness, SourceObjectAssociation};
-use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::products::{
+    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchCoordinateAxis,
     SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
     SketchNativeOperand,
 };
 use cadmpeg_ir::tessellation::Tessellation;
-use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{BodyKind, Edge, PcurveUse, Point, Sense, Vertex};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
+    Vertex,
+};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::wire::hash::sha256_hex;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use serde::Serialize;
 
 use crate::container::{self, role, ContainerScan};
-use crate::loss::CreoLossCode;
 use crate::topology::HalfEdgeId;
 
 mod native;
@@ -7215,6 +7219,7 @@ fn transfer_feature_extrusion_surfaces(
                     ]),
                     direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
                     native_position: None,
+                    revision_form: None,
                 },
                 cache_fit_tolerance: None,
                 record_bounds: None,
@@ -8104,22 +8109,6 @@ fn transfer_resolved_revolution_breps(
         }
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
-        let mut builder = TopologyBuilder::new();
-        builder
-            .body(
-                body_id.clone(),
-                BodySpec {
-                    kind: BodyKind::Solid,
-                    ..BodySpec::default()
-                },
-            )
-            .expect("revolution body id is unique per feature");
-        builder
-            .region(region_id.clone(), &body_id)
-            .expect("revolution region id is unique under its body");
-        builder
-            .shell(shell_id.clone(), &region_id)
-            .expect("revolution shell id is unique under its region");
         let count = profile.len();
         let mut edges = vec![None; count];
         for (index, ((_, _, point, _), curve_geometry)) in
@@ -8172,11 +8161,7 @@ fn transfer_resolved_revolution_breps(
             });
             edges[index] = Some(edge_id);
         }
-        // Each boundary coedge shares its vertex circle edge with exactly one
-        // coedge on the adjacent face; the builder's `radial_ring` links that pair
-        // once both are staged, replacing the hand-written `radial_next` string.
-        let mut emitted_coedges: BTreeSet<CoedgeId> = BTreeSet::new();
-        let mut radial_pairs: Vec<[CoedgeId; 2]> = Vec::new();
+        let mut faces = Vec::new();
         for (index, (((_, _, start, end), surface_geometry), face_sense)) in profile
             .iter()
             .zip(surface_geometries)
@@ -8191,19 +8176,7 @@ fn transfer_resolved_revolution_breps(
                 geometry: surface_geometry.clone(),
                 source_object: None,
             });
-            builder
-                .face(
-                    face_id.clone(),
-                    &shell_id,
-                    FaceSpec {
-                        surface: surface_id,
-                        sense: face_sense,
-                        name: None,
-                        color: None,
-                        tolerance: None,
-                    },
-                )
-                .expect("revolution face id is unique under its shell");
+            let mut loops = Vec::new();
             for (boundary, vertex_index, section_point, sense) in [
                 ("start", index, *start, Sense::Reversed),
                 ("end", next, *end, Sense::Forward),
@@ -8229,41 +8202,66 @@ fn transfer_resolved_revolution_breps(
                     transform.offset,
                     pcurve_geometry,
                 );
-                builder
-                    .ring(
-                        loop_id,
-                        &face_id,
-                        cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                        vec![CoedgeSpec {
-                            id: coedge_id.clone(),
-                            edge: edge_id,
-                            sense,
-                            pcurves: vec![PcurveUse {
-                                pcurve,
-                                isoparametric: None,
-                                parameter_range: None,
-                            }],
-                            use_curve: None,
-                            use_curve_parameter_range: None,
-                        }],
-                        Vec::new(),
-                    )
-                    .expect("revolution boundary ring registers under its face");
-                emitted_coedges.insert(coedge_id.clone());
-                radial_pairs.push([
-                    coedge_id,
-                    CoedgeId(format!("{prefix}:coedge:{radial_index}:{radial_boundary}")),
-                ]);
+                ir.model.loops.push(IrLoop {
+                    id: loop_id.clone(),
+                    face: face_id.clone(),
+                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                    coedges: vec![coedge_id.clone()],
+                    vertex_uses: Vec::new(),
+                });
+                ir.model.coedges.push(Coedge {
+                    id: coedge_id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge: edge_id,
+                    next: coedge_id.clone(),
+                    previous: coedge_id,
+                    radial_next: CoedgeId(format!(
+                        "{prefix}:coedge:{radial_index}:{radial_boundary}"
+                    )),
+                    sense,
+                    pcurves: vec![PcurveUse {
+                        pcurve,
+                        isoparametric: None,
+                        parameter_range: None,
+                    }],
+                    use_curve: None,
+                    use_curve_parameter_range: None,
+                });
+                loops.push(loop_id);
             }
+            ir.model.faces.push(Face {
+                id: face_id.clone(),
+                shell: shell_id.clone(),
+                surface: surface_id,
+                sense: face_sense,
+                loops,
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            faces.push(face_id);
         }
-        for [id, partner] in &radial_pairs {
-            if emitted_coedges.contains(partner) {
-                builder.radial_ring(&[id.clone(), partner.clone()]);
-            }
-        }
-        builder
-            .finish(&mut ir.model)
-            .expect("revolution topology appends without id or owner conflicts");
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+        ir.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Solid,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
         transferred += 1;
     }
     transferred
@@ -8318,29 +8316,12 @@ fn transfer_resolved_circular_extrusion_breps(
         }
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
-        let mut builder = TopologyBuilder::new();
-        builder
-            .body(
-                body_id.clone(),
-                BodySpec {
-                    kind: BodyKind::Solid,
-                    ..BodySpec::default()
-                },
-            )
-            .expect("circular extrusion body id is unique per feature");
-        builder
-            .region(region_id.clone(), &body_id)
-            .expect("circular extrusion region id is unique under its body");
-        builder
-            .shell(shell_id.clone(), &region_id)
-            .expect("circular extrusion shell id is unique under its region");
         let center = section_point_in_model(transform, section_center);
         let seam =
             std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis[axis]);
         let sides = [("bottom", span.lower), ("top", span.upper)];
-        // A cap coedge and its side coedge share the seam edge; record the pair so
-        // the builder's `radial_ring` links both `radial_next` arcs at finish.
-        let mut radial_pairs: Vec<[CoedgeId; 2]> = Vec::new();
+        let mut face_ids = Vec::new();
+        let mut cap_coedges = Vec::new();
         let mut side_coedges = Vec::new();
         for (side_index, (side, offset)) in sides.into_iter().enumerate() {
             let cap_surface = SurfaceId(format!("{prefix}:surface:{side}"));
@@ -8431,49 +8412,54 @@ fn transfer_resolved_circular_extrusion_breps(
                 param_range: Some([0.0, std::f64::consts::TAU]),
                 tolerance: None,
             });
-            let cap_sense = if side_index == 0 {
-                Sense::Reversed
-            } else {
-                Sense::Forward
-            };
-            builder
-                .face(
-                    cap_face.clone(),
-                    &shell_id,
-                    FaceSpec {
-                        surface: cap_surface,
-                        sense: cap_sense,
-                        name: None,
-                        color: None,
-                        tolerance: None,
-                    },
-                )
-                .expect("circular extrusion cap face id is unique under its shell");
-            builder
-                .ring(
-                    cap_loop,
-                    &cap_face,
-                    cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-                    vec![CoedgeSpec {
-                        id: cap_coedge.clone(),
-                        edge: edge_id.clone(),
-                        sense: cap_sense,
-                        pcurves: vec![PcurveUse {
-                            pcurve: cap_pcurve,
-                            isoparametric: None,
-                            parameter_range: None,
-                        }],
-                        use_curve: None,
-                        use_curve_parameter_range: None,
-                    }],
-                    Vec::new(),
-                )
-                .expect("circular extrusion cap ring registers under its face");
-            radial_pairs.push([cap_coedge, side_coedge.clone()]);
+            ir.model.loops.push(IrLoop {
+                id: cap_loop.clone(),
+                face: cap_face.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+                coedges: vec![cap_coedge.clone()],
+                vertex_uses: Vec::new(),
+            });
+            ir.model.coedges.push(Coedge {
+                id: cap_coedge.clone(),
+                owner_loop: cap_loop.clone(),
+                edge: edge_id.clone(),
+                next: cap_coedge.clone(),
+                previous: cap_coedge.clone(),
+                radial_next: side_coedge.clone(),
+                sense: if side_index == 0 {
+                    Sense::Reversed
+                } else {
+                    Sense::Forward
+                },
+                pcurves: vec![PcurveUse {
+                    pcurve: cap_pcurve,
+                    isoparametric: None,
+                    parameter_range: None,
+                }],
+                use_curve: None,
+                use_curve_parameter_range: None,
+            });
+            ir.model.faces.push(Face {
+                id: cap_face.clone(),
+                shell: shell_id.clone(),
+                surface: cap_surface,
+                sense: if side_index == 0 {
+                    Sense::Reversed
+                } else {
+                    Sense::Forward
+                },
+                loops: vec![cap_loop],
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            face_ids.push(cap_face);
+            cap_coedges.push(cap_coedge);
             side_coedges.push((side_coedge, edge_id, side_pcurve));
         }
         let side_surface = SurfaceId(format!("{prefix}:surface:side"));
         let side_face = FaceId(format!("{prefix}:face:side"));
+        let mut side_loops = Vec::new();
         ir.model.surfaces.push(Surface {
             id: side_surface.clone(),
             geometry: SurfaceGeometry::Cylinder {
@@ -8492,54 +8478,71 @@ fn transfer_resolved_circular_extrusion_breps(
             },
             source_object: None,
         });
-        builder
-            .face(
-                side_face.clone(),
-                &shell_id,
-                FaceSpec {
-                    surface: side_surface,
-                    sense: Sense::Forward,
-                    name: None,
-                    color: None,
-                    tolerance: None,
-                },
-            )
-            .expect("circular extrusion side face id is unique under its shell");
         for (side_index, ((side, _), (coedge, edge, pcurve))) in
             sides.into_iter().zip(side_coedges).enumerate()
         {
             let loop_id = LoopId(format!("{prefix}:loop:side:{side}"));
-            builder
-                .ring(
-                    loop_id,
-                    &side_face,
-                    cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                    vec![CoedgeSpec {
-                        id: coedge,
-                        edge,
-                        sense: if side_index == 0 {
-                            Sense::Forward
-                        } else {
-                            Sense::Reversed
-                        },
-                        pcurves: vec![PcurveUse {
-                            pcurve,
-                            isoparametric: None,
-                            parameter_range: None,
-                        }],
-                        use_curve: None,
-                        use_curve_parameter_range: None,
-                    }],
-                    Vec::new(),
-                )
-                .expect("circular extrusion side ring registers under its face");
+            ir.model.loops.push(IrLoop {
+                id: loop_id.clone(),
+                face: side_face.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                coedges: vec![coedge.clone()],
+                vertex_uses: Vec::new(),
+            });
+            ir.model.coedges.push(Coedge {
+                id: coedge.clone(),
+                owner_loop: loop_id.clone(),
+                edge,
+                next: coedge.clone(),
+                previous: coedge.clone(),
+                radial_next: cap_coedges[side_index].clone(),
+                sense: if side_index == 0 {
+                    Sense::Forward
+                } else {
+                    Sense::Reversed
+                },
+                pcurves: vec![PcurveUse {
+                    pcurve,
+                    isoparametric: None,
+                    parameter_range: None,
+                }],
+                use_curve: None,
+                use_curve_parameter_range: None,
+            });
+            side_loops.push(loop_id);
         }
-        for [id, partner] in &radial_pairs {
-            builder.radial_ring(&[id.clone(), partner.clone()]);
-        }
-        builder
-            .finish(&mut ir.model)
-            .expect("circular extrusion topology appends without id or owner conflicts");
+        ir.model.faces.push(Face {
+            id: side_face.clone(),
+            shell: shell_id.clone(),
+            surface: side_surface,
+            sense: Sense::Forward,
+            loops: side_loops,
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        face_ids.push(side_face);
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: face_ids,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+        ir.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Solid,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
         transferred += 1;
     }
     transferred
@@ -8727,22 +8730,6 @@ fn transfer_resolved_extrusion_breps(
         }
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
-        let mut builder = TopologyBuilder::new();
-        builder
-            .body(
-                body_id.clone(),
-                BodySpec {
-                    kind: BodyKind::Solid,
-                    ..BodySpec::default()
-                },
-            )
-            .expect("extrusion body id is unique per feature");
-        builder
-            .region(region_id.clone(), &body_id)
-            .expect("extrusion region id is unique under its body");
-        builder
-            .shell(shell_id.clone(), &region_id)
-            .expect("extrusion shell id is unique under its region");
         let bottom_surface = SurfaceId(format!("{prefix}:surface:bottom"));
         let top_surface = SurfaceId(format!("{prefix}:surface:top"));
         for (id, offset) in [(&bottom_surface, span.lower), (&top_surface, span.upper)] {
@@ -8779,44 +8766,9 @@ fn transfer_resolved_extrusion_breps(
 
         let bottom_face = FaceId(format!("{prefix}:face:bottom"));
         let top_face = FaceId(format!("{prefix}:face:top"));
-        builder
-            .face(
-                bottom_face.clone(),
-                &shell_id,
-                FaceSpec {
-                    surface: bottom_surface,
-                    sense: if forward_caps {
-                        Sense::Reversed
-                    } else {
-                        Sense::Forward
-                    },
-                    name: None,
-                    color: None,
-                    tolerance: None,
-                },
-            )
-            .expect("extrusion bottom cap face id is unique under its shell");
-        builder
-            .face(
-                top_face.clone(),
-                &shell_id,
-                FaceSpec {
-                    surface: top_surface,
-                    sense: if forward_caps {
-                        Sense::Forward
-                    } else {
-                        Sense::Reversed
-                    },
-                    name: None,
-                    color: None,
-                    tolerance: None,
-                },
-            )
-            .expect("extrusion top cap face id is unique under its shell");
-        // Every coedge's radial partner is its single twin across a shared edge;
-        // record each pair and link it with `radial_ring` once both are staged.
-        let mut emitted_coedges: BTreeSet<CoedgeId> = BTreeSet::new();
-        let mut radial_pairs: Vec<[CoedgeId; 2]> = Vec::new();
+        let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
+        let mut bottom_loops = Vec::new();
+        let mut top_loops = Vec::new();
         for (profile_index, profile) in profiles.iter().enumerate() {
             let count = profile.len();
             let mut bottom_vertices = Vec::new();
@@ -8964,6 +8916,8 @@ fn transfer_resolved_extrusion_breps(
 
             let bottom_loop = LoopId(format!("{prefix}:loop:{profile_index}:bottom"));
             let top_loop = LoopId(format!("{prefix}:loop:{profile_index}:top"));
+            bottom_loops.push(bottom_loop.clone());
+            top_loops.push(top_loop.clone());
             let bottom_coedges = (0..count)
                 .rev()
                 .map(|index| {
@@ -8975,15 +8929,31 @@ fn transfer_resolved_extrusion_breps(
             let top_coedges = (0..count)
                 .map(|index| CoedgeId(format!("{prefix}:coedge:{profile_index}:{index}:top-cap")))
                 .collect::<Vec<_>>();
-            let cap_role = if profile_index == 0 {
-                cadmpeg_ir::topology::LoopBoundaryRole::Outer
-            } else {
-                cadmpeg_ir::topology::LoopBoundaryRole::Inner
-            };
-            let mut bottom_specs = Vec::with_capacity(count);
-            let mut top_specs = Vec::with_capacity(count);
+            ir.model.loops.push(IrLoop {
+                id: bottom_loop.clone(),
+                face: bottom_face.clone(),
+                boundary_role: if profile_index == 0 {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                },
+                coedges: bottom_coedges.clone(),
+                vertex_uses: Vec::new(),
+            });
+            ir.model.loops.push(IrLoop {
+                id: top_loop.clone(),
+                face: top_face.clone(),
+                boundary_role: if profile_index == 0 {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                },
+                coedges: top_coedges.clone(),
+                vertex_uses: Vec::new(),
+            });
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
+                let id = bottom_coedges[ring_index].clone();
                 let (geometry, reversed, start, end) = &profile[edge_index];
                 let bottom_pcurve = add_extrusion_pcurve(
                     ir,
@@ -8994,17 +8964,15 @@ fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     extrusion_cap_pcurve(geometry, *reversed, *start, *end),
                 );
-                let id = bottom_coedges[ring_index].clone();
-                emitted_coedges.insert(id.clone());
-                radial_pairs.push([
-                    id.clone(),
-                    CoedgeId(format!(
+                ir.model.coedges.push(Coedge {
+                    id,
+                    owner_loop: bottom_loop.clone(),
+                    edge: bottom_edges[edge_index].clone(),
+                    next: bottom_coedges[(ring_index + 1) % count].clone(),
+                    previous: bottom_coedges[(ring_index + count - 1) % count].clone(),
+                    radial_next: CoedgeId(format!(
                         "{prefix}:coedge:{profile_index}:{edge_index}:side-bottom"
                     )),
-                ]);
-                bottom_specs.push(CoedgeSpec {
-                    id,
-                    edge: bottom_edges[edge_index].clone(),
                     sense: Sense::Reversed,
                     pcurves: vec![PcurveUse {
                         pcurve: bottom_pcurve,
@@ -9014,6 +8982,7 @@ fn transfer_resolved_extrusion_breps(
                     use_curve: None,
                     use_curve_parameter_range: None,
                 });
+                let id = top_coedges[ring_index].clone();
                 let (geometry, reversed, start, end) = &profile[ring_index];
                 let top_pcurve = add_extrusion_pcurve(
                     ir,
@@ -9024,17 +8993,15 @@ fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     extrusion_cap_pcurve(geometry, *reversed, *start, *end),
                 );
-                let id = top_coedges[ring_index].clone();
-                emitted_coedges.insert(id.clone());
-                radial_pairs.push([
-                    id.clone(),
-                    CoedgeId(format!(
+                ir.model.coedges.push(Coedge {
+                    id,
+                    owner_loop: top_loop.clone(),
+                    edge: top_edges[ring_index].clone(),
+                    next: top_coedges[(ring_index + 1) % count].clone(),
+                    previous: top_coedges[(ring_index + count - 1) % count].clone(),
+                    radial_next: CoedgeId(format!(
                         "{prefix}:coedge:{profile_index}:{ring_index}:side-top"
                     )),
-                ]);
-                top_specs.push(CoedgeSpec {
-                    id,
-                    edge: top_edges[ring_index].clone(),
                     sense: Sense::Forward,
                     pcurves: vec![PcurveUse {
                         pcurve: top_pcurve,
@@ -9045,18 +9012,6 @@ fn transfer_resolved_extrusion_breps(
                     use_curve_parameter_range: None,
                 });
             }
-            builder
-                .ring(
-                    bottom_loop,
-                    &bottom_face,
-                    cap_role,
-                    bottom_specs,
-                    Vec::new(),
-                )
-                .expect("extrusion bottom cap ring registers under its face");
-            builder
-                .ring(top_loop, &top_face, cap_role, top_specs, Vec::new())
-                .expect("extrusion top cap ring registers under its face");
 
             let forward_sides = extrusion_profile_signed_area(profile)
                 .expect("validated extrusion profile has nonzero area")
@@ -9099,23 +9054,13 @@ fn transfer_resolved_extrusion_breps(
                         "{prefix}:coedge:{profile_index}:{index}:side-vertical-in"
                     )),
                 ];
-                builder
-                    .face(
-                        face_id.clone(),
-                        &shell_id,
-                        FaceSpec {
-                            surface: surface_id,
-                            sense: if forward_sides {
-                                Sense::Forward
-                            } else {
-                                Sense::Reversed
-                            },
-                            name: None,
-                            color: None,
-                            tolerance: None,
-                        },
-                    )
-                    .expect("extrusion side face id is unique under its shell");
+                ir.model.loops.push(IrLoop {
+                    id: loop_id.clone(),
+                    face: face_id.clone(),
+                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+                    coedges: coedges.to_vec(),
+                    vertex_uses: Vec::new(),
+                });
                 let edge_uses = [
                     (bottom_edges[index].clone(), Sense::Forward),
                     (vertical_edges[next].clone(), Sense::Forward),
@@ -9124,7 +9069,6 @@ fn transfer_resolved_extrusion_breps(
                 ];
                 let side_uvs =
                     extrusion_side_uvs(geometry, profile[index].1, *start, profile[index].3, span);
-                let mut side_specs = Vec::with_capacity(4);
                 for use_index in 0..4 {
                     let radial_next = match use_index {
                         0 => bottom_coedges[count - 1 - index].clone(),
@@ -9146,12 +9090,13 @@ fn transfer_resolved_extrusion_breps(
                         transform.offset,
                         line_pcurve(side_uvs[use_index][0], side_uvs[use_index][1]),
                     );
-                    let id = coedges[use_index].clone();
-                    emitted_coedges.insert(id.clone());
-                    radial_pairs.push([id.clone(), radial_next]);
-                    side_specs.push(CoedgeSpec {
-                        id,
+                    ir.model.coedges.push(Coedge {
+                        id: coedges[use_index].clone(),
+                        owner_loop: loop_id.clone(),
                         edge: edge_uses[use_index].0.clone(),
+                        next: coedges[(use_index + 1) % 4].clone(),
+                        previous: coedges[(use_index + 3) % 4].clone(),
+                        radial_next,
                         sense: edge_uses[use_index].1,
                         pcurves: vec![PcurveUse {
                             pcurve,
@@ -9162,25 +9107,72 @@ fn transfer_resolved_extrusion_breps(
                         use_curve_parameter_range: None,
                     });
                 }
-                builder
-                    .ring(
-                        loop_id,
-                        &face_id,
-                        cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-                        side_specs,
-                        Vec::new(),
-                    )
-                    .expect("extrusion side ring registers under its face");
+                ir.model.faces.push(Face {
+                    id: face_id.clone(),
+                    shell: shell_id.clone(),
+                    surface: surface_id,
+                    sense: if forward_sides {
+                        Sense::Forward
+                    } else {
+                        Sense::Reversed
+                    },
+                    loops: vec![loop_id],
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                });
+                shell_faces.push(face_id);
             }
         }
-        for [id, partner] in &radial_pairs {
-            if emitted_coedges.contains(partner) {
-                builder.radial_ring(&[id.clone(), partner.clone()]);
-            }
-        }
-        builder
-            .finish(&mut ir.model)
-            .expect("extrusion topology appends without id or owner conflicts");
+        ir.model.faces.push(Face {
+            id: bottom_face,
+            shell: shell_id.clone(),
+            surface: bottom_surface,
+            sense: if forward_caps {
+                Sense::Reversed
+            } else {
+                Sense::Forward
+            },
+            loops: bottom_loops,
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        ir.model.faces.push(Face {
+            id: top_face,
+            shell: shell_id.clone(),
+            surface: top_surface,
+            sense: if forward_caps {
+                Sense::Forward
+            } else {
+                Sense::Reversed
+            },
+            loops: top_loops,
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: shell_faces,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+        ir.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Solid,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
         transferred += 1;
     }
     transferred
@@ -15289,7 +15281,7 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
     }
 }
 
-fn feature_reference_name(scan: &ContainerScan, feature_id: u32) -> Option<&str> {
+fn feature_reference_name<'a>(scan: &'a ContainerScan<'_>, feature_id: u32) -> Option<&'a str> {
     let mut records = scan
         .features
         .reference_names
@@ -15327,10 +15319,10 @@ fn owned_section_feature_id(scan: &ContainerScan, definition_id: u32) -> Option<
     Some(row.feature_id)
 }
 
-fn section_definition_for_history_feature(
-    scan: &ContainerScan,
+fn section_definition_for_history_feature<'a>(
+    scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<&crate::feature::FeatureDefinition> {
+) -> Option<&'a crate::feature::FeatureDefinition> {
     let rows = scan
         .features
         .rows
@@ -23830,11 +23822,6 @@ fn transfer_native_brep(
         components.push(component);
     }
 
-    let mut builder = TopologyBuilder::new();
-    // Each half-edge's twin is its sole radial partner across the shared edge;
-    // record the pair when the twin is also emitted and link it with
-    // `radial_ring` at finish, matching the former per-coedge `radial_next`.
-    let mut radial_pairs: Vec<[CoedgeId; 2]> = Vec::new();
     for (component_index, faces) in components.iter().enumerate() {
         let body_id = BodyId(format!("creo:visibgeom:body#{}", component_index + 1));
         let region_id = RegionId(format!("creo:visibgeom:region#{}", component_index + 1));
@@ -23860,25 +23847,34 @@ fn transfer_native_brep(
                 .collect::<BTreeSet<_>>();
             adjacent.len() == 2 && adjacent.iter().all(|face| faces.contains(face))
         });
-        builder
-            .body(
-                body_id.clone(),
-                BodySpec {
-                    kind: if closed {
-                        BodyKind::Solid
-                    } else {
-                        BodyKind::Sheet
-                    },
-                    ..BodySpec::default()
-                },
-            )
-            .expect("native component body id is unique per component");
-        builder
-            .region(region_id.clone(), &body_id)
-            .expect("native component region id is unique under its body");
-        builder
-            .shell(shell_id.clone(), &region_id)
-            .expect("native component shell id is unique under its region");
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind: if closed {
+                BodyKind::Solid
+            } else {
+                BodyKind::Sheet
+            },
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        });
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id,
+            faces: faces
+                .iter()
+                .map(|face| FaceId(format!("creo:visibgeom:face#{face}")))
+                .collect(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
         for face_id in faces {
             let native_loops = &eligible_faces[face_id];
             let face = FaceId(format!("creo:visibgeom:face#{face_id}"));
@@ -23942,19 +23938,16 @@ fn transfer_native_brep(
                     Exactness::Derived,
                 );
             }
-            builder
-                .face(
-                    face.clone(),
-                    &shell_id,
-                    FaceSpec {
-                        surface,
-                        sense: face_sense,
-                        name: None,
-                        color: None,
-                        tolerance: None,
-                    },
-                )
-                .expect("native face id is unique under its shell");
+            ir.model.faces.push(Face {
+                id: face.clone(),
+                shell: shell_id.clone(),
+                surface,
+                sense: face_sense,
+                loops: loop_ids.clone(),
+                name: None,
+                color: None,
+                tolerance: None,
+            });
             for (boundary_index, (native_loop, loop_id)) in
                 native_loops.iter().zip(loop_ids).enumerate()
             {
@@ -23968,27 +23961,31 @@ fn transfer_native_brep(
                         ))
                     })
                     .collect::<Vec<_>>();
-                let boundary_role = if boundary_index == 0 {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                } else {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                };
-                let mut coedge_specs = Vec::with_capacity(native_loop.half_edges.len());
+                ir.model.loops.push(IrLoop {
+                    id: loop_id.clone(),
+                    face: face.clone(),
+                    boundary_role: if boundary_index == 0 {
+                        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                    } else {
+                        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                    },
+                    coedges: coedge_ids.clone(),
+                    vertex_uses: Vec::new(),
+                });
                 for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                     let id = coedge_ids[index].clone();
                     let twin = HalfEdgeId {
                         curve_id: half_edge.curve_id,
                         side: 1 - half_edge.side,
                     };
-                    if emitted_half_edges.contains(&twin) {
-                        radial_pairs.push([
-                            id.clone(),
-                            CoedgeId(format!(
-                                "creo:visibgeom:coedge#{}:{}",
-                                twin.curve_id, twin.side
-                            )),
-                        ]);
-                    }
+                    let radial_next = if emitted_half_edges.contains(&twin) {
+                        CoedgeId(format!(
+                            "creo:visibgeom:coedge#{}:{}",
+                            twin.curve_id, twin.side
+                        ))
+                    } else {
+                        id.clone()
+                    };
                     annotate(
                         annotations,
                         &id,
@@ -24101,9 +24098,14 @@ fn transfer_native_brep(
                         })
                         .into_iter()
                         .collect();
-                    coedge_specs.push(CoedgeSpec {
+                    ir.model.coedges.push(Coedge {
                         id,
+                        owner_loop: loop_id.clone(),
                         edge: EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id)),
+                        next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
+                        previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()]
+                            .clone(),
+                        radial_next,
                         sense: if half_edge.side == 0 {
                             Sense::Forward
                         } else {
@@ -24114,18 +24116,9 @@ fn transfer_native_brep(
                         use_curve_parameter_range: None,
                     });
                 }
-                builder
-                    .ring(loop_id, &face, boundary_role, coedge_specs, Vec::new())
-                    .expect("native loop ring registers under its face");
             }
         }
     }
-    for [id, partner] in &radial_pairs {
-        builder.radial_ring(&[id.clone(), partner.clone()]);
-    }
-    builder
-        .finish(&mut ir.model)
-        .expect("native topology appends without id or owner conflicts");
     (solved_point_count, emitted_curves.len())
 }
 
@@ -24365,12 +24358,12 @@ fn prototype_local_frame(
 #[cfg(test)]
 mod prototype_local_frame_tests;
 
-fn unique_surface_prototype_associations(
-    scan: &ContainerScan,
+fn unique_surface_prototype_associations<'a>(
+    scan: &'a ContainerScan<'_>,
 ) -> Vec<(
-    &crate::surface::SurfacePrototypeRecord,
-    &crate::surface::SurfaceRow,
-    &crate::container::Section,
+    &'a crate::surface::SurfacePrototypeRecord,
+    &'a crate::surface::SurfaceRow,
+    &'a crate::container::Section,
 )> {
     let mut associations = Vec::new();
     for record in &scan.surfaces.prototype_records {
@@ -24834,6 +24827,7 @@ fn transfer_positional_line_extrusion_planes(
                 parameter_interval: None,
                 direction: Vector3::new(frame.direction[0], frame.direction[1], frame.direction[2]),
                 native_position: None,
+                revision_form: None,
             },
             cache_fit_tolerance: None,
             record_bounds: None,
@@ -24951,6 +24945,7 @@ fn transfer_tabulated_cylinder_spline_extrusions(
                 parameter_interval: Some([0.0, 1.0]),
                 direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
                 native_position: None,
+                revision_form: None,
             },
             cache_fit_tolerance: None,
             record_bounds: None,
@@ -24971,8 +24966,8 @@ fn transfer_part_product(
     let Some(model_name_offset) = scan.framing.model_name_offset else {
         return false;
     };
-    let product_id = ProductId("creo:model:product#root".to_string());
-    let occurrence_id = OccurrenceId("creo:model:product_occurrence#root".to_string());
+    let product_id = ProductDefinitionId("creo:model:product_definition#root".to_string());
+    let occurrence_id = OccurrenceId("creo:model:occurrence#root".to_string());
     annotate(
         annotations,
         &product_id,
@@ -24989,18 +24984,38 @@ fn transfer_part_product(
         "part_product_occurrence",
         Exactness::Derived,
     );
-    ir.model.products.push(Product {
+    ir.model.product_definitions.push(ProductDefinition {
         id: product_id.clone(),
-        product_id: model_name.clone(),
-        name: Some(model_name.clone()),
+        kind: ProductDefinitionKind::Part,
+        source_name: Some(model_name.clone()),
+        label: Some(model_name.clone()),
+        description: None,
+        part_number: Some(model_name.clone()),
+        bom_properties: BTreeMap::default(),
         bodies: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+        native_ref: None,
     });
-    ir.model.product_occurrences.push(ProductOccurrence {
+    ir.model.occurrences.push(Occurrence {
         id: occurrence_id,
-        product: product_id,
+        prototype: PrototypeReference::Local {
+            definition: product_id,
+        },
         parent: OccurrenceParent::Root,
+        ordinal: 0,
         transform: Transform::identity(),
+        prototype_transform: Transform::identity(),
+        scale: [1.0; 3],
         name: Some(model_name.clone()),
+        linked_subelements: Vec::new(),
+        visible: None,
+        element_component: None,
+        claim_child: None,
+        copy_on_change: None,
+        copy_on_change_source: None,
+        copy_on_change_group: None,
+        copy_on_change_touched: None,
+        link_transform: None,
+        native_ref: None,
     });
     true
 }
@@ -28443,24 +28458,21 @@ fn transfer_cross_section_planes(
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan(ctx, root);
+    let scan = container::scan_bytes(root.window());
 
     let (mut ir, annotations, unknowns, coverage) = if ctx.container_only() {
         build_container_ir(&scan)?
     } else {
         build_ir(&scan)?
     };
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit Creo entities")?;
     let report = build_report(&scan, &ir, coverage, ctx.container_only());
-    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
-        ..cadmpeg_ir::source_fidelity::SourceFidelity::default()
+        ..cadmpeg_ir::SourceFidelity::default()
     };
-    source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
+    Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
 fn preserve_passthrough_sections(
@@ -28519,7 +28531,7 @@ fn preserve_passthrough_sections(
 /// decode-coverage counts.
 type BuiltIr = (
     CadIr,
-    cadmpeg_ir::annotations::Annotations,
+    cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
     BTreeMap<String, usize>,
 );
@@ -31289,6 +31301,9 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                                     | cadmpeg_ir::features::BodySelection::Native(_)
                             )
                         }
+                        cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => {
+                            occurrences.is_empty()
+                        }
                     });
                 let unresolved_transform = pattern_kind_has_unresolved_operands(pattern);
                 unresolved_pattern_seed_feature_count += usize::from(unresolved_seeds);
@@ -32402,10 +32417,12 @@ fn build_report(
     let mut losses = Vec::new();
 
     if container_only {
-        losses.push(
-            CreoLossCode::ContainerOnlyDecode
-                .note("Container-only decode requested; entity transfer was skipped.".to_string()),
-        );
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::ContainerOnly,
+            severity: Severity::Info,
+            message: "Container-only decode requested; entity transfer was skipped.".to_string(),
+            provenance: None,
+        });
     }
 
     // The namespace census: what is byte-backed and readable.
@@ -32419,7 +32436,10 @@ fn build_report(
         .census
         .crv_array_count
         .map_or_else(|| "n/a".to_string(), |c| c.to_string());
-    losses.push(CreoLossCode::NamespaceCensusSummary.note(format!(
+    losses.push(LossNote {
+        code: cadmpeg_ir::report::LossKind::CarrierSummary,
+        severity: Severity::Info,
+        message: format!(
             "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
@@ -32442,10 +32462,15 @@ fn build_report(
             scan.curves.prototypes.len(),
             scan.curves.topology_rows.len(),
             scan.topology.loops.len(),
-        )));
+        ),
+        provenance: None,
+    });
 
     // The core prototype-vs-instance limitation.
-    losses.push(CreoLossCode::GeneralBrepIncomplete.note(format!(
+    losses.push(LossNote {
+        code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+        severity: Severity::Blocking,
+        message: format!(
             "General model B-rep transfer remains incomplete. Native face components transfer \
              when every boundary edge has solved vertex orbits, face orientation is unique, and \
              every loop is complete; a multi-loop planar face additionally requires one strict \
@@ -32460,172 +32485,251 @@ fn build_report(
              defaults; they require their per-instance parameter bodies \
              ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
              records."
-        )));
+        ),
+        provenance: None,
+    });
 
     if !container_only && placed_plane_count != 0 {
-        losses.push(CreoLossCode::PlaneCarriersTransferred.note(format!(
-            "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
                  VisibGeom local-system support frames."
-        )));
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && topology_bound_plane_count != 0 {
-        losses.push(
-            CreoLossCode::TopologyBoundPlaneCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {topology_bound_plane_count} model-space plane carrier(s) from \
-             circle, ellipse, or line boundary carriers or three or more non-collinear \
-             solved boundary vertices of the same native face."
-            )),
-        );
+                 circle, ellipse, or line boundary carriers or three or more non-collinear \
+                 solved boundary vertices of the same native face."
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && first_instance_prototype_surface_count != 0 {
-        losses.push(
-            CreoLossCode::FirstInstancePrototypeCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
                  cylinder, cone, torus, or interpolation-spline carrier(s) from complete named \
                  parameters."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && paired_envelope_sphere_count != 0 {
-        losses.push(CreoLossCode::SphereCarriersTransferred.note(format!(
-            "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {paired_envelope_sphere_count} sphere carrier(s) from complementary \
                  five-coordinate type-26 hemisphere envelopes and their shared zero-major-radius \
                  prototype."
-        )));
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && positional_torus_count != 0 {
-        losses.push(
-            CreoLossCode::PositionalTorusCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {positional_torus_count} exact positional torus carrier(s) from \
                  complete local-system, radius, and five-coordinate envelope bodies."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && positional_cylinder_count != 0 {
-        losses.push(
-            CreoLossCode::PositionalCylinderCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {positional_cylinder_count} exact positional cylinder carrier(s) \
                  from complete per-instance parameter bodies."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && positional_cone_count != 0 {
-        losses.push(
-            CreoLossCode::PositionalConeCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {positional_cone_count} exact positional cone carrier(s) from \
                  complete support-apex or planar-envelope bodies."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && positional_line_extrusion_plane_count != 0 {
-        losses.push(CreoLossCode::LineExtrusionCarriersTransferred.note(format!(
-            "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
                  surface-of-extrusion carrier(s) from complete sweep-direction and directrix \
                  frames."
-        )));
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && tabulated_cylinder_spline_extrusion_count != 0 {
-        losses.push(
-            CreoLossCode::TabulatedCylinderSplineExtrusionCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {tabulated_cylinder_spline_extrusion_count} tabulated-cylinder \
                  cubic spline extrusion carrier(s) from uniquely matched directrix and frame spans."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && !scan.planes.datums.is_empty() {
-        losses.push(CreoLossCode::DatumPlaneCarriersTransferred.note(format!(
-            "Transferred {} exact model-space construction datum plane carrier(s) from ActDatums; \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {} exact model-space construction datum plane carrier(s) from ActDatums; \
                  these are unbounded reference planes, not model B-rep faces.",
-            scan.planes.datums.len()
-        )));
+                scan.planes.datums.len()
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && !scan.references.lines.is_empty() {
-        losses.push(CreoLossCode::ReferenceLineCarriersTransferred.note(format!(
-            "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {} finite model-space reference line carrier(s) from MdlRefInfo; \
                  their byte-exact endpoints remain attached as native line records.",
-            scan.references.lines.len()
-        )));
+                scan.references.lines.len()
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && !scan.references.circles.is_empty() {
-        losses.push(CreoLossCode::ReferenceCircleCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {} circular reference carrier(s) from MdlRefInfo rows whose stored center, radius, and endpoints satisfy the circle equation; byte-exact endpoints remain attached as native circle records.",
                 scan.references.circles.len()
-            )));
+            ),
+            provenance: None,
+        });
     }
 
     if !container_only && !scan.references.ellipses.is_empty() {
-        losses.push(CreoLossCode::ReferenceEllipseCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {} elliptical reference carrier(s) from MdlRefInfo conic rows whose frame, coefficient radii, and antipodal endpoints satisfy one ellipse equation; the source conic records remain byte-exact native records.",
                 scan.references.ellipses.len()
-            )));
+            ),
+            provenance: None,
+        });
     }
 
     let topological_point_count = count("transferred_topological_point_count");
     if !container_only && topological_point_count != 0 {
-        losses.push(CreoLossCode::TopologicalPointCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers."
-            )));
+            ),
+            provenance: None,
+        });
     }
 
     let native_topological_edge_count = count("transferred_native_topological_edge_count");
     if !container_only && native_topological_edge_count != 0 {
-        losses.push(CreoLossCode::TopologicalEdgeCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {native_topological_edge_count} native topological edge(s) whose endpoint vertex orbits have exact model-space points."
-            )));
+            ),
+            provenance: None,
+        });
     }
 
     let analytic_pcurve_carrier_count = count("transferred_analytic_pcurve_carrier_count");
     if !container_only && analytic_pcurve_carrier_count != 0 {
-        losses.push(CreoLossCode::AnalyticPcurveCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {analytic_pcurve_carrier_count} exact analytic carrier(s) by mapping native linear pcurves through placed planar, cylindrical, conical, spherical, or toroidal face charts."
-            )));
+            ),
+            provenance: None,
+        });
     }
 
     let extrusion_plane_boundary_curve_count =
         count("transferred_extrusion_plane_boundary_curve_count");
     if !container_only && extrusion_plane_boundary_curve_count != 0 {
-        losses.push(
-            CreoLossCode::ExtrusionPlaneBoundaryCurveCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {extrusion_plane_boundary_curve_count} exact NURBS boundary \
                  carrier(s) where one tabulated-extrusion boundary lies in an adjacent plane \
                  and every other control point lies strictly on one side."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     let extrusion_plane_section_generator_curve_count =
         count("transferred_extrusion_plane_section_generator_curve_count");
     if !container_only && extrusion_plane_section_generator_curve_count != 0 {
-        losses.push(
-            CreoLossCode::ExtrusionPlaneSectionGeneratorCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {extrusion_plane_section_generator_curve_count} exact NURBS \
                  generator carrier(s) where an adjacent plane contains the sweep direction and \
                  the cubic directrix has exactly one plane intersection."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     let shared_extrusion_generator_curve_count =
         count("transferred_shared_extrusion_generator_curve_count");
     if !container_only && shared_extrusion_generator_curve_count != 0 {
-        losses.push(
-            CreoLossCode::SharedExtrusionGeneratorCarriersTransferred.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
                 "Transferred {shared_extrusion_generator_curve_count} exact shared NURBS \
                  generator carrier(s) whose two tabulated-extrusion control nets meet on the \
                  same linear boundary and lie strictly on opposite sides of a plane through it."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     let torus_coverage = torus_parameter_coverage(scan);
@@ -32635,43 +32739,50 @@ fn build_report(
         || torus_coverage.five_coordinate_envelopes != 0
         || torus_coverage.split_coordinate_envelopes != 0
     {
-        losses.push(CreoLossCode::TorusParameterCoverageRetained.note(format!(
-            "Retained {} tagged type-26 radius override(s), {} prototype-minor-radius \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::CarrierSummary,
+            severity: Severity::Info,
+            message: format!(
+                "Retained {} tagged type-26 radius override(s), {} prototype-minor-radius \
                  replay(s), {} terminal outline extent(s), {} five-coordinate envelope(s), and \
                  {} split-coordinate envelope(s). These row-local fields remain byte-exact native \
                  data. Placement-complete paired sphere envelopes additionally transfer as \
                  analytic carriers.",
-            torus_coverage.radius_overrides,
-            torus_coverage.replayed_minor_radii,
-            torus_coverage.outline_extents,
-            torus_coverage.five_coordinate_envelopes,
-            torus_coverage.split_coordinate_envelopes,
-        )));
+                torus_coverage.radius_overrides,
+                torus_coverage.replayed_minor_radii,
+                torus_coverage.outline_extents,
+                torus_coverage.five_coordinate_envelopes,
+                torus_coverage.split_coordinate_envelopes,
+            ),
+            provenance: None,
+        });
     }
 
     // The specific undecoded PSB layers that gate per-instance geometry.
-    losses.push(
-        CreoLossCode::PerInstanceGeometryGated.note(
-            "Additional model-space carriers are gated by unresolved lane-specific scalar \
+    losses.push(LossNote {
+        code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+        severity: Severity::Blocking,
+        message: "Additional model-space carriers are gated by unresolved lane-specific scalar \
                   prefixes, feature-local transform bindings, placement-incomplete or untagged \
                   `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps \
                   prevent transfer of the remaining non-plane per-instance surfaces, curves, and \
                   vertices."
-                .to_string(),
-        ),
-    );
+            .to_string(),
+        provenance: None,
+    });
 
     // Topology.
-    losses.push(
-        CreoLossCode::TopologyPartiallyTransferred.note(
-            "Native curve half-edges and closed loops were decoded. Components with complete \
+    losses.push(LossNote {
+        code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+        severity: Severity::Blocking,
+        message: "Native curve half-edges and closed loops were decoded. Components with complete \
                   solved boundaries and unique face orientations transfer as \
                   body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components \
                   require face-instance partitioning, surface parameter bindings, curve geometry, \
                   or vertex coordinates."
-                .to_string(),
-        ),
-    );
+            .to_string(),
+        provenance: None,
+    });
 
     let configuration_gap = match scan.framing.family_table.map(|record| record.pointer) {
         Some(crate::container::FamilyTablePointer::Null) => "",
@@ -32709,14 +32820,19 @@ fn build_report(
     };
 
     // Features, history, materials.
-    losses.push(CreoLossCode::FeatureOperationsRetained.note(format!(
-        "Named feature operations and their decoded dependency/input tables transfer as typed \
+    losses.push(LossNote {
+        code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+        severity: Severity::Warning,
+        message: format!(
+            "Named feature operations and their decoded dependency/input tables transfer as typed \
              or native design records. {curve_expression_transfer} \
              Full neutral operation semantics\
              {configuration_gap}, graph, case-study, cabling, and cross-model relation functions, \
              materials, and display data \
              remain untransferred."
-    )));
+        ),
+        provenance: None,
+    });
 
     // Coverage drops: VisibGeom rows and curve-equation records that decoded
     // but could not be transferred, resolved, or evaluated.
@@ -32731,98 +32847,152 @@ fn build_report(
             })
             .collect::<Vec<_>>()
             .join(", ");
-        losses.push(CreoLossCode::VisibleSurfaceRowsUntransferred.note(format!(
-            "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{untransferred_surface_rows} unique VisibGeom surface row(s) were not \
                  transferred as carriers and remain structural namespace records \
                  ({unresolved_families})."
-        )));
+            ),
+            provenance: None,
+        });
     }
     let untransferred_curve_rows = count("untransferred_visible_curve_row_count");
     if untransferred_curve_rows != 0 {
-        losses.push(CreoLossCode::VisibleCurveRowsUntransferred.note(format!(
-            "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{untransferred_curve_rows} unique VisibGeom curve-topology row(s) were not \
                  transferred as carriers and remain structural namespace records."
-        )));
+            ),
+            provenance: None,
+        });
     }
     let ambiguous_surface_rows = count("ambiguous_visible_surface_row_count");
     if ambiguous_surface_rows != 0 {
-        losses.push(CreoLossCode::AmbiguousSurfaceRows.note(format!(
-            "{ambiguous_surface_rows} VisibGeom surface row(s) share a non-unique identity \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            severity: Severity::Info,
+            message: format!(
+                "{ambiguous_surface_rows} VisibGeom surface row(s) share a non-unique identity \
                  and were not resolved to a single carrier."
-        )));
+            ),
+            provenance: None,
+        });
     }
     let ambiguous_curve_rows = count("ambiguous_visible_curve_row_count");
     if ambiguous_curve_rows != 0 {
-        losses.push(CreoLossCode::AmbiguousCurveRows.note(format!(
-            "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            severity: Severity::Info,
+            message: format!(
+                "{ambiguous_curve_rows} VisibGeom curve-topology row(s) share a non-unique \
                  identity and were not resolved to a single carrier."
-        )));
+            ),
+            provenance: None,
+        });
     }
     let missing_segment_rows = count("missing_feature_segment_row_count");
     if missing_segment_rows != 0 {
-        losses.push(CreoLossCode::MissingSectionSegmentRows.note(format!(
-            "{missing_segment_rows} declared section segment row(s) did not decode and remain \
-             unavailable to the defining sketch."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_segment_rows} declared section segment row(s) did not decode and remain \
+                 unavailable to the defining sketch."
+            ),
+            provenance: None,
+        });
     }
     let missing_relation_rows = count("missing_feature_relation_row_count");
     if missing_relation_rows != 0 {
-        losses.push(CreoLossCode::MissingSectionRelationRows.note(format!(
-            "{missing_relation_rows} declared section relation row(s) did not decode; the \
-             affected complete-table solver identities remain unavailable."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_relation_rows} declared section relation row(s) did not decode; the \
+                 affected complete-table solver identities remain unavailable."
+            ),
+            provenance: None,
+        });
     }
     let malformed_relation_tables = count("malformed_feature_relation_table_count");
     if malformed_relation_tables != 0 {
-        losses.push(CreoLossCode::MalformedSectionRelationTables.note(format!(
-            "{malformed_relation_tables} section relation table(s) use the invalid zero \
-             allocation count."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "{malformed_relation_tables} section relation table(s) use the invalid zero \
+                 allocation count."
+            ),
+            provenance: None,
+        });
     }
     let missing_skamp_rows = count("missing_feature_skamp_row_count");
     if missing_skamp_rows != 0 {
-        losses.push(CreoLossCode::MissingSectionIncidenceRows.note(format!(
-            "{missing_skamp_rows} declared section incidence row(s) did not decode; the \
-             affected complete-table solver identities remain unavailable."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_skamp_rows} declared section incidence row(s) did not decode; the \
+                 affected complete-table solver identities remain unavailable."
+            ),
+            provenance: None,
+        });
     }
     let missing_triple_rows = count("missing_feature_relation_triple_row_count");
     if missing_triple_rows != 0 {
-        losses.push(
-            CreoLossCode::MissingSectionRelationIncidenceJoinRows.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{missing_triple_rows} declared section relation-incidence join row(s) did not \
-             decode; the affected complete-table solver identities remain unavailable."
-            )),
-        );
+                 decode; the affected complete-table solver identities remain unavailable."
+            ),
+            provenance: None,
+        });
     }
     let unresolved_segment_geometry = count("unresolved_feature_segment_geometry_count");
     if unresolved_segment_geometry != 0 {
-        losses.push(CreoLossCode::UnresolvedSectionSegmentGeometry.note(format!(
-            "{unresolved_segment_geometry} decoded section segment(s) retain source-native \
-             geometry because their exact neutral construction remains unresolved."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_segment_geometry} decoded section segment(s) retain source-native \
+                 geometry because their exact neutral construction remains unresolved."
+            ),
+            provenance: None,
+        });
     }
     let active_native_skamps = count("active_native_feature_skamp_constraint_count");
     if active_native_skamps != 0 {
         let kinds = constraint_kind_breakdown(&coverage, "active_native_feature_skamp_type_");
-        losses.push(
-            CreoLossCode::NativeSectionIncidenceConstraintsRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{active_native_skamps} active section incidence constraint(s) retain native \
-             operands because their neutral semantics or referenced geometry remain unresolved \
-             ({kinds})."
-            )),
-        );
+                 operands because their neutral semantics or referenced geometry remain unresolved \
+                 ({kinds})."
+            ),
+            provenance: None,
+        });
     }
     let active_native_relations = count("active_native_feature_relation_constraint_count");
     if active_native_relations != 0 {
         let kinds = constraint_kind_breakdown(&coverage, "active_native_feature_relation_type_");
-        losses.push(
-            CreoLossCode::NativeSectionDimensionRelationsRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{active_native_relations} active section dimension relation(s) retain native \
-             operands because their neutral semantics, incidence join, or referenced geometry \
-             remain unresolved ({kinds})."
-            )),
-        );
+                 operands because their neutral semantics, incidence join, or referenced geometry \
+                 remain unresolved ({kinds})."
+            ),
+            provenance: None,
+        });
     }
     let incomplete_sweeps = count("transferred_incomplete_sweep_feature_count");
     if incomplete_sweeps != 0 {
@@ -32840,10 +33010,15 @@ fn build_report(
         .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
         .collect::<Vec<_>>()
         .join(", ");
-        losses.push(CreoLossCode::IncompleteSweepFeaturesRetained.note(format!(
-            "{incomplete_sweeps} profile sweep history feature(s) retain incomplete required \
-             construction operands ({families})."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_sweeps} profile sweep history feature(s) retain incomplete required \
+                 construction operands ({families})."
+            ),
+            provenance: None,
+        });
     }
     let incomplete_surface_operations =
         count("transferred_incomplete_surface_operation_feature_count");
@@ -32866,12 +33041,15 @@ fn build_report(
         .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
         .collect::<Vec<_>>()
         .join(", ");
-        losses.push(
-            CreoLossCode::IncompleteSurfaceOperationFeaturesRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{incomplete_surface_operations} surface construction history feature(s) retain \
-             incomplete required operands ({families})."
-            )),
-        );
+                 incomplete required operands ({families})."
+            ),
+            provenance: None,
+        });
     }
     let incomplete_other_constructions =
         count("transferred_incomplete_other_construction_feature_count");
@@ -32890,12 +33068,15 @@ fn build_report(
         .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
         .collect::<Vec<_>>()
         .join(", ");
-        losses.push(
-            CreoLossCode::IncompleteOtherConstructionFeaturesRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{incomplete_other_constructions} construction history feature(s) retain \
-             unresolved neutral operands ({families})."
-            )),
-        );
+                 unresolved neutral operands ({families})."
+            ),
+            provenance: None,
+        });
     }
     let incomplete_recognized_features = count("transferred_incomplete_recognized_feature_count");
     if incomplete_recognized_features != 0 {
@@ -32915,30 +33096,39 @@ fn build_report(
         .filter_map(|(family, count)| (count != 0).then_some(format!("{family}={count}")))
         .collect::<Vec<_>>()
         .join(", ");
-        losses.push(
-            CreoLossCode::IncompleteRecognizedFeaturesRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{incomplete_recognized_features} recognized non-sweep history feature(s) retain \
-             incomplete required construction operands ({families})."
-            )),
-        );
+                 incomplete required construction operands ({families})."
+            ),
+            provenance: None,
+        });
     }
     let explicitly_unresolved_features = count("transferred_explicitly_unresolved_feature_count");
     let native_features = count("transferred_native_feature_count");
     if native_features != 0 {
-        losses.push(
-            CreoLossCode::NativeOnlyFeatureDefinitionsRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{native_features} history feature definition(s) retain only source-native \
-             semantics."
-            )),
-        );
+                 semantics."
+            ),
+            provenance: None,
+        });
     }
     if explicitly_unresolved_features != 0 {
-        losses.push(
-            CreoLossCode::ExplicitlyUnresolvedFeatureConstructionsRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{explicitly_unresolved_features} typed history feature definition(s) retain an \
-             explicitly unresolved model-space construction."
-            )),
-        );
+                 explicitly unresolved model-space construction."
+            ),
+            provenance: None,
+        });
     }
     let unresolved_dimension_driven_variables =
         count("unresolved_feature_dimension_driven_variable_count");
@@ -32946,91 +33136,122 @@ fn build_report(
         let unresolved_coordinate_variables =
             count("unresolved_feature_dimension_driven_coordinate_variable_count");
         let other_variables = count("unresolved_feature_dimension_driven_other_variable_count");
-        losses.push(
-            CreoLossCode::UnresolvedDimensionDrivenSolverVariables.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{unresolved_dimension_driven_variables} dimension-driven section solver \
-             variable(s) retain unresolved exact values: {unresolved_coordinate_variables} \
-             coordinate variable(s) lack a complete dimension equation and {other_variables} \
-             variable(s) have a non-coordinate family whose dimension semantics are \
-             unresolved."
-            )),
-        );
+                 variable(s) retain unresolved exact values: {unresolved_coordinate_variables} \
+                 coordinate variable(s) lack a complete dimension equation and {other_variables} \
+                 variable(s) have a non-coordinate family whose dimension semantics are \
+                 unresolved."
+            ),
+            provenance: None,
+        });
     }
     let unresolved_dimension_driven_guesses =
         count("unresolved_feature_dimension_driven_guess_count");
     if unresolved_dimension_driven_guesses != 0 {
-        losses.push(
-            CreoLossCode::UnresolvedDimensionDrivenSolverGuesses.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{unresolved_dimension_driven_guesses} section solver variable pre-solve \
-             estimate(s) use a dimension-driven sentinel whose dimension join is unresolved."
-            )),
-        );
+                 estimate(s) use a dimension-driven sentinel whose dimension join is unresolved."
+            ),
+            provenance: None,
+        });
     }
     let missing_solver_variables = count("missing_feature_solver_variable_count");
     if missing_solver_variables != 0 {
-        losses.push(CreoLossCode::MissingSectionSolverVariableRows.note(format!(
-            "{missing_solver_variables} declared section solver variable row(s) did not \
-             decode; stored and equation-derived coordinates are withheld for the incomplete \
-             table."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "{missing_solver_variables} declared section solver variable row(s) did not \
+                 decode; stored and equation-derived coordinates are withheld for the incomplete \
+                 table."
+            ),
+            provenance: None,
+        });
     }
     let unresolved_dimension_values = count("unresolved_feature_dimension_value_count");
     if unresolved_dimension_values != 0 {
-        losses.push(CreoLossCode::UnresolvedSectionDimensionValues.note(format!(
-            "{unresolved_dimension_values} section dimension(s) retain source-native value \
-             tokens because their exact scalar encodings remain unresolved."
-        )));
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_dimension_values} section dimension(s) retain source-native value \
+                 tokens because their exact scalar encodings remain unresolved."
+            ),
+            provenance: None,
+        });
     }
     let unresolved_configuration_driver_tables =
         count("decoded_configuration_driver_table_reference_count")
             .saturating_sub(count("transferred_configuration_driver_table_count"));
     if unresolved_configuration_driver_tables != 0 {
-        losses.push(
-            CreoLossCode::UnresolvedConfigurationDriverTables.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{unresolved_configuration_driver_tables} referenced configuration driver \
-             table(s) retain unresolved traversal and row semantics."
-            )),
-        );
+                 table(s) retain unresolved traversal and row semantics."
+            ),
+            provenance: None,
+        });
     }
     let prohibited_records = count("prohibited_active_curve_expression_record_count");
     if prohibited_records != 0 {
-        losses.push(
-            CreoLossCode::ProhibitedCurveExpressionRecordsRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{prohibited_records} active curve-equation record(s) containing prohibited \
                  datum-curve constructs were not evaluated; source and dependencies were \
                  retained without values or derived curves."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
     let unresolved_solve_blocks = count("decoded_active_curve_expression_solve_block_count")
         .saturating_sub(count("evaluated_active_curve_expression_solve_block_count"));
     if unresolved_solve_blocks != 0 {
-        losses.push(
-            CreoLossCode::UnresolvedCurveExpressionSolveBlocks.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{unresolved_solve_blocks} active curve-equation simultaneous-solve block(s) \
-             retain their ordered equations and unknowns without solved values or derived \
-             curves."
-            )),
-        );
+                 retain their ordered equations and unknowns without solved values or derived \
+                 curves."
+            ),
+            provenance: None,
+        });
     }
     let unresolved_solve_controls = count("unresolved_active_curve_expression_solve_control_count");
     if unresolved_solve_controls != 0 {
-        losses.push(
-            CreoLossCode::UnresolvedCurveExpressionSolveControl.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{unresolved_solve_controls} active curve-equation record(s) retain malformed or \
-             incomplete simultaneous-solve control without sequentially interpreting its \
-             bounded source lines."
-            )),
-        );
+                 incomplete simultaneous-solve control without sequentially interpreting its \
+                 bounded source lines."
+            ),
+            provenance: None,
+        });
     }
     let prohibited_kinds = count("prohibited_active_curve_expression_kind_count");
     if prohibited_kinds != 0 {
-        losses.push(
-            CreoLossCode::ProhibitedCurveExpressionKindsRetained.note(format!(
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
                 "{prohibited_kinds} prohibited datum-curve construct(s) across active \
                  curve-equation records were not evaluated."
-            )),
-        );
+            ),
+            provenance: None,
+        });
     }
 
     DecodeReport {
@@ -33038,6 +33259,7 @@ fn build_report(
         container_only,
         geometry_transferred: has_transferred_geometry(ir),
         coverage,
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }

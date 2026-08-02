@@ -4,14 +4,12 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId,
 };
-use cadmpeg_ir::provenance::Exactness;
-use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{BodyKind, Sense};
+use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop, Region, Sense, Shell};
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
 use super::{annotate, OrientedLoop, OwnershipPlan, TransferPlan};
@@ -208,8 +206,10 @@ pub(super) fn emit_faces(
     let ownership = &plan.ownership;
     let loop_orientation = &plan.loop_orientation;
 
-    let mut builder = TopologyBuilder::new();
     let body_id = BodyId("catia:b5:body#0".to_string());
+    let region_ids: Vec<RegionId> = (0..ownership.components.len())
+        .map(|component| RegionId(format!("catia:b5:region#{component}")))
+        .collect();
     annotate(
         annotations,
         &body_id,
@@ -220,20 +220,17 @@ pub(super) fn emit_faces(
     annotations
         .derived(&body_id, "kind")
         .derived(&body_id, "regions");
-    builder
-        .body(
-            body_id.clone(),
-            BodySpec {
-                kind: ownership.body_kind,
-                ..BodySpec::default()
-            },
-        )
-        .expect("b5 body id is unique");
-    // `shell.faces` is left to the builder's aggregation from the face pass
-    // below, which registers faces in graph order under the same
-    // `face_components` owner map the former explicit list mapped.
-    for component_index in 0..ownership.components.len() {
-        let region_id = RegionId(format!("catia:b5:region#{component_index}"));
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: ownership.body_kind,
+        regions: region_ids.clone(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    for (component_index, component_faces) in ownership.components.iter().enumerate() {
+        let region_id = region_ids[component_index].clone();
         let shell_id = ShellId(format!("catia:b5:shell#{component_index}"));
         annotate(
             annotations,
@@ -245,9 +242,11 @@ pub(super) fn emit_faces(
         annotations
             .derived(&region_id, "body")
             .derived(&region_id, "shells");
-        builder
-            .region(region_id.clone(), &body_id)
-            .expect("b5 region id is unique under its body");
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id.clone()],
+        });
         annotate(
             annotations,
             &shell_id,
@@ -258,12 +257,19 @@ pub(super) fn emit_faces(
         annotations
             .derived(&shell_id, "region")
             .derived(&shell_id, "faces");
-        builder
-            .shell(shell_id, &region_id)
-            .expect("b5 shell id is unique under its region");
+        ir.model.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: component_faces
+                .iter()
+                .map(|face| FaceId(format!("catia:b5:face#{}", graph.faces[*face].object_id)))
+                .collect(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
     }
 
-    let mut coedges_by_edge = HashMap::<u32, Vec<CoedgeId>>::new();
+    let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
         let face_id = FaceId(format!("catia:b5:face#{}", face.object_id));
         let shell_id = ShellId(format!(
@@ -282,19 +288,20 @@ pub(super) fn emit_faces(
             .derived(&face_id, "surface")
             .derived(&face_id, "sense")
             .derived(&face_id, "loops");
-        builder
-            .face(
-                face_id.clone(),
-                &shell_id,
-                FaceSpec {
-                    surface: surface_ids[&face.surface].clone(),
-                    sense: Sense::Forward,
-                    name: None,
-                    color: None,
-                    tolerance: None,
-                },
-            )
-            .expect("b5 face registers under its component shell");
+        ir.model.faces.push(Face {
+            id: face_id.clone(),
+            shell: shell_id.clone(),
+            surface: surface_ids[&face.surface].clone(),
+            sense: Sense::Forward,
+            loops: face
+                .loops
+                .iter()
+                .map(|loop_id| LoopId(format!("catia:b5:loop#{loop_id}")))
+                .collect(),
+            name: None,
+            color: None,
+            tolerance: None,
+        });
         for loop_id_value in &face.loops {
             let loop_ = &graph.loops[loop_id_value];
             let orientation = &loop_orientation[loop_id_value];
@@ -303,6 +310,10 @@ pub(super) fn emit_faces(
             let loop_id = LoopId(format!("catia:b5:loop#{loop_id_value}"));
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edges.len())
                 .map(|index| CoedgeId(format!("catia:b5:coedge#{loop_id_value}-{index}")))
+                .collect();
+            let coedge_ids: Vec<CoedgeId> = member_order
+                .iter()
+                .map(|member| coedge_ids_by_member[*member].clone())
                 .collect();
             annotate(
                 annotations,
@@ -314,8 +325,14 @@ pub(super) fn emit_faces(
             annotations
                 .derived(&loop_id, "face")
                 .derived(&loop_id, "coedges");
-            let mut coedge_specs = Vec::with_capacity(member_order.len());
-            for &member in member_order {
+            ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face: face_id.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                coedges: coedge_ids.clone(),
+                vertex_uses: Vec::new(),
+            });
+            for (position, &member) in member_order.iter().enumerate() {
                 let edge = loop_.edges[member];
                 let reversed = senses[member];
                 let id = coedge_ids_by_member[member].clone();
@@ -337,10 +354,16 @@ pub(super) fn emit_faces(
                 ] {
                     annotations.derived(&id, field);
                 }
-                coedges_by_edge.entry(edge).or_default().push(id.clone());
-                coedge_specs.push(CoedgeSpec {
-                    id,
+                let arena_index = ir.model.coedges.len();
+                coedges_by_edge.entry(edge).or_default().push(arena_index);
+                ir.model.coedges.push(Coedge {
+                    id: id.clone(),
+                    owner_loop: loop_id.clone(),
                     edge: edge_id_map[&edge].clone(),
+                    next: coedge_ids[(position + 1) % coedge_ids.len()].clone(),
+                    previous: coedge_ids[(position + coedge_ids.len() - 1) % coedge_ids.len()]
+                        .clone(),
+                    radial_next: id,
                     sense: if reversed {
                         Sense::Reversed
                     } else {
@@ -362,23 +385,12 @@ pub(super) fn emit_faces(
                     use_curve_parameter_range: None,
                 });
             }
-            builder
-                .ring(
-                    loop_id,
-                    &face_id,
-                    cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                    coedge_specs,
-                    Vec::new(),
-                )
-                .expect("b5 loop ring registers under its face");
         }
     }
-    // Each edge's shared coedges become one radial ring, wired in the same
-    // per-edge occurrence order the former arena-index fixup walked.
     for occurrences in coedges_by_edge.values() {
-        builder.radial_ring(occurrences);
+        for (position, &arena_index) in occurrences.iter().enumerate() {
+            let radial = occurrences[(position + 1) % occurrences.len()];
+            ir.model.coedges[arena_index].radial_next = ir.model.coedges[radial].id.clone();
+        }
     }
-    builder
-        .finish(&mut ir.model)
-        .expect("b5 topology hierarchy appends without id or owner conflicts");
 }

@@ -7,19 +7,12 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
     AppearanceId, BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId,
-    ProductId, SurfaceId, VertexId,
+    ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::topology::Color;
 
 use crate::parse::{Exchange, RawRecord, Value};
-use crate::vocab::{
-    COLOUR_RGB, COMPLEX_TRIANGULATED_FACE, CURVE_STYLE, DATUM, DATUM_SYSTEM,
-    DRAUGHTING_PRE_DEFINED_COLOUR, GEOMETRIC_CURVE_SET, GEOMETRIC_SET, INVISIBILITY,
-    NEXT_ASSEMBLY_USAGE_OCCURRENCE, NULL_STYLE, OVER_RIDING_STYLED_ITEM, POINT_STYLE,
-    PRESENTATION_LAYER_ASSIGNMENT, PRODUCT, STYLED_ITEM, SURFACE_STYLE, TRIANGULATED_FACE,
-    TRIANGULATED_SURFACE_SET,
-};
 
 pub(super) struct PresentationResult {
     pub typed_records: BTreeSet<u64>,
@@ -76,7 +69,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             .collect(),
         products: ir
             .model
-            .products
+            .product_definitions
             .iter()
             .map(|item| item.id.0.clone())
             .collect(),
@@ -96,7 +89,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
     };
     let mut appearance_ids = BTreeMap::<u64, AppearanceId>::new();
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some(INVISIBILITY) {
+        if record.simple_name() != Some("INVISIBILITY") {
             continue;
         }
         let Some(items) = record.parameter(0).and_then(ValueExt::list) else {
@@ -116,7 +109,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         typed.insert(id);
     }
     for (&layer_id, layer) in &exchange.records {
-        if layer.simple_name() != Some(PRESENTATION_LAYER_ASSIGNMENT) {
+        if layer.simple_name() != Some("PRESENTATION_LAYER_ASSIGNMENT") {
             continue;
         }
         let Some(name) = layer.parameter(0).and_then(ValueExt::text) else {
@@ -157,7 +150,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         .filter_map(|(&id, record)| {
             matches!(
                 record.simple_name(),
-                Some(STYLED_ITEM | OVER_RIDING_STYLED_ITEM)
+                Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
             )
             .then_some(id)
         })
@@ -225,6 +218,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
                     id: id.clone(),
                     name,
                     asset_guid: None,
+                    library_id: None,
                     visual_guid: None,
                     physical_token: None,
                     schema: Some("step_surface_style".into()),
@@ -309,7 +303,7 @@ fn expand_style_targets(
     };
     if !matches!(
         record.simple_name(),
-        Some(GEOMETRIC_SET | GEOMETRIC_CURVE_SET)
+        Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
     ) {
         active.remove(&id);
         return vec![id];
@@ -372,16 +366,16 @@ fn presentation_item(
         };
     }
     match exchange.records.get(&id).and_then(RecordExt::simple_name) {
-        Some(PRODUCT)
+        Some("PRODUCT")
             if entity_ids
                 .products
                 .contains(&format!("step:product:product#{id}")) =>
         {
             PresentationItem::Product {
-                product: ProductId(format!("step:product:product#{id}")),
+                product: ProductDefinitionId(format!("step:product:product#{id}")),
             }
         }
-        Some(NEXT_ASSEMBLY_USAGE_OCCURRENCE)
+        Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
             if entity_ids
                 .occurrences
                 .contains(&format!("step:product:occurrence#{id}")) =>
@@ -391,8 +385,8 @@ fn presentation_item(
             }
         }
         Some(name)
-            if (name == DATUM
-                || name == DATUM_SYSTEM
+            if (name == "DATUM"
+                || name == "DATUM_SYSTEM"
                 || name.starts_with("DIMENSIONAL_")
                 || name.ends_with("_TOLERANCE"))
                 && entity_ids
@@ -403,7 +397,7 @@ fn presentation_item(
                 annotation: PmiId(format!("step:presentation:pmi#{id}")),
             }
         }
-        Some(TRIANGULATED_FACE | COMPLEX_TRIANGULATED_FACE | TRIANGULATED_SURFACE_SET)
+        Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET")
             if entity_ids
                 .tessellations
                 .contains(&format!("step:tessellation:mesh#{id}")) =>
@@ -431,7 +425,7 @@ struct EntityIds {
 }
 
 fn overridden_style(style: &RawRecord) -> Option<u64> {
-    (style.simple_name() == Some(OVER_RIDING_STYLED_ITEM))
+    (style.simple_name() == Some("OVER_RIDING_STYLED_ITEM"))
         .then(|| style.parameter(3).and_then(ValueExt::reference))?
 }
 
@@ -475,11 +469,11 @@ fn find_color(
     }
     let record = exchange.records.get(&id)?;
     let name = record.simple_name()?;
-    let record_domain = if name.starts_with(SURFACE_STYLE) {
+    let record_domain = if name.starts_with("SURFACE_STYLE") {
         Some(StyleDomain::Surface)
-    } else if name == CURVE_STYLE {
+    } else if name == "CURVE_STYLE" {
         Some(StyleDomain::Curve)
-    } else if name == POINT_STYLE {
+    } else if name == "POINT_STYLE" {
         Some(StyleDomain::Point)
     } else {
         None
@@ -493,7 +487,7 @@ fn find_color(
         None
     } else {
         match name {
-            COLOUR_RGB => {
+            "COLOUR_RGB" => {
                 let r = record.parameter(1)?.number()?;
                 let g = record.parameter(2)?.number()?;
                 let b = record.parameter(3)?.number()?;
@@ -514,7 +508,7 @@ fn find_color(
                     record.parameter(0).and_then(ValueExt::text),
                 ))
             }
-            DRAUGHTING_PRE_DEFINED_COLOUR => {
+            "DRAUGHTING_PRE_DEFINED_COLOUR" => {
                 let name = record.parameter(0)?.text()?;
                 predefined(&name).map(|color| (id, color, Some(name)))
             }
@@ -564,7 +558,7 @@ fn contains_null_style(
         return false;
     }
     match value {
-        Value::Typed(name, _) if name == NULL_STYLE => true,
+        Value::Typed(name, _) if name == "NULL_STYLE" => true,
         Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1),
         Value::List(values) => values
             .iter()

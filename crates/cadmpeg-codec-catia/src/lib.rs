@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::doc_markdown))]
 //! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
 //! [`CatiaCodec`] is the crate's only entry point. It implements the shared
@@ -41,9 +42,11 @@
 //! crate-private; nothing but `CatiaCodec` is part of the public API.
 
 pub(crate) mod analytic;
+mod appearance;
 pub(crate) mod assemble;
 pub(crate) mod catalog;
 pub(crate) mod container;
+pub(crate) mod coverage;
 pub(crate) mod decode;
 pub(crate) mod design_feature;
 pub(crate) mod entity_table;
@@ -58,7 +61,7 @@ pub(crate) mod value_block;
 pub(crate) mod variant;
 pub(crate) mod wire;
 
-#[cfg(feature = "fuzz")]
+#[cfg(feature = "fuzzing")]
 pub mod fuzz;
 
 /// Maximum number of exact rational-quadratic spans materialized for one
@@ -76,8 +79,9 @@ pub(crate) fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Opt
         .filter(|count| *count <= MAX_NURBS_SURFACE_CONTROL_POINTS)
 }
 
-use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
 
 /// The CATIA V5 `.CATPart` codec.
 #[derive(Debug, Default, Clone, Copy)]
@@ -101,7 +105,7 @@ impl Codec for CatiaCodec {
         _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window().to_vec());
+        let scan = container::scan_bytes(root.window());
         Ok(container::summarize(&scan))
     }
 

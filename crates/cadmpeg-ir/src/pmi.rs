@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{BodyId, EdgeId, FaceId, OccurrenceId, PmiId, ProductId, VertexId};
+use crate::ids::{BodyId, EdgeId, FaceId, OccurrenceId, PmiId, ProductDefinitionId, VertexId};
 use crate::transform::Transform;
 
 /// A model object qualified by an annotation.
@@ -34,7 +34,7 @@ pub enum PmiTarget {
     /// Product prototype.
     Product {
         /// Qualified product.
-        product: ProductId,
+        product: ProductDefinitionId,
     },
     /// Placed product occurrence.
     Occurrence {
@@ -227,9 +227,9 @@ pub struct PmiAnnotation {
 mod tests {
     use super::*;
     use crate::document::CadIr;
+    use crate::report::Check;
     use crate::units::Units;
-    use crate::validate::validate;
-    use crate::validate::Check;
+    use crate::validate;
 
     #[test]
     fn datum_system_references_resolve_with_precedence() {

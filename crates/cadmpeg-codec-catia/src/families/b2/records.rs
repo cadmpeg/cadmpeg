@@ -4,21 +4,22 @@
 //! construction-use supports, class-`0x5e`/`0x61`/`0x62` owner and link records,
 //! parameter-space packets, and consolidated UV pcurves.
 
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_codec_core::le::u16_at as u16_le;
+use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::wire::le::u16_at as u16_le;
 use std::collections::{BTreeMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::families::a5a8::records::FreeformSurface;
 use crate::wire::bytes::persistent_ref;
-use crate::wire::bytes::{allocation_ref, f64_le, finite_f64_lane, read_f64_array, u32_le_24};
+use crate::wire::bytes::{
+    allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
+};
 use crate::wire::records::{
     b_family_frames, consolidated_records, parse_consolidated_pcurve, ConsolidatedFrame,
     ConsolidatedPcurve,
 };
-use crate::wire::tokens::compact_uint;
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
@@ -285,7 +286,7 @@ pub fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
                 let mut at = frame.payload + 1;
                 let mut references = Vec::new();
                 for _ in 0..count {
-                    references.push(compact_uint(data, &mut at)?);
+                    references.push(compact_int(data, &mut at)?);
                 }
                 (at == end).then_some(references)
             });
@@ -336,7 +337,7 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
         .filter_map(|frame| {
             let token_start = frame.pos.checked_add(4)?;
             let mut token_end = token_start;
-            let header_value = compact_uint(data, &mut token_end)?;
+            let header_value = compact_int(data, &mut token_end)?;
             let canonical_token_width = match header_value {
                 0..=0x3f => 1,
                 0x40..=0xff => 2,
@@ -348,11 +349,11 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
                 return None;
             }
             let mut at = frame.payload;
-            let curve_ref = compact_uint(data, &mut at)?;
+            let curve_ref = compact_int(data, &mut at)?;
             let start_vertex_ref = allocation_ref(data, &mut at)?;
             let end_vertex_ref = allocation_ref(data, &mut at)?;
-            let start_parameter_ref = compact_uint(data, &mut at)?;
-            let end_parameter_ref = compact_uint(data, &mut at)?;
+            let start_parameter_ref = compact_int(data, &mut at)?;
+            let end_parameter_ref = compact_int(data, &mut at)?;
             let tail = *data.get(at)?;
             (at + 1 == frame.end && matches!(tail, 0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
                 .then_some(B2EdgeNode {
@@ -443,7 +444,7 @@ pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
             let mut at = frame.payload;
             let mut references = Vec::new();
             while at < refs_end {
-                references.push(compact_uint(data, &mut at)?);
+                references.push(compact_int(data, &mut at)?);
             }
             (at == refs_end).then_some(B2ReferenceList {
                 pos: frame.pos,
@@ -502,7 +503,7 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
                     }
                     (B2OwnerReferenceEncoding::TaggedU16Strong, 1)
                     | (B2OwnerReferenceEncoding::WidthCodedStrong, 0) => {
-                        compact_uint(data, &mut at)?
+                        compact_int(data, &mut at)?
                     }
                     (B2OwnerReferenceEncoding::WidthCodedStrong, 1) => {
                         let value = u32::from(*data.get(at)?);
@@ -574,7 +575,7 @@ pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
             }
             let mut at = frame.payload + 1;
             let references = (0..count)
-                .map(|_| compact_uint(data, &mut at))
+                .map(|_| compact_int(data, &mut at))
                 .collect::<Option<Vec<_>>>()?;
             let tail = data.get(at..frame.end)?;
             if tail.is_empty() || tail.last() != Some(&0x03) {
@@ -653,7 +654,7 @@ pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
                 return None;
             }
             let mut at = frame.payload + 1;
-            let target = compact_uint(data, &mut at)?;
+            let target = compact_int(data, &mut at)?;
             (at + 2 == frame.end && data.get(at..frame.end) == Some(&[0x03, 0x05])).then_some(
                 B2Link5f {
                     pos: frame.pos,
@@ -786,7 +787,7 @@ pub fn b2_class25_descriptors(data: &[u8]) -> Vec<B2Class25Descriptor> {
                 return None;
             }
             let mut at = frame.payload;
-            let record_id = compact_uint(data, &mut at)?;
+            let record_id = compact_int(data, &mut at)?;
             let control = *data.get(at)?;
             at += 1;
             if !matches!(control, 0x02 | 0x0a) {
@@ -910,6 +911,163 @@ pub struct B2Circle {
     pub full_circle: bool,
     /// Length-valued angular chart shift.
     pub chart_shift: f64,
+}
+
+/// One clamped rational NURBS curve stored in a `b2 03 16` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2NurbsCurve {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded record token.
+    pub header_token: u32,
+    /// Exact neutral rational curve.
+    pub geometry: NurbsCurve,
+}
+
+/// One spatial circle carrier stored in a `b2 03 0f` record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2SpatialCircle {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded record token.
+    pub header_token: u32,
+    /// Circle centre.
+    pub center: Point3,
+    /// Unit circle-plane normal.
+    pub axis: Vector3,
+    /// Unit radial reference direction.
+    pub ref_direction: Vector3,
+    /// Positive radius in millimetres.
+    pub radius: f64,
+    /// Stored arc-length interval.
+    pub range: [f64; 2],
+    /// Stored chart shift.
+    pub chart_shift: f64,
+}
+
+/// Decode length-closed `b2/b3/b4 03 0f` spatial circles.
+#[must_use]
+pub fn b2_spatial_circles(data: &[u8]) -> Vec<B2SpatialCircle> {
+    b_family_frames(data, 0x0f)
+        .into_iter()
+        .filter_map(|frame| parse_b2_spatial_circle(data, frame))
+        .collect()
+}
+
+fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2SpatialCircle> {
+    let values = read_f64_array::<14>(data, frame.payload)?;
+    if frame.end.checked_sub(frame.payload)? != 14 * size_of::<f64>() {
+        return None;
+    }
+    let center = Point3::new(values[0], values[1], values[2]);
+    let ref_direction = Vector3::new(values[3], values[4], values[5]);
+    let transverse = Vector3::new(values[6], values[7], values[8]);
+    let ref_norm = ref_direction.norm();
+    let transverse_norm = transverse.norm();
+    let orthogonality = ref_direction.dot(transverse).abs();
+    let axis = ref_direction.cross(transverse).unit()?;
+    let radius = values[9];
+    let range = [values[10], values[11]];
+    if (ref_norm - 1.0).abs() > 1e-12
+        || (transverse_norm - 1.0).abs() > 1e-12
+        || orthogonality > 1e-12
+        || radius <= 0.0
+        || range[0] >= range[1]
+        || values[12].to_bits() != 1.0f64.to_bits()
+    {
+        return None;
+    }
+    Some(B2SpatialCircle {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        center,
+        axis,
+        ref_direction,
+        radius,
+        range,
+        chart_shift: values[13],
+    })
+}
+
+/// Decode length-closed `b2 03 16` rational NURBS curves.
+///
+/// The record stores one clamped span. The first compact integer is the degree,
+/// so the control-point and weight cardinalities are both `degree + 1`. The two
+/// knot limits occur twice and the second pair must reproduce the first pair.
+#[must_use]
+pub fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
+    b_family_frames(data, 0x16)
+        .into_iter()
+        .filter_map(|frame| parse_b2_nurbs_curve(data, frame))
+        .collect()
+}
+
+fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2NurbsCurve> {
+    let mut at = frame.payload;
+    let degree = compact_int(data, &mut at)?;
+    let control_count = usize::try_from(degree.checked_add(1)?).ok()?;
+    if !(1..=64).contains(&degree) || compact_int(data, &mut at)? != 2 {
+        return None;
+    }
+    if data.get(at) != Some(&0x0c) {
+        return None;
+    }
+    at += 1;
+    let knot_start = f64_le(data, at)?;
+    let knot_end = f64_le(data, at + 8)?;
+    at += 16;
+    if knot_start >= knot_end || compact_int(data, &mut at)? != 1 {
+        return None;
+    }
+    let control_points = (0..control_count)
+        .map(|_| {
+            let point = Point3::new(
+                f64_le(data, at)?,
+                f64_le(data, at + 8)?,
+                f64_le(data, at + 16)?,
+            );
+            at += 24;
+            Some(point)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let weights = (0..control_count)
+        .map(|_| {
+            let weight = f64_le(data, at)?;
+            at += 8;
+            (weight > 0.0).then_some(weight)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 1 {
+        return None;
+    }
+    let repeated_start = f64_le(data, at)?;
+    let repeated_end = f64_le(data, at + 8)?;
+    let scale = f64_le(data, at + 16)?;
+    let offset = f64_le(data, at + 24)?;
+    at += 32;
+    if repeated_start.to_bits() != knot_start.to_bits()
+        || repeated_end.to_bits() != knot_end.to_bits()
+        || scale.to_bits() != 1.0f64.to_bits()
+        || offset.to_bits() != 0.0f64.to_bits()
+        || data.get(at..frame.end) != Some(&[0x00, 0x07])
+    {
+        return None;
+    }
+    let multiplicity = usize::try_from(degree.checked_add(1)?).ok()?;
+    let mut knots = Vec::with_capacity(2 * multiplicity);
+    knots.extend(std::iter::repeat_n(knot_start, multiplicity));
+    knots.extend(std::iter::repeat_n(knot_end, multiplicity));
+    Some(B2NurbsCurve {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        geometry: NurbsCurve {
+            degree,
+            knots,
+            control_points,
+            weights: Some(weights),
+            periodic: false,
+        },
+    })
 }
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
@@ -1136,7 +1294,7 @@ pub fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
             let marker = search + relative;
             search = marker + 3;
             let mut payload = marker + 3;
-            let Some(object_id) = compact_uint(data, &mut payload) else {
+            let Some(object_id) = compact_int(data, &mut payload) else {
                 continue;
             };
             let Some(payload_end) = payload.checked_add(90) else {
@@ -1583,10 +1741,10 @@ pub fn b2_groups(data: &[u8]) -> Vec<B2Group> {
         .into_iter()
         .filter_map(|frame| {
             let mut at = frame.payload;
-            if compact_uint(data, &mut at)? != 32 {
+            if compact_int(data, &mut at)? != 32 {
                 return None;
             }
-            let group_type = compact_uint(data, &mut at)?;
+            let group_type = compact_int(data, &mut at)?;
             (at == frame.end).then_some(B2Group {
                 pos: frame.pos,
                 group_type,
@@ -1814,7 +1972,7 @@ pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
             continue;
         };
         let mut at = frame.payload;
-        let Some(record_id) = compact_uint(data, &mut at) else {
+        let Some(record_id) = compact_int(data, &mut at) else {
             continue;
         };
         let Some(values) = read_f64_array::<5>(data, at) else {

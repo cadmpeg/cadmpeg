@@ -11,7 +11,7 @@
 //! [`crate::brep`]. Framing every token preserves byte synchronization and
 //! record extents without requiring semantic decoding of each payload.
 
-use cadmpeg_ir::wire::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
+use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
 use std::sync::Arc;
 
 /// A decoded SAB token. Only the payload this codec consumes is retained with a
@@ -28,7 +28,8 @@ pub enum Token {
     Float(f32),
     /// `0x06` IEEE float64.
     Double(f64),
-    /// `0x07`/`0x08`/`0x09`/`0x12` UTF-8 string.
+    /// `0x07`/`0x08`/`0x09`/`0x12` UTF-8 string. The `0x07` length prefix is
+    /// one byte, `0x08` two bytes, and `0x09`/`0x12` the stream's ref width.
     Str(String),
     /// `0x0a` logical true (also `reversed` in sense fields).
     True,
@@ -303,16 +304,13 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
             )
         }
         0x09 | 0x12 => {
-            let s = bytes.get(p..p + 4).ok_or_else(truncated)?;
-            let len = u32::from_le_bytes(
-                s.try_into()
-                    .expect("invariant: bytes.get(p..p+4) is a 4-byte slice"),
-            ) as usize;
+            let len = read_i(bytes, p, ref_width).ok_or_else(truncated)?;
+            let len = usize::try_from(len).map_err(|_| err("negative string length"))?;
             (
                 Lexed::Value(Token::Str(
-                    read_string(bytes, p + 4, len).ok_or_else(truncated)?,
+                    read_string(bytes, p + ref_width, len).ok_or_else(truncated)?,
                 )),
-                p + 4 + len,
+                p + ref_width + len,
             )
         }
         0x0a => (Lexed::Value(Token::True), p),
@@ -371,7 +369,6 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
 
 /// Byte offsets of payload tokens with `tag` inside one framed record.
 #[cfg(test)]
-#[allow(dead_code)]
 pub(crate) fn payload_token_offsets(
     bytes: &[u8],
     record: &Record,
@@ -571,6 +568,30 @@ mod tests {
         let records = frame_history(&non_wrapper, 0, non_wrapper.len(), 8)
             .expect("marker with a later payload identifier");
         assert_eq!(records[0].name, "End-of-ASM-History-Section");
+    }
+
+    #[test]
+    fn wide_string_length_prefix_uses_the_stream_ref_width() {
+        for ref_width in [4usize, 8] {
+            let text = "subtransform program text";
+            let mut bytes = vec![0x0d, 4];
+            bytes.extend_from_slice(b"tspl");
+            bytes.push(0x09);
+            bytes.extend_from_slice(&(text.len() as u64).to_le_bytes()[..ref_width]);
+            bytes.extend_from_slice(text.as_bytes());
+            bytes.push(0x04);
+            bytes.extend_from_slice(&7i64.to_le_bytes()[..ref_width]);
+            bytes.push(0x11);
+
+            let records =
+                frame(&bytes, 0, bytes.len(), ref_width).expect("0x09 string at ref width");
+            assert_eq!(records.len(), 1);
+            assert_eq!(
+                records[0].chunk(0),
+                Some(&super::Token::Str(text.to_string()))
+            );
+            assert_eq!(records[0].chunk(1), Some(&super::Token::Long(7)));
+        }
     }
 
     fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {

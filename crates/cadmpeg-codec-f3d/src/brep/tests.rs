@@ -12,8 +12,9 @@ use crate::nurbs;
 use crate::records::BodyNativeKey;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::ids::{BodyId, FaceId};
+use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{Loop, LoopBoundaryRole, Shell};
 use std::collections::{HashMap, HashSet};
 
 fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
@@ -56,6 +57,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
             parameter_interval: [0.0, 4.0],
             direction,
             native_position: Point3::new(0.0, 0.0, 0.0),
+            revision_form: None,
         };
     let Some(SurfaceGeometry::Cylinder {
         origin,
@@ -151,6 +153,7 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
                 parameter_interval: [0.0, 4.0],
                 direction: Vector3::new(0.0, 0.0, 3.0),
                 native_position: Point3::new(0.0, 0.0, 0.0),
+                revision_form: None,
             }
         ),
         Some(SurfaceGeometry::Cylinder { .. })
@@ -298,6 +301,14 @@ fn normalized_topology_heads_are_not_other_records() {
 }
 
 #[test]
+fn unreferenced_carrier_heads_are_not_application_records() {
+    for head in ["spline", "intcurve", "pcurve"] {
+        assert!(is_known_record_head(head), "{head}");
+    }
+    assert!(!is_known_record_head("ATTRIB_CUSTOM"));
+}
+
+#[test]
 fn asm_stream_delimiters_are_not_application_records() {
     for name in ["Begin-of-ASM-History-Data", "End-of-ASM-data"] {
         assert!(is_asm_stream_delimiter(name));
@@ -416,6 +427,161 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
 }
 
 #[test]
+fn body_key_retention_preserves_selectorless_neutral_roots() {
+    use cadmpeg_ir::topology::{Body, BodyKind};
+
+    let native_body = BodyId("f3d:brep:entity#1".into());
+    let projected_body = BodyId("f3d:brep:saved-edge-body#5".into());
+    let mut brep = Brep {
+        bodies: vec![
+            Body {
+                id: native_body.clone(),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+            Body {
+                id: projected_body.clone(),
+                kind: BodyKind::Wire,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        ],
+        body_keys: HashMap::from([(native_body.clone(), 10)]),
+        body_native_keys: vec![BodyNativeKey {
+            id: "f3d:asm:body-native-key#1".into(),
+            body: native_body,
+            record_index: 1,
+            body_ordinal: 0,
+            source_brep: Some("BREP.source.smbh".into()),
+            asm_body_key: Some(10),
+        }],
+        ..Brep::default()
+    };
+
+    brep.retain_body_keys(&HashSet::from([10]))
+        .expect("retain body graph");
+
+    assert_eq!(brep.bodies.len(), 2);
+    assert!(brep.bodies.iter().any(|body| body.id == projected_body));
+}
+
+#[test]
+fn saved_top_level_edge_projects_as_a_wire_body() {
+    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+        index,
+        name: name.into(),
+        head: head.into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    };
+    let records = vec![
+        record(0, "asmheader", "asmheader", Vec::new()),
+        record(
+            1,
+            "edge",
+            "edge",
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(2),
+                Token::Double(0.0),
+                Token::Ref(3),
+                Token::Double(1.0),
+                Token::Ref(-1),
+                Token::Ref(6),
+                Token::False,
+            ],
+        ),
+        record(
+            2,
+            "vertex",
+            "vertex",
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(1),
+                Token::Long(0),
+                Token::Ref(4),
+            ],
+        ),
+        record(
+            3,
+            "vertex",
+            "vertex",
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(1),
+                Token::Long(1),
+                Token::Ref(5),
+            ],
+        ),
+        record(
+            4,
+            "point",
+            "point",
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Position([0.0, 0.0, 0.0]),
+            ],
+        ),
+        record(
+            5,
+            "point",
+            "point",
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Position([1.0, 0.0, 0.0]),
+            ],
+        ),
+        record(
+            6,
+            "straight-curve",
+            "straight",
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Position([0.0, 0.0, 0.0]),
+                Token::Vector3([1.0, 0.0, 0.0]),
+            ],
+        ),
+    ];
+    let mut bytes = Vec::from(&b"ASM BinaryFile4"[..]);
+    bytes.extend_from_slice(&22500u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+
+    let brep = decode(&records, &bytes, "BREP.saved-edge.smbh");
+
+    assert_eq!(brep.bodies.len(), 1);
+    assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
+    assert_eq!(brep.regions.len(), 1);
+    assert_eq!(brep.shells.len(), 1);
+    assert_eq!(brep.shells[0].wire_edges, vec![EdgeId(id(1))]);
+    assert_eq!(brep.edges.len(), 1);
+    assert_eq!(brep.vertices.len(), 2);
+    assert_eq!(brep.points.len(), 2);
+    assert_eq!(brep.curves.len(), 1);
+}
+
+#[test]
 fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
     let native_key = |ordinal, key| BodyNativeKey {
         id: format!("f3d:asm:body-native-key#{ordinal}"),
@@ -482,6 +648,75 @@ fn nested_attributes_inherit_their_topology_owner() {
     let cycle_right = attribute(10, 9);
     let cycle = HashMap::from([(9, &cycle_left), (10, &cycle_right)]);
     assert_eq!(inherited_attribute_target(9, &cycle, &targets), None);
+}
+
+#[test]
+fn shell_and_loop_attribute_chains_retain_their_native_owners() {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+        index,
+        name: name.into(),
+        head: head.into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    };
+    let records = vec![
+        record(0, "asmheader", "asmheader", vec![]),
+        record(
+            1,
+            "ATTRIB_CUSTOM-attrib",
+            "ATTRIB_CUSTOM",
+            vec![Token::Ref(-1)],
+        ),
+        record(
+            2,
+            "ATTRIB_CUSTOM-attrib",
+            "ATTRIB_CUSTOM",
+            vec![Token::Ref(-1)],
+        ),
+        record(3, "shell", "shell", vec![Token::Ref(1)]),
+        record(4, "loop", "loop", vec![Token::Ref(2)]),
+    ];
+    let mut brep = Brep {
+        shells: vec![Shell {
+            id: ShellId(id(3)),
+            region: RegionId("region".into()),
+            faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        }],
+        loops: vec![Loop {
+            id: LoopId(id(4)),
+            face: FaceId("face".into()),
+            boundary_role: LoopBoundaryRole::Unspecified,
+            coedges: Vec::new(),
+            vertex_uses: Vec::new(),
+        }],
+        ..Brep::default()
+    };
+    let by_index = records
+        .iter()
+        .map(|record| (record.index as i64, record))
+        .collect();
+    let reach = Reachable {
+        loops: HashSet::from([4]),
+        ..Reachable::default()
+    };
+
+    assert_eq!(
+        emit_attributes(&mut brep, &records, &by_index, &reach),
+        HashSet::from([1, 2])
+    );
+    assert!(brep
+        .attributes
+        .iter()
+        .any(|attribute| attribute.target == AttributeTarget::Shell(ShellId(id(3)))));
+    assert!(brep
+        .attributes
+        .iter()
+        .any(|attribute| attribute.target == AttributeTarget::Loop(LoopId(id(4)))));
 }
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {

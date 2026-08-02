@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! E5-stream decode route: analytic carriers, plane fitting, and topology transfer.
 
-use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -13,11 +12,13 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::provenance::Exactness;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{BodyKind, Edge, Point, Sense, Vertex};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::units::Units;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::{
@@ -32,7 +33,10 @@ use crate::solve::UnionFind;
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
-pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
+pub(crate) fn try_decode_e5(
+    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Option<FamilyOutput> {
     let stream_range = container::e5_record_stream(&scan.data)?;
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);
@@ -158,16 +162,14 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
             "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
         };
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Warning,
             message: message.to_string(),
             provenance: None,
         }]
     } else {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."
                 .to_string(),
@@ -184,6 +186,7 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses,
             notes: container::summarize(scan).notes,
         },
@@ -566,38 +569,32 @@ pub(crate) fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut Annotati
             Exactness::Inferred,
         );
     }
-    // Snapshot the vertex ids before the mutable `finish` borrow; the builder
-    // aggregates `shell.free_vertices` in this (vertex-arena) order.
-    let free_vertices: Vec<_> = ir
-        .model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.id.clone())
-        .collect();
-    let mut builder = TopologyBuilder::new();
-    builder
-        .body(
-            body_id.clone(),
-            BodySpec {
-                kind: BodyKind::Wire,
-                ..BodySpec::default()
-            },
-        )
-        .expect("e5 unbound-points body id is unique");
-    builder
-        .region(region_id.clone(), &body_id)
-        .expect("e5 unbound-points region id is unique under its body");
-    builder
-        .shell(shell_id.clone(), &region_id)
-        .expect("e5 unbound-points shell id is unique under its region");
-    for vertex in free_vertices {
-        builder
-            .free_vertex(&shell_id, vertex)
-            .expect("e5 free vertex records under the unbound-points shell");
-    }
-    builder
-        .finish(&mut ir.model)
-        .expect("e5 unbound-points hierarchy appends without id or owner conflicts");
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Wire,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id,
+        shells: vec![shell_id.clone()],
+    });
+    ir.model.shells.push(Shell {
+        id: shell_id,
+        region: region_id,
+        faces: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices: ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.id.clone())
+            .collect(),
+    });
 }
 
 pub(crate) struct E5IntersectionSidePlan {
@@ -709,19 +706,15 @@ pub(crate) fn transfer_e5_topology(
         &surface_curve_plan,
     );
     emit_e5_pcurves(ir, annotations, pcurve_plan);
-    let mut builder = TopologyBuilder::new();
-    emit_e5_bodies(&mut builder, annotations, &body_faces, &ownership);
+    emit_e5_bodies(ir, annotations, &body_faces, &ownership);
     emit_e5_faces_loops_coedges(
-        &mut builder,
+        ir,
         annotations,
         topology,
         &surface_for_ref,
         &face_shell,
         &edge_ids,
     );
-    builder
-        .finish(&mut ir.model)
-        .expect("e5 topology hierarchy appends without id or owner conflicts");
     true
 }
 
@@ -1223,13 +1216,9 @@ fn emit_e5_pcurves(
     }
 }
 
-/// Registers the body/region/shell layer into `builder`.
-///
-/// `shell.faces` is left to the builder's aggregation from the later
-/// `emit_e5_faces_loops_coedges` face registrations rather than pre-computed
-/// here, so the whole hierarchy shares one builder pass.
+/// Emits the body/region/shell layer.
 fn emit_e5_bodies(
-    builder: &mut TopologyBuilder,
+    ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     body_faces: &[(Option<u32>, Vec<u32>)],
     ownership: &[E5BodyOwnership],
@@ -1240,6 +1229,9 @@ fn emit_e5_bodies(
             |id| format!("catia:e5:body#{id}"),
         ));
         let plan = &ownership[body_index];
+        let region_ids: Vec<RegionId> = (0..plan.components.len())
+            .map(|component| RegionId(format!("catia:e5:region#{body_index}-{component}")))
+            .collect();
         annotate(
             annotations,
             &body_id,
@@ -1255,17 +1247,17 @@ fn emit_e5_bodies(
         annotations
             .derived(&body_id, "kind")
             .derived(&body_id, "regions");
-        builder
-            .body(
-                body_id.clone(),
-                BodySpec {
-                    kind: plan.kind,
-                    ..BodySpec::default()
-                },
-            )
-            .expect("e5 body id is unique per source ordinal");
-        for component in 0..plan.components.len() {
-            let region_id = RegionId(format!("catia:e5:region#{body_index}-{component}"));
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind: plan.kind,
+            regions: region_ids.clone(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        for (component, component_faces) in plan.components.iter().enumerate() {
+            let region_id = region_ids[component].clone();
             let shell_id = ShellId(format!("catia:e5:shell#{body_index}-{component}"));
             annotate(
                 annotations,
@@ -1278,9 +1270,11 @@ fn emit_e5_bodies(
             annotations
                 .derived(&region_id, "body")
                 .derived(&region_id, "shells");
-            builder
-                .region(region_id.clone(), &body_id)
-                .expect("e5 region id is unique under its body");
+            ir.model.regions.push(Region {
+                id: region_id.clone(),
+                body: body_id.clone(),
+                shells: vec![shell_id.clone()],
+            });
             annotate(
                 annotations,
                 &shell_id,
@@ -1292,30 +1286,37 @@ fn emit_e5_bodies(
             annotations
                 .derived(&shell_id, "region")
                 .derived(&shell_id, "faces");
-            builder
-                .shell(shell_id, &region_id)
-                .expect("e5 shell id is unique under its region");
+            ir.model.shells.push(Shell {
+                id: shell_id,
+                region: region_id,
+                faces: component_faces
+                    .iter()
+                    .map(|face| FaceId(format!("catia:e5:face#{face}")))
+                    .collect(),
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
+            });
         }
     }
 }
 
-/// Registers the face/loop/coedge layer into `builder`.
-///
-/// Faces register in `topology.faces` order, so the builder aggregates each
-/// `shell.faces` in that order and each coedge's `radial_next` is deferred to a
-/// `radial_ring` per edge accumulated in the same order the former inline fixup
-/// walked, keeping both byte-identical.
+/// Emits the face/loop/coedge layer and the radial-next fixup.
 fn emit_e5_faces_loops_coedges(
-    builder: &mut TopologyBuilder,
+    ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     topology: &crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     face_shell: &HashMap<u32, ShellId>,
     edge_ids: &HashMap<u32, EdgeId>,
 ) {
-    let mut coedges_by_edge = HashMap::<u32, Vec<CoedgeId>>::new();
+    let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for face in &topology.faces {
         let face_id = FaceId(format!("catia:e5:face#{}", face.record_id));
+        let loop_ids: Vec<LoopId> = face
+            .loops
+            .iter()
+            .map(|loop_| LoopId(format!("catia:e5:loop#{}", loop_.record_id)))
+            .collect();
         annotate(
             annotations,
             &face_id,
@@ -1327,23 +1328,20 @@ fn emit_e5_faces_loops_coedges(
         for field in ["shell", "surface", "sense", "loops"] {
             annotations.derived(&face_id, field);
         }
-        builder
-            .face(
-                face_id.clone(),
-                &face_shell[&face.record_id],
-                FaceSpec {
-                    surface: surface_for_ref[&face.surface].0.clone(),
-                    sense: if face.trailer_sign > 0 {
-                        Sense::Forward
-                    } else {
-                        Sense::Reversed
-                    },
-                    name: None,
-                    color: None,
-                    tolerance: None,
-                },
-            )
-            .expect("e5 face registers under its shell");
+        ir.model.faces.push(Face {
+            id: face_id.clone(),
+            shell: face_shell[&face.record_id].clone(),
+            surface: surface_for_ref[&face.surface].0.clone(),
+            sense: if face.trailer_sign > 0 {
+                Sense::Forward
+            } else {
+                Sense::Reversed
+            },
+            loops: loop_ids,
+            name: None,
+            color: None,
+            tolerance: None,
+        });
 
         for (loop_position, loop_) in face.loops.iter().enumerate() {
             let loop_id = LoopId(format!("catia:e5:loop#{}", loop_.record_id));
@@ -1353,6 +1351,10 @@ fn emit_e5_faces_loops_coedges(
             let members = loop_
                 .resolved_members()
                 .expect("E5 loop membership passed topology admission");
+            let coedge_ids: Vec<CoedgeId> = members
+                .iter()
+                .map(|member| coedge_ids_by_member[member.serialized_index].clone())
+                .collect();
             annotate(
                 annotations,
                 &loop_id,
@@ -1364,8 +1366,18 @@ fn emit_e5_faces_loops_coedges(
             annotations
                 .derived(&loop_id, "face")
                 .derived(&loop_id, "coedges");
-            let mut coedges = Vec::with_capacity(members.len());
-            for member in members {
+            ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face: face_id.clone(),
+                boundary_role: if loop_position == 0 {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                },
+                coedges: coedge_ids.clone(),
+                vertex_uses: Vec::new(),
+            });
+            for (position, member) in members.iter().enumerate() {
                 let index = member.serialized_index;
                 let edge_ref = loop_.edge_uses[index];
                 let pcurve_ref = loop_.pcurves[index];
@@ -1381,13 +1393,19 @@ fn emit_e5_faces_loops_coedges(
                 for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurves"] {
                     annotations.derived(&id, field);
                 }
+                let arena_index = ir.model.coedges.len();
                 coedges_by_edge
                     .entry(edge_ref)
                     .or_default()
-                    .push(id.clone());
-                coedges.push(CoedgeSpec {
-                    id,
+                    .push(arena_index);
+                ir.model.coedges.push(Coedge {
+                    id: id.clone(),
+                    owner_loop: loop_id.clone(),
                     edge: edge_ids[&edge_ref].clone(),
+                    next: coedge_ids[(position + 1) % coedge_ids.len()].clone(),
+                    previous: coedge_ids[(position + coedge_ids.len() - 1) % coedge_ids.len()]
+                        .clone(),
+                    radial_next: id,
                     sense: if member.reversed {
                         Sense::Reversed
                     } else {
@@ -1402,25 +1420,13 @@ fn emit_e5_faces_loops_coedges(
                     use_curve_parameter_range: None,
                 });
             }
-            builder
-                .ring(
-                    loop_id,
-                    &face_id,
-                    if loop_position == 0 {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                    } else {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                    },
-                    coedges,
-                    Vec::new(),
-                )
-                .expect("e5 loop ring registers under its face");
         }
     }
-    // Each edge's shared coedges become one radial ring, wired in the same
-    // per-edge occurrence order the former arena-index fixup walked.
     for occurrences in coedges_by_edge.values() {
-        builder.radial_ring(occurrences);
+        for (position, &arena_index) in occurrences.iter().enumerate() {
+            let radial = occurrences[(position + 1) % occurrences.len()];
+            ir.model.coedges[arena_index].radial_next = ir.model.coedges[radial].id.clone();
+        }
     }
 }
 

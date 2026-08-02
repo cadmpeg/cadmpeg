@@ -3,149 +3,90 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{Check, Finding, ModelIndex, Severity};
 use crate::document::CadIr;
-use crate::products::ComponentReference;
+use crate::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
+use crate::report::{Check, Finding, Severity};
 
-pub(super) fn check_products(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
-    let components = &index.components;
-    let occurrences = &index.occurrences;
-    // Keyed by native ref rather than id, so it stays local to this check.
-    let occurrence_by_native = ir
+pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let definitions = ir
+        .model
+        .product_definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<HashMap<_, _>>();
+    let occurrences = ir
         .model
         .occurrences
         .iter()
-        .filter_map(|occurrence| {
-            occurrence
-                .native_ref
-                .as_deref()
-                .map(|native| (native, occurrence))
-        })
+        .map(|occurrence| (occurrence.id.as_str(), occurrence))
         .collect::<HashMap<_, _>>();
+    let bodies = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str())
+        .collect::<HashSet<_>>();
 
-    for component in &ir.model.components {
-        let parent_valid = component.parent.as_ref().is_none_or(|parent| {
-            components
-                .get(parent.0.as_str())
-                .is_some_and(|parent| parent.components.iter().any(|child| child == &component.id))
-        });
-        let expected_transform =
-            component
-                .parent
-                .as_ref()
-                .map_or(component.local_transform, |parent| {
-                    components
-                        .get(parent.0.as_str())
-                        .map_or(component.local_transform, |parent| {
-                            multiply(parent.resolved_transform, component.local_transform)
-                        })
-                });
-        if !parent_valid
-            || !finite_transform(&component.local_transform)
-            || !finite_transform(&component.resolved_transform)
-            || !same_transform(&expected_transform, &component.resolved_transform)
+    for definition in &ir.model.product_definitions {
+        if definition
+            .bodies
+            .iter()
+            .any(|body| !bodies.contains(body.as_str()))
         {
             invalid(
                 findings,
-                &component.id.0,
-                "invalid component parent or resolved transform",
+                definition.id.as_str(),
+                "invalid product body reference",
             );
-        }
-        let mut children = HashSet::new();
-        for child in &component.components {
-            let valid = components
-                .get(child.0.as_str())
-                .is_some_and(|child| child.parent.as_ref() == Some(&component.id));
-            if !valid || !children.insert(child.0.as_str()) {
-                invalid(
-                    findings,
-                    &component.id.0,
-                    "invalid or repeated component child",
-                );
-            }
-        }
-        let mut uses = HashSet::new();
-        for occurrence in &component.occurrences {
-            let valid = occurrences
-                .get(occurrence.0.as_str())
-                .is_some_and(|occurrence| occurrence.parent.as_ref() == Some(&component.id));
-            if !valid || !uses.insert(occurrence.0.as_str()) {
-                invalid(
-                    findings,
-                    &component.id.0,
-                    "invalid or repeated occurrence child",
-                );
-            }
-        }
-        if component_cycle(&component.id.0, components) {
-            invalid(findings, &component.id.0, "product component cycle");
         }
     }
 
+    if AssemblyGraph::new(&ir.model.occurrences).is_err() {
+        invalid(
+            findings,
+            "model:assembly",
+            "invalid occurrence parent graph",
+        );
+    }
+    let mut sibling_ordinals = HashSet::new();
     for occurrence in &ir.model.occurrences {
         let valid_prototype = match &occurrence.prototype {
-            ComponentReference::Local { component } => {
-                components.contains_key(component.0.as_str())
+            PrototypeReference::Local { definition } => {
+                definitions.contains_key(definition.as_str())
             }
-            ComponentReference::External { document, .. } => {
+            PrototypeReference::External { document, .. } => {
                 document.path.is_some() ^ document.document_id.is_some()
             }
-            ComponentReference::Unresolved => true,
+            PrototypeReference::Unresolved => true,
         };
-        let valid_parent = occurrence
-            .parent
-            .as_ref()
-            .is_none_or(|parent| components.contains_key(parent.0.as_str()));
-        let auxiliary_components = [
+        let valid_parent = match &occurrence.parent {
+            OccurrenceParent::Root => true,
+            OccurrenceParent::Occurrence { occurrence } => {
+                occurrences.contains_key(occurrence.as_str())
+            }
+        };
+        let parent_key = match &occurrence.parent {
+            OccurrenceParent::Root => None,
+            OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str()),
+        };
+        let ordinal_unique = sibling_ordinals.insert((parent_key, occurrence.ordinal));
+        let auxiliary_definitions = [
             occurrence.element_component.as_ref(),
             occurrence.copy_on_change_source.as_ref(),
             occurrence.copy_on_change_group.as_ref(),
         ]
         .into_iter()
         .flatten()
-        .all(|component| components.contains_key(component.0.as_str()));
-        let finite = occurrence
-            .local_transform
-            .iter()
-            .flatten()
-            .chain(occurrence.prototype_transform.iter().flatten())
-            .chain(occurrence.resolved_transform.iter().flatten())
-            .chain(occurrence.scale.iter())
-            .all(|value| value.is_finite());
-        let container_transform =
-            occurrence
-                .parent
-                .as_ref()
-                .map_or(occurrence.local_transform, |parent| {
-                    components
-                        .get(parent.0.as_str())
-                        .map_or(occurrence.local_transform, |parent| {
-                            multiply(parent.resolved_transform, occurrence.local_transform)
-                        })
-                });
-        let expected_transform = multiply(container_transform, occurrence.prototype_transform);
-        if !valid_prototype
-            || !valid_parent
-            || !auxiliary_components
-            || !finite
-            || !same_transform(&expected_transform, &occurrence.resolved_transform)
+        .all(|definition| definitions.contains_key(definition.as_str()));
+        let affine = occurrence.transform.is_affine()
+            && occurrence.prototype_transform.is_affine()
+            && occurrence.scale.iter().all(|value| value.is_finite());
+        if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions || !affine
         {
             invalid(
                 findings,
-                &occurrence.id.0,
-                "invalid occurrence reference or transform",
-            );
-        }
-        if occurrence_prototype_cycle(
-            occurrence.id.0.as_str(),
-            occurrences,
-            components,
-            &occurrence_by_native,
-        ) {
-            invalid(
-                findings,
-                &occurrence.id.0,
-                "product occurrence prototype cycle",
+                occurrence.id.as_str(),
+                "invalid occurrence reference, ordinal, or affine transform",
             );
         }
     }
@@ -164,36 +105,37 @@ pub(super) fn check_products(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut 
                     document.path.is_some() ^ document.document_id.is_some()
                 });
                 let resolution_valid = match &operand.external_document {
-                    Some(_) => operand.component.is_none(),
-                    None => operand.component.is_some(),
+                    Some(_) => operand.occurrence.is_none(),
+                    None => operand.occurrence.is_some(),
                 };
                 operand.object.is_some()
                     && resolution_valid
                     && operand
-                        .component
+                        .occurrence
                         .as_ref()
-                        .is_none_or(|component| components.contains_key(component.0.as_str()))
+                        .is_none_or(|occurrence| occurrences.contains_key(occurrence.as_str()))
                     && external_valid
             });
         let finite = joint
             .frames
             .iter()
-            .flatten()
-            .flatten()
-            .chain(joint.offset_frames.iter().flatten().flatten())
-            .copied()
-            .chain(joint.angle)
-            .chain(joint.distance)
-            .chain(joint.distance2)
-            .chain(
-                joint
-                    .angular_limits
-                    .iter()
-                    .chain(joint.linear_limits.iter())
-                    .flat_map(|limits| [limits.minimum, limits.maximum])
-                    .flatten(),
-            )
-            .all(f64::is_finite);
+            .chain(&joint.offset_frames)
+            .all(crate::transform::Transform::is_affine)
+            && joint
+                .angle
+                .into_iter()
+                .chain(joint.translation_offset.into_iter().flatten())
+                .chain(joint.distance)
+                .chain(joint.distance2)
+                .chain(
+                    joint
+                        .angular_limits
+                        .iter()
+                        .chain(joint.linear_limits.iter())
+                        .flat_map(|limits| [limits.minimum, limits.maximum])
+                        .flatten(),
+                )
+                .all(f64::is_finite);
         let ordered = [joint.angular_limits.as_ref(), joint.linear_limits.as_ref()]
             .into_iter()
             .flatten()
@@ -209,81 +151,6 @@ pub(super) fn check_products(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut 
             );
         }
     }
-}
-
-fn occurrence_prototype_cycle<'a>(
-    start: &str,
-    occurrences: &HashMap<String, &'a crate::products::Occurrence>,
-    components: &HashMap<String, &'a crate::products::Component>,
-    occurrence_by_native: &HashMap<&'a str, &'a crate::products::Occurrence>,
-) -> bool {
-    let mut current = start;
-    let mut seen = HashSet::from([start]);
-    loop {
-        let Some(occurrence) = occurrences.get(current) else {
-            return false;
-        };
-        let ComponentReference::Local { component } = &occurrence.prototype else {
-            return false;
-        };
-        let Some(target) = components
-            .get(component.0.as_str())
-            .and_then(|component| component.native_ref.as_deref())
-            .and_then(|native| occurrence_by_native.get(native))
-        else {
-            return false;
-        };
-        current = target.id.0.as_str();
-        if current == start {
-            return true;
-        }
-        if !seen.insert(current) {
-            return false;
-        }
-    }
-}
-
-fn finite_transform(transform: &[[f64; 4]; 4]) -> bool {
-    transform.iter().flatten().all(|value| value.is_finite())
-}
-
-fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
-    std::array::from_fn(|row| {
-        std::array::from_fn(|column| {
-            (0..4)
-                .map(|index| left[row][index] * right[index][column])
-                .sum()
-        })
-    })
-}
-
-fn same_transform(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
-    left.iter()
-        .flatten()
-        .zip(right.iter().flatten())
-        .all(|(left, right)| {
-            let scale = left.abs().max(right.abs()).max(1.0);
-            (left - right).abs() <= scale * 1e-12
-        })
-}
-
-fn component_cycle(start: &str, components: &HashMap<String, &crate::products::Component>) -> bool {
-    let mut seen = HashSet::from([start]);
-    let mut stack = vec![start];
-    while let Some(current) = stack.pop() {
-        let Some(component) = components.get(current) else {
-            continue;
-        };
-        for child in &component.components {
-            if child.0 == start {
-                return true;
-            }
-            if seen.insert(child.0.as_str()) {
-                stack.push(child.0.as_str());
-            }
-        }
-    }
-    false
 }
 
 fn invalid(findings: &mut Vec<Finding>, entity: &str, message: &str) {

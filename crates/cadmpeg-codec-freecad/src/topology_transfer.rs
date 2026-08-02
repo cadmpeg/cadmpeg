@@ -3,22 +3,24 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::decode::DecodeContext;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
 };
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::provenance::SourceObjectAssociation;
 use cadmpeg_ir::tessellation::Tessellation;
-use cadmpeg_ir::topology::builder::{BodySpec, CoedgeSpec, EdgeSpec, FaceSpec, TopologyBuilder};
-use cadmpeg_ir::topology::{BodyKind, Coedge, Sense};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::wire::hash::sha256_hex;
+use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
     ShapePayloadRecord, TextCurve2d, TextEdgeRepresentation, TextLocation, TextOrientation,
@@ -31,6 +33,7 @@ type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
 
 /// Transfer text or binary shape-set topology with placements applied once.
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
@@ -49,7 +52,7 @@ pub(crate) fn transfer(
         let mut builder = Builder::new(payload, tables, source_object);
         builder.emit_pcurves(ir);
         for root in builder.body_roots()? {
-            builder.append_body(ir, root)?;
+            builder.append_body(ctx, ir, root)?;
         }
         builder.emit_unowned_triangulations(ir);
     }
@@ -304,7 +307,12 @@ impl<'a> Builder<'a> {
             .collect()
     }
 
-    fn append_body(&mut self, ir: &mut CadIr, root: BodyRoot) -> Result<(), CodecError> {
+    fn append_body(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        root: BodyRoot,
+    ) -> Result<(), CodecError> {
         self.body_scope = root.transform;
         let root_shape = self.shape(root.shape)?;
         let root_kind = root_shape.kind;
@@ -339,61 +347,44 @@ impl<'a> Builder<'a> {
             _ => BodyKind::General,
         };
         let tessellation_start = ir.model.tessellations.len();
-        // Stage this body's whole hierarchy in a private builder. A body that turns
-        // out to own no region is dropped by discarding the builder unfinished,
-        // preserving the source's "empty body is not emitted" tolerance without any
-        // arena retraction.
-        let mut topology = TopologyBuilder::new();
-        topology
-            .body(
-                body_id.clone(),
-                BodySpec {
-                    kind,
-                    transform: (!is_identity(root.transform)).then_some(root.transform),
-                    name: None,
-                    color: None,
-                    visible: None,
-                },
-            )
-            .expect("first registration in a fresh builder cannot collide");
         let mut regions = Vec::new();
         self.append_shape_regions(
-            &mut topology,
+            ctx,
             ir,
             &body_id,
             root.shape,
             Transform::identity(),
             root.reversed,
             &mut regions,
-            0,
         )?;
         if regions.is_empty() {
             ir.model.tessellations.truncate(tessellation_start);
             return Ok(());
         }
-        topology
-            .finish(&mut ir.model)
-            .expect("staged body topology appends without id or owner conflicts");
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind,
+            regions,
+            transform: (!is_identity(root.transform)).then_some(root.transform),
+            name: None,
+            color: None,
+            visible: None,
+        });
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)] // Depth is explicit to bound hostile topology nesting.
+    #[allow(clippy::too_many_arguments)]
     fn append_shape_regions(
         &mut self,
-        topology: &mut TopologyBuilder,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         body: &BodyId,
         shape_index: usize,
         transform: Transform,
         reversed: bool,
         output: &mut Vec<RegionId>,
-        depth: usize,
     ) -> Result<(), CodecError> {
-        if depth > 256 {
-            return Err(CodecError::Malformed(
-                "topology nesting limit exceeded".into(),
-            ));
-        }
+        let _depth = ctx.enter_nested("transfer FCStd topology nesting", None)?;
         let shape = self.shape(shape_index)?.clone();
         if matches!(
             shape.kind,
@@ -401,62 +392,58 @@ impl<'a> Builder<'a> {
         ) {
             for child in &shape.children {
                 self.append_shape_regions(
-                    topology,
+                    ctx,
                     ir,
                     body,
                     child.shape,
-                    multiply(transform, self.tables.location(child.location)),
+                    transform.compose(self.tables.location(child.location)),
                     reversed ^ is_reversed(child.orientation),
                     output,
-                    depth + 1,
                 )?;
             }
             return Ok(());
         }
-        // Every non-solid shape yields exactly one shell; a solid yields one per
-        // shell child. The builder needs the region registered before its shells,
-        // so decide emptiness up front rather than retracting a childless region —
-        // matching the source's "region with no shell is not emitted" tolerance.
-        let has_shell = shape.kind != TextShapeKind::Solid
-            || shape
-                .children
-                .iter()
-                .any(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell);
-        if !has_shell {
-            return Ok(());
-        }
         let key = self.topology_label(shape_index, transform);
         let region_id = RegionId(crate::native::model_id("region", &self.payload.id, &key));
-        topology
-            .region(region_id.clone(), body)
-            .expect("region registers under the body staged by `append_body`");
+        let mut shells = Vec::new();
         if shape.kind == TextShapeKind::Solid {
             for child in shape
                 .children
                 .iter()
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell)
             {
-                self.append_shell(topology, ir, &region_id, child, transform, reversed)?;
+                shells.push(self.append_shell(ir, &region_id, child, transform, reversed)?);
             }
         } else {
-            self.append_shell_shape(topology, ir, &region_id, shape_index, transform, reversed)?;
+            shells.push(self.append_shell_shape(
+                ir,
+                &region_id,
+                shape_index,
+                transform,
+                reversed,
+            )?);
         }
-        output.push(region_id);
+        if !shells.is_empty() {
+            ir.model.regions.push(Region {
+                id: region_id.clone(),
+                body: body.clone(),
+                shells,
+            });
+            output.push(region_id);
+        }
         Ok(())
     }
 
     fn append_shell(
         &mut self,
-        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         region: &RegionId,
         shell_use: &TextShapeUse,
         parent: Transform,
         reversed: bool,
-    ) -> Result<(), CodecError> {
-        let transform = multiply(parent, self.tables.location(shell_use.location));
+    ) -> Result<ShellId, CodecError> {
+        let transform = parent.compose(self.tables.location(shell_use.location));
         self.append_shell_shape(
-            topology,
             ir,
             region,
             shell_use.shape,
@@ -467,24 +454,26 @@ impl<'a> Builder<'a> {
 
     fn append_shell_shape(
         &mut self,
-        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         region: &RegionId,
         shape_index: usize,
         transform: Transform,
         reversed: bool,
-    ) -> Result<(), CodecError> {
+    ) -> Result<ShellId, CodecError> {
         let shape = self.shape(shape_index)?.clone();
         let key = self.topology_label(shape_index, transform);
         let shell_id = ShellId(crate::native::model_id("shell", &self.payload.id, &key));
-        topology
-            .shell(shell_id.clone(), region)
-            .expect("shell registers under the region staged by `append_shape_regions`");
+        let mut faces = Vec::new();
+        let mut wire_edges = Vec::new();
         match shape.kind {
             TextShapeKind::Shell => {
                 for child in &shape.children {
                     if self.shape(child.shape)?.kind == TextShapeKind::Face {
-                        self.append_face(topology, ir, &shell_id, child, transform, reversed)?;
+                        if let Some(face) =
+                            self.append_face(ir, &shell_id, child, transform, reversed)?
+                        {
+                            faces.push(face);
+                        }
                     }
                 }
             }
@@ -494,15 +483,16 @@ impl<'a> Builder<'a> {
                     orientation: TextOrientation::Forward,
                     location: 0,
                 };
-                self.append_face(topology, ir, &shell_id, &shape_use, transform, reversed)?;
+                if let Some(face) =
+                    self.append_face(ir, &shell_id, &shape_use, transform, reversed)?
+                {
+                    faces.push(face);
+                }
             }
             TextShapeKind::Wire => {
                 for child in &shape.children {
                     if self.shape(child.shape)?.kind == TextShapeKind::Edge {
-                        let edge = self.ensure_edge(topology, ir, child, transform)?;
-                        topology
-                            .wire_edge(&shell_id, edge)
-                            .expect("wire edge registers under the staged shell");
+                        wire_edges.push(self.ensure_edge(ir, child, transform)?);
                     }
                 }
             }
@@ -516,10 +506,7 @@ impl<'a> Builder<'a> {
                     },
                     location: 0,
                 };
-                let edge = self.ensure_edge(topology, ir, &edge_use, transform)?;
-                topology
-                    .wire_edge(&shell_id, edge)
-                    .expect("wire edge registers under the staged shell");
+                wire_edges.push(self.ensure_edge(ir, &edge_use, transform)?);
             }
             TextShapeKind::Vertex => {
                 let vertex_use = TextShapeUse {
@@ -527,26 +514,37 @@ impl<'a> Builder<'a> {
                     orientation: TextOrientation::Forward,
                     location: 0,
                 };
-                let vertex = self.ensure_vertex(topology, &vertex_use, transform)?;
-                topology
-                    .free_vertex(&shell_id, vertex)
-                    .expect("free vertex registers under the staged shell");
+                let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
+                ir.model.shells.push(Shell {
+                    id: shell_id.clone(),
+                    region: region.clone(),
+                    faces,
+                    wire_edges,
+                    free_vertices: vec![vertex],
+                });
+                return Ok(shell_id);
             }
             _ => {}
         }
-        Ok(())
+        ir.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region.clone(),
+            faces,
+            wire_edges,
+            free_vertices: Vec::new(),
+        });
+        Ok(shell_id)
     }
 
     fn append_face(
         &mut self,
-        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         shell: &ShellId,
         face_use: &TextShapeUse,
         parent: Transform,
         reversed: bool,
-    ) -> Result<(), CodecError> {
-        let face_transform = multiply(parent, self.tables.location(face_use.location));
+    ) -> Result<Option<FaceId>, CodecError> {
+        let face_transform = parent.compose(self.tables.location(face_use.location));
         let face_reversed = reversed ^ is_reversed(face_use.orientation);
         let shape = self.shape(face_use.shape)?.clone();
         let TextTShapeGeometry::Face {
@@ -557,9 +555,9 @@ impl<'a> Builder<'a> {
             ..
         } = shape.geometry
         else {
-            return Ok(());
+            return Ok(None);
         };
-        let surface_transform = multiply(face_transform, self.tables.location(location));
+        let surface_transform = face_transform.compose(self.tables.location(location));
         let face_key = self.topology_label(face_use.shape, face_transform);
         let face_id = FaceId(crate::native::model_id("face", &self.payload.id, &face_key));
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
@@ -569,7 +567,7 @@ impl<'a> Builder<'a> {
             let vertices = triangulation
                 .nodes
                 .iter()
-                .map(|point| transform_point(face_transform, *point))
+                .map(|point| face_transform.apply_point(*point))
                 .collect::<Vec<_>>();
             let triangles = triangulation
                 .triangles
@@ -604,7 +602,7 @@ impl<'a> Builder<'a> {
             }
             id
         } else {
-            return Ok(());
+            return Ok(None);
         };
         if let Some((index, triangulation, vertices, triangles)) = located_triangulation {
             self.emitted_triangulations.insert(index);
@@ -615,7 +613,7 @@ impl<'a> Builder<'a> {
                 .map(|normals| {
                     normals
                         .iter()
-                        .map(|normal| transform_vector(face_transform, *normal))
+                        .map(|normal| transform_normalized_vector(face_transform, *normal))
                         .collect()
                 })
                 .unwrap_or_default();
@@ -636,29 +634,14 @@ impl<'a> Builder<'a> {
                 channels: Vec::new(),
             });
         }
-        // The surface resolved, so this face is emitted. Register it before its
-        // rings so the builder aggregates `face.loops` from the `ring` calls and
-        // `shell.faces` from this registration.
-        topology
-            .face(
-                face_id.clone(),
-                shell,
-                FaceSpec {
-                    surface: surface_id,
-                    sense: sense(face_reversed),
-                    name: None,
-                    color: None,
-                    tolerance: positive_tolerance(tolerance),
-                },
-            )
-            .expect("face registers under the shell staged by `append_shell_shape`");
+        let mut loops = Vec::new();
         for (loop_index, wire_use) in shape
             .children
             .iter()
             .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Wire)
             .enumerate()
         {
-            let wire_transform = multiply(face_transform, self.tables.location(wire_use.location));
+            let wire_transform = face_transform.compose(self.tables.location(wire_use.location));
             let wire = self.shape(wire_use.shape)?.clone();
             let mut edge_uses = wire
                 .children
@@ -678,20 +661,31 @@ impl<'a> Builder<'a> {
                 &self.payload.id,
                 format!("{}:{}", face_key, loop_index + 1),
             ));
-            let mut coedges = Vec::with_capacity(edge_uses.len());
-            for (index, edge_use) in edge_uses.iter().enumerate() {
-                let edge_transform =
-                    multiply(wire_transform, self.tables.location(edge_use.location));
-                let edge = self.ensure_edge(topology, ir, edge_use, wire_transform)?;
-                let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
-                coedges.push(CoedgeSpec {
-                    id: CoedgeId(crate::native::model_id(
+            let coedge_ids = (0..edge_uses.len())
+                .map(|index| {
+                    CoedgeId(crate::native::model_id(
                         "coedge",
                         &self.payload.id,
                         format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
-                    )),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            for (index, edge_use) in edge_uses.iter().enumerate() {
+                let edge_transform =
+                    wire_transform.compose(self.tables.location(edge_use.location));
+                let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
+                let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
+                let id = coedge_ids[index].clone();
+                ir.model.coedges.push(Coedge {
+                    id: id.clone(),
+                    owner_loop: loop_id.clone(),
                     edge,
+                    next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
+                    previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
+                    radial_next: id,
                     sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
                     pcurves: pcurve
                         .into_iter()
                         .map(
@@ -702,35 +696,38 @@ impl<'a> Builder<'a> {
                             },
                         )
                         .collect(),
-                    use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
-            // `ring` derives each coedge's next/previous from this slice order and
-            // defaults radial_next to self, reproducing the former modulo wiring;
-            // `close_radial_rings` still resolves the shared-edge radials afterward.
-            topology
-                .ring(
-                    loop_id,
-                    &face_id,
-                    cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                    coedges,
-                    Vec::new(),
-                )
-                .expect("loop ring registers under the staged face");
+            ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face: face_id.clone(),
+                coedges: coedge_ids,
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                vertex_uses: Vec::new(),
+            });
+            loops.push(loop_id);
         }
-        Ok(())
+        ir.model.faces.push(Face {
+            id: face_id.clone(),
+            shell: shell.clone(),
+            surface: surface_id,
+            sense: sense(face_reversed),
+            loops,
+            name: None,
+            color: None,
+            tolerance: positive_tolerance(tolerance),
+        });
+        Ok(Some(face_id))
     }
 
     fn ensure_edge(
         &mut self,
-        topology: &mut TopologyBuilder,
         ir: &mut CadIr,
         edge_use: &TextShapeUse,
         parent: Transform,
     ) -> Result<EdgeId, CodecError> {
-        let transform = multiply(parent, self.tables.location(edge_use.location));
-        let key = OccurrenceKey::new(edge_use.shape, multiply(self.body_scope, transform));
+        let transform = parent.compose(self.tables.location(edge_use.location));
+        let key = OccurrenceKey::new(edge_use.shape, self.body_scope.compose(transform));
         if let Some(id) = self.edges.get(&key) {
             return Ok(id.clone());
         }
@@ -762,8 +759,8 @@ impl<'a> Builder<'a> {
             )));
         };
         let end_use = endpoint_use(TextOrientation::Reversed).unwrap_or_else(|| start_use.clone());
-        let start = self.ensure_vertex(topology, &start_use, transform)?;
-        let end = self.ensure_vertex(topology, &end_use, transform)?;
+        let start = self.ensure_vertex(ir, &start_use, transform)?;
+        let end = self.ensure_vertex(ir, &end_use, transform)?;
         let id = EdgeId(crate::native::model_id(
             "edge",
             &self.payload.id,
@@ -780,7 +777,7 @@ impl<'a> Builder<'a> {
             None
         } else if let Some(representation) = curve_representation {
             let carrier_transform =
-                multiply(transform, self.tables.location(representation.location));
+                transform.compose(self.tables.location(representation.location));
             Some(self.located_curve(ir, representation.primary, carrier_transform)?)
         } else if let Some((ordinal, representation)) = polygon_representation {
             Some(self.polygon_curve(ir, &id, ordinal, representation, transform)?)
@@ -795,18 +792,14 @@ impl<'a> Builder<'a> {
                         .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
                 })
             });
-        topology
-            .edge(
-                id.clone(),
-                EdgeSpec {
-                    curve,
-                    start,
-                    end,
-                    param_range,
-                    tolerance: positive_tolerance(tolerance),
-                },
-            )
-            .expect("edge id is minted once per occurrence, so registration cannot collide");
+        ir.model.edges.push(Edge {
+            id: id.clone(),
+            curve,
+            start,
+            end,
+            param_range,
+            tolerance: positive_tolerance(tolerance),
+        });
         self.edges.insert(key, id.clone());
         Ok(id)
     }
@@ -819,7 +812,7 @@ impl<'a> Builder<'a> {
         representation: &TextEdgeRepresentation,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let carrier_transform = multiply(transform, self.tables.location(representation.location));
+        let carrier_transform = transform.compose(self.tables.location(representation.location));
         let scale = similarity(carrier_transform)?.scale;
         let (points, parameters, deflection) = match representation.kind {
             5 => {
@@ -843,7 +836,7 @@ impl<'a> Builder<'a> {
             geometry: CurveGeometry::Polyline {
                 points: points
                     .iter()
-                    .map(|point| transform_point(carrier_transform, *point))
+                    .map(|point| carrier_transform.apply_point(*point))
                     .collect(),
                 parameters,
                 chordal_deflection: deflection * scale,
@@ -859,7 +852,7 @@ impl<'a> Builder<'a> {
                     geometry: CurveGeometry::Polyline {
                         points: points
                             .iter()
-                            .map(|point| transform_point(carrier_transform, *point))
+                            .map(|point| carrier_transform.apply_point(*point))
                             .collect(),
                         parameters,
                         chordal_deflection: deflection * scale,
@@ -913,12 +906,12 @@ impl<'a> Builder<'a> {
 
     fn ensure_vertex(
         &mut self,
-        topology: &mut TopologyBuilder,
+        ir: &mut CadIr,
         vertex_use: &TextShapeUse,
         parent: Transform,
     ) -> Result<VertexId, CodecError> {
-        let transform = multiply(parent, self.tables.location(vertex_use.location));
-        let key = OccurrenceKey::new(vertex_use.shape, multiply(self.body_scope, transform));
+        let transform = parent.compose(self.tables.location(vertex_use.location));
+        let key = OccurrenceKey::new(vertex_use.shape, self.body_scope.compose(transform));
         if let Some(id) = self.vertices.get(&key) {
             return Ok(id.clone());
         }
@@ -935,25 +928,24 @@ impl<'a> Builder<'a> {
         let label = self.topology_label(vertex_use.shape, transform);
         let point_id = PointId(crate::native::model_id("point", &self.payload.id, &label));
         let vertex_id = VertexId(crate::native::model_id("vertex", &self.payload.id, &label));
-        topology
-            .point(
-                point_id.clone(),
-                transform_point(transform, point),
-                Some(SourceObjectAssociation {
-                    format: "fcstd".into(),
-                    object_id: self.source_object.clone(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            )
-            .expect("point id is minted once per occurrence, so registration cannot collide");
-        let vertex_tolerance = positive_tolerance(tolerance * similarity(transform)?.scale);
-        topology
-            .vertex(vertex_id.clone(), point_id, vertex_tolerance)
-            .expect("vertex id is minted once per occurrence, so registration cannot collide");
+        ir.model.points.push(Point {
+            id: point_id.clone(),
+            position: transform.apply_point(point),
+            source_object: Some(SourceObjectAssociation {
+                format: "fcstd".into(),
+                object_id: self.source_object.clone(),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        ir.model.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point_id,
+            tolerance: positive_tolerance(tolerance * similarity(transform)?.scale),
+        });
         self.vertices.insert(key, vertex_id.clone());
         Ok(vertex_id)
     }
@@ -1054,10 +1046,7 @@ impl<'a> Builder<'a> {
                 matches!(representation.kind, 2 | 3)
                     && representation.surface == Some(surface)
                     && transforms_equal(
-                        multiply(
-                            edge_transform,
-                            self.tables.location(representation.location),
-                        ),
+                        edge_transform.compose(self.tables.location(representation.location)),
                         surface_transform,
                     )
             })
@@ -1082,7 +1071,7 @@ impl<'a> Builder<'a> {
     }
 
     fn topology_label(&self, shape: usize, local: Transform) -> String {
-        occurrence_label(shape, multiply(self.body_scope, local))
+        occurrence_label(shape, self.body_scope.compose(local))
     }
 }
 
@@ -1405,35 +1394,8 @@ fn transform_surface(
     })
 }
 
-fn transform_point(transform: Transform, point: Point3) -> Point3 {
-    Point3::new(
-        transform.rows[0][0] * point.x
-            + transform.rows[0][1] * point.y
-            + transform.rows[0][2] * point.z
-            + transform.rows[0][3],
-        transform.rows[1][0] * point.x
-            + transform.rows[1][1] * point.y
-            + transform.rows[1][2] * point.z
-            + transform.rows[1][3],
-        transform.rows[2][0] * point.x
-            + transform.rows[2][1] * point.y
-            + transform.rows[2][2] * point.z
-            + transform.rows[2][3],
-    )
-}
-
-fn transform_vector(transform: Transform, vector: Vector3) -> Vector3 {
-    let transformed = Vector3::new(
-        transform.rows[0][0] * vector.x
-            + transform.rows[0][1] * vector.y
-            + transform.rows[0][2] * vector.z,
-        transform.rows[1][0] * vector.x
-            + transform.rows[1][1] * vector.y
-            + transform.rows[1][2] * vector.z,
-        transform.rows[2][0] * vector.x
-            + transform.rows[2][1] * vector.y
-            + transform.rows[2][2] * vector.z,
-    );
+fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Vector3 {
+    let transformed = transform.apply_vector(vector);
     let magnitude = (transformed.x * transformed.x
         + transformed.y * transformed.y
         + transformed.z * transformed.z)
@@ -1447,18 +1409,6 @@ fn transform_vector(transform: Transform, vector: Vector3) -> Vector3 {
     } else {
         transformed
     }
-}
-
-fn multiply(left: Transform, right: Transform) -> Transform {
-    let mut rows = [[0.0; 4]; 4];
-    for (row, values) in rows.iter_mut().enumerate() {
-        for (column, value) in values.iter_mut().enumerate() {
-            *value = (0..4)
-                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
-                .sum();
-        }
-    }
-    Transform { rows }
 }
 
 fn occurrence_label(shape: usize, transform: Transform) -> String {

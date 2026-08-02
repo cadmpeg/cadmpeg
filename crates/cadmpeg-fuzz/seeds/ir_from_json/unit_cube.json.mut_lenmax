@@ -1,5 +1,5 @@
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": {
     "length": "millimeter"
   },
@@ -213,7 +213,7 @@
         "owner_loop": "synthetic:cube:loop#bottom",
         "edge": "synthetic:cube:edge#0",
         "next": "synthetic:cube:coedge#bottom:1",
-        "previous": "synthetic:cube:coedÿÿÿÿottom:3",
+        "previous": "syntheticÿÿÿÿe:coedge#bottom:3",
         "radial_next": "synthetic:cube:coedge#front:0",
         "sense": "forward"
       },
@@ -946,7 +946,7 @@
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
     "spreadsheets": [],
-    "components": [],
+    "product_definitions": [],
     "occurrences": [],
     "assembly_joints": [],
     "drawings": [],
@@ -957,8 +957,6 @@
     "appearances": [],
     "appearance_bindings": [],
     "attributes": [],
-    "products": [],
-    "product_occurrences": [],
     "pmi": [],
     "presentation_layers": []
   },

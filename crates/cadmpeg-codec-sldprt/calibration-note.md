@@ -13,8 +13,8 @@ actually charge work, which is blocked on the missing platform API (see
 The migrated-means checklist depends on `cadmpeg-ir` primitives that are absent
 on this branch: `View`/`req_*`/`View::window`/`View::counted`, `BoundedCount`,
 `grow_vec`, `alloc_unfloored`, `DepthGuard`, and `begin_expand`/`ExpandWriter`.
-The only bounded primitives available are `cadmpeg_ir::cursor::{Cursor,
-Cursor::counted, Cursor::read_counted}` and `cadmpeg_ir::wire::cursor::bounded_len`. Consequently no sldprt
+The only bounded primitives available are `cadmpeg_codec_core::cursor::{Cursor,
+bounded_len, Cursor::counted, Cursor::read_counted}`. Consequently no sldprt
 decoder module currently charges work, and peak allocation is governed by the
 existing hand-rolled ceilings rather than by an `alloc_unfloored` cap or a
 `begin_expand` decompressed-bytes charge. The freeze cannot bind a work ceiling
@@ -22,11 +22,11 @@ until those charges exist.
 
 ## Decompression ceilings observed today
 
-| Site                              | File:line                                                           | Ceiling today                                                                                                                                         | Post-graduation target                                                     |
-| --------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Per-block raw-DEFLATE inflate     | `container.rs:337`                                                  | `Vec::with_capacity(uncomp.min(1<<20))`, then `inflated.len()==uncomp` and CRC-32 verified                                                            | `begin_expand` charging `decompressed_bytes` per chunk before arena growth |
-| Parasolid member inflate          | `parasolid.rs:55` -> `cadmpeg_ir::compression::inflate_zlib_prefix` | uncapped `ZlibDecoder::read_to_end`                                                                                                                   | bounded inflate through `begin_expand`                                     |
-| Resolved-feature match re-inflate | `resolved_features.rs:~18859`                                       | HARDENED this leg: `Take(target.len()+1)` bounds inflation, so a member expanding past the target length cannot match and is never fully materialized | `begin_expand` charging `decompressed_bytes`                               |
+| Site                              | File:line                                                                  | Ceiling today                                                                                                                                         | Post-graduation target                                                     |
+| --------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Per-block raw-DEFLATE inflate     | `container.rs:337`                                                         | `Vec::with_capacity(uncomp.min(1<<20))`, then `inflated.len()==uncomp` and CRC-32 verified                                                            | `begin_expand` charging `decompressed_bytes` per chunk before arena growth |
+| Parasolid member inflate          | `parasolid.rs:55` -> `cadmpeg_container::compression::inflate_zlib_prefix` | uncapped `ZlibDecoder::read_to_end`                                                                                                                   | bounded inflate through `begin_expand`                                     |
+| Resolved-feature match re-inflate | `resolved_features.rs:~18859`                                              | HARDENED this leg: `Take(target.len()+1)` bounds inflation, so a member expanding past the target length cannot match and is never fully materialized | `begin_expand` charging `decompressed_bytes`                               |
 
 The remaining uncapped site is `parasolid.rs:55` -> `inflate_zlib_prefix`, which
 lives in `cadmpeg-ir` and cannot be capped from within this crate's scope; it is

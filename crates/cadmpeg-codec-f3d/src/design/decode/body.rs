@@ -7,12 +7,12 @@ use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
 use crate::records::{
-    BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBodyBinding, DesignBodyBounds,
-    DesignBodyMember, DesignEntityHeader, DesignObjectKind,
+    BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
 };
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::wire::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
 use std::collections::HashMap;
 
 /// Decode the `BodiesRoot` member list following the doubled `BodiesRoot`
@@ -95,7 +95,7 @@ pub fn decode_body_bounds(
     let mut out = Vec::new();
     for entity in entities
         .iter()
-        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Body))
+        .filter(|entity| entity.module.as_deref() == Some(DESIGN_MODULE_BODY))
     {
         let Some(stream) = native_stream(&entity.id) else {
             continue;
@@ -243,21 +243,6 @@ pub(crate) fn body_bound_candidates(
     })
 }
 
-pub(crate) fn object_kind(name: &str) -> DesignObjectKind {
-    match name {
-        "Fusion" => DesignObjectKind::Fusion,
-        "Body" => DesignObjectKind::Body,
-        "Component" => DesignObjectKind::Component,
-        "Geometry" => DesignObjectKind::Geometry,
-        "MSketch" => DesignObjectKind::Sketch,
-        "Dimension" => DesignObjectKind::Dimension,
-        "Scene" => DesignObjectKind::Scene,
-        "EntityTracking" => DesignObjectKind::EntityTracking,
-        "CommonData" => DesignObjectKind::CommonData,
-        _ => DesignObjectKind::Other(name.to_owned()),
-    }
-}
-
 pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) {
     let mut counters: HashMap<(ConstructionRecipeKind, Option<String>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
@@ -281,6 +266,15 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             }
             let design_id_field = recipe_design_id(bytes, offset, name);
             let design_id = design_id_field.as_ref().map(|field| field.0.clone());
+            let design_selector = design_id_field
+                .as_ref()
+                .and_then(|(design_id, design_id_at)| {
+                    let selector_at = design_id_at.checked_add(design_id.len())?;
+                    Some(ConstructionRecipeSelector {
+                        value: u32_at(bytes, selector_at)?,
+                        byte_offset: u64::try_from(selector_at).ok()?,
+                    })
+                });
             let key = (kind, design_id.clone());
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
@@ -302,6 +296,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 kind,
                 design_id,
                 design_id_offset: design_id_field.as_ref().map(|field| field.1 as u64),
+                design_selector,
                 recipe_index,
                 record_index,
             });
@@ -583,9 +578,52 @@ struct BrowserNodeVisibility {
 }
 
 fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, BrowserNodeVisibility> {
+    browser_node_records(bytes)
+        .into_iter()
+        .map(|record| {
+            (
+                record.entity_suffix,
+                BrowserNodeVisibility {
+                    byte_offset: record.byte_offset,
+                    hidden: record.hidden,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Map each browser-node GUID to its Design entity suffix.
+///
+/// The GUID is the stable join between browser presentation records; the
+/// adjacent entity suffix joins the node back to the Design body map.
+pub(crate) fn browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
+    let mut entities = HashMap::new();
+    let mut ambiguous = std::collections::HashSet::new();
+    for record in browser_node_records(bytes) {
+        let key = record.guid.to_ascii_lowercase();
+        if entities
+            .insert(key.clone(), record.entity_suffix)
+            .is_some_and(|previous| previous != record.entity_suffix)
+        {
+            ambiguous.insert(key);
+        }
+    }
+    entities.retain(|guid, _| !ambiguous.contains(guid));
+    entities
+}
+
+#[derive(Debug, Clone)]
+struct BrowserNodeRecord {
+    guid: String,
+    entity_suffix: u64,
+    byte_offset: u64,
+    hidden: bool,
+}
+
+fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
-    let mut out = HashMap::new();
+    let mut out = Vec::new();
     let mut at = 0usize;
     while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
         if read_u32(bytes, at) != Some(GUID_CHARS as u32)
@@ -597,13 +635,12 @@ fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, BrowserNodeVisibility
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (flag @ (0 | 1), Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
-                out.insert(
-                    member,
-                    BrowserNodeVisibility {
-                        byte_offset: flag_at as u64,
-                        hidden: flag == 1,
-                    },
-                );
+                out.push(BrowserNodeRecord {
+                    guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
+                    entity_suffix: member,
+                    byte_offset: flag_at as u64,
+                    hidden: flag == 1,
+                });
             }
         }
         at += 1;
