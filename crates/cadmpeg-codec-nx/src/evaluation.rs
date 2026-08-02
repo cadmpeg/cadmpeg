@@ -228,20 +228,31 @@ fn rederived_body_census(
             FeatureDefinition::Hole { .. }
                 if !crate::decode::hole_definition_is_incomplete(feature) =>
             {
-                let [output] = feature.outputs.as_slice() else {
-                    return Err((
-                        feature.id.clone(),
-                        UnsupportedBodyCensusReason::InvalidOutputLineage,
-                    ));
-                };
-                if !bodies.contains(output) {
-                    return Err((
-                        feature.id.clone(),
-                        UnsupportedBodyCensusReason::InvalidOutputLineage,
-                    ));
-                }
+                preserve_single_output(feature, &bodies)?;
             }
             FeatureDefinition::Hole { .. } => {
+                return Err((
+                    feature.id.clone(),
+                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                ));
+            }
+            FeatureDefinition::Chamfer { .. }
+                if !crate::decode::chamfer_definition_is_incomplete(feature) =>
+            {
+                preserve_single_output(feature, &bodies)?;
+            }
+            FeatureDefinition::Chamfer { .. } => {
+                return Err((
+                    feature.id.clone(),
+                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                ));
+            }
+            FeatureDefinition::Fillet { .. }
+                if !crate::decode::fillet_definition_is_incomplete(feature) =>
+            {
+                preserve_single_output(feature, &bodies)?;
+            }
+            FeatureDefinition::Fillet { .. } => {
                 return Err((
                     feature.id.clone(),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
@@ -256,6 +267,25 @@ fn rederived_body_census(
         }
     }
     Ok(bodies)
+}
+
+fn preserve_single_output(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &BTreeSet<BodyId>,
+) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    let [output] = feature.outputs.as_slice() else {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    };
+    if !bodies.contains(output) {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    }
+    Ok(())
 }
 
 fn explicit_body_selection(selection: &BodySelection) -> Option<&[BodyId]> {
@@ -279,7 +309,10 @@ fn positive_length(length: Length) -> bool {
 mod tests {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{BodyRetentionMode, Feature, HoleKind, HolePlacement, Termination};
+    use cadmpeg_ir::features::{
+        BodyRetentionMode, ChamferGroup, ChamferSpec, EdgeSelection, Feature, FilletGroup,
+        HoleKind, HolePlacement, RadiusSpec, Termination,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::{Body, BodyKind};
 
@@ -354,6 +387,29 @@ mod tests {
                 specification: None,
                 allow_multi_profile_faces: None,
             },
+            native_ref: None,
+        }
+    }
+
+    fn body_preserving_feature(
+        id: &str,
+        ordinal: u64,
+        body: BodyId,
+        definition: FeatureDefinition,
+    ) -> Feature {
+        Feature {
+            id: FeatureId(id.to_string()),
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body],
+            definition,
             native_ref: None,
         }
     }
@@ -526,6 +582,73 @@ mod tests {
             BodyCensusEvaluation::Mismatch {
                 rederived: vec![BodyId("body".to_string())],
                 saved: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn complete_chamfer_and_fillet_preserve_the_existing_body() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features.push(body_preserving_feature(
+            "chamfer",
+            1,
+            body.clone(),
+            FeatureDefinition::Chamfer {
+                groups: vec![ChamferGroup {
+                    edges: EdgeSelection::All,
+                    spec: ChamferSpec::Distance {
+                        distance: Length(0.25),
+                    },
+                }],
+                flip_direction: false,
+            },
+        ));
+        ir.model.features.push(body_preserving_feature(
+            "fillet",
+            2,
+            body.clone(),
+            FeatureDefinition::Fillet {
+                groups: vec![FilletGroup {
+                    edges: EdgeSelection::All,
+                    radius: RadiusSpec::Constant {
+                        radius: Length(0.2),
+                    },
+                    tangency_weight: Some(1.0),
+                }],
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn incomplete_chamfer_stops_before_applying_its_body_effect() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features.push(body_preserving_feature(
+            "chamfer",
+            1,
+            body,
+            FeatureDefinition::Chamfer {
+                groups: vec![ChamferGroup {
+                    edges: EdgeSelection::Unresolved,
+                    spec: ChamferSpec::Distance {
+                        distance: Length(0.25),
+                    },
+                }],
+                flip_direction: false,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("chamfer".to_string())),
+                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
     }

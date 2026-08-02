@@ -10353,25 +10353,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "rib"
             }
-            FeatureDefinition::Chamfer { groups, .. }
-                if groups.is_empty()
-                    || groups.iter().any(|group| {
-                        edge_selection_is_incomplete(&group.edges)
-                            || chamfer_spec_is_incomplete(&group.spec)
-                    }) =>
-            {
+            FeatureDefinition::Chamfer { .. } if chamfer_definition_is_incomplete(feature) => {
                 "chamfer"
             }
-            FeatureDefinition::Fillet { groups }
-                if groups.is_empty()
-                    || groups.iter().any(|group| {
-                        edge_selection_is_incomplete(&group.edges)
-                            || radius_spec_is_incomplete(&group.radius)
-                            || group
-                                .tangency_weight
-                                .is_some_and(|weight| !weight.is_finite())
-                    }) =>
-            {
+            FeatureDefinition::Fillet { .. } if fillet_definition_is_incomplete(feature) => {
                 "fillet"
             }
             FeatureDefinition::FaceBlend {
@@ -10896,6 +10881,30 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
         || profile
             .as_ref()
             .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+}
+
+pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Chamfer { groups, .. } = &feature.definition else {
+        return true;
+    };
+    groups.is_empty()
+        || groups.iter().any(|group| {
+            edge_selection_is_incomplete(&group.edges) || chamfer_spec_is_incomplete(&group.spec)
+        })
+}
+
+pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Fillet { groups } = &feature.definition else {
+        return true;
+    };
+    groups.is_empty()
+        || groups.iter().any(|group| {
+            edge_selection_is_incomplete(&group.edges)
+                || radius_spec_is_incomplete(&group.radius)
+                || group
+                    .tangency_weight
+                    .is_some_and(|weight| !weight.is_finite())
+        })
 }
 
 pub(crate) fn hole_feature_is_incomplete(
