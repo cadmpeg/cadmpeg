@@ -366,11 +366,6 @@
           "severity": "blocking"
         },
         {
-          "code": "material_not_transferred",
-          "message": "Material and appearance assignment was not transferred because the remaining NX object-model and Parasolid binding fields are not decoded.",
-          "severity": "warning"
-        },
-        {
           "code": "assembly_placements_not_transferred",
           "message": "Assembly occurrence placements were not transferred because their remaining NX object-model field serialization is not decoded.",
           "severity": "warning"

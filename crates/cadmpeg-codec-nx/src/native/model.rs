@@ -290,6 +290,11 @@ pub(crate) struct NativeModel {
 }
 
 impl NativeModel {
+    pub(crate) fn has_untransferred_material_assets(&self) -> bool {
+        !self.om.material_texture_assets.is_empty()
+            || !self.om.material_texture_catalog_entries.is_empty()
+    }
+
     pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
         parasolid_attribute_definitions_have_untransferred_fields(
             &self.parasolid.parasolid_attribute_definitions,

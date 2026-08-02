@@ -1650,7 +1650,7 @@ fn try_decode_geometry(
         !ir.model.faces.is_empty(),
         ir.model.bodies.len() > 1 && !active_body_selection,
         ir.model.tessellations.len(),
-        model.has_untransferred_parasolid_attribute_fields(),
+        &model,
     );
     report_untransferred_streams(scan, &mut report);
     Some((ir, report, annotations, unknowns))
@@ -9880,8 +9880,10 @@ fn build_geometry_report(
     has_topology: bool,
     has_unresolved_sub_bodies: bool,
     tessellation_count: usize,
-    has_untransferred_attribute_fields: bool,
+    model: &crate::native::NativeModel,
 ) -> DecodeReport {
+    let has_untransferred_material_assets = model.has_untransferred_material_assets();
+    let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
 
     losses.push(LossNote {
@@ -10025,14 +10027,16 @@ fn build_geometry_report(
 
     append_design_intent_losses(ir, &mut losses);
 
-    losses.push(LossNote {
-        code: LossKind::MaterialNotTransferred,
-        severity: Severity::Warning,
-        message: "Material and appearance assignment was not transferred because the remaining \
-                  NX object-model and Parasolid binding fields are not decoded."
-            .to_string(),
-        provenance: None,
-    });
+    if has_untransferred_material_assets {
+        losses.push(LossNote {
+            code: LossKind::MaterialNotTransferred,
+            severity: Severity::Warning,
+            message: "Embedded material texture assets were retained without material or \
+                      appearance assignment because their binding fields are not decoded."
+                .to_string(),
+            provenance: None,
+        });
+    }
 
     if has_untransferred_attribute_fields {
         losses.push(LossNote {

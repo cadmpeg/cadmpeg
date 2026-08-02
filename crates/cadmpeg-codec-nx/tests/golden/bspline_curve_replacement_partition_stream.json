@@ -171,11 +171,6 @@
           "code": "topology_not_transferred",
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
-        },
-        {
-          "code": "material_not_transferred",
-          "message": "Material and appearance assignment was not transferred because the remaining NX object-model and Parasolid binding fields are not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [

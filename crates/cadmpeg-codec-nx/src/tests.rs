@@ -7623,10 +7623,11 @@ fn decode_emits_connected_primitive_brep() {
         .losses
         .iter()
         .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
-    assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::MaterialNotTransferred
-            && loss.message.contains("Material and appearance")
-    }));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::MaterialNotTransferred));
     assert!(result
         .report
         .losses
@@ -7659,6 +7660,28 @@ fn decode_reports_missing_assembly_placements_only_for_external_references() {
     assert!(result.report.losses.iter().any(|loss| {
         loss.code == LossKind::AssemblyPlacementsNotTransferred
             && loss.message.contains("Assembly occurrence placements")
+    }));
+}
+
+#[test]
+fn decode_reports_material_loss_only_for_retained_material_assets() {
+    let file = prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        (
+            "/Root/materialsTif/Steel",
+            vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0],
+        ),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::MaterialNotTransferred
+            && loss.message.contains("Embedded material texture assets")
     }));
 }
 

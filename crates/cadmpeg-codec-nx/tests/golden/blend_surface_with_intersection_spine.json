@@ -327,11 +327,6 @@
           "code": "object_records_untransferred",
           "message": "1 surface-intersection record(s) without a complete validated CHART_s and term-endpoint witness remain opaque constructions. Support-UV values govern optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each Parasolid stream is preserved verbatim as an unknown passthrough record so the unresolved source bytes remain available. Rejections: 1 missing chart, 0 missing start term, 0 missing end term, 0 endpoint mismatch.",
           "severity": "warning"
-        },
-        {
-          "code": "material_not_transferred",
-          "message": "Material and appearance assignment was not transferred because the remaining NX object-model and Parasolid binding fields are not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [

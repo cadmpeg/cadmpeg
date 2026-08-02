@@ -3964,11 +3964,6 @@
           "code": "feature_history_retained",
           "message": "This part is composed of 2 sub-body partition(s); its decoded feature-history Booleans do not resolve every intermediate body object to a partition image. Carriers from all sub-bodies are emitted without the unresolved composition that would remove interior/construction faces.",
           "severity": "warning"
-        },
-        {
-          "code": "material_not_transferred",
-          "message": "Material and appearance assignment was not transferred because the remaining NX object-model and Parasolid binding fields are not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [

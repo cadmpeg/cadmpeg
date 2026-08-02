@@ -214,7 +214,7 @@
         },
         {
           "code": "material_not_transferred",
-          "message": "Material and appearance assignment was not transferred because the remaining NX object-model and Parasolid binding fields are not decoded.",
+          "message": "Embedded material texture assets were retained without material or appearance assignment because their binding fields are not decoded.",
           "severity": "warning"
         }
       ],

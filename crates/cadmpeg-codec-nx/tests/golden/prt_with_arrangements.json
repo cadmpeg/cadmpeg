@@ -286,11 +286,6 @@
           "code": "feature_history_retained",
           "message": "Activation, complete body membership, evaluated feature state, or evaluated parameter state remains unresolved for 1 NX design configuration(s).",
           "severity": "warning"
-        },
-        {
-          "code": "material_not_transferred",
-          "message": "Material and appearance assignment was not transferred because the remaining NX object-model and Parasolid binding fields are not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
