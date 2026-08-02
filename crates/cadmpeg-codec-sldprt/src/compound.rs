@@ -331,6 +331,9 @@ fn decode_wrapped_payload_budgeted<'a>(
     source: View<'a>,
     payload: &[u8],
 ) -> Result<Option<Vec<u8>>, CodecError> {
+    if payload.get(..16) != Some(&WRAPPED_PAYLOAD_MAGIC) {
+        return Ok(None);
+    }
     let Some(uncompressed_size) = le_u32(payload, 16).map(u64::from) else {
         return Ok(None);
     };
@@ -511,6 +514,8 @@ fn le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
 mod tests {
     use std::io::Write;
 
+    use cadmpeg_codec_core::decode::{DecodeArena, DecodePolicy};
+
     use super::*;
 
     const SECTOR_SIZE: usize = 512;
@@ -581,6 +586,23 @@ mod tests {
             .find(|section| section.name() == Some("Store/Large"))
             .expect("compound semantic section");
         assert_eq!(section.payload(), semantic);
+    }
+
+    #[test]
+    fn budgeted_scan_does_not_expand_unwrapped_streams() {
+        let file = fixture();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("fixture fits the decode budget");
+
+        let scan = crate::container::scan(&ctx, root).expect("valid unwrapped streams");
+
+        assert_eq!(scan.compound_streams.len(), 2);
+        assert!(scan
+            .compound_streams
+            .iter()
+            .all(|stream| stream.decoded_payload.is_none()));
     }
 
     fn fixture() -> Vec<u8> {

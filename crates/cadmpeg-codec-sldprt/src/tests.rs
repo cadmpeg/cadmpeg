@@ -17517,6 +17517,18 @@ fn decode_projects_feature_input_extrusion_operations() {
             "moICE_c",
             &[(true, 8), (true, 4)][..],
         ),
+        (
+            0,
+            cadmpeg_ir::features::BooleanOp::Cut,
+            "moICE_c",
+            &[(true, 8), (true, 4)][..],
+        ),
+        (
+            22_993,
+            cadmpeg_ir::features::BooleanOp::Cut,
+            "moICE_c",
+            &[(true, 8), (true, 4)][..],
+        ),
     ] {
         for &(direct_class, padding) in layouts {
             let mut source = sldprt_with_body(&triangle_body());
@@ -17552,7 +17564,7 @@ fn decode_projects_feature_input_extrusion_operations() {
         }
     }
 
-    for code in [0, 4, 20] {
+    for code in [4, 20] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
             0x42,
