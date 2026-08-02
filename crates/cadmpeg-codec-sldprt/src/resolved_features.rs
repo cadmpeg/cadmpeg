@@ -27698,7 +27698,7 @@ mod idless_history_binding_tests {
     }
 
     #[test]
-    fn directly_preceding_profile_survives_a_dissectable_extrusion_flag() {
+    fn directly_preceding_profile_binds_a_classless_dissectable_extrusion() {
         let mut profile = feature(1, "sketch");
         profile.id = "profile-native".into();
         profile.xml_tag = "Sketch".into();
@@ -27707,7 +27707,6 @@ mod idless_history_binding_tests {
         let mut extrusion = feature(2, "extrusion");
         extrusion.id = "extrusion-native".into();
         extrusion.xml_tag = "Extrusion".into();
-        extrusion.input_class = Some("moICE_c".into());
         extrusion.source_id = Some("42".into());
         extrusion
             .properties
@@ -34604,7 +34603,8 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             if is_profile_feature_object(feature) {
                 NativeClassKind::ProfileFeature
             } else if kind == NativeClassKind::Unknown
-                && feature_inline_operation_fields(lane, name).is_some()
+                && (matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
+                    || feature_inline_operation_fields(lane, name).is_some())
             {
                 NativeClassKind::Extrusion
             } else {
