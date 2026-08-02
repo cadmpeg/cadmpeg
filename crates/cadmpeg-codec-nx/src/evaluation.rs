@@ -125,7 +125,9 @@ fn rederived_body_census(
     let mut bodies = BTreeSet::new();
     let mut seen_features = BTreeSet::new();
     let mut previous_ordinal = None;
-    for feature in &ir.model.features {
+    let mut features = ir.model.features.iter().collect::<Vec<_>>();
+    features.sort_by_key(|feature| feature.ordinal);
+    for feature in features {
         if seen_features.contains(&feature.id)
             || previous_ordinal.is_some_and(|ordinal| feature.ordinal <= ordinal)
             || feature
@@ -574,6 +576,36 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: Some(FeatureId("block".to_string())),
+                reason: UnsupportedBodyCensusReason::InvalidHistoryOrder,
+            }
+        );
+    }
+
+    #[test]
+    fn replay_uses_stable_feature_ordinals_independently_of_storage_order() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features.push(complete_hole(body.clone()));
+        ir.model.features.reverse();
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn replay_rejects_duplicate_feature_ordinals() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut hole = complete_hole(body);
+        hole.ordinal = 0;
+        ir.model.features.push(hole);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("hole".to_string())),
                 reason: UnsupportedBodyCensusReason::InvalidHistoryOrder,
             }
         );
