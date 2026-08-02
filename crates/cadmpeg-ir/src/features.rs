@@ -971,8 +971,9 @@ pub enum FeatureDefinition {
         first: BodySelection,
         /// Second intersected source shape.
         second: BodySelection,
-        /// Whether the resulting section edges are approximated.
-        approximate: bool,
+        /// Whether the resulting section edges are approximated, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approximate: Option<bool>,
     },
     /// Reflects one source shape across a model-space plane.
     MirrorShape {
@@ -1270,10 +1271,49 @@ pub enum FeatureDefinition {
     },
 }
 
+impl FeatureDefinition {
+    /// Family name of a definition whose replay produces body geometry, and `None` for
+    /// definitions that do not.
+    ///
+    /// A feature of one of these families carries its result geometry in the owning
+    /// [`Feature::outputs`] list, so an empty or unresolvable output list means the body
+    /// lineage was not transferred. The returned name is the stable lowercase label for
+    /// the family, suitable for grouping such features in a report.
+    pub fn body_output_family(&self) -> Option<&'static str> {
+        match self {
+            Self::BaseFeature { .. } => Some("base feature"),
+            Self::Block { .. } => Some("block"),
+            Self::ExtractBody { .. } => Some("extract body"),
+            Self::Loft { .. } => Some("loft"),
+            Self::TrimSurface { .. } => Some("trim surface"),
+            Self::ExtendSurface { .. } => Some("extend surface"),
+            Self::Hole { .. } => Some("hole"),
+            Self::Rib { .. } => Some("rib"),
+            Self::Chamfer { .. } => Some("chamfer"),
+            Self::Fillet { .. } => Some("fillet"),
+            Self::FaceBlend { .. } => Some("face blend"),
+            Self::SewBodies { .. } => Some("sew bodies"),
+            Self::TrimBodies { .. } => Some("trim bodies"),
+            Self::Extrude { .. } => Some("extrude"),
+            Self::Revolve { .. } => Some("revolve"),
+            Self::Sweep { .. } => Some("sweep"),
+            Self::OffsetSurface { .. } => Some("offset surface"),
+            Self::Thicken { .. } => Some("thicken"),
+            Self::Draft { .. } => Some("draft"),
+            Self::Pattern { .. } => Some("pattern"),
+            Self::Combine { .. } => Some("body combine"),
+            Self::ReplaceFace { .. } => Some("replace face"),
+            _ => None,
+        }
+    }
+}
+
 /// Direction in which an extrusion sweeps its profile.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ExtrudeDirection {
+    /// Native direction selection is present structurally but unresolved.
+    Unresolved,
     /// Sweep along the profile's positive normal.
     #[default]
     ProfileNormal,
@@ -2111,6 +2151,8 @@ pub struct AxisAngle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExtrudeStart {
+    /// Native start condition is present structurally but unresolved.
+    Unresolved,
     /// Begin on the profile's own plane.
     #[default]
     ProfilePlane,

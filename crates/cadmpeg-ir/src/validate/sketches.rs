@@ -1017,14 +1017,9 @@ pub(super) fn check_sketches(ir: &CadIr, index: &ModelIndex<'_>, findings: &mut 
                         )
                     })
                     && !glyph_transforms.is_empty()
-                    && glyph_transforms.iter().all(|transform| {
-                        transform
-                            .rows
-                            .iter()
-                            .flatten()
-                            .all(|value| value.is_finite())
-                            && transform.rows[3] == [0.0, 0.0, 0.0, 1.0]
-                    })
+                    && glyph_transforms
+                        .iter()
+                        .all(crate::transform::Transform::is_affine)
             }
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),

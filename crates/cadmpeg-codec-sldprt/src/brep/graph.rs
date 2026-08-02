@@ -24,6 +24,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::unknown::UnknownRecord;
 
+use super::attrib;
 use super::blend::BlendSupportRef;
 use super::entity;
 use super::sweep::{self, SweepKind};
@@ -67,6 +68,8 @@ pub struct Brep {
     pub unknowns: Vec<UnknownRecord>,
     /// Per-face RGB colors resolved from native entity records.
     pub face_colors: Vec<entity::FaceColor>,
+    /// Per-face producing-feature identities resolved from Parasolid attributes.
+    pub face_atoms: Vec<attrib::FaceAtom>,
     /// Loss accounting for this decode.
     pub stats: Stats,
 }
@@ -195,6 +198,11 @@ impl Brep {
         }
         for color in &mut self.face_colors {
             if let Some(target) = &mut color.target {
+                *target = qualify(target);
+            }
+        }
+        for atom in &mut self.face_atoms {
+            if let Some(target) = &mut atom.target {
                 *target = qualify(target);
             }
         }
@@ -494,6 +502,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                     facts.cluster_bodies = scanned_facts.cluster_bodies;
                 }
                 facts.face_colors.append(&mut scanned_facts.face_colors);
+                facts.face_atoms.append(&mut scanned_facts.face_atoms);
                 facts.entity_count += scanned_facts.entity_count;
             } else {
                 tables = scanned_tables;
@@ -504,6 +513,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             carriers.merge_missing(scan_carriers(body));
             tables.merge_deltas(scanned_tables);
             facts.face_colors.append(&mut scanned_facts.face_colors);
+            facts.face_atoms.append(&mut scanned_facts.face_atoms);
             facts.entity_count += scanned_facts.entity_count;
         }
     }
@@ -528,6 +538,7 @@ fn decode_graph(
 
     let mut out = Brep {
         face_colors: entity_facts.face_colors,
+        face_atoms: entity_facts.face_atoms,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             ..Stats::default()
@@ -1102,6 +1113,13 @@ fn decode_graph(
             .map(|face| id_face(face.bridge_attr))
             .filter(|face| emitted_faces.contains(face.as_str()));
     }
+    for atom in &mut out.face_atoms {
+        atom.target =
+            Some(id_face(atom.face_attr)).filter(|face| emitted_faces.contains(face.as_str()));
+    }
+    let mut bound_faces = HashSet::new();
+    out.face_atoms
+        .retain(|atom| atom.target.is_some() && bound_faces.insert(atom.face_attr));
     solve_face_orientation(&mut out);
     synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
     synthesize_sphere_seams(&mut out, &mut annotations, source_stream);

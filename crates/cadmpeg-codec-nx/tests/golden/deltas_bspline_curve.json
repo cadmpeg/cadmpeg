@@ -120,6 +120,37 @@
       "native": {
         "nx": {
           "arenas": {
+            "parasolid_deltas_records": [
+              {
+                "byte_len": 30,
+                "family": "B_CURVE",
+                "id": "nx:s1:deltas-record#67-50",
+                "inflated_offset": 67,
+                "kind": 134,
+                "node_id": 915,
+                "position": null,
+                "references": [
+                  1,
+                  1,
+                  1,
+                  1,
+                  1,
+                  70,
+                  71
+                ],
+                "stream_ordinal": 1,
+                "xmt": 50
+              }
+            ],
+            "parasolid_deltas_residual_spans": [
+              {
+                "byte_len": 67,
+                "id": "nx:s1:deltas-residual#0",
+                "inflated_offset": 0,
+                "sha256": "b01e0f1bbecc6116af143073421185dfbddb9b35ec76aa1c8958391ab066efa3",
+                "stream_ordinal": 1
+              }
+            ],
             "unknowns": [
               {
                 "id": "nx:container:parasolid#0",
@@ -133,18 +164,21 @@
               }
             ]
           },
-          "version": 1
+          "version": 181
         }
       },
       "source": {
         "attributes": {
           "deltas.0.bytes_decoded": "30",
           "deltas.0.full.B_CURVE": "1",
-          "deltas.0.grammar": "status_byte_framed_topology",
+          "deltas.0.grammar": "typed_status_framed_records",
           "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "405",
-          "footer_offset": "0",
+          "file_size": "423",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "409",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -180,7 +214,7 @@
         {
           "category": "topology",
           "code": "decode_diagnostic",
-          "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Every terminal tombstone resolved to an exact current or earlier-added key.",
+          "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Complete ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native attribute extraction. Every completely bounded full record, compact tombstone, and BODY revision envelope was retained as an individually identified native event with its source bounds and decoded identities; BODY state tails retain exact bounded bytes and digests. Complete transmit headers retain their description, schema, consecutive identities, and exact bytes. Terminal two- and four-null-reference trailers retain their exact stream boundary and bytes. Count-selected numeric tails after term-use endpoints were retained with their ordered finite binary64 values. Maximal event gaps containing only typed stream-local references, framed reference/type maps, and complete four-reference state packets, reference-marker packets, and inline schema declarations were retained in order. Spans outside those events were retained with exact inflated-stream bounds and digests. Semantic intersection and NURBS records were retained in the semantic lane. Every terminal tombstone resolved to an exact current or earlier-added key.",
           "severity": "info"
         },
         {
@@ -191,7 +225,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 409, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -223,12 +257,12 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 72,
+            "offset": 76,
             "stream": 1,
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
-            "offset": 311,
+            "offset": 315,
             "stream": 1,
             "tag": "deltas"
           },
@@ -246,7 +280,8 @@
         "streams": [
           "nx:parasolid#0:partition",
           "nx:container",
-          "nx:parasolid#1:deltas"
+          "nx:parasolid#1:deltas",
+          "nx:s1"
         ]
       },
       "retained_records": [
@@ -254,7 +289,7 @@
           "byte_len": 625,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAFNDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAAAAeAB8AIAAhAH0AFQB9ABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAA/hHrhR64UewAAAAAAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7AAAAAAAAAAAAfwAAAAIAHgACAAIAfwAAAAIAHwACAAIAgAAAAAIAIAAAAAAAAAAAP/AAAAAAAAAAgAAAAAIAIQAAAAAAAAAAP/AAAAAAAAAAhgAyAAAAAAAAAAAAAAAAAAArACgAKQCIACgAAQAAAAIAAwAAAAIFAAAAAAAAACoAKwCHACkAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAAAAAAAAAAAAAB/AAAAAgAqAAIAAgCAAAAAAgArAAAAAAAAAAA/8AAAAAAAAACIAEYAAQAAAAIAAwAAAAIFAAAAAAAAACoAKwCHAEcAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7P4R64UeuFHsAAAAAAAAAAA==",
           "id": "nx:container:parasolid#0",
-          "offset": 72,
+          "offset": 76,
           "sha256": "d26c66fac58910af6efa3210241236b01f08502a598b87fc8029b2dca3db689c",
           "stream": "nx:container"
         },
@@ -262,7 +297,7 @@
           "byte_len": 97,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AACGADIAAAOTAAEBAAEBAAEBAAEBAAEBKwBGAQBHAQ==",
           "id": "nx:container:parasolid#1",
-          "offset": 311,
+          "offset": 315,
           "sha256": "7ba1639c1c80dfdf23c54456014a5481ac496f1746ddf007906f24bbb72c8360",
           "stream": "nx:container"
         }
@@ -275,18 +310,18 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
         "compressed_size": 333,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
+        "role": "part-payload",
         "uncompressed_size": 333
       },
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "kind": "partition",
           "records.body": "0",
           "records.edge": "0",
@@ -314,7 +349,7 @@
       },
       {
         "attributes": {
-          "file_offset": "311",
+          "file_offset": "315",
           "kind": "deltas",
           "records.body": "0",
           "records.delta.full.b_curve": "1",
@@ -336,7 +371,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 409, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

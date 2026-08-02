@@ -34,6 +34,82 @@ pub enum Region {
     Footer,
 }
 
+/// Stable semantic classification of one named SPLMSSTR entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntryContent {
+    Directory,
+    PartPayload,
+    ActiveBodyIndex,
+    FastLoadStructure,
+    FastLoadJt,
+    DisplayJt,
+    ExternalReferences,
+    SaveToggleInfo,
+    PreviewImage,
+    MaterialTexture,
+    Arrangements,
+    PartAttributes,
+    AssetCatalog,
+    NamedOpaqueStream,
+}
+
+impl EntryContent {
+    /// Stable inspection label for this content family.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Directory => "directory",
+            Self::PartPayload => "part-payload",
+            Self::ActiveBodyIndex => "active-body-index",
+            Self::FastLoadStructure => "fast-load-structure",
+            Self::FastLoadJt => "fast-load-jt",
+            Self::DisplayJt => "display-jt",
+            Self::ExternalReferences => "external-references",
+            Self::SaveToggleInfo => "save-toggle-info",
+            Self::PreviewImage => "preview-image",
+            Self::MaterialTexture => "material-texture",
+            Self::Arrangements => "arrangements",
+            Self::PartAttributes => "part-attributes",
+            Self::AssetCatalog => "asset-catalog",
+            Self::NamedOpaqueStream => "named-opaque-stream",
+        }
+    }
+
+    /// Whether the codec retains the complete payload as named opaque content.
+    pub fn retains_opaque_payload(self) -> bool {
+        matches!(
+            self,
+            Self::FastLoadStructure
+                | Self::FastLoadJt
+                | Self::SaveToggleInfo
+                | Self::NamedOpaqueStream
+        )
+    }
+}
+
+impl DirEntry {
+    /// Classify this entry by its canonical storage path.
+    pub(crate) fn content(&self) -> EntryContent {
+        if self.file_span.is_none() {
+            return EntryContent::Directory;
+        }
+        match self.name.as_str() {
+            "/Root/UG_PART/UG_PART" => EntryContent::PartPayload,
+            "/Root/FastLoad/RMFastLoad" => EntryContent::ActiveBodyIndex,
+            "/Root/FastLoad/Structure" => EntryContent::FastLoadStructure,
+            "/Root/FastLoad/JT" => EntryContent::FastLoadJt,
+            "/Root/UG_PART/DisplayJT" => EntryContent::DisplayJt,
+            "/Root/UG_PART/LastSavedToggleInfoStream" => EntryContent::SaveToggleInfo,
+            "/Root/images/preview" => EntryContent::PreviewImage,
+            "/Root/part/arrangements" => EntryContent::Arrangements,
+            "/Root/part/attrs" => EntryContent::PartAttributes,
+            "/Root/qafmetadata" => EntryContent::AssetCatalog,
+            name if name.ends_with("/ExternalReferences") => EntryContent::ExternalReferences,
+            name if name.starts_with("/Root/materialsTif/") => EntryContent::MaterialTexture,
+            _ => EntryContent::NamedOpaqueStream,
+        }
+    }
+}
+
 /// One 12-byte row in the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SegmentIndexRow {
@@ -54,6 +130,21 @@ pub struct SegmentIndex<'a> {
     pub padding: &'a [u8],
     /// Declared payload-relative end of the index.
     pub byte_len: usize,
+}
+
+/// One segment-index word whose target frames a compressed stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SegmentStreamWrapper {
+    /// Zero-based segment-index row ordinal.
+    pub row_ordinal: usize,
+    /// Zero-based word ordinal within the row.
+    pub word_ordinal: usize,
+    /// Absolute file offset of the wrapper.
+    pub wrapper_offset: usize,
+    /// Bytes from the wrapper start through its extension.
+    pub wrapper_byte_len: usize,
+    /// Absolute file offset of the candidate zlib member.
+    pub zlib_offset: usize,
 }
 
 /// One fixed-width member of the `RMFastLoad` object-id table.
@@ -124,6 +215,66 @@ impl Container {
                 byte_len,
             },
         ))
+    }
+
+    /// Resolve every in-bounds compressed-stream wrapper addressed by the
+    /// canonical segment index, preserving row and word order.
+    pub(crate) fn segment_stream_wrappers(&self) -> Vec<SegmentStreamWrapper> {
+        let Some((entry, index)) = self.segment_index() else {
+            return Vec::new();
+        };
+        let Some((entry_offset, entry_size)) = entry.file_span else {
+            return Vec::new();
+        };
+        let (Ok(entry_start), Ok(entry_size)) =
+            (usize::try_from(entry_offset), usize::try_from(entry_size))
+        else {
+            return Vec::new();
+        };
+        let Some(entry_end) = entry_start.checked_add(entry_size) else {
+            return Vec::new();
+        };
+        let Some(payload) = self.data.get(entry_start..entry_end) else {
+            return Vec::new();
+        };
+        let mut wrappers = Vec::new();
+        for (row_ordinal, row) in index.rows.iter().enumerate() {
+            for (word_ordinal, relative) in [row.type_code, row.subtype_code, row.value]
+                .into_iter()
+                .enumerate()
+            {
+                let relative = relative as usize;
+                let Some(wrapper) = payload.get(relative..) else {
+                    continue;
+                };
+                let Some(wrapper_word) = u32_le(wrapper, 0) else {
+                    continue;
+                };
+                let extension = (wrapper_word & 0x3fff_ffff) as usize;
+                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
+                    0x8000_0000 => 8usize.checked_add(extension),
+                    0xc000_0000 => 33usize.checked_add(extension),
+                    _ => continue,
+                };
+                let Some(wrapper_byte_len) = wrapper_byte_len else {
+                    continue;
+                };
+                let Some(zlib_relative) = relative.checked_add(wrapper_byte_len) else {
+                    continue;
+                };
+                if zlib_relative >= payload.len() {
+                    continue;
+                }
+                wrappers.push(SegmentStreamWrapper {
+                    row_ordinal,
+                    word_ordinal,
+                    wrapper_offset: entry_start + relative,
+                    wrapper_byte_len,
+                    zlib_offset: entry_start + zlib_relative,
+                });
+            }
+        }
+        wrappers
     }
 
     /// Locate independently size-framed NX object-model sections.
@@ -498,7 +649,13 @@ pub struct Container {
     pub file_tag: u32,
     /// Offset of the `FOOTER` region.
     pub footer_offset: u64,
-    /// Enumerated directory entries from both regions, in discovery order.
+    /// Declared HEADER directory entry count.
+    pub header_entry_count: u32,
+    /// Declared FOOTER directory entry count.
+    pub footer_entry_count: u32,
+    /// Exact four-byte value following the counted FOOTER directory.
+    pub footer_fingerprint: [u8; 4],
+    /// Enumerated directory entries from both regions, in serialized order.
     pub entries: Vec<DirEntry>,
 }
 
@@ -546,50 +703,108 @@ pub fn scan_bytes(data: Vec<u8>) -> Result<Container, CodecError> {
     let version = data.get(8).copied().unwrap_or(0);
     let file_tag = u24_le(&data, 9);
     let footer_offset = u48_le(&data, 0x11);
+    let fo = usize::try_from(footer_offset)
+        .map_err(|_| CodecError::Malformed("FOOTER offset exceeds address space".to_string()))?;
+    let footer_directory_end = data
+        .len()
+        .checked_sub(4)
+        .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
-    let mut entries = Vec::new();
-    // The HEADER directory begins at +25 (`0x19`). Scan forward from there for
-    // entries until the first non-entry byte; the region is contiguous.
-    enumerate_region(&data, 0x19, Region::Header, &mut entries);
-    // The FOOTER region begins at the 48-bit offset with an ASCII `FOOTER` tag,
-    // then a `u32 LE` entry count; entries follow.
-    let fo = footer_offset as usize;
-    if fo + 10 <= data.len() && &data[fo..fo + 6] == b"FOOTER" {
-        enumerate_region(&data, fo + 10, Region::Footer, &mut entries);
+    let (header_entry_count, mut entries, header_end) =
+        directory_region(&data, 0x19, *b"HEADER", Region::Header, fo)?;
+    let (footer_entry_count, footer_entries, footer_end) =
+        directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
+    entries.extend(footer_entries);
+    if header_end > fo {
+        return Err(CodecError::Malformed(
+            "HEADER directory overlaps the FOOTER region".to_string(),
+        ));
     }
+    if entries
+        .iter()
+        .filter_map(|entry| entry.file_span)
+        .any(|(offset, size)| {
+            offset
+                .checked_add(size)
+                .is_none_or(|end| end > footer_offset)
+        })
+    {
+        return Err(CodecError::Malformed(
+            "directory file span extends into the FOOTER region".to_string(),
+        ));
+    }
+    let fingerprint_end = footer_end
+        .checked_add(4)
+        .ok_or_else(|| CodecError::Malformed("FOOTER fingerprint offset overflow".to_string()))?;
+    if fingerprint_end != data.len() {
+        return Err(CodecError::Malformed(
+            "counted FOOTER directory is not followed by exactly four bytes".to_string(),
+        ));
+    }
+    let footer_fingerprint = data[footer_end..fingerprint_end]
+        .try_into()
+        .expect("checked four-byte footer fingerprint");
 
     Ok(Container {
         data,
         version,
         file_tag,
         footer_offset,
+        header_entry_count,
+        footer_entry_count,
+        footer_fingerprint,
         entries,
     })
 }
 
-/// Walk a directory region starting at `from`, appending every entry whose
-/// `name_len:u32 LE` frames an in-bounds ASCII `/Root/...` path. Stops at the
-/// first position that does not frame such an entry (the region is contiguous).
-fn enumerate_region(data: &[u8], from: usize, region: Region, out: &mut Vec<DirEntry>) {
-    let mut o = from;
-    // The very first HEADER entry is the `/Root/` sentinel; a run of well-formed
-    // entries follows. Allow a bounded number of framing misses before giving up,
-    // because the 16-byte opaque payloads can contain bytes that briefly look like
-    // a length field.
-    let mut misses = 0usize;
-    while o + 4 <= data.len() && misses < 64 {
-        match try_entry(data, o, region) {
-            Some((entry, next)) => {
-                out.push(entry);
-                o = next;
-                misses = 0;
-            }
-            None => {
-                o += 1;
-                misses += 1;
-            }
-        }
+fn directory_region(
+    data: &[u8],
+    marker_offset: usize,
+    marker: [u8; 6],
+    region: Region,
+    region_end: usize,
+) -> Result<(u32, Vec<DirEntry>, usize), CodecError> {
+    let count_offset = marker_offset
+        .checked_add(marker.len())
+        .ok_or_else(|| CodecError::Malformed("directory marker offset overflow".to_string()))?;
+    let entries_offset = count_offset
+        .checked_add(4)
+        .ok_or_else(|| CodecError::Malformed("directory count offset overflow".to_string()))?;
+    if data.get(marker_offset..count_offset) != Some(marker.as_slice()) {
+        return Err(CodecError::Malformed(format!(
+            "missing {} directory marker",
+            String::from_utf8_lossy(&marker)
+        )));
     }
+    let count = u32_le(data, count_offset)
+        .ok_or_else(|| CodecError::Malformed("truncated directory entry count".to_string()))?;
+    let capacity = usize::try_from(count)
+        .map_err(|_| CodecError::Malformed("directory entry count exceeds address space".into()))?;
+    let available = region_end.checked_sub(entries_offset).ok_or_else(|| {
+        CodecError::Malformed("directory marker extends beyond its region".to_string())
+    })?;
+    if capacity > available / 26 {
+        return Err(CodecError::Malformed(
+            "directory entry count exceeds its bounded region".to_string(),
+        ));
+    }
+    let mut entries = Vec::with_capacity(capacity);
+    let mut at = entries_offset;
+    for ordinal in 0..count {
+        let Some((entry, next)) = try_entry(data, at, region) else {
+            return Err(CodecError::Malformed(format!(
+                "directory entry {ordinal} is truncated or malformed"
+            )));
+        };
+        if next > region_end {
+            return Err(CodecError::Malformed(format!(
+                "directory entry {ordinal} extends beyond its bounded region"
+            )));
+        }
+        entries.push(entry);
+        at = next;
+    }
+    Ok((count, entries, at))
 }
 
 /// Try to read one directory entry at `o`: `name_len:u32 LE`, then that many bytes

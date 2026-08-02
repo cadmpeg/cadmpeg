@@ -1194,6 +1194,20 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
             scale_point(x_axis);
             scale_point(y_axis);
         }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            scale_point(center);
+            scale_point(cosine);
+            scale_point(sine);
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -1259,6 +1273,20 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
             scale_point(center);
             scale_point(x_axis);
             scale_point(y_axis);
+        }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            scale_point(center);
+            scale_point(cosine);
+            scale_point(sine);
         }
         PcurveGeometry::Parabola {
             vertex,
