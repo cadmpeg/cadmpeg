@@ -145,6 +145,16 @@ impl ModelDraft {
         self.model.entity_count()
     }
 
+    /// Commits only staged model entities, discarding empty ancillary staging surfaces.
+    pub fn commit_model(self, base: &mut CadIr) -> Result<(), DraftError> {
+        self.commit(
+            base,
+            &mut Annotations::default(),
+            &mut Vec::new(),
+            &mut TransferLedger::default(),
+        )
+    }
+
     fn validate_against(&self, base: &CadIr) -> Result<(), DraftError> {
         let index = ModelIndex::new(base);
         for identity in &self.identities {
