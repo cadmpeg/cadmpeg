@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::report::{LossCategory, LossKind};
 use cadmpeg_ir::Exactness;
 
 use crate::container;
@@ -7467,8 +7467,47 @@ fn decode_emits_connected_primitive_brep() {
         .losses
         .iter()
         .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
+    for (kind, text) in [
+        (LossKind::MaterialNotTransferred, "Material and appearance"),
+        (
+            LossKind::AttributesNotTransferred,
+            "Class-specific entity attribute fields",
+        ),
+    ] {
+        assert!(result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.code == kind && loss.message.contains(text)));
+    }
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::ObjectRecordsUntransferred
+            && loss.message.contains("Assembly occurrence placements")
+    }));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_reports_missing_assembly_placements_only_for_external_references() {
+    let file = prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        (
+            "/Root/UG_PART/ExternalReferences",
+            external_reference_stream(),
+        ),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::ObjectRecordsUntransferred
+            && loss.message.contains("Assembly occurrence placements")
+    }));
 }
 
 #[test]

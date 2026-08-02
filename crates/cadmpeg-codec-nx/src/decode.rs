@@ -51,7 +51,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
-use crate::container::{self, Container};
+use crate::container::{self, Container, EntryContent};
 use crate::geometry;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::parasolid::{self, Stream, StreamKind};
@@ -9927,14 +9927,38 @@ fn build_geometry_report(
     append_design_intent_losses(ir, &mut losses);
 
     losses.push(LossNote {
-        code: LossKind::AttributesNotTransferred,
+        code: LossKind::MaterialNotTransferred,
         severity: Severity::Warning,
-        message: "Material and appearance assignment, class-specific entity attribute fields, and \
-                  assembly occurrence placements were not transferred: their remaining NX \
-                  object-model and Parasolid field serialization is not decoded."
+        message: "Material and appearance assignment was not transferred because the remaining \
+                  NX object-model and Parasolid binding fields are not decoded."
             .to_string(),
         provenance: None,
     });
+
+    losses.push(LossNote {
+        code: LossKind::AttributesNotTransferred,
+        severity: Severity::Warning,
+        message: "Class-specific entity attribute fields were not transferred because their \
+                  remaining Parasolid field serialization is not decoded."
+            .to_string(),
+        provenance: None,
+    });
+
+    if scan
+        .container
+        .entries
+        .iter()
+        .any(|entry| entry.content() == EntryContent::ExternalReferences)
+    {
+        losses.push(LossNote {
+            code: LossKind::ObjectRecordsUntransferred,
+            severity: Severity::Warning,
+            message: "Assembly occurrence placements were not transferred because their remaining \
+                      NX object-model field serialization is not decoded."
+                .to_string(),
+            provenance: None,
+        });
+    }
 
     DecodeReport {
         format: "nx".to_string(),

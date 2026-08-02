@@ -207,8 +207,13 @@
           "severity": "info"
         },
         {
+          "code": "material_not_transferred",
+          "message": "Material and appearance assignment was not transferred because the remaining NX object-model and Parasolid binding fields are not decoded.",
+          "severity": "warning"
+        },
+        {
           "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
+          "message": "Class-specific entity attribute fields were not transferred because their remaining Parasolid field serialization is not decoded.",
           "severity": "warning"
         }
       ],
