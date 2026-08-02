@@ -542,14 +542,6 @@ by that invariant.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
 
-### AM-09. Remaining Parasolid attribute value families
-
-**Question.** What are the record layouts for Parasolid type-85 through type-89 and type-98 values?
-
-**Known.** The attribute section of `siemens_nx.md` defines the type-79 identifier/type-80 definition graph, type-99 field-name lists, type-81 class selection, field assignment, type-82 through type-84 value records, topology ownership, and neutral source-attribute names. Trailing type-81 slot `5 + i` supplies declared field `i`, subject to exact value-family compatibility with the field code. `SDL/TYSA_DENSITY` declares real `density` and character `units` fields.
-
-**Need.** We must decode point, vector, direction, axis, tag, pointer, and Unicode field values.
-
 ### AM-10. Face material bindings
 
 **Question.** Which serialized relation binds a material or appearance to a Parasolid face identity?

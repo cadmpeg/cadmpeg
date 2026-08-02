@@ -567,7 +567,7 @@ A terminal zero reference status may also serve as the high zero byte of the
 following record type. The following record begins at that shared byte and must
 satisfy its complete family grammar.
 
-Type-81 entity/attribute-list records and type-82, type-83, and type-84 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted type-82 integer and type-83 finite-binary64 records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
+Type-81 entity/attribute-list records and type-82 through type-89 and type-98 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted value records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
 
 Type-91 records are `type:005b [ff], xmt, flag:u32 BE, reference_status[6]`. The record XMT is non-null and `flag` is binary. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The optional `ff` envelope byte precedes the XMT identity. A complete escaped layout takes precedence over a coincidental longer direct layout beginning at that `ff`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
 
@@ -1671,7 +1671,7 @@ also be the leading `00` of the immediately following two-byte record tag. The
 shared byte belongs to both record frames and is counted once in the deltas byte
 ledger.
 
-The first five type-81 references form a fixed leading lane. The remaining `flags` references form the trailing payload lane. Only trailing references address type-82, type-83, or type-84 value records; their reference ordinals retain the five leading slots, so the first trailing reference has ordinal five. Leading references remain structural and do not produce attribute values even when their values collide with value-record XMT identities.
+The first five type-81 references form a fixed leading lane. The remaining `flags` references form the trailing payload lane. Only trailing references address attribute value records; their reference ordinals retain the five leading slots, so the first trailing reference has ordinal five. Leading references remain structural and do not produce attribute values even when their values collide with value-record XMT identities.
 
 The type-81 definition reference selects an attribute class when it equals the
 XMT of exactly one type-80 attribute definition in the same stream.
@@ -1695,25 +1695,35 @@ has no terminator. A type-81 reference slot resolves a numeric value record only
 when exactly one type-82 or type-83 record in the same stream has the referenced
 xmt; reference order and the value lane order are retained.
 
+Type-85 point, type-86 vector, and type-89 direction value records are `00 <55|56|59> [ff], count:u32 BE, xmt, value[count]`, where every value is three finite `f64 BE` components in serialized xyz order. Type-87 axis value records are `00 57 [ff], vector_count:u32 BE, xmt, vector[vector_count]`, with the same three-component vector representation. `vector_count` is positive and even; consecutive vector pairs form axes in lane order. Type-88 tag value records are `00 58 [ff], count:u32 BE, xmt, value[count]:u32 BE`.
+
+A type-98 Unicode value record is `00 62 [ff], count:u32 BE, xmt, code_unit[count]:u16 BE`. The count is positive and the complete code-unit lane is valid UTF-16. The decoded value is the Unicode scalar string represented by that lane. Type-85 through type-89 and type-98 records have non-null XMT identities, end after their counted lane, and have no terminator.
+
+A trailing type-81 reference resolves a value only when exactly one value record of all type-82 through type-89 and type-98 families in the same stream has the referenced XMT. A collision between families or duplicate records leaves the reference unresolved. Reference order and every serialized value lane remain ordered. Pointer fields have no value-record family and are always transmitted empty.
+
 Trailing type-81 reference slot `5 + i` supplies declared type-80 field `i`.
 The assignment is valid only when the referenced value family matches the
-declared field code: type 82 matches code 1, type 83 matches code 2, and type 84
-matches code 3. An absent field declaration, an ambiguous class or value
+declared field code: types 82, 83, 84, 85, 86, 89, 87, 88, and 98 match codes
+1, 2, 3, 4, 5, 6, 7, 8, and 10 respectively. Code 9 is an empty pointer field
+and has no value assignment. An absent field declaration, an ambiguous class or value
 relation, or a value-family mismatch leaves the field unassigned.
 
 A shell, face, loop, edge, FIN, or vertex topology record with one uniquely resolved
-attribute-list identity owns every uniquely resolved type-82, type-83, and
-type-84 value referenced by that type-81 record. Each value record transfers as
+attribute-list identity owns every uniquely resolved attribute value referenced
+by that type-81 record. Each value record transfers as
 one topology-targeted source attribute whose values retain serialized lane
 order. The independently resolved class relation identifies the owning
-attribute definition. A uniquely assigned type-82, type-83, or type-84 field is
+attribute definition. Integer and tag lanes transfer as integers, real lanes as
+floating-point values, character and Unicode lanes as strings, point/vector/direction
+lanes as three-component vectors, and axis lanes as six-component vectors retaining
+their serialized vector pair. A uniquely assigned field is
 named by its exact class name and resolved declared field name. Without a resolved
 field-name list, it is named by the zero-based declared field ordinal and declared
 field code. `SDL/TYSA_DENSITY` field zero is `density` and field one is `units`.
 
 When a value resolves without a unique declared-field assignment, its neutral
 source-attribute name retains the exact class name when available, followed by
-its type-82, type-83, or type-84 family and zero-based type-81 reference ordinal.
+its value-record family and zero-based type-81 reference ordinal.
 Without a resolved class it retains only the family and ordinal.
 
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:

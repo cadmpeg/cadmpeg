@@ -59,8 +59,7 @@
 //! transfer as active; other operation suppression remains unresolved. Embedded
 //! JT coordinates and triangle connectivity transfer as canonical tessellations.
 //! Complete design history, assembly occurrence placement, material and appearance
-//! assignment, Parasolid field-code 4 through 10 attribute values, Unicode
-//! attribute field names, and `.prt` writing are not supported.
+//! assignment and `.prt` writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules
 //! expose the lower-level container, stream, geometry, NURBS, intersection, and
 //! topology decoders. The object-model extraction and attachment tier (record

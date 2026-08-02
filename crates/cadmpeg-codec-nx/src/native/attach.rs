@@ -167,6 +167,22 @@ pub(crate) fn attach(
         },
         annotations,
     );
+    attach_parasolid_topology_structured_attributes(
+        ir,
+        &ParasolidStructuredAttributeSources {
+            topology_references: &model.parasolid.parasolid_topology_attribute_list_references,
+            class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
+            definitions: &model.parasolid.parasolid_attribute_definitions,
+            field_uses: &model.parasolid.parasolid_attribute_field_uses,
+            field_names: &model.parasolid.parasolid_attribute_field_names,
+            structured_uses: &model.parasolid.parasolid_entity_51_structured_uses,
+            vectors: &model.parasolid.parasolid_entity_vector_records,
+            axes: &model.parasolid.parasolid_entity_57_axis_records,
+            tags: &model.parasolid.parasolid_entity_58_tag_records,
+            unicode: &model.parasolid.parasolid_entity_62_unicode_records,
+        },
+        annotations,
+    );
     for row in &CATALOGUE[note_group_a_end..note_group_b_end] {
         if let Some(note) = row.note {
             note(model, row, annotations);
@@ -2403,33 +2419,9 @@ fn attach_parasolid_topology_string_attributes(
     for uses in uses_by_entity.values_mut() {
         uses.sort_by_key(|string_use| string_use.reference_ordinal);
     }
-    let mut references_by_target = BTreeMap::<
-        String,
-        Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
-    >::new();
-    for reference in sources.topology_references {
-        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
-            continue;
-        };
-        references_by_target
-            .entry(format!(
-                "nx:s{}:{kind}#{}",
-                reference.stream_ordinal, reference.topology_xmt
-            ))
-            .or_default()
-            .push(reference);
-    }
-    let emitted_targets = parasolid_topology_attribute_targets(ir);
-    for (target_key, references) in references_by_target {
-        let [reference] = references.as_slice() else {
-            continue;
-        };
-        let Some(target) = emitted_targets.get(target_key.as_str()) else {
-            continue;
-        };
-        let Some(entity) = reference.attribute_list_record.as_deref() else {
-            continue;
-        };
+    for context in parasolid_topology_attribute_contexts(ir, sources.topology_references) {
+        let reference = context.reference;
+        let entity = context.entity;
         for string_use in uses_by_entity.get(entity).into_iter().flatten() {
             let Some(string) = strings_by_id.get(string_use.string_record.as_str()) else {
                 continue;
@@ -2461,7 +2453,7 @@ fn attach_parasolid_topology_string_attributes(
             );
             ir.model.attributes.push(SourceAttribute {
                 id,
-                target: target.clone(),
+                target: context.target.clone(),
                 name: name
                     .or_else(|| {
                         class_names
@@ -2626,6 +2618,45 @@ fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, Attribut
         .collect()
 }
 
+struct ParasolidTopologyAttributeContext<'a> {
+    reference: &'a crate::native::parasolid::ParasolidTopologyAttributeListReference,
+    entity: &'a str,
+    target: AttributeTarget,
+}
+
+fn parasolid_topology_attribute_contexts<'a>(
+    ir: &CadIr,
+    topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
+) -> Vec<ParasolidTopologyAttributeContext<'a>> {
+    let mut references_by_target = BTreeMap::<String, Vec<_>>::new();
+    for reference in topology_references {
+        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
+            continue;
+        };
+        references_by_target
+            .entry(format!(
+                "nx:s{}:{kind}#{}",
+                reference.stream_ordinal, reference.topology_xmt
+            ))
+            .or_default()
+            .push(reference);
+    }
+    let emitted_targets = parasolid_topology_attribute_targets(ir);
+    references_by_target
+        .into_iter()
+        .filter_map(|(target_key, references)| {
+            let [reference] = references.as_slice() else {
+                return None;
+            };
+            Some(ParasolidTopologyAttributeContext {
+                reference,
+                entity: reference.attribute_list_record.as_deref()?,
+                target: emitted_targets.get(target_key.as_str())?.clone(),
+            })
+        })
+        .collect()
+}
+
 fn attach_parasolid_topology_numeric_attributes(
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
@@ -2654,34 +2685,9 @@ fn attach_parasolid_topology_numeric_attributes(
     for uses in uses_by_entity.values_mut() {
         uses.sort_by_key(|numeric_use| numeric_use.reference_ordinal);
     }
-    let mut references_by_target = BTreeMap::<
-        String,
-        Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
-    >::new();
-    for reference in sources.topology_references {
-        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
-            continue;
-        };
-        references_by_target
-            .entry(format!(
-                "nx:s{}:{kind}#{}",
-                reference.stream_ordinal, reference.topology_xmt
-            ))
-            .or_default()
-            .push(reference);
-    }
-    let emitted_targets = parasolid_topology_attribute_targets(ir);
-
-    for (target_key, references) in references_by_target {
-        let [reference] = references.as_slice() else {
-            continue;
-        };
-        let Some(target) = emitted_targets.get(target_key.as_str()) else {
-            continue;
-        };
-        let Some(entity) = reference.attribute_list_record.as_deref() else {
-            continue;
-        };
+    for context in parasolid_topology_attribute_contexts(ir, sources.topology_references) {
+        let reference = context.reference;
+        let entity = context.entity;
         for numeric_use in uses_by_entity.get(entity).into_iter().flatten() {
             let (values, source_offset, tag, lane) = match numeric_use.kind {
                 crate::native::parasolid::ParasolidEntity51NumericKind::UnsignedIntegers => {
@@ -2743,7 +2749,181 @@ fn attach_parasolid_topology_numeric_attributes(
             );
             ir.model.attributes.push(SourceAttribute {
                 id,
-                target: target.clone(),
+                target: context.target.clone(),
+                name: name
+                    .or_else(|| {
+                        class_names
+                            .get(reference.id.as_str())
+                            .map(|class_name| format!("{class_name}.{generic_name}"))
+                    })
+                    .unwrap_or(generic_name),
+                values,
+            });
+        }
+    }
+    ir.model
+        .attributes
+        .sort_by(|first, second| first.id.0.cmp(&second.id.0));
+}
+
+struct ParasolidStructuredAttributeSources<'a> {
+    topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
+    class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
+    field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
+    field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
+    structured_uses: &'a [crate::native::parasolid::ParasolidEntity51StructuredUse],
+    vectors: &'a [crate::native::parasolid::ParasolidEntityVectorRecord],
+    axes: &'a [crate::native::parasolid::ParasolidEntity57AxisRecord],
+    tags: &'a [crate::native::parasolid::ParasolidEntity58TagRecord],
+    unicode: &'a [crate::native::parasolid::ParasolidEntity62UnicodeRecord],
+}
+
+fn attach_parasolid_topology_structured_attributes(
+    ir: &mut CadIr,
+    sources: &ParasolidStructuredAttributeSources<'_>,
+    annotations: &mut AnnotationBuilder,
+) {
+    let class_names =
+        parasolid_topology_attribute_class_names(sources.class_uses, sources.definitions);
+    let vectors_by_id = sources
+        .vectors
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let axes_by_id = sources
+        .axes
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let tags_by_id = sources
+        .tags
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let unicode_by_id = sources
+        .unicode
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let mut uses_by_entity =
+        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StructuredUse>>::new();
+    for structured_use in sources.structured_uses {
+        uses_by_entity
+            .entry(structured_use.entity_51_record.as_str())
+            .or_default()
+            .push(structured_use);
+    }
+    for uses in uses_by_entity.values_mut() {
+        uses.sort_by_key(|structured_use| structured_use.reference_ordinal);
+    }
+    for context in parasolid_topology_attribute_contexts(ir, sources.topology_references) {
+        let reference = context.reference;
+        let entity = context.entity;
+        for structured_use in uses_by_entity.get(entity).into_iter().flatten() {
+            use crate::native::parasolid::ParasolidAttributeFieldValueKind as Kind;
+            use crate::native::parasolid::ParasolidVectorValueKind;
+            let (values, source_offset, tag, family) = match structured_use.kind {
+                Kind::Points | Kind::Vectors | Kind::Directions => {
+                    let Some(record) = vectors_by_id.get(structured_use.value_record.as_str())
+                    else {
+                        continue;
+                    };
+                    let family = match (structured_use.kind, record.kind) {
+                        (Kind::Points, ParasolidVectorValueKind::Points) => "85_point",
+                        (Kind::Vectors, ParasolidVectorValueKind::Vectors) => "86_vector",
+                        (Kind::Directions, ParasolidVectorValueKind::Directions) => "89_direction",
+                        _ => continue,
+                    };
+                    (
+                        record
+                            .values
+                            .iter()
+                            .map(|value| AttributeValue::Vector(value.to_vec()))
+                            .collect(),
+                        record.inflated_offset,
+                        "PARASOLID_VECTOR_ATTRIBUTE",
+                        family,
+                    )
+                }
+                Kind::Axes => {
+                    let Some(record) = axes_by_id.get(structured_use.value_record.as_str()) else {
+                        continue;
+                    };
+                    (
+                        record
+                            .values
+                            .iter()
+                            .map(|axis| {
+                                AttributeValue::Vector(
+                                    axis.iter()
+                                        .flat_map(|vector| vector.iter().copied())
+                                        .collect(),
+                                )
+                            })
+                            .collect(),
+                        record.inflated_offset,
+                        "ENTITY_57_AXIS_ATTRIBUTE",
+                        "87_axis",
+                    )
+                }
+                Kind::Tags => {
+                    let Some(record) = tags_by_id.get(structured_use.value_record.as_str()) else {
+                        continue;
+                    };
+                    (
+                        record
+                            .values
+                            .iter()
+                            .map(|value| AttributeValue::Integer(i64::from(*value)))
+                            .collect(),
+                        record.inflated_offset,
+                        "ENTITY_58_TAG_ATTRIBUTE",
+                        "88_tag",
+                    )
+                }
+                Kind::Unicode => {
+                    let Some(record) = unicode_by_id.get(structured_use.value_record.as_str())
+                    else {
+                        continue;
+                    };
+                    (
+                        vec![AttributeValue::String(record.value.clone())],
+                        record.inflated_offset,
+                        "ENTITY_62_UNICODE_ATTRIBUTE",
+                        "98_unicode",
+                    )
+                }
+                Kind::UnsignedIntegers | Kind::Doubles | Kind::String => continue,
+            };
+            let id = AttributeId(format!(
+                "nx:s{}:topology-structured-attribute#{}-{}-{}",
+                reference.stream_ordinal,
+                reference.topology_type,
+                reference.topology_xmt,
+                structured_use.reference_ordinal
+            ));
+            let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+            annotations
+                .note(&id.0, source_stream, source_offset)
+                .tag(tag);
+            annotations.derived(&id.0, "target");
+            annotations.derived(&id.0, "name");
+            let generic_name = format!(
+                "parasolid_type_{family}_reference_{}",
+                structured_use.reference_ordinal
+            );
+            let name = parasolid_topology_attribute_field_name(
+                reference,
+                structured_use.id.as_str(),
+                sources.class_uses,
+                sources.definitions,
+                sources.field_uses,
+                sources.field_names,
+            );
+            ir.model.attributes.push(SourceAttribute {
+                id,
+                target: context.target.clone(),
                 name: name
                     .or_else(|| {
                         class_names
@@ -7912,7 +8092,7 @@ mod tests {
             stream_ordinal: 3,
             attribute_definition: named_definition.id.clone(),
             field_names_record: "field-names-record".into(),
-            string_records: vec!["name-1".into(), "name-2".into()],
+            value_records: vec!["name-1".into(), "name-2".into()],
             names: vec!["width".into(), "units".into()],
         };
         assert_eq!(
@@ -7941,5 +8121,143 @@ mod tests {
             &[],
         )
         .is_none());
+    }
+
+    #[test]
+    fn topology_structured_attribute_values_preserve_serialized_lanes() {
+        use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+        use cadmpeg_ir::ids::FaceId;
+        use cadmpeg_ir::AnnotationBuilder;
+
+        use crate::native::parasolid::{
+            ParasolidAttributeFieldValueKind as Kind, ParasolidEntity51StructuredUse,
+            ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
+            ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+            ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
+        };
+
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 3,
+            topology_type: 14,
+            topology_xmt: 60,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some("entity".into()),
+            inflated_offset: 300,
+        };
+        let vectors = [
+            (ParasolidVectorValueKind::Points, "point", [1.0, 2.0, 3.0]),
+            (ParasolidVectorValueKind::Vectors, "vector", [4.0, 5.0, 6.0]),
+            (
+                ParasolidVectorValueKind::Directions,
+                "direction",
+                [7.0, 8.0, 9.0],
+            ),
+        ]
+        .map(|(kind, id, value)| ParasolidEntityVectorRecord {
+            id: id.into(),
+            stream_ordinal: 3,
+            kind,
+            xmt: 70,
+            values: vec![value],
+            byte_len: 36,
+            inflated_offset: 400,
+        });
+        let axis = ParasolidEntity57AxisRecord {
+            id: "axis".into(),
+            stream_ordinal: 3,
+            xmt: 73,
+            values: vec![[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+            byte_len: 60,
+            inflated_offset: 430,
+        };
+        let tag = ParasolidEntity58TagRecord {
+            id: "tag".into(),
+            stream_ordinal: 3,
+            xmt: 74,
+            values: vec![u32::MAX],
+            byte_len: 16,
+            inflated_offset: 440,
+        };
+        let unicode = ParasolidEntity62UnicodeRecord {
+            id: "unicode".into(),
+            stream_ordinal: 3,
+            xmt: 75,
+            code_units: vec![0x03bc],
+            value: "μ".into(),
+            byte_len: 14,
+            inflated_offset: 450,
+        };
+        let uses = [
+            (Kind::Points, "point"),
+            (Kind::Vectors, "vector"),
+            (Kind::Directions, "direction"),
+            (Kind::Axes, "axis"),
+            (Kind::Tags, "tag"),
+            (Kind::Unicode, "unicode"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, (kind, record))| ParasolidEntity51StructuredUse {
+            id: format!("use-{ordinal}"),
+            stream_ordinal: 3,
+            entity_51_record: "entity".into(),
+            reference_ordinal: u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
+            referenced_xmt: u32::try_from(ordinal).expect("test ordinal fits u32") + 70,
+            kind,
+            value_record: record.into(),
+            inflated_offset: 200,
+        })
+        .collect::<Vec<_>>();
+        let mut annotations = AnnotationBuilder::new();
+        super::attach_parasolid_topology_structured_attributes(
+            &mut ir,
+            &super::ParasolidStructuredAttributeSources {
+                topology_references: &[reference],
+                class_uses: &[],
+                definitions: &[],
+                field_uses: &[],
+                field_names: &[],
+                structured_uses: &uses,
+                vectors: &vectors,
+                axes: &[axis],
+                tags: &[tag],
+                unicode: &[unicode],
+            },
+            &mut annotations,
+        );
+
+        let attributes = ir
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| attribute.id.0.contains("topology-structured-attribute"))
+            .collect::<Vec<_>>();
+        assert_eq!(attributes.len(), 6);
+        assert!(attributes.iter().all(|attribute| {
+            attribute.target == AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+        }));
+        let values = attributes
+            .iter()
+            .map(|attribute| (attribute.name.as_str(), attribute.values.as_slice()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            values["parasolid_type_85_point_reference_5"],
+            [AttributeValue::Vector(vec![1.0, 2.0, 3.0])]
+        );
+        assert_eq!(
+            values["parasolid_type_87_axis_reference_8"],
+            [AttributeValue::Vector(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0])]
+        );
+        assert_eq!(
+            values["parasolid_type_88_tag_reference_9"],
+            [AttributeValue::Integer(i64::from(u32::MAX))]
+        );
+        assert_eq!(
+            values["parasolid_type_98_unicode_reference_10"],
+            [AttributeValue::String("μ".into())]
+        );
     }
 }

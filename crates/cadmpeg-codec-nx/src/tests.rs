@@ -14194,10 +14194,15 @@ mod golden {
         "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
         "parasolid_entity_51_records",
+        "parasolid_entity_51_structured_uses",
         "parasolid_entity_51_string_uses",
         "parasolid_entity_52_integer_records",
         "parasolid_entity_53_double_records",
         "parasolid_entity_54_string_records",
+        "parasolid_entity_57_axis_records",
+        "parasolid_entity_58_tag_records",
+        "parasolid_entity_62_unicode_records",
+        "parasolid_entity_vector_records",
         "parasolid_field_names_records",
         "parasolid_intersection_records",
         "parasolid_offset_surface_records",
@@ -14919,7 +14924,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (218), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (223), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -14928,7 +14933,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 218, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 223, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

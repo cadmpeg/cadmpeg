@@ -84,8 +84,13 @@ pub(crate) struct ParasolidRecords {
     pub(crate) parasolid_entity_52_integer_records: Vec<ParasolidEntity52IntegerRecord>,
     pub(crate) parasolid_entity_53_double_records: Vec<ParasolidEntity53DoubleRecord>,
     pub(crate) parasolid_entity_54_string_records: Vec<ParasolidEntity54StringRecord>,
+    pub(crate) parasolid_entity_vector_records: Vec<ParasolidEntityVectorRecord>,
+    pub(crate) parasolid_entity_57_axis_records: Vec<ParasolidEntity57AxisRecord>,
+    pub(crate) parasolid_entity_58_tag_records: Vec<ParasolidEntity58TagRecord>,
+    pub(crate) parasolid_entity_62_unicode_records: Vec<ParasolidEntity62UnicodeRecord>,
     pub(crate) parasolid_entity_51_numeric_uses: Vec<ParasolidEntity51NumericUse>,
     pub(crate) parasolid_entity_51_string_uses: Vec<ParasolidEntity51StringUse>,
+    pub(crate) parasolid_entity_51_structured_uses: Vec<ParasolidEntity51StructuredUse>,
     pub(crate) parasolid_attribute_class_uses: Vec<ParasolidAttributeClassUse>,
     pub(crate) parasolid_attribute_field_uses: Vec<ParasolidAttributeFieldUse>,
     pub(crate) parasolid_topology_attribute_list_references:
@@ -299,6 +304,9 @@ impl NativeModel {
         parasolid_attribute_definitions_have_untransferred_fields(
             &self.parasolid.parasolid_attribute_definitions,
             &self.parasolid.parasolid_attribute_field_names,
+            &self.parasolid.parasolid_entity_51_records,
+            &self.parasolid.parasolid_attribute_field_uses,
+            &self.parasolid.parasolid_topology_attribute_class_uses,
         )
     }
 
@@ -332,11 +340,16 @@ impl NativeModel {
         let parasolid_entity_52_integer_records = parasolid_entity_52_integer_records(streams);
         let parasolid_entity_53_double_records = parasolid_entity_53_double_records(streams);
         let parasolid_entity_54_string_records = parasolid_entity_54_string_records(streams);
+        let parasolid_entity_vector_records = parasolid_entity_vector_records(streams);
+        let parasolid_entity_57_axis_records = parasolid_entity_57_axis_records(streams);
+        let parasolid_entity_58_tag_records = parasolid_entity_58_tag_records(streams);
+        let parasolid_entity_62_unicode_records = parasolid_entity_62_unicode_records(streams);
         let parasolid_field_names_records = parasolid_field_names_records(streams);
         let parasolid_attribute_field_names = parasolid_attribute_field_names(
             &parasolid_attribute_definitions,
             &parasolid_field_names_records,
             &parasolid_entity_54_string_records,
+            &parasolid_entity_62_unicode_records,
         );
         let parasolid_entity_51_numeric_uses = parasolid_entity_51_numeric_uses(
             &parasolid_entity_51_records,
@@ -347,6 +360,13 @@ impl NativeModel {
             &parasolid_entity_51_records,
             &parasolid_entity_54_string_records,
         );
+        let parasolid_entity_51_structured_uses = parasolid_entity_51_structured_uses(
+            &parasolid_entity_51_records,
+            &parasolid_entity_vector_records,
+            &parasolid_entity_57_axis_records,
+            &parasolid_entity_58_tag_records,
+            &parasolid_entity_62_unicode_records,
+        );
         let parasolid_attribute_class_uses = parasolid_attribute_class_uses(
             &parasolid_entity_51_records,
             &parasolid_attribute_definitions,
@@ -356,6 +376,7 @@ impl NativeModel {
             &parasolid_attribute_definitions,
             &parasolid_entity_51_numeric_uses,
             &parasolid_entity_51_string_uses,
+            &parasolid_entity_51_structured_uses,
         );
         let parasolid_topology_attribute_list_references =
             parasolid_topology_attribute_list_references(parsed, &parasolid_entity_51_records);
@@ -892,8 +913,13 @@ impl NativeModel {
                 parasolid_entity_52_integer_records,
                 parasolid_entity_53_double_records,
                 parasolid_entity_54_string_records,
+                parasolid_entity_vector_records,
+                parasolid_entity_57_axis_records,
+                parasolid_entity_58_tag_records,
+                parasolid_entity_62_unicode_records,
                 parasolid_entity_51_numeric_uses,
                 parasolid_entity_51_string_uses,
+                parasolid_entity_51_structured_uses,
                 parasolid_attribute_class_uses,
                 parasolid_attribute_field_uses,
                 parasolid_topology_attribute_list_references,

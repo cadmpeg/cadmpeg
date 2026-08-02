@@ -47,8 +47,8 @@ pub(crate) struct CatalogueRow {
     /// Record count for this family, feeding the catalogue-derived emptiness
     /// fold ([`NativeModel::is_empty`]) and inspect counts.
     pub(crate) len: fn(&NativeModel) -> usize,
-    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 161 of
-    /// the 208 families count; the 47 that do not are transcribed verbatim from
+    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 176 of
+    /// the 223 families count; the 47 that do not are transcribed verbatim from
     /// the legacy hand-written all-empty guard, which omitted them. The
     /// exclusions look like oversights (25 of the 26 `display_jt` families are
     /// excluded, for instance) but are frozen observable behavior: flipping any
@@ -629,12 +629,37 @@ impl StreamNoted for ParasolidEntity54StringRecord {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
+impl StreamNoted for ParasolidEntityVectorRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidEntity57AxisRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidEntity58TagRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidEntity62UnicodeRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
 impl StreamNoted for ParasolidEntity51StringUse {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
 impl StreamNoted for ParasolidEntity51NumericUse {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidEntity51StructuredUse {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -1435,6 +1460,50 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "parasolid_entity_vector_records",
+        tag: Some("ATTRIBUTE_VECTOR_VALUES"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_vector_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_vector_records, r, ns),
+        len: |m| m.parasolid.parasolid_entity_vector_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_entity_57_axis_records",
+        tag: Some("ENTITY_57_AXES"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_57_axis_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_57_axis_records, r, ns),
+        len: |m| m.parasolid.parasolid_entity_57_axis_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_entity_58_tag_records",
+        tag: Some("ENTITY_58_TAGS"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_58_tag_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_58_tag_records, r, ns),
+        len: |m| m.parasolid.parasolid_entity_58_tag_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_entity_62_unicode_records",
+        tag: Some("ENTITY_62_UNICODE"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_62_unicode_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_62_unicode_records, r, ns),
+        len: |m| m.parasolid.parasolid_entity_62_unicode_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "parasolid_entity_51_string_uses",
         tag: Some("ENTITY_51_STRING_USE"),
         exactness: Exactness::ByteExact,
@@ -1450,6 +1519,17 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_per_stream(&m.parasolid.parasolid_entity_51_numeric_uses, r, a)),
         emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_51_numeric_uses, r, ns),
         len: |m| m.parasolid.parasolid_entity_51_numeric_uses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_entity_51_structured_uses",
+        tag: Some("ENTITY_51_STRUCTURED_USE"),
+        exactness: Exactness::Derived,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_51_structured_uses, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_51_structured_uses, r, ns),
+        len: |m| m.parasolid.parasolid_entity_51_structured_uses.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
