@@ -917,18 +917,27 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Sweep {
                 profile,
+                sections,
                 path,
                 mode,
+                orientation,
                 ..
             } => {
                 profile.as_ref().is_none_or(incomplete_profile)
+                    || sections.iter().any(incomplete_profile)
                     || path.as_ref().is_none_or(incomplete_path)
+                    || matches!(
+                        orientation,
+                        Some(cadmpeg_ir::features::SweepOrientation::Auxiliary { path, .. })
+                            if incomplete_path(path)
+                    )
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)
             }
             FeatureDefinition::Loft {
                 sections,
                 guides,
+                centerline,
                 op,
                 ..
             } => {
@@ -939,6 +948,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                         cadmpeg_ir::features::LoftSection::Point(_) => false,
                     })
                     || guides.iter().any(incomplete_path)
+                    || centerline.as_ref().is_some_and(incomplete_path)
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Rib { construction, op } => {
@@ -3619,6 +3629,90 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "4 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_checks_secondary_sweep_and_loft_paths() {
+        let mut ir = CadIr::empty(Units::default());
+        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+        let path = PathRef::Sketch(sketch);
+        let sweep = |sections, orientation| FeatureDefinition::Sweep {
+            profile: Some(profile.clone()),
+            sections,
+            path: Some(path.clone()),
+            mode: cadmpeg_ir::features::SweepMode::Surface,
+            orientation,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        };
+        let definitions = [
+            sweep(
+                vec![cadmpeg_ir::features::ProfileRef::Native("section".into())],
+                None,
+            ),
+            sweep(
+                Vec::new(),
+                Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
+                    path: PathRef::Native("auxiliary".into()),
+                    tangent: false,
+                    curvilinear: false,
+                }),
+            ),
+            FeatureDefinition::Loft {
+                sections: vec![
+                    cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+                    cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+                ],
+                guides: Vec::new(),
+                centerline: Some(PathRef::Native("centerline".into())),
+                op: BooleanOp::NewBody,
+                closed: false,
+                solid: false,
+                ruled: false,
+                max_degree: None,
+                check_compatibility: None,
+                allow_multi_profile_faces: None,
+            },
+            sweep(Vec::new(), None),
+        ];
+        for (ordinal, definition) in definitions.into_iter().enumerate() {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("path-feature-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "3 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
