@@ -1693,20 +1693,25 @@ has no terminator. A type-81 reference slot resolves a numeric value record only
 when exactly one type-82 or type-83 record in the same stream has the referenced
 xmt; reference order and the value lane order are retained.
 
+Trailing type-81 reference slot `5 + i` supplies declared type-80 field `i`.
+The assignment is valid only when the referenced value family matches the
+declared field code: type 82 matches code 1, type 83 matches code 2, and type 84
+matches code 3. An absent field declaration, an ambiguous class or value
+relation, or a value-family mismatch leaves the field unassigned.
+
 A shell, face, loop, edge, FIN, or vertex topology record with one uniquely resolved
 attribute-list identity owns every uniquely resolved type-82, type-83, and
 type-84 value referenced by that type-81 record. Each value record transfers as
-one topology-targeted source attribute. Its name contains the value-record
-family and zero-based type-81 reference ordinal; its values retain serialized
-lane order. The independently resolved class relation identifies the owning
-attribute definition, but a value receives a semantic field name only through
-the class-specific field-value serialization.
+one topology-targeted source attribute whose values retain serialized lane
+order. The independently resolved class relation identifies the owning
+attribute definition. A uniquely assigned type-82, type-83, or type-84 field is
+named by its exact class name, zero-based declared field ordinal, and declared
+field code. `SDL/TYSA_DENSITY` field zero is `density` and field one is `units`.
 
-When the class relation resolves, each neutral source-attribute name is the
-exact class name followed by its type-82, type-83, or type-84 family and
-zero-based type-81 reference ordinal. Without a resolved class it retains only
-the family and ordinal. This qualification assigns class ownership without
-assigning a declared field role.
+When a value resolves without a unique declared-field assignment, its neutral
+source-attribute name retains the exact class name when available, followed by
+its type-82, type-83, or type-84 family and zero-based type-81 reference ordinal.
+Without a resolved class it retains only the family and ordinal.
 
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 

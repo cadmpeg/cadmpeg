@@ -85,7 +85,7 @@ pub(crate) struct ParasolidRecords {
     pub(crate) parasolid_entity_51_numeric_uses: Vec<ParasolidEntity51NumericUse>,
     pub(crate) parasolid_entity_51_string_uses: Vec<ParasolidEntity51StringUse>,
     pub(crate) parasolid_attribute_class_uses: Vec<ParasolidAttributeClassUse>,
-    pub(crate) parasolid_attribute_numeric_class_uses: Vec<ParasolidAttributeNumericClassUse>,
+    pub(crate) parasolid_attribute_field_uses: Vec<ParasolidAttributeFieldUse>,
     pub(crate) parasolid_topology_attribute_list_references:
         Vec<ParasolidTopologyAttributeListReference>,
     pub(crate) parasolid_topology_attribute_class_uses: Vec<ParasolidTopologyAttributeClassUse>,
@@ -331,9 +331,11 @@ impl NativeModel {
             &parasolid_entity_51_records,
             &parasolid_attribute_definitions,
         );
-        let parasolid_attribute_numeric_class_uses = parasolid_attribute_numeric_class_uses(
+        let parasolid_attribute_field_uses = parasolid_attribute_field_uses(
             &parasolid_attribute_class_uses,
+            &parasolid_attribute_definitions,
             &parasolid_entity_51_numeric_uses,
+            &parasolid_entity_51_string_uses,
         );
         let parasolid_topology_attribute_list_references =
             parasolid_topology_attribute_list_references(parsed, &parasolid_entity_51_records);
@@ -871,7 +873,7 @@ impl NativeModel {
                 parasolid_entity_51_numeric_uses,
                 parasolid_entity_51_string_uses,
                 parasolid_attribute_class_uses,
-                parasolid_attribute_numeric_class_uses,
+                parasolid_attribute_field_uses,
                 parasolid_topology_attribute_list_references,
                 parasolid_topology_attribute_class_uses,
             },

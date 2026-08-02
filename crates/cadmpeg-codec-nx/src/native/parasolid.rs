@@ -1627,9 +1627,21 @@ pub struct ParasolidAttributeClassUse {
     pub attribute_definition: String,
 }
 
-/// Class-qualified numeric value referenced by one Parasolid attribute instance.
+/// Value-record family assigned to one declared Parasolid attribute field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidAttributeFieldValueKind {
+    /// Type-82 integer values.
+    UnsignedIntegers,
+    /// Type-83 binary64 values.
+    Doubles,
+    /// Type-84 character values.
+    String,
+}
+
+/// One uniquely typed type-81 field reference joined to its type-80 declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidAttributeNumericClassUse {
+pub struct ParasolidAttributeFieldUse {
     /// Globally unique relation identity.
     pub id: String,
     /// Zero-based inflated Parasolid stream ordinal.
@@ -1640,13 +1652,17 @@ pub struct ParasolidAttributeNumericClassUse {
     pub entity_51_record: String,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
-    /// Numeric-reference relation carried by the instance.
-    pub numeric_use: String,
-    /// Zero-based position in the type-81 reference lane.
+    /// Zero-based position in the type-80 field declaration.
+    pub field_ordinal: u32,
+    /// Declared type-80 field code.
+    pub field_code: u8,
+    /// Zero-based position in the complete type-81 reference lane.
     pub reference_ordinal: u32,
-    /// Numeric record family.
-    pub kind: ParasolidEntity51NumericKind,
-    /// Uniquely resolved numeric value record.
+    /// Resolved value-record family.
+    pub value_kind: ParasolidAttributeFieldValueKind,
+    /// Type-81-to-value relation carrying this field.
+    pub value_use: String,
+    /// Uniquely resolved value record.
     pub value_record: String,
     /// Offset of the owning type-81 record in the inflated stream.
     pub inflated_offset: u64,
@@ -1661,6 +1677,8 @@ pub struct ParasolidTopologyAttributeClassUse {
     pub topology_attribute_reference: String,
     /// Topology-owned type-81 attribute-instance record.
     pub entity_51_record: String,
+    /// Resolved class relation for the attribute instance.
+    pub attribute_class_use: String,
     /// Stream-local XMT of the matched type-80 definition.
     pub definition_xmt: u32,
     /// Uniquely matched attribute definition.
@@ -2001,16 +2019,19 @@ pub fn parasolid_topology_attribute_class_uses(
     topology_references: &[ParasolidTopologyAttributeListReference],
     class_uses: &[ParasolidAttributeClassUse],
 ) -> Vec<ParasolidTopologyAttributeClassUse> {
-    let class_uses = class_uses
-        .iter()
-        .map(|class_use| (class_use.entity_51_record.as_str(), class_use))
-        .collect::<BTreeMap<_, _>>();
+    let mut class_uses_by_entity = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
+    for class_use in class_uses {
+        class_uses_by_entity
+            .entry(class_use.entity_51_record.as_str())
+            .or_default()
+            .push(class_use);
+    }
     let mut uses = Vec::new();
     for reference in topology_references {
         let Some(entity_id) = reference.attribute_list_record.as_deref() else {
             continue;
         };
-        let Some(class_use) = class_uses.get(entity_id) else {
+        let Some([class_use]) = class_uses_by_entity.get(entity_id).map(Vec::as_slice) else {
             continue;
         };
         uses.push(ParasolidTopologyAttributeClassUse {
@@ -2020,6 +2041,7 @@ pub fn parasolid_topology_attribute_class_uses(
             ),
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: class_use.entity_51_record.clone(),
+            attribute_class_use: class_use.id.clone(),
             definition_xmt: class_use.definition_xmt,
             attribute_definition: class_use.attribute_definition.clone(),
         });
@@ -2067,11 +2089,13 @@ pub fn parasolid_attribute_class_uses(
     uses
 }
 
-/// Join every resolved attribute class to its uniquely resolved numeric values.
-pub fn parasolid_attribute_numeric_class_uses(
+/// Assign uniquely resolved type-82 through type-84 values to declared type-80 fields.
+pub fn parasolid_attribute_field_uses(
     class_uses: &[ParasolidAttributeClassUse],
+    definitions: &[ParasolidAttributeDefinition],
     numeric_uses: &[ParasolidEntity51NumericUse],
-) -> Vec<ParasolidAttributeNumericClassUse> {
+    string_uses: &[ParasolidEntity51StringUse],
+) -> Vec<ParasolidAttributeFieldUse> {
     let mut classes = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
     for class_use in class_uses {
         classes
@@ -2079,33 +2103,93 @@ pub fn parasolid_attribute_numeric_class_uses(
             .or_default()
             .push(class_use);
     }
-    let mut uses = numeric_uses
-        .iter()
-        .filter_map(|numeric_use| {
-            let [class_use] = classes
-                .get(numeric_use.entity_51_record.as_str())?
+    let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
+    for definition in definitions {
+        definitions_by_id
+            .entry(definition.id.as_str())
+            .or_default()
+            .push(definition);
+    }
+    let mut candidates = BTreeMap::<(&str, u32), Vec<_>>::new();
+    for numeric_use in numeric_uses {
+        let value_kind = match numeric_use.kind {
+            ParasolidEntity51NumericKind::UnsignedIntegers => {
+                ParasolidAttributeFieldValueKind::UnsignedIntegers
+            }
+            ParasolidEntity51NumericKind::Doubles => ParasolidAttributeFieldValueKind::Doubles,
+        };
+        candidates
+            .entry((
+                numeric_use.entity_51_record.as_str(),
+                numeric_use.reference_ordinal,
+            ))
+            .or_default()
+            .push((
+                numeric_use.stream_ordinal,
+                value_kind,
+                numeric_use.id.as_str(),
+                numeric_use.value_record.as_str(),
+                numeric_use.inflated_offset,
+            ));
+    }
+    for string_use in string_uses {
+        candidates
+            .entry((
+                string_use.entity_51_record.as_str(),
+                string_use.reference_ordinal,
+            ))
+            .or_default()
+            .push((
+                string_use.stream_ordinal,
+                ParasolidAttributeFieldValueKind::String,
+                string_use.id.as_str(),
+                string_use.string_record.as_str(),
+                string_use.inflated_offset,
+            ));
+    }
+    let mut uses = candidates
+        .into_iter()
+        .filter_map(|((entity_51_record, reference_ordinal), candidates)| {
+            let [(stream_ordinal, value_kind, value_use, value_record, inflated_offset)] =
+                candidates.as_slice()
+            else {
+                return None;
+            };
+            let [class_use] = classes.get(entity_51_record)?.as_slice() else {
+                return None;
+            };
+            if class_use.stream_ordinal != *stream_ordinal {
+                return None;
+            }
+            let [definition] = definitions_by_id
+                .get(class_use.attribute_definition.as_str())?
                 .as_slice()
             else {
                 return None;
             };
-            if class_use.stream_ordinal != numeric_use.stream_ordinal {
-                return None;
-            }
+            let field_ordinal = reference_ordinal.checked_sub(5)?;
+            let field_code = *definition.field_codes.get(field_ordinal as usize)?;
+            matches!(
+                (field_code, value_kind),
+                (1, ParasolidAttributeFieldValueKind::UnsignedIntegers)
+                    | (2, ParasolidAttributeFieldValueKind::Doubles)
+                    | (3, ParasolidAttributeFieldValueKind::String)
+            )
+            .then_some(())?;
             let (_, class_key) = class_use.id.rsplit_once('#')?;
-            Some(ParasolidAttributeNumericClassUse {
-                id: format!(
-                    "nx:s{}:attribute-numeric-class-use#{class_key}-{}",
-                    numeric_use.stream_ordinal, numeric_use.reference_ordinal
-                ),
-                stream_ordinal: numeric_use.stream_ordinal,
+            Some(ParasolidAttributeFieldUse {
+                id: format!("nx:s{stream_ordinal}:attribute-field-use#{class_key}-{field_ordinal}"),
+                stream_ordinal: *stream_ordinal,
                 attribute_class_use: class_use.id.clone(),
-                entity_51_record: numeric_use.entity_51_record.clone(),
+                entity_51_record: entity_51_record.to_string(),
                 attribute_definition: class_use.attribute_definition.clone(),
-                numeric_use: numeric_use.id.clone(),
-                reference_ordinal: numeric_use.reference_ordinal,
-                kind: numeric_use.kind,
-                value_record: numeric_use.value_record.clone(),
-                inflated_offset: numeric_use.inflated_offset,
+                field_ordinal,
+                field_code,
+                reference_ordinal,
+                value_kind: *value_kind,
+                value_use: (*value_use).to_string(),
+                value_record: (*value_record).to_string(),
+                inflated_offset: *inflated_offset,
             })
         })
         .collect::<Vec<_>>();
@@ -2624,7 +2708,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn numeric_attribute_uses_retain_their_resolved_class() {
+    fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 2,
+            xmt: 9,
+            next_definition_xmt: 1,
+            identifier_xmt: 10,
+            identifier_inflated_offset: 32,
+            name: "CLASS".into(),
+            type_id: 8000,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
+            field_count: 3,
+            field_codes: vec![1, 2, 3],
+            inflated_offset: 40,
+        };
         let class_use = ParasolidAttributeClassUse {
             id: "nx:s2:attribute-class-use#class-use".into(),
             stream_ordinal: 2,
@@ -2642,22 +2742,57 @@ mod tests {
             value_record: "integers".into(),
             inflated_offset: 48,
         };
+        let double_use = ParasolidEntity51NumericUse {
+            id: "double-use".into(),
+            reference_ordinal: 6,
+            kind: ParasolidEntity51NumericKind::Doubles,
+            value_record: "doubles".into(),
+            ..numeric_use.clone()
+        };
+        let string_use = ParasolidEntity51StringUse {
+            id: "string-use".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            reference_ordinal: 7,
+            referenced_xmt: 14,
+            string_record: "string".into(),
+            inflated_offset: 48,
+        };
 
-        let uses = parasolid_attribute_numeric_class_uses(
+        let uses = parasolid_attribute_field_uses(
             std::slice::from_ref(&class_use),
-            std::slice::from_ref(&numeric_use),
+            std::slice::from_ref(&definition),
+            &[numeric_use.clone(), double_use],
+            std::slice::from_ref(&string_use),
         );
 
-        assert_eq!(uses.len(), 1);
-        assert_eq!(uses[0].id, "nx:s2:attribute-numeric-class-use#class-use-5");
+        assert_eq!(uses.len(), 3);
+        assert_eq!(uses[0].id, "nx:s2:attribute-field-use#class-use-0");
         assert_eq!(
             uses[0].attribute_class_use,
             "nx:s2:attribute-class-use#class-use"
         );
         assert_eq!(uses[0].attribute_definition, "definition");
-        assert_eq!(uses[0].numeric_use, "numeric-use");
+        assert_eq!(uses[0].field_ordinal, 0);
+        assert_eq!(uses[0].field_code, 1);
         assert_eq!(uses[0].reference_ordinal, 5);
+        assert_eq!(
+            uses[0].value_kind,
+            ParasolidAttributeFieldValueKind::UnsignedIntegers
+        );
+        assert_eq!(uses[0].value_use, "numeric-use");
         assert_eq!(uses[0].value_record, "integers");
+        assert_eq!(uses[1].field_ordinal, 1);
+        assert_eq!(uses[1].field_code, 2);
+        assert_eq!(
+            uses[1].value_kind,
+            ParasolidAttributeFieldValueKind::Doubles
+        );
+        assert_eq!(uses[1].value_record, "doubles");
+        assert_eq!(uses[2].field_ordinal, 2);
+        assert_eq!(uses[2].field_code, 3);
+        assert_eq!(uses[2].value_kind, ParasolidAttributeFieldValueKind::String);
+        assert_eq!(uses[2].value_record, "string");
 
         let duplicate = ParasolidAttributeClassUse {
             id: "duplicate".into(),
@@ -2666,9 +2801,11 @@ mod tests {
             definition_xmt: 11,
             attribute_definition: "other-definition".into(),
         };
-        assert!(parasolid_attribute_numeric_class_uses(
-            &[class_use, duplicate.clone()],
-            std::slice::from_ref(&numeric_use)
+        assert!(parasolid_attribute_field_uses(
+            &[class_use.clone(), duplicate.clone()],
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[],
         )
         .is_empty());
 
@@ -2676,9 +2813,35 @@ mod tests {
             stream_ordinal: 3,
             ..duplicate
         };
-        assert!(parasolid_attribute_numeric_class_uses(
+        assert!(parasolid_attribute_field_uses(
             &[wrong_stream],
-            std::slice::from_ref(&numeric_use)
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[],
+        )
+        .is_empty());
+
+        let mismatched = ParasolidEntity51NumericUse {
+            kind: ParasolidEntity51NumericKind::Doubles,
+            ..numeric_use.clone()
+        };
+        assert!(parasolid_attribute_field_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&definition),
+            &[mismatched],
+            &[],
+        )
+        .is_empty());
+
+        let ambiguous_string = ParasolidEntity51StringUse {
+            reference_ordinal: 5,
+            ..string_use
+        };
+        assert!(parasolid_attribute_field_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[ambiguous_string],
         )
         .is_empty());
     }
@@ -2900,8 +3063,14 @@ mod tests {
             &instance_uses,
         );
         assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].attribute_class_use, instance_uses[0].id);
         assert_eq!(uses[0].definition_xmt, 34);
         assert_eq!(uses[0].attribute_definition, definition.id);
+        assert!(super::parasolid_topology_attribute_class_uses(
+            std::slice::from_ref(&reference),
+            &[instance_uses[0].clone(), instance_uses[0].clone()],
+        )
+        .is_empty());
 
         let mut invalid = entity;
         invalid.definition_xmt = 33;

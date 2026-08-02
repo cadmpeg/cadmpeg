@@ -142,11 +142,14 @@ pub(crate) fn attach(
     }
     attach_parasolid_topology_string_attributes(
         ir,
-        &model.parasolid.parasolid_topology_attribute_list_references,
-        &model.parasolid.parasolid_topology_attribute_class_uses,
-        &model.parasolid.parasolid_attribute_definitions,
-        &model.parasolid.parasolid_entity_51_string_uses,
-        &model.parasolid.parasolid_entity_54_string_records,
+        &ParasolidStringAttributeSources {
+            topology_references: &model.parasolid.parasolid_topology_attribute_list_references,
+            class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
+            definitions: &model.parasolid.parasolid_attribute_definitions,
+            field_uses: &model.parasolid.parasolid_attribute_field_uses,
+            string_uses: &model.parasolid.parasolid_entity_51_string_uses,
+            strings: &model.parasolid.parasolid_entity_54_string_records,
+        },
         annotations,
     );
     attach_parasolid_topology_numeric_attributes(
@@ -155,6 +158,7 @@ pub(crate) fn attach(
             topology_references: &model.parasolid.parasolid_topology_attribute_list_references,
             class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
             definitions: &model.parasolid.parasolid_attribute_definitions,
+            field_uses: &model.parasolid.parasolid_attribute_field_uses,
             numeric_uses: &model.parasolid.parasolid_entity_51_numeric_uses,
             integers: &model.parasolid.parasolid_entity_52_integer_records,
             doubles: &model.parasolid.parasolid_entity_53_double_records,
@@ -2364,23 +2368,30 @@ fn operation_source_properties(
 
 // ===== Feature-semantics and attachment helpers (moved from decode.rs) =====
 
+struct ParasolidStringAttributeSources<'a> {
+    topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
+    class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
+    field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
+    string_uses: &'a [crate::native::parasolid::ParasolidEntity51StringUse],
+    strings: &'a [crate::native::parasolid::ParasolidEntity54StringRecord],
+}
+
 fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
-    topology_references: &[crate::native::parasolid::ParasolidTopologyAttributeListReference],
-    class_uses: &[crate::native::parasolid::ParasolidTopologyAttributeClassUse],
-    definitions: &[crate::native::parasolid::ParasolidAttributeDefinition],
-    string_uses: &[crate::native::parasolid::ParasolidEntity51StringUse],
-    strings: &[crate::native::parasolid::ParasolidEntity54StringRecord],
+    sources: &ParasolidStringAttributeSources<'_>,
     annotations: &mut AnnotationBuilder,
 ) {
-    let class_names = parasolid_topology_attribute_class_names(class_uses, definitions);
-    let strings_by_id = strings
+    let class_names =
+        parasolid_topology_attribute_class_names(sources.class_uses, sources.definitions);
+    let strings_by_id = sources
+        .strings
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
     let mut uses_by_entity =
         BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StringUse>>::new();
-    for string_use in string_uses {
+    for string_use in sources.string_uses {
         uses_by_entity
             .entry(string_use.entity_51_record.as_str())
             .or_default()
@@ -2393,7 +2404,7 @@ fn attach_parasolid_topology_string_attributes(
         String,
         Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
     >::new();
-    for reference in topology_references {
+    for reference in sources.topology_references {
         let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
             continue;
         };
@@ -2437,14 +2448,23 @@ fn attach_parasolid_topology_string_attributes(
                 "parasolid_type_84_reference_{}",
                 string_use.reference_ordinal
             );
+            let name = parasolid_topology_attribute_field_name(
+                reference,
+                string_use.id.as_str(),
+                sources.class_uses,
+                sources.definitions,
+                sources.field_uses,
+            );
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: target.clone(),
-                name: class_names
-                    .get(reference.id.as_str())
-                    .map_or(generic_name.clone(), |class_name| {
-                        format!("{class_name}.{generic_name}")
-                    }),
+                name: name
+                    .or_else(|| {
+                        class_names
+                            .get(reference.id.as_str())
+                            .map(|class_name| format!("{class_name}.{generic_name}"))
+                    })
+                    .unwrap_or(generic_name),
                 values: vec![AttributeValue::String(string.value.clone())],
             });
         }
@@ -2459,26 +2479,85 @@ struct ParasolidNumericAttributeSources<'a> {
         &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
     pub(crate) class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     pub(crate) definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
+    pub(crate) field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
     pub(crate) numeric_uses: &'a [crate::native::parasolid::ParasolidEntity51NumericUse],
     pub(crate) integers: &'a [crate::native::parasolid::ParasolidEntity52IntegerRecord],
     pub(crate) doubles: &'a [crate::native::parasolid::ParasolidEntity53DoubleRecord],
+}
+
+fn parasolid_topology_attribute_field_name(
+    topology_reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
+    value_use: &str,
+    class_uses: &[crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &[crate::native::parasolid::ParasolidAttributeDefinition],
+    field_uses: &[crate::native::parasolid::ParasolidAttributeFieldUse],
+) -> Option<String> {
+    let mut classes = class_uses
+        .iter()
+        .filter(|class_use| class_use.topology_attribute_reference == topology_reference.id);
+    let class_use = classes.next()?;
+    if classes.next().is_some() {
+        return None;
+    }
+    let mut matching_fields = field_uses.iter().filter(|field_use| {
+        field_use.value_use == value_use
+            && field_use.entity_51_record == class_use.entity_51_record
+            && field_use.attribute_class_use == class_use.attribute_class_use
+            && field_use.attribute_definition == class_use.attribute_definition
+    });
+    let field_use = matching_fields.next()?;
+    if matching_fields.next().is_some() {
+        return None;
+    }
+    let mut matching_definitions = definitions
+        .iter()
+        .filter(|definition| definition.id == class_use.attribute_definition);
+    let definition = matching_definitions.next()?;
+    if matching_definitions.next().is_some() {
+        return None;
+    }
+    let field_name = match (definition.name.as_str(), field_use.field_ordinal) {
+        ("SDL/TYSA_DENSITY", 0) => "density".to_string(),
+        ("SDL/TYSA_DENSITY", 1) => "units".to_string(),
+        _ => format!(
+            "field_{}.parasolid_type_{}",
+            field_use.field_ordinal, field_use.field_code
+        ),
+    };
+    Some(format!("{}.{}", definition.name, field_name))
 }
 
 fn parasolid_topology_attribute_class_names<'a>(
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
 ) -> BTreeMap<&'a str, &'a str> {
-    let definitions = definitions
-        .iter()
-        .map(|definition| (definition.id.as_str(), definition.name.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    class_uses
-        .iter()
-        .filter_map(|class_use| {
-            Some((
-                class_use.topology_attribute_reference.as_str(),
-                *definitions.get(class_use.attribute_definition.as_str())?,
-            ))
+    let mut definitions_by_id = BTreeMap::<&str, Vec<&str>>::new();
+    for definition in definitions {
+        definitions_by_id
+            .entry(definition.id.as_str())
+            .or_default()
+            .push(definition.name.as_str());
+    }
+    let mut classes_by_reference = BTreeMap::<&str, Vec<&str>>::new();
+    for class_use in class_uses {
+        let Some([class_name]) = definitions_by_id
+            .get(class_use.attribute_definition.as_str())
+            .map(Vec::as_slice)
+        else {
+            continue;
+        };
+        classes_by_reference
+            .entry(class_use.topology_attribute_reference.as_str())
+            .or_default()
+            .push(class_name);
+    }
+    classes_by_reference
+        .into_iter()
+        .filter_map(|(reference, names)| {
+            let [name] = names.as_slice() else {
+                return None;
+            };
+            Some((reference, *name))
         })
         .collect()
 }
@@ -2640,14 +2719,23 @@ fn attach_parasolid_topology_numeric_attributes(
                 "parasolid_type_{lane}_reference_{}",
                 numeric_use.reference_ordinal
             );
+            let name = parasolid_topology_attribute_field_name(
+                reference,
+                numeric_use.id.as_str(),
+                sources.class_uses,
+                sources.definitions,
+                sources.field_uses,
+            );
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: target.clone(),
-                name: class_names
-                    .get(reference.id.as_str())
-                    .map_or(generic_name.clone(), |class_name| {
-                        format!("{class_name}.{generic_name}")
-                    }),
+                name: name
+                    .or_else(|| {
+                        class_names
+                            .get(reference.id.as_str())
+                            .map(|class_name| format!("{class_name}.{generic_name}"))
+                    })
+                    .unwrap_or(generic_name),
                 values,
             });
         }
@@ -7640,6 +7728,7 @@ mod tests {
             id: "class-use".into(),
             topology_attribute_reference: references[2].id.clone(),
             entity_51_record: "entity".into(),
+            attribute_class_use: "attribute-class-use".into(),
             definition_xmt: definition.xmt,
             attribute_definition: definition.id.clone(),
         };
@@ -7651,6 +7740,7 @@ mod tests {
                 topology_references: &references,
                 class_uses: &[class_use],
                 definitions: &[definition],
+                field_uses: &[],
                 numeric_uses: &uses,
                 integers: &[integer],
                 doubles: &[double],
@@ -7703,5 +7793,108 @@ mod tests {
                 [AttributeValue::Float(0.25), AttributeValue::Float(7.5)]
             );
         }
+    }
+
+    #[test]
+    fn topology_attribute_field_names_use_unique_declared_assignments() {
+        use crate::native::parasolid::{
+            ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
+            ParasolidAttributeFieldValueKind, ParasolidTopologyAttributeClassUse,
+            ParasolidTopologyAttributeListReference,
+        };
+
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 3,
+            topology_type: 14,
+            topology_xmt: 60,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some("entity".into()),
+            inflated_offset: 300,
+        };
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 3,
+            xmt: 34,
+            next_definition_xmt: 1,
+            identifier_xmt: 35,
+            identifier_inflated_offset: 90,
+            name: "SDL/TYSA_DENSITY".into(),
+            type_id: 8004,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
+            field_count: 2,
+            field_codes: vec![2, 3],
+            inflated_offset: 100,
+        };
+        let class_use = ParasolidTopologyAttributeClassUse {
+            id: "topology-class-use".into(),
+            topology_attribute_reference: reference.id.clone(),
+            entity_51_record: "entity".into(),
+            attribute_class_use: "attribute-class-use".into(),
+            definition_xmt: definition.xmt,
+            attribute_definition: definition.id.clone(),
+        };
+        let field_use = ParasolidAttributeFieldUse {
+            id: "field-use".into(),
+            stream_ordinal: 3,
+            attribute_class_use: "attribute-class-use".into(),
+            entity_51_record: "entity".into(),
+            attribute_definition: definition.id.clone(),
+            field_ordinal: 0,
+            field_code: 2,
+            reference_ordinal: 5,
+            value_kind: ParasolidAttributeFieldValueKind::Doubles,
+            value_use: "double-use".into(),
+            value_record: "double-record".into(),
+            inflated_offset: 200,
+        };
+
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "double-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&field_use),
+            )
+            .as_deref(),
+            Some("SDL/TYSA_DENSITY.density")
+        );
+
+        let units = ParasolidAttributeFieldUse {
+            field_ordinal: 1,
+            field_code: 3,
+            reference_ordinal: 6,
+            value_kind: ParasolidAttributeFieldValueKind::String,
+            value_use: "string-use".into(),
+            value_record: "string-record".into(),
+            ..field_use.clone()
+        };
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "string-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                &[units],
+            )
+            .as_deref(),
+            Some("SDL/TYSA_DENSITY.units")
+        );
+
+        let duplicate_class = ParasolidTopologyAttributeClassUse {
+            id: "duplicate-class-use".into(),
+            ..class_use.clone()
+        };
+        assert!(super::parasolid_topology_attribute_field_name(
+            &reference,
+            "double-use",
+            &[class_use, duplicate_class],
+            &[definition],
+            &[field_use],
+        )
+        .is_none());
     }
 }

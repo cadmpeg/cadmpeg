@@ -58,9 +58,9 @@
 //! model. Current-body writers and their complete earlier dependency closure
 //! transfer as active; other operation suppression remains unresolved. Embedded
 //! JT coordinates and triangle connectivity transfer as canonical tessellations.
-//! Complete design history, assembly occurrence placement, material
-//! and appearance assignment, class-specific entity attribute fields, and `.prt`
-//! writing are not supported.
+//! Complete design history, assembly occurrence placement, material and appearance
+//! assignment, Parasolid type-85 through type-89 attribute values, serialized
+//! attribute field names, and `.prt` writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules
 //! expose the lower-level container, stream, geometry, NURBS, intersection, and
 //! topology decoders. The object-model extraction and attachment tier (record

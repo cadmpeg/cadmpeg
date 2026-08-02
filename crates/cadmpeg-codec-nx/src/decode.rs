@@ -10035,8 +10035,8 @@ fn build_geometry_report(
     losses.push(LossNote {
         code: LossKind::AttributesNotTransferred,
         severity: Severity::Warning,
-        message: "Class-specific entity attribute fields were not transferred because their \
-                  remaining Parasolid field serialization is not decoded."
+        message: "Parasolid type-85 through type-89 attribute values and serialized field names \
+                  were not transferred because those record layouts are not decoded."
             .to_string(),
         provenance: None,
     });

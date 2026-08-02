@@ -7609,7 +7609,7 @@ fn decode_emits_connected_primitive_brep() {
         (LossKind::MaterialNotTransferred, "Material and appearance"),
         (
             LossKind::AttributesNotTransferred,
-            "Class-specific entity attribute fields",
+            "Parasolid type-85 through type-89 attribute values",
         ),
     ] {
         assert!(result
@@ -14050,7 +14050,7 @@ mod golden {
         "offset_store_named_points",
         "om_record_areas",
         "parasolid_attribute_class_uses",
-        "parasolid_attribute_numeric_class_uses",
+        "parasolid_attribute_field_uses",
         "parasolid_attribute_definitions",
         "parasolid_blend_bound_records",
         "parasolid_blend_surface_records",

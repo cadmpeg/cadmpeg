@@ -542,13 +542,13 @@ by that invariant.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
 
-### AM-09. SDL/TYSA attribute values
+### AM-09. Remaining Parasolid attribute value families and field names
 
-**Question.** How does each Parasolid SDL/TYSA attribute instance assign its referenced value records to the fields declared by its type-79 class definition?
+**Question.** What are the record layouts for Parasolid type-85 through type-89 values and type-80 field-name lists?
 
-**Known.** The attribute section of `siemens_nx.md` defines the type-79 identifier/type-80 definition graph, type-81 class selection, referenced value records, topology ownership, and neutral source-attribute names. A type-81 instance has five fixed leading structural references and a trailing field-reference lane counted by `flags`; only the trailing lane addresses type-82 through type-89 value records. The definition includes ordered field type codes such as `[real, character]` for `SDL/TYSA_DENSITY`.
+**Known.** The attribute section of `siemens_nx.md` defines the type-79 identifier/type-80 definition graph, type-81 class selection, field assignment, type-82 through type-84 value records, topology ownership, and neutral source-attribute names. Trailing type-81 slot `5 + i` supplies declared field `i`, subject to exact value-family compatibility with the field code. `SDL/TYSA_DENSITY` declares real `density` and character `units` fields.
 
-**Need.** We must know the assignment to transfer class-specific material and topology attributes with semantic field names.
+**Need.** We must decode point, vector, direction, axis, tag, pointer, and Unicode values and resolve serialized field names for arbitrary user-defined classes.
 
 ### AM-10. Face material bindings
 
