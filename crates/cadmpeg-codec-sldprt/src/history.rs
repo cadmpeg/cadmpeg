@@ -3647,6 +3647,91 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
+        let mut chamfer = feature("chamfer", Some("42"), 0);
+        chamfer.input_class = Some("Chamfer_c".into());
+        chamfer
+            .parameters
+            .insert("localized length".into(), "1.5".into());
+        chamfer
+            .parameters
+            .insert("localized angle".into(), "45°".into());
+        chamfer
+            .content
+            .push(FeatureContent::Dimension("localized length".into()));
+        chamfer
+            .content
+            .push(FeatureContent::Dimension("localized angle".into()));
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![chamfer],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::Chamfer { ref groups, .. }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::ChamferGroup {
+                        spec: ChamferSpec::DistanceAngle {
+                            distance: Length(1.5),
+                            angle: Angle(value),
+                        },
+                        ..
+                    }] if (*value - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
+                )
+        ));
+
+        let mut distance = feature("distance", Some("43"), 0);
+        distance.input_class = Some("Chamfer_c".into());
+        distance
+            .parameters
+            .insert("localized distance".into(), "2mm".into());
+        distance
+            .content
+            .push(FeatureContent::Dimension("localized distance".into()));
+        assert!(matches!(
+            project_chamfer(&distance),
+            FeatureDefinition::Chamfer { ref groups, .. }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::ChamferGroup {
+                        spec: ChamferSpec::Distance {
+                            distance: Length(2.0),
+                        },
+                        ..
+                    }]
+                )
+        ));
+
+        distance
+            .parameters
+            .insert("localized second distance".into(), "3mm".into());
+        distance.content.push(FeatureContent::Dimension(
+            "localized second distance".into(),
+        ));
+        assert!(matches!(
+            project_chamfer(&distance),
+            FeatureDefinition::Chamfer { ref groups, .. }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::ChamferGroup {
+                        spec: ChamferSpec::TwoDistances {
+                            first: Length(2.0),
+                            second: Length(3.0),
+                        },
+                        ..
+                    }]
+                )
+        ));
+    }
+
+    #[test]
     fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         let mut thread = feature("thread", Some("42"), 0);
         thread.input_class = Some("moCosmeticThread_c".into());
@@ -8044,6 +8129,36 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         .parameters
         .get("D2")
         .filter(|value| parse_bounded_angle_rad(value).is_some());
+    let ordered_dimensions = feature
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            FeatureContent::Dimension(name) => feature.parameters.get(name),
+            FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let ordered_spec = || match ordered_dimensions.as_slice() {
+        [distance] => Some(ChamferSpec::Distance {
+            distance: Length(parse_positive_dimension_length_mm(distance)?),
+        }),
+        [first, second] => {
+            let first_length = parse_positive_dimension_length_mm(first).map(Length);
+            let second_length = parse_positive_dimension_length_mm(second).map(Length);
+            let first_angle = parse_bounded_angle_rad(first).map(Angle);
+            let second_angle = parse_bounded_angle_rad(second).map(Angle);
+            match (first_length, second_length, first_angle, second_angle) {
+                (Some(distance), None, None, Some(angle))
+                | (None, Some(distance), Some(angle), None) => {
+                    Some(ChamferSpec::DistanceAngle { distance, angle })
+                }
+                (Some(first), Some(second), None, None) => {
+                    Some(ChamferSpec::TwoDistances { first, second })
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    };
     let spec = (|| {
         Some(
             if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
@@ -8062,6 +8177,7 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             },
         )
     })()
+    .or_else(ordered_spec)
     .unwrap_or_else(|| ChamferSpec::Unresolved {
         form: if feature.parameters.contains_key("Angle") {
             Some(ChamferForm::DistanceAngle)
