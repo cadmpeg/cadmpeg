@@ -4629,6 +4629,36 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         }) if outward_offset == (compact_shell_at + 21) as u64
     ));
+    let shifted_shell_at = bytes.len();
+    let mut shifted_shell = vec![0; 278];
+    shifted_shell[20] = 1;
+    shifted_shell[25] = 1;
+    shifted_shell[27] = 1;
+    shifted_shell[28..32].copy_from_slice(&9_000u32.to_le_bytes());
+    shifted_shell[51..55].copy_from_slice(&1u32.to_le_bytes());
+    shifted_shell[55] = 1;
+    shifted_shell[56..60].copy_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&shifted_shell);
+    let shifted_shell_scope = DesignParameterScope {
+        byte_offset: shifted_shell_at as u64,
+        frame_length: 278,
+        reference_members: vec![9_000, 200, 201],
+        ..shell_scope.clone()
+    };
+    assert!(matches!(
+        exact_direct_face_operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &shifted_shell_scope,
+        ),
+        Some(DesignDirectFaceOperation::Shell {
+            thickness: 0.25,
+            thickness_record_index: 9_000,
+            outward: false,
+            outward_offset,
+            ..
+        }) if outward_offset == (shifted_shell_at + 21) as u64
+    ));
     compact_shell_scope.direct_face_operation = exact_direct_face_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),

@@ -1802,8 +1802,29 @@ pub(crate) fn exact_direct_face_operation(
             })
         }
         DesignFeatureFamily::Shell if scope.reference_members.len() == 3 => {
-            let (thickness_record_index, outward, outward_offset) =
+            let (thickness_record_index, thickness_is_first, outward, outward_offset) =
                 match parameter_scope_payload_length(scope) {
+                    Some(268)
+                        if bytes.get(start + 11..start + 20) == Some(&[0; 9])
+                            && bytes.get(start + 20) == Some(&1)
+                            && matches!(bytes.get(start + 21), Some(0 | 1))
+                            && bytes.get(start + 22..start + 25) == Some(&[0; 3])
+                            && bytes.get(start + 25..start + 27) == Some(&[1, 0])
+                            && bytes.get(start + 27) == Some(&1)
+                            && bytes.get(start + 32..start + 51) == Some(&[0; 19])
+                            && u32_at(bytes, start + 51) == Some(1)
+                            && bytes.get(start + 55) == Some(&1)
+                            && u32_at(bytes, start + 56)
+                                == scope.reference_members.get(1).copied()
+                            && bytes.get(start + 60..start + 66) == Some(&[0; 6]) =>
+                    {
+                        (
+                            u32_at(bytes, start + 28)?,
+                            true,
+                            bytes[start + 21] != 0,
+                            start + 21,
+                        )
+                    }
                     Some(268)
                         if matches!(bytes.get(start + 25), Some(0 | 1))
                             && bytes.get(start + 26) == Some(&0)
@@ -1815,6 +1836,7 @@ pub(crate) fn exact_direct_face_operation(
                     {
                         (
                             u32_at(bytes, start + 28)?,
+                            false,
                             bytes[start + 25] != 0,
                             start + 25,
                         )
@@ -1832,13 +1854,19 @@ pub(crate) fn exact_direct_face_operation(
                     {
                         (
                             u32_at(bytes, start + 23)?,
+                            false,
                             bytes[start + 21] != 0,
                             start + 21,
                         )
                     }
                     _ => return None,
                 };
-            if scope.reference_members.last() != Some(&thickness_record_index) {
+            let expected_thickness = if thickness_is_first {
+                scope.reference_members.first()
+            } else {
+                scope.reference_members.last()
+            };
+            if expected_thickness != Some(&thickness_record_index) {
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
