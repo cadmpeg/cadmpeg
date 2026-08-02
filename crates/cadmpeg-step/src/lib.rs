@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP Part
 //! 21 exchange structures for AP203, AP214, and AP242.
 //!

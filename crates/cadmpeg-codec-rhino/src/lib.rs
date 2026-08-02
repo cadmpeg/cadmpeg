@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(
+        clippy::doc_markdown,
+        clippy::redundant_field_names,
+        clippy::unwrap_used
+    )
+)]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
 //! Support level: L8 for archive versions 50, 60, 70, and 80 on the cadmpeg

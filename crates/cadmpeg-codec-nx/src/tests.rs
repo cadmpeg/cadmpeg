@@ -8980,7 +8980,7 @@ fn deltas_walks_complete_type_45_records() {
         surface_header.extend_from_slice(&value.to_be_bytes());
     }
     surface_header.extend_from_slice(&[2, b'B', b'B', b'B', b'B', b'B', b'B', b'B', b'B']);
-    surface_header.extend_from_slice(&[b'?', b'?', b'?', b'?']);
+    surface_header.extend_from_slice(b"????");
     for reference in [1u32, 1, 1, 1] {
         surface_header.extend(encoded_xmt(reference));
         surface_header.push(1);
@@ -12868,11 +12868,15 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     let stream = topology_with_fully_extended_geometry_headers();
     let graph = crate::topology::Graph::parse(&stream);
     assert!(matches!(
-        graph.get(50, 6).and_then(|node| node.surface_geometry()),
+        graph
+            .get(50, 6)
+            .and_then(super::topology::Node::surface_geometry),
         Some(SurfaceGeometry::Plane { .. })
     ));
     assert!(matches!(
-        graph.get(30, 9).and_then(|node| node.curve_geometry()),
+        graph
+            .get(30, 9)
+            .and_then(super::topology::Node::curve_geometry),
         Some(CurveGeometry::Line { .. })
     ));
 

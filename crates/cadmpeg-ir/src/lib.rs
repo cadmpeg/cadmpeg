@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Format-neutral CAD documents and the codec interfaces that produce them.
 //!
 //! [`CadIr`] stores units, tolerances, and flat entity arenas connected by
